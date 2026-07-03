@@ -58,10 +58,12 @@ background jobs) instead of `console.log`/`console.error`.
 request: generates a `reqId` (`crypto.randomUUID()`), creates a fresh
 `logger.createChildLogger(route, { reqId })` and assigns it to `req.logger`
 (typed via `src/types/express.d.ts`'s augmentation of
-`express-serve-static-core`), and logs method/path/status plus `durationMs`
-on the response's `finish` event. Inside a route handler or anything that
-receives `req`, log through `req.logger` (not the top-level `logger`) so log
-lines carry the request's id automatically.
+`express-serve-static-core`), and on the response's `close` event (fires once
+the response is fully sent, including aborted requests — not `finish`) logs
+method/URL/status plus `durationMs`, timed with `process.hrtime()` rather
+than `Date.now()`. Inside a route handler or anything that receives `req`,
+log through `req.logger` (not the top-level `logger`) so log lines carry the
+request's id automatically.
 
 Both `@tkottke90/config-manager` and `@tkottke90/logger` come from the
 private npm registry (see the root `.npmrc`) — `npm install` needs network
