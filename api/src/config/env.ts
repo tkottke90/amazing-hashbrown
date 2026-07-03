@@ -13,7 +13,7 @@ const AppConfigSchema = z.object({
 
 // Docker/CI deploy config via process.env, not a config file on disk, so we
 // pass those through as runtimeValues and keep the manager read-only.
-const config = loadConfig({
+export const configManager = loadConfig({
   appName: 'amazing-hashbrown-api',
   schema: AppConfigSchema,
   writeBack: false,
@@ -26,10 +26,8 @@ const config = loadConfig({
 });
 
 export const env = {
-  port: config.getNumber('port', 3000),
-  llmBaseUrl: config.get('llmBaseUrl', 'http://localhost:11434'),
-  llmModel: config.get('llmModel', 'llama3'),
-  logLevel: config.get('logLevel', 'info'),
+  port: configManager.getNumber('port', 3000),
+  llmBaseUrl: configManager.get('llmBaseUrl', 'http://localhost:11434'),
+  llmModel: configManager.get('llmModel', 'llama3'),
+  logLevel: configManager.get('logLevel', 'info'),
 };
-
-export type AppConfig = typeof env;

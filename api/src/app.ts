@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
-import { env } from './config/env.js';
+import { configManager } from './config/env.js';
 import { logger } from './config/logger.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { apiRouter } from './routes/index.js';
@@ -13,7 +13,7 @@ const publicDir = path.join(__dirname, '..', 'public');
 export function createApp() {
   const app = express();
   app.logger = logger;
-  app.config = env;
+  app.config = configManager;
 
   app.use(cors());
   app.use(express.json());

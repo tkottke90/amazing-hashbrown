@@ -43,14 +43,17 @@ everything hangs off `/api/v1` so future breaking changes can live at
 passes those values as `runtimeValues` into `@tkottke90/config-manager`'s
 `loadConfig`, validated against a Zod schema, with `writeBack: false` since
 config here is driven by env vars/container config rather than a file on
-disk. Read config through the exported `env` object — don't read
-`process.env` directly elsewhere. Add new config fields to `AppConfigSchema`
-in `env.ts` (with a `.default(...)`) rather than reading ad hoc env vars.
+disk. `loadConfig` returns the `ConfigManager` instance itself, exported as
+`configManager`; `env` is a plain object of resolved values (`env.port`,
+`env.logLevel`, etc.) derived from it for convenient reads outside a
+request — for a new field, add it to `AppConfigSchema` (with a
+`.default(...)`) and to `env`, rather than reading ad hoc env vars.
 
-`app.ts` also assigns `app.config = env` (typed via `AppConfig`, exported
-from `env.ts`, in the same `express.d.ts` augmentation as `app.logger`), so
-route handlers can read config off the request as `req.app.config` instead
-of importing `env` directly.
+`app.ts` assigns `app.config = configManager` (typed via `ConfigManager`
+from `@tkottke90/config-manager` in the same `express.d.ts` augmentation as
+`app.logger`), so route handlers can reach the full manager — `get()`,
+`getNumber()`, `getSection()`, `reload()`, etc. — as `req.app.config`,
+instead of just the flattened `env` snapshot.
 
 ## Logging
 

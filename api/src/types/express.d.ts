@@ -1,10 +1,10 @@
+import type { ConfigManager } from '@tkottke90/config-manager';
 import type { Logger } from '@tkottke90/logger';
-import type { AppConfig } from '../config/env.js';
 
 declare module 'express-serve-static-core' {
   interface Application {
     logger: Logger;
-    config: AppConfig;
+    config: ConfigManager;
   }
 
   interface Request {
