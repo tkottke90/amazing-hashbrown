@@ -12,7 +12,8 @@ pre-commit checks.
 ```
 src/
   agents/           LangChain agent/chain definitions and streaming chat handlers
-  config/           Environment config (env.ts loads .env via dotenv)
+  config/           env.ts (@tkottke90/config-manager, seeded from .env via
+                     dotenv) and logger.ts (@tkottke90/logger)
   knowledge-base/   Domain-organized knowledge bases (LLM-Wiki pattern) — one
                      subfolder per domain under knowledge-base/domains/
   routes/           Express routers. All backend routes are versioned and
@@ -34,11 +35,27 @@ New routes go under `src/routes/v1/`, mounted onto `v1Router` in
 everything hangs off `/api/v1` so future breaking changes can live at
 `/api/v2` without disrupting existing clients.
 
-## Environment
+## Environment and config
 
-Config is loaded from `.env` (see `.env.example`) via the `dotenv` package in
-`src/config/env.ts`, and read through the exported `env` object — don't read
-`process.env` directly elsewhere.
+`src/config/env.ts` loads `.env` (see `.env.example`) via `dotenv`, then
+passes those values as `runtimeValues` into `@tkottke90/config-manager`'s
+`loadConfig`, validated against a Zod schema, with `writeBack: false` since
+config here is driven by env vars/container config rather than a file on
+disk. Read config through the exported `env` object — don't read
+`process.env` directly elsewhere. Add new config fields to `AppConfigSchema`
+in `env.ts` (with a `.default(...)`) rather than reading ad hoc env vars.
+
+## Logging
+
+`src/config/logger.ts` configures a shared `logger` via
+`@tkottke90/logger`'s `configureFromSchema`, level driven by `env.logLevel`
+(`LOG_LEVEL` env var). Use `logger` (or a `logger.createChildLogger('name')`
+for a subsystem, as `app.ts` does for HTTP request logging) instead of
+`console.log`/`console.error`.
+
+Both `@tkottke90/config-manager` and `@tkottke90/logger` come from the
+private npm registry (see the root `.npmrc`) — `npm install` needs network
+access to `npm.artifacts.tdkottke.com` and a valid `NPM_TOKEN`.
 
 ## Commands (run from `api/`, or with `--workspace api` from the repo root)
 
