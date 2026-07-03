@@ -47,6 +47,11 @@ disk. Read config through the exported `env` object — don't read
 `process.env` directly elsewhere. Add new config fields to `AppConfigSchema`
 in `env.ts` (with a `.default(...)`) rather than reading ad hoc env vars.
 
+`app.ts` also assigns `app.config = env` (typed via `AppConfig`, exported
+from `env.ts`, in the same `express.d.ts` augmentation as `app.logger`), so
+route handlers can read config off the request as `req.app.config` instead
+of importing `env` directly.
+
 ## Logging
 
 `src/config/logger.ts` configures a shared `logger` via

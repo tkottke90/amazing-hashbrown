@@ -31,3 +31,5 @@ export const env = {
   llmModel: config.get('llmModel', 'llama3'),
   logLevel: config.get('logLevel', 'info'),
 };
+
+export type AppConfig = typeof env;
