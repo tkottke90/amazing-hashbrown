@@ -54,6 +54,12 @@ npm test
 If any of these fail, fix the issue before committing — don't commit with
 `--no-verify` or otherwise bypass the check.
 
+## CI
+
+`.github/workflows/` runs the same three checks (`tests.yml`, `lint.yml`,
+`style.yml`) on every PR sync, each in its own job. They should always be
+green if you ran the pre-commit checks above locally.
+
 ## Docker
 
 The root `Dockerfile` is a multi-stage `node:24` build: it compiles both
