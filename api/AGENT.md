@@ -12,13 +12,16 @@ pre-commit checks.
 ```
 src/
   agents/           LangChain agent/chain definitions and streaming chat handlers
-  config/           Environment config (env.ts loads .env via dotenv)
+  config/           env.ts (@tkottke90/config-manager, seeded from .env via
+                     dotenv) and logger.ts (@tkottke90/logger)
   knowledge-base/   Domain-organized knowledge bases (LLM-Wiki pattern) — one
                      subfolder per domain under knowledge-base/domains/
+  middleware/       Express middleware (request-logger.ts, etc.)
   routes/           Express routers. All backend routes are versioned and
                      nested under /api/v1 (routes/v1/*); app.ts mounts
                      routes/index.ts at /api
-  types/            Shared API types
+  types/            Shared API types + express.d.ts (module augmentation for
+                     req.logger / app.logger)
   app.ts            Express app factory (routes + static hosting)
   index.ts          Server entrypoint — reads env.port, calls app.listen
 test/               Mocha + Chai tests
@@ -34,11 +37,45 @@ New routes go under `src/routes/v1/`, mounted onto `v1Router` in
 everything hangs off `/api/v1` so future breaking changes can live at
 `/api/v2` without disrupting existing clients.
 
-## Environment
+## Environment and config
 
-Config is loaded from `.env` (see `.env.example`) via the `dotenv` package in
-`src/config/env.ts`, and read through the exported `env` object — don't read
-`process.env` directly elsewhere.
+`src/config/env.ts` loads `.env` (see `.env.example`) via `dotenv`, then
+passes those values as `runtimeValues` into `@tkottke90/config-manager`'s
+`loadConfig`, validated against a Zod schema, with `writeBack: false` since
+config here is driven by env vars/container config rather than a file on
+disk. `loadConfig` returns the `ConfigManager` instance itself, exported as
+`configManager`; `env` is a plain object of resolved values (`env.port`,
+`env.logLevel`, etc.) derived from it for convenient reads outside a
+request — for a new field, add it to `AppConfigSchema` (with a
+`.default(...)`) and to `env`, rather than reading ad hoc env vars.
+
+`app.ts` assigns `app.config = configManager` (typed via `ConfigManager`
+from `@tkottke90/config-manager` in the same `express.d.ts` augmentation as
+`app.logger`), so route handlers can reach the full manager — `get()`,
+`getNumber()`, `getSection()`, `reload()`, etc. — as `req.app.config`,
+instead of just the flattened `env` snapshot.
+
+## Logging
+
+`src/config/logger.ts` configures a shared `logger` via
+`@tkottke90/logger`'s `configureFromSchema`, level driven by `env.logLevel`
+(`LOG_LEVEL` env var). Use `logger` for anything outside a request (startup,
+background jobs) instead of `console.log`/`console.error`.
+
+`src/middleware/request-logger.ts` runs first in `app.ts` and, for every
+request: generates a `reqId` (`crypto.randomUUID()`), creates a fresh
+`logger.createChildLogger(route, { reqId })` and assigns it to `req.logger`
+(typed via `src/types/express.d.ts`'s augmentation of
+`express-serve-static-core`), and on the response's `close` event (fires once
+the response is fully sent, including aborted requests — not `finish`) logs
+method/URL/status plus `durationMs`, timed with `process.hrtime()` rather
+than `Date.now()`. Inside a route handler or anything that receives `req`,
+log through `req.logger` (not the top-level `logger`) so log lines carry the
+request's id automatically.
+
+Both `@tkottke90/config-manager` and `@tkottke90/logger` come from the
+private npm registry (see the root `.npmrc`) — `npm install` needs network
+access to `npm.artifacts.tdkottke.com` and a valid `NPM_TOKEN`.
 
 ## Commands (run from `api/`, or with `--workspace api` from the repo root)
 

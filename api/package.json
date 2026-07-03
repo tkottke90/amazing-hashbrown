@@ -13,10 +13,13 @@
   "dependencies": {
     "@langchain/core": "^0.3.0",
     "@langchain/ollama": "^0.1.0",
+    "@tkottke90/config-manager": "^1.1.1",
+    "@tkottke90/logger": "^2.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
-    "langchain": "^0.3.0"
+    "langchain": "^0.3.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/chai": "^4.3.0",
