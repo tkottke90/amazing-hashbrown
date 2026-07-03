@@ -11,6 +11,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "zod": "^4.0.0"
+  },
   "scripts": {
     "dev:api": "npm run dev --workspace api",
     "dev:ui": "npm run dev --workspace ui",
