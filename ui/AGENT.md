@@ -30,9 +30,9 @@ built app. Backend routes are versioned under `/api/v1` — see `api/AGENT.md`.
 
 ## Styling
 
-Use Tailwind utility classes directly in components (`class="..."`, not
-`className`, since this is Preact). Avoid hand-written CSS files unless a
-utility genuinely can't express what you need.
+Use Tailwind utility classes directly in components (`className="..."`, not
+`class`). Avoid hand-written CSS files unless a utility genuinely can't
+express what you need.
 
 ## Commands (run from `ui/`, or with `--workspace ui` from the repo root)
 
