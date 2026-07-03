@@ -1,0 +1,31 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "mocha"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/ollama": "^0.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0",
+    "langchain": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.0",
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.14.0",
+    "chai": "^5.1.0",
+    "mocha": "^10.7.0",
+    "tsx": "^4.16.0"
+  }
+}
