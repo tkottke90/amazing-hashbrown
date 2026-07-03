@@ -16,10 +16,12 @@ src/
                      dotenv) and logger.ts (@tkottke90/logger)
   knowledge-base/   Domain-organized knowledge bases (LLM-Wiki pattern) — one
                      subfolder per domain under knowledge-base/domains/
+  middleware/       Express middleware (request-logger.ts, etc.)
   routes/           Express routers. All backend routes are versioned and
                      nested under /api/v1 (routes/v1/*); app.ts mounts
                      routes/index.ts at /api
-  types/            Shared API types
+  types/            Shared API types + express.d.ts (module augmentation for
+                     req.logger / app.logger)
   app.ts            Express app factory (routes + static hosting)
   index.ts          Server entrypoint — reads env.port, calls app.listen
 test/               Mocha + Chai tests
@@ -49,9 +51,17 @@ in `env.ts` (with a `.default(...)`) rather than reading ad hoc env vars.
 
 `src/config/logger.ts` configures a shared `logger` via
 `@tkottke90/logger`'s `configureFromSchema`, level driven by `env.logLevel`
-(`LOG_LEVEL` env var). Use `logger` (or a `logger.createChildLogger('name')`
-for a subsystem, as `app.ts` does for HTTP request logging) instead of
-`console.log`/`console.error`.
+(`LOG_LEVEL` env var). Use `logger` for anything outside a request (startup,
+background jobs) instead of `console.log`/`console.error`.
+
+`src/middleware/request-logger.ts` runs first in `app.ts` and, for every
+request: generates a `reqId` (`crypto.randomUUID()`), creates a fresh
+`logger.createChildLogger(route, { reqId })` and assigns it to `req.logger`
+(typed via `src/types/express.d.ts`'s augmentation of
+`express-serve-static-core`), and logs method/path/status plus `durationMs`
+on the response's `finish` event. Inside a route handler or anything that
+receives `req`, log through `req.logger` (not the top-level `logger`) so log
+lines carry the request's id automatically.
 
 Both `@tkottke90/config-manager` and `@tkottke90/logger` come from the
 private npm registry (see the root `.npmrc`) — `npm install` needs network
