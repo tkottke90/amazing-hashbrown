@@ -2,7 +2,7 @@ name: Style
 
 on:
   pull_request:
-    types: [synchronize]
+    types: [opened, reopened, synchronize]
 
 jobs:
   style:

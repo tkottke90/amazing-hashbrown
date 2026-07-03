@@ -57,8 +57,9 @@ If any of these fail, fix the issue before committing — don't commit with
 ## CI
 
 `.github/workflows/` runs the same three checks (`tests.yml`, `lint.yml`,
-`style.yml`) on every PR sync, each in its own job. They should always be
-green if you ran the pre-commit checks above locally.
+`style.yml`) whenever a PR is opened, reopened, or updated with new commits,
+each in its own job. They should always be green if you ran the pre-commit
+checks above locally.
 
 ## Docker
 
