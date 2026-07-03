@@ -10,7 +10,9 @@
     "test": "jest"
   },
   "dependencies": {
-    "preact": "^10.22.0"
+    "@tailwindcss/vite": "^4.3.2",
+    "preact": "^10.22.0",
+    "tailwindcss": "^4.3.2"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",
