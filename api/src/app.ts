@@ -21,5 +21,14 @@ export function createApp() {
   app.use('/api', apiRouter);
   app.use(express.static(publicDir));
 
+  app.start = () => {
+    const port = app.config.getNumber('port', 3000) as number;
+    const host = app.config.get('host', 'localhost') as string;
+
+    app.listen(port, host, () => {
+      logger.info(`API listening on port ${host}:${port}`);
+    });
+  }
+
   return app;
 }

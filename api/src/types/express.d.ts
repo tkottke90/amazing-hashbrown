@@ -5,6 +5,7 @@ declare module 'express-serve-static-core' {
   interface Application {
     logger: Logger;
     config: ConfigManager;
+    start: () => void;
   }
 
   interface Request {
