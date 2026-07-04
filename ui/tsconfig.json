@@ -8,7 +8,15 @@
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "jest", "@testing-library/jest-dom"]
+    "types": ["vite/client", "jest", "@testing-library/jest-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "react": ["../node_modules/preact/compat/"],
+      "react-dom": ["../node_modules/preact/compat/"],
+      "react/jsx-runtime": ["../node_modules/preact/jsx-runtime"],
+      "lucide-react": ["../node_modules/lucide-preact/dist/lucide-preact.d.ts"]
+    }
   },
   "include": ["src"]
 }
