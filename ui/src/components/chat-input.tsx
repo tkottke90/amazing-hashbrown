@@ -4,6 +4,7 @@ import { Plus, Send, Square } from 'lucide-preact';
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { TextEllipsis } from '@/components/text-ellipsis';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,8 +47,7 @@ export function ChatInputChip({
       )}
       {...props}
     >
-      {/* text-overflow only takes effect on a shrinkable block, not on the flex container itself */}
-      <span className="min-w-0 truncate">{children}</span>
+      <TextEllipsis>{children}</TextEllipsis>
     </span>
   );
 }

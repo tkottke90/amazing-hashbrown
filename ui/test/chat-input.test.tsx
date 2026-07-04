@@ -39,7 +39,7 @@ describe('ChatInput', () => {
     const text = screen.getByText('a-very-long-filename-that-should-truncate.png');
     const chip = text.closest('[data-slot="chat-input-chip"]');
     expect(chip).toHaveClass('max-w-[50%]');
-    expect(text).toHaveClass('truncate');
+    expect(text).toHaveAttribute('data-slot', 'text-ellipsis');
   });
 
   it('disables send until there is text', () => {
