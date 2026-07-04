@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { fireEvent, render, screen } from '@testing-library/preact';
 
-import { ChatInput } from '@/components/chat-input';
+import { ChatInput, ChatInputChip } from '@/components/chat-input';
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
@@ -30,8 +30,16 @@ describe('ChatInput', () => {
   });
 
   it('renders header chips when provided', () => {
-    render(<ControlledChatInput header={<span>file.png</span>} />);
+    render(<ControlledChatInput header={<ChatInputChip>file.png</ChatInputChip>} />);
     expect(screen.getByText('file.png')).toBeInTheDocument();
+  });
+
+  it('caps a chip at half the container width and truncates its text', () => {
+    render(<ChatInputChip>a-very-long-filename-that-should-truncate.png</ChatInputChip>);
+    const text = screen.getByText('a-very-long-filename-that-should-truncate.png');
+    const chip = text.closest('[data-slot="chat-input-chip"]');
+    expect(chip).toHaveClass('max-w-[50%]');
+    expect(text).toHaveClass('truncate');
   });
 
   it('disables send until there is text', () => {

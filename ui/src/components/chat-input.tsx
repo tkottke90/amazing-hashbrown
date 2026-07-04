@@ -12,7 +12,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export interface ChatInputProps {
-  /** Chips for non-text context additions (files, images, etc.), rendered in the header row. */
+  /**
+   * Chips for non-text context additions (files, images, etc.), rendered in
+   * the header row. Use `ChatInputChip` for each item so long names truncate
+   * instead of overflowing.
+   */
   header?: ComponentChildren;
   value: string;
   onValueChange: (value: string) => void;
@@ -26,6 +30,26 @@ export interface ChatInputProps {
   actions?: ComponentChildren;
   onAddFile?: () => void;
   className?: string;
+}
+
+export function ChatInputChip({
+  className,
+  children,
+  ...props
+}: JSX.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      data-slot="chat-input-chip"
+      className={cn(
+        'inline-flex max-w-[50%] items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground',
+        className,
+      )}
+      {...props}
+    >
+      {/* text-overflow only takes effect on a shrinkable block, not on the flex container itself */}
+      <span className="min-w-0 truncate">{children}</span>
+    </span>
+  );
 }
 
 export function ChatInput({
