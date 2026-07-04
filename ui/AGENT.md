@@ -11,7 +11,10 @@ pre-commit checks.
 
 ```
 src/
-  components/   Reusable UI components
+  components/
+    ui/         shadcn/ui components (generated, see below)
+  lib/
+    utils.ts    cn() helper (clsx + tailwind-merge)
   pages/        Top-level views
   hooks/        Preact hooks
   services/     API client code (fetches against /api/v1/*)
@@ -21,6 +24,31 @@ src/
 test/           Jest + @testing-library/preact tests
 public/         Static assets copied as-is into the Vite build output
 ```
+
+## shadcn/ui + Radix on Preact
+
+Component UI is built with [shadcn/ui](https://ui.shadcn.com) (Radix
+primitives) and icons come from `lucide-preact`. shadcn's CLI generates React
+code, so this project aliases `react` / `react-dom` / `react/jsx-runtime` to
+`preact/compat`, and `lucide-react` to `lucide-preact`, in both
+`vite.config.ts` (runtime) and `tsconfig.json` (`compilerOptions.paths`, for
+types). Generated components still say `import * as React from "react"` and
+`import { X } from "lucide-react"` — leave those imports as-is, the aliases
+resolve them to the Preact equivalents.
+
+To add another component, run from `ui/` (the bundled CLI conflicts with the
+repo's root `zod` override, so invoke it from outside the workspace tree and
+point `--cwd` back here):
+
+```sh
+cd /tmp && npx shadcn@latest add <component> -y --cwd /path/to/repo/ui
+```
+
+Then run `npx prettier --write src/components/ui/<component>.tsx` — the CLI
+emits double-quote/no-semicolon style that doesn't match this repo's
+Prettier config — and typecheck/build to confirm it compiles cleanly against
+Preact's stricter JSX types (the `asChild`/`Slot` polymorphic pattern, as
+used in `button.tsx`, may need an `as React.ElementType<...>` cast).
 
 ## Talking to the API
 

@@ -28,7 +28,7 @@ export function createApp() {
     app.listen(port, host, () => {
       logger.info(`API listening on port ${host}:${port}`);
     });
-  }
+  };
 
   return app;
 }
