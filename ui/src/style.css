@@ -147,6 +147,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
+  body,
+  #app {
+    @apply size-full overflow-hidden;
+  }
   body {
     @apply bg-background text-foreground;
   }
