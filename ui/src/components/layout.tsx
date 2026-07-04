@@ -61,7 +61,7 @@ export function Layout({
           <div className="flex flex-1 items-center justify-end gap-1">{navEnd}</div>
         </nav>
 
-        <SheetContent side="bottom" className="max-h-[80vh] lg:hidden">
+        <SheetContent side="bottom" className="data-[side=bottom]:h-[90vh] lg:hidden">
           <SheetHeader>
             <SheetTitle>Menu</SheetTitle>
           </SheetHeader>
