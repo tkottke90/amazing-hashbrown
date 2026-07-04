@@ -34,11 +34,11 @@ describe('ChatInput', () => {
     expect(screen.getByText('file.png')).toBeInTheDocument();
   });
 
-  it('caps a chip at half the container width and truncates its text', () => {
+  it('caps a chip at 500px and truncates its text', () => {
     render(<ChatInputChip>a-very-long-filename-that-should-truncate.png</ChatInputChip>);
     const text = screen.getByText('a-very-long-filename-that-should-truncate.png');
     const chip = text.closest('[data-slot="chat-input-chip"]');
-    expect(chip).toHaveClass('max-w-[50%]');
+    expect(chip).toHaveClass('max-w-[500px]');
     expect(text).toHaveAttribute('data-slot', 'text-ellipsis');
   });
 

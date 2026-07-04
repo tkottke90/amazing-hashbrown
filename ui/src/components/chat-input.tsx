@@ -42,7 +42,7 @@ export function ChatInputChip({
     <span
       data-slot="chat-input-chip"
       className={cn(
-        'inline-flex max-w-[50%] items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground',
+        'inline-flex min-w-0 max-w-[500px] items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground',
         className,
       )}
       {...props}
