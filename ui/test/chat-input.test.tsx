@@ -42,6 +42,18 @@ describe('ChatInput', () => {
     expect(text).toHaveAttribute('data-slot', 'text-ellipsis');
   });
 
+  it('has no remove button when onRemove is not provided', () => {
+    render(<ChatInputChip>file.png</ChatInputChip>);
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
+  });
+
+  it('shows a remove button and calls onRemove when clicked', () => {
+    const onRemove = jest.fn();
+    render(<ChatInputChip onRemove={onRemove}>file.png</ChatInputChip>);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
   it('disables send until there is text', () => {
     render(<ControlledChatInput />);
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();

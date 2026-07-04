@@ -1,5 +1,5 @@
 import type { ComponentChildren, JSX } from 'preact';
-import { Plus, Send, Square } from 'lucide-preact';
+import { Plus, Send, Square, X } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -33,11 +33,12 @@ export interface ChatInputProps {
   className?: string;
 }
 
-export function ChatInputChip({
-  className,
-  children,
-  ...props
-}: JSX.HTMLAttributes<HTMLSpanElement>) {
+export interface ChatInputChipProps extends JSX.HTMLAttributes<HTMLSpanElement> {
+  /** Renders a trailing remove (X) button that calls this when clicked. */
+  onRemove?: () => void;
+}
+
+export function ChatInputChip({ className, children, onRemove, ...props }: ChatInputChipProps) {
   return (
     <span
       data-slot="chat-input-chip"
@@ -48,6 +49,16 @@ export function ChatInputChip({
       {...props}
     >
       <TextEllipsis>{children}</TextEllipsis>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove"
+          className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3" />
+        </button>
+      ) : null}
     </span>
   );
 }
