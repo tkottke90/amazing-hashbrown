@@ -17,6 +17,18 @@
   --color-blue-800: #4712d7;
   --color-blue-900: #3810a2;
   --color-blue-950: #1f076e;
+
+  --color-night-shadz-50: #fdf2f7;
+  --color-night-shadz-100: #fce7f2;
+  --color-night-shadz-200: #fbcfe5;
+  --color-night-shadz-300: #faa7cf;
+  --color-night-shadz-400: #f571ae;
+  --color-night-shadz-500: #ed478f;
+  --color-night-shadz-600: #dc266c;
+  --color-night-shadz-700: #ba1650;
+  --color-night-shadz-800: #9e1644;
+  --color-night-shadz-900: #84173c;
+  --color-night-shadz-950: #51061f;
 }
 
 @theme inline {
@@ -77,7 +89,7 @@
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: var(--color-night-shadz-600);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: var(--color-blue-400);
@@ -112,7 +124,7 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --destructive: var(--color-night-shadz-400);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: var(--color-blue-500);
