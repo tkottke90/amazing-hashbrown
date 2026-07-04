@@ -81,7 +81,7 @@ export function ChatInput({
           placeholder={placeholder}
           disabled={disabled}
           rows={2}
-          className="max-h-40 resize-none overflow-y-auto border-none px-1 py-1 shadow-none focus-visible:ring-0"
+          className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
       </div>
 
