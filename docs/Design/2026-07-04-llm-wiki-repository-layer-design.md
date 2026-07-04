@@ -16,13 +16,14 @@ The skill today is a hybrid: six Python scripts that do deterministic bookkeepin
 coding agent executes with judgement. This project ports **only the deterministic
 islands** into code the LLM will later call.
 
-The guiding principle: *build the known mechanical patterns so the inference layer
+The guiding principle: _build the known mechanical patterns so the inference layer
 doesn't need to know the exact steps — it just leverages the mechanical system to
-work on the wiki.*
+work on the wiki._
 
 ## Scope
 
 **In scope**
+
 - A standalone library workspace implementing the mechanical wiki operations.
 - Multi-wiki support with a JSON registry and deterministic scored routing.
 - A coarse, JSON-serializable "tool surface" (methods) ready to be wrapped as LLM
@@ -30,24 +31,25 @@ work on the wiki.*
 - Full unit + integration test coverage.
 
 **Out of scope** (each a later spec)
+
 - REST/HTTP endpoints.
 - Any live LLM / LangChain wiring.
 - Tool descriptions, prompt engineering, or an operator guide for the LLM.
-- URL fetching / web extraction (raw source *content* is passed in as a string).
+- URL fetching / web extraction (raw source _content_ is passed in as a string).
 - UI.
 
 ## Key Decisions
 
-| Topic | Decision |
-|-------|----------|
-| Wiki identity | Multi-wiki + deterministic scored routing (port of `wiki-route.py`). |
-| Storage | Config-managed wiki root (default `./config/kb`, gitignored in dev). |
-| Registry | `registry.json` loaded/validated at boot, maintained in memory + persisted. |
-| Code shape | Single `LlmWiki` class of coarse methods + separate `WikiRegistry`, both thin facades over focused `internal/` modules (Approach B). |
-| Packaging | Its own npm workspace `@tkottke90/llm-wiki` under `lib/`, framework-agnostic. |
-| Logging | Optional injected logger interface; no-op if omitted. |
-| Write invariants | Warn-on-write: hard errors block, soft violations return warnings; `lint()` is the authoritative health check. |
-| Inference dip | Code + types only. Clean structured outputs; no prompting/tool metadata this spec. |
+| Topic            | Decision                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Wiki identity    | Multi-wiki + deterministic scored routing (port of `wiki-route.py`).                                                                 |
+| Storage          | Config-managed wiki root (default `./config/kb`, gitignored in dev).                                                                 |
+| Registry         | `registry.json` loaded/validated at boot, maintained in memory + persisted.                                                          |
+| Code shape       | Single `LlmWiki` class of coarse methods + separate `WikiRegistry`, both thin facades over focused `internal/` modules (Approach B). |
+| Packaging        | Its own npm workspace `@tkottke90/llm-wiki` under `lib/`, framework-agnostic.                                                        |
+| Logging          | Optional injected logger interface; no-op if omitted.                                                                                |
+| Write invariants | Warn-on-write: hard errors block, soft violations return warnings; `lint()` is the authoritative health check.                       |
+| Inference dip    | Code + types only. Clean structured outputs; no prompting/tool metadata this spec.                                                   |
 
 ## Section 1 — Package layout
 
@@ -93,8 +95,8 @@ createWikiRegistry({ wikiRoot: string, logger?: Logger }): Promise<WikiRegistry>
 The `api` side stays thin: `env.ts` resolves `wikiRoot` (add `wikiRoot` to
 `AppConfigSchema`, default `./config/kb`) from `config-manager`, and a small
 `api/src/services/wiki.ts` calls `createWikiRegistry({ wikiRoot, logger })` and
-re-exports for the rest of the API. The app owns *configuration*; the lib owns
-*mechanics*.
+re-exports for the rest of the API. The app owns _configuration_; the lib owns
+_mechanics_.
 
 **Build/dev.** TypeScript project references so root `npm run build` builds the lib
 before `api`. The lib's `exports` map to built `dist/` for production; `api`'s `tsx
@@ -109,6 +111,7 @@ returns structured, JSON-serializable results. Content is always passed in as
 strings (no fetching).
 
 **Factories**
+
 - `static async create({ path, name, domain, tags, logger? }): Promise<LlmWiki>`
   — scaffolds dirs (`raw/ entities/ concepts/ comparisons/ queries/`) and writes
   `SCHEMA.md` / `index.md` / `log.md` from templates with `domain` filled in.
@@ -117,6 +120,7 @@ strings (no fetching).
   wiki, parses `SCHEMA.md` (taxonomy + required fields) into memory.
 
 **Read / orient tools**
+
 - `orient(): Promise<OrientResult>` — `{ schema, index, recentLog[] }` (last N log
   entries). The single call the LLM makes to load current state. Ports `wiki-orient.py`.
 - `search(terms: string[]): Promise<string[]>` — matching page rel-paths (grep
@@ -124,6 +128,7 @@ strings (no fetching).
 - `listPages(): Promise<WikiFile[]>` / `readPage(relPath): Promise<WikiFile>` — typed reads.
 
 **Ingest tools**
+
 - `ingestPrep({ content, url?, filename?, keywords? }): Promise<IngestPrep>` —
   `{ sha256, isNew, drift, existingRaw, storedSha256, existingPages[], suggestedRawPath }`.
   Body-only sha, drift vs prior ingest, existing-page lookup. Ports `wiki-ingest-prep.py`.
@@ -141,6 +146,7 @@ strings (no fetching).
   mechanical half of the backlink sweep).
 
 **Bookkeeping / health**
+
 - `log({ action, subject, files? }): Promise<void>` — append a formatted
   `## [date] action | subject` entry (for updates/queries that don't go through
   `commitPage`).
@@ -148,9 +154,10 @@ strings (no fetching).
   grouped by severity. Ports `wiki-lint.py`.
 
 **Typical LLM flows** (illustrative; the LLM layer is a later spec)
-- Ingest: `orient` → `ingestPrep` → `saveRawSource` → *(judgement)* → `commitPage`×N
+
+- Ingest: `orient` → `ingestPrep` → `saveRawSource` → _(judgement)_ → `commitPage`×N
   → `addCrossLink`×N.
-- Query: `orient`/`search` → `readPage` → *(judgement)* → optional
+- Query: `orient`/`search` → `readPage` → _(judgement)_ → optional
   `commitPage(type: query)` + `log`.
 
 ## Section 3 — `WikiRegistry` + routing
@@ -170,16 +177,16 @@ starts an empty registry.
   "wikis": [
     {
       "id": "homelab",
-      "path": "homelab",                    // rel to wikiRoot (or absolute)
+      "path": "homelab", // rel to wikiRoot (or absolute)
       "domain": "infrastructure & services",
       "tags": ["host", "service", "dns", "proxy"],
-      "status": "active"
-    }
+      "status": "active",
+    },
   ],
   "routingNotes": [
     "Authentik, NPM, MinIO, DNS, VPN, reverse proxy, Docker, homelab servers -> homelab",
-    "workouts, training, strength, cardio, fitness programming -> health-fitness"
-  ]
+    "workouts, training, strength, cardio, fitness programming -> health-fitness",
+  ],
 }
 ```
 
@@ -188,6 +195,7 @@ Routing notes are LLM-authored judgement — the mechanical layer only stores,
 parses, and scores them, and offers a write method to persist what the LLM decides.
 
 **Methods**
+
 - `resolve(context: string): ResolveResult` — the routing tool. Runs the
   deterministic scorer (`internal/routing.ts`, port of `score_wiki`) over every
   active wiki. Scoring: `name` +10, domain words +2, tags +3, routing-note trigger
@@ -220,22 +228,22 @@ directly. Starting point is the existing `api/src/types/wiki.d.ts`
 ```ts
 interface PageFrontmatter {
   title: string;
-  created: string;                            // ISO date string
-  updated: string;                            // ISO date string
+  created: string; // ISO date string
+  updated: string; // ISO date string
   type: 'entity' | 'concept' | 'comparison' | 'query' | 'summary' | 'index' | 'log';
   tags: string[];
-  sources: string[];                          // rel paths into raw/
+  sources: string[]; // rel paths into raw/
   confidence?: 'high' | 'medium' | 'low';
   contested?: boolean;
   contradictions?: string[];
 }
 
 interface WikiFile {
-  filename: string;                           // rel to wiki root
+  filename: string; // rel to wiki root
   title: string;
   type: PageFrontmatter['type'];
   frontmatter: PageFrontmatter;
-  content: string;                            // body only (no frontmatter)
+  content: string; // body only (no frontmatter)
   sha: string;
   created: Date;
   lastModified: Date;
@@ -250,11 +258,18 @@ interface PageInput {
   confidence?: PageFrontmatter['confidence'];
   contested?: boolean;
   contradictions?: string[];
-  relPath?: string;                           // optional → derived from title/type
+  relPath?: string; // optional → derived from title/type
 }
 
-interface CommitResult { path: string; created: boolean; warnings: Warning[]; }
-interface Warning { code: 'few-wikilinks' | 'unknown-tag' | 'stale' | string; message: string; }
+interface CommitResult {
+  path: string;
+  created: boolean;
+  warnings: Warning[];
+}
+interface Warning {
+  code: 'few-wikilinks' | 'unknown-tag' | 'stale' | string;
+  message: string;
+}
 
 interface IngestPrep {
   sha256: string;
@@ -266,13 +281,22 @@ interface IngestPrep {
   suggestedRawPath: string;
 }
 
-interface OrientResult { schema: string; index: string; recentLog: LogEntry[]; }
-interface LogEntry { date: string; action: string; subject: string; raw: string; }
+interface OrientResult {
+  schema: string;
+  index: string;
+  recentLog: LogEntry[];
+}
+interface LogEntry {
+  date: string;
+  action: string;
+  subject: string;
+  raw: string;
+}
 
 // Registry entry (as stored in registry.json, minus routingNotes which are top-level)
 interface WikiEntry {
   id: string;
-  path: string;                               // rel to wikiRoot or absolute
+  path: string; // rel to wikiRoot or absolute
   domain: string;
   tags: string[];
   status: 'active' | 'archived';
@@ -283,7 +307,10 @@ type ResolveResult =
   | { ambiguous: true; candidates: { id: string; path: string }[] }
   | { noMatch: true; available: string[] };
 
-interface LintReport { ok: boolean; checks: LintFinding[]; }
+interface LintReport {
+  ok: boolean;
+  checks: LintFinding[];
+}
 interface LintFinding {
   check: LintCheckId;
   severity: 'error' | 'warn' | 'info';
@@ -291,9 +318,18 @@ interface LintFinding {
   message: string;
 }
 type LintCheckId =
-  | 'orphans' | 'broken_links' | 'index' | 'frontmatter' | 'page_size'
-  | 'tag_audit' | 'source_drift' | 'log_rotation' | 'stale' | 'quality'
-  | 'contradictions' | 'registry_sync';
+  | 'orphans'
+  | 'broken_links'
+  | 'index'
+  | 'frontmatter'
+  | 'page_size'
+  | 'tag_audit'
+  | 'source_drift'
+  | 'log_rotation'
+  | 'stale'
+  | 'quality'
+  | 'contradictions'
+  | 'registry_sync';
 ```
 
 `Warning` (soft, from writes) and `LintFinding` (authoritative, from lint) share
@@ -303,8 +339,9 @@ vocabulary but stay distinct types.
 
 **Lint engine** (`internal/lint/`) — a faithful TS port of `wiki-lint.py`,
 decomposed:
+
 - `checks.ts` exports each check as a pure function `(ctx: LintContext) =>
-  LintFinding[]`, where `LintContext` is a pre-loaded snapshot (all pages parsed
+LintFinding[]`, where `LintContext` is a pre-loaded snapshot (all pages parsed
   once, index parsed, log line count, registry entries). Loading once and passing a
   shared context avoids re-reading files per check.
 - `index.ts` exports `runLint(ctx, { only?: LintCheckId[] })` — runs all checks (or
@@ -322,13 +359,14 @@ mismatch), log_rotation (>500 entries), stale (>90d), quality
 (low-confidence/contested), contradictions, registry_sync.
 
 **Testing** (`lib/llm-wiki/test/`, Mocha + Chai to match `api`):
+
 - **`internal/` units** — pure-function tests, no fs: frontmatter round-trip,
   wikilink extraction/normalization, routing scorer (feed a registry + context;
   assert winner / ambiguous / no_match), sha/drift, each lint check against small
   in-memory page sets.
 - **Class integration** — build a throwaway wiki in an OS temp dir (`fs.mkdtemp`),
   exercise `create → orient → ingestPrep → saveRawSource → commitPage →
-  addCrossLink → lint`, assert on-disk files + returned structures, tear the temp
+addCrossLink → lint`, assert on-disk files + returned structures, tear the temp
   dir down after. Fixtures: a seeded multi-page wiki (for lint/search/routing) and
   an empty one (for create/scaffold).
 - **Registry** — temp `wikiRoot` with a `registry.json`; assert `resolve` /

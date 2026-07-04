@@ -9,6 +9,7 @@ const AppConfigSchema = z.object({
   llmBaseUrl: z.string().default('http://localhost:11434'),
   llmModel: z.string().default('llama3'),
   logLevel: z.string().default('info'),
+  wikiRoot: z.string().default('./config/kb'),
 });
 
 // Docker/CI deploy config via process.env, not a config file on disk, so we
@@ -22,6 +23,7 @@ export const configManager = loadConfig({
     ...(process.env.LLM_BASE_URL && { llmBaseUrl: process.env.LLM_BASE_URL }),
     ...(process.env.LLM_MODEL && { llmModel: process.env.LLM_MODEL }),
     ...(process.env.LOG_LEVEL && { logLevel: process.env.LOG_LEVEL }),
+    ...(process.env.WIKI_ROOT && { wikiRoot: process.env.WIKI_ROOT }),
   },
 });
 
@@ -30,4 +32,5 @@ export const env = {
   llmBaseUrl: configManager.get('llmBaseUrl', 'http://localhost:11434'),
   llmModel: configManager.get('llmModel', 'llama3'),
   logLevel: configManager.get('logLevel', 'info'),
+  wikiRoot: configManager.get('wikiRoot', './config/kb'),
 };
