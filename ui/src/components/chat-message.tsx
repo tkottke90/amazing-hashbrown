@@ -162,7 +162,11 @@ export function ChatMessage({
       <div
         data-slot="chat-message-cost"
         style={{ gridArea: 'cost' }}
-        className={cn(metaClass, 'gap-1.5', mirrored ? 'justify-end' : 'justify-start')}
+        className={cn(
+          metaClass,
+          'flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5',
+          mirrored ? 'items-end justify-end' : 'items-start justify-start',
+        )}
       >
         {cost?.tokensPerSecond != null && (
           <span data-slot="chat-message-tps">{cost.tokensPerSecond.toFixed(1)} tok/s</span>
