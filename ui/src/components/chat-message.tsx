@@ -133,7 +133,7 @@ export function ChatMessage({
     <div
       data-slot="chat-message"
       data-mirrored={mirrored || undefined}
-      className={cn('grid w-full grid-cols-3 gap-x-2 gap-y-1', className)}
+      className={cn('grid w-full max-w-[80%] grid-cols-3 gap-x-2 gap-y-1', className)}
       style={{ gridTemplateAreas: gridAreas }}
     >
       <div

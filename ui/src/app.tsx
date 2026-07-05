@@ -67,6 +67,7 @@ export function App() {
             message={USER_MSG}
             sentAt={SENT_YESTERDAY}
             mirrored
+            className="ml-auto"
             actions={
               <>
                 <ChatMessageCopyAction content={USER_MSG} />
@@ -78,6 +79,7 @@ export function App() {
           <ChatMessage
             message={ASSISTANT_MSG}
             sentAt={SENT_RECENTLY}
+            mirrored
             cost={{ tokensPerSecond: 43.2, dollars: 0.0082 }}
             duration={1800}
             actions={
