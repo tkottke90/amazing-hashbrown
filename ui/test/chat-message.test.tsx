@@ -139,17 +139,17 @@ describe('ChatMessage', () => {
       expect(slot('chat-message')).not.toHaveAttribute('data-mirrored');
     });
 
-    it('uses "cost timing actions" grid areas by default', () => {
+    it('uses "actions timing cost" grid areas by default', () => {
       render(<ChatMessage message="hi" sentAt={new Date()} />);
       expect(slot('chat-message')).toHaveStyle({
-        gridTemplateAreas: '"time time time" "msg msg msg" "cost timing actions"',
+        gridTemplateAreas: '"time time time" "msg msg msg" "actions timing cost"',
       });
     });
 
-    it('uses "actions timing cost" grid areas when mirrored', () => {
+    it('uses "cost timing actions" grid areas when mirrored', () => {
       render(<ChatMessage message="hi" sentAt={new Date()} mirrored />);
       expect(slot('chat-message')).toHaveStyle({
-        gridTemplateAreas: '"time time time" "msg msg msg" "actions timing cost"',
+        gridTemplateAreas: '"time time time" "msg msg msg" "cost timing actions"',
       });
     });
   });

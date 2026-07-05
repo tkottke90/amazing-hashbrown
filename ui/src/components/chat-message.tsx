@@ -130,8 +130,8 @@ export function ChatMessage({
   className,
 }: ChatMessageProps) {
   const gridAreas = mirrored
-    ? '"time time time" "msg msg msg" "actions timing cost"'
-    : '"time time time" "msg msg msg" "cost timing actions"';
+    ? '"time time time" "msg msg msg" "cost timing actions"'
+    : '"time time time" "msg msg msg" "actions timing cost"';
 
   return (
     <div
@@ -165,7 +165,7 @@ export function ChatMessage({
         className={cn(
           metaClass,
           'flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5',
-          mirrored ? 'items-end justify-end' : 'items-start justify-start',
+          mirrored ? 'items-start justify-start' : 'items-end justify-end',
         )}
       >
         {cost?.tokensPerSecond != null && (
@@ -187,7 +187,7 @@ export function ChatMessage({
       <div
         data-slot="chat-message-actions"
         style={{ gridArea: 'actions' }}
-        className={cn(metaClass, 'gap-0.5', mirrored ? 'justify-start' : 'justify-end')}
+        className={cn(metaClass, 'gap-0.5', mirrored ? 'justify-end' : 'justify-start')}
       >
         {actions}
       </div>
