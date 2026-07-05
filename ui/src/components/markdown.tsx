@@ -8,7 +8,7 @@ import { Check, Copy } from 'lucide-preact';
 import { cn } from '@/lib/utils';
 
 function getCodeLanguage(children: ComponentChildren): string | undefined {
-  const className = (children as any)?.props?.className ?? '';
+  const className = (children as { props?: { className?: string } })?.props?.className ?? '';
   const match = (className as string).match(/language-(.*)/);
   return match ? match[1] : undefined;
 }
@@ -28,7 +28,12 @@ function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
 
   return (
     <div className="relative group">
-      <pre ref={(el) => { ref.current = el; }} {...props} />
+      <pre
+        ref={(el) => {
+          ref.current = el;
+        }}
+        {...props}
+      />
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         {lang && <span className="text-xs text-muted-foreground capitalize">{lang}</span>}
         <button
@@ -55,7 +60,7 @@ export function Markdown({ children, className }: MarkdownProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{ pre: ({ node, ...props }) => <CodeBlock {...props} /> }}
+        components={{ pre: ({ node: _node, ...props }) => <CodeBlock {...props} /> }}
       >
         {children}
       </ReactMarkdown>
