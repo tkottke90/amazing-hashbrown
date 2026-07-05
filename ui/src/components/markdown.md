@@ -4,34 +4,32 @@ Renders a Markdown string as formatted HTML using `react-markdown` with GitHub F
 
 ## Exports
 
-| Export | Type | Description |
-|---|---|---|
-| `Markdown` | Component | The Markdown renderer |
-| `MarkdownProps` | Interface | Props for `Markdown` |
+| Export          | Type      | Description           |
+| --------------- | --------- | --------------------- |
+| `Markdown`      | Component | The Markdown renderer |
+| `MarkdownProps` | Interface | Props for `Markdown`  |
 
 ## `Markdown`
 
 ### Props
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `children` | `string` | — | The Markdown source to render. |
-| `className` | `string` | — | Extra classes merged onto the `prose` wrapper. |
+| Prop        | Type     | Default | Description                                    |
+| ----------- | -------- | ------- | ---------------------------------------------- |
+| `children`  | `string` | —       | The Markdown source to render.                 |
+| `className` | `string` | —       | Extra classes merged onto the `prose` wrapper. |
 
 ### Basic usage
 
 ```tsx
 import { Markdown } from '@/components/markdown';
 
-<Markdown>{'# Hello\n\nThis is **bold** and `inline code`.'}</Markdown>
+<Markdown>{'# Hello\n\nThis is **bold** and `inline code`.'}</Markdown>;
 ```
 
 ### With additional prose classes
 
 ```tsx
-<Markdown className="prose-lg">
-  {longFormContent}
-</Markdown>
+<Markdown className="prose-lg">{longFormContent}</Markdown>
 ```
 
 ## Styling
@@ -81,11 +79,11 @@ The light-mode code block background is `#f6f8fa` (GitHub's standard code surfac
 
 ## Dependencies
 
-| Package | Role |
-|---|---|
-| `react-markdown` | Markdown → JSX renderer |
-| `remark-gfm` | GitHub Flavored Markdown parser plugin |
-| `rehype-highlight` | Syntax highlighting (adds highlight.js token classes) |
-| `highlight.js` | Token class definitions and CSS theme |
-| `@tailwindcss/typography` | `prose` utility class |
-| `@preact/signals` | `useSignal` for the copy-button state |
+| Package                   | Role                                                  |
+| ------------------------- | ----------------------------------------------------- |
+| `react-markdown`          | Markdown → JSX renderer                               |
+| `remark-gfm`              | GitHub Flavored Markdown parser plugin                |
+| `rehype-highlight`        | Syntax highlighting (adds highlight.js token classes) |
+| `highlight.js`            | Token class definitions and CSS theme                 |
+| `@tailwindcss/typography` | `prose` utility class                                 |
+| `@preact/signals`         | `useSignal` for the copy-button state                 |
