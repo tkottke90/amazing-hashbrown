@@ -1,10 +1,10 @@
-# AGENT.md — ui
+# AGENTS.md — ui
 
 Preact + Vite frontend for the local LLM agent harness. TypeScript, styled
 with Tailwind CSS v4 (`@tailwindcss/vite` plugin, imported in `src/style.css`
 via `@import 'tailwindcss'`).
 
-See the root `AGENT.md` for repo-wide conventions and the required
+See the root `AGENTS.md` for repo-wide conventions and the required
 pre-commit checks.
 
 ## Layout
@@ -76,7 +76,12 @@ Linting and formatting are configured at the repo root — run `npm run lint`
 
 ## Before committing
 
-Tests, linting, and style checks must all pass — see the root `AGENT.md`
+Tests, linting, and style checks must all pass — see the root `AGENTS.md`
 checklist. For changes scoped to `ui/`, at minimum run `npm test` here and
 `npm run lint` from the repo root before committing. For UI-visible changes,
 also run `npm run dev` and check the change in a browser before committing.
+
+## State Management
+
+Prefer `@preact/signals` (`useSignal`, `useComputed`) over `useState`/`useReducer`
+from `preact/hooks` for component-level reactive state.
