@@ -62,7 +62,7 @@ export function App() {
           <ThemeToggle />
         </div>
 
-        <div className="mx-auto mt-8 flex max-w-2xl flex-col gap-6">
+        <div className="mx-auto mt-8 flex max-w-2xl flex-col gap-4">
           <ChatMessage
             message={USER_MSG}
             sentAt={SENT_YESTERDAY}
