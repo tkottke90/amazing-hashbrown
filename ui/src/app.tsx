@@ -68,7 +68,7 @@ export function App() {
           message={USER_MSG}
           sentAt={SENT_YESTERDAY}
           mirrored
-          className="ml-auto"
+          className="self-end"
           actions={
             <>
               <ChatMessageCopyAction content={USER_MSG} />
