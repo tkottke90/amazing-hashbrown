@@ -139,7 +139,7 @@ export function ChatMessage({
       <div
         data-slot="chat-message-time"
         style={{ gridArea: 'time' }}
-        className={cn('text-sm opacity-50', mirrored ? 'text-right' : 'text-left')}
+        className="text-sm opacity-50 text-left"
       >
         {formatTime(sentAt)}
       </div>

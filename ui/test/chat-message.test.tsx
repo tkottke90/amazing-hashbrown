@@ -43,14 +43,11 @@ describe('ChatMessage', () => {
       expect(timeEl).toHaveClass('opacity-50');
     });
 
-    it('left-aligns time by default', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} />);
+    it('always left-aligns time regardless of mirrored', () => {
+      const { rerender } = render(<ChatMessage message="hi" sentAt={new Date()} />);
       expect(slot('chat-message-time')).toHaveClass('text-left');
-    });
-
-    it('right-aligns time when mirrored', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} mirrored />);
-      expect(slot('chat-message-time')).toHaveClass('text-right');
+      rerender(<ChatMessage message="hi" sentAt={new Date()} mirrored />);
+      expect(slot('chat-message-time')).toHaveClass('text-left');
     });
   });
 
