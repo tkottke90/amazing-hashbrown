@@ -171,6 +171,11 @@
   color: inherit;
 }
 
+/* Nudge light-mode code block background off pure white for contrast */
+.hljs {
+  background: #f6f8fa;
+}
+
 .dark .hljs { color: #c9d1d9; background: #0d1117 }
 .dark .hljs-doctag, .dark .hljs-keyword, .dark .hljs-meta .hljs-keyword,
 .dark .hljs-template-tag, .dark .hljs-template-variable,
