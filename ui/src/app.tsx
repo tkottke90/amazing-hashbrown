@@ -2,6 +2,30 @@ import { Home, Settings } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { ThemeToggle } from '@/components/theme-toggle';
+import {
+  ChatMessage,
+  ChatMessageCopyAction,
+  ChatMessageForkAction,
+  ChatMessageSaveAction,
+} from '@/components/chat-message';
+
+const USER_MSG = `How do I configure a new persona in the knowledge base?`;
+
+const ASSISTANT_MSG = `To add a new persona, create a YAML file under \`personas/\` with the following fields:
+
+\`\`\`yaml
+name: Aria
+role: Customer Support Specialist
+tone: Friendly and concise
+knowledge:
+  - product_faq.md
+  - return_policy.md
+\`\`\`
+
+Then restart the agent harness — it will auto-index the new persona and make it available in the model selector. You can also hot-reload during development with \`npm run harness:reload\`.`;
+
+const SENT_YESTERDAY = new Date(Date.now() - 25 * 60 * 60_000);
+const SENT_RECENTLY = new Date(Date.now() - 5 * 60_000);
 
 function AppAside() {
   return (
@@ -36,6 +60,34 @@ export function App() {
             </p>
           </div>
           <ThemeToggle />
+        </div>
+
+        <div className="mx-auto mt-8 flex max-w-2xl flex-col gap-6">
+          <ChatMessage
+            message={USER_MSG}
+            sentAt={SENT_YESTERDAY}
+            mirrored
+            actions={
+              <>
+                <ChatMessageCopyAction content={USER_MSG} />
+                <ChatMessageForkAction />
+                <ChatMessageSaveAction content={USER_MSG} />
+              </>
+            }
+          />
+          <ChatMessage
+            message={ASSISTANT_MSG}
+            sentAt={SENT_RECENTLY}
+            cost={{ tokensPerSecond: 43.2, dollars: 0.0082 }}
+            duration={1800}
+            actions={
+              <>
+                <ChatMessageCopyAction content={ASSISTANT_MSG} />
+                <ChatMessageForkAction />
+                <ChatMessageSaveAction content={ASSISTANT_MSG} />
+              </>
+            }
+          />
         </div>
       </div>
     </Layout>
