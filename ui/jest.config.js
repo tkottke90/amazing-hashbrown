@@ -8,6 +8,7 @@ export default {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '\\.(css|less|scss)$': 'identity-obj-proxy',
+    '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-dom/test-utils$': 'preact/test-utils',
     '^react-dom$': 'preact/compat',

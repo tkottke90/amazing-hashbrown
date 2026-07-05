@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { Copy, GitFork, Save } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
+import { Markdown } from '@/components/markdown';
 
 function formatTime(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -151,11 +152,11 @@ export function ChatMessage({
         data-slot="chat-message-body"
         style={{ gridArea: 'msg' }}
         className={cn(
-          'min-w-0 whitespace-pre-wrap',
+          'min-w-0',
           showBG && 'rounded-lg bg-card px-3 py-4 shadow-md',
         )}
       >
-        {message}
+        <Markdown>{message}</Markdown>
       </div>
 
       <div

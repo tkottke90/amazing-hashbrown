@@ -1,4 +1,4 @@
-# AGENT.md
+# AGENTS.md
 
 Instructions for agents (and humans) working in this repository.
 
@@ -7,10 +7,10 @@ Instructions for agents (and humans) working in this repository.
 `amazing-hashbrown` is a local LLM agent harness: a persona knowledge base and
 autonomous assistant. It's an npm-workspaces monorepo with two apps:
 
-- `api/` — Express REST API, LangChain agents, knowledge base (see `api/AGENT.md`)
-- `ui/` — Preact web frontend (see `ui/AGENT.md`)
+- `api/` — Express REST API, LangChain agents, knowledge base (see `api/AGENTS.md`)
+- `ui/` — Preact web frontend (see `ui/AGENTS.md`)
 
-Read the `AGENT.md` in whichever workspace you're changing before making
+Read the `AGENTS.md` in whichever workspace you're changing before making
 edits there — it has directory-specific conventions this file doesn't repeat.
 
 ## Stack
@@ -66,4 +66,10 @@ checks above locally.
 The root `Dockerfile` is a multi-stage `node:24` build: it compiles both
 workspaces, installs production-only dependencies (`npm ci --omit dev`), and
 assembles a runtime image that serves the built `ui` app as static files from
-the `api` server. See `api/AGENT.md` for how static hosting is wired up.
+the `api` server. See `api/AGENTS.md` for how static hosting is wired up.
+
+## UI State Management
+
+The `ui/` workspace uses `@preact/signals` for component state. Prefer
+`useSignal`/`useComputed` over `useState`/`useReducer`. See `ui/AGENTS.md`
+for details.

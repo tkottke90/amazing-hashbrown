@@ -57,10 +57,10 @@ describe('ChatMessage', () => {
       expect(screen.getByText('Hello, world!')).toBeInTheDocument();
     });
 
-    it('preserves whitespace and newlines', () => {
+    it('renders message via markdown', () => {
       render(<ChatMessage message="line 1\nline 2" sentAt={new Date()} />);
       const body = slot('chat-message-body');
-      expect(body).toHaveClass('whitespace-pre-wrap');
+      expect(body?.querySelector('.prose')).toBeInTheDocument();
     });
   });
 
