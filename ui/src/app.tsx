@@ -68,6 +68,7 @@ export function App() {
           message={USER_MSG}
           sentAt={SENT_YESTERDAY}
           mirrored
+          showBG
           className="self-end"
           actions={
             <>

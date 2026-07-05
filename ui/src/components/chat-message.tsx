@@ -111,6 +111,8 @@ export interface ChatMessageProps {
   /** Duration in milliseconds for automated messages. Omit for user messages (renders a spacer). */
   duration?: number;
   actions?: ComponentChildren;
+  /** Adds an elevated background and shadow to the message body. */
+  showBG?: boolean;
   className?: string;
 }
 
@@ -123,6 +125,7 @@ export function ChatMessage({
   cost,
   duration,
   actions,
+  showBG = false,
   className,
 }: ChatMessageProps) {
   const gridAreas = mirrored
@@ -147,7 +150,10 @@ export function ChatMessage({
       <div
         data-slot="chat-message-body"
         style={{ gridArea: 'msg' }}
-        className="min-w-0 whitespace-pre-wrap"
+        className={cn(
+          'min-w-0 whitespace-pre-wrap',
+          showBG && 'rounded-lg bg-card px-3 py-2 shadow-md',
+        )}
       >
         {message}
       </div>
