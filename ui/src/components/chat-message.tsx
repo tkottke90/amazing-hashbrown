@@ -152,7 +152,7 @@ export function ChatMessage({
         style={{ gridArea: 'msg' }}
         className={cn(
           'min-w-0 whitespace-pre-wrap',
-          showBG && 'rounded-lg bg-card px-3 py-2 shadow-md',
+          showBG && 'rounded-lg bg-card px-3 py-4 shadow-md',
         )}
       >
         {message}
