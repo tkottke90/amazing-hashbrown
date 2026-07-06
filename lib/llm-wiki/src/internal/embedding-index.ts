@@ -17,9 +17,7 @@ interface IndexFile {
 }
 
 export class EmbeddingIndex {
-  private constructor(
-    private data: IndexFile,
-  ) {}
+  private constructor(private data: IndexFile) {}
 
   static async load(basePath: string, model: string): Promise<EmbeddingIndex> {
     const target = path.join(basePath, EMBEDDING_INDEX_FILE);

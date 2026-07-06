@@ -25,7 +25,12 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async embed(texts: string[]): Promise<number[][]> {
     let OpenAI: new (opts: { apiKey?: string; baseURL?: string }) => {
-      embeddings: { create(req: { input: string[]; model: string }): Promise<{ data: { embedding: number[] }[] }> };
+      embeddings: {
+        create(req: {
+          input: string[];
+          model: string;
+        }): Promise<{ data: { embedding: number[] }[] }>;
+      };
     };
     try {
       const mod = await import('openai');

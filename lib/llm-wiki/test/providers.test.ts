@@ -8,7 +8,7 @@ describe('NullEmbeddingProvider', () => {
     const result = await provider.embed(['hello', 'world']);
     expect(result).to.have.length(2);
     expect(result[0]).to.have.length(1536);
-    expect(result[0]!.every((v) => v === 0)).to.be.true;
+    expect(result[0]!.every((v) => v === 0)).to.equal(true);
   });
 
   it('returns zero vectors of a custom dimension', async () => {

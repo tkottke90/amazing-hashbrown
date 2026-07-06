@@ -20,7 +20,9 @@ export class AnthropicEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
-    let VoyageAIClient: new (opts: { apiKey?: string }) => { embed(req: unknown): Promise<{ data: { data?: { embedding?: number[] }[] } }> };
+    let VoyageAIClient: new (opts: { apiKey?: string }) => {
+      embed(req: unknown): Promise<{ data: { data?: { embedding?: number[] }[] } }>;
+    };
     try {
       const mod = await import('voyageai');
       VoyageAIClient = (mod as { VoyageAIClient: typeof VoyageAIClient }).VoyageAIClient;

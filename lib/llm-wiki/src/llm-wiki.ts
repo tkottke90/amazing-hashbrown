@@ -51,10 +51,7 @@ import {
   type LintRawFile,
 } from './internal/lint/index.js';
 import { schemaTemplate, indexTemplate, logTemplate } from './internal/templates.js';
-import {
-  EmbeddingIndex,
-  cosineSimilarity,
-} from './internal/embedding-index.js';
+import { EmbeddingIndex, cosineSimilarity } from './internal/embedding-index.js';
 import { bm25Score } from './internal/bm25.js';
 
 const noopLogger: Logger = {
@@ -180,10 +177,7 @@ export class LlmWiki {
    * - `'semantic'` — embedding cosine similarity; requires a provider.
    * - `'hybrid'`   — both fused via Reciprocal Rank Fusion (default).
    */
-  async semanticSearch(
-    query: string,
-    opts: SemanticSearchOptions = {},
-  ): Promise<RankedResult[]> {
+  async semanticSearch(query: string, opts: SemanticSearchOptions = {}): Promise<RankedResult[]> {
     const limit = opts.limit ?? 10;
     const mode = opts.mode ?? (this.embeddingProvider ? 'hybrid' : 'keyword');
     const contentPaths = await this.listContentPaths();
@@ -262,7 +256,8 @@ export class LlmWiki {
     const RRF_K = 60;
     const rrfScore = (path: string): number => {
       let score = 0;
-      if (semanticRanks) score += 1 / (RRF_K + (semanticRanks.get(path) ?? contentPaths.length + 1));
+      if (semanticRanks)
+        score += 1 / (RRF_K + (semanticRanks.get(path) ?? contentPaths.length + 1));
       if (keywordRanks) score += 1 / (RRF_K + (keywordRanks.get(path) ?? contentPaths.length + 1));
       return score;
     };
