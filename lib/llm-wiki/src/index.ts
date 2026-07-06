@@ -5,7 +5,7 @@
  */
 
 export { LlmWiki } from './llm-wiki.js';
-export type { CreateOptions, LoadOptions, SaveRawOptions, IngestPrepInput } from './llm-wiki.js';
+export type { BuildGraphOptions, CreateOptions, LoadOptions, SaveRawOptions, IngestPrepInput } from './llm-wiki.js';
 
 export { WikiRegistry, createWikiRegistry } from './registry.js';
 export type { CreateWikiRegistryOptions, CreateWikiInput } from './registry.js';

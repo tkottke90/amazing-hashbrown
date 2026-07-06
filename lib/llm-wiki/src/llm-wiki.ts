@@ -10,6 +10,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   CommitResult,
+  GraphEdge,
+  GraphNode,
+  GraphResult,
   IngestPrep,
   LintReport,
   Logger,
@@ -32,7 +35,7 @@ import {
   suggestRawPath,
 } from './internal/paths.js';
 import { sha256Body } from './internal/sha.js';
-import { outboundLinkCount, pageStem } from './internal/wikilinks.js';
+import { extractWikilinks, outboundLinkCount, pageStem, resolveLinkTarget } from './internal/wikilinks.js';
 import {
   runLint,
   type LintContext,
@@ -76,6 +79,11 @@ export interface IngestPrepInput {
   url?: string;
   filename?: string;
   keywords?: string[];
+}
+
+export interface BuildGraphOptions {
+  /** When true, raw source files become nodes and derived_from edges are included. Default false. */
+  includeSources?: boolean;
 }
 
 export class LlmWiki {
@@ -168,6 +176,66 @@ export class LlmWiki {
       created: stat.birthtime,
       lastModified: stat.mtime,
     };
+  }
+
+  /** Build a graph of nodes and edges from the wiki's pages and their links. */
+  async buildGraph(opts: BuildGraphOptions = {}): Promise<GraphResult> {
+    const pages = await this.listPages();
+    const allPaths = pages.map((p) => p.filename);
+
+    const nodes: GraphResult['nodes'] = [];
+    const edges: GraphResult['edges'] = [];
+    const edgeSet = new Set<string>();
+    const sourceNodeMap = new Map<string, GraphResult['nodes'][number]>();
+
+    const addEdge = (source: string, target: string, type: GraphEdge['type']) => {
+      const key = `${source}|${target}|${type}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        edges.push({ source, target, type });
+      }
+    };
+
+    for (const page of pages) {
+      const id = pageStem(page.filename);
+      const node: GraphNode = { id, title: page.title, type: page.type, tags: page.frontmatter.tags };
+      if (page.frontmatter.confidence !== undefined) node.confidence = page.frontmatter.confidence;
+      if (page.frontmatter.contested !== undefined) node.contested = page.frontmatter.contested;
+      nodes.push(node);
+
+      for (const link of extractWikilinks(page.content)) {
+        const resolved = resolveLinkTarget(link, allPaths);
+        if (resolved && resolved !== page.filename) {
+          addEdge(id, pageStem(resolved), 'references');
+        }
+      }
+
+      for (const slug of page.frontmatter.contradictions ?? []) {
+        const resolved = resolveLinkTarget(String(slug), allPaths);
+        if (resolved && resolved !== page.filename) {
+          addEdge(id, pageStem(resolved), 'contradicts');
+        }
+      }
+
+      if (opts.includeSources) {
+        for (const sourcePath of page.frontmatter.sources.filter(Boolean)) {
+          const sourceId = pageStem(sourcePath);
+          if (!sourceNodeMap.has(sourceId)) {
+            const basename = sourcePath.split('/').pop()?.replace(/\.md$/i, '') ?? sourceId;
+            sourceNodeMap.set(sourceId, { id: sourceId, title: basename, type: 'source', tags: [] });
+          }
+          addEdge(id, sourceId, 'derived_from');
+        }
+      }
+    }
+
+    if (opts.includeSources) {
+      for (const sourceNode of sourceNodeMap.values()) {
+        nodes.push(sourceNode);
+      }
+    }
+
+    return { nodes, edges };
   }
 
   // ── Ingest ────────────────────────────────────────────────────────────────
