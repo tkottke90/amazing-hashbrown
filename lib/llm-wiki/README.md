@@ -2,6 +2,16 @@
 
 Mechanical layer for building and maintaining an [LLM Wiki](../../docs/llm-wiki.md). Provides a deterministic, JSON-serializable "tool surface" that a future LLM inference layer can call without knowing the internal steps of each operation.
 
+## The problem this solves
+
+Most people who use AI assistants (like ChatGPT or Claude) start each conversation from scratch. You paste in some documents, ask a question, get an answer — and then that understanding disappears when the conversation ends. The next time you have a related question, the AI has to re-read the same documents and re-derive the same conclusions all over again. Nothing compounds.
+
+The **LLM Wiki** pattern is a different approach: instead of answering questions directly from raw documents, the AI incrementally builds and maintains a persistent, interlinked collection of markdown files — a wiki. When you share a new document or article, the AI doesn't just answer a question about it; it reads the document, extracts what's important, and files it into the wiki — updating existing pages, creating new ones, noting where the new information agrees or conflicts with what's already there. The next time you ask a question, the AI reads the wiki (which already contains synthesized knowledge from everything you've ever shared) rather than starting from scratch.
+
+The wiki is the memory. It gets richer with every source you add and every question you ask.
+
+This library handles the **mechanical side** of maintaining that wiki — the bookkeeping that would otherwise be tedious and error-prone: creating the right file structure, writing pages with consistent formatting, keeping a table of contents current, tracking where information came from, detecting when a source has changed, checking for broken links, and building a map of how pages connect to each other. The AI focuses on understanding and synthesis; this library handles the filing.
+
 ## What this library does
 
 - **Scaffolds** wiki directories with the standard structure (`entities/`, `concepts/`, `comparisons/`, `queries/`, `raw/`, plus `SCHEMA.md` / `index.md` / `log.md`).
