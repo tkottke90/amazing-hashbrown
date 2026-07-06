@@ -10,6 +10,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   CommitResult,
+  EmbeddingProvider,
   GraphEdge,
   GraphNode,
   GraphResult,
@@ -18,6 +19,8 @@ import type {
   Logger,
   OrientResult,
   PageInput,
+  RankedResult,
+  SemanticSearchOptions,
   Warning,
   WikiFile,
 } from './types.js';
@@ -34,7 +37,7 @@ import {
   slugify,
   suggestRawPath,
 } from './internal/paths.js';
-import { sha256Body } from './internal/sha.js';
+import { sha256Body, extractBody } from './internal/sha.js';
 import {
   extractWikilinks,
   outboundLinkCount,
@@ -48,6 +51,11 @@ import {
   type LintRawFile,
 } from './internal/lint/index.js';
 import { schemaTemplate, indexTemplate, logTemplate } from './internal/templates.js';
+import {
+  EmbeddingIndex,
+  cosineSimilarity,
+} from './internal/embedding-index.js';
+import { bm25Score } from './internal/bm25.js';
 
 const noopLogger: Logger = {
   debug() {},
@@ -65,10 +73,12 @@ export interface CreateOptions {
   domain: string;
   tags?: string[];
   logger?: Logger;
+  embeddingProvider?: EmbeddingProvider;
 }
 
 export interface LoadOptions {
   logger?: Logger;
+  embeddingProvider?: EmbeddingProvider;
 }
 
 export interface SaveRawOptions {
@@ -94,14 +104,18 @@ export interface BuildGraphOptions {
 export class LlmWiki {
   private readonly logger: Logger;
   private taxonomy: Set<string>;
+  private readonly embeddingProvider?: EmbeddingProvider;
+  private embeddingIndex?: EmbeddingIndex;
 
   private constructor(
     readonly basePath: string,
     taxonomy: Set<string>,
     logger: Logger,
+    embeddingProvider?: EmbeddingProvider,
   ) {
     this.taxonomy = taxonomy;
     this.logger = logger;
+    this.embeddingProvider = embeddingProvider;
   }
 
   // ── Factories ──────────────────────────────────────────────────────────────
@@ -123,7 +137,7 @@ export class LlmWiki {
     await writeIfAbsent(path.join(base, LOG_FILE), logTemplate(ctx));
 
     logger.info(`Created wiki at ${base}`);
-    return LlmWiki.load(base, { logger });
+    return LlmWiki.load(base, { logger, embeddingProvider: opts.embeddingProvider });
   }
 
   /** Load an existing wiki, parsing its SCHEMA.md tag taxonomy into memory. */
@@ -131,7 +145,7 @@ export class LlmWiki {
     const logger = opts.logger ?? noopLogger;
     const base = path.resolve(wikiPath);
     const schema = await readFileOr(path.join(base, SCHEMA_FILE), '');
-    return new LlmWiki(base, fm.parseTaxonomy(schema), logger);
+    return new LlmWiki(base, fm.parseTaxonomy(schema), logger, opts.embeddingProvider);
   }
 
   // ── Read / orient ───────────────────────────────────────────────────────────
@@ -157,6 +171,115 @@ export class LlmWiki {
       if (needles.some((n) => content.includes(n))) matches.push(rel);
     }
     return matches;
+  }
+
+  /**
+   * Ranked search over wiki content.
+   *
+   * - `'keyword'` — BM25 over page text; no provider required.
+   * - `'semantic'` — embedding cosine similarity; requires a provider.
+   * - `'hybrid'`   — both fused via Reciprocal Rank Fusion (default).
+   */
+  async semanticSearch(
+    query: string,
+    opts: SemanticSearchOptions = {},
+  ): Promise<RankedResult[]> {
+    const limit = opts.limit ?? 10;
+    const mode = opts.mode ?? (this.embeddingProvider ? 'hybrid' : 'keyword');
+    const contentPaths = await this.listContentPaths();
+
+    if (contentPaths.length === 0) return [];
+
+    // Build page text map once (needed for keyword + semantic refresh).
+    const pageTexts: Map<string, string> = new Map();
+    for (const rel of contentPaths) {
+      pageTexts.set(rel, await readFileOr(this.abs(rel), ''));
+    }
+
+    // Helper: build a rank map from scored results (lower rank = better).
+    const rankMap = (results: Array<{ path: string; score: number }>): Map<string, number> => {
+      const sorted = [...results].sort((a, b) => b.score - a.score);
+      const map = new Map<string, number>();
+      sorted.forEach((r, i) => map.set(r.path, i + 1));
+      return map;
+    };
+
+    let semanticRanks: Map<string, number> | null = null;
+    let keywordRanks: Map<string, number> | null = null;
+
+    if (mode === 'semantic' || mode === 'hybrid') {
+      const provider = this.embeddingProvider;
+      if (!provider) {
+        throw new Error(
+          `semanticSearch: mode '${mode}' requires an embeddingProvider. ` +
+            `Pass one via LoadOptions or use mode 'keyword'.`,
+        );
+      }
+      const index = await this.loadEmbeddingIndex(provider);
+
+      // Re-embed stale pages.
+      const stale = contentPaths.filter((rel) => {
+        const raw = pageTexts.get(rel) ?? '';
+        const sha = sha256Body(raw);
+        return index.needsUpdate(rel, sha);
+      });
+
+      if (stale.length > 0) {
+        const bodies = stale.map((rel) => {
+          const raw = pageTexts.get(rel) ?? '';
+          return extractBody(raw);
+        });
+        const vecs = await provider.embed(bodies);
+        stale.forEach((rel, i) => {
+          const raw = pageTexts.get(rel) ?? '';
+          index.set(rel, sha256Body(raw), vecs[i] ?? []);
+        });
+        await index.save(this.basePath);
+      }
+
+      const [queryVec] = await provider.embed([query]);
+      const semanticScores = index.getAll().map(({ relPath, vec }) => ({
+        path: relPath,
+        score: cosineSimilarity(queryVec ?? [], vec),
+      }));
+      semanticRanks = rankMap(semanticScores);
+    }
+
+    if (mode === 'keyword' || mode === 'hybrid') {
+      const docs = contentPaths.map((rel) => ({
+        path: rel,
+        text: extractBody(pageTexts.get(rel) ?? ''),
+      }));
+      const queryTerms = query
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((t) => t.length > 0);
+      const bm25Results = bm25Score(queryTerms, docs);
+      keywordRanks = rankMap(bm25Results);
+    }
+
+    // Reciprocal Rank Fusion (k = 60).
+    const RRF_K = 60;
+    const rrfScore = (path: string): number => {
+      let score = 0;
+      if (semanticRanks) score += 1 / (RRF_K + (semanticRanks.get(path) ?? contentPaths.length + 1));
+      if (keywordRanks) score += 1 / (RRF_K + (keywordRanks.get(path) ?? contentPaths.length + 1));
+      return score;
+    };
+
+    const ranked = contentPaths
+      .map((rel) => ({ path: rel, score: rrfScore(rel) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    return Promise.all(
+      ranked.map(async ({ path: rel, score }) => {
+        const raw = pageTexts.get(rel) ?? '';
+        const { data } = fm.parse(raw);
+        const title = String(data.title ?? pageStem(rel));
+        return { path: rel, score, title };
+      }),
+    );
   }
 
   /** List all content pages as parsed WikiFiles. */
@@ -366,6 +489,10 @@ export class LlmWiki {
       files: [rel],
     });
 
+    if (this.embeddingProvider) {
+      await this.updatePageEmbedding(rel, page.body, this.embeddingProvider);
+    }
+
     return { path: rel, created, warnings: this.pageWarnings(page, paths) };
   }
 
@@ -536,6 +663,27 @@ export class LlmWiki {
       registryWikiIds: registry?.wikiIds,
       onDiskWikiDirs: registry?.onDiskDirs,
     };
+  }
+
+  private async loadEmbeddingIndex(provider: EmbeddingProvider): Promise<EmbeddingIndex> {
+    if (!this.embeddingIndex || this.embeddingIndex.model !== provider.model) {
+      this.embeddingIndex = await EmbeddingIndex.load(this.basePath, provider.model);
+    }
+    return this.embeddingIndex;
+  }
+
+  private async updatePageEmbedding(
+    rel: string,
+    body: string,
+    provider: EmbeddingProvider,
+  ): Promise<void> {
+    const index = await this.loadEmbeddingIndex(provider);
+    const sha = sha256Body(body);
+    if (!index.needsUpdate(rel, sha)) return;
+    const [vec] = await provider.embed([body]);
+    index.set(rel, sha, vec ?? []);
+    await index.save(this.basePath);
+    this.logger.debug(`Updated embedding for ${rel}`);
   }
 
   private async loadRawFiles(): Promise<LintRawFile[]> {

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "default": "./dist/providers/index.js"
     }
   },
   "files": [
@@ -20,7 +24,10 @@
     "test": "mocha"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.110.0",
     "gray-matter": "4.0.3",
+    "openai": "6.45.0",
+    "voyageai": "0.4.0",
     "zod": "4.0.0"
   },
   "devDependencies": {
