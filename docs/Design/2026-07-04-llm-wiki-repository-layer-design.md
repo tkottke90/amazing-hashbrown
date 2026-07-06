@@ -64,7 +64,8 @@ lib/llm-wiki/
     index.ts            Barrel: createWikiRegistry, LlmWiki, WikiRegistry, public types
     llm-wiki.ts         LlmWiki class — coarse tool surface (facade)
     registry.ts         WikiRegistry — load/persist registry.json, scored routing
-    types.ts            Public types (WikiFile, Wiki, results, lint report)
+    types.ts            Public types (WikiFile, Wiki, results, lint report,
+                        EmbeddingProvider, RankedResult, SemanticSearchOptions)
     internal/
       frontmatter.ts    parse/serialize via gray-matter; required-field + tag checks
       wikilinks.ts      extract [[links]], normalize, resolve targets, backlink scan
@@ -72,17 +73,28 @@ lib/llm-wiki/
       templates.ts      SCHEMA.md / index.md / log.md skeletons
       sha.ts            body-only sha256 + drift compare
       routing.ts        pure scoring fn (port of score_wiki)
+      embedding-index.ts  manage _embeddings.json (load/save/upsert/drift check);
+                          cosineSimilarity helper
+      bm25.ts           pure BM25 scorer (k1=1.5, b=0.75); no external deps
       lint/
         index.ts        runLint(ctx, opts) → LintReport
         checks.ts       the individual check functions
+    providers/
+      index.ts          Barrel for @tkottke90/llm-wiki/providers sub-path export
+      null.ts           NullEmbeddingProvider — zero vectors, test/dev use
+      anthropic.ts      AnthropicEmbeddingProvider — Voyage AI via voyageai package
+      openai.ts         OpenAIEmbeddingProvider — OpenAI embeddings API
+      ollama.ts         OllamaEmbeddingProvider — Ollama local server (OpenAI compat)
   test/                 Mocha + Chai, temp-dir wiki fixtures
 ```
 
 - Root [`package.json`](../../package.json) `workspaces` becomes `["api", "ui", "lib/*"]`.
 - `api` adds `"@tkottke90/llm-wiki": "*"` as a dependency.
-- Library dependencies: `gray-matter` + `zod` only.
+- Library dependencies: `gray-matter`, `zod`, `openai`, `voyageai`, `@anthropic-ai/sdk`.
 - `internal/` modules are pure and one-way: they never import the `LlmWiki` /
   `WikiRegistry` classes.
+- `providers/` is exported at the `@tkottke90/llm-wiki/providers` sub-path so
+  consumers can import providers without pulling in the full library surface.
 
 **Setup interface change.** The library reads no env/config itself. It's
 constructed with explicit config:
@@ -112,19 +124,28 @@ strings (no fetching).
 
 **Factories**
 
-- `static async create({ path, name, domain, tags, logger? }): Promise<LlmWiki>`
+- `static async create({ path, name, domain, tags, logger?, embeddingProvider? }): Promise<LlmWiki>`
   — scaffolds dirs (`raw/ entities/ concepts/ comparisons/ queries/`) and writes
   `SCHEMA.md` / `index.md` / `log.md` from templates with `domain` filled in.
   Tag-taxonomy customization and seed pages stay with the LLM. Ports `wiki-init.py`.
-- `static async load(path, { logger? }): Promise<LlmWiki>` — loads an existing
-  wiki, parses `SCHEMA.md` (taxonomy + required fields) into memory.
+- `static async load(path, { logger?, embeddingProvider? }): Promise<LlmWiki>` — loads
+  an existing wiki, parses `SCHEMA.md` (taxonomy + required fields) into memory.
 
 **Read / orient tools**
 
 - `orient(): Promise<OrientResult>` — `{ schema, index, recentLog[] }` (last N log
   entries). The single call the LLM makes to load current state. Ports `wiki-orient.py`.
 - `search(terms: string[]): Promise<string[]>` — matching page rel-paths (grep
-  replacement).
+  replacement, no provider required).
+- `semanticSearch(query: string, opts?: SemanticSearchOptions): Promise<RankedResult[]>` —
+  ranked search across all content pages. Three modes:
+  - `'keyword'`: BM25 scorer over page text; no provider required.
+  - `'semantic'`: cosine similarity against stored embeddings; requires `embeddingProvider`.
+  - `'hybrid'` (default): Reciprocal Rank Fusion (k=60) over both rank lists.
+  Embeddings are persisted in `_embeddings.json` at the wiki root and updated
+  incrementally — only pages whose body sha differs from the stored sha are
+  re-embedded. The index is invalidated and rebuilt in full when the provider's
+  `model` string changes.
 - `listPages(): Promise<WikiFile[]>` / `readPage(relPath): Promise<WikiFile>` — typed reads.
 
 **Ingest tools**
@@ -137,10 +158,12 @@ strings (no fetching).
   rather than overwriting raw.
 - `commitPage(page: PageInput): Promise<CommitResult>` — **upsert** of one wiki
   page: serializes frontmatter (`gray-matter`), bumps `updated`, merges `sources`,
-  writes the file, updates `index.md`, appends a `log.md` entry. The "LLM needn't
-  know the steps" tool. Returns `{ path, created, warnings[] }`. Warn-on-write:
-  malformed frontmatter / missing required fields → rejected error result; <2
-  wikilinks or tag-not-in-taxonomy → `warnings`. Folds in `wiki-nav-update.py`.
+  writes the file, updates `index.md`, appends a `log.md` entry, and — if an
+  `embeddingProvider` is configured — embeds the page body and upserts
+  `_embeddings.json`. The "LLM needn't know the steps" tool. Returns `{ path,
+  created, warnings[] }`. Warn-on-write: malformed frontmatter / missing required
+  fields → rejected error result; <2 wikilinks or tag-not-in-taxonomy → `warnings`.
+  Folds in `wiki-nav-update.py`.
 - `addCrossLink({ fromPage, toPage }): Promise<CommitResult>` — inserts a
   `[[wikilink]]` under the target's "Related Pages" and bumps `updated` (the
   mechanical half of the backlink sweep).
@@ -157,7 +180,7 @@ strings (no fetching).
 
 - Ingest: `orient` → `ingestPrep` → `saveRawSource` → _(judgement)_ → `commitPage`×N
   → `addCrossLink`×N.
-- Query: `orient`/`search` → `readPage` → _(judgement)_ → optional
+- Query: `orient` / `semanticSearch` → `readPage` → _(judgement)_ → optional
   `commitPage(type: query)` + `log`.
 
 ## Section 3 — `WikiRegistry` + routing
@@ -330,6 +353,24 @@ type LintCheckId =
   | 'quality'
   | 'contradictions'
   | 'registry_sync';
+```
+
+// Semantic search
+interface EmbeddingProvider {
+  readonly model: string;
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+interface RankedResult {
+  path: string;
+  score: number;
+  title: string;
+}
+
+interface SemanticSearchOptions {
+  limit?: number;                              // default 10
+  mode?: 'semantic' | 'keyword' | 'hybrid';   // default 'hybrid'
+}
 ```
 
 `Warning` (soft, from writes) and `LintFinding` (authoritative, from lint) share

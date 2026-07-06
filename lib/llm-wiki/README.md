@@ -22,13 +22,13 @@ This library handles the **mechanical side** of maintaining that wiki — the bo
 - **Cross-links** pages: inserts `[[wikilink]]` entries under a `## Related Pages` section.
 - **Lints** wiki health across 12 checks (broken links, orphans, stale pages, source drift, frontmatter validity, and more).
 - **Builds a graph** of nodes and edges derived from wikilinks, contradictions, and source references — suitable for D3 force-graph and similar renderers.
+- **Searches semantically** using hybrid BM25 + embedding ranking with a pluggable `EmbeddingProvider` — or keyword-only when no provider is configured.
 
 ## What this library does NOT do
 
 - **No HTTP server or REST endpoints.** This is a pure library; routing and serving are the application's responsibility.
-- **No LLM inference.** No AI calls, no LangChain, no Anthropic SDK. Raw source content is passed in as strings — fetching is the caller's responsibility.
+- **No LLM inference.** No AI calls, no LangChain. Raw source content is passed in as strings — fetching is the caller's responsibility.
 - **No URL fetching.** `saveRawSource` and `ingestPrep` accept content strings; the caller retrieves the content.
-- **No vector/embedding search.** `search()` is keyword-based (grep-style) over page content.
 - **No UI.** No rendering, no server-side HTML.
 
 ---
@@ -69,14 +69,16 @@ The library itself reads no environment variables — all configuration is passe
 
 ```ts
 import { createWikiRegistry } from '@tkottke90/llm-wiki';
+import { OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
 
 const registry = await createWikiRegistry({
   wikiRoot: process.env.WIKI_ROOT ?? './config/kb',
   logger: myLogger, // optional; no-op if omitted
+  embeddingProvider: new OpenAIEmbeddingProvider({ apiKey: process.env.OPENAI_API_KEY }),
 });
 ```
 
-The `logger` must implement `{ debug, info, warn, error }`. Any structured logger works; passing nothing is valid.
+The `logger` must implement `{ debug, info, warn, error }`. Any structured logger works; passing nothing is valid. The `embeddingProvider` is optional — omit it to use keyword-only search.
 
 ---
 
@@ -145,6 +147,33 @@ const pages = await wiki.listPages();
 const page = await wiki.readPage('entities/dns-server.md');
 // page.frontmatter, page.content (body only), page.sha, page.title, etc.
 ```
+
+### Semantic search
+
+`semanticSearch` supports three modes. All three return `RankedResult[]` — `{ path, score, title }` sorted by relevance.
+
+```ts
+// Hybrid mode (default): fuses BM25 keyword + embedding scores via RRF.
+// Requires an embeddingProvider; falls back to keyword-only if none is set.
+const results = await wiki.semanticSearch('domain name resolution');
+
+// Explicit hybrid with options
+const results = await wiki.semanticSearch('DNS resolver', {
+  mode: 'hybrid', // 'hybrid' (default) | 'keyword' | 'semantic'
+  limit: 5,       // default 10
+});
+
+// Keyword-only (BM25): no provider required — works on any wiki
+const results = await wiki.semanticSearch('unbound DNS', { mode: 'keyword' });
+
+// Semantic-only (cosine similarity against stored embeddings):
+// requires embeddingProvider; throws if none is configured
+const results = await wiki.semanticSearch('name resolution', { mode: 'semantic' });
+
+// results[0] → { path: 'entities/dns-server.md', score: 0.94, title: 'DNS Server' }
+```
+
+Embeddings are persisted in `_embeddings.json` at the wiki root and updated incrementally — only pages whose body has changed since the last embed are re-processed. The index is invalidated and rebuilt automatically when the provider's model changes.
 
 ### Ingesting a source
 
@@ -246,6 +275,55 @@ await wiki.log({ action: 'query', subject: 'DNS failover behaviour' });
 await wiki.log({ action: 'lint', subject: 'weekly health check', files: [] });
 ```
 
+### Embedding providers
+
+Import from the `@tkottke90/llm-wiki/providers` sub-path. Pass a provider instance to `LlmWiki.create()`, `LlmWiki.load()`, or `createWikiRegistry()`.
+
+```ts
+import {
+  NullEmbeddingProvider,
+  AnthropicEmbeddingProvider,
+  OpenAIEmbeddingProvider,
+  OllamaEmbeddingProvider,
+} from '@tkottke90/llm-wiki/providers';
+```
+
+| Class | Backend | Required env / option |
+|---|---|---|
+| `NullEmbeddingProvider` | none (zero vectors) | — |
+| `AnthropicEmbeddingProvider` | Voyage AI (`voyageai` package) | `VOYAGE_API_KEY` or `{ apiKey }` |
+| `OpenAIEmbeddingProvider` | OpenAI (`openai` package) | `OPENAI_API_KEY` or `{ apiKey }` |
+| `OllamaEmbeddingProvider` | Ollama local server | `{ baseUrl?, model? }` |
+
+```ts
+// Null — useful in tests and CI
+new NullEmbeddingProvider()          // 1536-dim zero vectors
+new NullEmbeddingProvider(512)       // custom dimension
+
+// Anthropic / Voyage AI (default model: voyage-3)
+new AnthropicEmbeddingProvider()
+new AnthropicEmbeddingProvider({ apiKey: '...', model: 'voyage-3-lite' })
+
+// OpenAI (default model: text-embedding-3-small)
+new OpenAIEmbeddingProvider()
+new OpenAIEmbeddingProvider({ apiKey: '...', model: 'text-embedding-3-large' })
+
+// Ollama (default: http://localhost:11434/v1, model: nomic-embed-text)
+new OllamaEmbeddingProvider()
+new OllamaEmbeddingProvider({ baseUrl: 'http://my-host:11434/v1', model: 'mxbai-embed-large' })
+```
+
+You can also implement `EmbeddingProvider` directly for any other backend:
+
+```ts
+import type { EmbeddingProvider } from '@tkottke90/llm-wiki/providers';
+
+class MyProvider implements EmbeddingProvider {
+  readonly model = 'my-model-v1';
+  async embed(texts: string[]): Promise<number[][]> { /* ... */ }
+}
+```
+
 ---
 
 ## File layout
@@ -257,6 +335,7 @@ await wiki.log({ action: 'lint', subject: 'weekly health check', files: [] });
     SCHEMA.md               Tag taxonomy and page conventions
     index.md                Content catalog — updated on every commitPage
     log.md                  Append-only activity log
+    _embeddings.json        Persisted embedding vectors (written when a provider is set)
     entities/               Entity pages (*.md)
     concepts/               Concept pages
     comparisons/            Comparison pages
@@ -275,4 +354,4 @@ Pages in `entities/`, `concepts/`, `comparisons/`, and `queries/` are the linkab
 npm --workspace lib/llm-wiki test
 ```
 
-69 tests covering unit functions (wikilinks, routing, nav, sha, paths, frontmatter, lint checks) and class integration (create → orient → ingest → commit → cross-link → lint → buildGraph → registry routing).
+89 tests covering unit functions (wikilinks, routing, nav, sha, paths, frontmatter, lint checks, BM25 scorer, cosine similarity, embedding providers) and class integration (create → orient → ingest → commit → cross-link → lint → buildGraph → registry routing → semanticSearch).
