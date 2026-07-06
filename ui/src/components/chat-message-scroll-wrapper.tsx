@@ -8,10 +8,7 @@ interface ChatMessageScrollWrapperProps {
   className?: string;
 }
 
-export function ChatMessageScrollWrapper({
-  children,
-  className,
-}: ChatMessageScrollWrapperProps) {
+export function ChatMessageScrollWrapper({ children, className }: ChatMessageScrollWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);

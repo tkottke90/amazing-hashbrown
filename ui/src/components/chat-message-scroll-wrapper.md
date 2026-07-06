@@ -4,19 +4,19 @@ Wraps a chat message list and manages scroll behavior. On load it snaps instantl
 
 ## Exports
 
-| Export                              | Type      | Description                                      |
-| ----------------------------------- | --------- | ------------------------------------------------ |
-| `ChatMessageScrollWrapper`          | Component | The scroll-managing container                    |
-| `ChatMessageScrollWrapperProps`     | Interface | Props for `ChatMessageScrollWrapper`             |
+| Export                          | Type      | Description                          |
+| ------------------------------- | --------- | ------------------------------------ |
+| `ChatMessageScrollWrapper`      | Component | The scroll-managing container        |
+| `ChatMessageScrollWrapperProps` | Interface | Props for `ChatMessageScrollWrapper` |
 
 ## `ChatMessageScrollWrapper`
 
 ### Props
 
-| Prop        | Type                | Default | Description                                                                                                   |
-| ----------- | ------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
-| `children`  | `ComponentChildren` | —       | The message list to render. Observed for size changes to trigger auto-scroll.                                 |
-| `className` | `string`            | —       | Extra classes merged onto the outer scroll container. Use this to constrain height (`flex-1 min-h-0`, etc.)   |
+| Prop        | Type                | Default | Description                                                                                                 |
+| ----------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `children`  | `ComponentChildren` | —       | The message list to render. Observed for size changes to trigger auto-scroll.                               |
+| `className` | `string`            | —       | Extra classes merged onto the outer scroll container. Use this to constrain height (`flex-1 min-h-0`, etc.) |
 
 ### Basic usage
 
@@ -24,10 +24,10 @@ Wraps a chat message list and manages scroll behavior. On load it snaps instantl
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 
 <ChatMessageScrollWrapper className="flex-1 min-h-0">
-  {messages.map(m => (
+  {messages.map((m) => (
     <ChatMessage key={m.id} message={m.text} sentAt={m.sentAt} />
   ))}
-</ChatMessageScrollWrapper>
+</ChatMessageScrollWrapper>;
 ```
 
 ---
@@ -43,9 +43,7 @@ A full-height chat shell with a fixed header and input bar. `flex-1 min-h-0` let
 ```tsx
 <div className="flex h-screen flex-col">
   <Header />
-  <ChatMessageScrollWrapper className="flex-1 min-h-0">
-    {messages}
-  </ChatMessageScrollWrapper>
+  <ChatMessageScrollWrapper className="flex-1 min-h-0">{messages}</ChatMessageScrollWrapper>
   <ChatInput />
 </div>
 ```
@@ -57,9 +55,7 @@ When the shell uses a named grid layout, assign the wrapper to the message row a
 ```tsx
 <div className="grid h-screen grid-rows-[auto_1fr_auto]">
   <Header />
-  <ChatMessageScrollWrapper className="min-h-0">
-    {messages}
-  </ChatMessageScrollWrapper>
+  <ChatMessageScrollWrapper className="min-h-0">{messages}</ChatMessageScrollWrapper>
   <ChatInput />
 </div>
 ```
@@ -70,9 +66,7 @@ For a floating chat widget or a sidebar panel with a known height.
 
 ```tsx
 <div className="fixed bottom-4 right-4 flex h-[600px] w-96 flex-col rounded-xl border shadow-xl">
-  <ChatMessageScrollWrapper className="flex-1 min-h-0">
-    {messages}
-  </ChatMessageScrollWrapper>
+  <ChatMessageScrollWrapper className="flex-1 min-h-0">{messages}</ChatMessageScrollWrapper>
   <ChatInput />
 </div>
 ```
