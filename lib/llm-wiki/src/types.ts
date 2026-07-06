@@ -166,3 +166,30 @@ export interface LintReport {
   ok: boolean;
   checks: LintFinding[];
 }
+
+/** Node type — extends PageType with 'source' for raw source file nodes. */
+export type GraphNodeType = PageType | 'source';
+
+/** A vertex in the wiki graph. */
+export interface GraphNode {
+  /** pageStem(relPath), e.g. "entities/large-language-model" */
+  id: string;
+  title: string;
+  type: GraphNodeType;
+  tags: string[];
+  confidence?: 'high' | 'medium' | 'low';
+  contested?: boolean;
+}
+
+/** A directed edge in the wiki graph. */
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: 'references' | 'contradicts' | 'derived_from';
+}
+
+/** Result of {@link LlmWiki.buildGraph}. */
+export interface GraphResult {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
