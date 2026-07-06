@@ -160,7 +160,7 @@ const results = await wiki.semanticSearch('domain name resolution');
 // Explicit hybrid with options
 const results = await wiki.semanticSearch('DNS resolver', {
   mode: 'hybrid', // 'hybrid' (default) | 'keyword' | 'semantic'
-  limit: 5,       // default 10
+  limit: 5, // default 10
 });
 
 // Keyword-only (BM25): no provider required — works on any wiki
@@ -288,29 +288,29 @@ import {
 } from '@tkottke90/llm-wiki/providers';
 ```
 
-| Class | Backend | Required env / option |
-|---|---|---|
-| `NullEmbeddingProvider` | none (zero vectors) | — |
+| Class                        | Backend                        | Required env / option            |
+| ---------------------------- | ------------------------------ | -------------------------------- |
+| `NullEmbeddingProvider`      | none (zero vectors)            | —                                |
 | `AnthropicEmbeddingProvider` | Voyage AI (`voyageai` package) | `VOYAGE_API_KEY` or `{ apiKey }` |
-| `OpenAIEmbeddingProvider` | OpenAI (`openai` package) | `OPENAI_API_KEY` or `{ apiKey }` |
-| `OllamaEmbeddingProvider` | Ollama local server | `{ baseUrl?, model? }` |
+| `OpenAIEmbeddingProvider`    | OpenAI (`openai` package)      | `OPENAI_API_KEY` or `{ apiKey }` |
+| `OllamaEmbeddingProvider`    | Ollama local server            | `{ baseUrl?, model? }`           |
 
 ```ts
 // Null — useful in tests and CI
-new NullEmbeddingProvider()          // 1536-dim zero vectors
-new NullEmbeddingProvider(512)       // custom dimension
+new NullEmbeddingProvider(); // 1536-dim zero vectors
+new NullEmbeddingProvider(512); // custom dimension
 
 // Anthropic / Voyage AI (default model: voyage-3)
-new AnthropicEmbeddingProvider()
-new AnthropicEmbeddingProvider({ apiKey: '...', model: 'voyage-3-lite' })
+new AnthropicEmbeddingProvider();
+new AnthropicEmbeddingProvider({ apiKey: '...', model: 'voyage-3-lite' });
 
 // OpenAI (default model: text-embedding-3-small)
-new OpenAIEmbeddingProvider()
-new OpenAIEmbeddingProvider({ apiKey: '...', model: 'text-embedding-3-large' })
+new OpenAIEmbeddingProvider();
+new OpenAIEmbeddingProvider({ apiKey: '...', model: 'text-embedding-3-large' });
 
 // Ollama (default: http://localhost:11434/v1, model: nomic-embed-text)
-new OllamaEmbeddingProvider()
-new OllamaEmbeddingProvider({ baseUrl: 'http://my-host:11434/v1', model: 'mxbai-embed-large' })
+new OllamaEmbeddingProvider();
+new OllamaEmbeddingProvider({ baseUrl: 'http://my-host:11434/v1', model: 'mxbai-embed-large' });
 ```
 
 You can also implement `EmbeddingProvider` directly for any other backend:
@@ -320,7 +320,9 @@ import type { EmbeddingProvider } from '@tkottke90/llm-wiki/providers';
 
 class MyProvider implements EmbeddingProvider {
   readonly model = 'my-model-v1';
-  async embed(texts: string[]): Promise<number[][]> { /* ... */ }
+  async embed(texts: string[]): Promise<number[][]> {
+    /* ... */
+  }
 }
 ```
 

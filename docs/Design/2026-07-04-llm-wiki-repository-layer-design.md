@@ -142,10 +142,10 @@ strings (no fetching).
   - `'keyword'`: BM25 scorer over page text; no provider required.
   - `'semantic'`: cosine similarity against stored embeddings; requires `embeddingProvider`.
   - `'hybrid'` (default): Reciprocal Rank Fusion (k=60) over both rank lists.
-  Embeddings are persisted in `_embeddings.json` at the wiki root and updated
-  incrementally — only pages whose body sha differs from the stored sha are
-  re-embedded. The index is invalidated and rebuilt in full when the provider's
-  `model` string changes.
+    Embeddings are persisted in `_embeddings.json` at the wiki root and updated
+    incrementally — only pages whose body sha differs from the stored sha are
+    re-embedded. The index is invalidated and rebuilt in full when the provider's
+    `model` string changes.
 - `listPages(): Promise<WikiFile[]>` / `readPage(relPath): Promise<WikiFile>` — typed reads.
 
 **Ingest tools**
@@ -161,7 +161,7 @@ strings (no fetching).
   writes the file, updates `index.md`, appends a `log.md` entry, and — if an
   `embeddingProvider` is configured — embeds the page body and upserts
   `_embeddings.json`. The "LLM needn't know the steps" tool. Returns `{ path,
-  created, warnings[] }`. Warn-on-write: malformed frontmatter / missing required
+created, warnings[] }`. Warn-on-write: malformed frontmatter / missing required
   fields → rejected error result; <2 wikilinks or tag-not-in-taxonomy → `warnings`.
   Folds in `wiki-nav-update.py`.
 - `addCrossLink({ fromPage, toPage }): Promise<CommitResult>` — inserts a
@@ -357,20 +357,21 @@ type LintCheckId =
 
 // Semantic search
 interface EmbeddingProvider {
-  readonly model: string;
-  embed(texts: string[]): Promise<number[][]>;
+readonly model: string;
+embed(texts: string[]): Promise<number[][]>;
 }
 
 interface RankedResult {
-  path: string;
-  score: number;
-  title: string;
+path: string;
+score: number;
+title: string;
 }
 
 interface SemanticSearchOptions {
-  limit?: number;                              // default 10
-  mode?: 'semantic' | 'keyword' | 'hybrid';   // default 'hybrid'
+limit?: number; // default 10
+mode?: 'semantic' | 'keyword' | 'hybrid'; // default 'hybrid'
 }
+
 ```
 
 `Warning` (soft, from writes) and `LintFinding` (authoritative, from lint) share
@@ -422,3 +423,4 @@ Root `npm test` picks up the new workspace once it has a `"test": "mocha"` scrip
    schemas), prompt design, LangChain/Ollama wiring.
 2. **HTTP layer** — `/api/v1/wiki/*` routes over `WikiRegistry` / `LlmWiki`.
 3. **UI** — browse/query surface.
+```
