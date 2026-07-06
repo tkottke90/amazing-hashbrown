@@ -157,7 +157,7 @@ await wiki.saveRawSource({
 
 // 3. Commit synthesized wiki pages (one or more)
 const result = await wiki.commitPage({
-  type: 'entity',           // 'entity' | 'concept' | 'comparison' | 'query' | 'summary'
+  type: 'entity', // 'entity' | 'concept' | 'comparison' | 'query' | 'summary'
   title: 'DNS Server',
   tags: ['dns', 'service'],
   sources: [prep.suggestedRawPath],
@@ -185,8 +185,8 @@ const report = await wiki.lint();
 const report = await registry.lint('homelab');
 
 // Filter by severity
-const errors = report.checks.filter(c => c.severity === 'error');
-const warnings = report.checks.filter(c => c.severity === 'warn');
+const errors = report.checks.filter((c) => c.severity === 'error');
+const warnings = report.checks.filter((c) => c.severity === 'warn');
 ```
 
 The 12 checks: `broken_links`, `orphans`, `frontmatter`, `index`, `page_size`, `tag_audit`, `source_drift`, `log_rotation`, `stale`, `quality`, `contradictions`, `registry_sync`.
@@ -219,9 +219,10 @@ import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 type D3Node = GraphNode & SimulationNodeDatum;
 type D3Edge = SimulationLinkDatum<D3Node> & { type: GraphEdge['type'] };
 
-simulation
-  .nodes(graph.nodes as D3Node[])
-  .force('link', forceLink<D3Node, D3Edge>(graph.edges as D3Edge[]).id(d => d.id));
+simulation.nodes(graph.nodes as D3Node[]).force(
+  'link',
+  forceLink<D3Node, D3Edge>(graph.edges as D3Edge[]).id((d) => d.id),
+);
 ```
 
 Tags are available on each node (`node.tags`) and work naturally as a color encoding dimension without needing tag-level nodes or edges.

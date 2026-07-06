@@ -35,7 +35,12 @@ import {
   suggestRawPath,
 } from './internal/paths.js';
 import { sha256Body } from './internal/sha.js';
-import { extractWikilinks, outboundLinkCount, pageStem, resolveLinkTarget } from './internal/wikilinks.js';
+import {
+  extractWikilinks,
+  outboundLinkCount,
+  pageStem,
+  resolveLinkTarget,
+} from './internal/wikilinks.js';
 import {
   runLint,
   type LintContext,
@@ -198,7 +203,12 @@ export class LlmWiki {
 
     for (const page of pages) {
       const id = pageStem(page.filename);
-      const node: GraphNode = { id, title: page.title, type: page.type, tags: page.frontmatter.tags };
+      const node: GraphNode = {
+        id,
+        title: page.title,
+        type: page.type,
+        tags: page.frontmatter.tags,
+      };
       if (page.frontmatter.confidence !== undefined) node.confidence = page.frontmatter.confidence;
       if (page.frontmatter.contested !== undefined) node.contested = page.frontmatter.contested;
       nodes.push(node);
@@ -222,7 +232,12 @@ export class LlmWiki {
           const sourceId = pageStem(sourcePath);
           if (!sourceNodeMap.has(sourceId)) {
             const basename = sourcePath.split('/').pop()?.replace(/\.md$/i, '') ?? sourceId;
-            sourceNodeMap.set(sourceId, { id: sourceId, title: basename, type: 'source', tags: [] });
+            sourceNodeMap.set(sourceId, {
+              id: sourceId,
+              title: basename,
+              type: 'source',
+              tags: [],
+            });
           }
           addEdge(id, sourceId, 'derived_from');
         }
