@@ -19,12 +19,12 @@ const result = await runner.run(query, corpus, onStatus);
 
 **Constructor parameters**
 
-| Parameter          | Type                   | Required | Description                                                                              |
-| ------------------ | ---------------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `adapter`          | `InferenceAdapter`     | Yes      | LLM inference backend. Implement this interface or use `OllamaAdapter`.                  |
-| `embeddingAdapter` | `EmbeddingAdapter`     | No       | If provided, adds the `search` tool to the model's tool set. Pass `undefined` to omit.  |
-| `config`           | `Partial<RLMConfig>`   | No       | Overrides for any `DEFAULT_CONFIG` fields.                                               |
-| `logger`           | `RLMLogger`            | No       | Receives real-time events and/or the completed trace.                                    |
+| Parameter          | Type                 | Required | Description                                                                            |
+| ------------------ | -------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `adapter`          | `InferenceAdapter`   | Yes      | LLM inference backend. Implement this interface or use `OllamaAdapter`.                |
+| `embeddingAdapter` | `EmbeddingAdapter`   | No       | If provided, adds the `search` tool to the model's tool set. Pass `undefined` to omit. |
+| `config`           | `Partial<RLMConfig>` | No       | Overrides for any `DEFAULT_CONFIG` fields.                                             |
+| `logger`           | `RLMLogger`          | No       | Receives real-time events and/or the completed trace.                                  |
 
 Both `InferenceAdapter` and `EmbeddingAdapter` are defined in `@tkottke90/inference-adapter` and re-exported from this package. See the [inference-adapter docs](../../inference-adapter/docs/api-reference.md) for the full interface specification.
 
@@ -44,16 +44,16 @@ Returns `Promise<RLMResult>`.
 
 Configuration for the retrieval loop. Pass a partial object to `RLMRunner` — unset fields use `DEFAULT_CONFIG` values.
 
-| Field             | Type            | Default      | Description                                                                                                                                                                                                        |
-| ----------------- | --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`           | `string`        | `'qwen3:8b'` | Model identifier passed to the adapter. Must match the model name known to your backend.                                                                                                                           |
-| `maxIterations`   | `number`        | `10`         | Maximum number of model calls before the synthesis fallback fires.                                                                                                                                                 |
-| `maxResultTokens` | `number`        | `2000`       | Passed to the adapter; hints the max response length.                                                                                                                                                              |
-| `maxSliceLines`   | `number`        | `200`        | Hard cap on `slice` line range. Over-cap requests receive an error message that steers the model to `summarize`.                                                                                                   |
-| `think`           | `boolean`       | `false`      | Enable thinking mode (e.g. `enable_thinking` for Qwen3). **Strongly recommended to keep `false`** — thinking mode doubles median latency with no quality gain for retrieval tasks and can exceed gateway timeouts. |
-| `promptAddendum`  | `string`        | —            | Extra text appended to the system prompt. Use to add domain-specific instructions.                                                                                                                                 |
-| `extraTools`      | `ToolDefinition[]` | —         | Additional tools to expose to the model alongside the built-in REPL tools.                                                                                                                                         |
-| `traceDetail`     | `TraceDetail`   | `'full'`     | Controls how much content is stored in trace events. See [observability.md](./observability.md).                                                                                                                   |
+| Field             | Type               | Default      | Description                                                                                                                                                                                                        |
+| ----------------- | ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model`           | `string`           | `'qwen3:8b'` | Model identifier passed to the adapter. Must match the model name known to your backend.                                                                                                                           |
+| `maxIterations`   | `number`           | `10`         | Maximum number of model calls before the synthesis fallback fires.                                                                                                                                                 |
+| `maxResultTokens` | `number`           | `2000`       | Passed to the adapter; hints the max response length.                                                                                                                                                              |
+| `maxSliceLines`   | `number`           | `200`        | Hard cap on `slice` line range. Over-cap requests receive an error message that steers the model to `summarize`.                                                                                                   |
+| `think`           | `boolean`          | `false`      | Enable thinking mode (e.g. `enable_thinking` for Qwen3). **Strongly recommended to keep `false`** — thinking mode doubles median latency with no quality gain for retrieval tasks and can exceed gateway timeouts. |
+| `promptAddendum`  | `string`           | —            | Extra text appended to the system prompt. Use to add domain-specific instructions.                                                                                                                                 |
+| `extraTools`      | `ToolDefinition[]` | —            | Additional tools to expose to the model alongside the built-in REPL tools.                                                                                                                                         |
+| `traceDetail`     | `TraceDetail`      | `'full'`     | Controls how much content is stored in trace events. See [observability.md](./observability.md).                                                                                                                   |
 
 **`DEFAULT_CONFIG`**
 
@@ -150,18 +150,18 @@ interface InferenceAdapter {
 }
 ```
 
-| Parameter  | Description                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `messages` | Conversation history in order: system, user, then alternating assistant/tool turns.                 |
+| Parameter  | Description                                                                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `messages` | Conversation history in order: system, user, then alternating assistant/tool turns.                                                                                                                                |
 | `options`  | Optional: `tools` (expose to the model), `schema` (structured output), and sampling parameters. When `tools` is absent or empty, the model is expected to respond with plain text only (used for synthesis calls). |
 
 **`InferenceResponse`**
 
 ```ts
 interface InferenceResponse {
-  message: AssistantMessage;  // the model's reply; always role: 'assistant'
-  toolCalls?: ToolCall[];     // convenience copy of message.toolCalls
-  structured?: unknown;       // populated when options.schema was provided
+  message: AssistantMessage; // the model's reply; always role: 'assistant'
+  toolCalls?: ToolCall[]; // convenience copy of message.toolCalls
+  structured?: unknown; // populated when options.schema was provided
 }
 ```
 

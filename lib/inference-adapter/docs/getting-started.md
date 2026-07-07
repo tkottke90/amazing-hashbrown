@@ -18,12 +18,12 @@ This package provides a standard way to make those calls from TypeScript, regard
 
 AI models don't work with single questions — they work with **conversations**. A conversation is a list of messages, and each message has a **role** that identifies who said it:
 
-| Role | Who | What it contains |
-|---|---|---|
-| `'system'` | You (the developer) | Background instructions that shape how the model behaves: "You are a helpful assistant. Answer concisely." |
-| `'user'` | The person using your app | The question or request being asked. |
-| `'assistant'` | The AI model | The model's reply. |
-| `'tool'` | Your code | The result of a function the model asked your code to run (more on this below). |
+| Role          | Who                       | What it contains                                                                                           |
+| ------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `'system'`    | You (the developer)       | Background instructions that shape how the model behaves: "You are a helpful assistant. Answer concisely." |
+| `'user'`      | The person using your app | The question or request being asked.                                                                       |
+| `'assistant'` | The AI model              | The model's reply.                                                                                         |
+| `'tool'`      | Your code                 | The result of a function the model asked your code to run (more on this below).                            |
 
 A minimal conversation is just a single `user` message. Most real conversations also include a `system` message at the start, which you as the developer write to set the model's context and behavior.
 
@@ -43,7 +43,7 @@ When you call `adapter.invoke(messages)`, you get back an `InferenceResponse`. T
 ```ts
 const response = await adapter.invoke(messages);
 
-console.log(response.message.role);    // 'assistant'
+console.log(response.message.role); // 'assistant'
 console.log(response.message.content); // "TypeScript was first released in October 2012."
 ```
 
@@ -170,9 +170,7 @@ const getStockPrice: ToolDefinition = {
 ### Step 2 — Pass the tool to `invoke`
 
 ```ts
-const messages: Message[] = [
-  { role: 'user', content: "What is Apple's stock price?" },
-];
+const messages: Message[] = [{ role: 'user', content: "What is Apple's stock price?" }];
 
 const response = await adapter.invoke(messages, {
   tools: [getStockPrice],
@@ -213,7 +211,7 @@ if (response.toolCalls && response.toolCalls.length > 0) {
 }
 ```
 
-**Important rule:** after a tool call turn, always push *both* the `assistant` message (which includes `toolCalls`) *and* the `tool` message (which includes `results`) before calling `invoke` again.
+**Important rule:** after a tool call turn, always push _both_ the `assistant` message (which includes `toolCalls`) _and_ the `tool` message (which includes `results`) before calling `invoke` again.
 
 ---
 
@@ -264,7 +262,7 @@ const vectors: number[][] = await adapter.embed([
 ]);
 
 // Both vectors encode similar meanings and will be close in vector space
-console.log(vectors.length);    // 2
+console.log(vectors.length); // 2
 console.log(vectors[0].length); // e.g. 768 (depends on the model)
 ```
 
@@ -283,7 +281,7 @@ const adapter = new NullInferenceAdapter();
 const response = await adapter.invoke([{ role: 'user', content: 'anything' }]);
 
 console.log(response.message.content); // ''
-console.log(response.toolCalls);       // undefined
+console.log(response.toolCalls); // undefined
 ```
 
 For tests that need scripted responses (different replies for different calls), see [docs/custom-adapters.md](./custom-adapters.md#testing-with-stub-adapters).
@@ -297,8 +295,8 @@ Pass optional parameters to `invoke` to control how the model generates text:
 ```ts
 const response = await adapter.invoke(messages, {
   temperature: 0.2, // lower = more focused; higher = more creative (0.0–2.0)
-  topP: 0.9,        // nucleus sampling probability threshold
-  maxTokens: 500,   // stop generating after this many tokens
+  topP: 0.9, // nucleus sampling probability threshold
+  maxTokens: 500, // stop generating after this many tokens
 });
 ```
 

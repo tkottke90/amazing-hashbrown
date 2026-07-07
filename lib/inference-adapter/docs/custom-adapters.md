@@ -24,29 +24,29 @@ One method. It receives the full conversation history and optional settings, and
 
 **What `messages` looks like:**
 
-| Position | Role | Content |
-|---|---|---|
-| First | `'system'` | Instructions you write to set the model's behavior. |
-| Second | `'user'` | The user's question or request. |
-| Later | `'assistant'` / `'tool'` | Alternating model replies and tool results (if the conversation includes tool calls). |
+| Position | Role                     | Content                                                                               |
+| -------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| First    | `'system'`               | Instructions you write to set the model's behavior.                                   |
+| Second   | `'user'`                 | The user's question or request.                                                       |
+| Later    | `'assistant'` / `'tool'` | Alternating model replies and tool results (if the conversation includes tool calls). |
 
 **What `options` contains:**
 
-| Field | Type | Description |
-|---|---|---|
-| `tools` | `ToolDefinition[]` (optional) | Tools the model may call. Empty or absent means "respond with plain text only." |
-| `schema` | `z.ZodType` (optional) | Request structured output matching this schema. |
-| `temperature` | `number` (optional) | Generation randomness (0.0–2.0). |
-| `topP` | `number` (optional) | Nucleus sampling threshold. |
-| `maxTokens` | `number` (optional) | Maximum tokens to generate. |
+| Field         | Type                          | Description                                                                     |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| `tools`       | `ToolDefinition[]` (optional) | Tools the model may call. Empty or absent means "respond with plain text only." |
+| `schema`      | `z.ZodType` (optional)        | Request structured output matching this schema.                                 |
+| `temperature` | `number` (optional)           | Generation randomness (0.0–2.0).                                                |
+| `topP`        | `number` (optional)           | Nucleus sampling threshold.                                                     |
+| `maxTokens`   | `number` (optional)           | Maximum tokens to generate.                                                     |
 
 **What `InferenceResponse` must contain:**
 
 ```ts
 interface InferenceResponse {
-  message: AssistantMessage;  // required
-  toolCalls?: ToolCall[];     // include when the model called a tool
-  structured?: unknown;       // include when options.schema was provided
+  message: AssistantMessage; // required
+  toolCalls?: ToolCall[]; // include when the model called a tool
+  structured?: unknown; // include when options.schema was provided
 }
 
 interface AssistantMessage {
@@ -193,9 +193,7 @@ const adapter = new OpenAICompatibleAdapter(
   'gpt-4o-mini',
 );
 
-const response = await adapter.invoke([
-  { role: 'user', content: 'What is 2 + 2?' },
-]);
+const response = await adapter.invoke([{ role: 'user', content: 'What is 2 + 2?' }]);
 console.log(response.message.content); // "4"
 ```
 
@@ -207,8 +205,8 @@ Your `invoke` method receives `options.tools` — the list of tools the model ma
 
 ```ts
 interface ToolCall {
-  id?: string;                        // correlates to a ToolResult; optional
-  name: string;                       // exact name matching a ToolDefinition
+  id?: string; // correlates to a ToolResult; optional
+  name: string; // exact name matching a ToolDefinition
   arguments: Record<string, unknown>; // parsed object, not a JSON string
 }
 ```
@@ -257,6 +255,7 @@ interface EmbeddingAdapter {
 ```
 
 **Contract requirements:**
+
 - `result.length` must equal `texts.length`.
 - Every vector in `result` must have the same length (the model's embedding dimension).
 - `model` must be a stable identifier for the model being used — consumers use it to detect when the model changes and an embedding index needs to be rebuilt.
@@ -334,8 +333,14 @@ function scriptedAdapter(steps: Partial<InferenceResponse>[]): InferenceAdapter 
 
 // Usage:
 const adapter = scriptedAdapter([
-  { message: { role: 'assistant', content: '' }, toolCalls: [{ name: 'peek', arguments: { chars: 500 } }] },
-  { message: { role: 'assistant', content: '' }, toolCalls: [{ name: 'final_answer', arguments: { content: 'The answer is 42.' } }] },
+  {
+    message: { role: 'assistant', content: '' },
+    toolCalls: [{ name: 'peek', arguments: { chars: 500 } }],
+  },
+  {
+    message: { role: 'assistant', content: '' },
+    toolCalls: [{ name: 'final_answer', arguments: { content: 'The answer is 42.' } }],
+  },
 ]);
 ```
 
@@ -344,13 +349,15 @@ const adapter = scriptedAdapter([
 Some orchestrators (like `RLMRunner`) call `invoke` without tools when they want a plain-text synthesis response. Detect this in a stub to return the right thing:
 
 ```ts
-import type { InferenceAdapter, InferenceResponse, BaseCompleteOptions, Message } from '@tkottke90/inference-adapter';
+import type {
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
+  Message,
+} from '@tkottke90/inference-adapter';
 
 const smartStub: InferenceAdapter = {
-  async invoke(
-    _messages: Message[],
-    options?: BaseCompleteOptions,
-  ): Promise<InferenceResponse> {
+  async invoke(_messages: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
     const isSynthesisCall = !options?.tools || options.tools.length === 0;
 
     if (isSynthesisCall) {

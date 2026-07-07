@@ -42,10 +42,10 @@ console.log(response.message.content); // "The capital of France is Paris."
 
 ## Documentation
 
-| File | Contents |
-|---|---|
-| [docs/getting-started.md](./docs/getting-started.md) | Key concepts, first inference call, tool calling walkthrough, embeddings |
-| [docs/api-reference.md](./docs/api-reference.md) | Complete reference for all exported types, interfaces, and classes |
+| File                                                 | Contents                                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| [docs/getting-started.md](./docs/getting-started.md) | Key concepts, first inference call, tool calling walkthrough, embeddings  |
+| [docs/api-reference.md](./docs/api-reference.md)     | Complete reference for all exported types, interfaces, and classes        |
 | [docs/custom-adapters.md](./docs/custom-adapters.md) | Writing a custom `InferenceAdapter` or `EmbeddingAdapter` for any backend |
 
 ---

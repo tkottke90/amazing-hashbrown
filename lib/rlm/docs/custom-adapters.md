@@ -31,25 +31,25 @@ interface InferenceAdapter {
 
 **`options`** — optional settings for this call:
 
-| Field | Description |
-|---|---|
-| `tools` | `ToolDefinition[]` — tools to expose to the model. An absent or empty array signals a synthesis call: the model should respond with plain text only, no tool calls. |
-| `schema` | A Zod schema for structured output mode. |
-| `temperature`, `topP`, `maxTokens` | Sampling parameters (see `BaseSamplingParams`). |
+| Field                              | Description                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools`                            | `ToolDefinition[]` — tools to expose to the model. An absent or empty array signals a synthesis call: the model should respond with plain text only, no tool calls. |
+| `schema`                           | A Zod schema for structured output mode.                                                                                                                            |
+| `temperature`, `topP`, `maxTokens` | Sampling parameters (see `BaseSamplingParams`).                                                                                                                     |
 
 **`InferenceResponse`**
 
 ```ts
 interface InferenceResponse {
   message: AssistantMessage; // always role: 'assistant'
-  toolCalls?: ToolCall[];    // present when the model called a tool
-  structured?: unknown;      // present when options.schema was provided
+  toolCalls?: ToolCall[]; // present when the model called a tool
+  structured?: unknown; // present when options.schema was provided
 }
 
 interface AssistantMessage {
   role: 'assistant';
-  content: string;            // the model's text (post-processing applied)
-  toolCalls?: ToolCall[];     // same as InferenceResponse.toolCalls
+  content: string; // the model's text (post-processing applied)
+  toolCalls?: ToolCall[]; // same as InferenceResponse.toolCalls
 }
 ```
 
@@ -201,8 +201,8 @@ The runner passes `options.tools` as an array of `ToolDefinition` objects. What 
 
 ```ts
 interface ToolCall {
-  id?: string;                        // correlates back to a tool result; optional
-  name: string;                       // exact tool name as defined in the tools array
+  id?: string; // correlates back to a tool result; optional
+  name: string; // exact tool name as defined in the tools array
   arguments: Record<string, unknown>; // parsed argument object (not a JSON string)
 }
 ```
@@ -326,13 +326,15 @@ const result = await runner.run('Who leads DataBridge?', corpus);
 The runner calls `invoke` without tools when it needs a plain-text synthesis answer (after hitting `maxIterations`). Detect this in a stub to return the appropriate response:
 
 ```ts
-import type { InferenceAdapter, InferenceResponse, BaseCompleteOptions, Message } from '@tkottke90/rlm';
+import type {
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
+  Message,
+} from '@tkottke90/rlm';
 
 const smartStub: InferenceAdapter = {
-  async invoke(
-    _messages: Message[],
-    options?: BaseCompleteOptions,
-  ): Promise<InferenceResponse> {
+  async invoke(_messages: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
     // Synthesis calls have no tools (or an empty tools array)
     const isSynthesisCall = !options?.tools || options.tools.length === 0;
 

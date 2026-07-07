@@ -4,7 +4,12 @@ All public exports, organized by category. Import everything from the package ro
 
 ```ts
 import { OllamaInferenceAdapter, NullInferenceAdapter } from '@tkottke90/inference-adapter';
-import type { Message, ToolCall, InferenceAdapter, EmbeddingAdapter } from '@tkottke90/inference-adapter';
+import type {
+  Message,
+  ToolCall,
+  InferenceAdapter,
+  EmbeddingAdapter,
+} from '@tkottke90/inference-adapter';
 ```
 
 ---
@@ -17,20 +22,20 @@ The fundamental unit of a conversation. A discriminated union on the `role` fiel
 
 ```ts
 type Message =
-  | { role: 'system';    content: string }
-  | { role: 'user';      content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
-  | { role: 'tool';      results: ToolResult[] };
+  | { role: 'tool'; results: ToolResult[] };
 ```
 
 **Role descriptions:**
 
-| Role | Used by | Fields |
-|---|---|---|
-| `'system'` | Developer | `content` — instructions that shape model behavior throughout the conversation. Always the first message. |
-| `'user'` | App user | `content` — the question or request. |
-| `'assistant'` | Model | `content` — the model's reply. `toolCalls` — present when the model is requesting a tool execution. |
-| `'tool'` | Your code | `results` — an array of tool results, one per tool call in the preceding assistant turn. |
+| Role          | Used by   | Fields                                                                                                    |
+| ------------- | --------- | --------------------------------------------------------------------------------------------------------- |
+| `'system'`    | Developer | `content` — instructions that shape model behavior throughout the conversation. Always the first message. |
+| `'user'`      | App user  | `content` — the question or request.                                                                      |
+| `'assistant'` | Model     | `content` — the model's reply. `toolCalls` — present when the model is requesting a tool execution.       |
+| `'tool'`      | Your code | `results` — an array of tool results, one per tool call in the preceding assistant turn.                  |
 
 **Example conversation history:**
 
@@ -59,8 +64,8 @@ Represents a single function call that the model is requesting your code to exec
 
 ```ts
 interface ToolCall {
-  id?: string;                       // optional; some backends omit it
-  name: string;                      // the tool name, matching a ToolDefinition
+  id?: string; // optional; some backends omit it
+  name: string; // the tool name, matching a ToolDefinition
   arguments: Record<string, unknown>; // parsed argument values, keyed by parameter name
 }
 ```
@@ -75,7 +80,7 @@ The result you return to the model after running a tool.
 
 ```ts
 interface ToolResult {
-  id?: string;   // should match the ToolCall.id this result belongs to
+  id?: string; // should match the ToolCall.id this result belongs to
   content: string; // the result as a plain string
 }
 ```
@@ -130,10 +135,10 @@ interface InferenceAdapter {
 
 **`invoke` parameters:**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `messages` | `Message[]` | The full conversation history, in chronological order. |
-| `options` | `BaseCompleteOptions` | Optional settings: tools, output schema, sampling parameters. |
+| Parameter  | Type                  | Description                                                   |
+| ---------- | --------------------- | ------------------------------------------------------------- |
+| `messages` | `Message[]`           | The full conversation history, in chronological order.        |
+| `options`  | `BaseCompleteOptions` | Optional settings: tools, output schema, sampling parameters. |
 
 **`invoke` return value:** `Promise<InferenceResponse>` — see below.
 
@@ -145,17 +150,17 @@ The object returned by every `invoke` call.
 
 ```ts
 interface InferenceResponse {
-  message: AssistantMessage;  // the model's reply
-  toolCalls?: ToolCall[];     // convenience copy of message.toolCalls
-  structured?: unknown;       // populated when options.schema was provided
+  message: AssistantMessage; // the model's reply
+  toolCalls?: ToolCall[]; // convenience copy of message.toolCalls
+  structured?: unknown; // populated when options.schema was provided
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `message` | `AssistantMessage` | The model's reply. Always `role: 'assistant'`. Access the text via `response.message.content`. |
-| `toolCalls` | `ToolCall[]` (optional) | A convenience copy of `message.toolCalls`. Check either location — they are the same values. |
-| `structured` | `unknown` (optional) | The parsed, schema-validated object when `options.schema` was provided. Cast to the inferred Zod type before use. |
+| Field        | Type                    | Description                                                                                                       |
+| ------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `message`    | `AssistantMessage`      | The model's reply. Always `role: 'assistant'`. Access the text via `response.message.content`.                    |
+| `toolCalls`  | `ToolCall[]` (optional) | A convenience copy of `message.toolCalls`. Check either location — they are the same values.                      |
+| `structured` | `unknown` (optional)    | The parsed, schema-validated object when `options.schema` was provided. Cast to the inferred Zod type before use. |
 
 ---
 
@@ -182,7 +187,7 @@ Options accepted by `InferenceAdapter.invoke`. Extends `BaseSamplingParams`.
 ```ts
 interface BaseCompleteOptions extends BaseSamplingParams {
   tools?: ToolDefinition[]; // tools the model may call
-  schema?: z.ZodType;       // request structured output matching this schema
+  schema?: z.ZodType; // request structured output matching this schema
 }
 ```
 
@@ -212,8 +217,8 @@ These control how the model generates text. All fields are optional — omit the
 ```ts
 interface BaseSamplingParams {
   temperature?: number; // 0.0–2.0; lower = more focused, higher = more creative (default: model default)
-  topP?: number;        // nucleus sampling threshold 0.0–1.0; keeps the smallest set of tokens whose cumulative probability exceeds topP
-  maxTokens?: number;   // stop generating after this many tokens
+  topP?: number; // nucleus sampling threshold 0.0–1.0; keeps the smallest set of tokens whose cumulative probability exceeds topP
+  maxTokens?: number; // stop generating after this many tokens
 }
 ```
 
@@ -245,18 +250,20 @@ The interface for turning text into numeric vectors. Used by sibling packages fo
 
 ```ts
 interface EmbeddingAdapter {
-  readonly model: string;                          // identifies which model produced the embeddings
-  embed(texts: string[]): Promise<number[][]>;     // batch texts → parallel vectors
+  readonly model: string; // identifies which model produced the embeddings
+  embed(texts: string[]): Promise<number[][]>; // batch texts → parallel vectors
 }
 ```
 
 **`embed` contract:**
+
 - Accepts an array of strings (batch for efficiency).
 - Returns a parallel array of float vectors — `result[i]` is the vector for `texts[i]`.
 - All vectors in a batch must have the same length (the "embedding dimension" of the model).
 - The `model` property identifies which model produced the embeddings. Consumers (like `@tkottke90/llm-wiki`) use this to detect when the model has changed and the stored index needs to be rebuilt.
 
 This package defines the `EmbeddingAdapter` interface but does not ship a concrete implementation. See sibling packages:
+
 - `@tkottke90/rlm/adapters` — `OllamaEmbeddingAdapter`
 - `@tkottke90/llm-wiki/providers` — `OllamaEmbeddingProvider`, `OpenAIEmbeddingProvider`, `AnthropicEmbeddingProvider`, `NullEmbeddingProvider`
 
@@ -279,27 +286,27 @@ const adapter = new OllamaInferenceAdapter({
 
 **Constructor options** (`{ model, baseUrl? }`):
 
-| Option | Type | Required | Description |
-|---|---|---|---|
-| `model` | `string` | Yes | Model name as known to Ollama, e.g. `'qwen3:8b'`, `'mistral'`. |
-| `baseUrl` | `string` | No | Ollama server base URL. Defaults to `http://localhost:11434`. |
+| Option    | Type     | Required | Description                                                    |
+| --------- | -------- | -------- | -------------------------------------------------------------- |
+| `model`   | `string` | Yes      | Model name as known to Ollama, e.g. `'qwen3:8b'`, `'mistral'`. |
+| `baseUrl` | `string` | No       | Ollama server base URL. Defaults to `http://localhost:11434`.  |
 
 **Three operating modes** — selected automatically based on `options`:
 
-| When | What happens |
-|---|---|
-| `options.schema` is provided | Structured output mode: calls `model.withStructuredOutput(schema)`. Parsed result in `response.structured`; JSON string in `response.message.content`. |
-| `options.tools` is a non-empty array | Tool calling mode: calls `model.bindTools(tools)`. Tool calls land in `response.toolCalls` (and `response.message.toolCalls`). |
-| Neither | Plain text mode: bare `model.invoke()`. Response text in `response.message.content`. |
+| When                                 | What happens                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `options.schema` is provided         | Structured output mode: calls `model.withStructuredOutput(schema)`. Parsed result in `response.structured`; JSON string in `response.message.content`. |
+| `options.tools` is a non-empty array | Tool calling mode: calls `model.bindTools(tools)`. Tool calls land in `response.toolCalls` (and `response.message.toolCalls`).                         |
+| Neither                              | Plain text mode: bare `model.invoke()`. Response text in `response.message.content`.                                                                   |
 
 **Sampling parameter mapping:**
 
 | `ExtendedCompleteOptions` field | Ollama parameter |
-|---|---|
-| `temperature` | `temperature` |
-| `topP` | `topP` |
-| `topK` | `topK` |
-| `maxTokens` | `numPredict` |
+| ------------------------------- | ---------------- |
+| `temperature`                   | `temperature`    |
+| `topP`                          | `topP`           |
+| `topK`                          | `topK`           |
+| `maxTokens`                     | `numPredict`     |
 
 > **Note:** The `'system'` role in the `Message` union is not currently handled by `OllamaInferenceAdapter`'s internal message converter. System messages passed in the `messages` array will be silently ignored. Use the system prompt as a `ChatOllama` constructor option if you need system-level instructions via this adapter.
 
@@ -319,6 +326,7 @@ const response = await adapter.invoke([{ role: 'user', content: 'anything' }]);
 ```
 
 **Use cases:**
+
 - Unit tests where you only need to verify the calling code, not the model's response.
 - CI pipelines where no LLM is available.
 - Placeholder during development before a real adapter is configured.
@@ -329,19 +337,19 @@ For scripted test responses (the adapter returns different things on each call),
 
 ## Full exports table
 
-| Export | Kind | Description |
-|---|---|---|
-| `Message` | type | Discriminated union of all four message roles. |
-| `ToolCall` | interface | A function call the model is requesting. |
-| `ToolResult` | interface | Your code's response to a `ToolCall`. |
-| `ToolDefinition` | interface | A tool you make available to the model (Zod schema required). |
-| `BaseSamplingParams` | interface | `temperature`, `topP`, `maxTokens`. |
-| `SamplingParamsWithTopK` | interface | Extends `BaseSamplingParams` with `topK`. |
-| `BaseCompleteOptions` | interface | `tools`, `schema`, plus `BaseSamplingParams`. |
-| `ExtendedCompleteOptions` | interface | `tools`, `schema`, plus `SamplingParamsWithTopK`. |
-| `AssistantMessage` | interface | The `role: 'assistant'` variant of `Message`, narrowed for use in `InferenceResponse`. |
-| `InferenceResponse` | interface | The return value of `invoke`. |
-| `InferenceAdapter` | interface | The single-method interface every adapter must implement. |
-| `EmbeddingAdapter` | interface | Interface for text-to-vector embedding backends. |
-| `OllamaInferenceAdapter` | class | Concrete adapter for Ollama inference via LangChain. |
-| `NullInferenceAdapter` | class | No-op stub adapter for tests and CI. |
+| Export                    | Kind      | Description                                                                            |
+| ------------------------- | --------- | -------------------------------------------------------------------------------------- |
+| `Message`                 | type      | Discriminated union of all four message roles.                                         |
+| `ToolCall`                | interface | A function call the model is requesting.                                               |
+| `ToolResult`              | interface | Your code's response to a `ToolCall`.                                                  |
+| `ToolDefinition`          | interface | A tool you make available to the model (Zod schema required).                          |
+| `BaseSamplingParams`      | interface | `temperature`, `topP`, `maxTokens`.                                                    |
+| `SamplingParamsWithTopK`  | interface | Extends `BaseSamplingParams` with `topK`.                                              |
+| `BaseCompleteOptions`     | interface | `tools`, `schema`, plus `BaseSamplingParams`.                                          |
+| `ExtendedCompleteOptions` | interface | `tools`, `schema`, plus `SamplingParamsWithTopK`.                                      |
+| `AssistantMessage`        | interface | The `role: 'assistant'` variant of `Message`, narrowed for use in `InferenceResponse`. |
+| `InferenceResponse`       | interface | The return value of `invoke`.                                                          |
+| `InferenceAdapter`        | interface | The single-method interface every adapter must implement.                              |
+| `EmbeddingAdapter`        | interface | Interface for text-to-vector embedding backends.                                       |
+| `OllamaInferenceAdapter`  | class     | Concrete adapter for Ollama inference via LangChain.                                   |
+| `NullInferenceAdapter`    | class     | No-op stub adapter for tests and CI.                                                   |
