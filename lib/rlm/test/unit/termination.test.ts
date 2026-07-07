@@ -9,7 +9,7 @@ function scriptedAdapter(responses: Partial<ModelResponse>[]): ModelAdapter {
   let i = 0;
   return {
     async complete(): Promise<ModelResponse> {
-      const base: ModelResponse = { content: "", toolCalls: [], durationMs: 0 };
+      const base: ModelResponse = { content: "", rawContent: "", toolCalls: [], durationMs: 0 };
       if (i < responses.length) {
         return { ...base, ...responses[i++] };
       }
@@ -72,9 +72,9 @@ describe("RLMRunner termination paths", () => {
       async complete(_msgs: Message[], tools: Tool[], _cfg: RLMConfig): Promise<ModelResponse> {
         if (tools.length === 0) {
           synthCall = true;
-          return { content: "Synthesized answer.", toolCalls: [], durationMs: 0 };
+          return { content: "Synthesized answer.", rawContent: "Synthesized answer.", toolCalls: [], durationMs: 0 };
         }
-        return { content: "", toolCalls: [{ name: "grep", args: { pattern: "apple" } }], durationMs: 0 };
+        return { content: "", rawContent: "", toolCalls: [{ name: "grep", args: { pattern: "apple" } }], durationMs: 0 };
       },
     };
     const runner = new RLMRunner(adapter, undefined, { ...baseConfig, maxIterations: 3 });

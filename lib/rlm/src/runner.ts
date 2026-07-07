@@ -4,16 +4,19 @@ import type {
   RLMConfig,
   RLMCorpus,
   RLMResult,
+  RLMLogger,
   StatusCallback,
-  StatusSignal,
   Tool,
   ToolCall,
   ToolCallRecord,
   Message,
+  IterationPhase,
+  CorpusMeta,
 } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import { REPLEnvironment, SENTINEL_FINAL, SENTINEL_NOT_FOUND } from "./repl.js";
 import { buildRootSystemPrompt } from "./prompts.js";
+import { TraceBuilder, deriveSourcesUsed, deriveMetrics } from "./trace.js";
 
 const CORE_TOOLS: Tool[] = [
   {
@@ -157,38 +160,36 @@ const PROVENANCE_TOOL: Tool = {
   },
 };
 
-const STATUS_MAP: Record<
-  string,
-  { phase: StatusSignal["phase"]; message: string }
-> = {
-  peek: { phase: "searching", message: "Checking your memory..." },
-  grep: { phase: "searching", message: "Searching your memory..." },
-  search: { phase: "searching", message: "Searching for relevant context..." },
-  slice: { phase: "reading", message: "Reading relevant section..." },
-  summarize: { phase: "summarizing", message: "Reviewing a longer section..." },
-  query: {
-    phase: "querying",
-    message: "Checking a specific part of your memory...",
-  },
-  get_provenance: {
-    phase: "reading",
-    message: "Looking up the source of that...",
-  },
+// Maps each tool name to its iteration phase label and user-facing status message.
+// Both the trace and the StatusCallback derive from this single source.
+const TOOL_DISPLAY: Record<string, { phase: IterationPhase; message: string }> = {
+  peek:          { phase: "orientation", message: "Checking your memory..." },
+  grep:          { phase: "searching",   message: "Searching your memory..." },
+  search:        { phase: "searching",   message: "Searching for relevant context..." },
+  slice:         { phase: "reading",     message: "Reading relevant section..." },
+  summarize:     { phase: "summarizing", message: "Reviewing a longer section..." },
+  query:         { phase: "querying",    message: "Checking a specific part of your memory..." },
+  get_provenance:{ phase: "reading",     message: "Looking up the source of that..." },
+  final_answer:  { phase: "answering",   message: "" },
+  not_found:     { phase: "not_found",   message: "" },
 };
 
 export class RLMRunner {
   private readonly adapter: ModelAdapter;
   private readonly embeddingAdapter: RlmEmbeddingAdapter | null;
   private readonly config: RLMConfig;
+  private readonly logger: RLMLogger | undefined;
 
   constructor(
     adapter: ModelAdapter,
     embeddingAdapter?: RlmEmbeddingAdapter,
-    config?: Partial<RLMConfig>
+    config?: Partial<RLMConfig>,
+    logger?: RLMLogger
   ) {
     this.adapter = adapter;
     this.embeddingAdapter = embeddingAdapter ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.logger = logger;
   }
 
   async run(
@@ -196,13 +197,20 @@ export class RLMRunner {
     corpus: RLMCorpus,
     onStatus?: StatusCallback
   ): Promise<RLMResult> {
-    const startTime = Date.now();
+    const startMs = Date.now();
+    const detail = this.config.traceDetail ?? "full";
+    const tb = new TraceBuilder(detail, this.logger);
 
     const repl = new REPLEnvironment(corpus, this.config, this.adapter);
+    if (this.embeddingAdapter) await repl.buildIndex(this.embeddingAdapter);
 
-    if (this.embeddingAdapter) {
-      await repl.buildIndex(this.embeddingAdapter);
-    }
+    const corpusMeta: CorpusMeta = {
+      source: corpus.source,
+      charCount: repl.charCount,
+      lineCount: repl.lineCount,
+      hasEmbeddings: repl.hasIndex(),
+      hasProvenance: repl.hasProvenance(),
+    };
 
     const tools = this._buildToolList(repl);
     const systemPrompt = buildRootSystemPrompt(
@@ -212,25 +220,33 @@ export class RLMRunner {
       this.config
     );
 
+    tb.runStarted(query, corpusMeta);
+
     const history: Message[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: query },
     ];
 
-    const trace: ToolCallRecord[] = [];
+    const toolCallTrace: ToolCallRecord[] = [];
     let loopDetectionFired = false;
     let terminationReason: RLMResult["terminationReason"] = "max_iterations";
     let answer = "";
     let found = true;
 
-    // Last 2 tool calls for loop detection
     const recentCalls: Array<{ tool: string; args: string }> = [];
     let remainingIterations = this.config.maxIterations;
+    let iteration = 0;
 
     while (remainingIterations > 0) {
       remainingIterations--;
+      iteration++;
 
+      tb.iterationStarted(iteration);
+
+      const modelCorrId = tb.modelRequested(iteration, history);
+      const modelStart = Date.now();
       const response = await this.adapter.complete(history, tools, this.config);
+      tb.modelResponded(modelCorrId, iteration, response, Date.now() - modelStart);
 
       // Plain text response (no tool calls) — treat as final answer
       if (response.toolCalls.length === 0) {
@@ -240,17 +256,14 @@ export class RLMRunner {
       }
 
       const toolCall = response.toolCalls[0]!;
-      const callKey = JSON.stringify({ tool: toolCall.name, args: toolCall.args });
 
       // Loop detection: same tool + same args as previous call
-      if (
-        recentCalls.length >= 1 &&
-        recentCalls[recentCalls.length - 1]?.tool === toolCall.name &&
-        recentCalls[recentCalls.length - 1]?.args ===
-          JSON.stringify(toolCall.args)
-      ) {
+      const prevSig = recentCalls.at(-1);
+      if (prevSig && prevSig.tool === toolCall.name && prevSig.args === JSON.stringify(toolCall.args)) {
         loopDetectionFired = true;
+        const deducted = Math.min(2, remainingIterations);
         remainingIterations = Math.max(0, remainingIterations - 2);
+        tb.loopDetection(iteration, toolCall, deducted);
         history.push({
           role: "user",
           content: `You just called ${toolCall.name} with the same arguments again. Try a different approach — use a different tool, change your search terms, or call final_answer or not_found if you have exhausted your options.`,
@@ -261,77 +274,92 @@ export class RLMRunner {
       recentCalls.push({ tool: toolCall.name, args: JSON.stringify(toolCall.args) });
       if (recentCalls.length > 3) recentCalls.shift();
 
-      // Emit status signal
-      const statusEntry = STATUS_MAP[toolCall.name];
-      if (statusEntry && onStatus) {
-        onStatus({
-          phase: statusEntry.phase,
-          message: statusEntry.message,
-          iteration: this.config.maxIterations - remainingIterations,
-          tool: toolCall.name,
-        });
+      // Emit tool dispatched event and StatusCallback signal — both derived
+      // from the same TOOL_DISPLAY entry to keep them consistent.
+      const display = TOOL_DISPLAY[toolCall.name] ?? { phase: "reading" as IterationPhase, message: "" };
+      const toolCorrId = tb.toolDispatched(iteration, toolCall, display.phase, display.message);
+
+      if (display.message && onStatus) {
+        onStatus({ phase: display.phase, message: display.message, iteration, tool: toolCall.name });
       }
 
-      const callStart = Date.now();
+      const toolStart = Date.now();
       const result = await repl.execute(toolCall);
-      const callDuration = Date.now() - callStart;
+      const toolDuration = Date.now() - toolStart;
 
-      // Check for terminal sentinels before recording — final_answer and
-      // not_found are signaling tools, not retrieval calls, so they're
-      // excluded from the trace.
+      // Check terminal sentinels before recording — final_answer and not_found
+      // are signaling tools, not retrieval calls, so they're excluded from the trace.
       if (result === SENTINEL_NOT_FOUND) {
-        answer = "";
+        tb.toolCompleted(toolCorrId, iteration, toolCall.name, result, toolDuration);
         found = false;
         terminationReason = "not_found_tool";
         break;
       }
 
       if (result.startsWith(SENTINEL_FINAL)) {
+        tb.toolCompleted(toolCorrId, iteration, toolCall.name, result, toolDuration);
         answer = result.slice(SENTINEL_FINAL.length);
         terminationReason = "final_tool";
         break;
       }
 
-      // Record the retrieval call
-      trace.push({
-        iteration: this.config.maxIterations - remainingIterations,
+      tb.toolCompleted(toolCorrId, iteration, toolCall.name, result, toolDuration);
+
+      toolCallTrace.push({
+        iteration,
         tool: toolCall.name,
         args: toolCall.args,
         resultPreview: result.slice(0, 200),
-        durationMs: callDuration,
+        durationMs: toolDuration,
       });
 
-      // Append assistant turn with the tool call
       history.push({
         role: "assistant",
         content: response.content,
         toolCalls: [toolCall],
       });
-
-      // Append tool result
       history.push({
         role: "tool",
         content: result,
         toolName: toolCall.name,
       });
 
-      void callKey;
     }
 
-    // Max iterations failsafe: try to synthesize a best-effort answer
+    // Max iterations failsafe
     if (terminationReason === "max_iterations") {
-      answer = await this._synthesize(history, tools);
+      const synthCorrId = tb.synthesisTriggered();
+      const synthStart = Date.now();
+      const { text, hadToolCallEscape } = await this._synthesize(history, tools);
+      tb.synthesisCompleted(synthCorrId, text, hadToolCallEscape, Date.now() - synthStart);
+      answer = text;
     }
 
-    return {
+    const totalDurationMs = Date.now() - startMs;
+
+    tb.runCompleted(terminationReason, found, iteration, totalDurationMs);
+
+    const events = tb.getEvents();
+    const metrics = deriveMetrics(events, corpusMeta);
+    const sourcesUsed = deriveSourcesUsed(events);
+
+    const result: RLMResult = {
       answer,
       found,
-      iterations: this.config.maxIterations - remainingIterations,
-      toolCallTrace: trace,
+      iterations: iteration,
+      toolCallTrace,
       terminationReason,
       loopDetectionFired,
-      totalDurationMs: Date.now() - startTime,
+      totalDurationMs,
+      events,
+      metrics,
+      sourcesUsed,
     };
+
+    const trace = tb.buildTrace(query, corpusMeta, this.config, systemPrompt, result, startMs);
+    this.logger?.onTrace?.(trace);
+
+    return result;
   }
 
   private _buildToolList(repl: REPLEnvironment): Tool[] {
@@ -345,7 +373,7 @@ export class RLMRunner {
   private async _synthesize(
     history: Message[],
     _tools: Tool[]
-  ): Promise<string> {
+  ): Promise<{ text: string; hadToolCallEscape: boolean }> {
     const synthesis: Message[] = [
       ...history,
       {
@@ -357,8 +385,6 @@ export class RLMRunner {
 
     const response = await this.adapter.complete(synthesis, [], this.config);
 
-    // If the model emitted tool-call syntax despite tools being suppressed,
-    // retry once with an explicit plain-text-only instruction.
     if (response.toolCalls.length > 0 || looksLikeToolCall(response.content)) {
       const retry = await this.adapter.complete(
         [
@@ -372,18 +398,15 @@ export class RLMRunner {
         [],
         this.config
       );
-      const text = retry.content.trim();
-      return text || "[synthesis failed]";
+      const text = retry.content.trim() || "[synthesis failed]";
+      return { text, hadToolCallEscape: true };
     }
 
-    return response.content.trim() || "[synthesis failed]";
+    return { text: response.content.trim() || "[synthesis failed]", hadToolCallEscape: false };
   }
 }
 
 function looksLikeToolCall(text: string): boolean {
   const t = text.trim();
-  return (
-    t.includes("<tool_call>") ||
-    (t.startsWith("[") && t.includes('"name"'))
-  );
+  return t.includes("<tool_call>") || (t.startsWith("[") && t.includes('"name"'));
 }

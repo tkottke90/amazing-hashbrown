@@ -42,7 +42,7 @@ function scripted(steps: Partial<ModelResponse>[]): ModelAdapter {
   let i = 0;
   return {
     async complete(_msgs: Message[], tools: Tool[], _cfg: RLMConfig): Promise<ModelResponse> {
-      const base: ModelResponse = { content: "", toolCalls: [], durationMs: 0 };
+      const base: ModelResponse = { content: "", rawContent: "", toolCalls: [], durationMs: 0 };
       // Synthesis call (tools suppressed)
       if (tools.length === 0) {
         return { ...base, content: "Synthesized best answer." };

@@ -7,7 +7,7 @@ import type { ModelAdapter, ModelResponse, Message, Tool, RLMConfig } from "../.
 // Stub adapter — sub-calls return a fixed string
 const stubAdapter: ModelAdapter = {
   async complete(_messages: Message[], _tools: Tool[], _config: RLMConfig): Promise<ModelResponse> {
-    return { content: "stub sub-call response", toolCalls: [], durationMs: 0 };
+    return { content: "stub sub-call response", rawContent: "stub sub-call response", toolCalls: [], durationMs: 0 };
   },
 };
 

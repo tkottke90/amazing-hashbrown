@@ -24,6 +24,7 @@ export interface ToolCall {
 
 export interface ModelResponse {
   content: string;
+  rawContent: string; // content before any post-processing (think-block stripping, etc.)
   toolCalls: ToolCall[];
   durationMs: number;
 }
@@ -36,6 +37,11 @@ export interface ModelAdapter {
   ): Promise<ModelResponse>;
 }
 
+// "full"    → model_requested events include the complete messages array
+// "compact" → model_requested events include message counts only (no content)
+// "minimal" → events carry only structural metadata; no content fields
+export type TraceDetail = "full" | "compact" | "minimal";
+
 export interface RLMConfig {
   model: string;
   maxIterations: number;
@@ -44,6 +50,7 @@ export interface RLMConfig {
   think?: boolean;
   promptAddendum?: string;
   extraTools?: Tool[];
+  traceDetail?: TraceDetail;
 }
 
 export const DEFAULT_CONFIG: RLMConfig = {
@@ -52,6 +59,7 @@ export const DEFAULT_CONFIG: RLMConfig = {
   maxResultTokens: 2000,
   maxSliceLines: 200,
   think: false,
+  traceDetail: "full",
 };
 
 export type TerminationReason =
@@ -59,6 +67,17 @@ export type TerminationReason =
   | "not_found_tool"
   | "no_tool_call"
   | "max_iterations";
+
+// The phase label derived from which tool the model called in an iteration.
+// Used on ToolDispatchedEvent and on StatusSignal.
+export type IterationPhase =
+  | "orientation" // peek
+  | "searching"   // grep, search
+  | "reading"     // slice, get_provenance
+  | "summarizing" // summarize
+  | "querying"    // query
+  | "answering"   // final_answer, no_tool_call
+  | "not_found";  // not_found
 
 export interface ToolCallRecord {
   iteration: number;
@@ -68,6 +87,138 @@ export interface ToolCallRecord {
   durationMs: number;
 }
 
+// Metadata about the corpus — serializable snapshot, no reference to the live object.
+export interface CorpusMeta {
+  source?: string;
+  charCount: number;
+  lineCount: number;
+  hasEmbeddings: boolean;
+  hasProvenance: boolean;
+}
+
+// A specific line range that was read during the run, used for source attribution.
+export interface SourceRange {
+  tool: "slice" | "summarize" | "query" | "peek";
+  startLine: number;
+  endLine: number;
+  iteration: number;
+}
+
+export interface RLMMetrics {
+  modelCallCount: number;
+  totalModelDurationMs: number;
+  totalToolDurationMs: number;
+  charsRead: number;
+  coverageRatio: number;    // charsRead / corpusMeta.charCount
+  peekFirst: boolean;       // was peek the first retrieval tool called?
+  synthesisTriggered: boolean;
+  toolFrequency: Record<string, number>;
+}
+
+// --------------------------------------------------------------------------
+// Trace event types — discriminated union on `kind`.
+//
+// Matched pairs (model_requested/model_responded, tool_dispatched/tool_completed,
+// synthesis_triggered/synthesis_completed) share a `correlationId` so a UI can
+// link the start and end of each operation without scanning the full event list.
+// --------------------------------------------------------------------------
+
+interface RLMEventBase {
+  eventId: string;
+  timestampMs: number;
+}
+
+export interface RunStartedEvent extends RLMEventBase {
+  kind: "run_started";
+  query: string;
+  corpusMeta: CorpusMeta;
+}
+
+export interface IterationStartedEvent extends RLMEventBase {
+  kind: "iteration_started";
+  iteration: number;
+}
+
+export interface ModelRequestedEvent extends RLMEventBase {
+  kind: "model_requested";
+  correlationId: string;
+  iteration: number;
+  messageCount: number;
+  messages?: Message[]; // present only when traceDetail === "full"
+}
+
+export interface ModelRespondedEvent extends RLMEventBase {
+  kind: "model_responded";
+  correlationId: string;
+  iteration: number;
+  durationMs: number;
+  content: string;      // post-processing (think blocks stripped)
+  rawContent: string;   // verbatim from the wire; present when traceDetail !== "minimal"
+  toolCalls: ToolCall[];
+}
+
+export interface ToolDispatchedEvent extends RLMEventBase {
+  kind: "tool_dispatched";
+  correlationId: string;
+  iteration: number;
+  tool: string;
+  args: Record<string, unknown>;
+  phase: IterationPhase;
+  displayMessage: string; // the user-facing status message for this tool call
+}
+
+export interface ToolCompletedEvent extends RLMEventBase {
+  kind: "tool_completed";
+  correlationId: string;
+  iteration: number;
+  tool: string;
+  durationMs: number;
+  result: string; // full result when traceDetail === "full"; truncated otherwise
+}
+
+export interface LoopDetectionEvent extends RLMEventBase {
+  kind: "loop_detection";
+  iteration: number;
+  tool: string;
+  args: Record<string, unknown>;
+  iterationsDeducted: number;
+}
+
+export interface SynthesisTriggeredEvent extends RLMEventBase {
+  kind: "synthesis_triggered";
+  correlationId: string;
+}
+
+export interface SynthesisCompletedEvent extends RLMEventBase {
+  kind: "synthesis_completed";
+  correlationId: string;
+  durationMs: number;
+  content: string;
+  hadToolCallEscape: boolean; // model emitted tool-call syntax despite tools being suppressed
+}
+
+export interface RunCompletedEvent extends RLMEventBase {
+  kind: "run_completed";
+  durationMs: number;
+  terminationReason: TerminationReason;
+  found: boolean;
+  iterations: number;
+}
+
+export type RLMEvent =
+  | RunStartedEvent
+  | IterationStartedEvent
+  | ModelRequestedEvent
+  | ModelRespondedEvent
+  | ToolDispatchedEvent
+  | ToolCompletedEvent
+  | LoopDetectionEvent
+  | SynthesisTriggeredEvent
+  | SynthesisCompletedEvent
+  | RunCompletedEvent;
+
+// --------------------------------------------------------------------------
+
 export interface RLMResult {
   answer: string;
   found: boolean;
@@ -76,16 +227,38 @@ export interface RLMResult {
   terminationReason: TerminationReason;
   loopDetectionFired: boolean;
   totalDurationMs: number;
+  events: RLMEvent[];
+  metrics: RLMMetrics;
+  sourcesUsed: SourceRange[];
 }
 
+// Self-contained audit record emitted to RLMLogger.onTrace at run completion.
+// Includes everything needed to understand, replay, or render the run without
+// any external context.
+export interface RLMTrace {
+  traceId: string;
+  startedAt: string;   // ISO 8601
+  completedAt: string; // ISO 8601
+  query: string;
+  corpusMeta: CorpusMeta;
+  config: RLMConfig;
+  systemPrompt: string;
+  events: RLMEvent[];
+  result: RLMResult;
+}
+
+// Observability interface — implement to route events to any sink (console,
+// database, OpenTelemetry, Langfuse, etc.). Both methods are optional so
+// callers can implement only what they need.
+export interface RLMLogger {
+  onEvent?(event: RLMEvent): void;
+  onTrace?(trace: RLMTrace): void;
+}
+
+// --------------------------------------------------------------------------
+
 export interface StatusSignal {
-  phase:
-    | "searching"
-    | "reading"
-    | "summarizing"
-    | "querying"
-    | "answering"
-    | "not_found";
+  phase: IterationPhase;
   message: string;
   iteration: number;
   tool?: string;

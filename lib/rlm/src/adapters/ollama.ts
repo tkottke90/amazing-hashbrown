@@ -70,11 +70,13 @@ export class OllamaAdapter implements ModelAdapter {
     const data = raw as OllamaChatResponse;
     const msg = data.message;
 
-    const stripped = stripThinkBlocks(msg.content ?? "");
+    const rawContent = msg.content ?? "";
+    const stripped = stripThinkBlocks(rawContent);
     const toolCalls = extractToolCalls(msg, stripped);
 
     return {
       content: stripped,
+      rawContent,
       toolCalls,
       durationMs: Date.now() - start,
     };
