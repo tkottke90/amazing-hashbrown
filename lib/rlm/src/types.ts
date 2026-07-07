@@ -1,37 +1,16 @@
-export type Role = 'system' | 'user' | 'assistant' | 'tool';
+export type {
+  Message,
+  ToolCall,
+  ToolResult,
+  ToolDefinition,
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
+  ExtendedCompleteOptions,
+  EmbeddingAdapter,
+} from '@tkottke90/inference-adapter';
 
-export interface Message {
-  role: Role;
-  content: string;
-  toolCalls?: ToolCall[];
-  toolName?: string;
-}
-
-export interface Tool {
-  name: string;
-  description: string;
-  parameters: {
-    type: 'object';
-    properties: Record<string, { type: string; description: string }>;
-    required?: string[];
-  };
-}
-
-export interface ToolCall {
-  name: string;
-  args: Record<string, unknown>;
-}
-
-export interface ModelResponse {
-  content: string;
-  rawContent: string; // content before any post-processing (think-block stripping, etc.)
-  toolCalls: ToolCall[];
-  durationMs: number;
-}
-
-export interface ModelAdapter {
-  complete(messages: Message[], tools: Tool[], config: RLMConfig): Promise<ModelResponse>;
-}
+import type { EmbeddingAdapter, ToolDefinition } from '@tkottke90/inference-adapter';
 
 // "full"    → model_requested events include the complete messages array
 // "compact" → model_requested events include message counts only (no content)
@@ -45,7 +24,7 @@ export interface RLMConfig {
   maxSliceLines: number;
   think?: boolean;
   promptAddendum?: string;
-  extraTools?: Tool[];
+  extraTools?: ToolDefinition[];
   traceDetail?: TraceDetail;
 }
 
@@ -136,7 +115,7 @@ export interface ModelRequestedEvent extends RLMEventBase {
   correlationId: string;
   iteration: number;
   messageCount: number;
-  messages?: Message[]; // present only when traceDetail === "full"
+  messages?: import('@tkottke90/inference-adapter').Message[];
 }
 
 export interface ModelRespondedEvent extends RLMEventBase {
@@ -145,8 +124,8 @@ export interface ModelRespondedEvent extends RLMEventBase {
   iteration: number;
   durationMs: number;
   content: string; // post-processing (think blocks stripped)
-  rawContent: string; // verbatim from the wire; present when traceDetail !== "minimal"
-  toolCalls: ToolCall[];
+  rawContent?: string; // verbatim from the wire; only available when adapter exposes it
+  toolCalls: import('@tkottke90/inference-adapter').ToolCall[];
 }
 
 export interface ToolDispatchedEvent extends RLMEventBase {
@@ -258,11 +237,8 @@ export interface StatusSignal {
 
 export type StatusCallback = (signal: StatusSignal) => void;
 
-export interface RlmEmbeddingAdapter {
-  embed(texts: string[]): Promise<number[][]>;
-}
-
-export class NoOpEmbeddingAdapter implements RlmEmbeddingAdapter {
+export class NoOpEmbeddingAdapter implements EmbeddingAdapter {
+  readonly model: string = 'none';
   async embed(_texts: string[]): Promise<number[][]> {
     return [];
   }

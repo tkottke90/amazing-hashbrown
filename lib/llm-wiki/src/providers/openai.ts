@@ -1,4 +1,4 @@
-import type { EmbeddingProvider } from '../types.js';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 
 export interface OpenAIEmbeddingOptions {
   apiKey?: string;
@@ -12,7 +12,7 @@ export interface OpenAIEmbeddingOptions {
  * Embedding provider using the OpenAI embeddings API.
  * Requires the `openai` package to be installed.
  */
-export class OpenAIEmbeddingProvider implements EmbeddingProvider {
+export class OpenAIEmbeddingProvider implements EmbeddingAdapter {
   readonly model: string;
   private readonly apiKey?: string;
   private readonly baseURL?: string;

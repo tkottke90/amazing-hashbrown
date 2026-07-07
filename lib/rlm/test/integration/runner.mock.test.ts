@@ -2,11 +2,10 @@ import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { RLMRunner } from '../../src/runner.js';
 import type {
-  ModelAdapter,
-  ModelResponse,
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
   Message,
-  Tool,
-  RLMConfig,
   RLMCorpus,
 } from '../../src/types.js';
 
@@ -45,17 +44,17 @@ const baseConfig = {
   think: false,
 };
 
-function scripted(steps: Partial<ModelResponse>[]): ModelAdapter {
+function scripted(steps: Partial<InferenceResponse>[]): InferenceAdapter {
   let i = 0;
   return {
-    async complete(_msgs: Message[], tools: Tool[], _cfg: RLMConfig): Promise<ModelResponse> {
-      const base: ModelResponse = { content: '', rawContent: '', toolCalls: [], durationMs: 0 };
+    async invoke(_msgs: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
+      const base: InferenceResponse = { message: { role: 'assistant', content: '' } };
       // Synthesis call (tools suppressed)
-      if (tools.length === 0) {
-        return { ...base, content: 'Synthesized best answer.' };
+      if (!options?.tools || options.tools.length === 0) {
+        return { ...base, message: { role: 'assistant', content: 'Synthesized best answer.' } };
       }
       if (i < steps.length) return { ...base, ...steps[i++] };
-      return { ...base, content: 'Fallback answer.' };
+      return { ...base, message: { role: 'assistant', content: 'Fallback answer.' } };
     },
   };
 }
@@ -63,14 +62,14 @@ function scripted(steps: Partial<ModelResponse>[]): ModelAdapter {
 describe('RLMRunner — mock integration', () => {
   it('realistic query: peek then grep then slice then final_answer', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 500 } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Marcus' } }] },
-      { toolCalls: [{ name: 'slice', args: { startLine: 5, endLine: 7 } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 500 } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Marcus' } }] },
+      { toolCalls: [{ name: 'slice', arguments: { startLine: 5, endLine: 7 } }] },
       {
         toolCalls: [
           {
             name: 'final_answer',
-            args: { content: 'Marcus Delacroix is the lead on DataBridge.' },
+            arguments: { content: 'Marcus Delacroix is the lead on DataBridge.' },
           },
         ],
       },
@@ -87,13 +86,13 @@ describe('RLMRunner — mock integration', () => {
 
   it('not_found path: model searches and gives up honestly', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 500 } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'purple unicorn' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 500 } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'purple unicorn' } }] },
       {
         toolCalls: [
           {
             name: 'not_found',
-            args: { searched: 'purple unicorn — no matches in peek or grep' },
+            arguments: { searched: 'purple unicorn — no matches in peek or grep' },
           },
         ],
       },
@@ -108,24 +107,24 @@ describe('RLMRunner — mock integration', () => {
 
   it('summarize path for a large region', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 200 } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 200 } }] },
       {
-        toolCalls: [{ name: 'summarize', args: { startLine: 1, endLine: 20, focus: 'Q4' } }],
+        toolCalls: [{ name: 'summarize', arguments: { startLine: 1, endLine: 20, focus: 'Q4' } }],
       },
       {
         toolCalls: [
           {
             name: 'final_answer',
-            args: { content: 'The Q4 timeline ends Dec 15.' },
+            arguments: { content: 'The Q4 timeline ends Dec 15.' },
           },
         ],
       },
     ]);
 
     // Stub the sub-adapter for summarize
-    const subStub: ModelAdapter = {
-      async complete(): Promise<ModelResponse> {
-        return { content: 'Q4 milestones must land before Dec 15.', toolCalls: [], durationMs: 0 };
+    const subStub: InferenceAdapter = {
+      async invoke(): Promise<InferenceResponse> {
+        return { message: { role: 'assistant', content: 'Q4 milestones must land before Dec 15.' } };
       },
     };
 
@@ -141,7 +140,7 @@ describe('RLMRunner — mock integration', () => {
 
   it('tracks totalDurationMs as a positive number', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'final_answer', args: { content: 'quick' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'quick' } }] },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     const result = await runner.run('Fast query.', corpus);
@@ -151,9 +150,9 @@ describe('RLMRunner — mock integration', () => {
 
   it('provides iteration count', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 100 } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Sofia' } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Sofia Martel.' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 100 } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Sofia' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Sofia Martel.' } }] },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     const result = await runner.run('Who is Sofia?', corpus);

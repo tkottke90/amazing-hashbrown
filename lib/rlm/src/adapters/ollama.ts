@@ -1,17 +1,12 @@
-// NOTE: OllamaAdapter and OllamaEmbeddingAdapter are bundled here as a
-// convenience. A future @tkottke90/adapters package should provide a
-// common adapter interface and implementations shared between @tkottke90/rlm
-// and @tkottke90/llm-wiki, eliminating the current EmbeddingProvider /
-// RlmEmbeddingAdapter split and any other duplicated adapter code.
-
+import { z } from 'zod';
 import type {
-  ModelAdapter,
-  ModelResponse,
+  InferenceAdapter,
+  EmbeddingAdapter,
+  ExtendedCompleteOptions,
+  InferenceResponse,
   Message,
-  Tool,
   ToolCall,
-  RLMConfig,
-  RlmEmbeddingAdapter,
+  ToolDefinition,
 } from '../types.js';
 
 // --------------------------------------------------------------------------
@@ -38,9 +33,9 @@ interface OllamaChatResponse {
   message: OllamaChatMessage;
 }
 
-export class OllamaAdapter implements ModelAdapter {
+export class OllamaAdapter implements InferenceAdapter {
   private readonly baseUrl: string;
-  private readonly model: string;
+  readonly model: string;
   private readonly think: boolean;
   private readonly retryOn5xx: boolean;
 
@@ -51,14 +46,19 @@ export class OllamaAdapter implements ModelAdapter {
     this.retryOn5xx = opts.retryOn5xx ?? true;
   }
 
-  async complete(messages: Message[], tools: Tool[], _config: RLMConfig): Promise<ModelResponse> {
-    const start = Date.now();
+  async invoke(messages: Message[], options?: ExtendedCompleteOptions): Promise<InferenceResponse> {
+    const tools = options?.tools ?? [];
     const body = {
       model: this.model,
       messages: messages.map(toOllamaMessage),
       tools: tools.length > 0 ? tools.map(toOllamaTool) : undefined,
       stream: false,
-      options: {},
+      options: {
+        temperature: options?.temperature,
+        top_p: options?.topP,
+        top_k: options?.topK,
+        num_predict: options?.maxTokens,
+      },
       chat_template_kwargs: { enable_thinking: this.think },
     };
 
@@ -71,10 +71,8 @@ export class OllamaAdapter implements ModelAdapter {
     const toolCalls = extractToolCalls(msg, stripped);
 
     return {
-      content: stripped,
-      rawContent,
-      toolCalls,
-      durationMs: Date.now() - start,
+      message: { role: 'assistant', content: stripped },
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }
 
@@ -115,9 +113,9 @@ interface OllamaEmbedResponse {
   embeddings: number[][];
 }
 
-export class OllamaEmbeddingAdapter implements RlmEmbeddingAdapter {
+export class OllamaEmbeddingAdapter implements EmbeddingAdapter {
+  readonly model: string;
   private readonly baseUrl: string;
-  private readonly model: string;
 
   constructor(opts: { baseUrl: string; model: string }) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
@@ -144,23 +142,25 @@ export class OllamaEmbeddingAdapter implements RlmEmbeddingAdapter {
 // --------------------------------------------------------------------------
 
 function toOllamaMessage(m: Message): Record<string, unknown> {
+  if (m.role === 'tool') {
+    return { role: 'tool', content: m.results.map((r) => r.content).join('\n') };
+  }
   const base: Record<string, unknown> = { role: m.role, content: m.content };
-  if (m.toolCalls && m.toolCalls.length > 0) {
+  if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
     base['tool_calls'] = m.toolCalls.map((tc) => ({
-      function: { name: tc.name, arguments: tc.args },
+      function: { name: tc.name, arguments: tc.arguments },
     }));
   }
-  if (m.toolName) base['name'] = m.toolName;
   return base;
 }
 
-function toOllamaTool(tool: Tool): Record<string, unknown> {
+function toOllamaTool(tool: ToolDefinition): Record<string, unknown> {
   return {
     type: 'function',
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.parameters,
+      parameters: z.toJSONSchema(tool.parameters),
     },
   };
 }
@@ -176,15 +176,17 @@ function stripThinkBlocks(text: string): string {
 function extractToolCalls(msg: OllamaChatMessage, strippedContent: string): ToolCall[] {
   // Format 1: native structured
   if (msg.tool_calls && msg.tool_calls.length > 0) {
-    return msg.tool_calls.map((tc) => ({
+    return msg.tool_calls.map((tc, i) => ({
+      id: `tc_${i}`,
       name: tc.function.name,
-      args: tc.function.arguments ?? {},
+      arguments: tc.function.arguments ?? {},
     }));
   }
 
   // Format 2: <tool_call>{...}</tool_call>
   const xmlMatches = strippedContent.matchAll(/<tool_call>([\s\S]*?)<\/tool_call>/g);
   const xmlCalls: ToolCall[] = [];
+  let xmlIdx = 0;
   for (const match of xmlMatches) {
     try {
       const parsed = JSON.parse(match[1] ?? '') as {
@@ -192,7 +194,7 @@ function extractToolCalls(msg: OllamaChatMessage, strippedContent: string): Tool
         arguments?: Record<string, unknown>;
       };
       if (parsed.name) {
-        xmlCalls.push({ name: parsed.name, args: parsed.arguments ?? {} });
+        xmlCalls.push({ id: `tc_${xmlIdx++}`, name: parsed.name, arguments: parsed.arguments ?? {} });
       }
     } catch {
       // malformed — skip
@@ -211,7 +213,7 @@ function extractToolCalls(msg: OllamaChatMessage, strippedContent: string): Tool
       if (Array.isArray(arr) && arr.length > 0 && arr[0]?.name) {
         return arr
           .filter((tc) => tc.name)
-          .map((tc) => ({ name: tc.name!, args: tc.arguments ?? {} }));
+          .map((tc, i) => ({ id: `tc_${i}`, name: tc.name!, arguments: tc.arguments ?? {} }));
       }
     } catch {
       // not valid JSON

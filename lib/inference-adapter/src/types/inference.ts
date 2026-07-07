@@ -14,8 +14,14 @@ export interface ExtendedCompleteOptions extends SamplingParamsWithTopK {
   schema?: z.ZodType;
 }
 
+export interface AssistantMessage {
+  role: 'assistant';
+  content: string;
+  toolCalls?: ToolCall[];
+}
+
 export interface InferenceResponse {
-  message: Message;
+  message: AssistantMessage;
   toolCalls?: ToolCall[];
   structured?: unknown;
 }

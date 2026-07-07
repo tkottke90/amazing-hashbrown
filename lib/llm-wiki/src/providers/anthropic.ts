@@ -1,4 +1,4 @@
-import type { EmbeddingProvider } from '../types.js';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 
 export interface AnthropicEmbeddingOptions {
   apiKey?: string;
@@ -10,7 +10,7 @@ export interface AnthropicEmbeddingOptions {
  * Embedding provider using Voyage AI (Anthropic's embedding service).
  * Requires the `voyageai` package to be installed.
  */
-export class AnthropicEmbeddingProvider implements EmbeddingProvider {
+export class AnthropicEmbeddingProvider implements EmbeddingAdapter {
   readonly model: string;
   private readonly apiKey?: string;
 
@@ -21,7 +21,7 @@ export class AnthropicEmbeddingProvider implements EmbeddingProvider {
 
   async embed(texts: string[]): Promise<number[][]> {
     let VoyageAIClient: new (opts: { apiKey?: string }) => {
-      embed(req: unknown): Promise<{ data: { data?: { embedding?: number[] }[] } }>;
+      embed(req: unknown): Promise<{ data?: { embedding?: number[] }[] }>;
     };
     try {
       const mod = await import('voyageai');

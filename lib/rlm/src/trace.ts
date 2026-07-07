@@ -8,14 +8,12 @@ import type {
   SourceRange,
   CorpusMeta,
   IterationPhase,
-  Message,
-  ToolCall,
-  ModelResponse,
   TerminationReason,
   TraceDetail,
   ToolDispatchedEvent,
   ToolCompletedEvent,
 } from './types.js';
+import type { Message, ToolCall, InferenceResponse } from '@tkottke90/inference-adapter';
 
 // --------------------------------------------------------------------------
 // Internal helpers
@@ -90,7 +88,7 @@ export class TraceBuilder {
   modelResponded(
     correlationId: string,
     iteration: number,
-    response: ModelResponse,
+    response: InferenceResponse,
     durationMs: number,
   ): void {
     this.emit({
@@ -100,9 +98,8 @@ export class TraceBuilder {
       correlationId,
       iteration,
       durationMs,
-      content: response.content,
-      rawContent: this.detail !== 'minimal' ? response.rawContent : '',
-      toolCalls: response.toolCalls,
+      content: response.message.content,
+      toolCalls: response.toolCalls ?? [],
     });
   }
 
@@ -121,7 +118,7 @@ export class TraceBuilder {
       correlationId,
       iteration,
       tool: toolCall.name,
-      args: toolCall.args,
+      args: toolCall.arguments,
       phase,
       displayMessage,
     });
@@ -161,7 +158,7 @@ export class TraceBuilder {
       timestampMs: now(),
       iteration,
       tool: toolCall.name,
-      args: toolCall.args,
+      args: toolCall.arguments,
       iterationsDeducted,
     });
   }

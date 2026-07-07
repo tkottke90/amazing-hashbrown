@@ -2,25 +2,24 @@ import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { RLMRunner } from '../../src/runner.js';
 import type {
-  ModelAdapter,
-  ModelResponse,
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
   Message,
-  Tool,
-  RLMConfig,
   RLMCorpus,
 } from '../../src/types.js';
 
 // Scripted adapter: returns responses from a queue in order.
 // Once the queue is exhausted, returns a plain-text fallback.
-function scriptedAdapter(responses: Partial<ModelResponse>[]): ModelAdapter {
+function scriptedAdapter(responses: Partial<InferenceResponse>[]): InferenceAdapter {
   let i = 0;
   return {
-    async complete(): Promise<ModelResponse> {
-      const base: ModelResponse = { content: '', rawContent: '', toolCalls: [], durationMs: 0 };
+    async invoke(): Promise<InferenceResponse> {
+      const base: InferenceResponse = { message: { role: 'assistant', content: '' } };
       if (i < responses.length) {
         return { ...base, ...responses[i++] };
       }
-      return { ...base, content: 'fallback answer' };
+      return { ...base, message: { role: 'assistant', content: 'fallback answer' } };
     },
   };
 }
@@ -42,7 +41,7 @@ describe('RLMRunner termination paths', () => {
   it('exits via final_tool when model calls final_answer', async () => {
     const adapter = scriptedAdapter([
       {
-        toolCalls: [{ name: 'final_answer', args: { content: 'The answer is banana.' } }],
+        toolCalls: [{ name: 'final_answer', arguments: { content: 'The answer is banana.' } }],
       },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -55,7 +54,7 @@ describe('RLMRunner termination paths', () => {
   it('exits via not_found_tool when model calls not_found', async () => {
     const adapter = scriptedAdapter([
       {
-        toolCalls: [{ name: 'not_found', args: { searched: 'purple unicorn' } }],
+        toolCalls: [{ name: 'not_found', arguments: { searched: 'purple unicorn' } }],
       },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -65,7 +64,7 @@ describe('RLMRunner termination paths', () => {
   });
 
   it('exits via no_tool_call when model responds with plain text', async () => {
-    const adapter = scriptedAdapter([{ content: 'Direct plain text answer.', toolCalls: [] }]);
+    const adapter = scriptedAdapter([{ message: { role: 'assistant', content: 'Direct plain text answer.' } }]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     const result = await runner.run('Quick question?', corpus);
     expect(result.terminationReason).to.equal('no_tool_call');
@@ -75,22 +74,16 @@ describe('RLMRunner termination paths', () => {
   it('exits via max_iterations and synthesizes', async () => {
     // Model always calls grep (will loop), then synthesis returns plain text
     let synthCall = false;
-    const adapter: ModelAdapter = {
-      async complete(_msgs: Message[], tools: Tool[], _cfg: RLMConfig): Promise<ModelResponse> {
-        if (tools.length === 0) {
+    const adapter: InferenceAdapter = {
+      async invoke(_msgs: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
+        // Synthesis call omits tools
+        if (!options?.tools || options.tools.length === 0) {
           synthCall = true;
-          return {
-            content: 'Synthesized answer.',
-            rawContent: 'Synthesized answer.',
-            toolCalls: [],
-            durationMs: 0,
-          };
+          return { message: { role: 'assistant', content: 'Synthesized answer.' } };
         }
         return {
-          content: '',
-          rawContent: '',
-          toolCalls: [{ name: 'grep', args: { pattern: 'apple' } }],
-          durationMs: 0,
+          message: { role: 'assistant', content: '' },
+          toolCalls: [{ name: 'grep', arguments: { pattern: 'apple' } }],
         };
       },
     };
@@ -104,9 +97,9 @@ describe('RLMRunner termination paths', () => {
   it('detects a repeated tool call and fires loop detection', async () => {
     // Same grep call twice in a row, then final_answer
     const adapter = scriptedAdapter([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'apple' } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'apple' } }] }, // duplicate
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Found it.' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'apple' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'apple' } }] }, // duplicate
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Found it.' } }] },
     ]);
     const runner = new RLMRunner(adapter, undefined, { ...baseConfig, maxIterations: 10 });
     const result = await runner.run('Find apple.', corpus);
@@ -115,8 +108,8 @@ describe('RLMRunner termination paths', () => {
 
   it('records tool calls in the trace', async () => {
     const adapter = scriptedAdapter([
-      { toolCalls: [{ name: 'peek', args: { chars: 100 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Done.' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 100 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Done.' } }] },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     const result = await runner.run('What is this?', corpus);
@@ -127,8 +120,8 @@ describe('RLMRunner termination paths', () => {
   it('emits status signals via onStatus callback', async () => {
     const signals: string[] = [];
     const adapter = scriptedAdapter([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'banana' } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'banana' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'banana' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'banana' } }] },
     ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     await runner.run('Find banana.', corpus, (s) => signals.push(s.phase));

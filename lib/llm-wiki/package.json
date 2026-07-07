@@ -24,7 +24,7 @@
     "test": "mocha"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.110.0",
+    "@tkottke90/inference-adapter": "*",
     "gray-matter": "4.0.3",
     "openai": "6.45.0",
     "voyageai": "0.4.0",

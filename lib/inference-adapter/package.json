@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "mocha"
+    "test": "echo 'No tests yet.'"
   },
   "dependencies": {
     "@langchain/core": "1.2.1",

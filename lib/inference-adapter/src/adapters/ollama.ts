@@ -19,7 +19,7 @@ function toLangChainMessages(messages: Message[]): BaseMessage[] {
       result.push(new AIMessage(msg.content));
     } else if (msg.role === 'tool') {
       for (const r of msg.results) {
-        result.push(new ToolMessage({ content: r.content, tool_call_id: r.id }));
+        result.push(new ToolMessage({ content: r.content, tool_call_id: r.id ?? '' }));
       }
     }
   }
