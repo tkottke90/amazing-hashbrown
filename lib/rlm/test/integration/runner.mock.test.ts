@@ -124,7 +124,9 @@ describe('RLMRunner — mock integration', () => {
     // Stub the sub-adapter for summarize
     const subStub: InferenceAdapter = {
       async invoke(): Promise<InferenceResponse> {
-        return { message: { role: 'assistant', content: 'Q4 milestones must land before Dec 15.' } };
+        return {
+          message: { role: 'assistant', content: 'Q4 milestones must land before Dec 15.' },
+        };
       },
     };
 

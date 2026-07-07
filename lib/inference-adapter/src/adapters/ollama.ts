@@ -2,7 +2,11 @@ import { ChatOllama } from '@langchain/ollama';
 import { HumanMessage, AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import type { Message, ToolCall } from '../types/message.js';
-import type { ExtendedCompleteOptions, InferenceAdapter, InferenceResponse } from '../types/inference.js';
+import type {
+  ExtendedCompleteOptions,
+  InferenceAdapter,
+  InferenceResponse,
+} from '../types/inference.js';
 import type { ToolDefinition } from '../types/tool.js';
 
 interface OllamaAdapterConfig {
@@ -71,14 +75,20 @@ export class OllamaInferenceAdapter implements InferenceAdapter {
         arguments: tc.args as Record<string, unknown>,
       }));
       return {
-        message: { role: 'assistant', content: typeof response.content === 'string' ? response.content : '' },
+        message: {
+          role: 'assistant',
+          content: typeof response.content === 'string' ? response.content : '',
+        },
         toolCalls,
       };
     }
 
     const response = await model.invoke(langchainMessages);
     return {
-      message: { role: 'assistant', content: typeof response.content === 'string' ? response.content : '' },
+      message: {
+        role: 'assistant',
+        content: typeof response.content === 'string' ? response.content : '',
+      },
     };
   }
 }

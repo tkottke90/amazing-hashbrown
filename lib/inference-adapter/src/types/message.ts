@@ -10,7 +10,7 @@ export interface ToolResult {
 }
 
 export type Message =
-  | { role: 'system';    content: string }
-  | { role: 'user';      content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
-  | { role: 'tool';      results: ToolResult[] };
+  | { role: 'tool'; results: ToolResult[] };

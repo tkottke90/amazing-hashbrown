@@ -100,7 +100,10 @@ describe('REPLEnvironment', () => {
     it('rejects ranges exceeding maxSliceLines', async () => {
       const manyLines = Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\n');
       const bigRepl = makeRepl(manyLines);
-      const result = await bigRepl.execute({ name: 'slice', arguments: { startLine: 1, endLine: 300 } });
+      const result = await bigRepl.execute({
+        name: 'slice',
+        arguments: { startLine: 1, endLine: 300 },
+      });
       expect(result).to.include('limit');
       expect(result).to.include('summarize');
     });
@@ -108,7 +111,10 @@ describe('REPLEnvironment', () => {
 
   describe('summarize', () => {
     it('returns sub-adapter output', async () => {
-      const result = await repl.execute({ name: 'summarize', arguments: { startLine: 1, endLine: 3 } });
+      const result = await repl.execute({
+        name: 'summarize',
+        arguments: { startLine: 1, endLine: 3 },
+      });
       expect(result).to.equal('stub sub-call response');
     });
   });

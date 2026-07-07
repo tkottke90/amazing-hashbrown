@@ -64,7 +64,9 @@ describe('RLMRunner termination paths', () => {
   });
 
   it('exits via no_tool_call when model responds with plain text', async () => {
-    const adapter = scriptedAdapter([{ message: { role: 'assistant', content: 'Direct plain text answer.' } }]);
+    const adapter = scriptedAdapter([
+      { message: { role: 'assistant', content: 'Direct plain text answer.' } },
+    ]);
     const runner = new RLMRunner(adapter, undefined, baseConfig);
     const result = await runner.run('Quick question?', corpus);
     expect(result.terminationReason).to.equal('no_tool_call');

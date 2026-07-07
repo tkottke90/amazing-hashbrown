@@ -194,7 +194,11 @@ function extractToolCalls(msg: OllamaChatMessage, strippedContent: string): Tool
         arguments?: Record<string, unknown>;
       };
       if (parsed.name) {
-        xmlCalls.push({ id: `tc_${xmlIdx++}`, name: parsed.name, arguments: parsed.arguments ?? {} });
+        xmlCalls.push({
+          id: `tc_${xmlIdx++}`,
+          name: parsed.name,
+          arguments: parsed.arguments ?? {},
+        });
       }
     } catch {
       // malformed — skip

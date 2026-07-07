@@ -101,9 +101,7 @@ const PROVENANCE_TOOL: ToolDefinition = {
   description:
     'Look up the original source of a fact: which document it came from, its type, when it was written, and how old it is.',
   parameters: z.object({
-    fact: z
-      .string()
-      .describe('The fact or claim to look up (as close to verbatim as possible)'),
+    fact: z.string().describe('The fact or claim to look up (as close to verbatim as possible)'),
   }),
 };
 
@@ -350,7 +348,10 @@ export class RLMRunner {
       return { text, hadToolCallEscape: true };
     }
 
-    return { text: response.message.content.trim() || '[synthesis failed]', hadToolCallEscape: false };
+    return {
+      text: response.message.content.trim() || '[synthesis failed]',
+      hadToolCallEscape: false,
+    };
   }
 }
 
