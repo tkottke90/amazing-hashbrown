@@ -22,7 +22,7 @@ This library handles the **mechanical side** of maintaining that wiki — the bo
 - **Cross-links** pages: inserts `[[wikilink]]` entries under a `## Related Pages` section.
 - **Lints** wiki health across 12 checks (broken links, orphans, stale pages, source drift, frontmatter validity, and more).
 - **Builds a graph** of nodes and edges derived from wikilinks, contradictions, and source references — suitable for D3 force-graph and similar renderers.
-- **Searches semantically** using hybrid BM25 + embedding ranking with a pluggable `EmbeddingProvider` — or keyword-only when no provider is configured.
+- **Searches semantically** using hybrid BM25 + embedding ranking with a pluggable `EmbeddingAdapter` — or keyword-only when no provider is configured.
 
 ## What this library does NOT do
 
@@ -313,18 +313,20 @@ new OllamaEmbeddingProvider();
 new OllamaEmbeddingProvider({ baseUrl: 'http://my-host:11434/v1', model: 'mxbai-embed-large' });
 ```
 
-You can also implement `EmbeddingProvider` directly for any other backend:
+You can also implement `EmbeddingAdapter` directly for any other backend:
 
 ```ts
-import type { EmbeddingProvider } from '@tkottke90/llm-wiki/providers';
+import type { EmbeddingAdapter } from '@tkottke90/llm-wiki/providers';
 
-class MyProvider implements EmbeddingProvider {
+class MyProvider implements EmbeddingAdapter {
   readonly model = 'my-model-v1';
   async embed(texts: string[]): Promise<number[][]> {
     /* ... */
   }
 }
 ```
+
+> **Note:** `EmbeddingProvider` is a deprecated alias for `EmbeddingAdapter` that still works but will be removed in a future release. Use `EmbeddingAdapter` in new code.
 
 ---
 
