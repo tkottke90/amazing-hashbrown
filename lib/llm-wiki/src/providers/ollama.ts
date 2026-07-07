@@ -1,5 +1,5 @@
 import { OpenAIEmbeddingProvider } from './openai.js';
-import type { EmbeddingProvider } from '../types.js';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 
 export interface OllamaEmbeddingOptions {
   /** Ollama server base URL. Default: 'http://localhost:11434/v1'. */
@@ -12,7 +12,7 @@ export interface OllamaEmbeddingOptions {
  * Embedding provider using a local Ollama instance via its OpenAI-compatible API.
  * Requires the `openai` package to be installed and Ollama running locally.
  */
-export class OllamaEmbeddingProvider implements EmbeddingProvider {
+export class OllamaEmbeddingProvider implements EmbeddingAdapter {
   private readonly inner: OpenAIEmbeddingProvider;
 
   constructor(opts: OllamaEmbeddingOptions = {}) {

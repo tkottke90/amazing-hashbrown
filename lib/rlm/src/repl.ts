@@ -1,4 +1,5 @@
-import type { ToolCall, RLMConfig, ModelAdapter, RlmEmbeddingAdapter, RLMCorpus } from './types.js';
+import type { ToolCall, RLMConfig, RLMCorpus } from './types.js';
+import type { InferenceAdapter, EmbeddingAdapter } from '@tkottke90/inference-adapter';
 import { CorpusIndex } from './search.js';
 import { buildSubCallPrompt } from './prompts.js';
 
@@ -9,16 +10,16 @@ export const SENTINEL_NOT_FOUND = '__rlm_not_found__';
 export class REPLEnvironment {
   private readonly lines: string[];
   private index: CorpusIndex | null = null;
-  private embeddingAdapter: RlmEmbeddingAdapter | null = null;
+  private embeddingAdapter: EmbeddingAdapter | null = null;
   private readonly corpus: RLMCorpus;
   private readonly config: RLMConfig;
-  private readonly subAdapter: ModelAdapter;
+  private readonly subAdapter: InferenceAdapter;
 
   readonly charCount: number;
   readonly lineCount: number;
   readonly source: string | undefined;
 
-  constructor(corpus: RLMCorpus, config: RLMConfig, subAdapter: ModelAdapter) {
+  constructor(corpus: RLMCorpus, config: RLMConfig, subAdapter: InferenceAdapter) {
     this.corpus = corpus;
     this.config = config;
     this.subAdapter = subAdapter;
@@ -28,7 +29,7 @@ export class REPLEnvironment {
     this.source = corpus.source;
   }
 
-  async buildIndex(adapter: RlmEmbeddingAdapter): Promise<void> {
+  async buildIndex(adapter: EmbeddingAdapter): Promise<void> {
     this.embeddingAdapter = adapter;
     this.index = await CorpusIndex.build(this.lines, adapter);
   }
@@ -44,23 +45,23 @@ export class REPLEnvironment {
   async execute(call: ToolCall): Promise<string> {
     switch (call.name) {
       case 'peek':
-        return this._peek(call.args);
+        return this._peek(call.arguments);
       case 'grep':
-        return this._grep(call.args);
+        return this._grep(call.arguments);
       case 'slice':
-        return this._slice(call.args);
+        return this._slice(call.arguments);
       case 'summarize':
-        return await this._summarize(call.args);
+        return await this._summarize(call.arguments);
       case 'query':
-        return await this._query(call.args);
+        return await this._query(call.arguments);
       case 'search':
-        return await this._search(call.args);
+        return await this._search(call.arguments);
       case 'get_provenance':
-        return await this._getProvenance(call.args);
+        return await this._getProvenance(call.arguments);
       case 'not_found':
         return SENTINEL_NOT_FOUND;
       case 'final_answer':
-        return SENTINEL_FINAL + ((call.args['content'] as string) ?? '');
+        return SENTINEL_FINAL + ((call.arguments['content'] as string) ?? '');
       default:
         return `Unknown tool: "${call.name}". Available tools: peek, grep, slice, summarize, query, search, not_found, final_answer.`;
     }
@@ -131,16 +132,12 @@ export class REPLEnvironment {
     const chunk = this.lines.slice(startLine - 1, endLine).join('\n');
 
     const systemPrompt = buildSubCallPrompt('summarize', focus);
-    const response = await this.subAdapter.complete(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: chunk },
-      ],
-      [],
-      this.config,
-    );
+    const response = await this.subAdapter.invoke([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: chunk },
+    ]);
 
-    return response.content;
+    return response.message.content;
   }
 
   private async _query(args: Record<string, unknown>): Promise<string> {
@@ -151,16 +148,12 @@ export class REPLEnvironment {
     const chunk = this.lines.slice(startLine - 1, endLine).join('\n');
 
     const systemPrompt = buildSubCallPrompt('query', question);
-    const response = await this.subAdapter.complete(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: chunk },
-      ],
-      [],
-      this.config,
-    );
+    const response = await this.subAdapter.invoke([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: chunk },
+    ]);
 
-    return response.content;
+    return response.message.content;
   }
 
   private async _search(args: Record<string, unknown>): Promise<string> {

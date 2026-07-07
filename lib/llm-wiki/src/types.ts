@@ -194,11 +194,9 @@ export interface GraphResult {
   edges: GraphEdge[];
 }
 
-/** Contract for any embedding backend. Implement this to add a custom provider. */
-export interface EmbeddingProvider {
-  readonly model: string;
-  embed(texts: string[]): Promise<number[][]>;
-}
+export type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
+/** @deprecated Use EmbeddingAdapter from @tkottke90/inference-adapter instead. */
+export type { EmbeddingAdapter as EmbeddingProvider } from '@tkottke90/inference-adapter';
 
 /** A search result with a relevance score. Returned by {@link LlmWiki.semanticSearch}. */
 export interface RankedResult {

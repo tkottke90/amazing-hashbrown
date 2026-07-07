@@ -209,4 +209,4 @@ Terminal tools (`final_answer`, `not_found`) do not fire a `StatusSignal`.
 
 - **[api-reference.md](./api-reference.md)** — complete reference for all public classes, interfaces, functions, and the nine REPL tools
 - **[observability.md](./observability.md)** — event stream, `RLMLogger`, `formatTrace`, and how to build a live-updating UI from `correlationId` pairs
-- **[custom-adapters.md](./custom-adapters.md)** — implementing `ModelAdapter` and `RlmEmbeddingAdapter` for any LLM backend (OpenAI-compatible APIs, Anthropic, vLLM, etc.)
+- **[custom-adapters.md](./custom-adapters.md)** — implementing `InferenceAdapter` and `EmbeddingAdapter` for any LLM backend (OpenAI-compatible APIs, Anthropic, vLLM, etc.)

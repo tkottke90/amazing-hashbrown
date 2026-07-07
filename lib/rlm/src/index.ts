@@ -7,13 +7,21 @@ export { NoOpEmbeddingAdapter } from './types.js';
 // Utilities
 export { formatTrace, deriveSourcesUsed, deriveMetrics } from './trace.js';
 
-// Types
+// Types from @tkottke90/inference-adapter (re-exported for consumers)
 export type {
-  Role,
   Message,
-  Tool,
   ToolCall,
-  ModelResponse,
+  ToolResult,
+  ToolDefinition,
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
+  ExtendedCompleteOptions,
+  EmbeddingAdapter,
+} from './types.js';
+
+// RLM-specific types
+export type {
   RLMConfig,
   RLMResult,
   RLMCorpus,
@@ -35,8 +43,6 @@ export type {
   ToolCallRecord,
   StatusSignal,
   StatusCallback,
-  ModelAdapter,
-  RlmEmbeddingAdapter,
   ProvenanceEntry,
   CorpusMeta,
   SourceRange,

@@ -1,14 +1,15 @@
+import { z } from 'zod';
 import type {
-  ModelAdapter,
-  RlmEmbeddingAdapter,
+  InferenceAdapter,
+  EmbeddingAdapter,
+  ToolDefinition,
+  Message,
   RLMConfig,
   RLMCorpus,
   RLMResult,
   RLMLogger,
   StatusCallback,
-  Tool,
   ToolCallRecord,
-  Message,
   IterationPhase,
   CorpusMeta,
 } from './types.js';
@@ -17,145 +18,91 @@ import { REPLEnvironment, SENTINEL_FINAL, SENTINEL_NOT_FOUND } from './repl.js';
 import { buildRootSystemPrompt } from './prompts.js';
 import { TraceBuilder, deriveSourcesUsed, deriveMetrics } from './trace.js';
 
-const CORE_TOOLS: Tool[] = [
+const CORE_TOOLS: ToolDefinition[] = [
   {
     name: 'peek',
     description:
       'Read the first N characters of the document. Use this first to understand structure and vocabulary.',
-    parameters: {
-      type: 'object',
-      properties: {
-        chars: {
-          type: 'number',
-          description: 'Number of characters to read (default 2000)',
-        },
-      },
-      required: [],
-    },
+    parameters: z.object({
+      chars: z.number().optional().describe('Number of characters to read (default 2000)'),
+    }),
   },
   {
     name: 'grep',
     description:
       'Search the document for a regex pattern. Returns matching lines with their line numbers.',
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: { type: 'string', description: 'Regex pattern to search for' },
-        maxResults: {
-          type: 'number',
-          description: 'Maximum number of results (default 50)',
-        },
-      },
-      required: ['pattern'],
-    },
+    parameters: z.object({
+      pattern: z.string().describe('Regex pattern to search for'),
+      maxResults: z.number().optional().describe('Maximum number of results (default 50)'),
+    }),
   },
   {
     name: 'slice',
     description:
       'Read a specific line range from the document. Hard limit applies — use summarize for large ranges.',
-    parameters: {
-      type: 'object',
-      properties: {
-        startLine: { type: 'number', description: 'First line to read (1-indexed)' },
-        endLine: { type: 'number', description: 'Last line to read (inclusive)' },
-      },
-      required: ['startLine', 'endLine'],
-    },
+    parameters: z.object({
+      startLine: z.number().describe('First line to read (1-indexed)'),
+      endLine: z.number().describe('Last line to read (inclusive)'),
+    }),
   },
   {
     name: 'summarize',
     description:
       'Distill a section that is too large to slice. The summary is scoped to the given range only — a NOT FOUND result means absent from that range, not from the full document.',
-    parameters: {
-      type: 'object',
-      properties: {
-        startLine: { type: 'number', description: 'First line of the range' },
-        endLine: { type: 'number', description: 'Last line of the range' },
-        focus: {
-          type: 'string',
-          description: 'Optional topic or question to focus the summary on',
-        },
-      },
-      required: ['startLine', 'endLine'],
-    },
+    parameters: z.object({
+      startLine: z.number().describe('First line of the range'),
+      endLine: z.number().describe('Last line of the range'),
+      focus: z.string().optional().describe('Optional topic or question to focus the summary on'),
+    }),
   },
   {
     name: 'query',
     description:
       'Ask a specific question about a line range. Returns NOT FOUND IN THIS RANGE if the answer is absent from that range.',
-    parameters: {
-      type: 'object',
-      properties: {
-        question: { type: 'string', description: 'The question to answer' },
-        startLine: { type: 'number', description: 'First line of the range' },
-        endLine: { type: 'number', description: 'Last line of the range' },
-      },
-      required: ['question', 'startLine', 'endLine'],
-    },
+    parameters: z.object({
+      question: z.string().describe('The question to answer'),
+      startLine: z.number().describe('First line of the range'),
+      endLine: z.number().describe('Last line of the range'),
+    }),
   },
   {
     name: 'not_found',
     description:
       'Call this when you have exhausted your search and the answer is not in the document. Describe what you searched for.',
-    parameters: {
-      type: 'object',
-      properties: {
-        searched: {
-          type: 'string',
-          description: 'Description of what was searched',
-        },
-      },
-      required: ['searched'],
-    },
+    parameters: z.object({
+      searched: z.string().describe('Description of what was searched'),
+    }),
   },
   {
     name: 'final_answer',
     description: 'Call this when you have found the answer. Provide your complete response.',
-    parameters: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'Your complete answer' },
-      },
-      required: ['content'],
-    },
+    parameters: z.object({
+      content: z.string().describe('Your complete answer'),
+    }),
   },
 ];
 
-const SEARCH_TOOL: Tool = {
+const SEARCH_TOOL: ToolDefinition = {
   name: 'search',
   description:
     'Semantic search by meaning — finds passages even when wording differs from the query. Returns candidate regions with line numbers. Always read (slice) a result before answering from it.',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description:
-          "Plain-language description of what the passage would say, not the question's exact wording",
-      },
-      topK: {
-        type: 'number',
-        description: 'Number of results to return (default 5)',
-      },
-    },
-    required: ['query'],
-  },
+  parameters: z.object({
+    query: z
+      .string()
+      .describe(
+        "Plain-language description of what the passage would say, not the question's exact wording",
+      ),
+    topK: z.number().optional().describe('Number of results to return (default 5)'),
+  }),
 };
 
-const PROVENANCE_TOOL: Tool = {
+const PROVENANCE_TOOL: ToolDefinition = {
   name: 'get_provenance',
   description:
     'Look up the original source of a fact: which document it came from, its type, when it was written, and how old it is.',
-  parameters: {
-    type: 'object',
-    properties: {
-      fact: {
-        type: 'string',
-        description: 'The fact or claim to look up (as close to verbatim as possible)',
-      },
-    },
-    required: ['fact'],
-  },
+  parameters: z.object({
+    fact: z.string().describe('The fact or claim to look up (as close to verbatim as possible)'),
+  }),
 };
 
 // Maps each tool name to its iteration phase label and user-facing status message.
@@ -173,14 +120,14 @@ const TOOL_DISPLAY: Record<string, { phase: IterationPhase; message: string }> =
 };
 
 export class RLMRunner {
-  private readonly adapter: ModelAdapter;
-  private readonly embeddingAdapter: RlmEmbeddingAdapter | null;
+  private readonly adapter: InferenceAdapter;
+  private readonly embeddingAdapter: EmbeddingAdapter | null;
   private readonly config: RLMConfig;
   private readonly logger: RLMLogger | undefined;
 
   constructor(
-    adapter: ModelAdapter,
-    embeddingAdapter?: RlmEmbeddingAdapter,
+    adapter: InferenceAdapter,
+    embeddingAdapter?: EmbeddingAdapter,
     config?: Partial<RLMConfig>,
     logger?: RLMLogger,
   ) {
@@ -239,24 +186,24 @@ export class RLMRunner {
 
       const modelCorrId = tb.modelRequested(iteration, history);
       const modelStart = Date.now();
-      const response = await this.adapter.complete(history, tools, this.config);
+      const response = await this.adapter.invoke(history, { tools });
       tb.modelResponded(modelCorrId, iteration, response, Date.now() - modelStart);
 
       // Plain text response (no tool calls) — treat as final answer
-      if (response.toolCalls.length === 0) {
-        answer = response.content;
+      if ((response.toolCalls ?? []).length === 0) {
+        answer = response.message.content;
         terminationReason = 'no_tool_call';
         break;
       }
 
-      const toolCall = response.toolCalls[0]!;
+      const toolCall = response.toolCalls![0]!;
 
       // Loop detection: same tool + same args as previous call
       const prevSig = recentCalls.at(-1);
       if (
         prevSig &&
         prevSig.tool === toolCall.name &&
-        prevSig.args === JSON.stringify(toolCall.args)
+        prevSig.args === JSON.stringify(toolCall.arguments)
       ) {
         loopDetectionFired = true;
         const deducted = Math.min(2, remainingIterations);
@@ -269,7 +216,7 @@ export class RLMRunner {
         continue;
       }
 
-      recentCalls.push({ tool: toolCall.name, args: JSON.stringify(toolCall.args) });
+      recentCalls.push({ tool: toolCall.name, args: JSON.stringify(toolCall.arguments) });
       if (recentCalls.length > 3) recentCalls.shift();
 
       // Emit tool dispatched event and StatusCallback signal — both derived
@@ -314,20 +261,19 @@ export class RLMRunner {
       toolCallTrace.push({
         iteration,
         tool: toolCall.name,
-        args: toolCall.args,
+        args: toolCall.arguments,
         resultPreview: result.slice(0, 200),
         durationMs: toolDuration,
       });
 
       history.push({
         role: 'assistant',
-        content: response.content,
+        content: response.message.content,
         toolCalls: [toolCall],
       });
       history.push({
         role: 'tool',
-        content: result,
-        toolName: toolCall.name,
+        results: [{ id: toolCall.id, content: result }],
       });
     }
 
@@ -335,7 +281,7 @@ export class RLMRunner {
     if (terminationReason === 'max_iterations') {
       const synthCorrId = tb.synthesisTriggered();
       const synthStart = Date.now();
-      const { text, hadToolCallEscape } = await this._synthesize(history, tools);
+      const { text, hadToolCallEscape } = await this._synthesize(history);
       tb.synthesisCompleted(synthCorrId, text, hadToolCallEscape, Date.now() - synthStart);
       answer = text;
     }
@@ -367,7 +313,7 @@ export class RLMRunner {
     return result;
   }
 
-  private _buildToolList(repl: REPLEnvironment): Tool[] {
+  private _buildToolList(repl: REPLEnvironment): ToolDefinition[] {
     const list = [...CORE_TOOLS];
     if (repl.hasIndex()) list.push(SEARCH_TOOL);
     if (repl.hasProvenance()) list.push(PROVENANCE_TOOL);
@@ -377,7 +323,6 @@ export class RLMRunner {
 
   private async _synthesize(
     history: Message[],
-    _tools: Tool[],
   ): Promise<{ text: string; hadToolCallEscape: boolean }> {
     const synthesis: Message[] = [
       ...history,
@@ -388,26 +333,25 @@ export class RLMRunner {
       },
     ];
 
-    const response = await this.adapter.complete(synthesis, [], this.config);
+    const response = await this.adapter.invoke(synthesis);
 
-    if (response.toolCalls.length > 0 || looksLikeToolCall(response.content)) {
-      const retry = await this.adapter.complete(
-        [
-          ...synthesis,
-          {
-            role: 'user',
-            content:
-              'Plain text only. Do not call any tools. Write your answer as a single paragraph.',
-          },
-        ],
-        [],
-        this.config,
-      );
-      const text = retry.content.trim() || '[synthesis failed]';
+    if ((response.toolCalls?.length ?? 0) > 0 || looksLikeToolCall(response.message.content)) {
+      const retry = await this.adapter.invoke([
+        ...synthesis,
+        {
+          role: 'user',
+          content:
+            'Plain text only. Do not call any tools. Write your answer as a single paragraph.',
+        },
+      ]);
+      const text = retry.message.content.trim() || '[synthesis failed]';
       return { text, hadToolCallEscape: true };
     }
 
-    return { text: response.content.trim() || '[synthesis failed]', hadToolCallEscape: false };
+    return {
+      text: response.message.content.trim() || '[synthesis failed]',
+      hadToolCallEscape: false,
+    };
   }
 }
 

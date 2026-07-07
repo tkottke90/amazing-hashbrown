@@ -19,12 +19,14 @@ const result = await runner.run(query, corpus, onStatus);
 
 **Constructor parameters**
 
-| Parameter          | Type                  | Required | Description                                                                            |
-| ------------------ | --------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `adapter`          | `ModelAdapter`        | Yes      | LLM inference backend. Implement this interface or use `OllamaAdapter`.                |
-| `embeddingAdapter` | `RlmEmbeddingAdapter` | No       | If provided, adds the `search` tool to the model's tool set. Pass `undefined` to omit. |
-| `config`           | `Partial<RLMConfig>`  | No       | Overrides for any `DEFAULT_CONFIG` fields.                                             |
-| `logger`           | `RLMLogger`           | No       | Receives real-time events and/or the completed trace.                                  |
+| Parameter          | Type                 | Required | Description                                                                            |
+| ------------------ | -------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `adapter`          | `InferenceAdapter`   | Yes      | LLM inference backend. Implement this interface or use `OllamaAdapter`.                |
+| `embeddingAdapter` | `EmbeddingAdapter`   | No       | If provided, adds the `search` tool to the model's tool set. Pass `undefined` to omit. |
+| `config`           | `Partial<RLMConfig>` | No       | Overrides for any `DEFAULT_CONFIG` fields.                                             |
+| `logger`           | `RLMLogger`          | No       | Receives real-time events and/or the completed trace.                                  |
+
+Both `InferenceAdapter` and `EmbeddingAdapter` are defined in `@tkottke90/inference-adapter` and re-exported from this package. See the [inference-adapter docs](../../inference-adapter/docs/api-reference.md) for the full interface specification.
 
 **`run(query, corpus, onStatus?)`**
 
@@ -42,16 +44,16 @@ Returns `Promise<RLMResult>`.
 
 Configuration for the retrieval loop. Pass a partial object to `RLMRunner` — unset fields use `DEFAULT_CONFIG` values.
 
-| Field             | Type          | Default      | Description                                                                                                                                                                                                        |
-| ----------------- | ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`           | `string`      | `'qwen3:8b'` | Model identifier passed to the adapter. Must match the model name known to your backend.                                                                                                                           |
-| `maxIterations`   | `number`      | `10`         | Maximum number of model calls before the synthesis fallback fires.                                                                                                                                                 |
-| `maxResultTokens` | `number`      | `2000`       | Passed to the adapter; hints the max response length.                                                                                                                                                              |
-| `maxSliceLines`   | `number`      | `200`        | Hard cap on `slice` line range. Over-cap requests receive an error message that steers the model to `summarize`.                                                                                                   |
-| `think`           | `boolean`     | `false`      | Enable thinking mode (e.g. `enable_thinking` for Qwen3). **Strongly recommended to keep `false`** — thinking mode doubles median latency with no quality gain for retrieval tasks and can exceed gateway timeouts. |
-| `promptAddendum`  | `string`      | —            | Extra text appended to the system prompt. Use to add domain-specific instructions.                                                                                                                                 |
-| `extraTools`      | `Tool[]`      | —            | Additional tools to expose to the model alongside the built-in REPL tools.                                                                                                                                         |
-| `traceDetail`     | `TraceDetail` | `'full'`     | Controls how much content is stored in trace events. See [observability.md](./observability.md).                                                                                                                   |
+| Field             | Type               | Default      | Description                                                                                                                                                                                                        |
+| ----------------- | ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model`           | `string`           | `'qwen3:8b'` | Model identifier passed to the adapter. Must match the model name known to your backend.                                                                                                                           |
+| `maxIterations`   | `number`           | `10`         | Maximum number of model calls before the synthesis fallback fires.                                                                                                                                                 |
+| `maxResultTokens` | `number`           | `2000`       | Passed to the adapter; hints the max response length.                                                                                                                                                              |
+| `maxSliceLines`   | `number`           | `200`        | Hard cap on `slice` line range. Over-cap requests receive an error message that steers the model to `summarize`.                                                                                                   |
+| `think`           | `boolean`          | `false`      | Enable thinking mode (e.g. `enable_thinking` for Qwen3). **Strongly recommended to keep `false`** — thinking mode doubles median latency with no quality gain for retrieval tasks and can exceed gateway timeouts. |
+| `promptAddendum`  | `string`           | —            | Extra text appended to the system prompt. Use to add domain-specific instructions.                                                                                                                                 |
+| `extraTools`      | `ToolDefinition[]` | —            | Additional tools to expose to the model alongside the built-in REPL tools.                                                                                                                                         |
+| `traceDetail`     | `TraceDetail`      | `'full'`     | Controls how much content is stored in trace events. See [observability.md](./observability.md).                                                                                                                   |
 
 **`DEFAULT_CONFIG`**
 
@@ -114,7 +116,7 @@ interface ToolCallRecord {
 
 | Field                  | Type                     | Description                                                                       |
 | ---------------------- | ------------------------ | --------------------------------------------------------------------------------- |
-| `modelCallCount`       | `number`                 | Total `complete()` calls made to the adapter.                                     |
+| `modelCallCount`       | `number`                 | Total `invoke()` calls made to the adapter.                                       |
 | `totalModelDurationMs` | `number`                 | Cumulative model call time.                                                       |
 | `totalToolDurationMs`  | `number`                 | Cumulative tool execution time.                                                   |
 | `charsRead`            | `number`                 | Estimated characters actually returned by read tools.                             |
@@ -138,48 +140,51 @@ Intermediate tools (`grep`, `search`) are excluded from `sourcesUsed` — they r
 
 ---
 
-### `ModelAdapter`
+### `InferenceAdapter`
 
 The inference seam. Implement this interface to connect any LLM backend.
 
 ```ts
-interface ModelAdapter {
-  complete(messages: Message[], tools: Tool[], config: RLMConfig): Promise<ModelResponse>;
+interface InferenceAdapter {
+  invoke(messages: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse>;
 }
 ```
 
-| Parameter  | Description                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `messages` | Conversation history in order: system, user, then alternating assistant/tool turns.                 |
-| `tools`    | JSON Schema tool definitions to expose to the model. Empty array means "no tools" (synthesis call). |
-| `config`   | The runner's config, including `model`, `maxResultTokens`, `think`.                                 |
+| Parameter  | Description                                                                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `messages` | Conversation history in order: system, user, then alternating assistant/tool turns.                                                                                                                                |
+| `options`  | Optional: `tools` (expose to the model), `schema` (structured output), and sampling parameters. When `tools` is absent or empty, the model is expected to respond with plain text only (used for synthesis calls). |
 
-**`ModelResponse`**
+**`InferenceResponse`**
 
 ```ts
-interface ModelResponse {
-  content: string; // post-processed text (think blocks stripped, if applicable)
-  rawContent: string; // verbatim text from the wire, before any stripping
-  toolCalls: ToolCall[]; // parsed tool calls; empty if model responded with plain text
-  durationMs: number; // elapsed time for the completion call
+interface InferenceResponse {
+  message: AssistantMessage; // the model's reply; always role: 'assistant'
+  toolCalls?: ToolCall[]; // convenience copy of message.toolCalls
+  structured?: unknown; // populated when options.schema was provided
 }
 ```
 
-See [custom-adapters.md](./custom-adapters.md) for a full implementation guide.
+Access the model's text via `response.message.content`. Check `response.toolCalls` (or `response.message.toolCalls`) to see if the model called a tool.
+
+See [`@tkottke90/inference-adapter` docs](../../inference-adapter/docs/custom-adapters.md) for a full implementation guide.
 
 ---
 
-### `RlmEmbeddingAdapter`
+### `EmbeddingAdapter`
 
 Optional. Implement to enable semantic `search`.
 
 ```ts
-interface RlmEmbeddingAdapter {
+interface EmbeddingAdapter {
+  readonly model: string;
   embed(texts: string[]): Promise<number[][]>;
 }
 ```
 
-`embed` receives an array of text strings and must return a parallel array of embedding vectors (floating-point arrays of equal length). See [custom-adapters.md](./custom-adapters.md).
+`embed` receives an array of text strings and must return a parallel array of embedding vectors (floating-point arrays of equal length). The `model` field identifies which model produced the vectors; the runner uses it to detect when the index needs rebuilding.
+
+See [`@tkottke90/inference-adapter` docs](../../inference-adapter/docs/custom-adapters.md#implementing-embeddingadapter) for a full implementation guide.
 
 ---
 
@@ -301,7 +306,6 @@ Computes the full `RLMMetrics` object from a raw event array. Called automatical
 | `TerminationReason` | `'final_tool' \| 'not_found_tool' \| 'no_tool_call' \| 'max_iterations'`                                 |
 | `IterationPhase`    | `'orientation' \| 'searching' \| 'reading' \| 'summarizing' \| 'querying' \| 'answering' \| 'not_found'` |
 | `TraceDetail`       | `'full' \| 'compact' \| 'minimal'`                                                                       |
-| `Role`              | `'system' \| 'user' \| 'assistant' \| 'tool'`                                                            |
 | `StatusCallback`    | `(signal: StatusSignal) => void`                                                                         |
 | `RLMEvent`          | Discriminated union of all ten event interfaces.                                                         |
 
@@ -329,7 +333,7 @@ These tools are exposed to the model automatically. You do not call them directl
 
 ### `OllamaAdapter`
 
-Implements `ModelAdapter` for the [Ollama](https://ollama.com) local server. Handles three observed tool-call wire formats automatically.
+Implements `InferenceAdapter` for the [Ollama](https://ollama.com) local server using direct HTTP calls to Ollama's `/api/chat` endpoint. Handles three observed tool-call wire formats automatically.
 
 ```ts
 import { OllamaAdapter } from '@tkottke90/rlm/adapters';
@@ -360,13 +364,13 @@ const adapter = new OllamaAdapter({
 
 **Think-block stripping**
 
-`<think>...</think>` blocks are stripped from `content` automatically. The original wire content is preserved in `rawContent`.
+`<think>...</think>` blocks are stripped from the response content automatically.
 
 ---
 
 ### `OllamaEmbeddingAdapter`
 
-Implements `RlmEmbeddingAdapter` using Ollama's `/api/embed` endpoint.
+Implements `EmbeddingAdapter` using Ollama's `/api/embed` endpoint.
 
 ```ts
 import { OllamaEmbeddingAdapter } from '@tkottke90/rlm/adapters';

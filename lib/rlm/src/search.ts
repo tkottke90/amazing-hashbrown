@@ -1,4 +1,4 @@
-import type { RlmEmbeddingAdapter } from './types.js';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 
 interface IndexedChunk {
   text: string;
@@ -13,7 +13,7 @@ const CHUNK_OVERLAP = 5;
 export class CorpusIndex {
   private chunks: IndexedChunk[] = [];
 
-  static async build(lines: string[], adapter: RlmEmbeddingAdapter): Promise<CorpusIndex> {
+  static async build(lines: string[], adapter: EmbeddingAdapter): Promise<CorpusIndex> {
     const index = new CorpusIndex();
     const windows: Array<{ text: string; startLine: number; endLine: number }> = [];
 

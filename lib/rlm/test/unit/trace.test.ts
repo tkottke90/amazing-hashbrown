@@ -3,10 +3,10 @@ import { expect } from 'chai';
 import { RLMRunner } from '../../src/runner.js';
 import { formatTrace, deriveSourcesUsed, deriveMetrics } from '../../src/trace.js';
 import type {
-  ModelAdapter,
-  ModelResponse,
+  InferenceAdapter,
+  InferenceResponse,
+  BaseCompleteOptions,
   Message,
-  Tool,
   RLMConfig,
   RLMCorpus,
   RLMEvent,
@@ -15,17 +15,18 @@ import type {
   CorpusMeta,
 } from '../../src/types.js';
 
-function base(): ModelResponse {
-  return { content: '', rawContent: '', toolCalls: [], durationMs: 10 };
+function base(): InferenceResponse {
+  return { message: { role: 'assistant', content: '' } };
 }
 
-function scripted(steps: Partial<ModelResponse>[]): ModelAdapter {
+function scripted(steps: Partial<InferenceResponse>[]): InferenceAdapter {
   let i = 0;
   return {
-    async complete(_m: Message[], tools: Tool[], _c: RLMConfig): Promise<ModelResponse> {
-      if (tools.length === 0) return { ...base(), content: 'Synthesized.' };
+    async invoke(_m: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
+      if (!options?.tools || options.tools.length === 0)
+        return { message: { role: 'assistant', content: 'Synthesized.' } };
       if (i < steps.length) return { ...base(), ...steps[i++] };
-      return { ...base(), content: 'Fallback.' };
+      return { message: { role: 'assistant', content: 'Fallback.' } };
     },
   };
 }
@@ -67,8 +68,8 @@ describe('RLMLogger', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 100 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice.' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 100 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice.' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -91,7 +92,7 @@ describe('RLMLogger', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Done.' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Done.' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -111,7 +112,9 @@ describe('RLMLogger', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
     await runner.run('test', corpus);
@@ -132,8 +135,8 @@ describe('RLMLogger', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Alice' } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice.' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Alice' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice.' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -162,7 +165,9 @@ describe('RLMLogger', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(
       adapter,
@@ -187,7 +192,9 @@ describe('RLMLogger', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(
       adapter,
@@ -211,8 +218,8 @@ describe('RLMLogger', () => {
 describe('RLMResult derived fields', () => {
   it('events array is populated on the result', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 50 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'done' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 50 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'done' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -225,8 +232,8 @@ describe('RLMResult derived fields', () => {
 
   it('metrics.peekFirst is true when peek was first tool called', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 100 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 100 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -237,8 +244,8 @@ describe('RLMResult derived fields', () => {
 
   it('metrics.peekFirst is false when grep was first tool called', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Alice' } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Alice' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -249,10 +256,10 @@ describe('RLMResult derived fields', () => {
 
   it('metrics.toolFrequency counts each retrieval tool', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Alice' } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Bob' } }] },
-      { toolCalls: [{ name: 'slice', args: { startLine: 1, endLine: 3 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Alice' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Bob' } }] },
+      { toolCalls: [{ name: 'slice', arguments: { startLine: 1, endLine: 3 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -264,10 +271,14 @@ describe('RLMResult derived fields', () => {
   });
 
   it('metrics.synthesisTriggered is true when max_iterations fires', async () => {
-    const adapter: ModelAdapter = {
-      async complete(_m: Message[], tools: Tool[], _c: RLMConfig): Promise<ModelResponse> {
-        if (tools.length === 0) return { ...base(), content: 'Synthesized.' };
-        return { ...base(), toolCalls: [{ name: 'grep', args: { pattern: 'x' } }] };
+    const adapter: InferenceAdapter = {
+      async invoke(_m: Message[], options?: BaseCompleteOptions): Promise<InferenceResponse> {
+        if (!options?.tools || options.tools.length === 0)
+          return { message: { role: 'assistant', content: 'Synthesized.' } };
+        return {
+          message: { role: 'assistant', content: '' },
+          toolCalls: [{ name: 'grep', arguments: { pattern: 'x' } }],
+        };
       },
     };
 
@@ -280,8 +291,8 @@ describe('RLMResult derived fields', () => {
 
   it('sourcesUsed includes slice calls', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'slice', args: { startLine: 3, endLine: 5 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice is lead.' } }] },
+      { toolCalls: [{ name: 'slice', arguments: { startLine: 3, endLine: 5 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice is lead.' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -295,8 +306,8 @@ describe('RLMResult derived fields', () => {
 
   it('sourcesUsed includes peek calls', async () => {
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 120 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 120 } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig);
@@ -421,7 +432,6 @@ describe('deriveMetrics', () => {
         iteration: 1,
         durationMs: 300,
         content: '',
-        rawContent: '',
         toolCalls: [],
       },
       {
@@ -432,7 +442,6 @@ describe('deriveMetrics', () => {
         iteration: 2,
         durationMs: 250,
         content: '',
-        rawContent: '',
         toolCalls: [],
       },
     ];
@@ -496,9 +505,11 @@ describe('formatTrace', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Alice' } }] },
-      { toolCalls: [{ name: 'slice', args: { startLine: 4, endLine: 5 } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice is the project lead.' } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Alice' } }] },
+      { toolCalls: [{ name: 'slice', arguments: { startLine: 4, endLine: 5 } }] },
+      {
+        toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice is the project lead.' } }],
+      },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -516,7 +527,9 @@ describe('formatTrace', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
     await runner.run('What is the meaning of life?', corpus);
@@ -533,7 +546,9 @@ describe('formatTrace', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
     await runner.run('test', corpus);
@@ -551,9 +566,9 @@ describe('formatTrace', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'peek', args: { chars: 200 } }] },
-      { toolCalls: [{ name: 'grep', args: { pattern: 'Alice' } }] },
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice leads.' } }] },
+      { toolCalls: [{ name: 'peek', arguments: { chars: 200 } }] },
+      { toolCalls: [{ name: 'grep', arguments: { pattern: 'Alice' } }] },
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice leads.' } }] },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -575,7 +590,9 @@ describe('formatTrace', () => {
     };
 
     const adapter = scripted([
-      { toolCalls: [{ name: 'final_answer', args: { content: 'Alice is the project lead.' } }] },
+      {
+        toolCalls: [{ name: 'final_answer', arguments: { content: 'Alice is the project lead.' } }],
+      },
     ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
@@ -593,7 +610,9 @@ describe('formatTrace', () => {
       },
     };
 
-    const adapter = scripted([{ toolCalls: [{ name: 'final_answer', args: { content: 'ok' } }] }]);
+    const adapter = scripted([
+      { toolCalls: [{ name: 'final_answer', arguments: { content: 'ok' } }] },
+    ]);
 
     const runner = new RLMRunner(adapter, undefined, baseConfig, logger);
     await runner.run('test', corpus);

@@ -29,6 +29,7 @@ describe('CorpusIndex', () => {
     // Fake adapter: chunk i gets a one-hot vector at position i % FAKE_DIM
     let chunkIndex = 0;
     const fakeAdapter = {
+      model: 'test' as const,
       async embed(texts: string[]): Promise<number[][]> {
         return texts.map(() => makeVec(FAKE_DIM, chunkIndex++));
       },
@@ -46,6 +47,7 @@ describe('CorpusIndex', () => {
 
   it('returns at most topK results', async () => {
     const fakeAdapter = {
+      model: 'test' as const,
       async embed(texts: string[]): Promise<number[][]> {
         return texts.map((_, i) => makeVec(FAKE_DIM, i));
       },
@@ -57,6 +59,7 @@ describe('CorpusIndex', () => {
 
   it('each chunk has correct startLine and endLine', async () => {
     const fakeAdapter = {
+      model: 'test' as const,
       async embed(texts: string[]): Promise<number[][]> {
         return texts.map(() => []);
       },

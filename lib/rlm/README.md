@@ -13,13 +13,13 @@ The naive options are both bad: truncate the corpus (miss relevant content) or u
 - **Orchestrates the retrieval loop** — runs a conversation loop where the model calls document tools until it calls `final_answer` (found) or `not_found` (genuinely absent).
 - **Provides nine REPL tools** to the model: `peek`, `grep`, `slice`, `summarize`, `query`, and optionally `search` (semantic), `get_provenance`, `not_found`, `final_answer`.
 - **Handles all termination paths**: explicit answer, explicit not-found, plain-text response, and a `max_iterations` ceiling with automatic synthesis.
-- **Detects infinite loops** — tracks the last three tool calls and injects a corrective message when the model repeats the same call consecutively.
+- **Detects infinite loops** — detects when the model calls the same tool with the same arguments back-to-back, and injects a corrective message to break the cycle.
 - **Emits a structured event stream** — every model call, tool dispatch, and result is an observable event, with matched pairs linked by `correlationId` for UI rendering.
 - **Produces a complete audit trace** at run completion, renderable as human-readable text via `formatTrace`.
 
 ## What this library does NOT do
 
-- **No LLM inference.** You provide a `ModelAdapter` — the library calls it, but has no knowledge of any specific API.
+- **No LLM inference.** You provide an `InferenceAdapter` — the library calls it, but has no knowledge of any specific API.
 - **No corpus assembly.** You pass a plain string. What text goes in it, and how it's concatenated, is your responsibility.
 - **No routing logic.** Deciding when to use the retrieval loop versus a direct streaming call is the application's job.
 - **No filesystem access.** The corpus is passed in as `{ text: string }`. Reading files is your responsibility.
@@ -60,7 +60,7 @@ if (result.found) {
 | [docs/getting-started.md](./docs/getting-started.md) | Prerequisites, install, first query, reading the result, adding semantic search, UI status updates |
 | [docs/api-reference.md](./docs/api-reference.md)     | All public classes, interfaces, functions, and the nine REPL tools                                 |
 | [docs/observability.md](./docs/observability.md)     | Event stream, `RLMLogger`, `formatTrace`, metrics, source attribution                              |
-| [docs/custom-adapters.md](./docs/custom-adapters.md) | Implementing `ModelAdapter` and `RlmEmbeddingAdapter` for any LLM backend                          |
+| [docs/custom-adapters.md](./docs/custom-adapters.md) | Implementing `InferenceAdapter` and `EmbeddingAdapter` for any LLM backend                         |
 
 ---
 

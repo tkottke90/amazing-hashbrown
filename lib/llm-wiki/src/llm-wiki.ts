@@ -8,9 +8,9 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 import type {
   CommitResult,
-  EmbeddingProvider,
   GraphEdge,
   GraphNode,
   GraphResult,
@@ -70,12 +70,12 @@ export interface CreateOptions {
   domain: string;
   tags?: string[];
   logger?: Logger;
-  embeddingProvider?: EmbeddingProvider;
+  embeddingProvider?: EmbeddingAdapter;
 }
 
 export interface LoadOptions {
   logger?: Logger;
-  embeddingProvider?: EmbeddingProvider;
+  embeddingProvider?: EmbeddingAdapter;
 }
 
 export interface SaveRawOptions {
@@ -101,14 +101,14 @@ export interface BuildGraphOptions {
 export class LlmWiki {
   private readonly logger: Logger;
   private taxonomy: Set<string>;
-  private readonly embeddingProvider?: EmbeddingProvider;
+  private readonly embeddingProvider?: EmbeddingAdapter;
   private embeddingIndex?: EmbeddingIndex;
 
   private constructor(
     readonly basePath: string,
     taxonomy: Set<string>,
     logger: Logger,
-    embeddingProvider?: EmbeddingProvider,
+    embeddingProvider?: EmbeddingAdapter,
   ) {
     this.taxonomy = taxonomy;
     this.logger = logger;
@@ -660,7 +660,7 @@ export class LlmWiki {
     };
   }
 
-  private async loadEmbeddingIndex(provider: EmbeddingProvider): Promise<EmbeddingIndex> {
+  private async loadEmbeddingIndex(provider: EmbeddingAdapter): Promise<EmbeddingIndex> {
     if (!this.embeddingIndex || this.embeddingIndex.model !== provider.model) {
       this.embeddingIndex = await EmbeddingIndex.load(this.basePath, provider.model);
     }
@@ -670,7 +670,7 @@ export class LlmWiki {
   private async updatePageEmbedding(
     rel: string,
     body: string,
-    provider: EmbeddingProvider,
+    provider: EmbeddingAdapter,
   ): Promise<void> {
     const index = await this.loadEmbeddingIndex(provider);
     const sha = sha256Body(body);

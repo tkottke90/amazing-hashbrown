@@ -2,7 +2,7 @@ import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { OllamaAdapter } from '../../src/adapters/ollama.js';
 
-// We test the internal parsing logic by reaching the adapter's complete()
+// We test the internal parsing logic by reaching the adapter's invoke()
 // method via a patched fetch — no real network calls.
 
 type FetchLike = typeof globalThis.fetch;
@@ -20,13 +20,6 @@ function patchFetch(responseBody: unknown): () => void {
 
 describe('OllamaAdapter tool-call parsing', () => {
   const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434', model: 'test' });
-  const config = {
-    model: 'test',
-    maxIterations: 10,
-    maxResultTokens: 2000,
-    maxSliceLines: 200,
-    think: false,
-  };
 
   it('parses native structured tool_calls array (format 1)', async () => {
     const restore = patchFetch({
@@ -37,10 +30,10 @@ describe('OllamaAdapter tool-call parsing', () => {
       },
     });
     try {
-      const resp = await adapter.complete([], [], config);
+      const resp = await adapter.invoke([]);
       expect(resp.toolCalls).to.have.length(1);
-      expect(resp.toolCalls[0]!.name).to.equal('grep');
-      expect(resp.toolCalls[0]!.args).to.deep.equal({ pattern: 'Marcus' });
+      expect(resp.toolCalls![0]!.name).to.equal('grep');
+      expect(resp.toolCalls![0]!.arguments).to.deep.equal({ pattern: 'Marcus' });
     } finally {
       restore();
     }
@@ -55,10 +48,10 @@ describe('OllamaAdapter tool-call parsing', () => {
       },
     });
     try {
-      const resp = await adapter.complete([], [], config);
+      const resp = await adapter.invoke([]);
       expect(resp.toolCalls).to.have.length(1);
-      expect(resp.toolCalls[0]!.name).to.equal('slice');
-      expect(resp.toolCalls[0]!.args).to.deep.equal({ startLine: 10, endLine: 20 });
+      expect(resp.toolCalls![0]!.name).to.equal('slice');
+      expect(resp.toolCalls![0]!.arguments).to.deep.equal({ startLine: 10, endLine: 20 });
     } finally {
       restore();
     }
@@ -72,9 +65,9 @@ describe('OllamaAdapter tool-call parsing', () => {
       },
     });
     try {
-      const resp = await adapter.complete([], [], config);
+      const resp = await adapter.invoke([]);
       expect(resp.toolCalls).to.have.length(1);
-      expect(resp.toolCalls[0]!.name).to.equal('peek');
+      expect(resp.toolCalls![0]!.name).to.equal('peek');
     } finally {
       restore();
     }
@@ -85,9 +78,9 @@ describe('OllamaAdapter tool-call parsing', () => {
       message: { role: 'assistant', content: 'Here is my answer.' },
     });
     try {
-      const resp = await adapter.complete([], [], config);
-      expect(resp.toolCalls).to.have.length(0);
-      expect(resp.content).to.equal('Here is my answer.');
+      const resp = await adapter.invoke([]);
+      expect(resp.toolCalls ?? []).to.have.length(0);
+      expect(resp.message.content).to.equal('Here is my answer.');
     } finally {
       restore();
     }
@@ -101,9 +94,9 @@ describe('OllamaAdapter tool-call parsing', () => {
       },
     });
     try {
-      const resp = await adapter.complete([], [], config);
-      expect(resp.content).to.equal('The answer is banana.');
-      expect(resp.content).not.to.include('<think>');
+      const resp = await adapter.invoke([]);
+      expect(resp.message.content).to.equal('The answer is banana.');
+      expect(resp.message.content).not.to.include('<think>');
     } finally {
       restore();
     }
@@ -124,9 +117,9 @@ describe('OllamaAdapter tool-call parsing', () => {
     }) as FetchLike;
 
     try {
-      const resp = await adapter.complete([], [], config);
+      const resp = await adapter.invoke([]);
       expect(callCount).to.equal(2);
-      expect(resp.content).to.equal('ok');
+      expect(resp.message.content).to.equal('ok');
     } finally {
       (globalThis as Record<string, unknown>)['fetch'] = original;
     }
