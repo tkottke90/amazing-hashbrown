@@ -193,3 +193,29 @@ export interface GraphResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+
+/** Contract for any embedding backend. Implement this to add a custom provider. */
+export interface EmbeddingProvider {
+  readonly model: string;
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+/** A search result with a relevance score. Returned by {@link LlmWiki.semanticSearch}. */
+export interface RankedResult {
+  path: string;
+  score: number;
+  title: string;
+}
+
+/** Options for {@link LlmWiki.semanticSearch}. */
+export interface SemanticSearchOptions {
+  /** Maximum number of results to return. Default 10. */
+  limit?: number;
+  /**
+   * Search mode:
+   * - `'semantic'`: embedding cosine similarity only (requires a provider)
+   * - `'keyword'`: BM25 full-text scoring only (no provider required)
+   * - `'hybrid'`: both fused with Reciprocal Rank Fusion — default
+   */
+  mode?: 'semantic' | 'keyword' | 'hybrid';
+}
