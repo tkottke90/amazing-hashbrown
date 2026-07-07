@@ -17,7 +17,7 @@ Neither option is acceptable for a personal assistant that must be trustworthy.
 
 ### The RLM solution: give the model tools to read on demand
 
-A **Recursive Language Model (RLM)** inverts the relationship. Instead of loading the entire corpus into the model's working memory, the corpus is kept *outside* the model entirely — in a separate environment the model can query. The model is given a small set of named **tools** it can call to read specific pieces:
+A **Recursive Language Model (RLM)** inverts the relationship. Instead of loading the entire corpus into the model's working memory, the corpus is kept _outside_ the model entirely — in a separate environment the model can query. The model is given a small set of named **tools** it can call to read specific pieces:
 
 - Search for a keyword and get back matching lines
 - Read a specific line range
@@ -35,11 +35,12 @@ This is why the pattern is called "recursive": the model loops, reading incremen
 The RLM is a fallback, not the default path. Simple requests and short contexts go to a single direct model call with streaming enabled — the user gets a response starting in ~100ms. The RLM loop activates when the corpus exceeds the model's comfortable context budget, or when the query requires retrieval over a large document or memory store. For background tasks and automations, perceived latency is not a concern; the loop runs unobserved and its overhead is irrelevant to the experience.
 
 **What POC validation confirmed** (POCs 001–003):
-- A scaffolded RLM with the constrained toolkit outperforms truncated direct prompting on local 8B models — but *only* in the regime where truncation actually bites. The routing decision is the thing that matters most.
+
+- A scaffolded RLM with the constrained toolkit outperforms truncated direct prompting on local 8B models — but _only_ in the regime where truncation actually bites. The routing decision is the thing that matters most.
 - The mechanism is robust across the modern model class (every model trained for multi-turn tool use passes once thinking is disabled). The floor is training generation, not parameter count: a modern 4B beats a 2023-era 7B at this workload.
 - Structural refusal (`not_found` tool) is the single highest-leverage honesty mechanism: restores 10/10 honesty on qwen3:8b without retrieval cost. Refusal must be a first-class tool, not a prompt instruction.
 - Semantic search (`search` tool) closes the paraphrase gap on capable models. On less capable models, adoption is the barrier — keyword grep returns a plausible hit and the model stops there. For absence-heavy workloads, forced-search-first routing is the correct scaffold response.
-- **Thinking/reasoning mode must be disabled everywhere the RLM loop runs.** Internal deliberation on top of the loop's iterative exploration is pure cost: thinking-on doubled median latency for marginally worse topic coverage. On remote serving, thinking tokens push queries over gateway timeouts and *look* like infrastructure failure.
+- **Thinking/reasoning mode must be disabled everywhere the RLM loop runs.** Internal deliberation on top of the loop's iterative exploration is pure cost: thinking-on doubled median latency for marginally worse topic coverage. On remote serving, thinking tokens push queries over gateway timeouts and _look_ like infrastructure failure.
 
 ---
 
@@ -370,7 +371,7 @@ Requires a `ProvenanceStore` instance to be passed to the `REPLEnvironment`. If 
 Structural refusal tool. When the model has exhausted its search and cannot find the answer in the corpus, it calls `not_found` with a description of what it searched. The loop treats this as a terminal call — equivalent to `final_answer`, but with an explicit not-found result. Signals a safe failure rather than a synthesized fabrication.
 
 **Why structural, not textual:** prompt-only honesty instructions are unreliable under retrieval pressure regardless of model size. Making refusal a first-class tool legitimizes it in the model's decision space — the presence of the tool in the schema is what matters, not whether the model calls it on every absent case. POC-002 finding: qwen3:8b went from 6/10 honest to 10/10 honest purely by adding the `not_found` tool, without any change to prompt instructions or retrieval scaffolding. GLM-4.7-Flash holds both the honesty and persistence dials simultaneously — the tool is a mid-tier prosthetic, exactly where it is most needed (typical local hardware runs mid-tier models).
-**POC finding:** the tool only needed to be *called* on 4 of 10 absent cases for honesty to go 10/10 — its presence legitimizes refusal on the other 6 cases where the model refuses via the `final_answer` path instead. Structure substitutes for capability on the honesty axis.
+**POC finding:** the tool only needed to be _called_ on 4 of 10 absent cases for honesty to go 10/10 — its presence legitimizes refusal on the other 6 cases where the model refuses via the `final_answer` path instead. Structure substitutes for capability on the honesty axis.
 
 ---
 
@@ -390,7 +391,7 @@ Three exit paths, in priority order:
 
 **2. Plain text response (no tool call).** When the model returns a message with no tool calls, the loop treats the text content as the final answer. Secondary path — less reliable than `final_answer` because the adapter must detect absence of tool calls, but essential as a fallback for models with inconsistent tool discipline.
 
-**3. Max iterations failsafe.** Default 10 iterations. When the limit is hit, a synthesis message is injected: *"You have reached the maximum number of steps. Synthesize your final answer from what you have gathered so far."* The model is called once more with the full tool list suppressed (tools set to `[]`). If the model responds with another tool call format despite tools being suppressed (the "escaped `<tool_call>`" failure mode observed on Qwen3), the synthesis is retried once with an explicit "plain text only" instruction before returning whatever is available.
+**3. Max iterations failsafe.** Default 10 iterations. When the limit is hit, a synthesis message is injected: _"You have reached the maximum number of steps. Synthesize your final answer from what you have gathered so far."_ The model is called once more with the full tool list suppressed (tools set to `[]`). If the model responds with another tool call format despite tools being suppressed (the "escaped `<tool_call>`" failure mode observed on Qwen3), the synthesis is retried once with an explicit "plain text only" instruction before returning whatever is available.
 
 **Infinite loop detection.** Track the last 3 tool calls. If the same tool + arguments appears twice consecutively, inject a warning message and decrement the remaining iteration budget by 2. Also blocks identical consecutive `search` queries at the handler level — returns a steering message instead of duplicate results.
 
@@ -428,6 +429,7 @@ test/
 ```
 
 **Adapter escape formats.** Three tool-call formats have been observed from real models and must all be parsed:
+
 - Native Ollama/OpenAI structured `tool_calls` array (preferred path; GLM-4.7-Flash, qwen3:8b)
 - `<tool_call>{...}</tool_call>` XML escape (Qwen3 under context pressure)
 - Bare JSON array `[{"name":"grep",...}]` (Mistral 7B)
@@ -441,20 +443,20 @@ The `adapter.ts` text-fallback parser handles all three. Unknown tool names (e.g
 These types are the public contract between the RLM module and its callers. They are defined in `src/types.ts` and re-exported from `src/index.ts`.
 
 ```typescript
-export type Role = "system" | "user" | "assistant" | "tool";
+export type Role = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface Message {
   role: Role;
   content: string;
-  toolCalls?: ToolCall[];    // present on assistant messages
-  toolName?: string;         // present on tool messages: which call this answers
+  toolCalls?: ToolCall[]; // present on assistant messages
+  toolName?: string; // present on tool messages: which call this answers
 }
 
 export interface Tool {
   name: string;
   description: string;
   parameters: {
-    type: "object";
+    type: 'object';
     properties: Record<string, { type: string; description: string }>;
     required?: string[];
   };
@@ -466,26 +468,26 @@ export interface ToolCall {
 }
 
 export interface ModelResponse {
-  content: string;       // plain text (may be empty when toolCalls is non-empty)
+  content: string; // plain text (may be empty when toolCalls is non-empty)
   toolCalls: ToolCall[]; // empty array when model responded in text
   durationMs: number;
 }
 
 export interface RLMConfig {
-  model: string;              // e.g. "glm-4.7-flash", "qwen3:8b"
-  subModel?: string;          // model for sub-calls; defaults to model
-  ollamaBaseUrl: string;      // e.g. "http://localhost:11434"
-  maxIterations: number;      // default 10
-  maxResultTokens: number;    // default 2000 (estimated at 4 chars/token)
-  maxSliceLines: number;      // default 200
-  think?: boolean;            // default false — must be off for loop reliability
-  promptAddendum?: string;    // appended to root system prompt (e.g. honesty instructions)
-  extraTools?: Tool[];        // additional tools beyond the core toolkit
+  model: string; // e.g. "glm-4.7-flash", "qwen3:8b"
+  subModel?: string; // model for sub-calls; defaults to model
+  ollamaBaseUrl: string; // e.g. "http://localhost:11434"
+  maxIterations: number; // default 10
+  maxResultTokens: number; // default 2000 (estimated at 4 chars/token)
+  maxSliceLines: number; // default 200
+  think?: boolean; // default false — must be off for loop reliability
+  promptAddendum?: string; // appended to root system prompt (e.g. honesty instructions)
+  extraTools?: Tool[]; // additional tools beyond the core toolkit
 }
 
 export const DEFAULT_CONFIG: RLMConfig = {
-  model: "qwen3:8b",
-  ollamaBaseUrl: "http://localhost:11434",
+  model: 'qwen3:8b',
+  ollamaBaseUrl: 'http://localhost:11434',
   maxIterations: 10,
   maxResultTokens: 2000,
   maxSliceLines: 200,
@@ -493,22 +495,22 @@ export const DEFAULT_CONFIG: RLMConfig = {
 };
 
 export type TerminationReason =
-  | "final_tool"       // model called final_answer
-  | "not_found_tool"   // model called not_found
-  | "no_tool_call"     // model returned plain text with no tool call
-  | "max_iterations";  // loop hit the iteration ceiling
+  | 'final_tool' // model called final_answer
+  | 'not_found_tool' // model called not_found
+  | 'no_tool_call' // model returned plain text with no tool call
+  | 'max_iterations'; // loop hit the iteration ceiling
 
 export interface ToolCallRecord {
   iteration: number;
   tool: string;
   args: Record<string, unknown>;
-  resultPreview: string;   // first 200 chars of result (for debugging)
+  resultPreview: string; // first 200 chars of result (for debugging)
   durationMs: number;
 }
 
 export interface RLMResult {
   answer: string;
-  found: boolean;                  // false when terminationReason is "not_found_tool"
+  found: boolean; // false when terminationReason is "not_found_tool"
   iterations: number;
   toolCallTrace: ToolCallRecord[];
   terminationReason: TerminationReason;
@@ -518,10 +520,10 @@ export interface RLMResult {
 
 // Status signal emitted during the loop — callers use this for progress UI
 export interface StatusSignal {
-  phase: "searching" | "reading" | "summarizing" | "querying" | "answering" | "not_found";
-  message: string;    // e.g. "Searching your memory...", "Reading relevant section..."
+  phase: 'searching' | 'reading' | 'summarizing' | 'querying' | 'answering' | 'not_found';
+  message: string; // e.g. "Searching your memory...", "Reading relevant section..."
   iteration: number;
-  tool?: string;      // internal tool name — for logging, not for display to users
+  tool?: string; // internal tool name — for logging, not for display to users
 }
 
 export type StatusCallback = (signal: StatusSignal) => void;
@@ -533,13 +535,15 @@ export interface RlmEmbeddingAdapter {
 
 // Default when no embedding adapter is provided — disables the search tool
 export class NoOpEmbeddingAdapter implements RlmEmbeddingAdapter {
-  async embed(_texts: string[]): Promise<number[][]> { return []; }
+  async embed(_texts: string[]): Promise<number[][]> {
+    return [];
+  }
 }
 
 // Corpus passed to the runner
 export interface RLMCorpus {
   text: string;
-  source?: string;              // label for status messages and provenance
+  source?: string; // label for status messages and provenance
   provenance?: ProvenanceStore; // if provided, get_provenance tool is activated
   // No searchIndex here — the runner builds the index internally when an
   // embedding adapter is provided at construction time.
@@ -569,8 +573,8 @@ export class OllamaAdapter implements ModelAdapter {
   constructor(opts: {
     baseUrl: string;
     model: string;
-    think?: boolean;       // forwarded to Ollama's chat_template_kwargs
-    retryOn5xx?: boolean;  // default true — one retry on HTTP 5xx
+    think?: boolean; // forwarded to Ollama's chat_template_kwargs
+    retryOn5xx?: boolean; // default true — one retry on HTTP 5xx
   });
   complete(messages: Message[], tools: Tool[], config: RLMConfig): Promise<ModelResponse>;
 }
@@ -585,14 +589,10 @@ export class RLMRunner {
   constructor(
     adapter: ModelAdapter,
     embeddingAdapter?: RlmEmbeddingAdapter, // omit or pass NoOpEmbeddingAdapter to disable search
-    config?: Partial<RLMConfig>
+    config?: Partial<RLMConfig>,
   );
 
-  run(
-    query: string,
-    corpus: RLMCorpus,
-    onStatus?: StatusCallback
-  ): Promise<RLMResult>;
+  run(query: string, corpus: RLMCorpus, onStatus?: StatusCallback): Promise<RLMResult>;
 }
 ```
 
@@ -606,7 +606,7 @@ export class REPLEnvironment {
     corpus: RLMCorpus,
     config: RLMConfig,
     subAdapter: ModelAdapter,
-    embeddingAdapter?: RlmEmbeddingAdapter
+    embeddingAdapter?: RlmEmbeddingAdapter,
   );
 
   execute(call: ToolCall): Promise<string>;
@@ -632,7 +632,9 @@ export interface RlmEmbeddingAdapter {
 
 // Default no-op — search tool is omitted when this is active
 export class NoOpEmbeddingAdapter implements RlmEmbeddingAdapter {
-  async embed(_texts: string[]): Promise<number[][]> { return []; }
+  async embed(_texts: string[]): Promise<number[][]> {
+    return [];
+  }
 }
 
 // Bundled Ollama implementation (qwen3-embed-0.6b is the validated model)
@@ -657,12 +659,12 @@ export class ProvenanceStore {
 }
 
 export interface ProvenanceEntry {
-  entityId: string;         // e.g. wiki page identifier
-  claimText: string;        // canonical claim text, resolved at write time
-  sourceDocId: string;      // source document identifier
-  sourceType: string;       // "email" | "meeting-notes" | "calendar" | ...
-  writtenAt: string;        // ISO date when the fact was written to the wiki
-  supersededBy?: string;    // claimText of the superseding entry, if stale
+  entityId: string; // e.g. wiki page identifier
+  claimText: string; // canonical claim text, resolved at write time
+  sourceDocId: string; // source document identifier
+  sourceType: string; // "email" | "meeting-notes" | "calendar" | ...
+  writtenAt: string; // ISO date when the fact was written to the wiki
+  supersededBy?: string; // claimText of the superseding entry, if stale
 }
 ```
 
@@ -670,25 +672,33 @@ export interface ProvenanceEntry {
 
 ```typescript
 // Classes
-export { RLMRunner } from "./runner.ts";
-export { REPLEnvironment } from "./repl.ts";
-export { OllamaAdapter } from "./adapter.ts";
-export { NoOpEmbeddingAdapter, OllamaEmbeddingAdapter } from "./search.ts";
-export { ProvenanceStore } from "./provenance.ts";
+export { RLMRunner } from './runner.ts';
+export { REPLEnvironment } from './repl.ts';
+export { OllamaAdapter } from './adapter.ts';
+export { NoOpEmbeddingAdapter, OllamaEmbeddingAdapter } from './search.ts';
+export { ProvenanceStore } from './provenance.ts';
 
 // Types
 export type {
-  Role, Message, Tool, ToolCall, ModelResponse,
-  RLMConfig, RLMResult, RLMCorpus,
-  TerminationReason, ToolCallRecord,
-  StatusSignal, StatusCallback,
+  Role,
+  Message,
+  Tool,
+  ToolCall,
+  ModelResponse,
+  RLMConfig,
+  RLMResult,
+  RLMCorpus,
+  TerminationReason,
+  ToolCallRecord,
+  StatusSignal,
+  StatusCallback,
   ModelAdapter,
   RlmEmbeddingAdapter,
   ProvenanceEntry,
-} from "./types.ts";
+} from './types.ts';
 
 // Constants
-export { DEFAULT_CONFIG } from "./types.ts";
+export { DEFAULT_CONFIG } from './types.ts';
 ```
 
 ---
@@ -703,12 +713,12 @@ The RLM module receives a corpus string. It does not know where that string came
 
 **Common assembly strategies:**
 
-| Use case | Strategy |
-|---|---|
-| Wiki pages | Keyword-score all sections against the query; concatenate sections above threshold. (This is how the system in ARCHITECTURE.md works — keyword scoring runs before the router, so the corpus is already pre-filtered when it arrives.) |
-| Codebase | Grep for the symbol, filename, or concept in the query; load the matching files and their immediate imports. Do not load the full repository. |
-| Email / document archive | Filter by date range and keyword match; concatenate the filtered set. |
-| Task history | Load tasks whose title or tags intersect the query's subject. |
+| Use case                 | Strategy                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wiki pages               | Keyword-score all sections against the query; concatenate sections above threshold. (This is how the system in ARCHITECTURE.md works — keyword scoring runs before the router, so the corpus is already pre-filtered when it arrives.) |
+| Codebase                 | Grep for the symbol, filename, or concept in the query; load the matching files and their immediate imports. Do not load the full repository.                                                                                          |
+| Email / document archive | Filter by date range and keyword match; concatenate the filtered set.                                                                                                                                                                  |
+| Task history             | Load tasks whose title or tags intersect the query's subject.                                                                                                                                                                          |
 
 **Size target.** The corpus should be large enough that truncation would lose the answer, but not so large that it is structurally unnarrowed. A practical ceiling is whatever fits on a single long wiki page or a handful of related source files — typically 40,000–120,000 characters. If the candidate set exceeds that, apply a second-pass filter before handing off.
 
@@ -727,22 +737,22 @@ import {
   DEFAULT_CONFIG,
   type RLMCorpus,
   type StatusSignal,
-} from "@tkottke90/rlm-client";
+} from '@tkottke90/rlm-client';
 
 // --- Adapter setup (done once at app startup) ---
 
 const adapter = new OllamaAdapter({
-  baseUrl: "http://localhost:11434",
-  model: "qwen3:8b",
-  think: false,         // required for loop reliability
+  baseUrl: 'http://localhost:11434',
+  model: 'qwen3:8b',
+  think: false, // required for loop reliability
   retryOn5xx: true,
 });
 
 // Passing OllamaEmbeddingAdapter enables the search tool.
 // Omit this argument (or pass NoOpEmbeddingAdapter) to disable semantic search.
 const embeddingAdapter = new OllamaEmbeddingAdapter({
-  baseUrl: "http://localhost:11434",
-  model: "qwen3-embed-0.6b",
+  baseUrl: 'http://localhost:11434',
+  model: 'qwen3-embed-0.6b',
 });
 
 const runner = new RLMRunner(adapter, embeddingAdapter, {
@@ -753,37 +763,37 @@ const runner = new RLMRunner(adapter, embeddingAdapter, {
 
 // --- Provenance store ---
 
-const provenance = new ProvenanceStore({ path: "wikis/user.provenance.jsonl" });
+const provenance = new ProvenanceStore({ path: 'wikis/user.provenance.jsonl' });
 
 // --- Running a query ---
 
-const wikiText = await fs.readFile("wikis/user.md", "utf-8");
+const wikiText = await fs.readFile('wikis/user.md', 'utf-8');
 
 const corpus: RLMCorpus = {
   text: wikiText,
-  source: "user-wiki",
-  provenance,        // activates the get_provenance tool
+  source: 'user-wiki',
+  provenance, // activates the get_provenance tool
   // No searchIndex here — the runner builds the index on first run.
 };
 
 // Status callback: translate internal signals to user-facing messages for the UI.
 // tool names are internal; phase and message are what the user sees.
 function onStatus(signal: StatusSignal): void {
-  emitToClient({ type: "rlm_status", message: signal.message });
+  emitToClient({ type: 'rlm_status', message: signal.message });
 }
 
 const result = await runner.run(userQuery, corpus, onStatus);
 
 if (!result.found) {
   // Model called not_found — safe failure, no fabrication
-  return { answer: null, source: "not_found" };
+  return { answer: null, source: 'not_found' };
 }
 
 return {
   answer: result.answer,
-  source: "rlm",
+  source: 'rlm',
   iterations: result.iterations,
-  terminatedCleanly: result.terminationReason !== "max_iterations",
+  terminatedCleanly: result.terminationReason !== 'max_iterations',
 };
 ```
 
@@ -794,9 +804,9 @@ The router decides whether to enter the RLM loop. The decision is deterministic 
 ```typescript
 const CONTEXT_BUDGET_CHARS = 24_000;
 
-function route(query: string, corpus: string): "direct" | "rlm" {
-  if (corpus.length <= CONTEXT_BUDGET_CHARS) return "direct";
-  return "rlm";
+function route(query: string, corpus: string): 'direct' | 'rlm' {
+  if (corpus.length <= CONTEXT_BUDGET_CHARS) return 'direct';
+  return 'rlm';
 }
 ```
 
@@ -806,17 +816,17 @@ The router is owned by the application, not the module. The module assumes the c
 
 Status messages describe the activity from the user's perspective in plain language, not the internal tool name:
 
-| Tool called | Phase | Example message |
-|---|---|---|
-| `peek` | `searching` | "Checking your memory..." |
-| `grep` | `searching` | "Searching your memory..." |
-| `search` | `searching` | "Searching for relevant context..." |
-| `slice` | `reading` | "Reading relevant section..." |
-| `summarize` | `summarizing` | "Reviewing a longer section..." |
-| `query` | `querying` | "Checking a specific part of your memory..." |
-| `get_provenance` | `reading` | "Looking up the source of that..." |
-| `final_answer` | `answering` | — (no signal; answer follows immediately) |
-| `not_found` | `not_found` | — (no signal; not-found result returned) |
+| Tool called      | Phase         | Example message                              |
+| ---------------- | ------------- | -------------------------------------------- |
+| `peek`           | `searching`   | "Checking your memory..."                    |
+| `grep`           | `searching`   | "Searching your memory..."                   |
+| `search`         | `searching`   | "Searching for relevant context..."          |
+| `slice`          | `reading`     | "Reading relevant section..."                |
+| `summarize`      | `summarizing` | "Reviewing a longer section..."              |
+| `query`          | `querying`    | "Checking a specific part of your memory..." |
+| `get_provenance` | `reading`     | "Looking up the source of that..."           |
+| `final_answer`   | `answering`   | — (no signal; answer follows immediately)    |
+| `not_found`      | `not_found`   | — (no signal; not-found result returned)     |
 
 ---
 
