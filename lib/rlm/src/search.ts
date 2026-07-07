@@ -1,4 +1,4 @@
-import type { RlmEmbeddingAdapter } from "./types.js";
+import type { RlmEmbeddingAdapter } from './types.js';
 
 interface IndexedChunk {
   text: string;
@@ -13,18 +13,14 @@ const CHUNK_OVERLAP = 5;
 export class CorpusIndex {
   private chunks: IndexedChunk[] = [];
 
-  static async build(
-    lines: string[],
-    adapter: RlmEmbeddingAdapter
-  ): Promise<CorpusIndex> {
+  static async build(lines: string[], adapter: RlmEmbeddingAdapter): Promise<CorpusIndex> {
     const index = new CorpusIndex();
-    const windows: Array<{ text: string; startLine: number; endLine: number }> =
-      [];
+    const windows: Array<{ text: string; startLine: number; endLine: number }> = [];
 
     for (let i = 0; i < lines.length; i += CHUNK_LINES - CHUNK_OVERLAP) {
       const start = i;
       const end = Math.min(i + CHUNK_LINES - 1, lines.length - 1);
-      const text = lines.slice(start, end + 1).join("\n");
+      const text = lines.slice(start, end + 1).join('\n');
       windows.push({ text, startLine: start + 1, endLine: end + 1 });
       if (end === lines.length - 1) break;
     }

@@ -1,4 +1,4 @@
-export type Role = "system" | "user" | "assistant" | "tool";
+export type Role = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface Message {
   role: Role;
@@ -11,7 +11,7 @@ export interface Tool {
   name: string;
   description: string;
   parameters: {
-    type: "object";
+    type: 'object';
     properties: Record<string, { type: string; description: string }>;
     required?: string[];
   };
@@ -30,17 +30,13 @@ export interface ModelResponse {
 }
 
 export interface ModelAdapter {
-  complete(
-    messages: Message[],
-    tools: Tool[],
-    config: RLMConfig
-  ): Promise<ModelResponse>;
+  complete(messages: Message[], tools: Tool[], config: RLMConfig): Promise<ModelResponse>;
 }
 
 // "full"    → model_requested events include the complete messages array
 // "compact" → model_requested events include message counts only (no content)
 // "minimal" → events carry only structural metadata; no content fields
-export type TraceDetail = "full" | "compact" | "minimal";
+export type TraceDetail = 'full' | 'compact' | 'minimal';
 
 export interface RLMConfig {
   model: string;
@@ -54,30 +50,26 @@ export interface RLMConfig {
 }
 
 export const DEFAULT_CONFIG: RLMConfig = {
-  model: "qwen3:8b",
+  model: 'qwen3:8b',
   maxIterations: 10,
   maxResultTokens: 2000,
   maxSliceLines: 200,
   think: false,
-  traceDetail: "full",
+  traceDetail: 'full',
 };
 
-export type TerminationReason =
-  | "final_tool"
-  | "not_found_tool"
-  | "no_tool_call"
-  | "max_iterations";
+export type TerminationReason = 'final_tool' | 'not_found_tool' | 'no_tool_call' | 'max_iterations';
 
 // The phase label derived from which tool the model called in an iteration.
 // Used on ToolDispatchedEvent and on StatusSignal.
 export type IterationPhase =
-  | "orientation" // peek
-  | "searching"   // grep, search
-  | "reading"     // slice, get_provenance
-  | "summarizing" // summarize
-  | "querying"    // query
-  | "answering"   // final_answer, no_tool_call
-  | "not_found";  // not_found
+  | 'orientation' // peek
+  | 'searching' // grep, search
+  | 'reading' // slice, get_provenance
+  | 'summarizing' // summarize
+  | 'querying' // query
+  | 'answering' // final_answer, no_tool_call
+  | 'not_found'; // not_found
 
 export interface ToolCallRecord {
   iteration: number;
@@ -98,7 +90,7 @@ export interface CorpusMeta {
 
 // A specific line range that was read during the run, used for source attribution.
 export interface SourceRange {
-  tool: "slice" | "summarize" | "query" | "peek";
+  tool: 'slice' | 'summarize' | 'query' | 'peek';
   startLine: number;
   endLine: number;
   iteration: number;
@@ -109,8 +101,8 @@ export interface RLMMetrics {
   totalModelDurationMs: number;
   totalToolDurationMs: number;
   charsRead: number;
-  coverageRatio: number;    // charsRead / corpusMeta.charCount
-  peekFirst: boolean;       // was peek the first retrieval tool called?
+  coverageRatio: number; // charsRead / corpusMeta.charCount
+  peekFirst: boolean; // was peek the first retrieval tool called?
   synthesisTriggered: boolean;
   toolFrequency: Record<string, number>;
 }
@@ -129,18 +121,18 @@ interface RLMEventBase {
 }
 
 export interface RunStartedEvent extends RLMEventBase {
-  kind: "run_started";
+  kind: 'run_started';
   query: string;
   corpusMeta: CorpusMeta;
 }
 
 export interface IterationStartedEvent extends RLMEventBase {
-  kind: "iteration_started";
+  kind: 'iteration_started';
   iteration: number;
 }
 
 export interface ModelRequestedEvent extends RLMEventBase {
-  kind: "model_requested";
+  kind: 'model_requested';
   correlationId: string;
   iteration: number;
   messageCount: number;
@@ -148,17 +140,17 @@ export interface ModelRequestedEvent extends RLMEventBase {
 }
 
 export interface ModelRespondedEvent extends RLMEventBase {
-  kind: "model_responded";
+  kind: 'model_responded';
   correlationId: string;
   iteration: number;
   durationMs: number;
-  content: string;      // post-processing (think blocks stripped)
-  rawContent: string;   // verbatim from the wire; present when traceDetail !== "minimal"
+  content: string; // post-processing (think blocks stripped)
+  rawContent: string; // verbatim from the wire; present when traceDetail !== "minimal"
   toolCalls: ToolCall[];
 }
 
 export interface ToolDispatchedEvent extends RLMEventBase {
-  kind: "tool_dispatched";
+  kind: 'tool_dispatched';
   correlationId: string;
   iteration: number;
   tool: string;
@@ -168,7 +160,7 @@ export interface ToolDispatchedEvent extends RLMEventBase {
 }
 
 export interface ToolCompletedEvent extends RLMEventBase {
-  kind: "tool_completed";
+  kind: 'tool_completed';
   correlationId: string;
   iteration: number;
   tool: string;
@@ -177,7 +169,7 @@ export interface ToolCompletedEvent extends RLMEventBase {
 }
 
 export interface LoopDetectionEvent extends RLMEventBase {
-  kind: "loop_detection";
+  kind: 'loop_detection';
   iteration: number;
   tool: string;
   args: Record<string, unknown>;
@@ -185,12 +177,12 @@ export interface LoopDetectionEvent extends RLMEventBase {
 }
 
 export interface SynthesisTriggeredEvent extends RLMEventBase {
-  kind: "synthesis_triggered";
+  kind: 'synthesis_triggered';
   correlationId: string;
 }
 
 export interface SynthesisCompletedEvent extends RLMEventBase {
-  kind: "synthesis_completed";
+  kind: 'synthesis_completed';
   correlationId: string;
   durationMs: number;
   content: string;
@@ -198,7 +190,7 @@ export interface SynthesisCompletedEvent extends RLMEventBase {
 }
 
 export interface RunCompletedEvent extends RLMEventBase {
-  kind: "run_completed";
+  kind: 'run_completed';
   durationMs: number;
   terminationReason: TerminationReason;
   found: boolean;
@@ -237,7 +229,7 @@ export interface RLMResult {
 // any external context.
 export interface RLMTrace {
   traceId: string;
-  startedAt: string;   // ISO 8601
+  startedAt: string; // ISO 8601
   completedAt: string; // ISO 8601
   query: string;
   corpusMeta: CorpusMeta;
@@ -288,5 +280,5 @@ export interface ProvenanceEntry {
 export interface RLMCorpus {
   text: string;
   source?: string;
-  provenance?: import("./provenance.js").ProvenanceStore;
+  provenance?: import('./provenance.js').ProvenanceStore;
 }

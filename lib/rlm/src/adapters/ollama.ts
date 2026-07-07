@@ -12,7 +12,7 @@ import type {
   ToolCall,
   RLMConfig,
   RlmEmbeddingAdapter,
-} from "../types.js";
+} from '../types.js';
 
 // --------------------------------------------------------------------------
 // OllamaAdapter
@@ -45,17 +45,13 @@ export class OllamaAdapter implements ModelAdapter {
   private readonly retryOn5xx: boolean;
 
   constructor(opts: OllamaAdapterOpts) {
-    this.baseUrl = opts.baseUrl.replace(/\/$/, "");
+    this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.model = opts.model;
     this.think = opts.think ?? false;
     this.retryOn5xx = opts.retryOn5xx ?? true;
   }
 
-  async complete(
-    messages: Message[],
-    tools: Tool[],
-    _config: RLMConfig
-  ): Promise<ModelResponse> {
+  async complete(messages: Message[], tools: Tool[], _config: RLMConfig): Promise<ModelResponse> {
     const start = Date.now();
     const body = {
       model: this.model,
@@ -66,11 +62,11 @@ export class OllamaAdapter implements ModelAdapter {
       chat_template_kwargs: { enable_thinking: this.think },
     };
 
-    const raw = await this._post("/api/chat", body);
+    const raw = await this._post('/api/chat', body);
     const data = raw as OllamaChatResponse;
     const msg = data.message;
 
-    const rawContent = msg.content ?? "";
+    const rawContent = msg.content ?? '';
     const stripped = stripThinkBlocks(rawContent);
     const toolCalls = extractToolCalls(msg, stripped);
 
@@ -86,12 +82,12 @@ export class OllamaAdapter implements ModelAdapter {
     const url = `${this.baseUrl}${path}`;
     const attempt = async () => {
       const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
+        const text = await res.text().catch(() => '');
         throw Object.assign(new Error(`Ollama HTTP ${res.status}: ${text}`), {
           status: res.status,
         });
@@ -124,18 +120,18 @@ export class OllamaEmbeddingAdapter implements RlmEmbeddingAdapter {
   private readonly model: string;
 
   constructor(opts: { baseUrl: string; model: string }) {
-    this.baseUrl = opts.baseUrl.replace(/\/$/, "");
+    this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.model = opts.model;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
     const res = await fetch(`${this.baseUrl}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: this.model, input: texts }),
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text = await res.text().catch(() => '');
       throw new Error(`Ollama embed HTTP ${res.status}: ${text}`);
     }
     const data = (await res.json()) as OllamaEmbedResponse;
@@ -147,22 +143,20 @@ export class OllamaEmbeddingAdapter implements RlmEmbeddingAdapter {
 // Helpers
 // --------------------------------------------------------------------------
 
-function toOllamaMessage(
-  m: Message
-): Record<string, unknown> {
+function toOllamaMessage(m: Message): Record<string, unknown> {
   const base: Record<string, unknown> = { role: m.role, content: m.content };
   if (m.toolCalls && m.toolCalls.length > 0) {
-    base["tool_calls"] = m.toolCalls.map((tc) => ({
+    base['tool_calls'] = m.toolCalls.map((tc) => ({
       function: { name: tc.name, arguments: tc.args },
     }));
   }
-  if (m.toolName) base["name"] = m.toolName;
+  if (m.toolName) base['name'] = m.toolName;
   return base;
 }
 
 function toOllamaTool(tool: Tool): Record<string, unknown> {
   return {
-    type: "function",
+    type: 'function',
     function: {
       name: tool.name,
       description: tool.description,
@@ -172,17 +166,14 @@ function toOllamaTool(tool: Tool): Record<string, unknown> {
 }
 
 function stripThinkBlocks(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
 // Parses tool calls from three observed formats:
 //   1. Native Ollama structured tool_calls array (preferred)
 //   2. <tool_call>{...}</tool_call> XML escape (Qwen3 under context pressure)
 //   3. Bare JSON array [{...}] (Mistral 7B)
-function extractToolCalls(
-  msg: OllamaChatMessage,
-  strippedContent: string
-): ToolCall[] {
+function extractToolCalls(msg: OllamaChatMessage, strippedContent: string): ToolCall[] {
   // Format 1: native structured
   if (msg.tool_calls && msg.tool_calls.length > 0) {
     return msg.tool_calls.map((tc) => ({
@@ -196,7 +187,7 @@ function extractToolCalls(
   const xmlCalls: ToolCall[] = [];
   for (const match of xmlMatches) {
     try {
-      const parsed = JSON.parse(match[1] ?? "") as {
+      const parsed = JSON.parse(match[1] ?? '') as {
         name?: string;
         arguments?: Record<string, unknown>;
       };
@@ -211,7 +202,7 @@ function extractToolCalls(
 
   // Format 3: bare JSON array
   const trimmed = strippedContent.trim();
-  if (trimmed.startsWith("[")) {
+  if (trimmed.startsWith('[')) {
     try {
       const arr = JSON.parse(trimmed) as Array<{
         name?: string;

@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import type { ProvenanceEntry } from "./types.js";
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { ProvenanceEntry } from './types.js';
 
 export class ProvenanceStore {
   private readonly filePath: string;
@@ -10,9 +10,9 @@ export class ProvenanceStore {
   }
 
   async record(entry: ProvenanceEntry): Promise<void> {
-    const line = JSON.stringify(entry) + "\n";
+    const line = JSON.stringify(entry) + '\n';
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    await fs.appendFile(this.filePath, line, "utf-8");
+    await fs.appendFile(this.filePath, line, 'utf-8');
   }
 
   async lookup(factText: string): Promise<ProvenanceEntry[]> {
@@ -37,14 +37,14 @@ export class ProvenanceStore {
   private async _loadAll(): Promise<ProvenanceEntry[]> {
     let raw: string;
     try {
-      raw = await fs.readFile(this.filePath, "utf-8");
+      raw = await fs.readFile(this.filePath, 'utf-8');
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw err;
     }
 
     return raw
-      .split("\n")
+      .split('\n')
       .filter(Boolean)
       .map((line) => JSON.parse(line) as ProvenanceEntry);
   }

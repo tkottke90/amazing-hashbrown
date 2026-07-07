@@ -7,171 +7,169 @@ import type {
   RLMLogger,
   StatusCallback,
   Tool,
-  ToolCall,
   ToolCallRecord,
   Message,
   IterationPhase,
   CorpusMeta,
-} from "./types.js";
-import { DEFAULT_CONFIG } from "./types.js";
-import { REPLEnvironment, SENTINEL_FINAL, SENTINEL_NOT_FOUND } from "./repl.js";
-import { buildRootSystemPrompt } from "./prompts.js";
-import { TraceBuilder, deriveSourcesUsed, deriveMetrics } from "./trace.js";
+} from './types.js';
+import { DEFAULT_CONFIG } from './types.js';
+import { REPLEnvironment, SENTINEL_FINAL, SENTINEL_NOT_FOUND } from './repl.js';
+import { buildRootSystemPrompt } from './prompts.js';
+import { TraceBuilder, deriveSourcesUsed, deriveMetrics } from './trace.js';
 
 const CORE_TOOLS: Tool[] = [
   {
-    name: "peek",
+    name: 'peek',
     description:
-      "Read the first N characters of the document. Use this first to understand structure and vocabulary.",
+      'Read the first N characters of the document. Use this first to understand structure and vocabulary.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         chars: {
-          type: "number",
-          description: "Number of characters to read (default 2000)",
+          type: 'number',
+          description: 'Number of characters to read (default 2000)',
         },
       },
       required: [],
     },
   },
   {
-    name: "grep",
+    name: 'grep',
     description:
-      "Search the document for a regex pattern. Returns matching lines with their line numbers.",
+      'Search the document for a regex pattern. Returns matching lines with their line numbers.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        pattern: { type: "string", description: "Regex pattern to search for" },
+        pattern: { type: 'string', description: 'Regex pattern to search for' },
         maxResults: {
-          type: "number",
-          description: "Maximum number of results (default 50)",
+          type: 'number',
+          description: 'Maximum number of results (default 50)',
         },
       },
-      required: ["pattern"],
+      required: ['pattern'],
     },
   },
   {
-    name: "slice",
+    name: 'slice',
     description:
-      "Read a specific line range from the document. Hard limit applies — use summarize for large ranges.",
+      'Read a specific line range from the document. Hard limit applies — use summarize for large ranges.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        startLine: { type: "number", description: "First line to read (1-indexed)" },
-        endLine: { type: "number", description: "Last line to read (inclusive)" },
+        startLine: { type: 'number', description: 'First line to read (1-indexed)' },
+        endLine: { type: 'number', description: 'Last line to read (inclusive)' },
       },
-      required: ["startLine", "endLine"],
+      required: ['startLine', 'endLine'],
     },
   },
   {
-    name: "summarize",
+    name: 'summarize',
     description:
-      "Distill a section that is too large to slice. The summary is scoped to the given range only — a NOT FOUND result means absent from that range, not from the full document.",
+      'Distill a section that is too large to slice. The summary is scoped to the given range only — a NOT FOUND result means absent from that range, not from the full document.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        startLine: { type: "number", description: "First line of the range" },
-        endLine: { type: "number", description: "Last line of the range" },
+        startLine: { type: 'number', description: 'First line of the range' },
+        endLine: { type: 'number', description: 'Last line of the range' },
         focus: {
-          type: "string",
-          description: "Optional topic or question to focus the summary on",
+          type: 'string',
+          description: 'Optional topic or question to focus the summary on',
         },
       },
-      required: ["startLine", "endLine"],
+      required: ['startLine', 'endLine'],
     },
   },
   {
-    name: "query",
+    name: 'query',
     description:
-      "Ask a specific question about a line range. Returns NOT FOUND IN THIS RANGE if the answer is absent from that range.",
+      'Ask a specific question about a line range. Returns NOT FOUND IN THIS RANGE if the answer is absent from that range.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        question: { type: "string", description: "The question to answer" },
-        startLine: { type: "number", description: "First line of the range" },
-        endLine: { type: "number", description: "Last line of the range" },
+        question: { type: 'string', description: 'The question to answer' },
+        startLine: { type: 'number', description: 'First line of the range' },
+        endLine: { type: 'number', description: 'Last line of the range' },
       },
-      required: ["question", "startLine", "endLine"],
+      required: ['question', 'startLine', 'endLine'],
     },
   },
   {
-    name: "not_found",
+    name: 'not_found',
     description:
-      "Call this when you have exhausted your search and the answer is not in the document. Describe what you searched for.",
+      'Call this when you have exhausted your search and the answer is not in the document. Describe what you searched for.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         searched: {
-          type: "string",
-          description: "Description of what was searched",
+          type: 'string',
+          description: 'Description of what was searched',
         },
       },
-      required: ["searched"],
+      required: ['searched'],
     },
   },
   {
-    name: "final_answer",
-    description:
-      "Call this when you have found the answer. Provide your complete response.",
+    name: 'final_answer',
+    description: 'Call this when you have found the answer. Provide your complete response.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        content: { type: "string", description: "Your complete answer" },
+        content: { type: 'string', description: 'Your complete answer' },
       },
-      required: ["content"],
+      required: ['content'],
     },
   },
 ];
 
 const SEARCH_TOOL: Tool = {
-  name: "search",
+  name: 'search',
   description:
-    "Semantic search by meaning — finds passages even when wording differs from the query. Returns candidate regions with line numbers. Always read (slice) a result before answering from it.",
+    'Semantic search by meaning — finds passages even when wording differs from the query. Returns candidate regions with line numbers. Always read (slice) a result before answering from it.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
       query: {
-        type: "string",
+        type: 'string',
         description:
           "Plain-language description of what the passage would say, not the question's exact wording",
       },
       topK: {
-        type: "number",
-        description: "Number of results to return (default 5)",
+        type: 'number',
+        description: 'Number of results to return (default 5)',
       },
     },
-    required: ["query"],
+    required: ['query'],
   },
 };
 
 const PROVENANCE_TOOL: Tool = {
-  name: "get_provenance",
+  name: 'get_provenance',
   description:
-    "Look up the original source of a fact: which document it came from, its type, when it was written, and how old it is.",
+    'Look up the original source of a fact: which document it came from, its type, when it was written, and how old it is.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
       fact: {
-        type: "string",
-        description: "The fact or claim to look up (as close to verbatim as possible)",
+        type: 'string',
+        description: 'The fact or claim to look up (as close to verbatim as possible)',
       },
     },
-    required: ["fact"],
+    required: ['fact'],
   },
 };
 
 // Maps each tool name to its iteration phase label and user-facing status message.
 // Both the trace and the StatusCallback derive from this single source.
 const TOOL_DISPLAY: Record<string, { phase: IterationPhase; message: string }> = {
-  peek:          { phase: "orientation", message: "Checking your memory..." },
-  grep:          { phase: "searching",   message: "Searching your memory..." },
-  search:        { phase: "searching",   message: "Searching for relevant context..." },
-  slice:         { phase: "reading",     message: "Reading relevant section..." },
-  summarize:     { phase: "summarizing", message: "Reviewing a longer section..." },
-  query:         { phase: "querying",    message: "Checking a specific part of your memory..." },
-  get_provenance:{ phase: "reading",     message: "Looking up the source of that..." },
-  final_answer:  { phase: "answering",   message: "" },
-  not_found:     { phase: "not_found",   message: "" },
+  peek: { phase: 'orientation', message: 'Checking your memory...' },
+  grep: { phase: 'searching', message: 'Searching your memory...' },
+  search: { phase: 'searching', message: 'Searching for relevant context...' },
+  slice: { phase: 'reading', message: 'Reading relevant section...' },
+  summarize: { phase: 'summarizing', message: 'Reviewing a longer section...' },
+  query: { phase: 'querying', message: 'Checking a specific part of your memory...' },
+  get_provenance: { phase: 'reading', message: 'Looking up the source of that...' },
+  final_answer: { phase: 'answering', message: '' },
+  not_found: { phase: 'not_found', message: '' },
 };
 
 export class RLMRunner {
@@ -184,7 +182,7 @@ export class RLMRunner {
     adapter: ModelAdapter,
     embeddingAdapter?: RlmEmbeddingAdapter,
     config?: Partial<RLMConfig>,
-    logger?: RLMLogger
+    logger?: RLMLogger,
   ) {
     this.adapter = adapter;
     this.embeddingAdapter = embeddingAdapter ?? null;
@@ -192,13 +190,9 @@ export class RLMRunner {
     this.logger = logger;
   }
 
-  async run(
-    query: string,
-    corpus: RLMCorpus,
-    onStatus?: StatusCallback
-  ): Promise<RLMResult> {
+  async run(query: string, corpus: RLMCorpus, onStatus?: StatusCallback): Promise<RLMResult> {
     const startMs = Date.now();
-    const detail = this.config.traceDetail ?? "full";
+    const detail = this.config.traceDetail ?? 'full';
     const tb = new TraceBuilder(detail, this.logger);
 
     const repl = new REPLEnvironment(corpus, this.config, this.adapter);
@@ -217,20 +211,20 @@ export class RLMRunner {
       repl.charCount,
       repl.lineCount,
       repl.source,
-      this.config
+      this.config,
     );
 
     tb.runStarted(query, corpusMeta);
 
     const history: Message[] = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: query },
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: query },
     ];
 
     const toolCallTrace: ToolCallRecord[] = [];
     let loopDetectionFired = false;
-    let terminationReason: RLMResult["terminationReason"] = "max_iterations";
-    let answer = "";
+    let terminationReason: RLMResult['terminationReason'] = 'max_iterations';
+    let answer = '';
     let found = true;
 
     const recentCalls: Array<{ tool: string; args: string }> = [];
@@ -251,7 +245,7 @@ export class RLMRunner {
       // Plain text response (no tool calls) — treat as final answer
       if (response.toolCalls.length === 0) {
         answer = response.content;
-        terminationReason = "no_tool_call";
+        terminationReason = 'no_tool_call';
         break;
       }
 
@@ -259,13 +253,17 @@ export class RLMRunner {
 
       // Loop detection: same tool + same args as previous call
       const prevSig = recentCalls.at(-1);
-      if (prevSig && prevSig.tool === toolCall.name && prevSig.args === JSON.stringify(toolCall.args)) {
+      if (
+        prevSig &&
+        prevSig.tool === toolCall.name &&
+        prevSig.args === JSON.stringify(toolCall.args)
+      ) {
         loopDetectionFired = true;
         const deducted = Math.min(2, remainingIterations);
         remainingIterations = Math.max(0, remainingIterations - 2);
         tb.loopDetection(iteration, toolCall, deducted);
         history.push({
-          role: "user",
+          role: 'user',
           content: `You just called ${toolCall.name} with the same arguments again. Try a different approach — use a different tool, change your search terms, or call final_answer or not_found if you have exhausted your options.`,
         });
         continue;
@@ -276,11 +274,19 @@ export class RLMRunner {
 
       // Emit tool dispatched event and StatusCallback signal — both derived
       // from the same TOOL_DISPLAY entry to keep them consistent.
-      const display = TOOL_DISPLAY[toolCall.name] ?? { phase: "reading" as IterationPhase, message: "" };
+      const display = TOOL_DISPLAY[toolCall.name] ?? {
+        phase: 'reading' as IterationPhase,
+        message: '',
+      };
       const toolCorrId = tb.toolDispatched(iteration, toolCall, display.phase, display.message);
 
       if (display.message && onStatus) {
-        onStatus({ phase: display.phase, message: display.message, iteration, tool: toolCall.name });
+        onStatus({
+          phase: display.phase,
+          message: display.message,
+          iteration,
+          tool: toolCall.name,
+        });
       }
 
       const toolStart = Date.now();
@@ -292,14 +298,14 @@ export class RLMRunner {
       if (result === SENTINEL_NOT_FOUND) {
         tb.toolCompleted(toolCorrId, iteration, toolCall.name, result, toolDuration);
         found = false;
-        terminationReason = "not_found_tool";
+        terminationReason = 'not_found_tool';
         break;
       }
 
       if (result.startsWith(SENTINEL_FINAL)) {
         tb.toolCompleted(toolCorrId, iteration, toolCall.name, result, toolDuration);
         answer = result.slice(SENTINEL_FINAL.length);
-        terminationReason = "final_tool";
+        terminationReason = 'final_tool';
         break;
       }
 
@@ -314,20 +320,19 @@ export class RLMRunner {
       });
 
       history.push({
-        role: "assistant",
+        role: 'assistant',
         content: response.content,
         toolCalls: [toolCall],
       });
       history.push({
-        role: "tool",
+        role: 'tool',
         content: result,
         toolName: toolCall.name,
       });
-
     }
 
     // Max iterations failsafe
-    if (terminationReason === "max_iterations") {
+    if (terminationReason === 'max_iterations') {
       const synthCorrId = tb.synthesisTriggered();
       const synthStart = Date.now();
       const { text, hadToolCallEscape } = await this._synthesize(history, tools);
@@ -372,14 +377,14 @@ export class RLMRunner {
 
   private async _synthesize(
     history: Message[],
-    _tools: Tool[]
+    _tools: Tool[],
   ): Promise<{ text: string; hadToolCallEscape: boolean }> {
     const synthesis: Message[] = [
       ...history,
       {
-        role: "user",
+        role: 'user',
         content:
-          "You have reached the maximum number of steps. Synthesize your best answer from what you have gathered so far. Respond with plain text only — no tool calls.",
+          'You have reached the maximum number of steps. Synthesize your best answer from what you have gathered so far. Respond with plain text only — no tool calls.',
       },
     ];
 
@@ -390,23 +395,23 @@ export class RLMRunner {
         [
           ...synthesis,
           {
-            role: "user",
+            role: 'user',
             content:
-              "Plain text only. Do not call any tools. Write your answer as a single paragraph.",
+              'Plain text only. Do not call any tools. Write your answer as a single paragraph.',
           },
         ],
         [],
-        this.config
+        this.config,
       );
-      const text = retry.content.trim() || "[synthesis failed]";
+      const text = retry.content.trim() || '[synthesis failed]';
       return { text, hadToolCallEscape: true };
     }
 
-    return { text: response.content.trim() || "[synthesis failed]", hadToolCallEscape: false };
+    return { text: response.content.trim() || '[synthesis failed]', hadToolCallEscape: false };
   }
 }
 
 function looksLikeToolCall(text: string): boolean {
   const t = text.trim();
-  return t.includes("<tool_call>") || (t.startsWith("[") && t.includes('"name"'));
+  return t.includes('<tool_call>') || (t.startsWith('[') && t.includes('"name"'));
 }

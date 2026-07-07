@@ -1,1 +1,1 @@
-export { OllamaAdapter, OllamaEmbeddingAdapter } from "./ollama.js";
+export { OllamaAdapter, OllamaEmbeddingAdapter } from './ollama.js';
