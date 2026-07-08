@@ -29,7 +29,7 @@ export function validateFrontmatter(data: Record<string, unknown>): SkillFrontma
   }
   if (name.length > NAME_MAX || !NAME_RE.test(name)) {
     throw new Error(
-      `Invalid skill name "${name}": must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/ and be ≤${NAME_MAX} chars`
+      `Invalid skill name "${name}": must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/ and be ≤${NAME_MAX} chars`,
     );
   }
   if (typeof description !== 'string' || !description) {
@@ -40,7 +40,11 @@ export function validateFrontmatter(data: Record<string, unknown>): SkillFrontma
   if (typeof data['license'] === 'string') fm.license = data['license'];
   if (typeof data['compatibility'] === 'string') fm.compatibility = data['compatibility'];
   if (typeof data['allowed-tools'] === 'string') fm['allowed-tools'] = data['allowed-tools'];
-  if (data['metadata'] && typeof data['metadata'] === 'object' && !Array.isArray(data['metadata'])) {
+  if (
+    data['metadata'] &&
+    typeof data['metadata'] === 'object' &&
+    !Array.isArray(data['metadata'])
+  ) {
     fm.metadata = data['metadata'] as Record<string, string>;
   }
   return fm;

@@ -6,7 +6,7 @@ import type { ScriptResult } from '../types.js';
 
 export async function runJsScript(
   scriptPath: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): Promise<unknown> {
   const src = await readFile(scriptPath, 'utf8');
   const sandbox = vm.createContext({ console, process: { env: process.env }, ...context });
@@ -37,7 +37,7 @@ async function resolveInterpreter(skillPath: string): Promise<InterpreterMode> {
 export async function runPythonScript(
   skillPath: string,
   scriptPath: string,
-  args: string[] = []
+  args: string[] = [],
 ): Promise<ScriptResult> {
   const mode = await resolveInterpreter(skillPath);
 
@@ -62,8 +62,12 @@ export async function runPythonScript(
 
     proc.stdout.setEncoding('utf8');
     proc.stderr.setEncoding('utf8');
-    proc.stdout.on('data', (chunk: string) => { stdout += chunk; });
-    proc.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    proc.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    proc.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
     proc.on('error', reject);
     proc.on('close', (code) => {
       resolve({ stdout, stderr, exitCode: code ?? 1 });

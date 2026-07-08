@@ -27,7 +27,6 @@ my-skills/
 name: pdf-processing
 description: Extracts structured data from PDF files.
 ---
-
 When the user provides a PDF, call the extract script to pull out the raw text,
 then summarize the key sections...
 ```
@@ -102,7 +101,10 @@ const newSkill = await skills.create({
 const result = await skills.runScript('pdf-processing', 'extract.js', { filePath: '/tmp/doc.pdf' });
 
 // Python script — resolves .venv → uv → python3
-const { stdout, exitCode } = await skills.runPythonScript('pdf-processing', 'extract.py', ['--input', '/tmp/doc.pdf']);
+const { stdout, exitCode } = await skills.runPythonScript('pdf-processing', 'extract.py', [
+  '--input',
+  '/tmp/doc.pdf',
+]);
 ```
 
 ---
@@ -181,10 +183,7 @@ A test case (`EvalCase`) has a prompt, an expected output description, optional 
       "id": 1,
       "prompt": "Summarize the following article in bullet points.",
       "expected_output": "A 5–7 bullet summary of the article's key points.",
-      "assertions": [
-        "Each bullet is a single sentence",
-        "No bullet exceeds 20 words"
-      ]
+      "assertions": ["Each bullet is a single sentence", "No bullet exceeds 20 words"]
     },
     {
       "id": 2,
@@ -220,7 +219,7 @@ await skills.saveEvals('summarize', suite);
 
 ### Description trigger evals
 
-Description trigger evals test whether a skill's `description` field reliably causes the agent to invoke the skill for appropriate queries — and to *not* invoke it for unrelated ones. They are used to tune the description wording systematically.
+Description trigger evals test whether a skill's `description` field reliably causes the agent to invoke the skill for appropriate queries — and to _not_ invoke it for unrelated ones. They are used to tune the description wording systematically.
 
 Each entry is a query labeled with whether the skill should trigger:
 

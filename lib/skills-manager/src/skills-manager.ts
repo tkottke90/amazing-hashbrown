@@ -36,7 +36,7 @@ export class SkillsManager {
         } catch {
           // malformed skill — skip silently on boot
         }
-      })
+      }),
     );
   }
 
@@ -60,7 +60,7 @@ export class SkillsManager {
     const { name, description, body, license, compatibility, metadata, allowedTools } = input;
     if (!name || name.length > NAME_MAX || !NAME_RE.test(name)) {
       throw new Error(
-        `Invalid skill name "${name}": must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/ and be ≤${NAME_MAX} chars`
+        `Invalid skill name "${name}": must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/ and be ≤${NAME_MAX} chars`,
       );
     }
     if (this.cache.has(name)) {
@@ -135,18 +135,14 @@ export class SkillsManager {
   async runScript(
     name: string,
     scriptFile: string,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   ): Promise<unknown> {
     this.assertExists(name);
     const scriptPath = join(this.skillsRoot, name, 'scripts', scriptFile);
     return runJsScript(scriptPath, context);
   }
 
-  async runPythonScript(
-    name: string,
-    scriptFile: string,
-    args?: string[]
-  ): Promise<ScriptResult> {
+  async runPythonScript(name: string, scriptFile: string, args?: string[]): Promise<ScriptResult> {
     this.assertExists(name);
     const skillPath = join(this.skillsRoot, name);
     const scriptPath = join(skillPath, 'scripts', scriptFile);
@@ -156,7 +152,7 @@ export class SkillsManager {
   async readFile(
     name: string,
     dir: 'scripts' | 'references' | 'evals',
-    basename: string
+    basename: string,
   ): Promise<string> {
     this.assertExists(name);
     return readFile(join(this.skillsRoot, name, dir, basename), 'utf8');
@@ -166,7 +162,7 @@ export class SkillsManager {
     name: string,
     dir: 'scripts' | 'references' | 'evals',
     basename: string,
-    content: string
+    content: string,
   ): Promise<void> {
     this.assertExists(name);
     const dirPath = join(this.skillsRoot, name, dir);
@@ -177,7 +173,7 @@ export class SkillsManager {
   async deleteFile(
     name: string,
     dir: 'scripts' | 'references' | 'evals',
-    basename: string
+    basename: string,
   ): Promise<void> {
     this.assertExists(name);
     await rm(join(this.skillsRoot, name, dir, basename));

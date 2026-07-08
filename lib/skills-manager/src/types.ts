@@ -14,7 +14,7 @@ export interface Skill {
   path: string;
   frontmatter: SkillFrontmatter;
   body: string;
-  scripts: Record<string, string>;    // basename → absolute filepath; use readFile() for content
+  scripts: Record<string, string>; // basename → absolute filepath; use readFile() for content
   references: Record<string, string>; // basename → absolute filepath; use readFile() for content
 }
 
@@ -58,8 +58,8 @@ export interface EvalCase {
   id: number | string;
   prompt: string;
   expected_output: string;
-  files?: string[];       // relative paths to input files (under evals/files/)
-  assertions?: string[];  // verifiable statements about expected output
+  files?: string[]; // relative paths to input files (under evals/files/)
+  assertions?: string[]; // verifiable statements about expected output
 }
 
 export interface EvalSuite {
