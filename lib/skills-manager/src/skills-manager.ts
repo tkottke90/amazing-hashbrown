@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { serialize, validateFrontmatter, parse } from './internal/frontmatter.js';
+import { serialize, validateFrontmatter, parse, DESCRIPTION_MAX } from './internal/frontmatter.js';
 import { scanSkillsRoot, readFrontmatter, readFullSkill } from './internal/loader.js';
 import { runJsScript, runPythonScript as execPythonScript } from './internal/runner.js';
 import type {
@@ -10,6 +10,7 @@ import type {
   CreateSkillInput,
   EditSkillInput,
   ScriptResult,
+  EvalSuite,
 } from './types.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -84,6 +85,7 @@ export class SkillsManager {
       description: skill.frontmatter.description,
       slashCommand: skill.slashCommand,
       enabled: skill.enabled,
+      largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
     });
     return skill;
   }
@@ -119,6 +121,7 @@ export class SkillsManager {
       description: skill.frontmatter.description,
       slashCommand: skill.slashCommand,
       enabled: skill.enabled,
+      largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
     });
     return skill;
   }
@@ -152,7 +155,7 @@ export class SkillsManager {
 
   async readFile(
     name: string,
-    dir: 'scripts' | 'references',
+    dir: 'scripts' | 'references' | 'evals',
     basename: string
   ): Promise<string> {
     this.assertExists(name);
@@ -161,7 +164,7 @@ export class SkillsManager {
 
   async writeFile(
     name: string,
-    dir: 'scripts' | 'references',
+    dir: 'scripts' | 'references' | 'evals',
     basename: string,
     content: string
   ): Promise<void> {
@@ -173,11 +176,30 @@ export class SkillsManager {
 
   async deleteFile(
     name: string,
-    dir: 'scripts' | 'references',
+    dir: 'scripts' | 'references' | 'evals',
     basename: string
   ): Promise<void> {
     this.assertExists(name);
     await rm(join(this.skillsRoot, name, dir, basename));
+  }
+
+  async loadEvals(name: string): Promise<EvalSuite> {
+    this.assertExists(name);
+    const evalsPath = join(this.skillsRoot, name, 'evals', 'evals.json');
+    let raw: string;
+    try {
+      raw = await readFile(evalsPath, 'utf8');
+    } catch {
+      throw new Error(`No evals found for skill "${name}" — create evals/evals.json first`);
+    }
+    return JSON.parse(raw) as EvalSuite;
+  }
+
+  async saveEvals(name: string, suite: EvalSuite): Promise<void> {
+    this.assertExists(name);
+    const evalsDir = join(this.skillsRoot, name, 'evals');
+    await mkdir(evalsDir, { recursive: true });
+    await writeFile(join(evalsDir, 'evals.json'), JSON.stringify(suite, null, 2), 'utf8');
   }
 
   private assertExists(name: string): void {

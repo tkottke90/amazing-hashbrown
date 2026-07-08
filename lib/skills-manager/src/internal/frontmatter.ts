@@ -3,6 +3,7 @@ import type { SkillFrontmatter } from '../types.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 const NAME_MAX = 64;
+export const DESCRIPTION_MAX = 1024;
 
 export interface ParsedSkill {
   data: Record<string, unknown>;

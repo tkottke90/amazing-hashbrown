@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parse, validateFrontmatter } from './frontmatter.js';
+import { parse, validateFrontmatter, DESCRIPTION_MAX } from './frontmatter.js';
 import type { Skill, SkillSummary } from '../types.js';
 
 const SKILL_FILE = 'SKILL.md';
@@ -34,6 +34,7 @@ export async function readFrontmatter(skillPath: string): Promise<SkillSummary> 
     description: fm.description,
     slashCommand: `/${fm.name}`,
     enabled: fm.metadata?.['enabled'] !== 'false',
+    largeDesc: fm.description.length > DESCRIPTION_MAX,
   };
 }
 
