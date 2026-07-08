@@ -1,1 +1,9 @@
-// Skills manager — loads, resolves, and activates AgentSkills for agent invocations.
+export { SkillsManager } from './skills-manager.js';
+export type {
+  Skill,
+  SkillSummary,
+  SkillFrontmatter,
+  CreateSkillInput,
+  EditSkillInput,
+  ScriptResult,
+} from './types.js';
