@@ -3,6 +3,7 @@ import { MessageCircleQuestion } from 'lucide-preact';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { ChatMessage } from './chat-message';
 import type { HitlThreadMessage } from '../types/thread-message';
 
 interface HitlPromptMessageProps {
@@ -21,11 +22,22 @@ function approveVariant(
 
 export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMessageProps) {
   const freeTextValue = useSignal('');
-  const isAnswered = message.status === 'answered';
 
   function submit(answer: string) {
     if (!answer.trim()) return;
     onAnswer(message.promptId, answer);
+  }
+
+  if (message.status === 'answered') {
+    return (
+      <ChatMessage
+        message={message.answer ?? ''}
+        sentAt={new Date()}
+        mirrored
+        showBG
+        className="self-end"
+      />
+    );
   }
 
   return (
@@ -40,11 +52,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
         <p className="font-medium leading-snug">{message.question}</p>
       </div>
 
-      {isAnswered ? (
-        <p className="text-muted-foreground text-xs">
-          You answered: <span className="font-medium text-foreground">{message.answer}</span>
-        </p>
-      ) : message.promptKind === 'yes_no' ? (
+      {message.promptKind === 'yes_no' ? (
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => submit(message.rejectLabel ?? 'No')}>
             {message.rejectLabel ?? 'No'}
