@@ -1,4 +1,12 @@
 import '@testing-library/jest-dom';
+import { webcrypto } from 'node:crypto';
+
+if (!globalThis.crypto?.randomUUID) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    writable: false,
+  });
+}
 
 // Radix popover-style primitives (DropdownMenu, Select, ...) call these
 // during open/close in the browser; jsdom doesn't implement them.
@@ -13,6 +21,22 @@ if (!Element.prototype.releasePointerCapture) {
 }
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
+}
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class IntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof IntersectionObserver;
 }
 
 if (typeof window.matchMedia !== 'function') {

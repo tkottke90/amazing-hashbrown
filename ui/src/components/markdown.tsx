@@ -6,6 +6,9 @@ import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
+import { ArtifactImage } from './artifact-image';
+
+// ---- helpers ----
 
 function getCodeLanguage(children: ComponentChildren): string | undefined {
   const className = (children as { props?: { className?: string } })?.props?.className ?? '';
@@ -13,10 +16,12 @@ function getCodeLanguage(children: ComponentChildren): string | undefined {
   return match ? match[1] : undefined;
 }
 
+// ---- code block ----
+
 function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   const copied = useSignal(false);
-  const ref = { current: null as HTMLPreElement | null };
   const lang = getCodeLanguage(props.children);
+  const ref = { current: null as HTMLPreElement | null };
 
   function handleCopy() {
     navigator.clipboard.writeText(ref.current?.innerText ?? '').catch(() => {});
@@ -49,6 +54,23 @@ function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   );
 }
 
+// ---- img override: routes artifact URLs to ArtifactImage ----
+
+const ARTIFACT_RE = /^\/api\/v1\/artifacts\/([^/?#]+)/;
+
+function MarkdownImg(props: Record<string, unknown>) {
+  const src = String(props.src ?? '');
+  const alt = props.alt != null ? String(props.alt) : undefined;
+  const url = new URL(src, 'http://x');
+  const match = url.pathname.match(ARTIFACT_RE);
+  if (match) {
+    return <ArtifactImage id={match[1] ?? ''} alt={alt} nsfw={url.hash === '#nsfw'} />;
+  }
+  return <img src={src} alt={alt} loading="lazy" className="rounded-md" />;
+}
+
+// ---- public ----
+
 export interface MarkdownProps {
   children: string;
   className?: string;
@@ -60,7 +82,10 @@ export function Markdown({ children, className }: MarkdownProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{ pre: ({ node: _node, ...props }) => <CodeBlock {...props} /> }}
+        components={{
+          pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
+          img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
+        }}
       >
         {children}
       </ReactMarkdown>
