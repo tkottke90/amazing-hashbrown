@@ -1,1 +1,10 @@
-// Tools manager — registers and resolves tools (MCP and built-in) for agent invocations.
+export { ToolsManager } from './tools-manager.js';
+export type {
+  RegisteredTool,
+  McpServerConfig,
+  McpStdioConfig,
+  McpHttpConfig,
+  McpConfigFile,
+  ToolDefinition,
+  ToolCall,
+} from './types.js';
