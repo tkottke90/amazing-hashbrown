@@ -19,6 +19,12 @@ function approveVariant(
   return 'default';
 }
 
+function parseChoice(raw: string): { label: string; description?: string } {
+  const idx = raw.indexOf(' - ');
+  if (idx < 0) return { label: raw };
+  return { label: raw.slice(0, idx), description: raw.slice(idx + 3) };
+}
+
 export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMessageProps) {
   const freeTextValue = useSignal('');
 
@@ -39,20 +45,24 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
     );
   }
 
+  const isMultipleChoice = message.promptKind === 'multiple_choice';
+
   return (
     <div
       className={cn(
-        'rounded-md border border-border bg-card p-4 text-sm shadow-sm',
+        'rounded-md border border-border bg-card text-sm shadow-sm overflow-hidden',
         className,
       )}
     >
-      <div className="mb-3 flex items-start gap-2">
+      {/* Question header */}
+      <div className={cn('flex items-start gap-2 px-4 pt-4', isMultipleChoice ? 'pb-3' : 'pb-0')}>
         <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <p className="font-medium leading-snug">{message.question}</p>
       </div>
 
+      {/* Controls */}
       {message.promptKind === 'yes_no' ? (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 px-4 py-3">
           <Button size="sm" variant="outline" onClick={() => submit(message.rejectLabel ?? 'No')}>
             {message.rejectLabel ?? 'No'}
           </Button>
@@ -65,35 +75,35 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
           </Button>
         </div>
       ) : message.promptKind === 'multiple_choice' ? (
-        <div>
-          <div className="flex flex-wrap gap-2">
-            {message.choices?.map((choice) => (
+        <div className="border-t border-border">
+          {message.choices?.map((raw) => {
+            const { label, description } = parseChoice(raw);
+            return (
               <button
-                key={choice}
+                key={raw}
                 type="button"
-                onClick={() => submit(choice)}
-                className={cn(
-                  'cursor-pointer rounded-lg border border-border bg-background px-4 py-2 text-left text-sm',
-                  'transition-all duration-150',
-                  'hover:border-primary/50 hover:bg-accent hover:shadow-sm',
-                )}
+                onClick={() => submit(raw)}
+                className="flex w-full cursor-pointer items-baseline gap-1 px-4 py-2 text-left transition-colors hover:bg-accent"
               >
-                <strong>{choice}</strong>
+                <strong>{label}</strong>
+                {description && (
+                  <span className="text-muted-foreground">&nbsp;-&nbsp;{description}</span>
+                )}
               </button>
-            ))}
-          </div>
+            );
+          })}
           {message.allowFreeText && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 submit(freeTextValue.value);
               }}
-              className="mt-3 flex gap-2"
+              className="flex gap-2 border-t border-border px-4 py-2"
             >
               <Input
                 value={freeTextValue.value}
                 onInput={(e) => { freeTextValue.value = (e.target as HTMLInputElement).value; }}
-                placeholder="Or type a custom answer…"
+                placeholder="Custom answer…"
                 className="h-8 text-sm"
               />
               <Button type="submit" size="sm" disabled={!freeTextValue.value.trim()}>
@@ -108,7 +118,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
             e.preventDefault();
             submit(freeTextValue.value);
           }}
-          className="flex gap-2"
+          className="flex gap-2 px-4 py-3"
         >
           <Input
             value={freeTextValue.value}
