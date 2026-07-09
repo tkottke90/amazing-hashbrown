@@ -36,6 +36,10 @@ export type ThreadMessage =
       question: string;
       promptKind: HitlKind;
       choices?: string[];
+      allowFreeText?: boolean;
+      approveLabel?: string;
+      approveType?: 'primary' | 'secondary' | 'destructive';
+      rejectLabel?: string;
       status: HitlStatus;
       answer?: string;
     }

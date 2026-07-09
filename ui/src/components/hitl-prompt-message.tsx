@@ -11,6 +11,14 @@ interface HitlPromptMessageProps {
   className?: string;
 }
 
+function approveVariant(
+  t: 'primary' | 'secondary' | 'destructive' | undefined,
+): 'default' | 'secondary' | 'destructive' {
+  if (t === 'destructive') return 'destructive';
+  if (t === 'secondary') return 'secondary';
+  return 'default';
+}
+
 export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMessageProps) {
   const freeTextValue = useSignal('');
   const isAnswered = message.status === 'answered';
@@ -23,7 +31,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
   return (
     <div
       className={cn(
-        'rounded-md border border-border bg-card p-4 text-sm max-w-[min(80%,75ch)] shadow-sm',
+        'rounded-md border border-border bg-card p-4 text-sm shadow-sm',
         className,
       )}
     >
@@ -37,17 +45,55 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
           You answered: <span className="font-medium text-foreground">{message.answer}</span>
         </p>
       ) : message.promptKind === 'yes_no' ? (
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => submit('yes')}>Yes</Button>
-          <Button size="sm" variant="outline" onClick={() => submit('no')}>No</Button>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={() => submit(message.rejectLabel ?? 'No')}>
+            {message.rejectLabel ?? 'No'}
+          </Button>
+          <Button
+            size="sm"
+            variant={approveVariant(message.approveType)}
+            onClick={() => submit(message.approveLabel ?? 'Yes')}
+          >
+            {message.approveLabel ?? 'Yes'}
+          </Button>
         </div>
       ) : message.promptKind === 'multiple_choice' ? (
-        <div className="flex flex-wrap gap-2">
-          {message.choices?.map((choice) => (
-            <Button key={choice} size="sm" variant="outline" onClick={() => submit(choice)}>
-              {choice}
-            </Button>
-          ))}
+        <div>
+          <div className="flex flex-wrap gap-2">
+            {message.choices?.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                onClick={() => submit(choice)}
+                className={cn(
+                  'cursor-pointer rounded-lg border border-border bg-background px-4 py-2 text-left text-sm',
+                  'transition-all duration-150',
+                  'hover:border-primary/50 hover:bg-accent hover:shadow-sm',
+                )}
+              >
+                <strong>{choice}</strong>
+              </button>
+            ))}
+          </div>
+          {message.allowFreeText && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submit(freeTextValue.value);
+              }}
+              className="mt-3 flex gap-2"
+            >
+              <Input
+                value={freeTextValue.value}
+                onInput={(e) => { freeTextValue.value = (e.target as HTMLInputElement).value; }}
+                placeholder="Or type a custom answer…"
+                className="h-8 text-sm"
+              />
+              <Button type="submit" size="sm" disabled={!freeTextValue.value.trim()}>
+                Submit
+              </Button>
+            </form>
+          )}
         </div>
       ) : (
         <form

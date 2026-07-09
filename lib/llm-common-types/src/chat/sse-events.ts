@@ -34,6 +34,10 @@ const HitlPromptSchema = z.object({
   question: z.string(),
   kind: HitlKindSchema,
   choices: z.array(z.string()).optional(),
+  allowFreeText: z.boolean().optional(),
+  approveLabel: z.string().optional(),
+  approveType: z.enum(['primary', 'secondary', 'destructive']).optional(),
+  rejectLabel: z.string().optional(),
 });
 
 const IframeContentSchema = z.object({

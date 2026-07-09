@@ -137,11 +137,16 @@ async function emitHitlOrDone(
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
   if (interrupt) {
-    const { question, kind, choices } = interrupt.value as {
-      question: string;
-      kind: 'yes_no' | 'multiple_choice' | 'free_text';
-      choices?: string[];
-    };
+    const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
+      interrupt.value as {
+        question: string;
+        kind: 'yes_no' | 'multiple_choice' | 'free_text';
+        choices?: string[];
+        allowFreeText?: boolean;
+        approveLabel?: string;
+        approveType?: 'primary' | 'secondary' | 'destructive';
+        rejectLabel?: string;
+      };
     writeSseEvent(res, {
       type: 'hitl_prompt',
       messageId: msgId,
@@ -149,6 +154,10 @@ async function emitHitlOrDone(
       question,
       kind,
       choices,
+      allowFreeText,
+      approveLabel,
+      approveType,
+      rejectLabel,
     });
   } else {
     writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });

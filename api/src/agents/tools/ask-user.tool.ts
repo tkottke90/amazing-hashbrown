@@ -11,6 +11,22 @@ const AskUserSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Required for multiple_choice: the list of options to present'),
+  allowFreeText: z
+    .boolean()
+    .optional()
+    .describe('multiple_choice only: also show a free-text input so the user can type a custom answer'),
+  approveLabel: z
+    .string()
+    .optional()
+    .describe('yes_no only: label for the affirmative button (default: "Yes")'),
+  approveType: z
+    .enum(['primary', 'secondary', 'destructive'])
+    .optional()
+    .describe('yes_no only: visual style of the affirmative button (default: "primary")'),
+  rejectLabel: z
+    .string()
+    .optional()
+    .describe('yes_no only: label for the negative button (default: "No")'),
 });
 
 export const askUserTool = tool(

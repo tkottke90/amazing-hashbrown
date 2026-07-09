@@ -106,6 +106,10 @@ function handleEvent(evt: ChatSSEEvent): void {
           question: evt.question,
           promptKind: evt.kind,
           choices: evt.choices,
+          allowFreeText: evt.allowFreeText,
+          approveLabel: evt.approveLabel,
+          approveType: evt.approveType,
+          rejectLabel: evt.rejectLabel,
           status: 'pending',
         },
       ];
