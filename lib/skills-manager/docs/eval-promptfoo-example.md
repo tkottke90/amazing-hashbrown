@@ -8,11 +8,11 @@ This guide shows how to wire them together.
 
 ## How They Fit Together
 
-| Layer | Responsibility |
-|---|---|
-| `skills-manager` | Stores and loads `evals/evals.json`; provides `EvalCase`, `GradingResult`, `aggregateBenchmark` types |
-| PromptFoo | Runs each test case against an LLM provider, grades assertions, produces structured results |
-| Adapter (your code) | Converts `EvalSuite` → PromptFoo config; maps PromptFoo results → `GradingResult[]` |
+| Layer               | Responsibility                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `skills-manager`    | Stores and loads `evals/evals.json`; provides `EvalCase`, `GradingResult`, `aggregateBenchmark` types |
+| PromptFoo           | Runs each test case against an LLM provider, grades assertions, produces structured results           |
+| Adapter (your code) | Converts `EvalSuite` → PromptFoo config; maps PromptFoo results → `GradingResult[]`                   |
 
 The key design decision: PromptFoo is the **runner**, not the source of truth. Test cases stay in `evals/evals.json` and are loaded via `loadEvals()`. The adapter layer is thin — no business logic, just format translation.
 
@@ -140,13 +140,12 @@ function toGradingResults(promptFooResults: any): {
   const withoutSkill: GradingResult[] = [];
 
   for (const result of promptFooResults.results) {
-    const assertionResults: AssertionResult[] = result.gradingResult?.componentResults?.map(
-      (r: any) => ({
+    const assertionResults: AssertionResult[] =
+      result.gradingResult?.componentResults?.map((r: any) => ({
         text: r.assertion?.value ?? '',
         passed: r.pass,
         evidence: r.reason ?? '',
-      }),
-    ) ?? [];
+      })) ?? [];
 
     const passed = assertionResults.filter((a) => a.passed).length;
     const total = assertionResults.length;
@@ -238,7 +237,7 @@ assert: [
   // Deterministic — no LLM call
   { type: 'not-contains', value: 'I cannot help with that' },
   { type: 'javascript', value: 'output.split("\\n").length <= 10' },
-]
+];
 ```
 
 To use mixed assertion types, you would extend `EvalCase.assertions` to support a structured form (e.g. `{ type: string; value: string }[]`) rather than plain strings. The `EvalCase` type in `types.ts` would need updating if you go this route.
