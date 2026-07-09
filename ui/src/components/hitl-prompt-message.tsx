@@ -30,13 +30,21 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
 
   if (message.status === 'answered') {
     return (
-      <ChatMessage
-        message={message.answer ?? ''}
-        sentAt={new Date()}
-        mirrored
-        showBG
-        className="self-end"
-      />
+      <>
+        <div className={cn('rounded-md border border-border bg-card p-4 text-sm shadow-sm', className)}>
+          <div className="flex items-start gap-2">
+            <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <p className="font-medium leading-snug">{message.question}</p>
+          </div>
+        </div>
+        <ChatMessage
+          message={message.answer ?? ''}
+          sentAt={new Date()}
+          mirrored
+          showBG
+          className="self-end"
+        />
+      </>
     );
   }
 
