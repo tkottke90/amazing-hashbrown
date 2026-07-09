@@ -3,6 +3,7 @@ import { MemorySaver } from '@langchain/langgraph';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { env } from '../config/env.js';
 import { askUserTool } from './tools/ask-user.tool.js';
+import { uploadImageTool } from './tools/upload-image.tool.js';
 
 const checkpointer = new MemorySaver();
 
@@ -14,7 +15,7 @@ function buildChatAgent() {
 
   return createReactAgent({
     llm,
-    tools: [askUserTool],
+    tools: [askUserTool, uploadImageTool],
     checkpointSaver: checkpointer,
   });
 }
