@@ -120,10 +120,7 @@ function handleEvent(evt: ChatSSEEvent): void {
       break;
 
     case 'iframe_content':
-      messages.value = [
-        ...messages.value,
-        { kind: 'iframe', id: evt.messageId, html: evt.html },
-      ];
+      messages.value = [...messages.value, { kind: 'iframe', id: evt.messageId, html: evt.html }];
       break;
 
     case 'audio_content':
@@ -147,9 +144,7 @@ function handleEvent(evt: ChatSSEEvent): void {
 
     case 'stream_error':
       messages.value = messages.value.map((m) =>
-        m.kind === 'assistant' && m.id === _currentAssistantId
-          ? { ...m, status: 'error' }
-          : m,
+        m.kind === 'assistant' && m.id === _currentAssistantId ? { ...m, status: 'error' } : m,
       );
       batch(() => {
         isStreaming.value = false;
@@ -191,9 +186,7 @@ export async function sendMessage(content: string): Promise<void> {
 
 export async function submitHitlAnswer(promptId: string, answer: string): Promise<void> {
   messages.value = messages.value.map((m) =>
-    m.kind === 'hitl_prompt' && m.promptId === promptId
-      ? { ...m, status: 'answered', answer }
-      : m,
+    m.kind === 'hitl_prompt' && m.promptId === promptId ? { ...m, status: 'answered', answer } : m,
   );
   pendingHitlId.value = null;
 

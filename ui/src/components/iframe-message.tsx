@@ -15,7 +15,9 @@ export function IframeMessage({ message, className }: IframeMessageProps) {
     <div className={cn('rounded-md border border-border bg-card max-w-[min(80%,75ch)]', className)}>
       <button
         type="button"
-        onClick={() => { isOpen.value = !isOpen.value; }}
+        onClick={() => {
+          isOpen.value = !isOpen.value;
+        }}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/30 transition-colors"
       >
         {isOpen.value ? (

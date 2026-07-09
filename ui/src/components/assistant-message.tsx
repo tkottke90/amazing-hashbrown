@@ -30,16 +30,14 @@ export function AssistantMessage({ message, className }: AssistantMessageProps) 
       </span>
 
       {hasThought && (
-        <ThoughtBlock
-          content={message.thoughtContent!}
-          isStreaming={isStreaming && !hasContent}
-        />
+        <ThoughtBlock content={message.thoughtContent!} isStreaming={isStreaming && !hasContent} />
       )}
 
       <div
         className={cn(
           'rounded-lg px-4 py-3 text-sm',
-          message.status === 'error' && 'border border-destructive/50 bg-destructive/10 text-destructive',
+          message.status === 'error' &&
+            'border border-destructive/50 bg-destructive/10 text-destructive',
         )}
       >
         {isStreaming && !hasContent ? (

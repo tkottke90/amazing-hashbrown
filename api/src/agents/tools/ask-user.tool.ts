@@ -14,7 +14,9 @@ const AskUserSchema = z.object({
   allowFreeText: z
     .boolean()
     .optional()
-    .describe('multiple_choice only: also show a free-text input so the user can type a custom answer'),
+    .describe(
+      'multiple_choice only: also show a free-text input so the user can type a custom answer',
+    ),
   approveLabel: z
     .string()
     .optional()

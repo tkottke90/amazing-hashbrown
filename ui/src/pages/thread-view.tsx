@@ -37,11 +37,7 @@ export function ThreadView() {
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">
           {scrollMessages.map((msg) => (
-            <ThreadMessageItem
-              key={msg.id}
-              message={msg}
-              onHitlAnswer={submitHitlAnswer}
-            />
+            <ThreadMessageItem key={msg.id} message={msg} onHitlAnswer={submitHitlAnswer} />
           ))}
         </div>
       </ChatMessageScrollWrapper>
@@ -55,7 +51,9 @@ export function ThreadView() {
       <div class="border-t border-border p-4">
         <ChatInput
           value={inputValue.value}
-          onValueChange={(v) => { inputValue.value = v; }}
+          onValueChange={(v) => {
+            inputValue.value = v;
+          }}
           onSend={handleSend}
           onStop={stopGeneration}
           isGenerating={isStreaming.value}

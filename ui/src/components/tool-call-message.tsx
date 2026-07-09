@@ -13,10 +13,17 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
   const isPending = message.status === 'pending';
 
   return (
-    <div className={cn('rounded-md border border-border bg-muted/20 text-sm max-w-[min(80%,75ch)]', className)}>
+    <div
+      className={cn(
+        'rounded-md border border-border bg-muted/20 text-sm max-w-[min(80%,75ch)]',
+        className,
+      )}
+    >
       <button
         type="button"
-        onClick={() => { isOpen.value = !isOpen.value; }}
+        onClick={() => {
+          isOpen.value = !isOpen.value;
+        }}
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
       >
         {isOpen.value ? (
@@ -41,7 +48,9 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
       {isOpen.value && (
         <div className="border-t border-border divide-y divide-border">
           <div className="px-3 py-2">
-            <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Inputs</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Inputs
+            </p>
             <pre className="overflow-x-auto rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-wrap break-all">
               {JSON.stringify(message.inputs, null, 2)}
             </pre>
@@ -49,7 +58,9 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
 
           {message.outputs !== undefined && (
             <div className="px-3 py-2">
-              <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Output</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Output
+              </p>
               <pre className="overflow-x-auto rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-wrap break-all">
                 {typeof message.outputs === 'string'
                   ? message.outputs

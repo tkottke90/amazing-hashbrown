@@ -8,6 +8,10 @@ export default {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '\\.(css|less|scss)$': 'identity-obj-proxy',
+    '^@tkottke90/llm-common-types/(.*)$': '<rootDir>/test/__mocks__/llm-common-types/$1.ts',
+    '^react-markdown$': '<rootDir>/test/__mocks__/react-markdown.tsx',
+    '^remark-gfm$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
+    '^rehype-highlight$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-dom/test-utils$': 'preact/test-utils',

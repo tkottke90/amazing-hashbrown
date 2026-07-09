@@ -35,7 +35,12 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
 
   if (message.status === 'answered') {
     return (
-      <div className={cn('self-end rounded-lg bg-card px-3 py-4 shadow-md text-sm max-w-[min(80%,75ch)]', className)}>
+      <div
+        className={cn(
+          'self-end rounded-lg bg-card px-3 py-4 shadow-md text-sm max-w-[min(80%,75ch)]',
+          className,
+        )}
+      >
         <div className="mb-2 flex items-start gap-2">
           <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <strong className="leading-snug">{message.question}</strong>
@@ -102,7 +107,9 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
             >
               <Input
                 value={freeTextValue.value}
-                onInput={(e) => { freeTextValue.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  freeTextValue.value = (e.target as HTMLInputElement).value;
+                }}
                 placeholder="Custom answer…"
                 className="h-8 text-sm"
               />
@@ -122,7 +129,9 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
         >
           <Input
             value={freeTextValue.value}
-            onInput={(e) => { freeTextValue.value = (e.target as HTMLInputElement).value; }}
+            onInput={(e) => {
+              freeTextValue.value = (e.target as HTMLInputElement).value;
+            }}
             placeholder="Type your answer…"
             className="h-8 text-sm"
             autoFocus

@@ -31,7 +31,11 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
       const closeIdx = state.buf.indexOf(CLOSE_TAG);
       if (closeIdx >= 0) {
         if (closeIdx > 0) {
-          writeSseEvent(res, { type: 'thought_delta', messageId: msgId, delta: state.buf.slice(0, closeIdx) });
+          writeSseEvent(res, {
+            type: 'thought_delta',
+            messageId: msgId,
+            delta: state.buf.slice(0, closeIdx),
+          });
         }
         state.buf = state.buf.slice(closeIdx + CLOSE_TAG.length);
         state.inThought = false;
@@ -47,7 +51,11 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
       const openIdx = state.buf.indexOf(OPEN_TAG);
       if (openIdx >= 0) {
         if (openIdx > 0) {
-          writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: state.buf.slice(0, openIdx) });
+          writeSseEvent(res, {
+            type: 'text_delta',
+            messageId: msgId,
+            delta: state.buf.slice(0, openIdx),
+          });
         }
         state.buf = state.buf.slice(openIdx + OPEN_TAG.length);
         state.inThought = true;
@@ -195,10 +203,10 @@ export async function resumeChatToSse(
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
-  const eventStream = agent.streamEvents(
-    new Command({ resume: answer }),
-    { ...config, version: 'v2' },
-  );
+  const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+    ...config,
+    version: 'v2',
+  });
 
   await pipeEvents(res, msgId, eventStream);
   await emitHitlOrDone(res, msgId, threadId, startedAt);

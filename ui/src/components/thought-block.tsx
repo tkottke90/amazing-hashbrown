@@ -16,7 +16,9 @@ export function ThoughtBlock({ content, isStreaming = false, className }: Though
     <div className={cn('rounded-md border border-border bg-muted/40', className)}>
       <button
         type="button"
-        onClick={() => { isOpen.value = !isOpen.value; }}
+        onClick={() => {
+          isOpen.value = !isOpen.value;
+        }}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         {isOpen.value ? (
@@ -25,9 +27,7 @@ export function ThoughtBlock({ content, isStreaming = false, className }: Though
           <ChevronRight className="size-3.5 shrink-0" />
         )}
         <Brain className="size-3.5 shrink-0" />
-        <span className="font-medium">
-          {isStreaming ? 'Thinking…' : 'Thought process'}
-        </span>
+        <span className="font-medium">{isStreaming ? 'Thinking…' : 'Thought process'}</span>
         {isStreaming && (
           <span className="ml-1 inline-flex gap-0.5">
             <span className="animate-bounce size-1 rounded-full bg-muted-foreground [animation-delay:0ms]" />
