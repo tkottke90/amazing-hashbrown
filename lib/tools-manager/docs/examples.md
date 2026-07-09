@@ -53,7 +53,13 @@ const tm = new ToolsManager({ configDir: './config' });
 await tm.boot();
 
 // Import from Claude Desktop's default location
-const claudeMcpPath = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+const claudeMcpPath = join(
+  homedir(),
+  'Library',
+  'Application Support',
+  'Claude',
+  'claude_desktop_config.json',
+);
 await tm.importMcpConfig(claudeMcpPath);
 
 console.log(tm.listMcpServers());

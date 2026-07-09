@@ -12,8 +12,8 @@ import { ToolsManager } from '@tkottke90/tools-manager';
 new ToolsManager(opts: { configDir: string })
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter        | Type     | Description                                                          |
+| ---------------- | -------- | -------------------------------------------------------------------- |
 | `opts.configDir` | `string` | Directory where `mcp.json` is stored. Created on `boot()` if absent. |
 
 ---
@@ -58,9 +58,9 @@ tm.register({
 
 Returns tool definitions (name, description, parameters — no `execute`) suitable for passing to an inference adapter. Lazily initialises MCP connections on first call.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `filter` | `string[]` (optional) | If provided, only tools whose names appear in this list are returned. An empty array returns all tools. |
+| Parameter | Type                  | Description                                                                                             |
+| --------- | --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `filter`  | `string[]` (optional) | If provided, only tools whose names appear in this list are returned. An empty array returns all tools. |
 
 ```ts
 const all = await tm.getTools();
@@ -73,9 +73,9 @@ const subset = await tm.getTools(['wiki-orient', 'rlm-run']);
 
 Dispatches a tool call. Built-ins are checked first, then MCP tools. Lazily initialises MCP connections if needed.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `call.name` | `string` | Tool name. |
+| Parameter        | Type                      | Description               |
+| ---------------- | ------------------------- | ------------------------- |
+| `call.name`      | `string`                  | Tool name.                |
 | `call.arguments` | `Record<string, unknown>` | Arguments from the model. |
 
 **Throws:** `Error: Unknown tool: "<name>"` if no tool with that name is registered.
@@ -100,9 +100,9 @@ const tools = tm.list();
 
 Imports an MCP config, **replacing** all existing servers. Accepts a file path string or a Buffer containing JSON.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `source` | `string \| Buffer` | File path or JSON Buffer. |
+| Parameter | Type               | Description               |
+| --------- | ------------------ | ------------------------- |
+| `source`  | `string \| Buffer` | File path or JSON Buffer. |
 
 **Throws:** `Error` if the JSON is invalid or missing `mcpServers`.
 
@@ -176,7 +176,7 @@ interface RegisteredTool {
   description: string;
   parameters: z.ZodType;
   source: 'builtin' | 'mcp';
-  mcpServer?: string;        // present when source === 'mcp'
+  mcpServer?: string; // present when source === 'mcp'
   execute(args: Record<string, unknown>): Promise<unknown>;
 }
 ```

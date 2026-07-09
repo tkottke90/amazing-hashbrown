@@ -17,9 +17,7 @@ export async function writeMcpConfig(filePath: string, config: McpConfigFile): P
 }
 
 export async function parseMcpSource(source: string | Buffer): Promise<McpConfigFile> {
-  const raw = Buffer.isBuffer(source)
-    ? source.toString('utf8')
-    : await readFile(source, 'utf8');
+  const raw = Buffer.isBuffer(source) ? source.toString('utf8') : await readFile(source, 'utf8');
   return validateShape(JSON.parse(raw));
 }
 
