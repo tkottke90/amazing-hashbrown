@@ -6,6 +6,9 @@ import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
+import { ArtifactImage } from './artifact-image';
+
+// ---- helpers ----
 
 function getCodeLanguage(children: ComponentChildren): string | undefined {
   const className = (children as { props?: { className?: string } })?.props?.className ?? '';
@@ -13,10 +16,46 @@ function getCodeLanguage(children: ComponentChildren): string | undefined {
   return match ? match[1] : undefined;
 }
 
+function getCodeText(children: ComponentChildren): string {
+  return (children as { props?: { children?: string } })?.props?.children ?? '';
+}
+
+// ---- image block ----
+
+interface ImageBlockProps {
+  id: string;
+  alt?: string;
+  nsfw?: boolean;
+}
+
+function parseImageBlock(raw: string): ImageBlockProps {
+  const result: Record<string, string> = {};
+  for (const line of raw.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      result[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+    }
+  }
+  return {
+    id: result.id ?? '',
+    alt: result.alt,
+    nsfw: result.nsfw === 'true',
+  };
+}
+
+// ---- code block ----
+
 function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   const copied = useSignal(false);
-  const ref = { current: null as HTMLPreElement | null };
   const lang = getCodeLanguage(props.children);
+
+  // Delegate image blocks to ArtifactImage
+  if (lang === 'image') {
+    const parsed = parseImageBlock(getCodeText(props.children));
+    return <ArtifactImage {...parsed} />;
+  }
+
+  const ref = { current: null as HTMLPreElement | null };
 
   function handleCopy() {
     navigator.clipboard.writeText(ref.current?.innerText ?? '').catch(() => {});
@@ -48,6 +87,8 @@ function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
     </div>
   );
 }
+
+// ---- public ----
 
 export interface MarkdownProps {
   children: string;

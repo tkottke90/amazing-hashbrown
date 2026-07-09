@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
-interface Artifact {
-  buffer: Buffer;
-  mimeType: string;
+export interface Artifact {
+  mimeType: string; // original MIME type
+  original: Buffer;
+  web: Buffer; // WebP ≤1200px wide
+  preview: Buffer; // 32px wide JPEG for blur-up
 }
 
 const store = new Map<string, Artifact>();
 
-export function storeArtifact(buffer: Buffer, mimeType: string): string {
+export function storeArtifact(artifact: Omit<Artifact, never>): string {
   const id = randomUUID();
-  store.set(id, { buffer, mimeType });
+  store.set(id, artifact);
   return id;
 }
 
