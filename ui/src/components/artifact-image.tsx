@@ -13,8 +13,8 @@ export function ArtifactImage({ id, alt, nsfw = false }: ArtifactImageProps) {
   const revealed = useSignal(!nsfw);
 
   return (
-    <div className="group relative my-2 overflow-hidden rounded-md bg-muted">
-      {/* Blur-up placeholder: tiny 32px JPEG scaled up, fades out once main loads */}
+    <figure className="not-prose group relative my-2 overflow-hidden rounded-md bg-muted">
+      {/* Blur-up placeholder: 32px JPEG scaled up via background-image, fades out on load */}
       <div
         style={{ backgroundImage: `url(/api/v1/artifacts/${id}/preview)` }}
         className={cn(
@@ -55,16 +55,21 @@ export function ArtifactImage({ id, alt, nsfw = false }: ArtifactImageProps) {
         </button>
       )}
 
-      {/* Download original — visible on hover */}
-      <a
-        href={`/api/v1/artifacts/${id}/original`}
-        download
-        aria-label="Download original image"
-        onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-2 right-2 rounded-md bg-black/50 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover:opacity-100"
-      >
-        <Download className="size-4" />
-      </a>
-    </div>
+      {/* Caption + download bar
+          Mobile: always visible
+          Desktop (sm+): hidden until group hover */}
+      <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/55 px-3 py-2 text-sm text-white transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+        <span className="min-w-0 truncate">{alt ?? ''}</span>
+        <a
+          href={`/api/v1/artifacts/${id}/original`}
+          download
+          aria-label="Download original image"
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 rounded p-1 hover:bg-white/20"
+        >
+          <Download className="size-4" />
+        </a>
+      </figcaption>
+    </figure>
   );
 }

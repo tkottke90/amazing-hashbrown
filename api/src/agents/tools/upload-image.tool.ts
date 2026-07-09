@@ -9,7 +9,7 @@ const UploadImageSchema = z.object({
   alt: z
     .string()
     .optional()
-    .describe('Descriptive alt text shown while loading and for screen readers'),
+    .describe('Descriptive alt text shown in the caption bar and for screen readers'),
   nsfw: z
     .boolean()
     .optional()
@@ -22,18 +22,15 @@ export const uploadImageTool = tool(
     const { web, preview } = await processImage(original);
 
     const id = storeArtifact({ mimeType, original, web, preview });
+    const hash = nsfw ? '#nsfw' : '';
 
-    const lines = [`id: ${id}`];
-    if (alt) lines.push(`alt: ${alt}`);
-    if (nsfw) lines.push(`nsfw: true`);
-
-    return '```image\n' + lines.join('\n') + '\n```';
+    return `![${alt ?? 'Image'}](/api/v1/artifacts/${id}${hash})`;
   },
   {
     name: 'upload_image',
     description:
-      'Process and store an image, then get back a Markdown image block you can embed ' +
-      'directly in your response. The image is optimised for the web automatically. ' +
+      'Process and store an image, then get back a standard Markdown image link you can ' +
+      'embed directly in your response. The image is automatically optimised for the web. ' +
       'Pass raw base64 bytes (no data: URI prefix), the MIME type, and an optional alt text. ' +
       'Set nsfw: true for sensitive images — they will be blurred until the user reveals them.',
     schema: UploadImageSchema,

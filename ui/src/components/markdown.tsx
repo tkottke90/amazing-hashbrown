@@ -16,45 +16,11 @@ function getCodeLanguage(children: ComponentChildren): string | undefined {
   return match ? match[1] : undefined;
 }
 
-function getCodeText(children: ComponentChildren): string {
-  return (children as { props?: { children?: string } })?.props?.children ?? '';
-}
-
-// ---- image block ----
-
-interface ImageBlockProps {
-  id: string;
-  alt?: string;
-  nsfw?: boolean;
-}
-
-function parseImageBlock(raw: string): ImageBlockProps {
-  const result: Record<string, string> = {};
-  for (const line of raw.split('\n')) {
-    const colon = line.indexOf(':');
-    if (colon > 0) {
-      result[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
-    }
-  }
-  return {
-    id: result.id ?? '',
-    alt: result.alt,
-    nsfw: result.nsfw === 'true',
-  };
-}
-
 // ---- code block ----
 
 function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   const copied = useSignal(false);
   const lang = getCodeLanguage(props.children);
-
-  // Delegate image blocks to ArtifactImage
-  if (lang === 'image') {
-    const parsed = parseImageBlock(getCodeText(props.children));
-    return <ArtifactImage {...parsed} />;
-  }
-
   const ref = { current: null as HTMLPreElement | null };
 
   function handleCopy() {
@@ -88,6 +54,21 @@ function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   );
 }
 
+// ---- img override: routes artifact URLs to ArtifactImage ----
+
+const ARTIFACT_RE = /^\/api\/v1\/artifacts\/([^/?#]+)/;
+
+function MarkdownImg(props: Record<string, unknown>) {
+  const src = String(props.src ?? '');
+  const alt = props.alt != null ? String(props.alt) : undefined;
+  const url = new URL(src, 'http://x');
+  const match = url.pathname.match(ARTIFACT_RE);
+  if (match) {
+    return <ArtifactImage id={match[1] ?? ''} alt={alt} nsfw={url.hash === '#nsfw'} />;
+  }
+  return <img src={src} alt={alt} loading="lazy" className="rounded-md" />;
+}
+
 // ---- public ----
 
 export interface MarkdownProps {
@@ -101,7 +82,10 @@ export function Markdown({ children, className }: MarkdownProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{ pre: ({ node: _node, ...props }) => <CodeBlock {...props} /> }}
+        components={{
+          pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
+          img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
+        }}
       >
         {children}
       </ReactMarkdown>
