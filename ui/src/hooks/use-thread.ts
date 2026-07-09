@@ -60,7 +60,7 @@ function handleEvent(evt: ChatSSEEvent): void {
   switch (evt.type) {
     case 'text_delta':
       messages.value = messages.value.map((m) =>
-        m.kind === 'assistant' && m.id === evt.messageId
+        m.kind === 'assistant' && m.id === _currentAssistantId
           ? { ...m, content: m.content + evt.delta }
           : m,
       );
@@ -68,7 +68,7 @@ function handleEvent(evt: ChatSSEEvent): void {
 
     case 'thought_delta':
       messages.value = messages.value.map((m) =>
-        m.kind === 'assistant' && m.id === evt.messageId
+        m.kind === 'assistant' && m.id === _currentAssistantId
           ? { ...m, thoughtContent: (m.thoughtContent ?? '') + evt.delta }
           : m,
       );
