@@ -250,7 +250,7 @@ Items are ordered first by priority/necessity, then by dependency.
 
 **Ideas / Requirements:**
 - A task record captures: id, type (chat/automated/triggered), goal/description, authority level, current stage, created/updated timestamps, escalation conditions, and output summary
-- Stage state machine: `pending → running → waiting_on_user → done | failed | cancelled`
+- Stage state machine: `pending → running → waiting_on_user → done | failed | cancelled`; `running` can also transition to `blocked` (agent self-scheduled wakeup) and back to `running` when the trigger fires — blocked is a deliberate park, not an error
 - Persisted in SQLite (same layer as conversation memory) — the task record survives API restarts
 - WIP limits: configurable cap on how many tasks can be in `running` state simultaneously to prevent resource exhaustion
 - The Kanban board in the UI is a view over this store — users can see all tasks, their stages, and act on them (cancel, reprioritize, provide input)

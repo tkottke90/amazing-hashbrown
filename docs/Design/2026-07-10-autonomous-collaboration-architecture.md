@@ -44,7 +44,7 @@ Each question maps to one of the five concepts described below.
 Work that only starts when a human sends a message is not autonomous. Triggers are the
 mechanism by which the system can initiate work without direct human input.
 
-Four trigger types cover the full space:
+Five trigger types cover the full space:
 
 | Type | Description | Example |
 |---|---|---|
@@ -52,6 +52,26 @@ Four trigger types cover the full space:
 | **Scheduled** | One-shot at a specific date/time | Send briefing at start of next quarter |
 | **Duration / Delay** | A task has been waiting or running for too long | Escalate if no response within 4 hours |
 | **Event** | An external signal arrives | An alert fires; a webhook is received |
+| **Agent Self-Schedule** | The agent pauses its own task and schedules a future wakeup | "Tests are running; check back in 10 minutes" |
+
+The fifth type — agent self-scheduling — deserves special emphasis because it is the one
+most often missing from autonomous systems, and its absence causes characteristic failure
+modes: agents that spin in a wait loop consuming resources, agents that time out and fail
+when the underlying work simply needed more time, and agents that hold a task open blocking
+other work from proceeding.
+
+The pattern is: the agent recognizes that it cannot make progress right now (a build is
+running, an external API is rate-limited, a long test suite is executing, a deployment is
+propagating) and actively decides to put the task down rather than wait. It records enough
+resumption context to continue meaningfully when it wakes up, marks the task as `blocked`
+in the task system, and releases. A scheduled trigger fires at the agent-specified time and
+resumes the task from where it left off.
+
+This is borrowed directly from Kanban's `blocked` card state. A blocked card is not failed
+or cancelled — it is parked with a reason and a resolution condition. The key insight is
+that **blocking is a first-class outcome of working**, not an error state. Treating it as
+such makes the system more resilient and allows the agent to be genuinely productive across
+multiple tasks rather than holding resources open while waiting.
 
 Without triggers, the system has no agentic capability — it is purely reactive to human
 input. Triggers are what transform it from a tool into a collaborator.
@@ -98,7 +118,9 @@ task is always knowable**. The user should never have to wonder what the agent i
 Key elements:
 
 - **Task stages**: a defined state machine (e.g. `pending → running → waiting_on_user →
-  done | failed`)
+  done | failed | cancelled`); `running` can also transition to `blocked` when the agent
+  self-schedules a wakeup, then back to `running` when the trigger fires — blocked is not
+  failure, it is a deliberate park
 - **WIP limits**: bounds on how many tasks can be in each stage simultaneously to prevent
   resource exhaustion and cognitive overload
 - **Passive and active participation**: the user can watch the board update without acting
