@@ -6,44 +6,66 @@ Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
 2. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
-3. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #2
-4. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #3
-5. [Persistent Conversation Memory](#persistent-conversation-memory) — currently lost on API restart
-6. [Persistent Artifact Store](#persistent-artifact-store) — currently lost on API restart
-7. [Multi-Conversation Support](#multi-conversation-support) — depends on: #5
-8. [File Attachment in Chat Input](#file-attachment-in-chat-input) — UI wiring already stubbed
-9. [Skills Integration](#skills-integration) — `skills-manager` library is complete; needs API + UI
-10. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-11. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #10
-12. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #7
+3. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
+4. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #2, #3
+5. [AfterAgent Middleware](#afteragent-middleware) — depends on: #4; closes the conversational wiki-write loop
+6. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #4; required for automated tasks
+7. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #4; required for automated tasks
+8. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #4; required for automated task knowledge gaps
+9. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #4
+10. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #6, #7, #8, #9
+11. [Persistent Conversation Memory](#persistent-conversation-memory) — currently lost on API restart
+12. [Persistent Artifact Store](#persistent-artifact-store) — currently lost on API restart
+13. [Multi-Conversation Support](#multi-conversation-support) — depends on: #11
+14. [File Attachment in Chat Input](#file-attachment-in-chat-input) — UI wiring already stubbed
+15. [Skills Integration](#skills-integration) — `skills-manager` library is complete; needs API + UI
+16. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+17. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #16
+18. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #13
 
 ---
 
 ## 2. Item Details
+
+### AfterAgent Middleware
+
+**Goal:** Run a background post-response layer that detects novel knowledge surfaced during a conversational turn and commits it to the wiki without blocking the user's response.
+
+**Ideas / Requirements:**
+- Implemented as Express middleware (or a LangGraph post-step hook) that fires **after** the SSE response stream closes
+- Inspect the completed turn's tool call outputs for a "wiki write" signal (e.g. a flag set by the agent on the `upload_image` or a dedicated `flag_for_wiki` tool)
+- If signalled: call `wiki.ingestPrep({ content, title })` then `wiki.commitPage(page)` in the background
+- Emit a `wiki_updated` SSE event on the **next** response or via a persistent notification channel so the UI can show a subtle "wiki updated" indicator
+- Must not block or error the main response — wrap in try/catch, log failures
+- The wiki is **read-only during the turn itself**; this middleware is the only write path for Thread Type 1
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent, `wiki_updated` SSE Event
+
+---
 
 ### Connect LLM-Wiki to Chat Agent
 
 **Goal:** Expose the knowledge base as a tool the LangGraph ReAct agent can read from and write to during conversations.
 
 **Ideas / Requirements:**
-- Add `wiki_search` and `wiki_upsert` tools in `api/src/agents/tools/` using `@tkottke90/llm-wiki`
-- `wiki_search` should perform hybrid BM25 + embedding search against the active wiki(s) and return ranked results
-- `wiki_upsert` should let the agent add or update a knowledge page (entity, concept, comparison, etc.)
+- Add `wiki_search` and `wiki_read_page` tools in `api/src/agents/tools/` using `@tkottke90/llm-wiki`
+- `wiki_search` performs hybrid BM25 + embedding search and returns ranked results with page paths
+- `wiki_read_page` accepts a page path and returns the full content for short pages
 - The wiki root should be configured via the existing `WIKI_ROOT` env var
-- Consider whether the agent should have read-only access by default with write access opt-in
 - Tools should handle errors gracefully (wiki not initialised, embedding provider unavailable, etc.)
+- Write access is intentionally deferred — the AfterAgent Middleware owns wiki writes for Thread Type 1
 
-**Dependencies:** Wire Up Domain Knowledge Bases
+**Dependencies:** Wire Up Domain Knowledge Bases, `wiki_updated` SSE Event
 
 ---
 
 ### Connect RLM to Chat Agent
 
-**Goal:** Let the agent use the Retrieval Loop Model engine to answer questions over large corpora that exceed the model's context window.
+**Goal:** Let the agent use the Retrieval Loop Model engine to answer questions over pages too large to fit in the model's context window.
 
 **Ideas / Requirements:**
-- Add an `rlm_query` tool in `api/src/agents/tools/` that accepts a natural-language question and a target wiki/domain
-- The tool should instantiate `RLM` with the `OllamaInferenceAdapter` and the configured `WIKI_ROOT`
+- Add an `rlm_query` tool in `api/src/agents/tools/` that accepts a natural-language question and a page path
+- The tool passes the page content to `rlm.run(question, { text: page.content })` — matching the flow in the design doc
 - Stream `StatusSignal` callbacks back to the SSE layer so the UI can show progress (e.g. "Searching… iteration 3/10")
 - Consider emitting intermediate `tool_call_start` / `tool_call_end` events per RLM iteration for transparency
 - Cap `maxIterations` via env var (e.g. `RLM_MAX_ITERATIONS`, default 10)
@@ -176,6 +198,68 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ---
 
+### Thread Type 2: Automated Task
+
+**Goal:** Implement a second thread mode for goal-directed autonomous tasks where the agent reads and writes the wiki in a loop until a goal is met.
+
+**Ideas / Requirements:**
+- New API endpoint or thread-type flag: `POST /api/v1/task/:threadId` (or `?mode=task` on the existing route)
+- Flow per the design doc:
+  1. Call `wiki.orient()` to load SCHEMA + INDEX + recent log entries as planning context
+  2. Agent plans its approach
+  3. Loop: `wiki.semanticSearch()` → if no pages found, `wiki.ingestPrep()` + `wiki.commitPage()` a new stub; if pages found, decide short (`wiki.readPage()`) or long (`rlm.run()`)
+  4. Accumulate findings; call `wiki.commitPage()` to update/supplement if new knowledge is extracted
+  5. Check goal: if not met, iterate from step 3; if met, call `wiki.lint()` then return task complete
+- All wiki reads and writes are visible in the stream as tool call events (no background-only writes unlike Thread Type 1)
+- The UI needs a way to initiate a task vs. a conversation — consider a mode toggle in `ChatInput` or a separate entry point in the sidebar
+
+**Dependencies:** Wiki Orient Tool (`wiki.orient()`), Wiki Lint Tool (`wiki.lint()`), Web/URL Ingestion Tool, Connect RLM to Chat Agent
+
+---
+
+### Web/URL Ingestion Tool
+
+**Goal:** Let the agent fetch content from a URL and ingest it into the wiki when a knowledge gap is detected during an automated task.
+
+**Ideas / Requirements:**
+- Add a `web_fetch` built-in tool that accepts a URL, fetches the page, and returns cleaned text (strip scripts/styles, extract main content)
+- A separate `wiki_ingest` tool wraps `wiki.ingestPrep({ content, url })` + `wiki.commitPage()` for the agent to call after fetching
+- Or combine into a single `web_ingest` tool that fetches and commits in one step (simpler, less composable)
+- Respect `robots.txt` and add a configurable request timeout
+- Used exclusively in the automated task flow (Thread Type 2); the conversational flow writes are handled by AfterAgent Middleware instead
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent
+
+---
+
+### Wiki Lint Tool (`wiki.lint()`)
+
+**Goal:** Expose the wiki linter as an agent-callable tool so automated tasks can validate wiki health before completing.
+
+**Ideas / Requirements:**
+- Add a `wiki_lint` tool in `api/src/agents/tools/` that calls `lllmWiki.lint()` and returns the structured result
+- The linter runs 12 checks (already implemented in `@tkottke90/llm-wiki`); surface pass/fail counts and any failures to the agent
+- The agent can use the output to decide whether to fix issues before declaring the task complete
+- Also useful as a standalone maintenance tool the user can trigger from the Settings page
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent
+
+---
+
+### Wiki Orient Tool (`wiki.orient()`)
+
+**Goal:** Give the agent a single call to load the wiki's structural context (schema, index, recent log entries) before planning an automated task.
+
+**Ideas / Requirements:**
+- Add a `wiki_orient` tool in `api/src/agents/tools/` that returns the wiki's `SCHEMA.md`, `index.md`, and the last N entries from `log.md`
+- Check whether `wiki.orient()` already exists on the `LlmWiki` class; if not, add it as a method that assembles the three documents
+- The result is injected as context at the start of Thread Type 2 turns so the agent knows the knowledge graph shape before searching
+- Keep the payload small: summarise the index if it exceeds a token budget rather than passing the full file
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent
+
+---
+
 ### Wire Up Domain Knowledge Bases
 
 **Goal:** Define at least one domain and register it so `llm-wiki` has a wiki to operate against.
@@ -187,4 +271,15 @@ Items are ordered first by priority/necessity, then by dependency.
 - Consider shipping a seed script (`npm run seed:kb`) that scaffolds the directory structure on first run
 - Decide on embedding provider: Ollama (local, free) vs. null adapter (keyword-only BM25 search, no setup required) — null is a safe default
 
-**Dependencies:** none
+---
+
+### `wiki_updated` SSE Event
+
+**Goal:** Add a new SSE event type to the shared protocol so the UI can show a notification when a background wiki commit completes.
+
+**Ideas / Requirements:**
+- Add `wiki_updated` to the `ChatSSEEventSchema` discriminated union in `lib/llm-common-types/src/chat/sse-events.ts`
+- Payload: `{ type: 'wiki_updated', pageTitle: string, pageKind: string, wikiName: string }`
+- The UI should render this as a subtle inline indicator in the message stream (e.g. a small "📖 Wiki updated: _Entity Name_" chip), not a full message bubble
+- Emitted by AfterAgent Middleware after a successful `wiki.commitPage()` call
+- Update `handleEvent` in `ui/src/hooks/use-thread.ts` and add a corresponding `ThreadMessage` kind (`wiki_update`) to render it
