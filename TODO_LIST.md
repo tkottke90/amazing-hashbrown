@@ -42,6 +42,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Run a background post-response layer that detects novel knowledge surfaced during a conversational turn and commits it to the wiki without blocking the user's response.
 
 **Ideas / Requirements:**
+
 - Implemented as Express middleware (or a LangGraph post-step hook) that fires **after** the SSE response stream closes
 - Inspect the completed turn's tool call outputs for a "wiki write" signal (e.g. a flag set by the agent on the `upload_image` or a dedicated `flag_for_wiki` tool)
 - If signalled: call `wiki.ingestPrep({ content, title })` then `wiki.commitPage(page)` in the background
@@ -58,6 +59,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Expose the knowledge base as a tool the LangGraph ReAct agent can read from and write to during conversations.
 
 **Ideas / Requirements:**
+
 - Add `wiki_search` and `wiki_read_page` tools in `api/src/agents/tools/` using `@tkottke90/llm-wiki`
 - `wiki_search` performs hybrid BM25 + embedding search and returns ranked results with page paths
 - `wiki_read_page` accepts a page path and returns the full content for short pages
@@ -74,6 +76,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Let the agent use the Retrieval Loop Model engine to answer questions over pages too large to fit in the model's context window.
 
 **Ideas / Requirements:**
+
 - Add an `rlm_query` tool in `api/src/agents/tools/` that accepts a natural-language question and a page path
 - The tool passes the page content to `rlm.run(question, { text: page.content })` — matching the flow in the design doc
 - Stream `StatusSignal` callbacks back to the SSE layer so the UI can show progress (e.g. "Searching… iteration 3/10")
@@ -89,6 +92,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Replace the hard-coded `[askUserTool, uploadImageTool]` tool list in `chat-agent.ts` with the unified `ToolsManager` registry so MCP tools are available automatically.
 
 **Ideas / Requirements:**
+
 - Call `toolsManager.getTools()` at agent build time and merge with built-in tools
 - Ensure `ask_user` and `upload_image` remain registered as built-in tools in the manager
 - Hot-reload: if `mcp.json` changes on disk, rebuild the agent (or signal the user to restart)
@@ -104,6 +108,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — Monitoring & Dashboards
 
 **Ideas / Requirements:**
+
 - Agents emit widget definitions as a byproduct of working; the system renders and refreshes them in the UI
 - A widget is a self-contained unit: a question the agent knows how to answer, a data payload, and a display hint
 - Widget examples: "3 tasks completed overnight, 1 waiting for input"; "Wiki: 47 pages, last updated 2h ago, 2 lint warnings"; "Inbox quiet on Project X for 3 days — unusual given last week's pace"
@@ -124,6 +129,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — The Escalation Spectrum
 
 **Ideas / Requirements:**
+
 - Four tiers: **Inform** (dashboard widget), **Confirm** (soft notification with undo window), **Decide** (active HITL prompt, blocks agent), **Escalate** (interrupt regardless of availability)
 - The existing HITL mechanism covers Decide; this system wraps and extends it to cover all four tiers
 - Tier selection criteria: reversibility of the action, cost of being wrong, whether the task can continue without input
@@ -142,6 +148,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Provide a standardized, dual-use evaluation framework that works during development (TDD, CI gates) and in production (model comparison, regression detection) without coupling to any test runner.
 
 **Ideas / Requirements:**
+
 - New package: `lib/evaluations` — zero test-framework dependencies; callable from API routes, CLI scripts, or test suites equally
 - **Scenario schema** (Zod): `{ id, name, description, input, evalMethod, expectedCriteria, minScore? }`
 - **Result schema** (Zod): `{ scenarioId, model, modelVersion, suiteId, timestamp, passed, score, latencyMs, estimatedCost, details }`
@@ -164,6 +171,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Wire up the "Add file" menu item in `ChatInput` so users can attach images or documents to a message.
 
 **Ideas / Requirements:**
+
 - Implement `onAddFile` in `ThreadView` — open a native file picker, read the selected file
 - Images: convert to base64, display as a `ChatInputChip` in the header slot, and include in the message payload
 - The API chat route should accept an optional `attachments` array alongside `content`
@@ -180,6 +188,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Build the Home page that lists all past conversations so users can switch between threads.
 
 **Ideas / Requirements:**
+
 - Lists all persisted threads (title derived from first message, timestamp, message count)
 - Clicking a thread loads it into `ThreadView`
 - "New conversation" button creates a fresh thread UUID
@@ -196,6 +205,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Let users add, remove, and toggle MCP servers through the Settings page without editing `mcp.json` by hand.
 
 **Ideas / Requirements:**
+
 - List configured MCP servers with enabled/disabled toggle
 - Form to add a new server: transport type (stdio / SSE), command or URL, environment variables
 - Test connection button that pings the server and lists discovered tools
@@ -211,6 +221,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Support multiple independent chat threads within a single session and across page reloads.
 
 **Ideas / Requirements:**
+
 - Generate and persist thread IDs in `localStorage` (list of `{ id, title, createdAt, updatedAt }`)
 - `threadId` is no longer a single `crypto.randomUUID()` at module load — it becomes the active thread from router state
 - The API already supports arbitrary `threadId` values; no backend routing changes needed beyond persistence
@@ -226,6 +237,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Deliver agent escalations to the user through external channels (push, email, mobile) when they are not in the application. Deferred — each channel has implications for how the user can respond (quick actions, reply-by-email, deep links) that warrants its own design. The interim mechanism is an `action_required` flag on threads and tasks.
 
 **Ideas / Requirements:**
+
 - Interim solution: threads and tasks expose `action_required: boolean`; the Escalation System sets it; the UI surfaces flagged items prominently — no external channel needed at this stage
 - The Escalation System routes through a `NotificationInterface`, not directly to channels — channels are pluggable without touching escalation logic
 - First external channel: browser push via ServiceWorker — no server-side sending required, works when the user is in a browser but not on the current tab
@@ -242,6 +254,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** A custom, in-application tracing implementation for agent checkpoints and tool calls — kept local rather than sent to LangSmith, surfaced directly in the UI, and used as the data source for evaluation results and cost tracking.
 
 **Ideas / Requirements:**
+
 - New package: `lib/observability` — defines trace and span schemas, a tracer interface, a LangChain `CallbackHandler`, and a SQLite-backed store
 - **Trace**: `{ traceId, threadId?, taskId?, provider, model, startedAt, endedAt, totalTokens, totalCostEstimate }`
 - **Span**: `{ spanId, traceId, parentSpanId?, type: 'llm-call' | 'tool-call' | 'checkpoint', name, startedAt, endedAt, inputTokens, outputTokens, latencyMs, input, output, error? }`
@@ -258,6 +271,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Provide a durable, shared storage layer for all artifacts in the system — files uploaded by the user in the chat interface and files generated by agents during task execution.
 
 **Ideas / Requirements:**
+
 - Replace the in-memory `Map<string, Artifact>` in `artifact-store.ts` with file-system persistence
 - Store originals under `ARTIFACT_ROOT` (env var, default `./config/artifacts/<id>/original.<ext>`)
 - Store processed WebP and preview JPEG alongside the original on write
@@ -273,6 +287,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Survive API restarts without losing conversation history, and establish SQLite as the shared persistence layer for downstream systems.
 
 **Ideas / Requirements:**
+
 - Replace `MemorySaver` in `chat-agent.ts` with a file-system or SQLite checkpointer
 - LangGraph ships `SqliteSaver` (`@langchain/langgraph-checkpoint-sqlite`) — lowest-friction option
 - Store the SQLite DB at a configurable path (env var `CHECKPOINT_DB`, default `./config/checkpoints.db`)
@@ -287,6 +302,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Allow the user to configure one or more LLM inference providers in a centralised config file, with support for OpenAI-compatible APIs and Anthropic. All agent code uses a provider factory rather than hardcoding a model class.
 
 **Ideas / Requirements:**
+
 - `config.yaml` at a configurable path holds all system configuration; a **Config Manager** (`lib/config`) reads, validates (Zod), and exports typed config at startup — replacing the current scattered env vars
 - Provider section in `config.yaml`:
   ```yaml
@@ -315,6 +331,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Build the Settings page behind the sidebar "Settings" nav link.
 
 **Ideas / Requirements:**
+
 - Route: `/settings` (requires adding a client-side router)
 - Sections: General (theme already handled by `ThemeToggle`), Model (LLM model selector, base URL), MCP Servers, Skills
 - Model settings should POST to a new `PATCH /api/v1/settings/model` endpoint that updates env/config and rebuilds the agent
@@ -327,6 +344,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Expose the `skills-manager` library through the API and surface available skills in the UI.
 
 **Ideas / Requirements:**
+
 - Add a `GET /api/v1/skills` route listing enabled skills (name, description, trigger phrases)
 - Add a `POST /api/v1/skills/:name/run` route to execute a skill script with arguments
 - Register each enabled skill as a LangGraph tool via the tools manager so the agent can invoke skills autonomously
@@ -344,6 +362,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — The Task System
 
 **Ideas / Requirements:**
+
 - A task record captures: id, type (chat/automated/triggered), goal/description, authority level, current stage, created/updated timestamps, escalation conditions, and output summary
 - Stage state machine: `pending → running → waiting_on_user → done | failed | cancelled`; `running` can also transition to `blocked` (agent self-scheduled wakeup) and back to `running` when the trigger fires — blocked is a deliberate park, not an error
 - Persisted in SQLite (same layer as conversation memory) — the task record survives API restarts
@@ -361,6 +380,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Implement a second thread mode for goal-directed autonomous tasks where the agent reads and writes the wiki in a loop until a goal is met.
 
 **Ideas / Requirements:**
+
 - New API endpoint or thread-type flag: `POST /api/v1/task/:threadId` (or `?mode=task` on the existing route)
 - Flow per the design doc:
   1. Call `wiki.orient()` to load SCHEMA + INDEX + recent log entries as planning context
@@ -382,6 +402,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — Non-Chat Triggers
 
 **Ideas / Requirements:**
+
 - Four trigger types:
   - **Interval**: recurring on a cron-style schedule (e.g. process inbox every morning at 7am)
   - **Scheduled**: one-shot at a specific datetime (e.g. send briefing at start of next quarter)
@@ -403,6 +424,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Surface per-provider, per-model token usage and estimated cost so the user can understand their consumption and make informed model choices.
 
 **Ideas / Requirements:**
+
 - Built on Observability — aggregates token counts from the trace span store; no separate instrumentation needed
 - Cost configuration in `config.yaml`:
   ```yaml
@@ -430,6 +452,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Let the agent fetch content from a URL and ingest it into the wiki when a knowledge gap is detected during an automated task.
 
 **Ideas / Requirements:**
+
 - Add a `web_fetch` built-in tool that accepts a URL, fetches the page, and returns cleaned text (strip scripts/styles, extract main content)
 - A separate `wiki_ingest` tool wraps `wiki.ingestPrep({ content, url })` + `wiki.commitPage()` for the agent to call after fetching
 - Or combine into a single `web_ingest` tool that fetches and commits in one step (simpler, less composable)
@@ -445,6 +468,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Expose the wiki linter as an agent-callable tool so automated tasks can validate wiki health before completing.
 
 **Ideas / Requirements:**
+
 - Add a `wiki_lint` tool in `api/src/agents/tools/` that calls `llmWiki.lint()` and returns the structured result
 - The linter runs 12 checks (already implemented in `@tkottke90/llm-wiki`); surface pass/fail counts and any failures to the agent
 - The agent can use the output to decide whether to fix issues before declaring the task complete
@@ -459,6 +483,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Give the agent a single call to load the wiki's structural context (schema, index, recent log entries) before planning an automated task.
 
 **Ideas / Requirements:**
+
 - Add a `wiki_orient` tool in `api/src/agents/tools/` that returns the wiki's `SCHEMA.md`, `index.md`, and the last N entries from `log.md`
 - Check whether `wiki.orient()` already exists on the `LlmWiki` class; if not, add it as a method that assembles the three documents
 - The result is injected as context at the start of Thread Type 2 turns so the agent knows the knowledge graph shape before searching
@@ -473,6 +498,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** A unified set of wiki write and commit tools used by all agent patterns — Thread Type 1 via AfterAgent Middleware, Thread Type 2, and triggered tasks — so write logic is defined once and not reimplemented per pattern.
 
 **Ideas / Requirements:**
+
 - `wiki_update_page` tool: accepts an existing page path and updated content with a commit message; validates the path is within the wiki root; calls `llmWiki.commitPage()`
 - `wiki_create_page` tool: for new pages — accepts a title, content, and target section; calls `llmWiki.ingestPrep()` then `llmWiki.commitPage()`
 - Both tools emit a `wiki_updated` SSE event so the UI reflects the change regardless of which pattern triggered the write
@@ -490,6 +516,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Define at least one domain and register it so `llm-wiki` has a wiki to operate against.
 
 **Ideas / Requirements:**
+
 - Create an initial domain directory under `WIKI_ROOT` (e.g. `general/`) with `SCHEMA.md`, `index.md`, `log.md`
 - Add the domain to `api/src/knowledge-base/domains/index.ts` (currently exports an empty array)
 - The `WikiRegistry` and `LlmWiki` classes in `@tkottke90/llm-wiki` handle everything else
@@ -503,6 +530,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Add a new SSE event type to the shared protocol so the UI can show a notification when a background wiki commit completes.
 
 **Ideas / Requirements:**
+
 - Add `wiki_updated` to the `ChatSSEEventSchema` discriminated union in `lib/llm-common-types/src/chat/sse-events.ts`
 - Payload: `{ type: 'wiki_updated', pageTitle: string, pageKind: string, wikiName: string }`
 - The UI should render this as a subtle inline indicator in the message stream (e.g. a small "📖 Wiki updated: _Entity Name_" chip), not a full message bubble

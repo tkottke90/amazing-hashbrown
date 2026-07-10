@@ -46,12 +46,12 @@ mechanism by which the system can initiate work without direct human input.
 
 Five trigger types cover the full space:
 
-| Type | Description | Example |
-|---|---|---|
-| **Interval** | Recurring on a schedule | Process inbox every morning at 7am |
-| **Scheduled** | One-shot at a specific date/time | Send briefing at start of next quarter |
-| **Duration / Delay** | A task has been waiting or running for too long | Escalate if no response within 4 hours |
-| **Event** | An external signal arrives | An alert fires; a webhook is received |
+| Type                    | Description                                                 | Example                                       |
+| ----------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| **Interval**            | Recurring on a schedule                                     | Process inbox every morning at 7am            |
+| **Scheduled**           | One-shot at a specific date/time                            | Send briefing at start of next quarter        |
+| **Duration / Delay**    | A task has been waiting or running for too long             | Escalate if no response within 4 hours        |
+| **Event**               | An external signal arrives                                  | An alert fires; a webhook is received         |
 | **Agent Self-Schedule** | The agent pauses its own task and schedules a future wakeup | "Tests are running; check back in 10 minutes" |
 
 The fifth type — agent self-scheduling — deserves special emphasis because it is the one
@@ -85,7 +85,7 @@ Commander's Intent (see below).
 ### 2. Commander's Intent
 
 Named after the military planning concept: rather than issuing exhaustive orders, commanders
-brief on the *why* and *desired end state* so that subordinates can make sound decisions
+brief on the _why_ and _desired end state_ so that subordinates can make sound decisions
 when situations change and communication is unavailable.
 
 Applied here: an agent given only instructions will stall or fail the moment reality
@@ -118,7 +118,7 @@ task is always knowable**. The user should never have to wonder what the agent i
 Key elements:
 
 - **Task stages**: a defined state machine (e.g. `pending → running → waiting_on_user →
-  done | failed | cancelled`); `running` can also transition to `blocked` when the agent
+done | failed | cancelled`); `running` can also transition to `blocked` when the agent
   self-schedules a wakeup, then back to `running` when the trigger fires — blocked is not
   failure, it is a deliberate park
 - **WIP limits**: bounds on how many tasks can be in each stage simultaneously to prevent
@@ -138,12 +138,12 @@ Not all communication from the agent to the user carries the same urgency or req
 same response. Treating every notification as an interrupt (or suppressing everything) are
 both failures. The escalation spectrum defines four tiers:
 
-| Tier | Description | Delivery | User action |
-|---|---|---|---|
-| **Inform** | Here is what happened | Dashboard widget / digest | None required |
-| **Confirm** | I acted — let me know if that was wrong | Soft notification; undo window | Optional correction |
-| **Decide** | I am blocked and cannot continue without input | Active HITL prompt | Required before agent proceeds |
-| **Escalate** | Something unexpected happened that needs immediate attention | Interrupt / push notification | Required promptly |
+| Tier         | Description                                                  | Delivery                       | User action                    |
+| ------------ | ------------------------------------------------------------ | ------------------------------ | ------------------------------ |
+| **Inform**   | Here is what happened                                        | Dashboard widget / digest      | None required                  |
+| **Confirm**  | I acted — let me know if that was wrong                      | Soft notification; undo window | Optional correction            |
+| **Decide**   | I am blocked and cannot continue without input               | Active HITL prompt             | Required before agent proceeds |
+| **Escalate** | Something unexpected happened that needs immediate attention | Interrupt / push notification  | Required promptly              |
 
 The agent chooses the tier based on the reversibility of the action, the cost of being
 wrong, and whether the task can proceed without input. The tier determines the delivery
@@ -218,13 +218,13 @@ Most automation systems force a binary: in the loop (slow, high friction) or out
 (fast, black box). This architecture allows the user to exist anywhere on a spectrum at any
 moment:
 
-| Engagement level | What the user is doing | What supports it |
-|---|---|---|
-| **Fully passive** | Living their life | Dashboards accumulate; no interruptions |
-| **Ambient awareness** | Glancing at state occasionally | Kanban board; dashboard widgets |
-| **Selective engagement** | Acting on specific items | Confirm/Decide notifications |
-| **Active direction** | Redirecting or reprioritizing work | Kanban controls; task editing |
-| **Full collaboration** | Working together in real time | Chat interface |
+| Engagement level         | What the user is doing             | What supports it                        |
+| ------------------------ | ---------------------------------- | --------------------------------------- |
+| **Fully passive**        | Living their life                  | Dashboards accumulate; no interruptions |
+| **Ambient awareness**    | Glancing at state occasionally     | Kanban board; dashboard widgets         |
+| **Selective engagement** | Acting on specific items           | Confirm/Decide notifications            |
+| **Active direction**     | Redirecting or reprioritizing work | Kanban controls; task editing           |
+| **Full collaboration**   | Working together in real time      | Chat interface                          |
 
 The agent's job is to work at the highest autonomy level the situation allows and pull the
 user to a higher engagement level only when necessary. Commander's Intent determines when
@@ -254,22 +254,26 @@ This architecture defines four systems that need to be built, layered on top of 
 chat and automated task execution:
 
 ### Task System
+
 A persistent model of every unit of work — its type, its goal, its authority level, its
 current stage, its history. The Kanban board is a view over this. The escalation system
 reads from it. The trigger system writes to it. Everything else depends on it.
 
 ### Trigger System
+
 The mechanism by which work starts without human initiation. Manages the four trigger types
 (interval, scheduled, duration, event), resolves each to a task in the task system, and
 handles lifecycle (enable, disable, one-shot vs. recurring).
 
 ### Escalation System
+
 Determines which tier of the escalation spectrum applies to a given situation and routes
 the communication accordingly. Needs to model user availability and preferences alongside
 task urgency. The existing HITL mechanism is a primitive implementation of the Decide tier;
 this system wraps and extends it.
 
 ### Dashboard System
+
 A runtime for agent-published widgets. Agents emit widget definitions as a byproduct of
 working; the system renders them in the UI and refreshes them as data changes. The user
 sees an always-current view of what the agents know, without being asked to actively query.
