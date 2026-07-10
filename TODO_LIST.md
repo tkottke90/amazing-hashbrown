@@ -5,7 +5,7 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
-1.1. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI, run locally against a real Ollama instance; no blocking dependencies
+   1.1. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI, run locally against a real Ollama instance; no blocking dependencies
 2. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
 3. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
 4. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #2, #3; per-provider cost metrics with configurable pricing
