@@ -1,6 +1,9 @@
 import { createApp } from './app.js';
+import { bootToolsManager } from './services/tools-manager.js';
 
 const app = createApp();
+
+await bootToolsManager();
 
 app.start();
 
