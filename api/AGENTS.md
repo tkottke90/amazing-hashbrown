@@ -95,56 +95,14 @@ Linting and formatting are configured at the repo root — run `npm run lint`
 
 ## Testing
 
-**Non-negotiable: all application code must have unit tests.** Routes, agents, tools, services, and middleware ship with tests. Untested code is not considered complete and will not be merged.
+See the root `AGENTS.md` for the full testing philosophy, test types, anti-patterns, and tagging conventions.
 
-### Testing Blacklist
+**api-specific conventions:**
 
-Not everything needs a test. Skip tests only for code where the codebase has no control over the outcome and no processing logic is present:
-
-- Third-party library wiring (`loadConfig`, `configureFromSchema`, `createReactAgent` call sites)
-- Pure type/interface files and Zod schema definitions with no runtime behaviour
-- Barrel/re-export files (`index.ts` files that only collect and re-export)
-
-Everything else — route handlers, agent logic, tool implementations, service modules, middleware — must be tested.
-
-### Test Types
-
-Test files (`*.test.ts`) live **adjacent to the source file they test** — `src/agents/chat-agent.ts` is tested by `src/agents/chat-agent.test.ts`. This keeps the test and its subject co-located so they can be navigated and reviewed together. Shared mock data factories belong in `tests/fixtures/`; shared test helpers (supertest wrappers, stub factories, etc.) belong in `tests/utilities/`. Import them via the `@/tests/*` path alias (e.g. `@/tests/fixtures/registered-tool.fixture.js`).
-
-All tests use **Mocha + Chai**. Choose the type that matches the scope of what you are verifying. Prefer many small, focused tests over one large cumulative test. Tests should assert on _behaviour_ (what the code does) rather than _implementation_ (how it does it internally).
-
-#### Unit Tests
-
-Scope: a single function or module in complete isolation. All external dependencies (filesystem, HTTP clients, database, LangChain models) are replaced with stubs or mocks — the test controls every input and asserts every output.
-
-Use for: pure data-transformation logic, input validation, Zod schema parsing, tool `execute()` handlers, utility functions, and any module that does processing. This is the **default test type** — reach for it first.
-
-Example targets in this package: individual route handler logic, `mcpToolToLangChain()`, `wrapBuiltin()`, artifact processing helpers.
-
-#### Orchestration Tests
-
-Scope: multiple internal units wired together, but no real external I/O. Use an in-process test client (e.g. `supertest` against the Express app with the LLM and MCP client swapped for fakes) to exercise the full request → middleware → handler → response pipeline.
-
-Use for: verifying that a route correctly delegates to its service layer, that middleware sets the right headers, or that an agent build composes tools in the expected order — without spinning up a real Ollama instance or MCP server.
-
-#### External Orchestration Tests
-
-Scope: the boundary between this application and an external system — an HTTP API, a database, an MCP server, a message queue. These tests do **not** connect to the real external system; they mock its responses so that every scenario the application might encounter can be exercised in a controlled, repeatable way.
-
-Two things to verify for every external boundary:
-
-1. **Outbound contract** — the application sends the right thing (correct HTTP method, path, query parameters, request body shape, headers). Assert on what the application _emits_, not just on what it returns.
-2. **Inbound handling** — the application correctly handles the full range of responses the external system might send back: success, expected error conditions (e.g. a database unique-constraint violation, a 404 from a downstream API, a timeout), and unexpected failures.
-
-Use for: a service that calls an external API (stub the HTTP client and assert the outbound request shape, then replay each error response to confirm the service handles it gracefully); a repository layer that talks to SQLite (stub the driver and inject a constraint-failure error to confirm the caller surfaces it correctly); an MCP client integration (mock the server response to verify tool-call parsing under malformed payloads).
-
-The goal is full scenario coverage of the contract — not to prove the external system works, but to prove _this application_ behaves correctly at the boundary regardless of what the external system does.
-
-#### Manual Testing
-
-Scope: exploratory, one-off verification by a human — not automated and not repeatable. Reserve for UI smoke-checks, novel agent flows, or anything where scripting the assertion is impractical.
-
-Manual testing does **not** substitute for an automated test. If you find a bug via manual testing, add a regression unit test before fixing it.
+- Test files (`*.test.ts`) live **adjacent to the source file they test** — `src/agents/chat-agent.ts` → `src/agents/chat-agent.test.ts`
+- Shared mock-data factories belong in `tests/fixtures/`; shared helpers (supertest wrappers, stub factories, etc.) in `tests/utilities/`
+- Import shared fixtures and utilities via the `@/tests/*` path alias (e.g. `@/tests/fixtures/registered-tool.fixture.js`)
+- Framework: **Mocha + Chai**
 
 ---
 
