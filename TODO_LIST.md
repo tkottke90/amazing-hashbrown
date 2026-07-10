@@ -14,14 +14,18 @@ Items are ordered first by priority/necessity, then by dependency.
 8. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #4; required for automated task knowledge gaps
 9. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #4
 10. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #6, #7, #8, #9
-11. [Persistent Conversation Memory](#persistent-conversation-memory) — currently lost on API restart
-12. [Persistent Artifact Store](#persistent-artifact-store) — currently lost on API restart
-13. [Multi-Conversation Support](#multi-conversation-support) — depends on: #11
-14. [File Attachment in Chat Input](#file-attachment-in-chat-input) — UI wiring already stubbed
-15. [Skills Integration](#skills-integration) — `skills-manager` library is complete; needs API + UI
-16. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-17. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #16
-18. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #13
+11. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer
+12. [Task System](#task-system) — depends on: #11; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+13. [Trigger System](#trigger-system) — depends on: #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+14. [Escalation System](#escalation-system) — depends on: #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+15. [Dashboard System](#dashboard-system) — depends on: #12, #14; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+16. [Persistent Artifact Store](#persistent-artifact-store) — currently lost on API restart
+17. [Multi-Conversation Support](#multi-conversation-support) — depends on: #11
+18. [File Attachment in Chat Input](#file-attachment-in-chat-input) — UI wiring already stubbed
+19. [Skills Integration](#skills-integration) — `skills-manager` library is complete; needs API + UI
+20. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+21. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #20
+22. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #17
 
 ---
 
@@ -84,6 +88,45 @@ Items are ordered first by priority/necessity, then by dependency.
 - Hot-reload: if `mcp.json` changes on disk, rebuild the agent (or signal the user to restart)
 - Add an `MCP_CONFIG_PATH` env var defaulting to `./config/mcp.json`
 - Handle the case where an MCP server is unreachable at startup (warn, don't crash)
+
+---
+
+### Dashboard System
+
+**Goal:** Provide a runtime for agent-published widgets so the agent can communicate asynchronously with the user through persistent, data-driven UI components rather than interrupting notifications.
+
+**Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — Monitoring & Dashboards
+
+**Ideas / Requirements:**
+- Agents emit widget definitions as a byproduct of working; the system renders and refreshes them in the UI
+- A widget is a self-contained unit: a question the agent knows how to answer, a data payload, and a display hint
+- Widget examples: "3 tasks completed overnight, 1 waiting for input"; "Wiki: 47 pages, last updated 2h ago, 2 lint warnings"; "Inbox quiet on Project X for 3 days — unusual given last week's pace"
+- The dashboard is the **Inform tier** of the escalation spectrum rendered as a persistent artifact rather than a one-time notification
+- Widgets should be queryable and updatable independently — agents don't re-emit the whole dashboard, just the widgets they own
+- Consider a `POST /api/v1/widgets` endpoint that tasks/agents write to, and a `GET /api/v1/widgets` that the UI polls or subscribes to
+- The UI surface could be an expandable panel, a sidebar section, or a dedicated `/dashboard` route
+- Agents define their own widgets — the user does not configure them manually
+
+**Dependencies:** Task System, Escalation System
+
+---
+
+### Escalation System
+
+**Goal:** Determine the appropriate tier of the escalation spectrum for any given agent communication and route it to the correct delivery channel based on urgency and user availability.
+
+**Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — The Escalation Spectrum
+
+**Ideas / Requirements:**
+- Four tiers: **Inform** (dashboard widget), **Confirm** (soft notification with undo window), **Decide** (active HITL prompt, blocks agent), **Escalate** (interrupt regardless of availability)
+- The existing HITL mechanism covers Decide; this system wraps and extends it to cover all four tiers
+- Tier selection criteria: reversibility of the action, cost of being wrong, whether the task can continue without input
+- User availability model: at minimum a manual "do not disturb" schedule; ideally inferred from activity or calendar
+- Confirm tier needs an undo window — agent commits but notifies the user with a time-limited rollback option
+- Escalate tier needs a push channel (browser notification, email, or future mobile notification) that works when the user is not in the UI
+- The system should log all escalation events so the user can review what happened and why
+
+**Dependencies:** Task System
 
 ---
 
@@ -162,7 +205,7 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ### Persistent Conversation Memory
 
-**Goal:** Survive API restarts without losing conversation history.
+**Goal:** Survive API restarts without losing conversation history, and establish SQLite as the shared persistence layer for downstream systems.
 
 **Ideas / Requirements:**
 - Replace `MemorySaver` in `chat-agent.ts` with a file-system or SQLite checkpointer
@@ -170,6 +213,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - Store the SQLite DB at a configurable path (env var `CHECKPOINT_DB`, default `./config/checkpoints.db`)
 - Ensure the `config/` directory is `.gitignore`d (it likely already is)
 - No API or UI changes required — the `thread_id` config key already flows through correctly
+- The same SQLite file (or a sibling file) will be used by the Task System
 
 ---
 
@@ -198,6 +242,25 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ---
 
+### Task System
+
+**Goal:** Provide a persistent model of every unit of autonomous work — its type, goal, authority level, current stage, and history — so that triggers, escalation, and dashboards all have a shared source of truth.
+
+**Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — The Task System
+
+**Ideas / Requirements:**
+- A task record captures: id, type (chat/automated/triggered), goal/description, authority level, current stage, created/updated timestamps, escalation conditions, and output summary
+- Stage state machine: `pending → running → waiting_on_user → done | failed | cancelled`
+- Persisted in SQLite (same layer as conversation memory) — the task record survives API restarts
+- WIP limits: configurable cap on how many tasks can be in `running` state simultaneously to prevent resource exhaustion
+- The Kanban board in the UI is a view over this store — users can see all tasks, their stages, and act on them (cancel, reprioritize, provide input)
+- Both Thread Type 2 (Automated Task) and trigger-initiated work create task records; conversational chat threads may optionally create lightweight task records for visibility
+- Exposes: `GET /api/v1/tasks`, `GET /api/v1/tasks/:id`, `PATCH /api/v1/tasks/:id` (for user actions), `DELETE /api/v1/tasks/:id`
+
+**Dependencies:** Persistent Conversation Memory
+
+---
+
 ### Thread Type 2: Automated Task
 
 **Goal:** Implement a second thread mode for goal-directed autonomous tasks where the agent reads and writes the wiki in a loop until a goal is met.
@@ -214,6 +277,29 @@ Items are ordered first by priority/necessity, then by dependency.
 - The UI needs a way to initiate a task vs. a conversation — consider a mode toggle in `ChatInput` or a separate entry point in the sidebar
 
 **Dependencies:** Wiki Orient Tool (`wiki.orient()`), Wiki Lint Tool (`wiki.lint()`), Web/URL Ingestion Tool, Connect RLM to Chat Agent
+
+---
+
+### Trigger System
+
+**Goal:** Allow work to be initiated without human input via scheduled, interval, duration, and event-based triggers — the mechanism that makes the agent genuinely autonomous rather than purely reactive.
+
+**Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — Non-Chat Triggers
+
+**Ideas / Requirements:**
+- Four trigger types:
+  - **Interval**: recurring on a cron-style schedule (e.g. process inbox every morning at 7am)
+  - **Scheduled**: one-shot at a specific datetime (e.g. send briefing at start of next quarter)
+  - **Duration**: fires when a task has been in a given stage longer than a threshold (e.g. escalate if waiting_on_user for more than 4 hours)
+  - **Event**: external signal via webhook or internal pub/sub (e.g. an alert fires, an email arrives)
+- Each trigger resolves to a task in the Task System with a defined goal and authority level
+- Trigger lifecycle: create, enable, disable, delete; recurring triggers persist across restarts
+- Persisted in SQLite alongside tasks
+- Exposes: `GET /api/v1/triggers`, `POST /api/v1/triggers`, `PATCH /api/v1/triggers/:id`, `DELETE /api/v1/triggers/:id`
+- Webhook endpoint for event triggers: `POST /api/v1/triggers/webhook/:triggerId`
+- The UI should allow the user to configure triggers (initially in Settings, eventually a dedicated view)
+
+**Dependencies:** Task System
 
 ---
 
@@ -237,7 +323,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Goal:** Expose the wiki linter as an agent-callable tool so automated tasks can validate wiki health before completing.
 
 **Ideas / Requirements:**
-- Add a `wiki_lint` tool in `api/src/agents/tools/` that calls `lllmWiki.lint()` and returns the structured result
+- Add a `wiki_lint` tool in `api/src/agents/tools/` that calls `llmWiki.lint()` and returns the structured result
 - The linter runs 12 checks (already implemented in `@tkottke90/llm-wiki`); surface pass/fail counts and any failures to the agent
 - The agent can use the output to decide whether to fix issues before declaring the task complete
 - Also useful as a standalone maintenance tool the user can trigger from the Settings page
