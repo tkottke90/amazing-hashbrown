@@ -24,11 +24,13 @@ chatRouter.post('/:threadId', async (req, res) => {
   const startedAt = Date.now();
 
   try {
+    req.logger.info(`Inference started for thread`, { threadId });
     await streamChatToSse(res, threadId, content.trim(), startedAt);
   } catch (err) {
     req.logger.error('Chat stream error', { err });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
+    req.logger.info(`Inference completed for thread`, { threadId });
     res.end();
   }
 });
