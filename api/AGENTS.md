@@ -111,7 +111,7 @@ Everything else — route handlers, agent logic, tool implementations, service m
 
 Test files (`*.test.ts`) live **adjacent to the source file they test** — `src/agents/chat-agent.ts` is tested by `src/agents/chat-agent.test.ts`. This keeps the test and its subject co-located so they can be navigated and reviewed together. Shared mock data factories belong in `tests/fixtures/`; shared test helpers (supertest wrappers, stub factories, etc.) belong in `tests/utilities/`. Import them via the `@/tests/*` path alias (e.g. `@/tests/fixtures/registered-tool.fixture.js`).
 
-All tests use **Mocha + Chai**. Choose the type that matches the scope of what you are verifying. Prefer many small, focused tests over one large cumulative test. Tests should assert on *behaviour* (what the code does) rather than *implementation* (how it does it internally).
+All tests use **Mocha + Chai**. Choose the type that matches the scope of what you are verifying. Prefer many small, focused tests over one large cumulative test. Tests should assert on _behaviour_ (what the code does) rather than _implementation_ (how it does it internally).
 
 #### Unit Tests
 
@@ -133,12 +133,12 @@ Scope: the boundary between this application and an external system — an HTTP 
 
 Two things to verify for every external boundary:
 
-1. **Outbound contract** — the application sends the right thing (correct HTTP method, path, query parameters, request body shape, headers). Assert on what the application *emits*, not just on what it returns.
+1. **Outbound contract** — the application sends the right thing (correct HTTP method, path, query parameters, request body shape, headers). Assert on what the application _emits_, not just on what it returns.
 2. **Inbound handling** — the application correctly handles the full range of responses the external system might send back: success, expected error conditions (e.g. a database unique-constraint violation, a 404 from a downstream API, a timeout), and unexpected failures.
 
 Use for: a service that calls an external API (stub the HTTP client and assert the outbound request shape, then replay each error response to confirm the service handles it gracefully); a repository layer that talks to SQLite (stub the driver and inject a constraint-failure error to confirm the caller surfaces it correctly); an MCP client integration (mock the server response to verify tool-call parsing under malformed payloads).
 
-The goal is full scenario coverage of the contract — not to prove the external system works, but to prove *this application* behaves correctly at the boundary regardless of what the external system does.
+The goal is full scenario coverage of the contract — not to prove the external system works, but to prove _this application_ behaves correctly at the boundary regardless of what the external system does.
 
 #### Manual Testing
 

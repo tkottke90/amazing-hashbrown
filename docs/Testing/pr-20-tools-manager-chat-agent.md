@@ -49,6 +49,7 @@ curl -s http://localhost:3000/api/v1/health | jq
 ```
 
 **Expected:**
+
 ```json
 { "status": "ok" }
 ```
@@ -64,7 +65,7 @@ THREAD="$(node -e "console.log(crypto.randomUUID())")"
 
 curl -sN -X POST http://localhost:3000/api/v1/chat/$THREAD \
   -H "Content-Type: application/json" \
-  -d '{"content": "Reply with exactly the word HELLO and nothing else."}' 
+  -d '{"content": "Reply with exactly the word HELLO and nothing else."}'
 ```
 
 **Expected — a stream of `data:` lines ending with:**
@@ -166,11 +167,7 @@ Edit `api/config/mcp.json`:
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/tmp"
-      ]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     }
   }
 }

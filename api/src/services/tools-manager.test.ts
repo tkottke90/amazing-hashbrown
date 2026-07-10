@@ -9,13 +9,13 @@ describe('services/tools-manager', () => {
   describe('built-in registrations', () => {
     it('registers ask_user with source "builtin"', () => {
       const tool = toolsManager.list().find((t) => t.name === 'ask_user');
-      expect(tool, 'ask_user not found in registry').to.exist;
+      expect(tool, 'ask_user not found in registry').to.not.equal(undefined);
       expect(tool!.source).to.equal('builtin');
     });
 
     it('registers upload_image with source "builtin"', () => {
       const tool = toolsManager.list().find((t) => t.name === 'upload_image');
-      expect(tool, 'upload_image not found in registry').to.exist;
+      expect(tool, 'upload_image not found in registry').to.not.equal(undefined);
       expect(tool!.source).to.equal('builtin');
     });
 
