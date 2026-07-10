@@ -19,7 +19,7 @@
     "dev:api": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/llm-common-types && npm run dev --workspace api",
     "dev:ui": "npm run dev --workspace ui",
     "build": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager && npm run build --workspace api && npm run build --workspace ui",
-    "test": "npm run test --workspace lib/inference-adapter && npm run test --workspace lib/llm-wiki && npm run test --workspace lib/llm-common-types && npm run test --workspace lib/rlm && npm run test --workspace lib/tools-manager && npm run test --workspace api && npm run test --workspace ui",
+    "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
