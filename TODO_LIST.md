@@ -11,6 +11,7 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI, run locally against a real Ollama instance; no blocking dependencies
+   1.2. [File-based Configuration](#file-based-configuration) — introduce a `config.yaml` as the primary config source; env vars become overrides; prerequisite for Provider Registration and Settings Page
 2. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
 3. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
 4. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #2, #3; per-provider cost metrics with configurable pricing
@@ -161,6 +162,22 @@ Items are ordered first by priority/necessity, then by dependency.
 - **Interim delivery mechanism:** until Notification Delivery (#28) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
 
 **Dependencies:** Task System
+
+---
+
+### File-based Configuration
+
+**Goal:** Introduce a `config.yaml` as the primary configuration source for the API so users can set values without editing `.env` files. Environment variables remain valid and take precedence as overrides, which the existing `@tkottke90/config-manager` already supports.
+
+**Ideas / Requirements:**
+
+- Add a `config.yaml` (or `config.yml`) at a configurable path (env var `CONFIG_PATH`, default `./config/config.yaml`) loaded before the Zod schema is validated
+- `src/config/env.ts` reads the file first, then merges env vars on top — env vars win on conflict
+- The file is created with documented defaults if it does not exist at startup (same pattern as `mcp.json`)
+- `config.yaml` is `.gitignore`d so local overrides never reach the repo; a committed `config.yaml.example` documents all supported keys
+- All values currently driven by env vars (port, log level, LLM model, LLM base URL, wiki root, MCP config path) should be expressible in the file
+- `app.config` (the `ConfigManager` instance on the Express app) exposes a `reload()` method — a `POST /api/v1/settings/reload` endpoint can trigger a live config reload without restart
+- This is a prerequisite for Provider Registration (#2) and the Settings Page UI (#24), both of which need structured config sections beyond what flat env vars can cleanly express
 
 ---
 
