@@ -1,0 +1,13 @@
+{
+  "name": "e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:local": "playwright test",
+    "test:ci": "playwright test --grep-invert \"@llm\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
