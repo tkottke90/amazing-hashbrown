@@ -5,28 +5,33 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
-2. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
-3. [Evaluation Harness](#evaluation-harness) — no dependencies; dual-use dev and production model comparison; enables TDD for #5
-4. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
-5. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #2, #4; first feature with eval coverage (#3)
-6. [AfterAgent Middleware](#afteragent-middleware) — depends on: #5; closes the conversational wiki-write loop
-7. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #5; required for automated tasks
-8. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #5; required for automated tasks
-9. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #5; required for automated task knowledge gaps
-10. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #5
-11. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer
-12. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #11 as a persistence sprint
-13. [Task System](#task-system) — depends on: #11; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-14. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #7, #8, #9, #10, #13
-15. [Trigger System](#trigger-system) — depends on: #13; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-16. [Escalation System](#escalation-system) — depends on: #13; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-17. [Dashboard System](#dashboard-system) — depends on: #13, #16; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-18. [Multi-Conversation Support](#multi-conversation-support) — depends on: #11
-19. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #12; UI wiring already stubbed
-20. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-21. [Skills Integration](#skills-integration) — depends on: #20; `skills-manager` library is complete; needs API + UI
-22. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #20
-23. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #18
+2. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
+3. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
+4. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #2, #3; per-provider cost metrics with configurable pricing
+5. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
+6. [Evaluation Harness](#evaluation-harness) — no dependencies; dual-use dev and production model comparison; enables TDD for #8
+7. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
+8. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #5, #7; first feature with eval coverage (#6)
+9. [AfterAgent Middleware](#afteragent-middleware) — depends on: #8; closes the conversational wiki-write loop
+10. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #8; required for automated tasks
+11. [Wiki Write Tooling](#wiki-write-tooling) — depends on: #8; unified write/commit tools used by all agent patterns
+12. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #8; required for automated tasks
+13. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #8; required for automated task knowledge gaps
+14. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #8
+15. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer
+16. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #15 as a persistence sprint
+17. [Task System](#task-system) — depends on: #15; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+18. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #10, #11, #12, #13, #14, #17
+19. [Trigger System](#trigger-system) — depends on: #17; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+20. [Escalation System](#escalation-system) — depends on: #17; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+21. [Dashboard System](#dashboard-system) — depends on: #17, #20; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+22. [Multi-Conversation Support](#multi-conversation-support) — depends on: #15
+23. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #16; UI wiring already stubbed
+24. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+25. [Skills Integration](#skills-integration) — depends on: #24; `skills-manager` library is complete; needs API + UI
+26. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #24
+27. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #22
+28. [Notification Delivery](#notification-delivery) — depends on: #20; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -126,6 +131,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - Confirm tier needs an undo window — agent commits but notifies the user with a time-limited rollback option
 - Escalate tier needs a push channel (browser notification, email, or future mobile notification) that works when the user is not in the UI
 - The system should log all escalation events so the user can review what happened and why
+- **Interim delivery mechanism:** until Notification Delivery (#28) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
 
 **Dependencies:** Task System
 
@@ -149,7 +155,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - **API**: `POST /api/v1/evaluations/run` — accepts suite name + model config, returns run ID; `GET /api/v1/evaluations/:runId` for results; `GET /api/v1/evaluations` for history
 - **UI surface**: Settings → Models → "Run Evaluation Suite" — pick a suite, optionally pick a second model to compare side-by-side; results shown as a scored table with pass/fail per scenario; eventually a dashboard widget tracking scores over time
 - **Dev CLI**: `npm run eval -- --suite wiki-search --model ollama/llama3.2` prints a summary table and exits non-zero if the suite's `passingThreshold` is not met — CI-friendly
-- First suite to define: `wiki-search` — written before Connect LLM-Wiki to Chat Agent (#5) as the TDD specification for that feature
+- First suite to define: `wiki-search` — written before Connect LLM-Wiki to Chat Agent (#8) as the TDD specification for that feature
 
 ---
 
@@ -215,6 +221,38 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ---
 
+### Notification Delivery
+
+**Goal:** Deliver agent escalations to the user through external channels (push, email, mobile) when they are not in the application. Deferred — each channel has implications for how the user can respond (quick actions, reply-by-email, deep links) that warrants its own design. The interim mechanism is an `action_required` flag on threads and tasks.
+
+**Ideas / Requirements:**
+- Interim solution: threads and tasks expose `action_required: boolean`; the Escalation System sets it; the UI surfaces flagged items prominently — no external channel needed at this stage
+- The Escalation System routes through a `NotificationInterface`, not directly to channels — channels are pluggable without touching escalation logic
+- First external channel: browser push via ServiceWorker — no server-side sending required, works when the user is in a browser but not on the current tab
+- Subsequent channels: email (configurable SMTP), mobile (future; requires a companion app or PWA)
+- Quick-action support (respond from the notification itself) is channel-specific: browser push supports action buttons; email supports mailto reply links; design each per-channel when implemented
+- A user preference model is needed: which escalation tiers route to which channels, and during what hours
+
+**Dependencies:** Escalation System
+
+---
+
+### Observability
+
+**Goal:** A custom, in-application tracing implementation for agent checkpoints and tool calls — kept local rather than sent to LangSmith, surfaced directly in the UI, and used as the data source for evaluation results and cost tracking.
+
+**Ideas / Requirements:**
+- New package: `lib/observability` — defines trace and span schemas, a tracer interface, a LangChain `CallbackHandler`, and a SQLite-backed store
+- **Trace**: `{ traceId, threadId?, taskId?, provider, model, startedAt, endedAt, totalTokens, totalCostEstimate }`
+- **Span**: `{ spanId, traceId, parentSpanId?, type: 'llm-call' | 'tool-call' | 'checkpoint', name, startedAt, endedAt, inputTokens, outputTokens, latencyMs, input, output, error? }`
+- A LangChain `CallbackHandler` plugs into the chat agent and Thread Type 2 — emits spans automatically on each LLM call and tool invocation without changes to agent logic
+- SQLite storage alongside conversation memory and tasks
+- API: `GET /api/v1/traces` (paginated list), `GET /api/v1/traces/:traceId` (full trace with all spans); query params: `?taskId=`, `?threadId=`, `?since=`
+- UI surface: task and thread detail views show the full execution trace (collapsible spans, token counts, latency per step) — this is the Agent Execution Traces capability
+- Evaluation runner reads trace data to enrich eval results with latency and token counts; eval scenarios can assert on trace shape (e.g. "this query must not trigger more than 2 LLM calls")
+
+---
+
 ### Persistent Artifact Store
 
 **Goal:** Provide a durable, shared storage layer for all artifacts in the system — files uploaded by the user in the chat interface and files generated by agents during task execution.
@@ -241,6 +279,34 @@ Items are ordered first by priority/necessity, then by dependency.
 - Ensure the `config/` directory is `.gitignore`d (it likely already is)
 - No API or UI changes required — the `thread_id` config key already flows through correctly
 - The same SQLite file (or a sibling file) will be used by the Task System
+
+---
+
+### Provider Registration
+
+**Goal:** Allow the user to configure one or more LLM inference providers in a centralised config file, with support for OpenAI-compatible APIs and Anthropic. All agent code uses a provider factory rather than hardcoding a model class.
+
+**Ideas / Requirements:**
+- `config.yaml` at a configurable path holds all system configuration; a **Config Manager** (`lib/config`) reads, validates (Zod), and exports typed config at startup — replacing the current scattered env vars
+- Provider section in `config.yaml`:
+  ```yaml
+  providers:
+    - name: local
+      type: ollama
+      baseUrl: http://localhost:11434
+      defaultModel: llama3.2
+    - name: anthropic
+      type: anthropic
+      apiKey: ${ANTHROPIC_API_KEY}
+      defaultModel: claude-sonnet-4-6
+  defaultProvider: local
+  ```
+- Supported types: `ollama` (OpenAI-compatible), `openai`, `anthropic` — each backed by the corresponding LangChain class
+- `createProvider(name?: string, model?: string): BaseChatModel` factory used by the chat agent, eval runner, and Thread Type 2 — replaces hardcoded `ChatOllama`
+- Existing env vars (e.g. `OLLAMA_BASE_URL`) become override sources for config values; current setup must not break
+- Config Manager validates on startup and emits clear errors for missing API keys or unreachable base URLs
+- API: `GET /api/v1/providers` — lists configured providers with their available models (queried live where possible)
+- UI: Settings → Providers section lists configured providers, current default, and allows selecting a model per conversation or task
 
 ---
 
@@ -305,7 +371,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - All wiki reads and writes are visible in the stream as tool call events (no background-only writes unlike Thread Type 1)
 - The UI needs a way to initiate a task vs. a conversation — consider a mode toggle in `ChatInput` or a separate entry point in the sidebar
 
-**Dependencies:** Wiki Orient Tool (`wiki.orient()`), Wiki Lint Tool (`wiki.lint()`), Web/URL Ingestion Tool, Connect RLM to Chat Agent, Task System
+**Dependencies:** Wiki Orient Tool (`wiki.orient()`), Wiki Write Tooling, Wiki Lint Tool (`wiki.lint()`), Web/URL Ingestion Tool, Connect RLM to Chat Agent, Task System
 
 ---
 
@@ -329,6 +395,33 @@ Items are ordered first by priority/necessity, then by dependency.
 - The UI should allow the user to configure triggers (initially in Settings, eventually a dedicated view)
 
 **Dependencies:** Task System
+
+---
+
+### Usage and Cost Tracking
+
+**Goal:** Surface per-provider, per-model token usage and estimated cost so the user can understand their consumption and make informed model choices.
+
+**Ideas / Requirements:**
+- Built on Observability — aggregates token counts from the trace span store; no separate instrumentation needed
+- Cost configuration in `config.yaml`:
+  ```yaml
+  costs:
+    anthropic/claude-sonnet-4-6:
+      inputPer1kTokens: 0.003
+      outputPer1kTokens: 0.015
+    openai/gpt-4.1-mini:
+      inputPer1kTokens: 0.0004
+      outputPer1kTokens: 0.0012
+  ```
+- Ollama / local providers can be configured with `0` cost or omitted — explicitly free
+- A `CostCalculator` in `lib/observability` looks up the cost config and computes estimated cost at trace close time
+- A pre-aggregated summary table in SQLite (updated per-trace): `{ date, provider, model, inputTokens, outputTokens, estimatedCost }` — avoids scanning all spans for cost queries
+- API: `GET /api/v1/usage` — aggregated usage and cost by time period (day/week/month), provider, and model
+- UI: Dashboard widget ("Estimated spend this week: $X.XX across N models") and Settings → Usage section with detailed breakdown
+- Evaluation results include cost per run, enabling cost-vs-quality tradeoffs to be quantified explicitly
+
+**Dependencies:** Provider Registration, Observability
 
 ---
 
@@ -370,6 +463,23 @@ Items are ordered first by priority/necessity, then by dependency.
 - Check whether `wiki.orient()` already exists on the `LlmWiki` class; if not, add it as a method that assembles the three documents
 - The result is injected as context at the start of Thread Type 2 turns so the agent knows the knowledge graph shape before searching
 - Keep the payload small: summarise the index if it exceeds a token budget rather than passing the full file
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent
+
+---
+
+### Wiki Write Tooling
+
+**Goal:** A unified set of wiki write and commit tools used by all agent patterns — Thread Type 1 via AfterAgent Middleware, Thread Type 2, and triggered tasks — so write logic is defined once and not reimplemented per pattern.
+
+**Ideas / Requirements:**
+- `wiki_update_page` tool: accepts an existing page path and updated content with a commit message; validates the path is within the wiki root; calls `llmWiki.commitPage()`
+- `wiki_create_page` tool: for new pages — accepts a title, content, and target section; calls `llmWiki.ingestPrep()` then `llmWiki.commitPage()`
+- Both tools emit a `wiki_updated` SSE event so the UI reflects the change regardless of which pattern triggered the write
+- AfterAgent Middleware refactors to call these tools rather than calling the wiki SDK directly — one write path, not three
+- Thread Type 2 uses these tools directly during its loop (step 4: commit updated knowledge) rather than a bespoke implementation
+- Dry-run mode on both tools: returns a diff of what would be committed without writing — used in evaluation scenarios that assert on wiki output without side effects
+- Both tools validate minimum content requirements (non-empty, passes basic schema check) before committing
 
 **Dependencies:** Connect LLM-Wiki to Chat Agent
 
