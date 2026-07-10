@@ -6,26 +6,27 @@ Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
 2. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
-3. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
-4. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #2, #3
-5. [AfterAgent Middleware](#afteragent-middleware) — depends on: #4; closes the conversational wiki-write loop
-6. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #4; required for automated tasks
-7. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #4; required for automated tasks
-8. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #4; required for automated task knowledge gaps
-9. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #4
-10. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer
-11. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #10 as a persistence sprint
-12. [Task System](#task-system) — depends on: #10; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-13. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #6, #7, #8, #9, #12
-14. [Trigger System](#trigger-system) — depends on: #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-15. [Escalation System](#escalation-system) — depends on: #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-16. [Dashboard System](#dashboard-system) — depends on: #12, #15; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-17. [Multi-Conversation Support](#multi-conversation-support) — depends on: #10
-18. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #11; UI wiring already stubbed
-19. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-20. [Skills Integration](#skills-integration) — depends on: #19; `skills-manager` library is complete; needs API + UI
-21. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #19
-22. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #17
+3. [Evaluation Harness](#evaluation-harness) — no dependencies; dual-use dev and production model comparison; enables TDD for #5
+4. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
+5. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #2, #4; first feature with eval coverage (#3)
+6. [AfterAgent Middleware](#afteragent-middleware) — depends on: #5; closes the conversational wiki-write loop
+7. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #5; required for automated tasks
+8. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #5; required for automated tasks
+9. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #5; required for automated task knowledge gaps
+10. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #5
+11. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer
+12. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #11 as a persistence sprint
+13. [Task System](#task-system) — depends on: #11; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+14. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #7, #8, #9, #10, #13
+15. [Trigger System](#trigger-system) — depends on: #13; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+16. [Escalation System](#escalation-system) — depends on: #13; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+17. [Dashboard System](#dashboard-system) — depends on: #13, #16; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+18. [Multi-Conversation Support](#multi-conversation-support) — depends on: #11
+19. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #12; UI wiring already stubbed
+20. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+21. [Skills Integration](#skills-integration) — depends on: #20; `skills-manager` library is complete; needs API + UI
+22. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #20
+23. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #18
 
 ---
 
@@ -127,6 +128,28 @@ Items are ordered first by priority/necessity, then by dependency.
 - The system should log all escalation events so the user can review what happened and why
 
 **Dependencies:** Task System
+
+---
+
+### Evaluation Harness
+
+**Goal:** Provide a standardized, dual-use evaluation framework that works during development (TDD, CI gates) and in production (model comparison, regression detection) without coupling to any test runner.
+
+**Ideas / Requirements:**
+- New package: `lib/evaluations` — zero test-framework dependencies; callable from API routes, CLI scripts, or test suites equally
+- **Scenario schema** (Zod): `{ id, name, description, input, evalMethod, expectedCriteria, minScore? }`
+- **Result schema** (Zod): `{ scenarioId, model, modelVersion, suiteId, timestamp, passed, score, latencyMs, estimatedCost, details }`
+- Three eval methods:
+  - **Deterministic**: predicate function or exact match on structured output — pass/fail, no scoring variance
+  - **Semantic**: embedding similarity between actual output and expected content — returns 0.0–1.0
+  - **LLM-as-judge**: a judge prompt with a structured verdict schema — returns score + reasoning string
+- **Suites** are named collections of scenarios grouped by feature area (e.g. `wiki-search`, `agent-routing`, `escalation`); each suite carries an optional `passingThreshold` percentage for CI gates
+- **Runner** is model-agnostic: accepts any LangChain-compatible model config alongside the suite; swapping models to compare performance is a first-class operation
+- Results stored in SQLite with full provenance (model ID, suite name, timestamp, per-scenario scores) — same DB as conversation memory and tasks
+- **API**: `POST /api/v1/evaluations/run` — accepts suite name + model config, returns run ID; `GET /api/v1/evaluations/:runId` for results; `GET /api/v1/evaluations` for history
+- **UI surface**: Settings → Models → "Run Evaluation Suite" — pick a suite, optionally pick a second model to compare side-by-side; results shown as a scored table with pass/fail per scenario; eventually a dashboard widget tracking scores over time
+- **Dev CLI**: `npm run eval -- --suite wiki-search --model ollama/llama3.2` prints a summary table and exits non-zero if the suite's `passingThreshold` is not met — CI-friendly
+- First suite to define: `wiki-search` — written before Connect LLM-Wiki to Chat Agent (#5) as the TDD specification for that feature
 
 ---
 
