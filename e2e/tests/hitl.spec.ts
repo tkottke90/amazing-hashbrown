@@ -3,8 +3,10 @@ import { test, expect } from '@playwright/test';
 const suite = {
   id: 6,
   name: 'HITL Prompts',
-  description: 'Verifies human-in-the-loop prompts disable the chat input and resume it after answering',
-  purpose: 'Ensure the agent can pause for user input and the UI correctly reflects the pending state',
+  description:
+    'Verifies human-in-the-loop prompts disable the chat input and resume it after answering',
+  purpose:
+    'Ensure the agent can pause for user input and the UI correctly reflects the pending state',
   tags: ['@user-workflow', '@llm'],
   steps: [
     {
@@ -28,9 +30,9 @@ test.describe('@user-workflow @llm', () => {
   test('HITL yes/no: pending prompt disables textarea; Yes re-enables it', async ({ page }) => {
     await page.goto('/');
 
-    await page.locator('[data-slot="textarea"]').fill(
-      'Ask me a yes or no question before you do anything',
-    );
+    await page
+      .locator('[data-slot="textarea"]')
+      .fill('Ask me a yes or no question before you do anything');
     await page.locator('button[aria-label="Send message"]').click();
 
     const textarea = page.locator('[data-slot="textarea"]');
@@ -48,9 +50,9 @@ test.describe('@user-workflow @llm', () => {
   test('HITL free-text: inline input accepts answer and re-enables textarea', async ({ page }) => {
     await page.goto('/');
 
-    await page.locator('[data-slot="textarea"]').fill(
-      'Ask me an open-ended question and wait for my text response',
-    );
+    await page
+      .locator('[data-slot="textarea"]')
+      .fill('Ask me an open-ended question and wait for my text response');
     await page.locator('button[aria-label="Send message"]').click();
 
     const textarea = page.locator('[data-slot="textarea"]');

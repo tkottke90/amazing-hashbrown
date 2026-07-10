@@ -55,9 +55,7 @@ test.describe('@smoke @user-workflow', () => {
 
     test('desktop sidebar is hidden on mobile', async ({ page }) => {
       await page.goto('/');
-      await expect(
-        page.locator('aside[aria-label="Sidebar navigation"]'),
-      ).not.toBeVisible();
+      await expect(page.locator('aside[aria-label="Sidebar navigation"]')).not.toBeVisible();
     });
 
     test('mobile menu button opens navigation sheet', async ({ page }) => {

@@ -24,7 +24,10 @@ export function AssistantMessage({ message, className }: AssistantMessageProps) 
   const hasThought = !!message.thoughtContent;
 
   return (
-    <div data-testid="assistant-message" className={cn('flex flex-col gap-2 max-w-[min(80%,75ch)]', className)}>
+    <div
+      data-testid="assistant-message"
+      className={cn('flex flex-col gap-2 max-w-[min(80%,75ch)]', className)}
+    >
       <span className="text-xs text-muted-foreground">
         {message.sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </span>

@@ -37,19 +37,19 @@ filter on either axis independently.
 
 ### Test-type tags (from root AGENTS.md)
 
-| Tag | When to use |
-|---|---|
-| `@smoke` | Fast check of core functionality; runs frequently |
-| `@user-workflow` | Simulates a user completing a task in the UI |
-| `@functional` | Non-user-facing flow: health checks, webhooks, system integrations |
+| Tag              | When to use                                                         |
+| ---------------- | ------------------------------------------------------------------- |
+| `@smoke`         | Fast check of core functionality; runs frequently                   |
+| `@user-workflow` | Simulates a user completing a task in the UI                        |
+| `@functional`    | Non-user-facing flow: health checks, webhooks, system integrations  |
 | `@comprehensive` | Full feature verification run to completion; used after deployments |
 
 Every test describe block must carry exactly one type tag.
 
 ### Runtime-requirement tag
 
-| Tag | Meaning |
-|---|---|
+| Tag    | Meaning                                                                          |
+| ------ | -------------------------------------------------------------------------------- |
 | `@llm` | Requires a live Ollama/LLM endpoint; excluded from CI via `--grep-invert "@llm"` |
 
 A test that sends a chat message and awaits a real LLM response carries both
@@ -101,8 +101,8 @@ implementation details that change without notice.
 
 ### Known `data-testid` attributes in UI source
 
-| Attribute value | Component file | Added for |
-|---|---|---|
+| Attribute value     | Component file                            | Added for                                          |
+| ------------------- | ----------------------------------------- | -------------------------------------------------- |
 | `assistant-message` | `ui/src/components/assistant-message.tsx` | Targeting assistant response bubbles in @llm tests |
 
 When you add a new `data-testid` to a UI source file, record it in the table

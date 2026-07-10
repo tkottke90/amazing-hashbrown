@@ -24,7 +24,11 @@ const suite = {
 
 void suite;
 
+// ThemeToggle lives in the `navEnd` slot, which is rendered exclusively inside
+// the mobile bottom nav (lg:hidden). A mobile viewport is required to interact with it.
 test.describe('@smoke @user-workflow', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
   test('theme toggle switches between dark and light', async ({ page }) => {
     await page.goto('/');
     const html = page.locator('html');

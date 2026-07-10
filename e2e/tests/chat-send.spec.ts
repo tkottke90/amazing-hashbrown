@@ -3,7 +3,8 @@ import { test, expect } from '@playwright/test';
 const suite = {
   id: 5,
   name: 'Chat Send',
-  description: 'Verifies sending a message, receiving a streamed response, stopping generation, and copying a message',
+  description:
+    'Verifies sending a message, receiving a streamed response, stopping generation, and copying a message',
   purpose: 'Ensure the core chat flow works end-to-end against a live LLM',
   tags: ['@user-workflow', '@llm'],
   steps: [
@@ -67,9 +68,9 @@ test.describe('@user-workflow @llm', () => {
     test.slow();
     await page.goto('/');
 
-    await page.locator('[data-slot="textarea"]').fill(
-      'Write a 5000-word essay about the entire history of computer science',
-    );
+    await page
+      .locator('[data-slot="textarea"]')
+      .fill('Write a 5000-word essay about the entire history of computer science');
     await page.locator('button[aria-label="Send message"]').click();
 
     const stopBtn = page.locator('button[aria-label="Stop generating"]');
