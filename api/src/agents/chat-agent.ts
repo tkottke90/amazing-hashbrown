@@ -11,7 +11,7 @@ import { uploadImageTool } from './tools/upload-image.tool.js';
 
 const checkpointer = new MemorySaver();
 
-function mcpToolToLangChain(t: RegisteredTool) {
+export function mcpToolToLangChain(t: RegisteredTool) {
   return tool(
     async (args: Record<string, unknown>) => {
       const result = await t.execute(args);
