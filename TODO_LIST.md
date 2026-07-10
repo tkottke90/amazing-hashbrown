@@ -5,6 +5,7 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
+1.1. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI, run locally against a real Ollama instance; no blocking dependencies
 2. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
 3. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
 4. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #2, #3; per-provider cost metrics with configurable pricing
@@ -36,6 +37,21 @@ Items are ordered first by priority/necessity, then by dependency.
 ---
 
 ## 2. Item Details
+
+### Automated E2E Tests
+
+**Goal:** Add a Playwright-based end-to-end test suite that exercises key user flows against a running instance of the application, so new features can be verified automatically as they are built.
+
+**Ideas / Requirements:**
+
+- New `e2e/` workspace at the repo root with `playwright.config.ts`
+- Playwright's built-in `webServer` option starts the API and UI dev servers before the suite runs
+- Tests that require the LLM (chat flows, HITL, tool calls) are tagged (e.g. `@llm`) and excluded from the CI run via a `--grep-invert` flag; they run locally against a live Ollama instance
+- CI runs only the non-LLM subset: page load, navigation, health check, static UI interactions
+- A new `e2e` job in `.github/workflows/tests.yml` runs the CI-safe subset on every PR
+- Add `npm run test:e2e` (full suite, local only) and `npm run test:e2e:ci` (tagged subset, CI-safe) to the root `package.json`
+
+---
 
 ### AfterAgent Middleware
 
