@@ -68,6 +68,168 @@ workspaces, installs production-only dependencies (`npm ci --omit dev`), and
 assembles a runtime image that serves the built `ui` app as static files from
 the `api` server. See `api/AGENTS.md` for how static hosting is wired up.
 
+## Testing
+
+**Non-negotiable: all application code must have tests.** Routes, agents, tools, services, and middleware ship with tests. Untested code is not considered complete and will not be merged.
+
+Tests add value through validation and regression checks. The tests themselves must follow these principles:
+
+1. **Tests only give value when you put value in** — descriptions should highlight what is being tested and why it matters; failures should explain _why_ they failed, not just that they did
+2. **Tests are cumulative** — many small, focused tests are better than one large test that checks everything at once
+3. **Tests assert on behaviour, not implementation** — answer "how do we expect this code to behave?" not "what functions did it call?"
+4. **Tests are deterministic** — a test must produce the same result every time it runs
+
+### When Not to Test (Testing Blacklist)
+
+Not everything needs a test. Before writing one, ask:
+
+1. Does this codebase have any control over the outcome?
+2. Does this file do any processing?
+
+If the answer to both is no, skip the test. Things that typically qualify:
+
+- Third-party library wiring (`loadConfig`, `configureFromSchema`, `createReactAgent` call sites)
+- Pure type/interface files, Zod schema definitions with no runtime behaviour
+- Barrel/re-export files (`index.ts` files that only collect and re-export)
+
+Everything else must be tested.
+
+### Developer Tests
+
+Developer tests run in isolation — no live external services required. They can run locally or in CI without heavy setup. Framework: **Mocha + Chai** (`api/`, `lib/`), **Jest** (`ui/`).
+
+Test files live **adjacent to the source file they test**: `src/agents/chat-agent.ts` → `src/agents/chat-agent.test.ts`.
+
+Append a tag to the end of each test name to identify its type:
+
+```ts
+enum TestTypes {
+  UNIT = '[unit]',
+  ORCHESTRATION = '[orchestration]',
+  EXTERNAL = '[external-orchestration]',
+}
+
+it(`returns error when input is null ${TestTypes.UNIT}`, () => {});
+it(`delegates to the correct handler ${TestTypes.ORCHESTRATION}`, () => {});
+it(`handles a 404 from the upstream API ${TestTypes.EXTERNAL}`, () => {});
+```
+
+#### Unit Tests
+
+Scope: a single function or module in complete isolation. All external dependencies (filesystem, HTTP clients, databases, LangChain models) are replaced with stubs or mocks.
+
+This is the **default test type** — reach for it first.
+
+**Best practices:**
+
+- Each test covers one specific scenario or edge case
+- Name tests descriptively: `returns error when input is null` is better than `calls validateInput`
+- Cover both the happy path and failure/edge cases
+- Keep test logic simple — if a test needs its own conditionals, it's doing too much
+
+#### Orchestration Tests
+
+Scope: multiple internal units wired together, but no real external I/O. The goal is to verify that units are composed correctly — not to re-test the units themselves.
+
+**Best practices:**
+
+- Focus on interactions between units (was the right function called with the right arguments?) rather than on the results those units produce
+- Prefer spying over mocking where possible — a spy verifies the call without replacing behaviour
+- Use in-process test clients (e.g. `supertest`) to exercise full request → middleware → handler → response pipelines
+
+#### External Orchestration Tests
+
+Scope: the boundary between this application and an external system (HTTP API, database, MCP server, message queue). These tests do **not** connect to the real external system — they mock responses to exercise every scenario the application might encounter.
+
+Two things to verify for every external boundary:
+
+1. **Outbound contract** — the application sends the right thing (correct method, path, query params, body shape, headers)
+2. **Inbound handling** — the application correctly handles the full range of responses: success, expected errors (e.g. unique-constraint violation, 404), and unexpected failures
+
+**Best practices:**
+
+- Always mock external services — never make real calls in a developer test
+- Test all documented error scenarios, not just the happy path
+- Use spies to verify that the correct input is constructed and sent
+- Build mock responses from real API documentation or SDK response types — this makes the test double as documentation
+- Note which version of the external API or SDK the test targets so it's clear when the test may be stale
+
+### End-to-End Tests
+
+E2E tests run against a live instance of the application and verify complete user-facing flows. Unlike developer tests they are not exhaustive — focus on expected paths. Framework: **Playwright**.
+
+Use Playwright tags to classify tests:
+
+```ts
+enum E2ETestTypes {
+  FUNCTIONAL = '@functional',
+  USER_WORKFLOW = '@user-workflow',
+  SMOKE = '@smoke',
+  COMPREHENSIVE = '@comprehensive',
+}
+```
+
+| Tag              | When to use                                                                   |
+| ---------------- | ----------------------------------------------------------------------------- |
+| `@smoke`         | Fast checks of core functionality; run frequently; mocking APIs is acceptable |
+| `@comprehensive` | Full feature verification run to completion; used after deployments           |
+| `@functional`    | Non-user-facing flows: background jobs, webhooks, system integrations         |
+| `@user-workflow` | Simulates a user completing a task in the UI                                  |
+
+Structure each test suite with the `TestSuite` pattern to capture intent alongside the test logic:
+
+```ts
+interface TestSuite {
+  id: number;
+  name: string;
+  description: string; // what the suite is testing
+  purpose: string; // value the feature provides
+  tags: string[];
+  steps: Array<{
+    tags: string[];
+    action: string; // plain-language description of what's done
+    expectedOutcome: string; // plain-language description of what should happen
+    test: () => void;
+  }>;
+}
+```
+
+**Best practices (user workflow tests):**
+
+- Use semantic selectors (`getByRole`, `getByLabel`, test IDs) — not CSS class or DOM hierarchy
+- Test from the user's perspective: "user can submit the form", not "form submit handler called"
+- Clean up any data created during the test, even on failure
+- Wait for specific conditions (element visible, text appears) rather than arbitrary timeouts
+
+**Best practices (functional tests):**
+
+- Always clean up test data after each run
+- Use the same seed data on every run to keep tests deterministic
+- Verify actual state changes — check the database, queue, or downstream system directly, not just the HTTP response
+
+### Testing Anti-Patterns
+
+#### Testing Log Messages
+
+```ts
+// ❌ Don't
+it('creates a record', () => {
+  const spy = sinon.spy(logger, 'info');
+  createRecord({});
+  expect(spy).to.have.been.calledWith('Record created');
+});
+
+// ✅ Do — assert on the observable outcome, not the log line
+it('creates a record', async () => {
+  const record = await createRecord({ name: 'test' });
+  expect(record.id).to.be.a('string');
+});
+```
+
+Log messages are not part of the public contract, change frequently, and testing them produces brittle tests that break on unrelated log wording changes.
+
+---
+
 ## UI State Management
 
 The `ui/` workspace uses `@preact/signals` for component state. Prefer

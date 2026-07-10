@@ -20,11 +20,11 @@ export function buildMcpClient(config: McpConfigFile): MultiServerMCPClient | nu
 }
 
 export async function fetchMcpTools(client: MultiServerMCPClient): Promise<RegisteredTool[]> {
-  // initializeConnections returns Map<serverName, StructuredToolInterface[]>
+  // initializeConnections returns Record<serverName, DynamicStructuredTool[]>
   // which lets us correctly associate each tool with its server
   const serverToTools = await client.initializeConnections();
   const result: RegisteredTool[] = [];
-  for (const [serverName, tools] of serverToTools.entries()) {
+  for (const [serverName, tools] of Object.entries(serverToTools)) {
     for (const tool of tools as unknown as LangChainTool[]) {
       result.push(fromLangChain(tool, serverName));
     }

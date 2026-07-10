@@ -16,8 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
-    "test": "mocha"
+    "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
     "gray-matter": "4.0.3"

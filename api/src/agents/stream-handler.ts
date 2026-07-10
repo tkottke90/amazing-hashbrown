@@ -139,7 +139,7 @@ async function emitHitlOrDone(
   threadId: string,
   startedAt: number,
 ): Promise<void> {
-  const agent = getChatAgent();
+  const agent = await getChatAgent();
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.getState(config);
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
@@ -180,7 +180,7 @@ export async function streamChatToSse(
   content: string,
   startedAt: number,
 ): Promise<void> {
-  const agent = getChatAgent();
+  const agent = await getChatAgent();
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
@@ -199,7 +199,7 @@ export async function resumeChatToSse(
   answer: string,
   startedAt: number,
 ): Promise<void> {
-  const agent = getChatAgent();
+  const agent = await getChatAgent();
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 

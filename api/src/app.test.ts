@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { createApp } from '../src/app.js';
+import { createApp } from './app.js';
 
 describe('createApp', () => {
   it('builds an express app instance', () => {

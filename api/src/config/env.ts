@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ const AppConfigSchema = z.object({
   llmModel: z.string().default('llama3'),
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./config/kb'),
+  mcpConfigDir: z.string().default('./config'),
 });
 
 // Docker/CI deploy config via process.env, not a config file on disk, so we
@@ -24,6 +26,10 @@ export const configManager = loadConfig({
     ...(process.env.LLM_MODEL && { llmModel: process.env.LLM_MODEL }),
     ...(process.env.LOG_LEVEL && { logLevel: process.env.LOG_LEVEL }),
     ...(process.env.WIKI_ROOT && { wikiRoot: process.env.WIKI_ROOT }),
+    // MCP_CONFIG_PATH points to the mcp.json file; derive the directory from it.
+    ...(process.env.MCP_CONFIG_PATH && {
+      mcpConfigDir: path.dirname(process.env.MCP_CONFIG_PATH),
+    }),
   },
 });
 
@@ -33,4 +39,5 @@ export const env = {
   llmModel: configManager.get('llmModel', 'llama3'),
   logLevel: configManager.get('logLevel', 'info'),
   wikiRoot: configManager.get('wikiRoot', './config/kb'),
+  mcpConfigDir: configManager.get('mcpConfigDir', './config'),
 };

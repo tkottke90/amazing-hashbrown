@@ -16,6 +16,7 @@
     "@langchain/ollama": "1.3.0",
     "@tkottke90/config-manager": "1.1.1",
     "@tkottke90/llm-common-types": "*",
+    "@tkottke90/tools-manager": "*",
     "@tkottke90/llm-wiki": "*",
     "@tkottke90/logger": "2.4.0",
     "cors": "2.8.5",

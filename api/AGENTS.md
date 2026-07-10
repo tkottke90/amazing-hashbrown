@@ -12,6 +12,7 @@ pre-commit checks.
 ```
 src/
   agents/           LangChain agent/chain definitions and streaming chat handlers
+                     agents/**/*.test.ts — unit tests live adjacent to their subject
   config/           env.ts (@tkottke90/config-manager, seeded from .env via
                      dotenv) and logger.ts (@tkottke90/logger)
   knowledge-base/   Domain-organized knowledge bases (LLM-Wiki pattern) — one
@@ -23,8 +24,11 @@ src/
   types/            Shared API types + express.d.ts (module augmentation for
                      req.logger / app.logger)
   app.ts            Express app factory (routes + static hosting)
+  app.test.ts       — test files sit next to the file they test throughout src/
   index.ts          Server entrypoint — reads env.port, calls app.listen
-test/               Mocha + Chai tests
+tests/
+  fixtures/         Shared mock-data factories (e.g. makeMcpTool)
+  utilities/        Shared test helpers (supertest wrappers, logger suppressors, etc.)
 public/             Static files served at the app root by express.static.
                      This checked-in copy is a dev-only placeholder; in the
                      Docker image it's replaced by the built ui app
@@ -88,6 +92,19 @@ npm test         # mocha (test/**/*.test.ts)
 
 Linting and formatting are configured at the repo root — run `npm run lint`
 / `npx prettier --check .` from the repo root, not from `api/`.
+
+## Testing
+
+See the root `AGENTS.md` for the full testing philosophy, test types, anti-patterns, and tagging conventions.
+
+**api-specific conventions:**
+
+- Test files (`*.test.ts`) live **adjacent to the source file they test** — `src/agents/chat-agent.ts` → `src/agents/chat-agent.test.ts`
+- Shared mock-data factories belong in `tests/fixtures/`; shared helpers (supertest wrappers, stub factories, etc.) in `tests/utilities/`
+- Import shared fixtures and utilities via the `@/tests/*` path alias (e.g. `@/tests/fixtures/registered-tool.fixture.js`)
+- Framework: **Mocha + Chai**
+
+---
 
 ## Before committing
 
