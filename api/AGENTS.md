@@ -123,15 +123,16 @@ Use for: verifying that a route correctly delegates to its service layer, that m
 
 #### External Orchestration Tests
 
-Scope: integration with a real external system — a live Ollama endpoint, the local filesystem, or an actual MCP server. These tests cross a process boundary and depend on infrastructure being available.
+Scope: the boundary between this application and an external system — an HTTP API, a database, an MCP server, a message queue. These tests do **not** connect to the real external system; they mock its responses so that every scenario the application might encounter can be exercised in a controlled, repeatable way.
 
-Use for: validating the real I/O contract of an external dependency when the behaviour cannot be faithfully reproduced with a mock (e.g. confirming that `ToolsManager.boot()` correctly creates `mcp.json` on disk, or that a live model returns a structured tool call). Guard with a skip when the external dependency is absent:
+Two things to verify for every external boundary:
 
-```ts
-before(function () {
-  if (!process.env.OLLAMA_BASE_URL) this.skip();
-});
-```
+1. **Outbound contract** — the application sends the right thing (correct HTTP method, path, query parameters, request body shape, headers). Assert on what the application *emits*, not just on what it returns.
+2. **Inbound handling** — the application correctly handles the full range of responses the external system might send back: success, expected error conditions (e.g. a database unique-constraint violation, a 404 from a downstream API, a timeout), and unexpected failures.
+
+Use for: a service that calls an external API (stub the HTTP client and assert the outbound request shape, then replay each error response to confirm the service handles it gracefully); a repository layer that talks to SQLite (stub the driver and inject a constraint-failure error to confirm the caller surfaces it correctly); an MCP client integration (mock the server response to verify tool-call parsing under malformed payloads).
+
+The goal is full scenario coverage of the contract — not to prove the external system works, but to prove *this application* behaves correctly at the boundary regardless of what the external system does.
 
 #### Manual Testing
 
