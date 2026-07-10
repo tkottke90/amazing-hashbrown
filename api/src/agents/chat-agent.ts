@@ -33,7 +33,8 @@ async function buildChatAgent() {
 
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
-    logger.warn('MCP initialization failed — MCP tools will be unavailable', { err });
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn('MCP initialization failed — MCP tools will be unavailable', { err: message });
   });
 
   const mcpTools = toolsManager
