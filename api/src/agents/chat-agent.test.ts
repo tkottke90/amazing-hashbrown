@@ -1,24 +1,9 @@
 import { describe, it, beforeEach } from 'mocha';
 import { expect } from 'chai';
 import { z } from 'zod';
-import { mcpToolToLangChain, invalidateChatAgent } from '../../src/agents/chat-agent.js';
+import { mcpToolToLangChain, invalidateChatAgent } from './chat-agent.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
-
-// Build a minimal RegisteredTool for conversion tests.
-// execute is configurable so each test can control what the tool returns.
-function makeMcpTool(
-  overrides: Partial<RegisteredTool> & { execute?: (args: Record<string, unknown>) => Promise<unknown> } = {},
-): RegisteredTool {
-  return {
-    name: 'test_tool',
-    description: 'A test MCP tool',
-    // Double-cast required: same Zod version mismatch as in production code
-    parameters: z.object({}) as unknown as RegisteredTool['parameters'],
-    source: 'mcp',
-    execute: async () => 'default result',
-    ...overrides,
-  };
-}
+import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
 
 describe('agents/chat-agent', () => {
   describe('mcpToolToLangChain()', () => {

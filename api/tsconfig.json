@@ -7,9 +7,11 @@
     "rootDir": "src",
     "baseUrl": ".",
     "paths": {
+      "@/tests/*": ["tests/*"],
       "@/*": ["src/*"]
     },
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

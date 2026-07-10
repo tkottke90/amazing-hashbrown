@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { toolsManager, bootToolsManager } from '../../src/services/tools-manager.js';
+import { toolsManager, bootToolsManager } from './tools-manager.js';
 
 // The module registers ask_user and upload_image at load time (before boot()).
 // list() does not require boot() — it reads the in-memory builtin registry.
