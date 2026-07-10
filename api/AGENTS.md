@@ -89,6 +89,58 @@ npm test         # mocha (test/**/*.test.ts)
 Linting and formatting are configured at the repo root — run `npm run lint`
 / `npx prettier --check .` from the repo root, not from `api/`.
 
+## Testing
+
+**Non-negotiable: all application code must have unit tests.** Routes, agents, tools, services, and middleware ship with tests. Untested code is not considered complete and will not be merged.
+
+### Testing Blacklist
+
+Not everything needs a test. Skip tests only for code where the codebase has no control over the outcome and no processing logic is present:
+
+- Third-party library wiring (`loadConfig`, `configureFromSchema`, `createReactAgent` call sites)
+- Pure type/interface files and Zod schema definitions with no runtime behaviour
+- Barrel/re-export files (`index.ts` files that only collect and re-export)
+
+Everything else — route handlers, agent logic, tool implementations, service modules, middleware — must be tested.
+
+### Test Types
+
+Tests live in `test/` and use **Mocha + Chai**. Choose the type that matches the scope of what you are verifying. Prefer many small, focused tests over one large cumulative test. Tests should assert on *behaviour* (what the code does) rather than *implementation* (how it does it internally).
+
+#### Unit Tests
+
+Scope: a single function or module in complete isolation. All external dependencies (filesystem, HTTP clients, database, LangChain models) are replaced with stubs or mocks — the test controls every input and asserts every output.
+
+Use for: pure data-transformation logic, input validation, Zod schema parsing, tool `execute()` handlers, utility functions, and any module that does processing. This is the **default test type** — reach for it first.
+
+Example targets in this package: individual route handler logic, `mcpToolToLangChain()`, `wrapBuiltin()`, artifact processing helpers.
+
+#### Orchestration Tests
+
+Scope: multiple internal units wired together, but no real external I/O. Use an in-process test client (e.g. `supertest` against the Express app with the LLM and MCP client swapped for fakes) to exercise the full request → middleware → handler → response pipeline.
+
+Use for: verifying that a route correctly delegates to its service layer, that middleware sets the right headers, or that an agent build composes tools in the expected order — without spinning up a real Ollama instance or MCP server.
+
+#### External Orchestration Tests
+
+Scope: integration with a real external system — a live Ollama endpoint, the local filesystem, or an actual MCP server. These tests cross a process boundary and depend on infrastructure being available.
+
+Use for: validating the real I/O contract of an external dependency when the behaviour cannot be faithfully reproduced with a mock (e.g. confirming that `ToolsManager.boot()` correctly creates `mcp.json` on disk, or that a live model returns a structured tool call). Guard with a skip when the external dependency is absent:
+
+```ts
+before(function () {
+  if (!process.env.OLLAMA_BASE_URL) this.skip();
+});
+```
+
+#### Manual Testing
+
+Scope: exploratory, one-off verification by a human — not automated and not repeatable. Reserve for UI smoke-checks, novel agent flows, or anything where scripting the assertion is impractical.
+
+Manual testing does **not** substitute for an automated test. If you find a bug via manual testing, add a regression unit test before fixing it.
+
+---
+
 ## Before committing
 
 Tests, linting, and style checks must all pass — see the root `AGENT.md`
