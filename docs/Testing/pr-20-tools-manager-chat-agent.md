@@ -188,7 +188,7 @@ THREAD="$(node -e "console.log(crypto.randomUUID())")"
 
 curl -sN -X POST http://localhost:3000/api/v1/chat/$THREAD \
   -H "Content-Type: application/json" \
-  -d '{"content": "List the files in /tmp using the available tools."}'
+  -d '{"content": "Fetch this document https://docs.langchain.com/oss/python/langchain/mcp.md using tools"}'
 ```
 
 **Expected — stream includes `tool_call_start` and `tool_call_end` events for a filesystem tool** before the final text response:
