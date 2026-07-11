@@ -34,34 +34,43 @@ const suite = {
   ],
 };
 
-void suite;
-
-test.describe('@smoke @user-workflow', () => {
-  test('desktop sidebar is visible with Home and Settings links', async ({ page }) => {
-    await page.goto('/');
-    const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
-    await expect(sidebar).toBeVisible();
-    await expect(sidebar.locator('a', { hasText: 'Home' })).toBeVisible();
-    await expect(sidebar.locator('a', { hasText: 'Settings' })).toBeVisible();
-  });
-
-  test.describe('mobile viewport', () => {
-    test.use({ viewport: { width: 375, height: 812 } });
-
-    test('bottom navigation bar is visible on mobile', async ({ page }) => {
+test.describe(
+  '@smoke @user-workflow',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test('desktop sidebar is visible with Home and Settings links', async ({ page }) => {
       await page.goto('/');
-      await expect(page.locator('nav[aria-label="Bottom navigation"]')).toBeVisible();
+      const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
+      await expect(sidebar).toBeVisible();
+      await expect(sidebar.locator('a', { hasText: 'Home' })).toBeVisible();
+      await expect(sidebar.locator('a', { hasText: 'Settings' })).toBeVisible();
     });
 
-    test('desktop sidebar is hidden on mobile', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.locator('aside[aria-label="Sidebar navigation"]')).not.toBeVisible();
-    });
+    test.describe('mobile viewport', () => {
+      test.use({ viewport: { width: 375, height: 812 } });
 
-    test('mobile menu button opens navigation sheet', async ({ page }) => {
-      await page.goto('/');
-      await page.locator('button[aria-label="Open navigation menu"]').click();
-      await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
+      test('bottom navigation bar is visible on mobile', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('nav[aria-label="Bottom navigation"]')).toBeVisible();
+      });
+
+      test('desktop sidebar is hidden on mobile', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('aside[aria-label="Sidebar navigation"]')).not.toBeVisible();
+      });
+
+      test('mobile menu button opens navigation sheet', async ({ page }) => {
+        await page.goto('/');
+        await page.locator('button[aria-label="Open navigation menu"]').click();
+        await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
+      });
     });
-  });
-});
+  },
+);

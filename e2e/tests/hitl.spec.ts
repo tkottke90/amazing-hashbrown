@@ -24,45 +24,56 @@ const suite = {
   ],
 };
 
-void suite;
+test.describe(
+  '@user-workflow @llm',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test('HITL yes/no: pending prompt disables textarea; Yes re-enables it', async ({ page }) => {
+      await page.goto('/');
 
-test.describe('@user-workflow @llm', () => {
-  test('HITL yes/no: pending prompt disables textarea; Yes re-enables it', async ({ page }) => {
-    await page.goto('/');
+      await page
+        .locator('[data-slot="textarea"]')
+        .fill('Ask me a yes or no question before you do anything');
+      await page.locator('button[aria-label="Send message"]').click();
 
-    await page
-      .locator('[data-slot="textarea"]')
-      .fill('Ask me a yes or no question before you do anything');
-    await page.locator('button[aria-label="Send message"]').click();
+      const textarea = page.locator('[data-slot="textarea"]');
+      await expect(textarea).toBeDisabled({ timeout: 30_000 });
 
-    const textarea = page.locator('[data-slot="textarea"]');
-    await expect(textarea).toBeDisabled({ timeout: 30_000 });
+      const yesButton = page.locator('button', { hasText: 'Yes' });
+      const noButton = page.locator('button', { hasText: 'No' });
+      await expect(yesButton).toBeVisible();
+      await expect(noButton).toBeVisible();
 
-    const yesButton = page.locator('button', { hasText: 'Yes' });
-    const noButton = page.locator('button', { hasText: 'No' });
-    await expect(yesButton).toBeVisible();
-    await expect(noButton).toBeVisible();
+      await yesButton.click();
+      await expect(textarea).toBeEnabled({ timeout: 10_000 });
+    });
 
-    await yesButton.click();
-    await expect(textarea).toBeEnabled({ timeout: 10_000 });
-  });
+    test('HITL free-text: inline input accepts answer and re-enables textarea', async ({
+      page,
+    }) => {
+      await page.goto('/');
 
-  test('HITL free-text: inline input accepts answer and re-enables textarea', async ({ page }) => {
-    await page.goto('/');
+      await page
+        .locator('[data-slot="textarea"]')
+        .fill('Ask me an open-ended question and wait for my text response');
+      await page.locator('button[aria-label="Send message"]').click();
 
-    await page
-      .locator('[data-slot="textarea"]')
-      .fill('Ask me an open-ended question and wait for my text response');
-    await page.locator('button[aria-label="Send message"]').click();
+      const textarea = page.locator('[data-slot="textarea"]');
+      await expect(textarea).toBeDisabled({ timeout: 30_000 });
 
-    const textarea = page.locator('[data-slot="textarea"]');
-    await expect(textarea).toBeDisabled({ timeout: 30_000 });
+      const hitlInput = page.locator('input[placeholder="Type your answer…"]');
+      await expect(hitlInput).toBeVisible();
+      await hitlInput.fill('My detailed answer here');
 
-    const hitlInput = page.locator('input[placeholder="Type your answer…"]');
-    await expect(hitlInput).toBeVisible();
-    await hitlInput.fill('My detailed answer here');
-
-    await page.locator('button[type="submit"]', { hasText: 'Submit' }).click();
-    await expect(textarea).toBeEnabled({ timeout: 10_000 });
-  });
-});
+      await page.locator('button[type="submit"]', { hasText: 'Submit' }).click();
+      await expect(textarea).toBeEnabled({ timeout: 10_000 });
+    });
+  },
+);

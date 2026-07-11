@@ -22,44 +22,53 @@ const suite = {
   ],
 };
 
-void suite;
-
 // ThemeToggle lives in the `navEnd` slot, which is rendered exclusively inside
 // the mobile bottom nav (lg:hidden). A mobile viewport is required to interact with it.
-test.describe('@smoke @user-workflow', () => {
-  test.use({ viewport: { width: 375, height: 812 } });
+test.describe(
+  '@smoke @user-workflow',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test.use({ viewport: { width: 375, height: 812 } });
 
-  test('theme toggle switches between dark and light', async ({ page }) => {
-    await page.goto('/');
-    const html = page.locator('html');
+    test('theme toggle switches between dark and light', async ({ page }) => {
+      await page.goto('/');
+      const html = page.locator('html');
 
-    const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
-    const toggleLabel = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
-    await page.locator(`button[aria-label="${toggleLabel}"]`).click();
+      const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
+      const toggleLabel = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
+      await page.locator(`button[aria-label="${toggleLabel}"]`).click();
 
-    if (startsDark) {
-      await expect(html).not.toHaveClass(/\bdark\b/);
-    } else {
-      await expect(html).toHaveClass(/\bdark\b/);
-    }
-  });
+      if (startsDark) {
+        await expect(html).not.toHaveClass(/\bdark\b/);
+      } else {
+        await expect(html).toHaveClass(/\bdark\b/);
+      }
+    });
 
-  test('theme toggle switches back on second click', async ({ page }) => {
-    await page.goto('/');
-    const html = page.locator('html');
+    test('theme toggle switches back on second click', async ({ page }) => {
+      await page.goto('/');
+      const html = page.locator('html');
 
-    const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
+      const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
 
-    const label1 = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
-    await page.locator(`button[aria-label="${label1}"]`).click();
+      const label1 = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
+      await page.locator(`button[aria-label="${label1}"]`).click();
 
-    const label2 = startsDark ? 'Switch to dark theme' : 'Switch to light theme';
-    await page.locator(`button[aria-label="${label2}"]`).click();
+      const label2 = startsDark ? 'Switch to dark theme' : 'Switch to light theme';
+      await page.locator(`button[aria-label="${label2}"]`).click();
 
-    if (startsDark) {
-      await expect(html).toHaveClass(/\bdark\b/);
-    } else {
-      await expect(html).not.toHaveClass(/\bdark\b/);
-    }
-  });
-});
+      if (startsDark) {
+        await expect(html).toHaveClass(/\bdark\b/);
+      } else {
+        await expect(html).not.toHaveClass(/\bdark\b/);
+      }
+    });
+  },
+);

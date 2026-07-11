@@ -16,13 +16,22 @@ const suite = {
   ],
 };
 
-void suite;
-
-test.describe('@smoke @functional', () => {
-  test('GET /api/v1/health returns 200 with status ok', async ({ request }) => {
-    const response = await request.get('http://localhost:3000/api/v1/health');
-    expect(response.status()).toBe(200);
-    const body = (await response.json()) as unknown;
-    expect(body).toEqual({ status: 'ok' });
-  });
-});
+test.describe(
+  '@smoke @functional',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test('GET /api/v1/health returns 200 with status ok', async ({ request }) => {
+      const response = await request.get('http://localhost:3000/api/v1/health');
+      expect(response.status()).toBe(200);
+      const body = (await response.json()) as unknown;
+      expect(body).toEqual({ status: 'ok' });
+    });
+  },
+);

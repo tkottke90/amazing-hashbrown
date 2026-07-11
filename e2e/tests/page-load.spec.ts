@@ -34,29 +34,38 @@ const suite = {
   ],
 };
 
-void suite;
+test.describe(
+  '@smoke @user-workflow',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test('page loads and textarea is visible', async ({ page }) => {
+      await page.goto('/');
+      await expect(page.locator('[data-slot="textarea"]')).toBeVisible();
+    });
 
-test.describe('@smoke @user-workflow', () => {
-  test('page loads and textarea is visible', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('[data-slot="textarea"]')).toBeVisible();
-  });
+    test('send button is disabled when textarea is empty', async ({ page }) => {
+      await page.goto('/');
+      await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
+    });
 
-  test('send button is disabled when textarea is empty', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
-  });
+    test('send button becomes enabled when text is typed', async ({ page }) => {
+      await page.goto('/');
+      await page.locator('[data-slot="textarea"]').fill('Hello');
+      await expect(page.locator('button[aria-label="Send message"]')).toBeEnabled();
+    });
 
-  test('send button becomes enabled when text is typed', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('[data-slot="textarea"]').fill('Hello');
-    await expect(page.locator('button[aria-label="Send message"]')).toBeEnabled();
-  });
-
-  test('clearing textarea disables send button again', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('[data-slot="textarea"]').fill('Hello');
-    await page.locator('[data-slot="textarea"]').fill('');
-    await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
-  });
-});
+    test('clearing textarea disables send button again', async ({ page }) => {
+      await page.goto('/');
+      await page.locator('[data-slot="textarea"]').fill('Hello');
+      await page.locator('[data-slot="textarea"]').fill('');
+      await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
+    });
+  },
+);

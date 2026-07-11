@@ -35,70 +35,79 @@ const suite = {
   ],
 };
 
-void suite;
+test.describe(
+  '@user-workflow @llm',
+  {
+    annotation: [
+      { type: 'suite.id', description: String(suite.id) },
+      { type: 'suite.name', description: suite.name },
+      { type: 'suite.description', description: suite.description },
+      { type: 'suite.purpose', description: suite.purpose },
+    ],
+  },
+  () => {
+    test('user message bubble appears immediately after send', async ({ page }) => {
+      await page.goto('/');
 
-test.describe('@user-workflow @llm', () => {
-  test('user message bubble appears immediately after send', async ({ page }) => {
-    await page.goto('/');
+      const message = 'Hello from Playwright';
+      await page.locator('[data-slot="textarea"]').fill(message);
+      await page.locator('button[aria-label="Send message"]').click();
 
-    const message = 'Hello from Playwright';
-    await page.locator('[data-slot="textarea"]').fill(message);
-    await page.locator('button[aria-label="Send message"]').click();
-
-    const userBubble = page.locator('[data-slot="chat-message"][data-mirrored]');
-    await expect(userBubble).toBeVisible();
-    await expect(userBubble.locator('[data-slot="chat-message-body"]')).toContainText(message);
-  });
-
-  test('assistant response appears after send', async ({ page }) => {
-    await page.goto('/');
-
-    await page.locator('[data-slot="textarea"]').fill('Say exactly: pong');
-    await page.locator('button[aria-label="Send message"]').click();
-
-    const assistantMsg = page.locator('[data-testid="assistant-message"]');
-    await expect(assistantMsg).toBeVisible({ timeout: 30_000 });
-    // Streaming complete when the loading dots are gone
-    await expect(assistantMsg.locator('.animate-bounce').first()).not.toBeVisible({
-      timeout: 30_000,
+      const userBubble = page.locator('[data-slot="chat-message"][data-mirrored]');
+      await expect(userBubble).toBeVisible();
+      await expect(userBubble.locator('[data-slot="chat-message-body"]')).toContainText(message);
     });
-  });
 
-  test('stop generation halts streaming and restores send button', async ({ page }) => {
-    test.slow();
-    await page.goto('/');
+    test('assistant response appears after send', async ({ page }) => {
+      await page.goto('/');
 
-    await page
-      .locator('[data-slot="textarea"]')
-      .fill('Write a 5000-word essay about the entire history of computer science');
-    await page.locator('button[aria-label="Send message"]').click();
+      await page.locator('[data-slot="textarea"]').fill('Say exactly: pong');
+      await page.locator('button[aria-label="Send message"]').click();
 
-    const stopBtn = page.locator('button[aria-label="Stop generating"]');
-    await expect(stopBtn).toBeVisible({ timeout: 15_000 });
-
-    await stopBtn.click();
-
-    await expect(page.locator('button[aria-label="Send message"]')).toBeVisible({
-      timeout: 5_000,
+      const assistantMsg = page.locator('[data-testid="assistant-message"]');
+      await expect(assistantMsg).toBeVisible({ timeout: 30_000 });
+      // Streaming complete when the loading dots are gone
+      await expect(assistantMsg.locator('.animate-bounce').first()).not.toBeVisible({
+        timeout: 30_000,
+      });
     });
-  });
 
-  test('copy button writes user message to clipboard', async ({ page, context }) => {
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.goto('/');
+    test('stop generation halts streaming and restores send button', async ({ page }) => {
+      test.slow();
+      await page.goto('/');
 
-    const message = 'Copy this text please';
-    await page.locator('[data-slot="textarea"]').fill(message);
-    await page.locator('button[aria-label="Send message"]').click();
+      await page
+        .locator('[data-slot="textarea"]')
+        .fill('Write a 5000-word essay about the entire history of computer science');
+      await page.locator('button[aria-label="Send message"]').click();
 
-    const userBubble = page.locator('[data-slot="chat-message"][data-mirrored]');
-    await expect(userBubble).toBeVisible();
+      const stopBtn = page.locator('button[aria-label="Stop generating"]');
+      await expect(stopBtn).toBeVisible({ timeout: 15_000 });
 
-    const copyBtn = userBubble.locator('button[aria-label="Copy to clipboard"]');
-    await expect(copyBtn).toBeVisible();
-    await copyBtn.click();
+      await stopBtn.click();
 
-    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clipboardText).toBe(message);
-  });
-});
+      await expect(page.locator('button[aria-label="Send message"]')).toBeVisible({
+        timeout: 5_000,
+      });
+    });
+
+    test('copy button writes user message to clipboard', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.goto('/');
+
+      const message = 'Copy this text please';
+      await page.locator('[data-slot="textarea"]').fill(message);
+      await page.locator('button[aria-label="Send message"]').click();
+
+      const userBubble = page.locator('[data-slot="chat-message"][data-mirrored]');
+      await expect(userBubble).toBeVisible();
+
+      const copyBtn = userBubble.locator('button[aria-label="Copy to clipboard"]');
+      await expect(copyBtn).toBeVisible();
+      await copyBtn.click();
+
+      const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+      expect(clipboardText).toBe(message);
+    });
+  },
+);
