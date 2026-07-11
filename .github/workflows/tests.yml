@@ -29,6 +29,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -53,36 +55,42 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Run E2E tests (CI-safe subset)
+        id: run-tests
         run: npm run test:e2e:ci
 
       - name: Upload Playwright report
         id: upload-report
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: playwright-report
           path: e2e/playwright-report/
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Comment on PR with report link
         uses: actions/github-script@v7
         if: always() && github.event_name == 'pull_request'
         env:
           ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
-          E2E_STATUS: ${{ job.status }}
+          E2E_STATUS: ${{ steps.run-tests.outcome }}
         with:
           script: |
             const marker = '<!-- playwright-e2e-report -->';
             const status = process.env.E2E_STATUS;
             const icon = status === 'success' ? '✅' : '❌';
-            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${process.env.ARTIFACT_ID}`;
+            const artifactId = process.env.ARTIFACT_ID;
+            const reportLink = artifactId
+              ? `**Report:** [Download HTML report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${artifactId})`
+              : `**Report:** not generated (check run logs)`;
             const body = [
               marker,
               `### ${icon} Playwright E2E Report`,
               '',
               `**Status:** ${status}`,
               `**Run:** [#${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
-              `**Report:** [Download HTML report](${url})`,
+              reportLink,
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
