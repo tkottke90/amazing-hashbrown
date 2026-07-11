@@ -28,10 +28,12 @@ cp .env.example .env
 ## Common commands (run from repo root)
 
 ```sh
-npm run dev:api     # start the API in watch mode
-npm run dev:ui       # start the Vite dev server (proxies /api to the API)
-npm run build        # build both workspaces
-npm test             # run api (Mocha) and ui (Jest) test suites
+npm run dev:api       # start the API in watch mode
+npm run dev:ui        # start the Vite dev server (proxies /api to the API)
+npm run build         # build both workspaces
+npm test              # run api (Mocha) and ui (Jest) test suites
+npm run test:e2e      # full Playwright E2E suite (requires Ollama running locally)
+npm run test:e2e:ci   # CI-safe E2E subset (excludes @llm tests, no Ollama needed)
 npm run lint          # ESLint across the whole repo
 npm run format        # Prettier --write across the whole repo
 ```
@@ -56,10 +58,15 @@ If any of these fail, fix the issue before committing — don't commit with
 
 ## CI
 
-`.github/workflows/` runs the same three checks (`tests.yml`, `lint.yml`,
-`style.yml`) whenever a PR is opened, reopened, or updated with new commits,
-each in its own job. They should always be green if you ran the pre-commit
-checks above locally.
+`.github/workflows/` runs checks whenever a PR is opened, reopened, or updated
+with new commits. Four jobs run in parallel:
+
+- `test` (`tests.yml`) — Mocha (API/libs) and Jest (UI) unit tests
+- `e2e` (`tests.yml`) — Playwright CI-safe subset (non-`@llm` tests only)
+- `lint` (`lint.yml`) — ESLint
+- `style` (`style.yml`) — Prettier format check
+
+All should be green if you ran the pre-commit checks above locally.
 
 ## Docker
 
