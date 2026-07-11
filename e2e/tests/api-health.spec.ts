@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 
-const suite = {
+const suite: TestSuite = {
   id: 2,
   name: 'API Health Check',
   description: 'Verifies the API server is running and reports healthy status',
@@ -19,12 +20,7 @@ const suite = {
 test.describe(
   '@smoke @functional',
   {
-    annotation: [
-      { type: 'suite.id', description: String(suite.id) },
-      { type: 'suite.name', description: suite.name },
-      { type: 'suite.description', description: suite.description },
-      { type: 'suite.purpose', description: suite.purpose },
-    ],
+    annotation: suiteAnnotations(suite),
   },
   () => {
     test('GET /api/v1/health returns 200 with status ok', async ({ request }) => {

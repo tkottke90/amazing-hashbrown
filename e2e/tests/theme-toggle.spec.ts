@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 
-const suite = {
+const suite: TestSuite = {
   id: 4,
   name: 'Theme Toggle',
   description: 'Verifies the theme toggle switches the dark/light class on the html element',
@@ -27,12 +28,7 @@ const suite = {
 test.describe(
   '@smoke @user-workflow',
   {
-    annotation: [
-      { type: 'suite.id', description: String(suite.id) },
-      { type: 'suite.name', description: suite.name },
-      { type: 'suite.description', description: suite.description },
-      { type: 'suite.purpose', description: suite.purpose },
-    ],
+    annotation: suiteAnnotations(suite),
   },
   () => {
     test.use({ viewport: { width: 375, height: 812 } });

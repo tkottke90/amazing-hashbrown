@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 
-const suite = {
+const suite: TestSuite = {
   id: 5,
   name: 'Chat Send',
   description:
@@ -38,12 +39,7 @@ const suite = {
 test.describe(
   '@user-workflow @llm',
   {
-    annotation: [
-      { type: 'suite.id', description: String(suite.id) },
-      { type: 'suite.name', description: suite.name },
-      { type: 'suite.description', description: suite.description },
-      { type: 'suite.purpose', description: suite.purpose },
-    ],
+    annotation: suiteAnnotations(suite),
   },
   () => {
     test('user message bubble appears immediately after send', async ({ page }) => {

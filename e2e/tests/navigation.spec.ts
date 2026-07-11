@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 
-const suite = {
+const suite: TestSuite = {
   id: 3,
   name: 'Navigation',
   description: 'Verifies sidebar navigation on desktop and the bottom nav / sheet on mobile',
@@ -37,12 +38,7 @@ const suite = {
 test.describe(
   '@smoke @user-workflow',
   {
-    annotation: [
-      { type: 'suite.id', description: String(suite.id) },
-      { type: 'suite.name', description: suite.name },
-      { type: 'suite.description', description: suite.description },
-      { type: 'suite.purpose', description: suite.purpose },
-    ],
+    annotation: suiteAnnotations(suite),
   },
   () => {
     test('desktop sidebar is visible with Home and Settings links', async ({ page }) => {
