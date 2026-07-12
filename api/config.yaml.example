@@ -1,0 +1,49 @@
+# amazing-hashbrown API configuration
+#
+# Copy this file to config/config.yaml and edit for your environment.
+# Use ${ENV_VAR} syntax to reference environment variables from the file.
+# The config/config.yaml file is auto-created from these defaults on first run
+# if it does not exist. config/ is gitignored — this example is the committed
+# reference.
+
+# Port the API server listens on.
+port: 3000
+# port: ${PORT}
+
+# Base URL for the Ollama (or OpenAI-compatible) inference endpoint.
+llmBaseUrl: http://localhost:11434
+# llmBaseUrl: ${LLM_BASE_URL}
+
+# Default model name passed to the inference provider.
+llmModel: llama3
+# llmModel: ${LLM_MODEL}
+
+# Log level: debug | info | warn | error
+logLevel: info
+# logLevel: ${LOG_LEVEL}
+
+# Absolute or relative path to the knowledge-base root directory.
+wikiRoot: ./config/kb
+# wikiRoot: ${WIKI_ROOT}
+
+# Directory that holds mcp.json and other runtime config files.
+# When MCP_CONFIG_PATH is set, use: dirname(MCP_CONFIG_PATH)
+mcpConfigDir: ./config
+
+# ---------------------------------------------------------------------------
+# Provider Registration (feature #2 — not yet active)
+# Uncomment and populate when Provider Registration is implemented.
+# ---------------------------------------------------------------------------
+# providers:
+#   - name: local
+#     type: ollama
+#     baseUrl: http://localhost:11434
+#     defaultModel: llama3
+#   - name: anthropic
+#     type: anthropic
+#     apiKey: ${ANTHROPIC_API_KEY}
+#     defaultModel: claude-sonnet-4-6
+# defaultProvider: local
+
+providers: []
+defaultProvider: ""

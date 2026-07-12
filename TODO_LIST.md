@@ -3,6 +3,8 @@
 ## 1. Completed Items
 
 1. [Connect Tools Manager to Chat Agent](#connect-tools-manager-to-chat-agent) — unlocks MCP tool support; no dependencies
+2. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI
+3. [File-based Configuration](#file-based-configuration) — `config.yaml` as primary config source; `${ENV_VAR}` interpolation; auto-created on first run; `POST /api/v1/settings/reload` endpoint
 
 ---
 
@@ -10,35 +12,33 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [Automated E2E Tests](#automated-e2e-tests) — Playwright test suite covering key user flows; LLM-dependent tests tagged and skipped in CI, run locally against a real Ollama instance; no blocking dependencies
-   1.2. [File-based Configuration](#file-based-configuration) — introduce a `config.yaml` as the primary config source; env vars become overrides; prerequisite for Provider Registration and Settings Page
-2. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
-3. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
-4. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #2, #3; per-provider cost metrics with configurable pricing
-5. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
-6. [Evaluation Harness](#evaluation-harness) — no dependencies; dual-use dev and production model comparison; enables TDD for #8
-7. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
-8. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #5, #7; first feature with eval coverage (#6)
-9. [AfterAgent Middleware](#afteragent-middleware) — depends on: #8; closes the conversational wiki-write loop
-10. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer; completes the v1 conversational product
-11. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #10 as a persistence sprint
-12. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #8; required for automated tasks
-13. [Wiki Write Tooling](#wiki-write-tooling) — depends on: #8; unified write/commit tools used by all agent patterns
-14. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #8; required for automated tasks
-15. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #8; required for automated task knowledge gaps
-16. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #8
-17. [Task System](#task-system) — depends on: #10; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-18. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #12, #13, #14, #15, #16, #17
-19. [Trigger System](#trigger-system) — depends on: #17; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-20. [Escalation System](#escalation-system) — depends on: #17; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-21. [Dashboard System](#dashboard-system) — depends on: #17, #20; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-22. [Multi-Conversation Support](#multi-conversation-support) — depends on: #10
-23. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #11; UI wiring already stubbed
-24. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-25. [Skills Integration](#skills-integration) — depends on: #24; `skills-manager` library is complete; needs API + UI
-26. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #1, #24
-27. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #22
-28. [Notification Delivery](#notification-delivery) — depends on: #20; external channels deferred; interim: `action_required` flag on threads/tasks
+1. [Provider Registration](#provider-registration) — foundational; configures LLM inference providers; enables model-agnostic agent and eval runner
+2. [Observability](#observability) — custom agent trace implementation; feeds into evaluation results and cost tracking
+3. [Usage and Cost Tracking](#usage-and-cost-tracking) — depends on: #1, #2; per-provider cost metrics with configurable pricing
+4. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — prerequisite for all knowledge features
+5. [Evaluation Harness](#evaluation-harness) — no dependencies; dual-use dev and production model comparison; enables TDD for #7
+6. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — type-level change; required before wiki middleware is visible in the UI
+7. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — depends on: #4, #6; first feature with eval coverage (#5)
+8. [AfterAgent Middleware](#afteragent-middleware) — depends on: #7; closes the conversational wiki-write loop
+9. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer; completes the v1 conversational product
+10. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #9 as a persistence sprint
+11. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: #7; required for automated tasks
+12. [Wiki Write Tooling](#wiki-write-tooling) — depends on: #7; unified write/commit tools used by all agent patterns
+13. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: #7; required for automated tasks
+14. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: #7; required for automated task knowledge gaps
+15. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: #7
+16. [Task System](#task-system) — depends on: #9; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+17. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #11, #12, #13, #14, #15, #16
+18. [Trigger System](#trigger-system) — depends on: #16; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+19. [Escalation System](#escalation-system) — depends on: #16; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+20. [Dashboard System](#dashboard-system) — depends on: #16, #19; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+21. [Multi-Conversation Support](#multi-conversation-support) — depends on: #9
+22. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #10; UI wiring already stubbed
+23. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+24. [Skills Integration](#skills-integration) — depends on: #23; `skills-manager` library is complete; needs API + UI
+25. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #23
+26. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #21
+27. [Notification Delivery](#notification-delivery) — depends on: #19; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
