@@ -1,10 +1,9 @@
 import { tool } from '@langchain/core/tools';
-import { ChatOllama } from '@langchain/ollama';
 import { MemorySaver } from '@langchain/langgraph';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
-import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
@@ -26,10 +25,7 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 }
 
 async function buildChatAgent() {
-  const llm = new ChatOllama({
-    model: env.llmModel,
-    baseUrl: env.llmBaseUrl,
-  });
+  const llm = createProvider();
 
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
