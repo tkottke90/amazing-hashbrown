@@ -1,9 +1,16 @@
-import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
 loadDotenv();
+
+const ProviderSchema = z.object({
+  name: z.string(),
+  type: z.enum(['ollama', 'openai', 'anthropic']),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  defaultModel: z.string().optional(),
+});
 
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
@@ -12,32 +19,38 @@ const AppConfigSchema = z.object({
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./config/kb'),
   mcpConfigDir: z.string().default('./config'),
+  // Populated by Provider Registration (#2). Empty by default.
+  providers: z.array(ProviderSchema).default([]),
+  defaultProvider: z.string().default(''),
 });
 
-// Docker/CI deploy config via process.env, not a config file on disk, so we
-// pass those through as runtimeValues and keep the manager read-only.
+// config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
+// to reference environment variables. CONFIG_DIR overrides the config directory.
 export const configManager = loadConfig({
   appName: 'amazing-hashbrown-api',
   schema: AppConfigSchema,
-  writeBack: false,
-  runtimeValues: {
-    ...(process.env.PORT && { port: Number(process.env.PORT) }),
-    ...(process.env.LLM_BASE_URL && { llmBaseUrl: process.env.LLM_BASE_URL }),
-    ...(process.env.LLM_MODEL && { llmModel: process.env.LLM_MODEL }),
-    ...(process.env.LOG_LEVEL && { logLevel: process.env.LOG_LEVEL }),
-    ...(process.env.WIKI_ROOT && { wikiRoot: process.env.WIKI_ROOT }),
-    // MCP_CONFIG_PATH points to the mcp.json file; derive the directory from it.
-    ...(process.env.MCP_CONFIG_PATH && {
-      mcpConfigDir: path.dirname(process.env.MCP_CONFIG_PATH),
-    }),
-  },
+  configDir: process.env.CONFIG_DIR ?? './config',
+  writeBack: true,
 });
 
+// Getter-based so values refresh automatically after configManager.reload().
 export const env = {
-  port: configManager.getNumber('port', 3000),
-  llmBaseUrl: configManager.get('llmBaseUrl', 'http://localhost:11434'),
-  llmModel: configManager.get('llmModel', 'llama3'),
-  logLevel: configManager.get('logLevel', 'info'),
-  wikiRoot: configManager.get('wikiRoot', './config/kb'),
-  mcpConfigDir: configManager.get('mcpConfigDir', './config'),
+  get port() {
+    return configManager.getNumber('port', 3000) as number;
+  },
+  get llmBaseUrl() {
+    return configManager.get('llmBaseUrl', 'http://localhost:11434') as string;
+  },
+  get llmModel() {
+    return configManager.get('llmModel', 'llama3') as string;
+  },
+  get logLevel() {
+    return configManager.get('logLevel', 'info') as string;
+  },
+  get wikiRoot() {
+    return configManager.get('wikiRoot', './config/kb') as string;
+  },
+  get mcpConfigDir() {
+    return configManager.get('mcpConfigDir', './config') as string;
+  },
 };
