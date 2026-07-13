@@ -10,14 +10,6 @@
 port: 3000
 # port: ${PORT}
 
-# Base URL for the Ollama (or OpenAI-compatible) inference endpoint.
-llmBaseUrl: http://localhost:11434
-# llmBaseUrl: ${LLM_BASE_URL}
-
-# Default model name passed to the inference provider.
-llmModel: llama3
-# llmModel: ${LLM_MODEL}
-
 # Log level: debug | info | warn | error
 logLevel: info
 # logLevel: ${LOG_LEVEL}
@@ -31,19 +23,23 @@ wikiRoot: ./config/kb
 mcpConfigDir: ./config
 
 # ---------------------------------------------------------------------------
-# Provider Registration (feature #2 — not yet active)
-# Uncomment and populate when Provider Registration is implemented.
+# LLM Providers
+#
+# At least one provider is required for the chat agent to function.
+# Use ${ENV_VAR} syntax for secrets so they are not stored in the file.
 # ---------------------------------------------------------------------------
-# providers:
-#   - name: local
-#     type: ollama
-#     baseUrl: http://localhost:11434
-#     defaultModel: llama3
-#   - name: anthropic
-#     type: anthropic
-#     apiKey: ${ANTHROPIC_API_KEY}
-#     defaultModel: claude-sonnet-4-6
-# defaultProvider: local
+providers:
+  - name: local
+    type: ollama
+    baseUrl: http://localhost:11434
+    defaultModel: llama3
+  # - name: openai
+  #   type: openai
+  #   apiKey: ${OPENAI_API_KEY}
+  #   defaultModel: gpt-4.1-mini
+  # - name: anthropic
+  #   type: anthropic
+  #   apiKey: ${ANTHROPIC_API_KEY}
+  #   defaultModel: claude-sonnet-4-6
 
-providers: []
-defaultProvider: ""
+defaultProvider: local

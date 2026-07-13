@@ -12,14 +12,13 @@ const ProviderSchema = z.object({
   defaultModel: z.string().optional(),
 });
 
+export type ProviderConfig = z.infer<typeof ProviderSchema>;
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
-  llmBaseUrl: z.string().default('http://localhost:11434'),
-  llmModel: z.string().default('llama3'),
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./config/kb'),
   mcpConfigDir: z.string().default('./config'),
-  // Populated by Provider Registration (#2). Empty by default.
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
 });
@@ -38,12 +37,6 @@ export const env = {
   get port() {
     return configManager.getNumber('port', 3000) as number;
   },
-  get llmBaseUrl() {
-    return configManager.get('llmBaseUrl', 'http://localhost:11434') as string;
-  },
-  get llmModel() {
-    return configManager.get('llmModel', 'llama3') as string;
-  },
   get logLevel() {
     return configManager.get('logLevel', 'info') as string;
   },
@@ -52,5 +45,11 @@ export const env = {
   },
   get mcpConfigDir() {
     return configManager.get('mcpConfigDir', './config') as string;
+  },
+  get providers() {
+    return (configManager.get('providers', []) ?? []) as ProviderConfig[];
+  },
+  get defaultProvider() {
+    return (configManager.get('defaultProvider', '') ?? '') as string;
   },
 };

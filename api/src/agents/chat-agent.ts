@@ -1,10 +1,9 @@
 import { tool } from '@langchain/core/tools';
-import { ChatOllama } from '@langchain/ollama';
 import { MemorySaver } from '@langchain/langgraph';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
-import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
@@ -25,11 +24,8 @@ export function mcpToolToLangChain(t: RegisteredTool) {
   );
 }
 
-async function buildChatAgent() {
-  const llm = new ChatOllama({
-    model: env.llmModel,
-    baseUrl: env.llmBaseUrl,
-  });
+async function buildChatAgent(provider?: string, model?: string) {
+  const llm = createProvider(provider, model);
 
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
@@ -59,13 +55,16 @@ async function buildChatAgent() {
 
 export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>;
 
-let _agent: ChatAgent | undefined;
+const _agents = new Map<string, ChatAgent>();
 
-export async function getChatAgent(): Promise<ChatAgent> {
-  _agent ??= await buildChatAgent();
-  return _agent;
+export async function getChatAgent(provider?: string, model?: string): Promise<ChatAgent> {
+  const key = `${provider ?? ''}:${model ?? ''}`;
+  if (!_agents.has(key)) {
+    _agents.set(key, await buildChatAgent(provider, model));
+  }
+  return _agents.get(key)!;
 }
 
 export function invalidateChatAgent(): void {
-  _agent = undefined;
+  _agents.clear();
 }
