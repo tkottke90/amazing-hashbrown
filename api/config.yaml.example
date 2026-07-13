@@ -43,3 +43,19 @@ providers:
   #   defaultModel: claude-sonnet-4-6
 
 defaultProvider: local
+
+# ---------------------------------------------------------------------------
+# Observability
+#
+# Controls agent tracing: token counts, latency, and tool call records.
+# Stored in a shared SQLite database alongside other application data.
+# ---------------------------------------------------------------------------
+observability:
+  enabled: true
+  # Path to the shared application database.
+  # All application features share this file; do not delete it between restarts.
+  dbPath: ./config/app.db
+  # How many characters of LLM responses and tool results to store per span.
+  # Set to -1 to store full content (high fidelity, higher disk use).
+  # Set to  0 to store no content (metrics-only mode: tokens, latency, cost).
+  spanOutputPreviewChars: 500

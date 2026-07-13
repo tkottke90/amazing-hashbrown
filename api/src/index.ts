@@ -1,10 +1,12 @@
 import { createApp } from './app.js';
 import { bootToolsManager } from './services/tools-manager.js';
+import { bootObservability } from './services/observability.js';
 import { getChatAgent } from './agents/chat-agent.js';
 
 const app = createApp();
 
 await bootToolsManager();
+bootObservability();
 
 app.start();
 

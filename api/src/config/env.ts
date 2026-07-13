@@ -14,6 +14,12 @@ const ProviderSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
+const ObservabilitySchema = z.object({
+  enabled: z.boolean().default(true),
+  dbPath: z.string().default('./config/app.db'),
+  spanOutputPreviewChars: z.number().default(500),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -21,6 +27,7 @@ const AppConfigSchema = z.object({
   mcpConfigDir: z.string().default('./config'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
+  observability: ObservabilitySchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -51,5 +58,13 @@ export const env = {
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
+  },
+  get observability(): z.infer<typeof ObservabilitySchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('observability', ObservabilitySchema) as z.infer<typeof ObservabilitySchema>;
+    } catch {
+      return ObservabilitySchema.parse({});
+    }
   },
 };

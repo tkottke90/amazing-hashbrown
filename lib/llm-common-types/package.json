@@ -7,6 +7,14 @@
     "./chat": {
       "types": "./dist/chat/index.d.ts",
       "default": "./dist/chat/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "default": "./dist/db/index.js"
+    },
+    "./traces": {
+      "types": "./dist/traces/index.d.ts",
+      "default": "./dist/traces/index.js"
     }
   },
   "files": [

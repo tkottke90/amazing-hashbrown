@@ -3,6 +3,9 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { getChatAgent } from './chat-agent.js';
+import { env } from '../config/env.js';
+import { getObservabilityStore } from '../services/observability.js';
+import { ObservabilityCallbackHandler } from './observability-handler.js';
 
 // ---- SSE write helper ----
 
@@ -188,12 +191,30 @@ export async function streamChatToSse(
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: provider ?? env.defaultProvider,
+    model: model ?? '',
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
   const eventStream = agent.streamEvents(
     { messages: [{ role: 'human', content }] },
-    { ...config, version: 'v2' },
+    { ...config, version: 'v2', callbacks: [obsHandler] },
   );
 
   await pipeEvents(res, msgId, eventStream);
+
+  store.endTrace(traceId, {
+    totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+  });
+
   await emitHitlOrDone(res, msgId, threadId, startedAt, provider, model);
 }
 
@@ -209,11 +230,30 @@ export async function resumeChatToSse(
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: provider ?? env.defaultProvider,
+    model: model ?? '',
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
   const eventStream = agent.streamEvents(new Command({ resume: answer }), {
     ...config,
     version: 'v2',
+    callbacks: [obsHandler],
   });
 
   await pipeEvents(res, msgId, eventStream);
+
+  store.endTrace(traceId, {
+    totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+  });
+
   await emitHitlOrDone(res, msgId, threadId, startedAt, provider, model);
 }
