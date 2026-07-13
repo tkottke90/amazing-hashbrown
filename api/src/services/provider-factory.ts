@@ -2,6 +2,9 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ChatOllama } from '@langchain/ollama';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
+import { Ollama } from 'ollama';
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { env, type ProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -35,6 +38,30 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         );
       }
       return new ChatAnthropic({ model: resolvedModel, apiKey: config.apiKey });
+  }
+}
+
+export async function listModels(provider: ProviderConfig): Promise<string[]> {
+  try {
+    switch (provider.type) {
+      case 'ollama': {
+        const client = new Ollama({ host: provider.baseUrl });
+        const response = await client.list();
+        return response.models.map((m) => m.name);
+      }
+      case 'openai': {
+        const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
+        const response = await client.models.list();
+        return response.data.map((m) => m.id);
+      }
+      case 'anthropic': {
+        const client = new Anthropic({ apiKey: provider.apiKey });
+        const response = await client.models.list();
+        return response.data.map((m) => m.id);
+      }
+    }
+  } catch {
+    return [];
   }
 }
 
