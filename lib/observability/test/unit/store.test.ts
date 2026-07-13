@@ -37,7 +37,10 @@ describe('ObservabilityStore', () => {
     let dir: string;
 
     before(() => ({ store, dir } = makeStore()));
-    after(() => { store.close(); rmSync(dir, { recursive: true }); });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
 
     it('creates a trace row and returns it via findById', () => {
       const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
@@ -61,7 +64,10 @@ describe('ObservabilityStore', () => {
     let dir: string;
 
     before(() => ({ store, dir } = makeStore()));
-    after(() => { store.close(); rmSync(dir, { recursive: true }); });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
 
     it('updates ended_at, total_tokens, total_cost_estimate', () => {
       const traceId = store.startTrace({ provider: 'anthropic', model: 'claude-3-5' });
@@ -83,13 +89,19 @@ describe('ObservabilityStore', () => {
       ({ store, dir } = makeStore());
       traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
     });
-    after(() => { store.close(); rmSync(dir, { recursive: true }); });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
 
     it('bulk-inserts spans and returns them via getTrace', () => {
       const llmSpan = makeSpan({ spanId: 'span-llm', traceId, type: 'llm-call' });
       const toolSpan = makeSpan({
-        spanId: 'span-tool', traceId, type: 'tool-call',
-        parentSpanId: 'span-llm', name: 'search',
+        spanId: 'span-tool',
+        traceId,
+        type: 'tool-call',
+        parentSpanId: 'span-llm',
+        name: 'search',
       });
       store.saveSpans([llmSpan, toolSpan]);
 
@@ -113,12 +125,19 @@ describe('ObservabilityStore', () => {
       ({ store, dir } = makeStore());
       const t1 = store.startTrace({ threadId: 'thread-A', provider: 'openai', model: 'gpt-4o' });
       const t2 = store.startTrace({ threadId: 'thread-A', provider: 'openai', model: 'gpt-4o' });
-      const t3 = store.startTrace({ threadId: 'thread-B', provider: 'anthropic', model: 'claude-3-5' });
+      const t3 = store.startTrace({
+        threadId: 'thread-B',
+        provider: 'anthropic',
+        model: 'claude-3-5',
+      });
       store.endTrace(t1, { totalTokens: 100 });
       store.endTrace(t2, { totalTokens: 200 });
       store.endTrace(t3, { totalTokens: 50 });
     });
-    after(() => { store.close(); rmSync(dir, { recursive: true }); });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
 
     it('returns all traces when no filters given', () => {
       const results = store.list();
@@ -148,7 +167,10 @@ describe('ObservabilityStore', () => {
     let dir: string;
 
     before(() => ({ store, dir } = makeStore()));
-    after(() => { store.close(); rmSync(dir, { recursive: true }); });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
 
     it('counts llmCallCount and toolCallCount in TraceSummary', () => {
       const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });

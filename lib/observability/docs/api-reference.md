@@ -18,10 +18,10 @@ Creates a new trace row. Returns the `traceId`. Call this before running the age
 
 ```typescript
 interface StartTraceParams {
-  threadId?: string;  // The conversation thread this trace belongs to
-  taskId?: string;    // Optional task identifier
-  provider: string;   // e.g. 'openai', 'anthropic'
-  model: string;      // e.g. 'gpt-4o', 'claude-3-5-sonnet'
+  threadId?: string; // The conversation thread this trace belongs to
+  taskId?: string; // Optional task identifier
+  provider: string; // e.g. 'openai', 'anthropic'
+  model: string; // e.g. 'gpt-4o', 'claude-3-5-sonnet'
 }
 ```
 
@@ -32,7 +32,7 @@ Closes the trace with final token counts and optional cost estimate. Call this a
 ```typescript
 interface EndTraceParams {
   totalTokens: number;
-  totalCostEstimate?: number;  // In USD; omit if not available
+  totalCostEstimate?: number; // In USD; omit if not available
 }
 ```
 
@@ -50,11 +50,11 @@ Returns a list of trace summaries, newest first.
 
 ```typescript
 interface TraceFilters {
-  threadId?: string;  // Return only traces for this thread
-  taskId?: string;    // Return only traces for this task
-  since?: string;     // ISO 8601 date; return traces where startedAt >= since
-  limit?: number;     // Default: 50
-  offset?: number;    // Default: 0
+  threadId?: string; // Return only traces for this thread
+  taskId?: string; // Return only traces for this task
+  since?: string; // ISO 8601 date; return traces where startedAt >= since
+  limit?: number; // Default: 50
+  offset?: number; // Default: 0
 }
 ```
 
@@ -82,40 +82,40 @@ All types are exported from both `@tkottke90/observability` and `@tkottke90/llm-
 
 ### `SpanRecord`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `spanId` | `string` | Unique identifier for this span (LangChain run ID) |
-| `traceId` | `string` | The trace this span belongs to |
-| `parentSpanId` | `string \| null` | For `tool-call` spans: the `spanId` of the `llm-call` that triggered them. `null` for `llm-call` spans. |
-| `type` | `'llm-call' \| 'tool-call'` | The kind of operation |
-| `name` | `string` | Model name for `llm-call`; tool name for `tool-call` |
-| `startedAt` | `string` | ISO 8601 timestamp |
-| `endedAt` | `string \| null` | ISO 8601 timestamp; `null` if the span errored before completing |
-| `latencyMs` | `number \| null` | Wall-clock time in milliseconds |
-| `inputTokens` | `number \| null` | `llm-call` only: prompt tokens |
-| `outputTokens` | `number \| null` | `llm-call` only: completion tokens |
-| `outputPreview` | `string \| null` | `llm-call`: JSON array of tool calls the model decided to make; `tool-call`: first N chars of the tool result (controlled by `spanOutputPreviewChars`) |
-| `inputPreview` | `string \| null` | `tool-call`: full tool arguments JSON; `llm-call`: always `null` (input is in the checkpoint) |
-| `error` | `string \| null` | Error message if the operation failed |
+| Field           | Type                        | Description                                                                                                                                            |
+| --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `spanId`        | `string`                    | Unique identifier for this span (LangChain run ID)                                                                                                     |
+| `traceId`       | `string`                    | The trace this span belongs to                                                                                                                         |
+| `parentSpanId`  | `string \| null`            | For `tool-call` spans: the `spanId` of the `llm-call` that triggered them. `null` for `llm-call` spans.                                                |
+| `type`          | `'llm-call' \| 'tool-call'` | The kind of operation                                                                                                                                  |
+| `name`          | `string`                    | Model name for `llm-call`; tool name for `tool-call`                                                                                                   |
+| `startedAt`     | `string`                    | ISO 8601 timestamp                                                                                                                                     |
+| `endedAt`       | `string \| null`            | ISO 8601 timestamp; `null` if the span errored before completing                                                                                       |
+| `latencyMs`     | `number \| null`            | Wall-clock time in milliseconds                                                                                                                        |
+| `inputTokens`   | `number \| null`            | `llm-call` only: prompt tokens                                                                                                                         |
+| `outputTokens`  | `number \| null`            | `llm-call` only: completion tokens                                                                                                                     |
+| `outputPreview` | `string \| null`            | `llm-call`: JSON array of tool calls the model decided to make; `tool-call`: first N chars of the tool result (controlled by `spanOutputPreviewChars`) |
+| `inputPreview`  | `string \| null`            | `tool-call`: full tool arguments JSON; `llm-call`: always `null` (input is in the checkpoint)                                                          |
+| `error`         | `string \| null`            | Error message if the operation failed                                                                                                                  |
 
 ### `TraceSummary`
 
 Metrics-only shape, returned by `findById()` and `list()`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `traceId` | `string` | Unique identifier |
-| `threadId` | `string \| null` | The conversation thread |
-| `taskId` | `string \| null` | The task, if any |
-| `provider` | `string` | e.g. `'openai'` |
-| `model` | `string` | e.g. `'gpt-4o'` |
-| `startedAt` | `string` | ISO 8601 timestamp |
-| `endedAt` | `string \| null` | ISO 8601 timestamp; `null` for in-progress traces |
-| `totalTokens` | `number` | Sum of all input and output tokens in this trace |
-| `totalCostEstimate` | `number \| null` | Estimated cost in USD |
-| `spanCount` | `number` | Total number of spans |
-| `llmCallCount` | `number` | Number of `llm-call` spans |
-| `toolCallCount` | `number` | Number of `tool-call` spans |
+| Field               | Type             | Description                                       |
+| ------------------- | ---------------- | ------------------------------------------------- |
+| `traceId`           | `string`         | Unique identifier                                 |
+| `threadId`          | `string \| null` | The conversation thread                           |
+| `taskId`            | `string \| null` | The task, if any                                  |
+| `provider`          | `string`         | e.g. `'openai'`                                   |
+| `model`             | `string`         | e.g. `'gpt-4o'`                                   |
+| `startedAt`         | `string`         | ISO 8601 timestamp                                |
+| `endedAt`           | `string \| null` | ISO 8601 timestamp; `null` for in-progress traces |
+| `totalTokens`       | `number`         | Sum of all input and output tokens in this trace  |
+| `totalCostEstimate` | `number \| null` | Estimated cost in USD                             |
+| `spanCount`         | `number`         | Total number of spans                             |
+| `llmCallCount`      | `number`         | Number of `llm-call` spans                        |
+| `toolCallCount`     | `number`         | Number of `tool-call` spans                       |
 
 ### `TraceWithSpans`
 
@@ -123,16 +123,16 @@ Full detail shape, returned by `getTrace()`.
 
 Contains all fields from `TraceSummary` (except `spanCount`, `llmCallCount`, `toolCallCount`) plus:
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field   | Type           | Description                                                |
+| ------- | -------------- | ---------------------------------------------------------- |
 | `spans` | `SpanRecord[]` | All spans for this trace, ordered by `startedAt` ascending |
 
 ### `SpanNode`
 
 Returned by `buildSpanTree()`. Extends `SpanRecord` with one additional field:
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field      | Type         | Description                                         |
+| ---------- | ------------ | --------------------------------------------------- |
 | `children` | `SpanNode[]` | Child spans (tool calls triggered by this llm-call) |
 
 ### Zod schemas

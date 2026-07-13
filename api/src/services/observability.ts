@@ -10,6 +10,7 @@ export function bootObservability(): void {
 }
 
 export function getObservabilityStore(): ObservabilityStore {
-  if (!_store) throw new Error('Observability store not initialised — call bootObservability() first');
+  if (!_store)
+    throw new Error('Observability store not initialised — call bootObservability() first');
   return _store;
 }

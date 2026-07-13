@@ -3,7 +3,11 @@ import { describe, it } from 'mocha';
 import { buildSpanTree } from '../../src/tree.js';
 import type { SpanRecord } from '../../src/index.js';
 
-function span(id: string, parent: string | null, type: SpanRecord['type'] = 'llm-call'): SpanRecord {
+function span(
+  id: string,
+  parent: string | null,
+  type: SpanRecord['type'] = 'llm-call',
+): SpanRecord {
   return {
     spanId: id,
     traceId: 'trace-1',

@@ -33,9 +33,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     parentRunId?: string,
   ): Promise<void> {
     const name =
-      (llm as { id?: string[] }).id?.at(-1) ??
-      (llm as { name?: string }).name ??
-      'unknown-model';
+      (llm as { id?: string[] }).id?.at(-1) ?? (llm as { name?: string }).name ?? 'unknown-model';
 
     this.pending.set(runId, {
       spanId: runId,
@@ -54,7 +52,8 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     const endedAt = new Date().toISOString();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const usage = (output.llmOutput as any)?.usage_metadata ??
+    const usage =
+      (output.llmOutput as any)?.usage_metadata ??
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (output.llmOutput as any)?.tokenUsage;
 
@@ -62,8 +61,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const text = (firstGen as any)?.text ?? '';
 
-    const inputTokens: number =
-      usage?.input_tokens ?? usage?.promptTokens ?? estimateTokens(text);
+    const inputTokens: number = usage?.input_tokens ?? usage?.promptTokens ?? estimateTokens(text);
     const outputTokens: number =
       usage?.output_tokens ?? usage?.completionTokens ?? estimateTokens(text);
 
@@ -73,9 +71,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toolCalls = (firstGen as any)?.message?.tool_calls ?? [];
     const outputPreview =
-      toolCalls.length > 0
-        ? this.preview(JSON.stringify(toolCalls))
-        : this.preview(text);
+      toolCalls.length > 0 ? this.preview(JSON.stringify(toolCalls)) : this.preview(text);
 
     this.completed.push({
       ...(span as SpanRecord),
@@ -114,9 +110,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     parentRunId?: string,
   ): Promise<void> {
     const name =
-      (tool as { name?: string }).name ??
-      (tool as { id?: string[] }).id?.at(-1) ??
-      'unknown-tool';
+      (tool as { name?: string }).name ?? (tool as { id?: string[] }).id?.at(-1) ?? 'unknown-tool';
 
     this.pending.set(runId, {
       spanId: runId,

@@ -159,12 +159,7 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
          SET ended_at = ?, total_tokens = ?, total_cost_estimate = ?
          WHERE trace_id = ?`,
       )
-      .run(
-        new Date().toISOString(),
-        params.totalTokens,
-        params.totalCostEstimate ?? null,
-        traceId,
-      );
+      .run(new Date().toISOString(), params.totalTokens, params.totalCostEstimate ?? null, traceId);
   }
 
   // Persists a batch of spans in a single transaction. Called by the
@@ -278,9 +273,8 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
   // Returns the full trace with all spans, or null if not found.
   // Use this for the evaluation harness and trace detail views.
   getTrace(traceId: string): TraceWithSpans | null {
-    const trace = this.db
-      .prepare('SELECT * FROM traces WHERE trace_id = ?')
-      .get(traceId) as RawTraceRow | undefined;
+    const trace = this.db.prepare('SELECT * FROM traces WHERE trace_id = ?').get(traceId) as
+      RawTraceRow | undefined;
 
     if (!trace) return null;
 

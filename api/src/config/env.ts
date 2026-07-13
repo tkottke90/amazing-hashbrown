@@ -62,7 +62,9 @@ export const env = {
   get observability(): z.infer<typeof ObservabilitySchema> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('observability', ObservabilitySchema) as z.infer<typeof ObservabilitySchema>;
+      return (configManager as any).getSection('observability', ObservabilitySchema) as z.infer<
+        typeof ObservabilitySchema
+      >;
     } catch {
       return ObservabilitySchema.parse({});
     }

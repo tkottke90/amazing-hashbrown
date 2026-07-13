@@ -43,11 +43,11 @@ dbPath: /var/data/myapp/app.db
 
 Controls how much text content is saved per span. This affects `outputPreview` for all spans and `inputPreview` for `llm-call` spans. It does NOT affect tool call arguments (`inputPreview` on `tool-call` spans), which are always stored in full.
 
-| Value | Behavior |
-|-------|----------|
-| `500` (default) | First 500 characters of the model response or tool result |
-| `-1` | Full text stored (highest fidelity; can grow large for long responses) |
-| `0` | No text stored — only token counts, latency, and timing are recorded |
+| Value           | Behavior                                                               |
+| --------------- | ---------------------------------------------------------------------- |
+| `500` (default) | First 500 characters of the model response or tool result              |
+| `-1`            | Full text stored (highest fidelity; can grow large for long responses) |
+| `0`             | No text stored — only token counts, latency, and timing are recorded   |
 
 **When to change this:**
 

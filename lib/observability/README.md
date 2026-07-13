@@ -33,8 +33,8 @@ const summaries = store.list({ threadId: 'thread-abc', limit: 20 });
 
 ## Documentation
 
-| File | Contents |
-|------|----------|
-| [docs/getting-started.md](docs/getting-started.md) | Concepts, data capture flow, and query examples |
-| [docs/api-reference.md](docs/api-reference.md) | Full method signatures and type field tables |
-| [docs/configuration.md](docs/configuration.md) | The `observability:` config block, field by field |
+| File                                               | Contents                                          |
+| -------------------------------------------------- | ------------------------------------------------- |
+| [docs/getting-started.md](docs/getting-started.md) | Concepts, data capture flow, and query examples   |
+| [docs/api-reference.md](docs/api-reference.md)     | Full method signatures and type field tables      |
+| [docs/configuration.md](docs/configuration.md)     | The `observability:` config block, field by field |

@@ -6,7 +6,10 @@ import type { TraceFilters } from '@tkottke90/observability';
 export const tracesRouter = Router();
 
 tracesRouter.get('/', (req: Request, res: Response) => {
-  const { threadId, taskId, since, limit, offset } = req.query as Record<string, string | undefined>;
+  const { threadId, taskId, since, limit, offset } = req.query as Record<
+    string,
+    string | undefined
+  >;
 
   const filters: TraceFilters = {};
   if (threadId) filters.threadId = threadId;

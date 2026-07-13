@@ -81,12 +81,12 @@ Use `buildSpanTree()` when you want to traverse the agent's decision process in 
 
 The `spanOutputPreviewChars` setting (default: 500) controls how much text is saved per span:
 
-| Setting | Behavior |
-|---------|----------|
+| Setting         | Behavior                                                        |
+| --------------- | --------------------------------------------------------------- |
 | `500` (default) | First 500 characters of the model response and each tool result |
-| `-1` | Full text stored (higher fidelity, uses more disk space) |
-| `0` | No text stored (metrics-only mode: tokens, latency, cost only) |
+| `-1`            | Full text stored (higher fidelity, uses more disk space)        |
+| `0`             | No text stored (metrics-only mode: tokens, latency, cost only)  |
 
-**What is always omitted**: the full message history that the model received as input. That data already lives in the LangGraph checkpoint and is not duplicated here. Spans store the *output* of each step, not the *input*.
+**What is always omitted**: the full message history that the model received as input. That data already lives in the LangGraph checkpoint and is not duplicated here. Spans store the _output_ of each step, not the _input_.
 
 **Tool call arguments** are always stored in full (in `inputPreview`) regardless of `spanOutputPreviewChars`. Tool arguments are small (a few hundred bytes at most) and represent a key behavioral record — what the agent decided to do — so they are never truncated.
