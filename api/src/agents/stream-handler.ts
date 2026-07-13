@@ -138,8 +138,10 @@ async function emitHitlOrDone(
   msgId: string,
   threadId: string,
   startedAt: number,
+  provider?: string,
+  model?: string,
 ): Promise<void> {
-  const agent = await getChatAgent();
+  const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.getState(config);
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
@@ -179,8 +181,10 @@ export async function streamChatToSse(
   threadId: string,
   content: string,
   startedAt: number,
+  provider?: string,
+  model?: string,
 ): Promise<void> {
-  const agent = await getChatAgent();
+  const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
@@ -190,7 +194,7 @@ export async function streamChatToSse(
   );
 
   await pipeEvents(res, msgId, eventStream);
-  await emitHitlOrDone(res, msgId, threadId, startedAt);
+  await emitHitlOrDone(res, msgId, threadId, startedAt, provider, model);
 }
 
 export async function resumeChatToSse(
@@ -198,8 +202,10 @@ export async function resumeChatToSse(
   threadId: string,
   answer: string,
   startedAt: number,
+  provider?: string,
+  model?: string,
 ): Promise<void> {
-  const agent = await getChatAgent();
+  const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
 
@@ -209,5 +215,5 @@ export async function resumeChatToSse(
   });
 
   await pipeEvents(res, msgId, eventStream);
-  await emitHitlOrDone(res, msgId, threadId, startedAt);
+  await emitHitlOrDone(res, msgId, threadId, startedAt, provider, model);
 }

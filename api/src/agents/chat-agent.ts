@@ -24,8 +24,8 @@ export function mcpToolToLangChain(t: RegisteredTool) {
   );
 }
 
-async function buildChatAgent() {
-  const llm = createProvider();
+async function buildChatAgent(provider?: string, model?: string) {
+  const llm = createProvider(provider, model);
 
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
@@ -55,13 +55,16 @@ async function buildChatAgent() {
 
 export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>;
 
-let _agent: ChatAgent | undefined;
+const _agents = new Map<string, ChatAgent>();
 
-export async function getChatAgent(): Promise<ChatAgent> {
-  _agent ??= await buildChatAgent();
-  return _agent;
+export async function getChatAgent(provider?: string, model?: string): Promise<ChatAgent> {
+  const key = `${provider ?? ''}:${model ?? ''}`;
+  if (!_agents.has(key)) {
+    _agents.set(key, await buildChatAgent(provider, model));
+  }
+  return _agents.get(key)!;
 }
 
 export function invalidateChatAgent(): void {
-  _agent = undefined;
+  _agents.clear();
 }
