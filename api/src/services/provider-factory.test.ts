@@ -44,11 +44,17 @@ describe('services/provider-factory', () => {
     it('model override does not throw for any provider type', () => {
       expect(() => createProviderFromConfig(ollamaConfig, 'llama3.2')).to.not.throw();
       expect(() => createProviderFromConfig(openaiConfig, 'gpt-4-turbo')).to.not.throw();
-      expect(() => createProviderFromConfig(anthropicConfig, 'claude-haiku-4-5-20251001')).to.not.throw();
+      expect(() =>
+        createProviderFromConfig(anthropicConfig, 'claude-haiku-4-5-20251001'),
+      ).to.not.throw();
     });
 
     it('throws when no defaultModel and no model override', () => {
-      const noModel: ProviderConfig = { name: 'x', type: 'ollama', baseUrl: 'http://localhost:11434' };
+      const noModel: ProviderConfig = {
+        name: 'x',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+      };
       expect(() => createProviderFromConfig(noModel)).to.throw(/defaultModel/);
     });
 
@@ -65,7 +71,11 @@ describe('services/provider-factory', () => {
     it('throws when anthropic has no apiKey and ANTHROPIC_API_KEY env var is unset', () => {
       // ChatAnthropic validates the key eagerly at construction time.
       // The factory warns first, then the constructor throws.
-      const noKey: ProviderConfig = { name: 'x', type: 'anthropic', defaultModel: 'claude-sonnet-4-6' };
+      const noKey: ProviderConfig = {
+        name: 'x',
+        type: 'anthropic',
+        defaultModel: 'claude-sonnet-4-6',
+      };
       if (!process.env.ANTHROPIC_API_KEY) {
         expect(() => createProviderFromConfig(noKey)).to.throw();
       } else {
