@@ -35,10 +35,22 @@ export const configManager = loadConfig({
 
 // Getter-based so values refresh automatically after configManager.reload().
 export const env = {
-  get port()         { return configManager.getNumber('port', 3000) as number; },
-  get llmBaseUrl()   { return configManager.get('llmBaseUrl', 'http://localhost:11434') as string; },
-  get llmModel()     { return configManager.get('llmModel', 'llama3') as string; },
-  get logLevel()     { return configManager.get('logLevel', 'info') as string; },
-  get wikiRoot()     { return configManager.get('wikiRoot', './config/kb') as string; },
-  get mcpConfigDir() { return configManager.get('mcpConfigDir', './config') as string; },
+  get port() {
+    return configManager.getNumber('port', 3000) as number;
+  },
+  get llmBaseUrl() {
+    return configManager.get('llmBaseUrl', 'http://localhost:11434') as string;
+  },
+  get llmModel() {
+    return configManager.get('llmModel', 'llama3') as string;
+  },
+  get logLevel() {
+    return configManager.get('logLevel', 'info') as string;
+  },
+  get wikiRoot() {
+    return configManager.get('wikiRoot', './config/kb') as string;
+  },
+  get mcpConfigDir() {
+    return configManager.get('mcpConfigDir', './config') as string;
+  },
 };
