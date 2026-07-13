@@ -5,11 +5,11 @@ At least one provider must be defined in `config/config.yaml` for the chat agent
 
 ## Supported Inference Engines
 
-| Engine | `type` value | Requires `baseUrl` | Requires `apiKey` |
-|---|---|---|---|
-| [Ollama](https://ollama.com) | `ollama` | Yes | No (optional bearer token) |
-| [OpenAI](https://platform.openai.com) | `openai` | No | Yes |
-| [Anthropic](https://www.anthropic.com) | `anthropic` | No | Yes |
+| Engine                                 | `type` value | Requires `baseUrl` | Requires `apiKey`          |
+| -------------------------------------- | ------------ | ------------------ | -------------------------- |
+| [Ollama](https://ollama.com)           | `ollama`     | Yes                | No (optional bearer token) |
+| [OpenAI](https://platform.openai.com)  | `openai`     | No                 | Yes                        |
+| [Anthropic](https://www.anthropic.com) | `anthropic`  | No                 | Yes                        |
 
 ### Ollama
 
@@ -55,12 +55,12 @@ providers:
 
 All providers share the same schema. Fields marked **required** must be present for that provider type.
 
-| Field | Type | Description |
-|---|---|---|
-| `name` | string | **Required.** Unique identifier used to reference this provider. |
-| `type` | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`. |
-| `baseUrl` | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`. |
-| `apiKey` | string | API secret key. Required for `openai` and `anthropic`. |
+| Field          | Type   | Description                                                                             |
+| -------------- | ------ | --------------------------------------------------------------------------------------- |
+| `name`         | string | **Required.** Unique identifier used to reference this provider.                        |
+| `type`         | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`.                     |
+| `baseUrl`      | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`.           |
+| `apiKey`       | string | API secret key. Required for `openai` and `anthropic`.                                  |
 | `defaultModel` | string | Model to use when no override is specified. Required if no per-request model is passed. |
 
 ### `defaultProvider`
