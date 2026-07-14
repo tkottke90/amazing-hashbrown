@@ -1,17 +1,41 @@
 # Configuration
 
 Observability is configured under the `observability:` key in `config.yaml`.
+The database path lives in the separate `database:` section because all
+application features share the same file.
 
 ```yaml
+database:
+  path: ./config/app.db
+
 observability:
   enabled: true
-  dbPath: ./config/app.db
   spanOutputPreviewChars: 500
 ```
 
 ---
 
-## `enabled`
+## `database.path`
+
+**Type**: string  
+**Default**: `./config/app.db`
+
+Path to the shared SQLite database file. All application features (observability,
+task system, persistent memory) share this file — do not delete it between
+restarts or you will lose all stored traces, spans, and related data.
+
+The path is resolved relative to the process working directory. For production
+deployments, use an absolute path.
+
+```yaml
+# Production example
+database:
+  path: /var/data/myapp/app.db
+```
+
+---
+
+## `observability.enabled`
 
 **Type**: boolean  
 **Default**: `true`
@@ -20,23 +44,7 @@ When `false`, the API skips starting traces and no data is written to the databa
 
 ---
 
-## `dbPath`
-
-**Type**: string  
-**Default**: `./config/app.db`
-
-Path to the shared SQLite database file. All application features share this file — do not delete it between restarts or you will lose all stored traces, spans, and (in the future) task records and memory entries.
-
-The path is resolved relative to the process working directory. For production deployments, use an absolute path.
-
-```yaml
-# Production example
-dbPath: /var/data/myapp/app.db
-```
-
----
-
-## `spanOutputPreviewChars`
+## `observability.spanOutputPreviewChars`
 
 **Type**: number  
 **Default**: `500`

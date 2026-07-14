@@ -14,9 +14,12 @@ const ProviderSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
+const DatabaseSchema = z.object({
+  path: z.string().default('./config/app.db'),
+});
+
 const ObservabilitySchema = z.object({
   enabled: z.boolean().default(true),
-  dbPath: z.string().default('./config/app.db'),
   spanOutputPreviewChars: z.number().default(500),
 });
 
@@ -27,6 +30,7 @@ const AppConfigSchema = z.object({
   mcpConfigDir: z.string().default('./config'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
+  database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
 });
 
@@ -58,6 +62,16 @@ export const env = {
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
+  },
+  get database(): z.infer<typeof DatabaseSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('database', DatabaseSchema) as z.infer<
+        typeof DatabaseSchema
+      >;
+    } catch {
+      return DatabaseSchema.parse({});
+    }
   },
   get observability(): z.infer<typeof ObservabilitySchema> {
     try {

@@ -9,7 +9,7 @@ const app = createApp();
 
 // One shared SQLite connection for all stores (WAL mode, foreign keys enabled).
 // Future stores (Task System, Persistent Memory) receive the same db instance.
-const db = openDatabase(env.observability.dbPath);
+const db = openDatabase(env.database.path);
 
 await bootToolsManager();
 bootObservability(db);
