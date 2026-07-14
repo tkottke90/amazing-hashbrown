@@ -53,14 +53,13 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
 
     const llmOutput: Record<string, unknown> = output.llmOutput ?? {};
     const usage = (llmOutput['usage_metadata'] ?? llmOutput['tokenUsage']) as
-      | Record<string, number>
-      | null
-      | undefined;
+      Record<string, number> | null | undefined;
 
     const firstGen = output.generations[0]?.[0];
     const text = (firstGen as { text?: string } | undefined)?.text ?? '';
 
-    const inputTokens: number = usage?.['input_tokens'] ?? usage?.['promptTokens'] ?? estimateTokens(text);
+    const inputTokens: number =
+      usage?.['input_tokens'] ?? usage?.['promptTokens'] ?? estimateTokens(text);
     const outputTokens: number =
       usage?.['output_tokens'] ?? usage?.['completionTokens'] ?? estimateTokens(text);
 
@@ -68,9 +67,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     this.totalOutputTokens += outputTokens;
 
     const toolCalls =
-      (
-        firstGen as { message?: { tool_calls?: unknown[] } } | undefined
-      )?.message?.tool_calls ?? [];
+      (firstGen as { message?: { tool_calls?: unknown[] } } | undefined)?.message?.tool_calls ?? [];
     const outputPreview =
       toolCalls.length > 0 ? this.preview(JSON.stringify(toolCalls)) : this.preview(text);
 
