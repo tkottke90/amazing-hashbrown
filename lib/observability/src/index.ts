@@ -2,6 +2,10 @@
 export { ObservabilityStore } from './store.js';
 export type { StartTraceParams, EndTraceParams } from './store.js';
 
+// Cost store
+export { CostStore } from './cost-store.js';
+export type { ProviderCostRecord, InsertCostRecord, UsageRow, UsageFilters } from './cost-store.js';
+
 // Utilities
 export { buildSpanTree } from './tree.js';
 

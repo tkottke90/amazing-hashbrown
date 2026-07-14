@@ -24,6 +24,13 @@ const ObservabilitySchema = z.object({
   spanOutputPreviewChars: z.number().default(500),
 });
 
+const CostEntrySchema = z.object({
+  inputPer1kTokens: z.number().default(0),
+  outputPer1kTokens: z.number().default(0),
+});
+
+export type CostEntry = z.infer<typeof CostEntrySchema>;
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -33,6 +40,7 @@ const AppConfigSchema = z.object({
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
+  costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -87,5 +95,8 @@ export const env = {
     } catch {
       return ObservabilitySchema.parse({});
     }
+  },
+  get costs(): Record<string, CostEntry> {
+    return ((configManager.get('costs', {}) ?? {}) as Record<string, CostEntry>);
   },
 };

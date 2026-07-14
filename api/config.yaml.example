@@ -68,3 +68,21 @@ observability:
   # Set to -1 to store full content (high fidelity, higher disk use).
   # Set to  0 to store no content (metrics-only mode: tokens, latency, cost).
   spanOutputPreviewChars: 500
+
+# ---------------------------------------------------------------------------
+# Cost Rates
+#
+# Optional. Maps "providerName/model" keys to per-1k-token prices in USD.
+# providerName must match a name in providers[]. Omitting a provider/model
+# pair treats it as free ($0). Local/Ollama models can be omitted entirely.
+#
+# Rates are stored historically — changing a price does not rewrite past data.
+# Old spans keep the rate that was active when they ran.
+# ---------------------------------------------------------------------------
+# costs:
+#   anthropic/claude-sonnet-4-6:
+#     inputPer1kTokens: 0.003
+#     outputPer1kTokens: 0.015
+#   openai/gpt-4.1-mini:
+#     inputPer1kTokens: 0.0004
+#     outputPer1kTokens: 0.0012

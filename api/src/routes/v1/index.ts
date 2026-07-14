@@ -5,6 +5,7 @@ import { artifactsRouter } from './artifacts.route.js';
 import { settingsRouter } from './settings.route.js';
 import { providersRouter } from './providers.route.js';
 import { tracesRouter } from './traces.route.js';
+import { usageRouter } from './usage.route.js';
 
 export const v1Router = Router();
 
@@ -14,3 +15,4 @@ v1Router.use('/artifacts', artifactsRouter);
 v1Router.use('/settings', settingsRouter);
 v1Router.use('/providers', providersRouter);
 v1Router.use('/traces', tracesRouter);
+v1Router.use('/usage', usageRouter);
