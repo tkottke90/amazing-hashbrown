@@ -1,11 +1,12 @@
 import { ObservabilityStore } from '@tkottke90/observability';
+import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
 
 let _store: ObservabilityStore | null = null;
 
-export function bootObservability(dbPath: string): void {
-  _store = ObservabilityStore.open(dbPath);
-  logger.info('Observability store opened', { dbPath });
+export function bootObservability(db: SqliteDatabase): void {
+  _store = new ObservabilityStore(db);
+  logger.info('Observability store opened');
 }
 
 export function getObservabilityStore(): ObservabilityStore {

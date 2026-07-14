@@ -3,12 +3,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
+import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ObservabilityStore } from '../../src/store.js';
 import type { SpanRecord } from '../../src/index.js';
 
 function makeStore(): { store: ObservabilityStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'obs-test-'));
-  const store = ObservabilityStore.open(join(dir, 'test.db'));
+  const db = openDatabase(join(dir, 'test.db'));
+  const store = new ObservabilityStore(db);
   return { store, dir };
 }
 

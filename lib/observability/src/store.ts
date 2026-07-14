@@ -1,6 +1,10 @@
-import Database from 'better-sqlite3';
 import { z } from 'zod';
-import { BaseStore, type IReadDao, type DbMigration } from '@tkottke90/llm-common-types/db';
+import {
+  BaseStore,
+  type IReadDao,
+  type DbMigration,
+  type SqliteDatabase,
+} from '@tkottke90/llm-common-types/db';
 import { SpanTypeSchema } from '@tkottke90/llm-common-types/traces';
 import type {
   TraceSummary,
@@ -176,19 +180,12 @@ const MIGRATIONS: DbMigration[] = [
 // ---------------------------------------------------------------------------
 
 export class ObservabilityStore extends BaseStore implements IReadDao<TraceSummary, TraceFilters> {
-  private constructor(db: Database.Database) {
+  // Pass an already-open Database connection (created via openDatabase() from
+  // @tkottke90/llm-common-types/db). The constructor applies any pending DDL
+  // migrations and returns a ready-to-use store.
+  constructor(db: SqliteDatabase) {
     super(db);
-  }
-
-  // Opens (or creates) the SQLite database at dbPath and applies any pending migrations.
-  // Safe to call on every startup — migrations are idempotent.
-  static open(dbPath: string): ObservabilityStore {
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL'); // better concurrent read performance
-    db.pragma('foreign_keys = ON');
-    const store = new ObservabilityStore(db);
-    store.runMigrations(MIGRATIONS);
-    return store;
+    this.runMigrations(MIGRATIONS);
   }
 
   // ---------------------------------------------------------------------------
