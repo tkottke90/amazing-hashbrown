@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
-import type { IReadDao, DbMigration } from '@tkottke90/llm-common-types/db';
+import { z } from 'zod';
+import { BaseStore, type IReadDao, type DbMigration } from '@tkottke90/llm-common-types/db';
+import { SpanTypeSchema } from '@tkottke90/llm-common-types/traces';
 import type {
   TraceSummary,
   TraceWithSpans,
@@ -24,18 +26,116 @@ export interface EndTraceParams {
 }
 
 // ---------------------------------------------------------------------------
+// Zod schemas — parse and transform raw SQLite rows into typed records
+// ---------------------------------------------------------------------------
+
+// Used by findById() and find() — the GROUP BY query always returns span counts.
+const RawTraceSummarySchema = z
+  .object({
+    trace_id: z.string(),
+    thread_id: z.string().nullable(),
+    task_id: z.string().nullable(),
+    provider: z.string(),
+    model: z.string(),
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    total_tokens: z.number(),
+    total_cost_estimate: z.number().nullable(),
+    // COUNT() returns 0 for empty sets; SUM() returns null for empty sets.
+    span_count: z.number(),
+    llm_call_count: z
+      .number()
+      .nullable()
+      .transform((v) => v ?? 0),
+    tool_call_count: z
+      .number()
+      .nullable()
+      .transform((v) => v ?? 0),
+  })
+  .transform((row) => ({
+    traceId: row.trace_id,
+    threadId: row.thread_id,
+    taskId: row.task_id,
+    provider: row.provider,
+    model: row.model,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    totalTokens: row.total_tokens,
+    totalCostEstimate: row.total_cost_estimate,
+    spanCount: row.span_count,
+    llmCallCount: row.llm_call_count,
+    toolCallCount: row.tool_call_count,
+  }));
+
+// Used by getTrace() — basic trace row without span count aggregates.
+const RawTraceRecordSchema = z
+  .object({
+    trace_id: z.string(),
+    thread_id: z.string().nullable(),
+    task_id: z.string().nullable(),
+    provider: z.string(),
+    model: z.string(),
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    total_tokens: z.number(),
+    total_cost_estimate: z.number().nullable(),
+  })
+  .transform((row) => ({
+    traceId: row.trace_id,
+    threadId: row.thread_id,
+    taskId: row.task_id,
+    provider: row.provider,
+    model: row.model,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    totalTokens: row.total_tokens,
+    totalCostEstimate: row.total_cost_estimate,
+  }));
+
+// Used by getTrace() for the spans array.
+const RawSpanSchema = z
+  .object({
+    span_id: z.string(),
+    trace_id: z.string(),
+    parent_span_id: z.string().nullable(),
+    type: SpanTypeSchema,
+    name: z.string(),
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    latency_ms: z.number().nullable(),
+    input_tokens: z.number().nullable(),
+    output_tokens: z.number().nullable(),
+    output_preview: z.string().nullable(),
+    input_preview: z.string().nullable(),
+    error: z.string().nullable(),
+  })
+  .transform((row) => ({
+    spanId: row.span_id,
+    traceId: row.trace_id,
+    parentSpanId: row.parent_span_id,
+    type: row.type,
+    name: row.name,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    latencyMs: row.latency_ms,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    outputPreview: row.output_preview,
+    inputPreview: row.input_preview,
+    error: row.error,
+  }));
+
+// ---------------------------------------------------------------------------
 // DDL migrations
 // ---------------------------------------------------------------------------
 
 // Each entry is applied once at startup in ascending version order.
-// When adding new tables to the shared database (e.g. for the Task System),
-// add a new entry with the next version number. Version numbers must be unique
-// across all features that share this database.
+// Version numbers must be unique across ALL features that share this database.
 const MIGRATIONS: DbMigration[] = [
   {
     version: 1,
     sql: `
-      CREATE TABLE IF NOT EXISTS traces (
+      CREATE TABLE IF NOT EXISTS observability_traces (
         trace_id            TEXT PRIMARY KEY,
         thread_id           TEXT,
         task_id             TEXT,
@@ -47,9 +147,9 @@ const MIGRATIONS: DbMigration[] = [
         total_cost_estimate REAL
       );
 
-      CREATE TABLE IF NOT EXISTS spans (
+      CREATE TABLE IF NOT EXISTS observability_spans (
         span_id         TEXT PRIMARY KEY,
-        trace_id        TEXT NOT NULL REFERENCES traces(trace_id),
+        trace_id        TEXT NOT NULL REFERENCES observability_traces(trace_id),
         parent_span_id  TEXT,
         type            TEXT NOT NULL,
         name            TEXT NOT NULL,
@@ -63,15 +163,10 @@ const MIGRATIONS: DbMigration[] = [
         error           TEXT
       );
 
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version     INTEGER PRIMARY KEY,
-        applied_at  TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_spans_trace   ON spans(trace_id);
-      CREATE INDEX IF NOT EXISTS idx_traces_thread ON traces(thread_id);
-      CREATE INDEX IF NOT EXISTS idx_traces_task   ON traces(task_id);
-      CREATE INDEX IF NOT EXISTS idx_traces_time   ON traces(started_at);
+      CREATE INDEX IF NOT EXISTS idx_observability_spans_trace   ON observability_spans(trace_id);
+      CREATE INDEX IF NOT EXISTS idx_observability_traces_thread ON observability_traces(thread_id);
+      CREATE INDEX IF NOT EXISTS idx_observability_traces_task   ON observability_traces(task_id);
+      CREATE INDEX IF NOT EXISTS idx_observability_traces_time   ON observability_traces(started_at);
     `,
   },
 ];
@@ -80,11 +175,9 @@ const MIGRATIONS: DbMigration[] = [
 // ObservabilityStore
 // ---------------------------------------------------------------------------
 
-export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> {
-  private readonly db: Database.Database;
-
+export class ObservabilityStore extends BaseStore implements IReadDao<TraceSummary, TraceFilters> {
   private constructor(db: Database.Database) {
-    this.db = db;
+    super(db);
   }
 
   // Opens (or creates) the SQLite database at dbPath and applies any pending migrations.
@@ -94,36 +187,8 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
     db.pragma('journal_mode = WAL'); // better concurrent read performance
     db.pragma('foreign_keys = ON');
     const store = new ObservabilityStore(db);
-    store.migrate();
+    store.runMigrations(MIGRATIONS);
     return store;
-  }
-
-  private migrate(): void {
-    // schema_migrations may not exist yet on the very first run; create it first.
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version     INTEGER PRIMARY KEY,
-        applied_at  TEXT NOT NULL
-      );
-    `);
-
-    const applied = new Set<number>(
-      (
-        this.db.prepare('SELECT version FROM schema_migrations').all() as Array<{
-          version: number;
-        }>
-      ).map((r) => r.version),
-    );
-
-    const insertMigration = this.db.prepare(
-      'INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',
-    );
-
-    for (const migration of MIGRATIONS) {
-      if (applied.has(migration.version)) continue;
-      this.db.exec(migration.sql);
-      insertMigration.run(migration.version, new Date().toISOString());
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -136,7 +201,7 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
     const traceId = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO traces (trace_id, thread_id, task_id, provider, model, started_at, total_tokens)
+        `INSERT INTO observability_traces (trace_id, thread_id, task_id, provider, model, started_at, total_tokens)
          VALUES (?, ?, ?, ?, ?, ?, 0)`,
       )
       .run(
@@ -155,7 +220,7 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
   endTrace(traceId: string, params: EndTraceParams): void {
     this.db
       .prepare(
-        `UPDATE traces
+        `UPDATE observability_traces
          SET ended_at = ?, total_tokens = ?, total_cost_estimate = ?
          WHERE trace_id = ?`,
       )
@@ -168,7 +233,7 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
     if (spans.length === 0) return;
 
     const insert = this.db.prepare(
-      `INSERT INTO spans
+      `INSERT INTO observability_spans
          (span_id, trace_id, parent_span_id, type, name,
           started_at, ended_at, latency_ms,
           input_tokens, output_tokens,
@@ -214,19 +279,19 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
            COUNT(s.span_id)                                    AS span_count,
            SUM(CASE WHEN s.type = 'llm-call'  THEN 1 ELSE 0 END) AS llm_call_count,
            SUM(CASE WHEN s.type = 'tool-call' THEN 1 ELSE 0 END) AS tool_call_count
-         FROM traces t
-         LEFT JOIN spans s ON s.trace_id = t.trace_id
+         FROM observability_traces t
+         LEFT JOIN observability_spans s ON s.trace_id = t.trace_id
          WHERE t.trace_id = ?
          GROUP BY t.trace_id`,
       )
-      .get(traceId) as RawTraceRow | undefined;
+      .get(traceId);
 
-    return row ? rowToSummary(row) : null;
+    return row ? RawTraceSummarySchema.parse(row) : null;
   }
 
   // Returns a list of TraceSummaries, newest first.
   // Use this for the conversation list, dashboard, and cost reports.
-  list(filters?: TraceFilters): TraceSummary[] {
+  find(filters?: TraceFilters): TraceSummary[] {
     const conditions: string[] = [];
     const values: unknown[] = [];
 
@@ -254,16 +319,16 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
            COUNT(s.span_id)                                    AS span_count,
            SUM(CASE WHEN s.type = 'llm-call'  THEN 1 ELSE 0 END) AS llm_call_count,
            SUM(CASE WHEN s.type = 'tool-call' THEN 1 ELSE 0 END) AS tool_call_count
-         FROM traces t
-         LEFT JOIN spans s ON s.trace_id = t.trace_id
+         FROM observability_traces t
+         LEFT JOIN observability_spans s ON s.trace_id = t.trace_id
          ${where}
          GROUP BY t.trace_id
          ORDER BY t.started_at DESC
          LIMIT ? OFFSET ?`,
       )
-      .all([...values, limit, offset]) as RawTraceRow[];
+      .all([...values, limit, offset]);
 
-    return rows.map(rowToSummary);
+    return rows.map((row) => RawTraceSummarySchema.parse(row));
   }
 
   // ---------------------------------------------------------------------------
@@ -273,101 +338,19 @@ export class ObservabilityStore implements IReadDao<TraceSummary, TraceFilters> 
   // Returns the full trace with all spans, or null if not found.
   // Use this for the evaluation harness and trace detail views.
   getTrace(traceId: string): TraceWithSpans | null {
-    const trace = this.db.prepare('SELECT * FROM traces WHERE trace_id = ?').get(traceId) as
-      RawTraceRow | undefined;
+    const traceRow = this.db
+      .prepare('SELECT * FROM observability_traces WHERE trace_id = ?')
+      .get(traceId);
 
-    if (!trace) return null;
+    if (!traceRow) return null;
 
-    const spans = this.db
-      .prepare('SELECT * FROM spans WHERE trace_id = ? ORDER BY started_at ASC')
-      .all(traceId) as RawSpanRow[];
+    const spanRows = this.db
+      .prepare('SELECT * FROM observability_spans WHERE trace_id = ? ORDER BY started_at ASC')
+      .all(traceId);
 
-    return {
-      traceId: trace.trace_id,
-      threadId: trace.thread_id,
-      taskId: trace.task_id,
-      provider: trace.provider,
-      model: trace.model,
-      startedAt: trace.started_at,
-      endedAt: trace.ended_at,
-      totalTokens: trace.total_tokens,
-      totalCostEstimate: trace.total_cost_estimate,
-      spans: spans.map(rowToSpan),
-    };
+    const trace = RawTraceRecordSchema.parse(traceRow);
+    const spans = spanRows.map((row) => RawSpanSchema.parse(row));
+
+    return { ...trace, spans };
   }
-
-  close(): void {
-    this.db.close();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Row mappers — translate snake_case DB columns to camelCase types
-// ---------------------------------------------------------------------------
-
-interface RawTraceRow {
-  trace_id: string;
-  thread_id: string | null;
-  task_id: string | null;
-  provider: string;
-  model: string;
-  started_at: string;
-  ended_at: string | null;
-  total_tokens: number;
-  total_cost_estimate: number | null;
-  // Only present in summary queries (LEFT JOIN + GROUP BY)
-  span_count?: number;
-  llm_call_count?: number;
-  tool_call_count?: number;
-}
-
-interface RawSpanRow {
-  span_id: string;
-  trace_id: string;
-  parent_span_id: string | null;
-  type: string;
-  name: string;
-  started_at: string;
-  ended_at: string | null;
-  latency_ms: number | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  output_preview: string | null;
-  input_preview: string | null;
-  error: string | null;
-}
-
-function rowToSummary(row: RawTraceRow): TraceSummary {
-  return {
-    traceId: row.trace_id,
-    threadId: row.thread_id,
-    taskId: row.task_id,
-    provider: row.provider,
-    model: row.model,
-    startedAt: row.started_at,
-    endedAt: row.ended_at,
-    totalTokens: row.total_tokens,
-    totalCostEstimate: row.total_cost_estimate,
-    spanCount: row.span_count ?? 0,
-    llmCallCount: row.llm_call_count ?? 0,
-    toolCallCount: row.tool_call_count ?? 0,
-  };
-}
-
-function rowToSpan(row: RawSpanRow): SpanRecord {
-  return {
-    spanId: row.span_id,
-    traceId: row.trace_id,
-    parentSpanId: row.parent_span_id,
-    type: row.type as SpanRecord['type'],
-    name: row.name,
-    startedAt: row.started_at,
-    endedAt: row.ended_at,
-    latencyMs: row.latency_ms,
-    inputTokens: row.input_tokens,
-    outputTokens: row.output_tokens,
-    outputPreview: row.output_preview,
-    inputPreview: row.input_preview,
-    error: row.error,
-  };
 }

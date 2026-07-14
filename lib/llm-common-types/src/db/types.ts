@@ -13,7 +13,7 @@ export interface BaseRecord {
 // IReadDao — the read side of any single-record-type store.
 //
 // TRecord:  the full record shape returned from the database.
-// TFilters: query filters accepted by list(); must extend PaginationOptions.
+// TFilters: query filters accepted by find(); must extend PaginationOptions.
 //
 // All data stores in this application implement this interface for their primary record type.
 // The Task System, Persistent Memory, and Observability stores are examples.
@@ -24,7 +24,7 @@ export interface IReadDao<
   TFilters extends PaginationOptions = PaginationOptions,
 > {
   findById(id: string): TRecord | null;
-  list(filters?: TFilters): TRecord[];
+  find(filters?: TFilters): TRecord[];
 }
 
 // IWriteDao — the write side of any store.
@@ -33,6 +33,7 @@ export interface IReadDao<
 //               Typically omits auto-generated fields (id, createdAt, etc.).
 export interface IWriteDao<TCreateInput, TRecord extends BaseRecord> {
   create(input: TCreateInput): TRecord;
+  update(id: string, input: Partial<TCreateInput>): TRecord | null;
   delete(id: string): boolean;
 }
 

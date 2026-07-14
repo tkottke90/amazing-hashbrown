@@ -25,10 +25,14 @@
     "dev": "tsc -p tsconfig.json --watch",
     "test": "echo \"No tests yet\""
   },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
   "peerDependencies": {
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
     "@types/node": "20.14.0",
     "tsx": "4.16.0"
   }

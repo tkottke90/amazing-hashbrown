@@ -19,7 +19,7 @@ tracesRouter.get('/', (req: Request, res: Response) => {
   if (offset) filters.offset = parseInt(offset, 10);
 
   const store = getObservabilityStore();
-  const summaries = store.list(filters);
+  const summaries = store.find(filters);
   res.json(summaries);
 });
 

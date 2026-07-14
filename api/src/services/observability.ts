@@ -1,12 +1,11 @@
 import { ObservabilityStore } from '@tkottke90/observability';
-import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
 let _store: ObservabilityStore | null = null;
 
-export function bootObservability(): void {
-  _store = ObservabilityStore.open(env.observability.dbPath);
-  logger.info('Observability store opened', { dbPath: env.observability.dbPath });
+export function bootObservability(dbPath: string): void {
+  _store = ObservabilityStore.open(dbPath);
+  logger.info('Observability store opened', { dbPath });
 }
 
 export function getObservabilityStore(): ObservabilityStore {

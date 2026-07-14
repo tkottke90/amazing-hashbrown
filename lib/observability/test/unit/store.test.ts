@@ -117,7 +117,7 @@ describe('ObservabilityStore', () => {
     });
   });
 
-  describe('list', () => {
+  describe('find', () => {
     let store: ObservabilityStore;
     let dir: string;
 
@@ -140,24 +140,24 @@ describe('ObservabilityStore', () => {
     });
 
     it('returns all traces when no filters given', () => {
-      const results = store.list();
+      const results = store.find();
       assert.equal(results.length, 3);
     });
 
     it('filters by threadId', () => {
-      const results = store.list({ threadId: 'thread-A' });
+      const results = store.find({ threadId: 'thread-A' });
       assert.equal(results.length, 2);
       assert.ok(results.every((r) => r.threadId === 'thread-A'));
     });
 
     it('respects limit', () => {
-      const results = store.list({ limit: 1 });
+      const results = store.find({ limit: 1 });
       assert.equal(results.length, 1);
     });
 
     it('filters by since', () => {
       const future = new Date(Date.now() + 60_000).toISOString();
-      const results = store.list({ since: future });
+      const results = store.find({ since: future });
       assert.equal(results.length, 0);
     });
   });

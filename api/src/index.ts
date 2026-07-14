@@ -2,11 +2,12 @@ import { createApp } from './app.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
 import { getChatAgent } from './agents/chat-agent.js';
+import { env } from './config/env.js';
 
 const app = createApp();
 
 await bootToolsManager();
-bootObservability();
+bootObservability(env.observability.dbPath);
 
 app.start();
 
