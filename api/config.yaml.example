@@ -43,3 +43,28 @@ providers:
   #   defaultModel: claude-sonnet-4-6
 
 defaultProvider: local
+
+# ---------------------------------------------------------------------------
+# Database
+#
+# Shared SQLite database used by all application features (observability,
+# task system, persistent memory). Do not delete this file between restarts.
+# ---------------------------------------------------------------------------
+database:
+  # Path to the application database file. Relative paths are resolved from the
+  # directory that contains this config file. Use an absolute path for production.
+  # All application features share this file.
+  path: app.db
+
+# ---------------------------------------------------------------------------
+# Observability
+#
+# Controls agent tracing: token counts, latency, and tool call records.
+# Writes to the shared database configured above.
+# ---------------------------------------------------------------------------
+observability:
+  enabled: true
+  # How many characters of LLM responses and tool results to store per span.
+  # Set to -1 to store full content (high fidelity, higher disk use).
+  # Set to  0 to store no content (metrics-only mode: tokens, latency, cost).
+  spanOutputPreviewChars: 500

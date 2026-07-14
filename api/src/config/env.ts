@@ -1,3 +1,4 @@
+import path from 'path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -14,6 +15,15 @@ const ProviderSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
+const DatabaseSchema = z.object({
+  path: z.string().default('app.db'),
+});
+
+const ObservabilitySchema = z.object({
+  enabled: z.boolean().default(true),
+  spanOutputPreviewChars: z.number().default(500),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -21,6 +31,8 @@ const AppConfigSchema = z.object({
   mcpConfigDir: z.string().default('./config'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
+  database: DatabaseSchema.optional(),
+  observability: ObservabilitySchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -51,5 +63,29 @@ export const env = {
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
+  },
+  get database(): z.infer<typeof DatabaseSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (configManager as any).getSection('database', DatabaseSchema) as z.infer<
+        typeof DatabaseSchema
+      >;
+      if (path.isAbsolute(raw.path)) return raw;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const configDir = (configManager as any).getConfigDir() as string;
+      return { ...raw, path: path.join(configDir, raw.path) };
+    } catch {
+      return DatabaseSchema.parse({});
+    }
+  },
+  get observability(): z.infer<typeof ObservabilitySchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('observability', ObservabilitySchema) as z.infer<
+        typeof ObservabilitySchema
+      >;
+    } catch {
+      return ObservabilitySchema.parse({});
+    }
   },
 };
