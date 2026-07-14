@@ -6,7 +6,7 @@ application features share the same file.
 
 ```yaml
 database:
-  path: ./config/app.db
+  path: app.db
 
 observability:
   enabled: true
@@ -18,14 +18,15 @@ observability:
 ## `database.path`
 
 **Type**: string  
-**Default**: `./config/app.db`
+**Default**: `app.db`
 
 Path to the shared SQLite database file. All application features (observability,
 task system, persistent memory) share this file — do not delete it between
 restarts or you will lose all stored traces, spans, and related data.
 
-The path is resolved relative to the process working directory. For production
-deployments, use an absolute path.
+Relative paths are resolved from the directory that contains `config.yaml`,
+so the default `app.db` places the database alongside the config file. Use an
+absolute path for production deployments.
 
 ```yaml
 # Production example

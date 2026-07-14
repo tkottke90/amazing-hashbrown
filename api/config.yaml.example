@@ -51,9 +51,10 @@ defaultProvider: local
 # task system, persistent memory). Do not delete this file between restarts.
 # ---------------------------------------------------------------------------
 database:
-  # Path to the application database file (absolute or relative to the process
-  # working directory). All features share this file.
-  path: ./config/app.db
+  # Path to the application database file. Relative paths are resolved from the
+  # directory that contains this config file. Use an absolute path for production.
+  # All application features share this file.
+  path: app.db
 
 # ---------------------------------------------------------------------------
 # Observability

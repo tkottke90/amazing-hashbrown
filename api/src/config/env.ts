@@ -1,3 +1,4 @@
+import path from 'path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -15,7 +16,7 @@ const ProviderSchema = z.object({
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
 const DatabaseSchema = z.object({
-  path: z.string().default('./config/app.db'),
+  path: z.string().default('app.db'),
 });
 
 const ObservabilitySchema = z.object({
@@ -66,9 +67,13 @@ export const env = {
   get database(): z.infer<typeof DatabaseSchema> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('database', DatabaseSchema) as z.infer<
+      const raw = (configManager as any).getSection('database', DatabaseSchema) as z.infer<
         typeof DatabaseSchema
       >;
+      if (path.isAbsolute(raw.path)) return raw;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const configDir = (configManager as any).getConfigDir() as string;
+      return { ...raw, path: path.join(configDir, raw.path) };
     } catch {
       return DatabaseSchema.parse({});
     }
