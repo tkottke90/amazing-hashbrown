@@ -1222,6 +1222,7 @@ the library under `lib/evaluations/templates/` and are bundled with the package.
 
 ```
 lib/evaluations/templates/
+├── base.css           ← shared styles across all reports
 ├── result.njk         ← single run report
 ├── comparison.njk     ← comparison report
 └── partials/
@@ -1231,6 +1232,34 @@ lib/evaluations/templates/
 
 Reports are fully self-contained: all CSS is inlined, no external CDN dependencies, readable
 offline. The report renders correctly in both light and dark browser themes.
+
+### CSS Strategy
+
+`base.css` is a plain CSS file — not a Nunjucks template — so it benefits from full editor
+syntax highlighting and can be maintained without Nunjucks escaping concerns. The serializer
+reads it as a string at render time and passes it to templates as a variable:
+
+```typescript
+// In serializer.ts
+const styles = await fs.readFile(
+  path.join(TEMPLATES_DIR, 'base.css'), 'utf-8'
+);
+
+nunjucks.render('result.njk', { run, results, styles });
+nunjucks.render('comparison.njk', { comparison, styles });
+```
+
+Templates inline it via Nunjucks's `safe` filter, which suppresses escaping:
+
+```nunjucks
+<style>
+  {{ styles | safe }}
+</style>
+```
+
+This produces a single self-contained HTML file with all styles inlined, while keeping CSS
+authoring in a proper `.css` file — one place to update when the visual design changes,
+shared across all report types.
 
 ### Single Run Report Content
 
