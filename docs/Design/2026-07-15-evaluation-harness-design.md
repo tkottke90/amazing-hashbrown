@@ -763,8 +763,133 @@ Skipped human evals (CI mode) get `actualOutput: ''`, `score: null`, `latencyMs:
 
 ---
 
-## Open Design Questions
+## Supporting Mechanics
 
-The following section is still being designed:
+Three workflows that allow the eval suite to grow organically alongside the application.
+Anywhere an interactive TUI is used, a `-d|--detached` flag provides a file-based alternative
+for coding agents, which cannot interact with TUIs.
 
-- **Supporting mechanics** — golden path authoring, failure-to-eval, bug-to-eval workflows
+---
+
+### Golden Path Authoring — `eval:new`
+
+The entry point for EDD. Before implementing a feature, run:
+
+```bash
+# Interactive (human)
+npm run eval:new -- --suite wiki-search
+
+# Detached (agent)
+npm run eval:new -- --suite wiki-search --detached
+```
+
+**Interactive mode** launches a step-by-step prompt, then appends the completed scenario to
+the suite file.
+
+**Detached mode** appends a skeleton scenario with `TODO` markers and prints the file path:
+
+```yaml
+- id: TODO-scenario-id
+  name: TODO - Scenario name
+  purpose: TODO - Why does this scenario matter?
+  type: deterministic   # change to: deterministic | semantic | llm-judge | human
+  input: TODO - Input sent to the model
+  match: contains       # contains | exact | regex
+  expected: TODO - Expected value
+```
+
+The `purpose` prompt is deliberate: "why does this scenario matter?" forces the author to
+articulate value before writing the test — the EDD discipline in practice.
+
+---
+
+### Failure-to-Eval — `eval:from-trace`
+
+When a bad response is observed in the app, grab the trace ID from the observability output
+and run:
+
+```bash
+# Interactive (human)
+npm run eval:from-trace -- --trace-id <id> --suite wiki-search
+
+# Detached (agent)
+npm run eval:from-trace -- --trace-id <id> --suite wiki-search --detached
+```
+
+**Interactive mode** pulls the trace from SQLite, displays the input and output, then prompts
+for what went wrong and the eval type.
+
+**Detached mode** pre-fills `input` from the trace and leaves eval-specific fields as TODOs:
+
+```yaml
+- id: TODO-change-me
+  name: TODO - Scenario name
+  purpose: "Regression: captured from trace a3f2c1d4-..."
+  type: llm-judge       # TODO: confirm eval type
+  input: "What is the difference between a skill and a tool?"
+  rubric: TODO - What should the correct response look like?
+  minScore: 7
+```
+
+The `purpose` defaults to `Regression: captured from trace <id>` as a starting point the
+developer makes meaningful before committing.
+
+---
+
+### Bug-to-Eval — Convention, Not a Command
+
+Turning a GitHub issue into an eval is a **developer discipline** documented in `AGENTS.md`,
+not a CLI feature. The convention:
+
+1. When an issue is filed, write a failing eval **before** writing the fix.
+2. Use the issue number in the scenario ID: `issue-42-provider-config-parsing`.
+3. Use the issue title as `name`; issue description as the starting point for `purpose`.
+4. The eval passes when the bug is fixed — it is the acceptance criterion for the PR.
+
+> **The eval is the fix spec. A PR that closes an issue should include a scenario that
+> would have caught it.**
+
+This gets documented in `AGENTS.md` alongside EDD guidance so both human developers and
+coding agents follow it consistently.
+
+---
+
+### Human Eval Deferred Scoring — `eval:review` and `eval:submit`
+
+Human eval outputs are saved as `pending` after the model run. Scoring can happen
+immediately (TUI launches after automated evals) or deferred to a separate session.
+
+```bash
+# Interactive review of a previous run (human)
+npm run eval:review -- --run <runId>
+
+# Detached — write a review manifest for agent to fill in
+npm run eval:review -- --run <runId> --detached
+# → Wrote: eval-results/review-<runId>.yaml
+
+# Submit a completed manifest
+npm run eval:submit -- --review-file eval-results/review-<runId>.yaml
+```
+
+The manifest pre-fills model output for context; the agent fills in `response` and
+`reviewerNotes`:
+
+```yaml
+runId: a3f2c1d4-...
+reviews:
+  - scenarioId: tone-empathy-check
+    input: "Something went wrong and I don't know why"
+    actualOutput: "I'm sorry to hear that. Let's work through this together..."
+    rubric: Response should be empathetic and suggest next steps.
+    scoring:
+      type: choice
+      options:
+        - key: "Y"
+          label: "Yes"
+          pass: true
+        - key: "N"
+          label: "No"
+          pass: false
+    response: ""        # fill in: "Y" or "N"
+    reviewerNotes: ""   # optional notes
+```
