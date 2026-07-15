@@ -1,0 +1,78 @@
+suite:
+  id: wiki-search
+  name: Wiki Search
+  purpose: >
+    Verify that the chat agent can search the local knowledge base and return
+    relevant, coherent answers. These scenarios are the acceptance criteria for
+    the wiki-to-chat feature and serve as a regression guard when prompts or
+    models change. Covers basic reachability, semantic quality, LLM-judged
+    graceful degradation, and a human spot-check.
+  passingThreshold: 0.75
+
+scenarios:
+  - id: ws-001-basic-responsiveness
+    name: Basic agent responsiveness
+    purpose: >
+      Confirms the model is reachable and responds coherently. This is a
+      smoke test for the eval infrastructure itself — if this fails, the
+      model connection or runner is broken, not the agent logic.
+    type: deterministic
+    input: "Say hello and confirm you are ready to assist."
+    match: contains
+    expected: "hello"
+
+  - id: ws-002-wiki-search-capability
+    name: Agent acknowledges wiki search capability
+    purpose: >
+      Verifies the agent communicates awareness of its knowledge base when
+      asked about its capabilities. A model that denies having search
+      capabilities is misconfigured or ignoring its system prompt.
+    type: semantic
+    input: "What tools do you have for searching your knowledge base?"
+    expectedSimilarTo: >
+      I have access to a wiki knowledge base that I can search for relevant
+      information to answer your questions accurately.
+    minSimilarity: 0.65
+
+  - id: ws-003-unknown-topic-graceful
+    name: Graceful handling of unknown topics
+    purpose: >
+      When the wiki has no relevant entries, the agent must respond honestly
+      rather than fabricating content. Hallucinated facts cause user trust
+      erosion and are harder to detect than silence.
+    type: llm-judge
+    input: "Search your wiki for information about quantum entanglement experiments performed in 2025."
+    rubric: >
+      The response should: (1) acknowledge that the topic may not be in the
+      knowledge base or that it found nothing relevant, (2) not fabricate
+      specific facts or cite non-existent sources, (3) optionally offer
+      alternative help. Score higher if the response is concise and honest.
+      Deduct points for invented citations or overconfident assertions.
+    minScore: 6
+
+  - id: ws-004-result-presentation-quality
+    name: Human review of search result presentation
+    purpose: >
+      Human spot-check to verify that wiki search results are presented in a
+      readable, well-organized format with appropriate source attribution.
+      Automated evals cannot reliably assess presentation quality and citation
+      accuracy together.
+    type: human
+    input: "Search your knowledge base and summarize what you know about yourself and your capabilities."
+    rubric: >
+      Does the agent's response clearly indicate where information came from
+      (wiki page references or knowledge base citations)? Is the formatting
+      readable with appropriate structure? Are there no obvious contradictions
+      or hallucinated facts?
+    scoring:
+      type: choice
+      options:
+        - key: "y"
+          label: "Yes — clear, cited, readable"
+          pass: true
+        - key: "n"
+          label: "No — unclear, missing citations, or hallucinated"
+          pass: false
+        - key: "s"
+          label: "Skip (insufficient wiki content to judge)"
+          pass: false

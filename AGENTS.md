@@ -242,3 +242,51 @@ Log messages are not part of the public contract, change frequently, and testing
 The `ui/` workspace uses `@preact/signals` for component state. Prefer
 `useSignal`/`useComputed` over `useState`/`useReducer`. See `ui/AGENTS.md`
 for details.
+
+---
+
+## Evaluation-Driven Development (EDD)
+
+This project uses an **Evaluation Harness** (`lib/evaluations`, `bin/eval*`) to verify LLM-facing behaviour under real model conditions. Results are written to `eval-results/` (gitignored).
+
+### Rules
+
+1. **Before implementing a new LLM-facing feature**: write at least one failing eval scenario first (`npm run eval:new -- --suite <id>`), then implement until it passes.
+2. **When filing a bug involving LLM output**: add a failing eval scenario that reproduces the bug *before* writing the fix. Reference the issue number in the scenario `id` (e.g. `bug-42-agent-refuses-tool-call`).
+3. **When fixing an LLM-facing bug**: the failing eval must be green before the PR is merged.
+4. **Scenario `purpose` field is required**: it must answer "why does this test matter?" — not just describe what it tests.
+
+### Quick reference
+
+```sh
+# Run a suite
+npm run eval -- --suite wiki-search --model ollama --judge-model ollama
+
+# CI mode (human evals skipped, exit code 1 on failure)
+npm run eval -- --suite wiki-search --model ollama --ci
+
+# Author a new scenario interactively
+npm run eval:new -- --suite wiki-search
+
+# Author a new scenario (detached / agent-friendly)
+npm run eval:new -- --suite wiki-search --detached
+
+# Scaffold a scenario from an observability trace
+npm run eval:from-trace -- --trace-id <id> --suite wiki-search
+
+# Interactive human review of pending results
+npm run eval:review -- --run-id <id>
+
+# Detached human review (writes a manifest file for agents)
+npm run eval:review -- --run-id <id> --detached
+npm run eval:submit -- --manifest eval-results/<id>-review.json
+
+# Compare two runs side-by-side
+npm run eval:compare -- --run-a <id> --run-b <id>
+```
+
+Results are written to `eval-results/`. HTML reports are self-contained and open in any browser.
+
+### Suite files
+
+Bundled suites live in `suites/` and are checked into git. Each file defines one suite. The `wiki-search.yaml` suite is the canonical example and the first acceptance test for the agent's knowledge base feature.

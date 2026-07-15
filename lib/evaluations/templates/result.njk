@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eval Report — {{ run.suiteId }}</title>
+  <style>{{ styles | safe }}</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+
+<div class="header">
+  <h1>Eval Report: {{ suiteName }}</h1>
+  <div class="subtitle">{{ run.startedAt }}</div>
+</div>
+
+<div class="{{ 'status-bar status-bar-pass' if run.passed else 'status-bar status-bar-fail' }}">
+  {{ '✓ PASS' if run.passed else '✗ FAIL' }}
+  <span style="font-weight:400;font-size:0.875rem">
+    Pass rate: {{ (run.passRate * 100) | round(1) }}%
+  </span>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-card">
+    <div class="label">Model</div>
+    <div class="value">{{ run.model }}</div>
+  </div>
+  {% if run.judgeModel %}
+  <div class="meta-card">
+    <div class="label">Judge Model</div>
+    <div class="value">{{ run.judgeModel }}</div>
+  </div>
+  {% endif %}
+  <div class="meta-card">
+    <div class="label">Suite</div>
+    <div class="value">{{ run.suiteId }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Run ID</div>
+    <div class="value" style="font-family:var(--font-mono);font-size:0.75rem">{{ run.id }}</div>
+  </div>
+</div>
+
+{% include "partials/suite-summary.njk" %}
+
+<h2>Scenarios</h2>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Scenario</th>
+        <th>Type</th>
+        <th>Latency</th>
+        <th>Score</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for result in results %}
+        {% include "partials/scenario-row.njk" %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>
