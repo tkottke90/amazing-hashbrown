@@ -19,3 +19,30 @@ export function getWikiRegistry(): Promise<WikiRegistry> {
   });
   return registryPromise;
 }
+
+/**
+ * Boot the knowledge base at startup. Creates the initial "user" domain wiki
+ * if no wikis are registered yet (idempotent — safe to call on every start).
+ *
+ * Future: domain creation will be available as a Task System action so users
+ * can scaffold additional domains through the agent without restarting.
+ */
+export async function bootKnowledgeBase(): Promise<void> {
+  const registry = await getWikiRegistry();
+  const existing = registry.list();
+
+  if (existing.length > 0) {
+    logger.info('Knowledge base ready', { wikis: existing.map((w: { id: string }) => w.id) });
+    return;
+  }
+
+  await registry.create({
+    id: 'user',
+    name: 'User',
+    domain: 'user',
+    tags: [],
+    routingNotes: ['user preferences, personal context, and biography -> user'],
+  });
+
+  logger.info('Knowledge base initialised', { wiki: 'user' });
+}
