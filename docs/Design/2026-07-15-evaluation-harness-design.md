@@ -269,6 +269,7 @@ const LlmJudgeDetails = z.object({
   score: z.number(),
   reasoning: z.string(),   // primary prompt-engineering signal
   judgeModel: z.string(),
+  biasRisk: z.boolean(),   // true when judgeModel === model under evaluation
 });
 
 const HumanDetails = z.object({
@@ -381,13 +382,195 @@ results:
 
 ---
 
+## File Discovery and the Runner
+
+### Suite Discovery
+
+The loader collects YAML files from two directories, merges them, and validates each against
+`SuiteSchema`. If the same `suite.id` appears in both paths, the user suite wins — this lets
+users override a bundled suite without modifying the repo.
+
+```typescript
+interface SuiteLoaderConfig {
+  bundledPath: string;   // e.g. <project-root>/suites/
+  userPath?: string;     // e.g. ~/.config/amazing-hashbrown/evals/suites/
+}
+
+async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>
+```
+
+Discovery order: glob `**/*.yaml` in `bundledPath`, parse and index by `suite.id`, then
+repeat for `userPath` — later entries overwrite earlier ones. Any file that fails
+`SuiteSchema.parse()` logs a validation error and is skipped rather than crashing the run.
+
+### Runner Interface
+
+The runner is model-agnostic: it accepts a LangChain `BaseChatModel` so any configured
+provider works without changes to the eval logic. The judge model for LLM-as-judge scenarios
+must be provided explicitly — using the same model as judge introduces a conflict of interest
+(the model scores its own output) which is flagged via `biasRisk: true` in the result details.
+
+```typescript
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+
+interface RunConfig {
+  suiteId?: string;           // omit to run all discovered suites
+  model: BaseChatModel;       // the model under evaluation
+  modelId: string;            // human-readable identifier stored in results, e.g. "ollama/llama3.2"
+  judgeModel: BaseChatModel;  // for llm-judge scenarios; must be explicit
+  judgeModelId: string;       // human-readable identifier for the judge
+  suitePaths: SuiteLoaderConfig;
+  resultPath: string;         // directory to write YAML result files
+}
+
+async function runEval(config: RunConfig): Promise<EvalRun>
+```
+
+### Execution per Scenario Type
+
+| Type | Execution |
+|---|---|
+| `deterministic` | Invoke `model` with `input` → apply `match` predicate against `expected` |
+| `semantic` | Invoke `model` with `input` → embed output and `expectedSimilarTo` → cosine similarity |
+| `llm-judge` | Invoke `model` with `input` → invoke `judgeModel` with output + `rubric` → structured verdict |
+| `human` | No model call — record `status` from the YAML file; score is `null` if pending |
+
+Human scenarios that are `pending` are included in results but excluded from the pass rate
+calculation — they neither pass nor fail until reviewed.
+
+### Judge Model Structured Output
+
+The LLM-as-judge call uses a structured output schema so the verdict is always parseable:
+
+```typescript
+const JudgeVerdictSchema = z.object({
+  score: z.number().min(0).max(10),
+  reasoning: z.string(),
+  passed: z.boolean(),
+});
+```
+
+### Dual-Write on Completion
+
+Once all scenarios complete, the runner writes results to both sinks from the same in-memory
+`EvalRun` object:
+
+```
+runEval()
+  └─ executeScenarios() → EvalRun (in memory)
+       ├─ writeToSqlite(run)    → eval_runs + eval_results tables
+       └─ writeToYaml(run)      → <resultPath>/<suiteId>-<timestamp>.yaml
+```
+
+If either write fails, the error is surfaced but the other write is not rolled back — a
+partial result on disk is better than no result at all.
+
+---
+
+## SQLite Storage
+
+### Tables
+
+```sql
+CREATE TABLE IF NOT EXISTS eval_runs (
+  run_id              TEXT PRIMARY KEY,
+  suite_id            TEXT NOT NULL,
+  model               TEXT NOT NULL,
+  judge_model         TEXT,
+  started_at          TEXT NOT NULL,
+  ended_at            TEXT,
+  passed              INTEGER NOT NULL,
+  pass_rate           REAL NOT NULL,
+  total_scenarios     INTEGER NOT NULL,
+  passed_scenarios    INTEGER NOT NULL,
+  total_latency_ms    INTEGER NOT NULL,
+  estimated_cost_usd  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS eval_results (
+  result_id           TEXT PRIMARY KEY,
+  run_id              TEXT NOT NULL REFERENCES eval_runs(run_id),
+  scenario_id         TEXT NOT NULL,
+  suite_id            TEXT NOT NULL,
+  type                TEXT NOT NULL,
+  passed              INTEGER NOT NULL,
+  score               REAL,
+  actual_output       TEXT NOT NULL,
+  latency_ms          INTEGER NOT NULL,
+  estimated_cost_usd  REAL NOT NULL,
+  details             TEXT NOT NULL CHECK(json_valid(details))
+);
+
+CREATE INDEX IF NOT EXISTS idx_eval_results_run    ON eval_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_suite     ON eval_runs(suite_id);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_started   ON eval_runs(started_at);
+```
+
+`details` is stored as JSON TEXT. `CHECK(json_valid(details))` provides DB-level validation
+as a safety net on top of Zod. The `type` column is stored separately so the read path can
+filter by eval type without parsing JSON — SQLite's `json_extract()` is available if needed
+for deeper queries but not required by the core read API.
+
+### JSON Serialization Boundary
+
+SQLite has no native JSON column type. The `details` field is `JSON.stringify`'d on write and
+parsed on read. Zod handles the read side via a transform helper:
+
+```typescript
+const JsonOf = <T extends z.ZodType>(schema: T) =>
+  z.string().transform((str, ctx) => {
+    try {
+      return schema.parse(JSON.parse(str));
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'Invalid JSON in details column' });
+      return z.NEVER;
+    }
+  });
+```
+
+This is used in the SQLite row schema to parse and validate `details` in a single step. The
+write path calls `JSON.stringify(result.details)` directly before insert.
+
+### Store Interface
+
+`EvaluationsStore` extends `BaseStore` and follows the same boot/singleton pattern as
+`ObservabilityStore`:
+
+```typescript
+class EvaluationsStore extends BaseStore {
+  saveRun(run: EvalRun, results: ScenarioResult[]): void  // single transaction
+
+  findRunById(runId: string): EvalRun | null
+  findRuns(filters?: EvalRunFilters): EvalRun[]
+  findResultsByRunId(runId: string): ScenarioResult[]
+}
+
+interface EvalRunFilters {
+  suiteId?: string;
+  model?: string;
+  since?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function bootEvaluations(db: Database): void
+export function getEvaluationsStore(): EvaluationsStore
+```
+
+`saveRun` wraps both inserts in a single `db.transaction`. In `api/src/index.ts`:
+
+```typescript
+const db = openDatabase(env.database.path);
+bootObservability(db);
+bootUsage(db);
+bootEvaluations(db);
+```
+
+---
+
 ## Open Design Questions
 
 The following sections are still being designed:
 
-- **File discovery and suite loading** — how the runner discovers suites from both bundled
-  and user paths, merges them, and handles conflicts
-- **Runner interface** — model-agnostic execution, how each eval method is invoked
-- **Storage layer** — SQLite schema; dual-write to DB and YAML
 - **CLI interface** — `npm run eval` flags, output format, exit codes
 - **Supporting mechanics** — golden path authoring, failure-to-eval, bug-to-eval workflows
