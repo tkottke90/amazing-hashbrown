@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
+import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { getChatAgent } from './agents/chat-agent.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
@@ -13,6 +14,8 @@ const db = openDatabase(env.database.path);
 
 await bootToolsManager();
 bootObservability(db);
+bootUsage(db);
+seedProviderCosts();
 
 app.start();
 
