@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  BaseStore,
-  type DbMigration,
-  type SqliteDatabase,
-} from '@tkottke90/llm-common-types/db';
+import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 
 // ---------------------------------------------------------------------------
 // Types and schemas
@@ -50,7 +46,10 @@ const RawUsageRowSchema = z
     input_tokens: z.number(),
     output_tokens: z.number(),
     // SUM over an empty set returns null; coerce to 0
-    estimated_cost: z.number().nullable().transform((v) => v ?? 0),
+    estimated_cost: z
+      .number()
+      .nullable()
+      .transform((v) => v ?? 0),
   })
   .transform((row) => ({
     date: row.date,
@@ -137,9 +136,7 @@ export class CostStore extends BaseStore {
   }
 
   closeCostRecord(id: number, until: string): void {
-    this.db
-      .prepare('UPDATE provider_costs SET valid_until = ? WHERE id = ?')
-      .run(until, id);
+    this.db.prepare('UPDATE provider_costs SET valid_until = ? WHERE id = ?').run(until, id);
   }
 
   insertCostRecord(record: InsertCostRecord): void {

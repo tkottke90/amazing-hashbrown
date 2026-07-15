@@ -180,12 +180,13 @@ describe('CostStore', () => {
       });
 
       const rows = cost.queryUsage({ from: '2026-07-14', to: '2026-07-14' });
-      const row = rows.find(
-        (r) => r.provider === 'anthropic' && r.model === 'claude-sonnet-4-6',
-      );
+      const row = rows.find((r) => r.provider === 'anthropic' && r.model === 'claude-sonnet-4-6');
       assert.ok(row, 'expected a usage row for anthropic/claude-sonnet-4-6');
       // 1000/1000 * 0.003 + 500/1000 * 0.015 = 0.003 + 0.0075 = 0.0105
-      assert.ok(Math.abs(row.estimatedCost - 0.0105) < 0.0001, `expected ~0.0105, got ${row.estimatedCost}`);
+      assert.ok(
+        Math.abs(row.estimatedCost - 0.0105) < 0.0001,
+        `expected ~0.0105, got ${row.estimatedCost}`,
+      );
     });
 
     it('excludes spans outside the date range', () => {

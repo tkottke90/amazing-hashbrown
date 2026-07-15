@@ -97,6 +97,6 @@ export const env = {
     }
   },
   get costs(): Record<string, CostEntry> {
-    return ((configManager.get('costs', {}) ?? {}) as Record<string, CostEntry>);
+    return (configManager.get('costs', {}) ?? {}) as Record<string, CostEntry>;
   },
 };
