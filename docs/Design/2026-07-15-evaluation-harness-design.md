@@ -568,9 +568,203 @@ bootEvaluations(db);
 
 ---
 
+## CLI Interface
+
+The CLI is an npm script that calls the evaluations library directly. It is the primary
+developer and CI interface for running suites.
+
+### Commands
+
+```bash
+# Run a specific suite
+npm run eval -- --suite wiki-search --model ollama/llama3.2
+
+# Run all suites
+npm run eval -- --model ollama/llama3.2
+
+# Specify an explicit judge model (required when llm-judge scenarios are present)
+npm run eval -- --suite wiki-search --model ollama/llama3.2 --judge-model anthropic/claude-haiku-4-5
+
+# CI mode — human evals skipped, not scored, not counted in pass rate
+npm run eval -- --suite wiki-search --model ollama/llama3.2 --ci
+
+# Review pending human evals from a previous run (deferred scoring)
+npm run eval:review -- --run <runId>
+```
+
+`eval:review` supports the "come back and wrap up" workflow: the model runs and saves human
+eval outputs as `pending`, and the reviewer scores them separately without re-running the
+full suite.
+
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Suite passed (pass rate met threshold) |
+| `1` | Suite failed (pass rate below threshold) |
+| `2` | Configuration error (bad flags, missing suite, invalid YAML) |
+| `3` | Runtime error (model unreachable, DB write failed) |
+
+Exit code `1` is what makes `npm run eval` useful as a CI gate.
+
+### Terminal Output
+
+**Normal mode** (automated evals run, TUI launches for pending human evals):
+
+```
+Running suite: wiki-search (4 scenarios) against ollama/llama3.2
+
+  ✓  basic-provider-lookup        deterministic   342ms
+  ✗  conceptual-distinction       llm-judge      1205ms   score: 5/10
+  ✓  summary-quality              semantic        890ms   similarity: 0.81
+  ◌  tone-empathy-check           human           —       pending review
+
+Results: 2/3 evaluated passed  (1 pending)   pass rate: 0.67   threshold: 0.80
+Status: FAIL
+
+Failure details:
+  conceptual-distinction
+    Score: 5/10  [biasRisk: false]
+    Reasoning: The response treats skills and tools as equivalent extension
+    mechanisms without distinguishing their fundamental difference...
+
+Result written to: eval-results/wiki-search-2026-07-15T12-00-00Z.yaml
+```
+
+**CI mode** (`--ci` — human evals are skipped entirely, no model call, not counted):
+
+```
+Running suite: wiki-search (4 scenarios) against ollama/llama3.2  [--ci]
+
+  ✓  basic-provider-lookup        deterministic   342ms
+  ✗  conceptual-distinction       llm-judge      1205ms   score: 5/10
+  ✓  summary-quality              semantic        890ms   similarity: 0.81
+  ⊘  tone-empathy-check           human           —       skipped
+
+Results: 2/3 automated passed  (1 human skipped)   pass rate: 0.67   threshold: 0.80
+Status: FAIL
+```
+
+`pending` means the model ran and output exists but no score yet. `skipped` means nothing
+ran at all. Only automated scenarios contribute to the pass rate in CI mode.
+
+### Human Eval TUI
+
+When human eval scenarios are present and `--ci` is not set, the CLI launches an interactive
+scoring session after the automated scenarios complete.
+
+```
+Human Scoring — 2 of 5
+────────────────────────────────────────
+
+Input:
+  Something went wrong and I don't know why
+
+Output:
+  I'm sorry to hear that. Let's work through this together.
+  First, can you tell me which feature you were using when
+  the error occurred?
+
+────────────────────────────────────────
+Rubric:
+  Response should be empathetic, offer a clear explanation,
+  and suggest concrete next steps.
+────────────────────────────────────────
+
+[Y] Yes    [N] No
+
+> _
+```
+
+After selection:
+
+```
+Notes (optional — press Enter to skip):
+> _
+```
+
+Then immediately advances to the next pending scenario. When all are scored, results are
+written and the summary is printed.
+
+### Human Eval Scoring Types
+
+The `scoring` field on a human scenario configures what the reviewer sees. Two types:
+
+**Choice** (binary or multiple option — key + label, each marked as passing or not):
+
+```yaml
+scoring:
+  type: choice
+  options:
+    - key: "Y"
+      label: "Yes"
+      pass: true
+    - key: "N"
+      label: "No"
+      pass: false
+```
+
+**Scale** (numeric range with labels — passes if selected value meets `passingScore`):
+
+```yaml
+scoring:
+  type: scale
+  options:
+    - value: 1
+      label: "Bad"
+    - value: 2
+      label: "Okay"
+    - value: 3
+      label: "Good"
+    - value: 4
+      label: "Great"
+  passingScore: 3
+```
+
+Zod schemas:
+
+```typescript
+const ChoiceOption = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  pass: z.boolean(),
+});
+
+const ScaleOption = z.object({
+  value: z.number(),
+  label: z.string().min(1),
+});
+
+const ScoringSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('choice'), options: z.array(ChoiceOption).min(2) }),
+  z.object({ type: z.literal('scale'), options: z.array(ScaleOption).min(2), passingScore: z.number() }),
+]);
+
+export const HumanScenarioSchema = BaseScenario.extend({
+  type: z.literal('human'),
+  rubric: z.string().min(1),
+  scoring: ScoringSchema,
+  status: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+});
+```
+
+`HumanDetails` in results stores the reviewer's response and any notes:
+
+```typescript
+const HumanDetails = z.object({
+  type: z.literal('human'),
+  status: z.enum(['pending', 'approved', 'rejected', 'skipped']),
+  response: z.string().optional(),       // key or value selected by reviewer
+  reviewerNotes: z.string().optional(),
+});
+```
+
+Skipped human evals (CI mode) get `actualOutput: ''`, `score: null`, `latencyMs: 0`.
+
+---
+
 ## Open Design Questions
 
-The following sections are still being designed:
+The following section is still being designed:
 
-- **CLI interface** — `npm run eval` flags, output format, exit codes
 - **Supporting mechanics** — golden path authoring, failure-to-eval, bug-to-eval workflows
