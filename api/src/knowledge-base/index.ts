@@ -1,11 +1,12 @@
-// Knowledge base registry, following the LLM-Wiki pattern: each persona/topic
-// domain owns its own folder under `domains/` with its source documents and
-// retrieval index. This module will expose the domain registry once the
-// first domain is implemented.
+// Knowledge-base module. All domain state is derived at runtime from the
+// on-disk registry — no domain definitions live in the repository.
 
-export interface KnowledgeDomain {
-  id: string;
-  name: string;
+import { getWikiRegistry, bootKnowledgeBase } from '../services/wiki.js';
+
+export { getWikiRegistry, bootKnowledgeBase };
+
+/** Return all active wiki entries from the on-disk registry. */
+export async function getActiveDomains() {
+  const registry = await getWikiRegistry();
+  return registry.list();
 }
-
-export const domains: KnowledgeDomain[] = [];

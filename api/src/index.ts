@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
+import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { getChatAgent } from './agents/chat-agent.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
@@ -13,9 +14,14 @@ const app = createApp();
 const db = openDatabase(env.database.path);
 
 await bootToolsManager();
+app.logger.info('Tools manager booted');
 bootObservability(db);
+app.logger.info('Observability booted');
 bootUsage(db);
 seedProviderCosts();
+app.logger.info('Usage tracking booted');
+await bootKnowledgeBase();
+app.logger.info('Knowledge base booted');
 
 app.start();
 
