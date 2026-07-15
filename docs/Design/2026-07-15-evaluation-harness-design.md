@@ -893,3 +893,266 @@ reviews:
     response: ""        # fill in: "Y" or "N"
     reviewerNotes: ""   # optional notes
 ```
+
+---
+
+## Library API
+
+`lib/evaluations` is the shared core. CLI scripts in `bin/` and future API routes are thin
+consumers of this library. The package is structured as follows:
+
+```
+lib/evaluations/src/
+├── index.ts          ← public exports
+├── schemas.ts        ← all Zod schemas and inferred types
+├── loader.ts         ← loadSuites(), loadSuite()
+├── runner.ts         ← runEval()
+├── executors/
+│   ├── deterministic.ts
+│   ├── semantic.ts
+│   ├── llm-judge.ts
+│   └── human.ts
+├── store.ts          ← EvaluationsStore, bootEvaluations(), getEvaluationsStore()
+└── serializer.ts     ← writeResultYaml(), readResultYaml(), writeReviewManifest(), readReviewManifest()
+```
+
+CLI entry points live outside the library in `bin/` at the project root, wired as npm
+scripts. Each script is thin: parse args, build config, call the library.
+
+```
+bin/
+├── eval.ts              ← npm run eval
+├── eval-new.ts          ← npm run eval:new
+├── eval-from-trace.ts   ← npm run eval:from-trace
+├── eval-review.ts       ← npm run eval:review
+└── eval-submit.ts       ← npm run eval:submit
+```
+
+Root `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "eval":            "tsx bin/eval.ts",
+    "eval:new":        "tsx bin/eval-new.ts",
+    "eval:from-trace": "tsx bin/eval-from-trace.ts",
+    "eval:review":     "tsx bin/eval-review.ts",
+    "eval:submit":     "tsx bin/eval-submit.ts"
+  }
+}
+```
+
+---
+
+### `loader.ts`
+
+```typescript
+interface SuiteLoaderConfig {
+  bundledPath: string;   // absolute path to bundled suites directory
+  userPath?: string;     // absolute path to user suites directory
+}
+
+// Discovers all *.yaml files in both paths, validates each against SuiteSchema.
+// If the same suite.id appears in both, userPath wins.
+// Files that fail validation are skipped with a logged warning — never throws.
+async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>
+
+// Convenience wrapper — loads a single suite by id, returns null if not found.
+async function loadSuite(id: string, config: SuiteLoaderConfig): Promise<Suite | null>
+```
+
+---
+
+### `runner.ts`
+
+```typescript
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { Embeddings } from '@langchain/core/embeddings';
+
+interface RunConfig {
+  suiteId?: string;            // omit to run all discovered suites
+  model: BaseChatModel;        // model under evaluation
+  modelId: string;             // stored in results, e.g. "ollama/llama3.2"
+  judgeModel: BaseChatModel;   // required — no same-model fallback
+  judgeModelId: string;        // stored in results
+  embeddings?: Embeddings;     // required if any semantic scenarios are present
+  suitePaths: SuiteLoaderConfig;
+  resultPath: string;          // directory where YAML result files are written
+  ci?: boolean;                // skips human evals when true; default false
+  store?: EvaluationsStore;    // if provided, saves results to SQLite
+}
+
+interface RunResult {
+  run: EvalRun;
+  results: ScenarioResult[];
+  yamlPath: string;            // absolute path to the written result YAML
+}
+
+// Loads suites, executes all scenarios, writes results to YAML and optionally SQLite.
+// Never throws on scenario failure — errors are captured per-scenario in details.
+async function runEval(config: RunConfig): Promise<RunResult>
+```
+
+`store` is optional: when the database is unavailable (fresh environment, first run before
+the app has booted), the CLI logs a warning and falls back to YAML-only output. In
+production, the server opens a `better-sqlite3` connection and passes it to
+`bootEvaluations(db)`. CLI scripts open their own independent connection to the same SQLite
+file — SQLite WAL mode handles concurrent access safely.
+
+---
+
+### `executors/` (internal)
+
+Executors are not exported. Each takes a scenario and returns a `ScenarioResult`. They never
+throw — model errors are caught and recorded as a failed result with error detail.
+
+```typescript
+async function executeDeterministic(
+  scenario: DeterministicScenario,
+  model: BaseChatModel,
+  runId: string,
+): Promise<ScenarioResult>
+
+async function executeSemantic(
+  scenario: SemanticScenario,
+  model: BaseChatModel,
+  embeddings: Embeddings,
+  runId: string,
+): Promise<ScenarioResult>
+
+async function executeLlmJudge(
+  scenario: LlmJudgeScenario,
+  model: BaseChatModel,
+  modelId: string,
+  judgeModel: BaseChatModel,
+  judgeModelId: string,
+  runId: string,
+): Promise<ScenarioResult>
+
+// Synchronous — no model call.
+// ci=true → status: 'skipped', actualOutput: '', score: null, latencyMs: 0
+// ci=false → status: 'pending', model runs to generate actualOutput
+function executeHuman(
+  scenario: HumanScenario,
+  runId: string,
+  ci: boolean,
+): ScenarioResult
+```
+
+---
+
+### `store.ts`
+
+```typescript
+interface EvalRunFilters {
+  suiteId?: string;
+  model?: string;
+  since?: string;    // ISO 8601 — returns runs started after this timestamp
+  limit?: number;
+  offset?: number;
+}
+
+interface HumanResultUpdate {
+  status: 'approved' | 'rejected';
+  response: string;          // key or value selected by the reviewer
+  reviewerNotes?: string;
+}
+
+class EvaluationsStore extends BaseStore {
+  // Inserts run + all results in a single transaction.
+  saveRun(run: EvalRun, results: ScenarioResult[]): void
+
+  // Updates a single human eval result after scoring (used by eval:submit).
+  updateHumanResult(resultId: string, update: HumanResultUpdate): void
+
+  findRunById(runId: string): EvalRun | null
+  findRuns(filters?: EvalRunFilters): EvalRun[]
+  findResultsByRunId(runId: string): ScenarioResult[]
+
+  // Returns only results where human status is 'pending' — used by eval:review.
+  findPendingHumanResults(runId: string): ScenarioResult[]
+}
+
+export function bootEvaluations(db: Database): void
+export function getEvaluationsStore(): EvaluationsStore
+```
+
+---
+
+### `serializer.ts`
+
+```typescript
+// Writes a result YAML file named <suiteId>-<timestamp>.yaml.
+// Returns the absolute path of the written file.
+async function writeResultYaml(
+  run: EvalRun,
+  results: ScenarioResult[],
+  resultPath: string,
+): Promise<string>
+
+// Parses a result YAML file back into typed, validated objects.
+async function readResultYaml(filePath: string): Promise<{
+  run: EvalRun;
+  results: ScenarioResult[];
+}>
+
+// Writes a review manifest for pending human evals (eval:review --detached).
+// Returns the absolute path of the written manifest file.
+async function writeReviewManifest(
+  run: EvalRun,
+  pendingResults: ScenarioResult[],
+  suites: Map<string, Suite>,
+  resultPath: string,
+): Promise<string>
+
+// Parses a completed review manifest (eval:submit).
+async function readReviewManifest(filePath: string): Promise<ReviewManifest>
+
+interface ReviewManifest {
+  runId: string;
+  reviews: ReviewEntry[];
+}
+
+interface ReviewEntry {
+  resultId: string;          // links back to the ScenarioResult row in SQLite
+  scenarioId: string;
+  input: string;
+  actualOutput: string;
+  rubric: string;
+  scoring: z.infer<typeof ScoringSchema>;
+  response: string;          // filled in by reviewer
+  reviewerNotes: string;     // filled in by reviewer
+}
+```
+
+---
+
+### Public exports (`index.ts`)
+
+```typescript
+// Schemas
+export { SuiteSchema, ScenarioSchema, EvalRunSchema, ScenarioResultSchema }
+export { DeterministicScenarioSchema, SemanticScenarioSchema,
+         LlmJudgeScenarioSchema, HumanScenarioSchema, ScoringSchema }
+
+// Types
+export type { Suite, Scenario, EvalRun, ScenarioResult }
+export type { DeterministicScenario, SemanticScenario,
+              LlmJudgeScenario, HumanScenario }
+export type { RunConfig, RunResult, SuiteLoaderConfig,
+              EvalRunFilters, HumanResultUpdate,
+              ReviewManifest, ReviewEntry }
+
+// Suite loading
+export { loadSuites, loadSuite }
+
+// Runner
+export { runEval }
+
+// Storage
+export { bootEvaluations, getEvaluationsStore, EvaluationsStore }
+
+// Result I/O
+export { writeResultYaml, readResultYaml,
+         writeReviewManifest, readReviewManifest }
+```
