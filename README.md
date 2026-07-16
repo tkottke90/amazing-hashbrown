@@ -61,11 +61,11 @@ Each workspace that has its own conventions carries an `AGENTS.md` — read it b
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|---|---|---|
-| Node.js | ≥ 20 | 20 LTS or 22 LTS recommended |
-| npm | ≥ 10 | bundled with Node |
-| [Ollama](https://ollama.com) | latest | local inference backend |
+| Requirement                  | Version | Notes                        |
+| ---------------------------- | ------- | ---------------------------- |
+| Node.js                      | ≥ 20    | 20 LTS or 22 LTS recommended |
+| npm                          | ≥ 10    | bundled with Node            |
+| [Ollama](https://ollama.com) | latest  | local inference backend      |
 
 Pull a model before starting:
 
@@ -100,13 +100,13 @@ The UI dev server proxies `/api` requests to the API, so you only need to open `
 
 ### Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | API server port |
-| `LOG_LEVEL` | `info` | Pino log level (`debug`, `info`, `warn`, `error`) |
-| `LLM_BASE_URL` | `http://localhost:11434` | Ollama (or compatible) base URL |
-| `LLM_MODEL` | `llama3` | Model name passed to the inference backend |
-| `WIKI_ROOT` | `./config/kb` | Root directory for the knowledge-base domains |
+| Variable       | Default                  | Description                                       |
+| -------------- | ------------------------ | ------------------------------------------------- |
+| `PORT`         | `3000`                   | API server port                                   |
+| `LOG_LEVEL`    | `info`                   | Pino log level (`debug`, `info`, `warn`, `error`) |
+| `LLM_BASE_URL` | `http://localhost:11434` | Ollama (or compatible) base URL                   |
+| `LLM_MODEL`    | `llama3`                 | Model name passed to the inference backend        |
+| `WIKI_ROOT`    | `./config/kb`            | Root directory for the knowledge-base domains     |
 
 ---
 
