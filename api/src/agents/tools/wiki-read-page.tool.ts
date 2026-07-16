@@ -4,9 +4,7 @@ import { logger } from '../../config/logger.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 
 const WikiReadPageSchema = z.object({
-  wikiId: z
-    .string()
-    .describe('Wiki domain ID returned by wiki_search (e.g. "user")'),
+  wikiId: z.string().describe('Wiki domain ID returned by wiki_search (e.g. "user")'),
   path: z
     .string()
     .describe(
