@@ -4,6 +4,7 @@ import { ToolCallMessage } from './tool-call-message';
 import { HitlPromptMessage } from './hitl-prompt-message';
 import { IframeMessage } from './iframe-message';
 import { AudioMessage } from './audio-message';
+import { WikiUpdateMessage } from './wiki-update-message';
 import type { ThreadMessage } from '../types/thread-message';
 
 interface ThreadMessageItemProps {
@@ -39,5 +40,8 @@ export function ThreadMessageItem({ message, onHitlAnswer }: ThreadMessageItemPr
 
     case 'audio':
       return <AudioMessage message={message} />;
+
+    case 'wiki_update':
+      return <WikiUpdateMessage message={message} />;
   }
 }

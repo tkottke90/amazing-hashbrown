@@ -63,6 +63,13 @@ const StreamErrorSchema = z.object({
   error: z.string(),
 });
 
+const WikiUpdatedSchema = z.object({
+  type: z.literal('wiki_updated'),
+  pageTitle: z.string(),
+  pageKind: z.string(),
+  wikiName: z.string(),
+});
+
 export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   TextDeltaSchema,
   ThoughtDeltaSchema,
@@ -73,6 +80,7 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   AudioContentSchema,
   StreamDoneSchema,
   StreamErrorSchema,
+  WikiUpdatedSchema,
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;
