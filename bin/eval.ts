@@ -73,7 +73,9 @@ try {
   const status = run.passed ? 'PASS' : 'FAIL';
 
   console.log(`\n${icon} ${status} — ${run.suiteId}`);
-  console.log(`  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`);
+  console.log(
+    `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
+  );
   console.log(`  Latency:   ${run.totalLatencyMs}ms`);
   console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
   console.log(`\n  Result:    ${result.yamlPath}`);

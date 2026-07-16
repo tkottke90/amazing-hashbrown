@@ -41,8 +41,14 @@ const store = getEvaluationsStore();
 const runA = store.findRunById(values['run-a']);
 const runB = store.findRunById(values['run-b']);
 
-if (!runA) { console.error(`Error: Run A "${values['run-a']}" not found`); process.exit(2); }
-if (!runB) { console.error(`Error: Run B "${values['run-b']}" not found`); process.exit(2); }
+if (!runA) {
+  console.error(`Error: Run A "${values['run-a']}" not found`);
+  process.exit(2);
+}
+if (!runB) {
+  console.error(`Error: Run B "${values['run-b']}" not found`);
+  process.exit(2);
+}
 
 const resultsA = store.findResultsByRunId(runA.id);
 const resultsB = store.findResultsByRunId(runB.id);

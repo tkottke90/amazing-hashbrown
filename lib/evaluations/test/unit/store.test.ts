@@ -91,7 +91,13 @@ describe('EvaluationsStore', () => {
     it('parses details JSON back to typed object', () => {
       const run = makeRun();
       const result = makeResult(run.id, {
-        details: { type: 'llm-judge', score: 8, reasoning: 'Good', judgeModel: 'gpt-4', biasRisk: false },
+        details: {
+          type: 'llm-judge',
+          score: 8,
+          reasoning: 'Good',
+          judgeModel: 'gpt-4',
+          biasRisk: false,
+        },
       });
       store.saveRun(run, [result]);
 
@@ -135,7 +141,7 @@ describe('EvaluationsStore', () => {
     });
 
     it('respects limit and offset', () => {
-      const runs = Array.from({ length: 3 }, () => {
+      Array.from({ length: 3 }, () => {
         const r = makeRun({ suiteId: 'paging-suite' });
         store.saveRun(r, [makeResult(r.id)]);
         return r;
@@ -215,8 +221,13 @@ describe('EvaluationsStore migration versioning', () => {
       const db = openDatabase(join(tmpDir2, 'shared.db'));
       const evalStore = new EvaluationsStore(db);
 
-      const versions = (db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number }>).map((r) => r.version);
-      assert.ok(versions.includes(3), `Expected version 3 in migrations, got: ${JSON.stringify(versions)}`);
+      const versions = (
+        db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number }>
+      ).map((r) => r.version);
+      assert.ok(
+        versions.includes(3),
+        `Expected version 3 in migrations, got: ${JSON.stringify(versions)}`,
+      );
 
       evalStore.close();
     } finally {
@@ -230,9 +241,16 @@ describe('EvaluationsStore migration versioning', () => {
       const db = openDatabase(join(tmpDir2, 'tables.db'));
       const evalStore = new EvaluationsStore(db);
 
-      const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((r) => r.name);
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name);
       assert.ok(tables.includes('eval_runs'), `eval_runs not found in: ${JSON.stringify(tables)}`);
-      assert.ok(tables.includes('eval_results'), `eval_results not found in: ${JSON.stringify(tables)}`);
+      assert.ok(
+        tables.includes('eval_results'),
+        `eval_results not found in: ${JSON.stringify(tables)}`,
+      );
 
       evalStore.close();
     } finally {

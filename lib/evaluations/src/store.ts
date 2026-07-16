@@ -237,9 +237,7 @@ export class EvaluationsStore extends BaseStore {
   }
 
   findResultsByRunId(runId: string): ScenarioResult[] {
-    const rows = this.db
-      .prepare('SELECT * FROM eval_results WHERE run_id = ?')
-      .all(runId);
+    const rows = this.db.prepare('SELECT * FROM eval_results WHERE run_id = ?').all(runId);
     return rows.map((row) => ScenarioResultSchema.parse(RawEvalResultSchema.parse(row)));
   }
 

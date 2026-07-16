@@ -33,7 +33,11 @@ function makeResult(runId: string, scenarioId: string, passed: boolean): Scenari
   };
 }
 
-function makeHumanResult(runId: string, scenarioId: string, status: 'pending' | 'approved' | 'rejected'): ScenarioResult {
+function makeHumanResult(
+  runId: string,
+  scenarioId: string,
+  status: 'pending' | 'approved' | 'rejected',
+): ScenarioResult {
   return {
     id: crypto.randomUUID(),
     runId,
@@ -53,7 +57,9 @@ describe('compareRuns', () => {
     it('classifies pass→pass correctly', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b', 'model-b');
-      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', true)], runB, [makeResult('run-b', 'sc-1', true)]);
+      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', true)], runB, [
+        makeResult('run-b', 'sc-1', true),
+      ]);
       const sc = cmp.scenarios.find((s) => s.scenarioId === 'sc-1');
       assert.equal(sc?.change, 'pass→pass');
     });
@@ -61,21 +67,27 @@ describe('compareRuns', () => {
     it('classifies fail→fail correctly', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b');
-      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', false)], runB, [makeResult('run-b', 'sc-1', false)]);
+      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', false)], runB, [
+        makeResult('run-b', 'sc-1', false),
+      ]);
       assert.equal(cmp.scenarios[0]?.change, 'fail→fail');
     });
 
     it('classifies fail→pass (improvement) correctly', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b');
-      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', false)], runB, [makeResult('run-b', 'sc-1', true)]);
+      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', false)], runB, [
+        makeResult('run-b', 'sc-1', true),
+      ]);
       assert.equal(cmp.scenarios[0]?.change, 'fail→pass');
     });
 
     it('classifies pass→fail (regression) correctly', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b');
-      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', true)], runB, [makeResult('run-b', 'sc-1', false)]);
+      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-1', true)], runB, [
+        makeResult('run-b', 'sc-1', false),
+      ]);
       assert.equal(cmp.scenarios[0]?.change, 'pass→fail');
     });
 
@@ -98,10 +110,9 @@ describe('compareRuns', () => {
     it('classifies pending human scenarios as pending', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b');
-      const cmp = compareRuns(
-        runA, [makeHumanResult('run-a', 'h-1', 'pending')],
-        runB, [makeHumanResult('run-b', 'h-1', 'approved')],
-      );
+      const cmp = compareRuns(runA, [makeHumanResult('run-a', 'h-1', 'pending')], runB, [
+        makeHumanResult('run-b', 'h-1', 'approved'),
+      ]);
       assert.equal(cmp.scenarios[0]?.change, 'pending');
     });
   });
@@ -124,12 +135,9 @@ describe('compareRuns', () => {
     it('counts added and removed', () => {
       const runA = makeRun('run-a');
       const runB = makeRun('run-b');
-      const cmp = compareRuns(
-        runA,
-        [makeResult('run-a', 'sc-old', true)],
-        runB,
-        [makeResult('run-b', 'sc-new', true)],
-      );
+      const cmp = compareRuns(runA, [makeResult('run-a', 'sc-old', true)], runB, [
+        makeResult('run-b', 'sc-new', true),
+      ]);
       assert.equal(cmp.summary.added, 1);
       assert.equal(cmp.summary.removed, 1);
       assert.equal(cmp.summary.unchanged, 0);

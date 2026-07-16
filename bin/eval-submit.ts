@@ -59,4 +59,6 @@ for (const review of manifest.reviews) {
   submitted++;
 }
 
-console.log(`\n✓ Submitted ${submitted} review(s)${skipped > 0 ? ` (${skipped} skipped — no response)` : ''}`);
+console.log(
+  `\n✓ Submitted ${submitted} review(s)${skipped > 0 ? ` (${skipped} skipped — no response)` : ''}`,
+);

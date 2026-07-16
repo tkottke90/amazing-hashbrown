@@ -26,11 +26,7 @@ export type {
 } from './schemas.js';
 
 // Store
-export {
-  EvaluationsStore,
-  bootEvaluations,
-  getEvaluationsStore,
-} from './store.js';
+export { EvaluationsStore, bootEvaluations, getEvaluationsStore } from './store.js';
 export type { EvalRunFilters, HumanResultUpdate } from './store.js';
 
 // Loader

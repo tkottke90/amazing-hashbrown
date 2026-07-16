@@ -68,9 +68,7 @@ const suite = suites.get(run.suiteId);
 
 let idx = 1;
 for (const result of pending) {
-  const scenario = suite?.scenarios.find(
-    (s) => s.id === result.scenarioId && s.type === 'human',
-  );
+  const scenario = suite?.scenarios.find((s) => s.id === result.scenarioId && s.type === 'human');
   if (!scenario || scenario.type !== 'human') {
     console.warn(`Skipping ${result.scenarioId} — scenario not found in suite`);
     continue;

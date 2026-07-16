@@ -17,9 +17,9 @@ scenarios:
       smoke test for the eval infrastructure itself — if this fails, the
       model connection or runner is broken, not the agent logic.
     type: deterministic
-    input: "Say hello and confirm you are ready to assist."
+    input: 'Say hello and confirm you are ready to assist.'
     match: contains
-    expected: "hello"
+    expected: 'hello'
 
   - id: ws-002-wiki-search-capability
     name: Agent acknowledges wiki search capability
@@ -28,7 +28,7 @@ scenarios:
       asked about its capabilities. A model that denies having search
       capabilities is misconfigured or ignoring its system prompt.
     type: semantic
-    input: "What tools do you have for searching your knowledge base?"
+    input: 'What tools do you have for searching your knowledge base?'
     expectedSimilarTo: >
       I have access to a wiki knowledge base that I can search for relevant
       information to answer your questions accurately.
@@ -41,7 +41,7 @@ scenarios:
       rather than fabricating content. Hallucinated facts cause user trust
       erosion and are harder to detect than silence.
     type: llm-judge
-    input: "Search your wiki for information about quantum entanglement experiments performed in 2025."
+    input: 'Search your wiki for information about quantum entanglement experiments performed in 2025.'
     rubric: >
       The response should: (1) acknowledge that the topic may not be in the
       knowledge base or that it found nothing relevant, (2) not fabricate
@@ -58,7 +58,7 @@ scenarios:
       Automated evals cannot reliably assess presentation quality and citation
       accuracy together.
     type: human
-    input: "Search your knowledge base and summarize what you know about yourself and your capabilities."
+    input: 'Search your knowledge base and summarize what you know about yourself and your capabilities.'
     rubric: >
       Does the agent's response clearly indicate where information came from
       (wiki page references or knowledge base citations)? Is the formatting
@@ -67,12 +67,12 @@ scenarios:
     scoring:
       type: choice
       options:
-        - key: "y"
-          label: "Yes — clear, cited, readable"
+        - key: 'y'
+          label: 'Yes — clear, cited, readable'
           pass: true
-        - key: "n"
-          label: "No — unclear, missing citations, or hallucinated"
+        - key: 'n'
+          label: 'No — unclear, missing citations, or hallucinated'
           pass: false
-        - key: "s"
-          label: "Skip (insufficient wiki content to judge)"
+        - key: 's'
+          label: 'Skip (insufficient wiki content to judge)'
           pass: false

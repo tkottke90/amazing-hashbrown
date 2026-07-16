@@ -252,7 +252,7 @@ This project uses an **Evaluation Harness** (`lib/evaluations`, `bin/eval*`) to 
 ### Rules
 
 1. **Before implementing a new LLM-facing feature**: write at least one failing eval scenario first (`npm run eval:new -- --suite <id>`), then implement until it passes.
-2. **When filing a bug involving LLM output**: add a failing eval scenario that reproduces the bug *before* writing the fix. Reference the issue number in the scenario `id` (e.g. `bug-42-agent-refuses-tool-call`).
+2. **When filing a bug involving LLM output**: add a failing eval scenario that reproduces the bug _before_ writing the fix. Reference the issue number in the scenario `id` (e.g. `bug-42-agent-refuses-tool-call`).
 3. **When fixing an LLM-facing bug**: the failing eval must be green before the PR is merged.
 4. **Scenario `purpose` field is required**: it must answer "why does this test matter?" — not just describe what it tests.
 

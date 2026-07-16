@@ -3,7 +3,10 @@ import { describe, it } from 'mocha';
 import { runDeterministic } from '../../../src/executors/deterministic.js';
 import type { DeterministicScenario } from '../../../src/schemas.js';
 
-function makeScenario(match: 'contains' | 'exact' | 'regex', expected: string): DeterministicScenario {
+function makeScenario(
+  match: 'contains' | 'exact' | 'regex',
+  expected: string,
+): DeterministicScenario {
   return { id: 'x', name: 'x', purpose: 'x', input: 'x', type: 'deterministic', match, expected };
 }
 
@@ -54,7 +57,10 @@ describe('runDeterministic', () => {
     });
 
     it('works with word boundary anchors', () => {
-      const result = runDeterministic(makeScenario('regex', '\\bprovider\\b'), 'configure a provider here');
+      const result = runDeterministic(
+        makeScenario('regex', '\\bprovider\\b'),
+        'configure a provider here',
+      );
       assert.equal(result.passed, true);
     });
   });

@@ -3,7 +3,14 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify, parse } from 'yaml';
 import nunjucks from 'nunjucks';
-import { EvalRunSchema, ScenarioResultSchema, ScoringSchema, type EvalRun, type ScenarioResult, type Suite } from './schemas.js';
+import {
+  EvalRunSchema,
+  ScenarioResultSchema,
+  ScoringSchema,
+  type EvalRun,
+  type ScenarioResult,
+  type Suite,
+} from './schemas.js';
 import type { ComparisonResult } from './comparator.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +45,9 @@ export async function writeResultYaml(
   return filePath;
 }
 
-export async function readResultYaml(filePath: string): Promise<{ run: EvalRun; results: ScenarioResult[] }> {
+export async function readResultYaml(
+  filePath: string,
+): Promise<{ run: EvalRun; results: ScenarioResult[] }> {
   const raw = await readFile(filePath, 'utf-8');
   const data = parse(raw) as { run: unknown; results: unknown[] };
   const run = EvalRunSchema.parse(data.run);
@@ -117,9 +126,7 @@ export async function writeReviewManifest(
   const suite = suites.get(run.suiteId);
 
   const reviews: ReviewEntry[] = pendingResults.map((r) => {
-    const scenario = suite?.scenarios.find(
-      (s) => s.id === r.scenarioId && s.type === 'human',
-    );
+    const scenario = suite?.scenarios.find((s) => s.id === r.scenarioId && s.type === 'human');
     const humanScenario = scenario?.type === 'human' ? scenario : undefined;
     return {
       resultId: r.id,
@@ -127,7 +134,13 @@ export async function writeReviewManifest(
       input: humanScenario?.input ?? '',
       actualOutput: r.actualOutput,
       rubric: humanScenario?.rubric ?? '',
-      scoring: humanScenario?.scoring ?? { type: 'choice', options: [{ key: 'y', label: 'Yes', pass: true }, { key: 'n', label: 'No', pass: false }] },
+      scoring: humanScenario?.scoring ?? {
+        type: 'choice',
+        options: [
+          { key: 'y', label: 'Yes', pass: true },
+          { key: 'n', label: 'No', pass: false },
+        ],
+      },
       response: '',
       reviewerNotes: '',
     };

@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
-import { readFile, writeFile, appendFile } from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import * as readline from 'node:readline';
 

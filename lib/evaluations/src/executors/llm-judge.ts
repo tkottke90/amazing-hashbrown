@@ -36,11 +36,13 @@ export async function runLlmJudge(
 
   let structured: z.infer<typeof JudgeResponseSchema>;
   try {
-    const chain = judgeModel.withStructuredOutput(JudgeResponseSchema);
+    const chain = judgeModel
+      .withStructuredOutput(JudgeResponseSchema)
+      .withRetry({ stopAfterAttempt: 3 });
     structured = await chain.invoke(prompt);
   } catch (err) {
     throw new Error(
-      `Judge model "${judgeModelId}" does not support structured output or failed to respond: ${String(err)}`,
+      `Judge model "${judgeModelId}" does not support structured output or failed to respond after retries: ${String(err)}`,
     );
   }
 

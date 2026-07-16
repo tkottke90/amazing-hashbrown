@@ -3,8 +3,14 @@ import type { EvalRun, ScenarioResult, Scenario } from './schemas.js';
 export interface ScenarioComparison {
   scenarioId: string;
   type: Scenario['type'];
-  runA: Pick<ScenarioResult, 'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'> | null;
-  runB: Pick<ScenarioResult, 'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'> | null;
+  runA: Pick<
+    ScenarioResult,
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+  > | null;
+  runB: Pick<
+    ScenarioResult,
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+  > | null;
   change: 'pass→pass' | 'pass→fail' | 'fail→pass' | 'fail→fail' | 'pending' | 'added' | 'removed';
 }
 
@@ -88,11 +94,22 @@ export function compareRuns(
     });
 
     switch (change) {
-      case 'fail→pass': improved++; break;
-      case 'pass→fail': regressed++; break;
-      case 'pass→pass': case 'fail→fail': unchanged++; break;
-      case 'added': added++; break;
-      case 'removed': removed++; break;
+      case 'fail→pass':
+        improved++;
+        break;
+      case 'pass→fail':
+        regressed++;
+        break;
+      case 'pass→pass':
+      case 'fail→fail':
+        unchanged++;
+        break;
+      case 'added':
+        added++;
+        break;
+      case 'removed':
+        removed++;
+        break;
     }
   }
 

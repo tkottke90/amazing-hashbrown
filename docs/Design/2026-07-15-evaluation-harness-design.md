@@ -41,14 +41,14 @@ Three development practices follow from this:
 This design covers the **core evaluation library and CLI**. API routes and UI are deferred
 and will be thin consumers of the same library once it exists.
 
-| In scope | Deferred |
-|---|---|
-| `lib/evaluations` package | `POST /api/v1/evaluations/run` and related routes |
-| YAML suite definitions | UI — Settings → Models → Run Evaluation Suite |
-| Four eval methods | Trace-to-eval promotion UI |
-| SQLite + YAML result storage | Human eval reviewer UI |
-| `npm run eval` CLI | |
-| `wiki-search` first suite | |
+| In scope                     | Deferred                                          |
+| ---------------------------- | ------------------------------------------------- |
+| `lib/evaluations` package    | `POST /api/v1/evaluations/run` and related routes |
+| YAML suite definitions       | UI — Settings → Models → Run Evaluation Suite     |
+| Four eval methods            | Trace-to-eval promotion UI                        |
+| SQLite + YAML result storage | Human eval reviewer UI                            |
+| `npm run eval` CLI           |                                                   |
+| `wiki-search` first suite    |                                                   |
 
 ---
 
@@ -114,7 +114,7 @@ suite:
     Ensures the agent surfaces accurate wiki content in response to user queries.
     These scenarios are the acceptance criteria for the wiki-to-chat feature and
     serve as a regression guard when prompts or models change.
-  passingThreshold: 0.8   # fraction of scenarios that must pass; omit to require all
+  passingThreshold: 0.8 # fraction of scenarios that must pass; omit to require all
 ```
 
 ### Deterministic scenario
@@ -124,9 +124,9 @@ suite:
   name: Basic provider lookup
   purpose: The most common lookup pattern — user asks a config question and expects a direct answer.
   type: deterministic
-  input: "How do I configure a provider?"
-  match: contains       # contains | exact | regex
-  expected: "provider"
+  input: 'How do I configure a provider?'
+  match: contains # contains | exact | regex
+  expected: 'provider'
 ```
 
 ### Semantic scenario
@@ -136,11 +136,11 @@ suite:
   name: Observability summary quality
   purpose: Confirms the agent can synthesize multi-part technical content into an accurate summary.
   type: semantic
-  input: "How does the observability system work?"
+  input: 'How does the observability system work?'
   expectedSimilarTo: |
     The observability system captures traces and spans from LLM interactions,
     storing cost and latency data in SQLite.
-  minSimilarity: 0.75   # default: 0.75
+  minSimilarity: 0.75 # default: 0.75
 ```
 
 ### LLM-as-judge scenario
@@ -150,11 +150,11 @@ suite:
   name: Skills vs tools distinction
   purpose: Validates that the agent does not conflate two foundational concepts that are frequently confused.
   type: llm-judge
-  input: "What is the difference between a skill and a tool?"
+  input: 'What is the difference between a skill and a tool?'
   rubric: |
     The response must clearly distinguish skills (prompt-driven behaviors)
     from tools (function calls with side effects). Must not conflate them.
-  minScore: 7           # 0–10 scale; default: 7
+  minScore: 7 # 0–10 scale; default: 7
 ```
 
 ### Human scenario
@@ -168,7 +168,7 @@ suite:
   rubric: |
     Response should be empathetic, offer a clear explanation,
     and suggest concrete next steps.
-  status: pending       # pending | approved | rejected; default: pending
+  status: pending # pending | approved | rejected; default: pending
 ```
 
 ---
@@ -267,9 +267,9 @@ const SemanticDetails = z.object({
 const LlmJudgeDetails = z.object({
   type: z.literal('llm-judge'),
   score: z.number(),
-  reasoning: z.string(),   // primary prompt-engineering signal
+  reasoning: z.string(), // primary prompt-engineering signal
   judgeModel: z.string(),
-  biasRisk: z.boolean(),   // true when judgeModel === model under evaluation
+  biasRisk: z.boolean(), // true when judgeModel === model under evaluation
 });
 
 const HumanDetails = z.object({
@@ -291,7 +291,7 @@ export const ScenarioResultSchema = z.object({
   scenarioId: z.string(),
   suiteId: z.string(),
   passed: z.boolean(),
-  score: z.number().min(0).max(1).nullable(),  // null for pending human evals
+  score: z.number().min(0).max(1).nullable(), // null for pending human evals
   actualOutput: z.string(),
   latencyMs: z.number(),
   estimatedCostUsd: z.number(),
@@ -340,10 +340,10 @@ on LLM-as-judge results is the key signal for prompt engineering iteration.
 
 ```yaml
 run:
-  id: "a3f2c1d4-..."
+  id: 'a3f2c1d4-...'
   suiteId: wiki-search
   model: ollama/llama3.2
-  timestamp: "2026-07-15T12:00:00.000Z"
+  timestamp: '2026-07-15T12:00:00.000Z'
   passed: false
   passRate: 0.75
   totalScenarios: 4
@@ -355,19 +355,19 @@ results:
   - scenarioId: basic-provider-lookup
     passed: true
     score: 1.0
-    actualOutput: "To configure a provider, navigate to Settings > Providers..."
+    actualOutput: 'To configure a provider, navigate to Settings > Providers...'
     latencyMs: 342
     estimatedCostUsd: 0.0001
     details:
       type: deterministic
       match: contains
-      expected: "provider"
+      expected: 'provider'
       passed: true
 
   - scenarioId: conceptual-distinction
     passed: false
     score: 0.5
-    actualOutput: "Skills and tools are both ways to extend the agent..."
+    actualOutput: 'Skills and tools are both ways to extend the agent...'
     latencyMs: 1205
     estimatedCostUsd: 0.0004
     details:
@@ -392,11 +392,11 @@ users override a bundled suite without modifying the repo.
 
 ```typescript
 interface SuiteLoaderConfig {
-  bundledPath: string;   // e.g. <project-root>/suites/
-  userPath?: string;     // e.g. ~/.config/amazing-hashbrown/evals/suites/
+  bundledPath: string; // e.g. <project-root>/suites/
+  userPath?: string; // e.g. ~/.config/amazing-hashbrown/evals/suites/
 }
 
-async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>
+async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>;
 ```
 
 Discovery order: glob `**/*.yaml` in `bundledPath`, parse and index by `suite.id`, then
@@ -414,26 +414,26 @@ must be provided explicitly — using the same model as judge introduces a confl
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 interface RunConfig {
-  suiteId?: string;           // omit to run all discovered suites
-  model: BaseChatModel;       // the model under evaluation
-  modelId: string;            // human-readable identifier stored in results, e.g. "ollama/llama3.2"
-  judgeModel: BaseChatModel;  // for llm-judge scenarios; must be explicit
-  judgeModelId: string;       // human-readable identifier for the judge
+  suiteId?: string; // omit to run all discovered suites
+  model: BaseChatModel; // the model under evaluation
+  modelId: string; // human-readable identifier stored in results, e.g. "ollama/llama3.2"
+  judgeModel: BaseChatModel; // for llm-judge scenarios; must be explicit
+  judgeModelId: string; // human-readable identifier for the judge
   suitePaths: SuiteLoaderConfig;
-  resultPath: string;         // directory to write YAML result files
+  resultPath: string; // directory to write YAML result files
 }
 
-async function runEval(config: RunConfig): Promise<EvalRun>
+async function runEval(config: RunConfig): Promise<EvalRun>;
 ```
 
 ### Execution per Scenario Type
 
-| Type | Execution |
-|---|---|
-| `deterministic` | Invoke `model` with `input` → apply `match` predicate against `expected` |
-| `semantic` | Invoke `model` with `input` → embed output and `expectedSimilarTo` → cosine similarity |
-| `llm-judge` | Invoke `model` with `input` → invoke `judgeModel` with output + `rubric` → structured verdict |
-| `human` | No model call — record `status` from the YAML file; score is `null` if pending |
+| Type            | Execution                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `deterministic` | Invoke `model` with `input` → apply `match` predicate against `expected`                      |
+| `semantic`      | Invoke `model` with `input` → embed output and `expectedSimilarTo` → cosine similarity        |
+| `llm-judge`     | Invoke `model` with `input` → invoke `judgeModel` with output + `rubric` → structured verdict |
+| `human`         | No model call — record `status` from the YAML file; score is `null` if pending                |
 
 Human scenarios that are `pending` are included in results but excluded from the pass rate
 calculation — they neither pass nor fail until reviewed.
@@ -538,11 +538,11 @@ write path calls `JSON.stringify(result.details)` directly before insert.
 
 ```typescript
 class EvaluationsStore extends BaseStore {
-  saveRun(run: EvalRun, results: ScenarioResult[]): void  // single transaction
+  saveRun(run: EvalRun, results: ScenarioResult[]): void; // single transaction
 
-  findRunById(runId: string): EvalRun | null
-  findRuns(filters?: EvalRunFilters): EvalRun[]
-  findResultsByRunId(runId: string): ScenarioResult[]
+  findRunById(runId: string): EvalRun | null;
+  findRuns(filters?: EvalRunFilters): EvalRun[];
+  findResultsByRunId(runId: string): ScenarioResult[];
 }
 
 interface EvalRunFilters {
@@ -553,8 +553,8 @@ interface EvalRunFilters {
   offset?: number;
 }
 
-export function bootEvaluations(db: Database): void
-export function getEvaluationsStore(): EvaluationsStore
+export function bootEvaluations(db: Database): void;
+export function getEvaluationsStore(): EvaluationsStore;
 ```
 
 `saveRun` wraps both inserts in a single `db.transaction`. In `api/src/index.ts`:
@@ -598,12 +598,12 @@ full suite.
 
 ### Exit Codes
 
-| Code | Meaning |
-|---|---|
-| `0` | Suite passed (pass rate met threshold) |
-| `1` | Suite failed (pass rate below threshold) |
-| `2` | Configuration error (bad flags, missing suite, invalid YAML) |
-| `3` | Runtime error (model unreachable, DB write failed) |
+| Code | Meaning                                                      |
+| ---- | ------------------------------------------------------------ |
+| `0`  | Suite passed (pass rate met threshold)                       |
+| `1`  | Suite failed (pass rate below threshold)                     |
+| `2`  | Configuration error (bad flags, missing suite, invalid YAML) |
+| `3`  | Runtime error (model unreachable, DB write failed)           |
 
 Exit code `1` is what makes `npm run eval` useful as a CI gate.
 
@@ -696,11 +696,11 @@ The `scoring` field on a human scenario configures what the reviewer sees. Two t
 scoring:
   type: choice
   options:
-    - key: "Y"
-      label: "Yes"
+    - key: 'Y'
+      label: 'Yes'
       pass: true
-    - key: "N"
-      label: "No"
+    - key: 'N'
+      label: 'No'
       pass: false
 ```
 
@@ -711,13 +711,13 @@ scoring:
   type: scale
   options:
     - value: 1
-      label: "Bad"
+      label: 'Bad'
     - value: 2
-      label: "Okay"
+      label: 'Okay'
     - value: 3
-      label: "Good"
+      label: 'Good'
     - value: 4
-      label: "Great"
+      label: 'Great'
   passingScore: 3
 ```
 
@@ -737,7 +737,11 @@ const ScaleOption = z.object({
 
 const ScoringSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('choice'), options: z.array(ChoiceOption).min(2) }),
-  z.object({ type: z.literal('scale'), options: z.array(ScaleOption).min(2), passingScore: z.number() }),
+  z.object({
+    type: z.literal('scale'),
+    options: z.array(ScaleOption).min(2),
+    passingScore: z.number(),
+  }),
 ]);
 
 export const HumanScenarioSchema = BaseScenario.extend({
@@ -754,7 +758,7 @@ export const HumanScenarioSchema = BaseScenario.extend({
 const HumanDetails = z.object({
   type: z.literal('human'),
   status: z.enum(['pending', 'approved', 'rejected', 'skipped']),
-  response: z.string().optional(),       // key or value selected by reviewer
+  response: z.string().optional(), // key or value selected by reviewer
   reviewerNotes: z.string().optional(),
 });
 ```
@@ -792,9 +796,9 @@ the suite file.
 - id: TODO-scenario-id
   name: TODO - Scenario name
   purpose: TODO - Why does this scenario matter?
-  type: deterministic   # change to: deterministic | semantic | llm-judge | human
+  type: deterministic # change to: deterministic | semantic | llm-judge | human
   input: TODO - Input sent to the model
-  match: contains       # contains | exact | regex
+  match: contains # contains | exact | regex
   expected: TODO - Expected value
 ```
 
@@ -824,9 +828,9 @@ for what went wrong and the eval type.
 ```yaml
 - id: TODO-change-me
   name: TODO - Scenario name
-  purpose: "Regression: captured from trace a3f2c1d4-..."
-  type: llm-judge       # TODO: confirm eval type
-  input: "What is the difference between a skill and a tool?"
+  purpose: 'Regression: captured from trace a3f2c1d4-...'
+  type: llm-judge # TODO: confirm eval type
+  input: 'What is the difference between a skill and a tool?'
   rubric: TODO - What should the correct response look like?
   minScore: 7
 ```
@@ -884,14 +888,14 @@ reviews:
     scoring:
       type: choice
       options:
-        - key: "Y"
-          label: "Yes"
+        - key: 'Y'
+          label: 'Yes'
           pass: true
-        - key: "N"
-          label: "No"
+        - key: 'N'
+          label: 'No'
           pass: false
-    response: ""        # fill in: "Y" or "N"
-    reviewerNotes: ""   # optional notes
+    response: '' # fill in: "Y" or "N"
+    reviewerNotes: '' # optional notes
 ```
 
 ---
@@ -942,12 +946,12 @@ Root `package.json` scripts:
 ```json
 {
   "scripts": {
-    "eval":            "tsx bin/eval.ts",
-    "eval:new":        "tsx bin/eval-new.ts",
+    "eval": "tsx bin/eval.ts",
+    "eval:new": "tsx bin/eval-new.ts",
     "eval:from-trace": "tsx bin/eval-from-trace.ts",
-    "eval:review":     "tsx bin/eval-review.ts",
-    "eval:submit":     "tsx bin/eval-submit.ts",
-    "eval:compare":    "tsx bin/eval-compare.ts"
+    "eval:review": "tsx bin/eval-review.ts",
+    "eval:submit": "tsx bin/eval-submit.ts",
+    "eval:compare": "tsx bin/eval-compare.ts"
   }
 }
 ```
@@ -958,17 +962,17 @@ Root `package.json` scripts:
 
 ```typescript
 interface SuiteLoaderConfig {
-  bundledPath: string;   // absolute path to bundled suites directory
-  userPath?: string;     // absolute path to user suites directory
+  bundledPath: string; // absolute path to bundled suites directory
+  userPath?: string; // absolute path to user suites directory
 }
 
 // Discovers all *.yaml files in both paths, validates each against SuiteSchema.
 // If the same suite.id appears in both, userPath wins.
 // Files that fail validation are skipped with a logged warning — never throws.
-async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>
+async function loadSuites(config: SuiteLoaderConfig): Promise<Map<string, Suite>>;
 
 // Convenience wrapper — loads a single suite by id, returns null if not found.
-async function loadSuite(id: string, config: SuiteLoaderConfig): Promise<Suite | null>
+async function loadSuite(id: string, config: SuiteLoaderConfig): Promise<Suite | null>;
 ```
 
 ---
@@ -980,29 +984,29 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { Embeddings } from '@langchain/core/embeddings';
 
 interface RunConfig {
-  suiteId?: string;            // omit to run all discovered suites
-  model: BaseChatModel;        // model under evaluation
-  modelId: string;             // stored in results, e.g. "ollama/llama3.2"
-  judgeModel: BaseChatModel;   // required — no same-model fallback
-  judgeModelId: string;        // stored in results
-  embeddings?: Embeddings;     // required if any semantic scenarios are present
+  suiteId?: string; // omit to run all discovered suites
+  model: BaseChatModel; // model under evaluation
+  modelId: string; // stored in results, e.g. "ollama/llama3.2"
+  judgeModel: BaseChatModel; // required — no same-model fallback
+  judgeModelId: string; // stored in results
+  embeddings?: Embeddings; // required if any semantic scenarios are present
   suitePaths: SuiteLoaderConfig;
-  resultPath: string;          // directory where result files are written
-  ci?: boolean;                // skips human evals when true; default false
-  noHtml?: boolean;            // suppresses HTML report generation; default false
-  store?: EvaluationsStore;    // if provided, saves results to SQLite
+  resultPath: string; // directory where result files are written
+  ci?: boolean; // skips human evals when true; default false
+  noHtml?: boolean; // suppresses HTML report generation; default false
+  store?: EvaluationsStore; // if provided, saves results to SQLite
 }
 
 interface RunResult {
   run: EvalRun;
   results: ScenarioResult[];
-  yamlPath: string;            // absolute path to the written result YAML
-  htmlPath?: string;           // absolute path to the written HTML report (absent when noHtml: true)
+  yamlPath: string; // absolute path to the written result YAML
+  htmlPath?: string; // absolute path to the written HTML report (absent when noHtml: true)
 }
 
 // Loads suites, executes all scenarios, writes results to YAML and optionally SQLite.
 // Never throws on scenario failure — errors are captured per-scenario in details.
-async function runEval(config: RunConfig): Promise<RunResult>
+async function runEval(config: RunConfig): Promise<RunResult>;
 ```
 
 `store` is optional: when the database is unavailable (fresh environment, first run before
@@ -1023,14 +1027,14 @@ async function executeDeterministic(
   scenario: DeterministicScenario,
   model: BaseChatModel,
   runId: string,
-): Promise<ScenarioResult>
+): Promise<ScenarioResult>;
 
 async function executeSemantic(
   scenario: SemanticScenario,
   model: BaseChatModel,
   embeddings: Embeddings,
   runId: string,
-): Promise<ScenarioResult>
+): Promise<ScenarioResult>;
 
 async function executeLlmJudge(
   scenario: LlmJudgeScenario,
@@ -1039,16 +1043,12 @@ async function executeLlmJudge(
   judgeModel: BaseChatModel,
   judgeModelId: string,
   runId: string,
-): Promise<ScenarioResult>
+): Promise<ScenarioResult>;
 
 // Synchronous — no model call.
 // ci=true → status: 'skipped', actualOutput: '', score: null, latencyMs: 0
 // ci=false → status: 'pending', model runs to generate actualOutput
-function executeHuman(
-  scenario: HumanScenario,
-  runId: string,
-  ci: boolean,
-): ScenarioResult
+function executeHuman(scenario: HumanScenario, runId: string, ci: boolean): ScenarioResult;
 ```
 
 ---
@@ -1059,34 +1059,34 @@ function executeHuman(
 interface EvalRunFilters {
   suiteId?: string;
   model?: string;
-  since?: string;    // ISO 8601 — returns runs started after this timestamp
+  since?: string; // ISO 8601 — returns runs started after this timestamp
   limit?: number;
   offset?: number;
 }
 
 interface HumanResultUpdate {
   status: 'approved' | 'rejected';
-  response: string;          // key or value selected by the reviewer
+  response: string; // key or value selected by the reviewer
   reviewerNotes?: string;
 }
 
 class EvaluationsStore extends BaseStore {
   // Inserts run + all results in a single transaction.
-  saveRun(run: EvalRun, results: ScenarioResult[]): void
+  saveRun(run: EvalRun, results: ScenarioResult[]): void;
 
   // Updates a single human eval result after scoring (used by eval:submit).
-  updateHumanResult(resultId: string, update: HumanResultUpdate): void
+  updateHumanResult(resultId: string, update: HumanResultUpdate): void;
 
-  findRunById(runId: string): EvalRun | null
-  findRuns(filters?: EvalRunFilters): EvalRun[]
-  findResultsByRunId(runId: string): ScenarioResult[]
+  findRunById(runId: string): EvalRun | null;
+  findRuns(filters?: EvalRunFilters): EvalRun[];
+  findResultsByRunId(runId: string): ScenarioResult[];
 
   // Returns only results where human status is 'pending' — used by eval:review.
-  findPendingHumanResults(runId: string): ScenarioResult[]
+  findPendingHumanResults(runId: string): ScenarioResult[];
 }
 
-export function bootEvaluations(db: Database): void
-export function getEvaluationsStore(): EvaluationsStore
+export function bootEvaluations(db: Database): void;
+export function getEvaluationsStore(): EvaluationsStore;
 ```
 
 ---
@@ -1100,13 +1100,13 @@ async function writeResultYaml(
   run: EvalRun,
   results: ScenarioResult[],
   resultPath: string,
-): Promise<string>
+): Promise<string>;
 
 // Parses a result YAML file back into typed, validated objects.
 async function readResultYaml(filePath: string): Promise<{
   run: EvalRun;
   results: ScenarioResult[];
-}>
+}>;
 
 // Writes a review manifest for pending human evals (eval:review --detached).
 // Returns the absolute path of the written manifest file.
@@ -1115,10 +1115,10 @@ async function writeReviewManifest(
   pendingResults: ScenarioResult[],
   suites: Map<string, Suite>,
   resultPath: string,
-): Promise<string>
+): Promise<string>;
 
 // Parses a completed review manifest (eval:submit).
-async function readReviewManifest(filePath: string): Promise<ReviewManifest>
+async function readReviewManifest(filePath: string): Promise<ReviewManifest>;
 
 // Renders a single run report to HTML using Nunjucks (result.njk).
 // Filename: <suiteId>-<timestamp>.html — same base name as the YAML result.
@@ -1127,7 +1127,7 @@ async function writeResultHtml(
   run: EvalRun,
   results: ScenarioResult[],
   resultPath: string,
-): Promise<string>
+): Promise<string>;
 
 // Renders a comparison report to HTML using Nunjucks (comparison.njk).
 // Filename: comparison-<runAId>-vs-<runBId>.html
@@ -1135,7 +1135,7 @@ async function writeResultHtml(
 async function writeComparisonHtml(
   comparison: ComparisonResult,
   resultPath: string,
-): Promise<string>
+): Promise<string>;
 
 interface ReviewManifest {
   runId: string;
@@ -1143,14 +1143,14 @@ interface ReviewManifest {
 }
 
 interface ReviewEntry {
-  resultId: string;          // links back to the ScenarioResult row in SQLite
+  resultId: string; // links back to the ScenarioResult row in SQLite
   scenarioId: string;
   input: string;
   actualOutput: string;
   rubric: string;
   scoring: z.infer<typeof ScoringSchema>;
-  response: string;          // filled in by reviewer
-  reviewerNotes: string;     // filled in by reviewer
+  response: string; // filled in by reviewer
+  reviewerNotes: string; // filled in by reviewer
 }
 ```
 
@@ -1160,35 +1160,50 @@ interface ReviewEntry {
 
 ```typescript
 // Schemas
-export { SuiteSchema, ScenarioSchema, EvalRunSchema, ScenarioResultSchema }
-export { DeterministicScenarioSchema, SemanticScenarioSchema,
-         LlmJudgeScenarioSchema, HumanScenarioSchema, ScoringSchema }
+export { SuiteSchema, ScenarioSchema, EvalRunSchema, ScenarioResultSchema };
+export {
+  DeterministicScenarioSchema,
+  SemanticScenarioSchema,
+  LlmJudgeScenarioSchema,
+  HumanScenarioSchema,
+  ScoringSchema,
+};
 
 // Types
-export type { Suite, Scenario, EvalRun, ScenarioResult }
-export type { DeterministicScenario, SemanticScenario,
-              LlmJudgeScenario, HumanScenario }
-export type { RunConfig, RunResult, SuiteLoaderConfig,
-              EvalRunFilters, HumanResultUpdate,
-              ReviewManifest, ReviewEntry }
+export type { Suite, Scenario, EvalRun, ScenarioResult };
+export type { DeterministicScenario, SemanticScenario, LlmJudgeScenario, HumanScenario };
+export type {
+  RunConfig,
+  RunResult,
+  SuiteLoaderConfig,
+  EvalRunFilters,
+  HumanResultUpdate,
+  ReviewManifest,
+  ReviewEntry,
+};
 
 // Suite loading
-export { loadSuites, loadSuite }
+export { loadSuites, loadSuite };
 
 // Runner
-export { runEval }
+export { runEval };
 
 // Storage
-export { bootEvaluations, getEvaluationsStore, EvaluationsStore }
+export { bootEvaluations, getEvaluationsStore, EvaluationsStore };
 
 // Result I/O
-export { writeResultYaml, readResultYaml,
-         writeResultHtml, writeComparisonHtml,
-         writeReviewManifest, readReviewManifest }
+export {
+  writeResultYaml,
+  readResultYaml,
+  writeResultHtml,
+  writeComparisonHtml,
+  writeReviewManifest,
+  readReviewManifest,
+};
 
 // Comparison
-export { compareRuns }
-export type { ComparisonResult, ScenarioComparison }
+export { compareRuns };
+export type { ComparisonResult, ScenarioComparison };
 ```
 
 ---
@@ -1241,9 +1256,7 @@ reads it as a string at render time and passes it to templates as a variable:
 
 ```typescript
 // In serializer.ts
-const styles = await fs.readFile(
-  path.join(TEMPLATES_DIR, 'base.css'), 'utf-8'
-);
+const styles = await fs.readFile(path.join(TEMPLATES_DIR, 'base.css'), 'utf-8');
 
 nunjucks.render('result.njk', { run, results, styles });
 nunjucks.render('comparison.njk', { comparison, styles });
@@ -1291,8 +1304,14 @@ interface ScenarioComparison {
   scenarioId: string;
   name: string;
   type: Scenario['type'];
-  runA: Pick<ScenarioResult, 'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'> | null;
-  runB: Pick<ScenarioResult, 'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'> | null;
+  runA: Pick<
+    ScenarioResult,
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+  > | null;
+  runB: Pick<
+    ScenarioResult,
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+  > | null;
   // null entries indicate a scenario present in one run but not the other
   change: 'pass→pass' | 'pass→fail' | 'fail→pass' | 'fail→fail' | 'pending' | 'added' | 'removed';
 }
@@ -1303,11 +1322,11 @@ interface ComparisonResult {
   runB: EvalRun;
   scenarios: ScenarioComparison[];
   summary: {
-    improved: number;    // fail→pass
-    regressed: number;   // pass→fail
-    unchanged: number;   // same result in both runs
-    added: number;       // scenarios in runB not present in runA
-    removed: number;     // scenarios in runA not present in runB
+    improved: number; // fail→pass
+    regressed: number; // pass→fail
+    unchanged: number; // same result in both runs
+    added: number; // scenarios in runB not present in runA
+    removed: number; // scenarios in runA not present in runB
   };
 }
 
@@ -1317,7 +1336,7 @@ function compareRuns(
   resultsA: ScenarioResult[],
   runB: EvalRun,
   resultsB: ScenarioResult[],
-): ComparisonResult
+): ComparisonResult;
 ```
 
 ### CLI — `eval:compare`
@@ -1349,11 +1368,11 @@ eval-results/comparison-<runAId>-vs-<runBId>.html
 
 The HTML comparison report renders a side-by-side table with one row per scenario:
 
-| Scenario | Change | Run A score | Run B score | Δ score | Δ latency | Δ cost |
-|---|---|---|---|---|---|---|
-| basic-provider-lookup | pass→pass | 1.0 | 1.0 | — | −42ms | −$0.00002 |
-| conceptual-distinction | fail→pass | 0.5 | 0.8 | +0.3 | +210ms | +$0.0001 |
-| summary-quality | pass→pass | 0.81 | 0.92 | +0.11 | −80ms | −$0.00005 |
+| Scenario               | Change    | Run A score | Run B score | Δ score | Δ latency | Δ cost    |
+| ---------------------- | --------- | ----------- | ----------- | ------- | --------- | --------- |
+| basic-provider-lookup  | pass→pass | 1.0         | 1.0         | —       | −42ms     | −$0.00002 |
+| conceptual-distinction | fail→pass | 0.5         | 0.8         | +0.3    | +210ms    | +$0.0001  |
+| summary-quality        | pass→pass | 0.81        | 0.92        | +0.11   | −80ms     | −$0.00005 |
 
 - Regressions (`pass→fail`) are highlighted red
 - Improvements (`fail→pass`) are highlighted green

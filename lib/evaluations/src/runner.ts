@@ -4,11 +4,7 @@ import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
-import {
-  runHumanSkipped,
-  runHumanPending,
-  runHumanInteractive,
-} from './executors/human.js';
+import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
   ScenarioResult,
@@ -52,7 +48,10 @@ function extractContent(raw: unknown): string {
   return String(raw);
 }
 
-async function invokeModel(model: BaseChatModel, input: string): Promise<{ content: string; latencyMs: number }> {
+async function invokeModel(
+  model: BaseChatModel,
+  input: string,
+): Promise<{ content: string; latencyMs: number }> {
   const start = Date.now();
   const response = await model.invoke(input);
   const latencyMs = Date.now() - start;
@@ -64,7 +63,7 @@ async function executeScenario(
   suite: Suite,
   runId: string,
   config: RunConfig,
-  humanIndex: { count: number; total: number },
+  _humanIndex: { count: number; total: number },
 ): Promise<ScenarioResult> {
   const baseResult = {
     id: crypto.randomUUID(),
@@ -156,7 +155,7 @@ async function executeScenario(
     }
 
     throw new Error(`Unknown scenario type: ${(scenario as Scenario).type}`);
-  } catch (err) {
+  } catch {
     return {
       ...baseResult,
       passed: false,
@@ -182,7 +181,11 @@ function computeRunSummary(
   startedAt: string,
 ): EvalRun {
   const scorable = results.filter(
-    (r) => !(r.details.type === 'human' && (r.details.status === 'pending' || r.details.status === 'skipped')),
+    (r) =>
+      !(
+        r.details.type === 'human' &&
+        (r.details.status === 'pending' || r.details.status === 'skipped')
+      ),
   );
   const passedScenarios = scorable.filter((r) => r.passed).length;
   const passRate = scorable.length > 0 ? passedScenarios / scorable.length : 1;
@@ -242,7 +245,14 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
   // Strip internal _humanScenario field
   const cleanResults: ScenarioResult[] = results.map(({ _humanScenario: _, ...r }) => r);
 
-  const run = computeRunSummary(cleanResults, suite, runId, config.modelId, config.judgeModelId, startedAt);
+  const run = computeRunSummary(
+    cleanResults,
+    suite,
+    runId,
+    config.modelId,
+    config.judgeModelId,
+    startedAt,
+  );
 
   // Dual-write: SQLite (if store provided) and YAML
   if (config.store) {

@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'mocha';
@@ -67,7 +67,10 @@ describe('loadSuites', () => {
     const userDir = createTempDir();
     try {
       writeFileSync(join(bundledDir, 'test-suite.yaml'), VALID_SUITE_YAML);
-      writeFileSync(join(userDir, 'test-suite.yaml'), VALID_SUITE_YAML.replace('Test Suite', 'User Suite'));
+      writeFileSync(
+        join(userDir, 'test-suite.yaml'),
+        VALID_SUITE_YAML.replace('Test Suite', 'User Suite'),
+      );
 
       const map = await loadSuites({ bundledPath: bundledDir, userPath: userDir });
       assert.equal(map.size, 1);
@@ -105,7 +108,10 @@ describe('loadSuites', () => {
   it('throws when suite fails schema validation', async () => {
     const dir = createTempDir();
     try {
-      writeFileSync(join(dir, 'invalid.yaml'), 'suite:\n  id: no-name\n  purpose: p\nscenarios: []\n');
+      writeFileSync(
+        join(dir, 'invalid.yaml'),
+        'suite:\n  id: no-name\n  purpose: p\nscenarios: []\n',
+      );
       await assert.rejects(() => loadSuites({ bundledPath: dir }));
     } finally {
       rmSync(dir, { recursive: true, force: true });

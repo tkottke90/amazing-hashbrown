@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { describe, it } from 'mocha';
-import { writeResultYaml, readResultYaml, writeReviewManifest, readReviewManifest } from '../../src/serializer.js';
+import {
+  writeResultYaml,
+  readResultYaml,
+  writeReviewManifest,
+  readReviewManifest,
+} from '../../src/serializer.js';
 import type { EvalRun, ScenarioResult, Suite } from '../../src/schemas.js';
 
 function makeRun(overrides: Partial<EvalRun> = {}): EvalRun {
@@ -38,16 +43,6 @@ function makeResult(runId: string, overrides: Partial<ScenarioResult> = {}): Sce
     ...overrides,
   };
 }
-
-const MOCK_SUITE: Suite = {
-  suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' },
-  scenarios: [
-    {
-      id: 'sc-1', name: 'Scenario 1', purpose: 'p', input: 'i',
-      type: 'deterministic', match: 'contains', expected: 'output',
-    },
-  ],
-};
 
 describe('writeResultYaml + readResultYaml', () => {
   it('writes a file and reads it back with matching run data', async () => {
@@ -118,9 +113,19 @@ describe('writeReviewManifest + readReviewManifest', () => {
         suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' },
         scenarios: [
           {
-            id: 'h-1', name: 'Human 1', purpose: 'p', input: 'test input',
-            type: 'human', rubric: 'test rubric',
-            scoring: { type: 'choice', options: [{ key: 'y', label: 'Yes', pass: true }, { key: 'n', label: 'No', pass: false }] },
+            id: 'h-1',
+            name: 'Human 1',
+            purpose: 'p',
+            input: 'test input',
+            type: 'human',
+            rubric: 'test rubric',
+            scoring: {
+              type: 'choice',
+              options: [
+                { key: 'y', label: 'Yes', pass: true },
+                { key: 'n', label: 'No', pass: false },
+              ],
+            },
             status: 'pending',
           },
         ],
