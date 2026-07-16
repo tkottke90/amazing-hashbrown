@@ -130,6 +130,19 @@ function handleEvent(evt: ChatSSEEvent): void {
       ];
       break;
 
+    case 'wiki_updated':
+      messages.value = [
+        ...messages.value,
+        {
+          kind: 'wiki_update',
+          id: crypto.randomUUID(),
+          pageTitle: evt.pageTitle,
+          pageKind: evt.pageKind,
+          wikiName: evt.wikiName,
+        },
+      ];
+      break;
+
     case 'stream_done':
       messages.value = messages.value.map((m) =>
         m.kind === 'assistant' && m.id === _currentAssistantId
