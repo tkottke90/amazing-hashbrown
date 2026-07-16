@@ -42,6 +42,12 @@ There is no per-workspace lint/format script — ESLint and Prettier are
 configured once at the repo root (`eslint.config.js`, `.prettierrc.json`) and
 apply to both `api/` and `ui/`.
 
+## TODO List
+
+Outstanding work is tracked in [`TODO_LIST.md`](./TODO_LIST.md) at the repo root.
+
+When a branch implements an item from that file, **mark it as complete on the same branch** — move it from the "Outstanding Items" list into the "Completed Items" list and update the numbering. That way the TODO list is already accurate the moment the branch is merged into `main`; no separate cleanup commit is needed.
+
 ## Before committing
 
 **Tests, linting, and style checks must all pass before you make a commit.**
