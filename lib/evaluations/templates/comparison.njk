@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eval Comparison — {{ comparison.suiteId }}</title>
+  <style>{{ styles | safe }}</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+
+<div class="header">
+  <h1>Eval Comparison: {{ comparison.suiteId }}</h1>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-card">
+    <div class="label">Run A</div>
+    <div class="value" style="font-size:0.8rem">{{ comparison.runA.model }}<br>{{ comparison.runA.startedAt }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Run B</div>
+    <div class="value" style="font-size:0.8rem">{{ comparison.runB.model }}<br>{{ comparison.runB.startedAt }}</div>
+  </div>
+</div>
+
+<div class="summary-stats">
+  <div class="stat">
+    <span class="num" style="color:var(--pass)">{{ comparison.summary.improved }}</span>
+    <span class="lbl">Improved (fail→pass)</span>
+  </div>
+  <div class="stat">
+    <span class="num" style="color:var(--fail)">{{ comparison.summary.regressed }}</span>
+    <span class="lbl">Regressed (pass→fail)</span>
+  </div>
+  <div class="stat">
+    <span class="num">{{ comparison.summary.unchanged }}</span>
+    <span class="lbl">Unchanged</span>
+  </div>
+  <div class="stat">
+    <span class="num">{{ comparison.summary.added }}</span>
+    <span class="lbl">Added</span>
+  </div>
+  <div class="stat">
+    <span class="num">{{ comparison.summary.removed }}</span>
+    <span class="lbl">Removed</span>
+  </div>
+</div>
+
+<h2>Scenario Diff</h2>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Change</th>
+        <th>Scenario</th>
+        <th>Type</th>
+        <th>Run A score</th>
+        <th>Run B score</th>
+        <th>Δ score</th>
+        <th>Δ latency</th>
+        <th>Δ cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sc in comparison.scenarios %}
+      {% set changeClass = 'badge-pass' if sc.change === 'fail→pass' else ('badge-fail' if sc.change === 'pass→fail' else 'badge-type') %}
+      <tr>
+        <td><span class="badge {{ changeClass }}">{{ sc.change }}</span></td>
+        <td>{{ sc.scenarioId }}</td>
+        <td><span class="badge badge-type">{{ sc.type }}</span></td>
+        <td>{% if sc.runA and sc.runA.score !== null %}{{ (sc.runA.score * 100) | round(1) }}%{% else %}—{% endif %}</td>
+        <td>{% if sc.runB and sc.runB.score !== null %}{{ (sc.runB.score * 100) | round(1) }}%{% else %}—{% endif %}</td>
+        <td>
+          {% if sc.runA and sc.runB and sc.runA.score !== null and sc.runB.score !== null %}
+            {% set delta = (sc.runB.score - sc.runA.score) * 100 %}
+            <span style="color: {{ 'var(--pass)' if delta > 0 else ('var(--fail)' if delta < 0 else 'inherit') }}">
+              {{ '+' if delta > 0 else '' }}{{ delta | round(1) }}%
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if sc.runA and sc.runB %}
+            {% set delta = sc.runB.latencyMs - sc.runA.latencyMs %}
+            {{ '+' if delta > 0 else '' }}{{ delta }}ms
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if sc.runA and sc.runB %}
+            {% set delta = sc.runB.estimatedCostUsd - sc.runA.estimatedCostUsd %}
+            {{ '+' if delta > 0 else '' }}${{ delta | round(6) }}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% if sc.runA and sc.runB %}
+      <tr>
+        <td colspan="8" style="padding-top:0;padding-bottom:0.5rem">
+          {% if sc.runA.details.type === 'llm-judge' or sc.runB.details.type === 'llm-judge' %}
+          <details>
+            <summary>Judge reasoning</summary>
+            <div class="detail-panel" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+              <div>
+                <h3>Run A</h3>
+                {% if sc.runA.details.type === 'llm-judge' %}
+                <pre>{{ sc.runA.details.reasoning }}</pre>
+                {% else %}—{% endif %}
+              </div>
+              <div>
+                <h3>Run B</h3>
+                {% if sc.runB.details.type === 'llm-judge' %}
+                <pre>{{ sc.runB.details.reasoning }}</pre>
+                {% else %}—{% endif %}
+              </div>
+            </div>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>

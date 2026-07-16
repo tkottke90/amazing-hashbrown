@@ -1,0 +1,54 @@
+{% set details = result.details %}
+{% set isPending = details.type === 'human' and details.status === 'pending' %}
+{% set isSkipped = details.type === 'human' and details.status === 'skipped' %}
+
+<tr>
+  <td>
+    {% if result.passed %}
+      <span class="badge badge-pass">✓ pass</span>
+    {% elif isPending %}
+      <span class="badge badge-pending">◌ pending</span>
+    {% elif isSkipped %}
+      <span class="badge badge-skipped">⊘ skipped</span>
+    {% else %}
+      <span class="badge badge-fail">✗ fail</span>
+    {% endif %}
+  </td>
+  <td>{{ result.scenarioId }}</td>
+  <td><span class="badge badge-type">{{ details.type }}</span></td>
+  <td>{{ result.latencyMs }}ms</td>
+  <td>
+    {% if result.score !== null %}
+      {{ (result.score * 100) | round(1) }}%
+    {% else %}
+      —
+    {% endif %}
+  </td>
+  <td>
+    {% if not result.passed and not isPending and not isSkipped %}
+    <details>
+      <summary>Details</summary>
+      <div class="detail-panel">
+        <div><strong>Output:</strong></div>
+        <pre>{{ result.actualOutput }}</pre>
+        {% if details.type === 'deterministic' %}
+          <div style="margin-top:0.5rem"><strong>Expected ({{ details.match }}):</strong></div>
+          <pre>{{ details.expected }}</pre>
+        {% elif details.type === 'semantic' %}
+          <div style="margin-top:0.5rem">Similarity: {{ (details.similarity * 100) | round(2) }}% (threshold: {{ (details.threshold * 100) | round(0) }}%)</div>
+        {% elif details.type === 'llm-judge' %}
+          <div style="margin-top:0.5rem">
+            Score: {{ details.score }}/10
+            {% if details.biasRisk %}<span class="badge badge-bias">⚠ bias risk</span>{% endif %}
+          </div>
+          <div style="margin-top:0.5rem"><strong>Judge reasoning:</strong></div>
+          <pre>{{ details.reasoning }}</pre>
+        {% elif details.type === 'human' %}
+          <div>Status: {{ details.status }}</div>
+          {% if details.reviewerNotes %}<pre>{{ details.reviewerNotes }}</pre>{% endif %}
+        {% endif %}
+      </div>
+    </details>
+    {% endif %}
+  </td>
+</tr>

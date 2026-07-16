@@ -19,11 +19,17 @@
   "scripts": {
     "dev:api": "npm run build:libs && npm run dev --workspace api",
     "dev:ui": "npm run dev --workspace ui",
-    "build:libs": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/observability && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager",
+    "build:libs": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/observability && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager && npm run build --workspace lib/evaluations",
     "build": "npm run build:libs && npm run build --workspace api && npm run build --workspace ui",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:local --workspace e2e",
     "test:e2e:ci": "npm run test:ci --workspace e2e",
+    "eval": "tsx bin/eval.ts",
+    "eval:new": "tsx bin/eval-new.ts",
+    "eval:from-trace": "tsx bin/eval-from-trace.ts",
+    "eval:review": "tsx bin/eval-review.ts",
+    "eval:submit": "tsx bin/eval-submit.ts",
+    "eval:compare": "tsx bin/eval-compare.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

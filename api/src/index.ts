@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
+import { bootEvaluations } from './services/evaluations.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { getChatAgent } from './agents/chat-agent.js';
 import { env } from './config/env.js';
@@ -20,6 +21,8 @@ app.logger.info('Observability booted');
 bootUsage(db);
 seedProviderCosts();
 app.logger.info('Usage tracking booted');
+bootEvaluations(db);
+app.logger.info('Evaluations booted');
 await bootKnowledgeBase();
 app.logger.info('Knowledge base booted');
 

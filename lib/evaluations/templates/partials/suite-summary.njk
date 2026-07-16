@@ -1,0 +1,18 @@
+<div class="summary-stats">
+  <div class="stat">
+    <span class="num">{{ run.passedScenarios }} / {{ run.totalScenarios }}</span>
+    <span class="lbl">Scenarios passed</span>
+  </div>
+  <div class="stat">
+    <span class="num">{{ (run.passRate * 100) | round(1) }}%</span>
+    <span class="lbl">Pass rate</span>
+  </div>
+  <div class="stat">
+    <span class="num">{{ run.totalLatencyMs }}ms</span>
+    <span class="lbl">Total latency</span>
+  </div>
+  <div class="stat">
+    <span class="num">${{ run.estimatedCostUsd | round(6) }}</span>
+    <span class="lbl">Estimated cost</span>
+  </div>
+</div>
