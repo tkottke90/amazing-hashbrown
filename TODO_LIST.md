@@ -33,12 +33,12 @@ Items are ordered first by priority/necessity, then by dependency.
 12. [Escalation System](#escalation-system) — depends on: #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 13. [Dashboard System](#dashboard-system) — depends on: #9, #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 14. [Multi-Conversation Support](#multi-conversation-support) — depends on: #2
-18. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #6; UI wiring already stubbed
-19. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-20. [Skills Integration](#skills-integration) — depends on: #19; `skills-manager` library is complete; needs API + UI
-21. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #19
-22. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #17
-23. [Notification Delivery](#notification-delivery) — depends on: #15; external channels deferred; interim: `action_required` flag on threads/tasks
+15. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #6; UI wiring already stubbed
+16. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+17. [Skills Integration](#skills-integration) — depends on: #19; `skills-manager` library is complete; needs API + UI
+18. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #19
+19. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #17
+20. [Notification Delivery](#notification-delivery) — depends on: #15; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
