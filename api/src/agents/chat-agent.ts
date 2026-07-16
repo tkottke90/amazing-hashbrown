@@ -7,6 +7,8 @@ import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
+import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
+import { wikiSearchTool } from './tools/wiki-search.tool.js';
 
 const checkpointer = new MemorySaver();
 
@@ -48,7 +50,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     llm,
     // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
     // MCP tools are converted from RegisteredTool.
-    tools: [askUserTool, uploadImageTool, ...mcpTools],
+    tools: [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool, ...mcpTools],
     checkpointSaver: checkpointer,
   });
 }
