@@ -42,6 +42,14 @@ There is no per-workspace lint/format script — ESLint and Prettier are
 configured once at the repo root (`eslint.config.js`, `.prettierrc.json`) and
 apply to both `api/` and `ui/`.
 
+## Git Workflow
+
+This repository uses **Trunk Flow**: `main` is the single integration branch. All work happens on short-lived feature branches that are merged directly into `main` via pull request — there are no long-lived `develop`, `staging`, or release branches.
+
+- Branch from `main`, merge back to `main`
+- Keep branches short-lived; avoid letting them drift far from `main`
+- PRs require passing CI (lint, style, tests) before merge
+
 ## TODO List
 
 Outstanding work is tracked in [`TODO_LIST.md`](./TODO_LIST.md) at the repo root.
