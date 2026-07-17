@@ -187,12 +187,14 @@ async function executeScenario(
     }
 
     throw new Error(`Unknown scenario type: ${(scenario as Scenario).type}`);
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[eval] scenario "${scenario.id}" (${scenario.type}) errored: ${message}`);
     return {
       ...baseResult,
       passed: false,
       score: 0,
-      actualOutput: '',
+      actualOutput: `[scenario error] ${message}`,
       latencyMs: 0,
       details: {
         type: 'deterministic',
