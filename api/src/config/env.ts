@@ -71,8 +71,16 @@ export const env = {
   get mcpConfigDir() {
     return configManager.get('mcpConfigDir', './config') as string;
   },
-  get providers() {
-    return (configManager.get('providers', []) ?? []) as ProviderConfig[];
+  get providers(): ProviderConfig[] {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection(
+        'providers',
+        z.array(ProviderSchema),
+      ) as ProviderConfig[];
+    } catch {
+      return [];
+    }
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
@@ -112,6 +120,14 @@ export const env = {
     }
   },
   get costs(): Record<string, CostEntry> {
-    return (configManager.get('costs', {}) ?? {}) as Record<string, CostEntry>;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection(
+        'costs',
+        z.record(z.string(), CostEntrySchema),
+      ) as Record<string, CostEntry>;
+    } catch {
+      return {};
+    }
   },
 };
