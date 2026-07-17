@@ -13,10 +13,11 @@ function setSseHeaders(res: import('express').Response): void {
 
 chatRouter.post('/:threadId', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model } = req.body as {
+  const { content, provider, model, afterAgent } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
+    afterAgent?: boolean;
   };
 
   if (!threadId || !content?.trim()) {
@@ -29,7 +30,7 @@ chatRouter.post('/:threadId', async (req, res) => {
 
   try {
     req.logger.info(`Inference started for thread`, { threadId, provider, model });
-    await streamChatToSse(res, threadId, content.trim(), startedAt, provider, model);
+    await streamChatToSse(res, threadId, content.trim(), startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('Chat stream error', { err });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
@@ -41,11 +42,12 @@ chatRouter.post('/:threadId', async (req, res) => {
 
 chatRouter.post('/:threadId/hitl', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { answer, provider, model } = req.body as {
+  const { answer, provider, model, afterAgent } = req.body as {
     promptId?: string;
     answer?: string;
     provider?: string;
     model?: string;
+    afterAgent?: boolean;
   };
 
   if (!threadId || answer === undefined) {
@@ -57,7 +59,7 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   const startedAt = Date.now();
 
   try {
-    await resumeChatToSse(res, threadId, answer, startedAt, provider, model);
+    await resumeChatToSse(res, threadId, answer, startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('HITL resume error', { err });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });

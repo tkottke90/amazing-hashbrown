@@ -1,0 +1,612 @@
+suite:
+  id: after-agent
+  name: AfterAgent Pipeline
+  purpose: >
+    Verify the AfterAgent Middleware's individual prompts (summarize, classify, extract, merge)
+    behave as intended before the pipeline is wired into live chat traffic. Scenarios exercise
+    the same prompts/model configuration the pipeline actually uses via after-agent.ts's
+    buildSummarizePrompt/buildClassifyPrompt/buildExtractPrompt/buildMergePrompt — not the live
+    POST /api/v1/chat/:threadId endpoint (the eval harness invokes a bare model, not the full
+    createAgent graph, and has no mechanism to assert on side effects like actual wiki writes).
+  passingThreshold: 0.75
+
+scenarios:
+  # ---------------------------------------------------------------------------------------------
+  # Classify scenarios — outputSchema mirrors after-agent.ts's ClassifyOutputSchema
+  # ---------------------------------------------------------------------------------------------
+
+  - id: cls-001-novel-personal-fact
+    name: Classify flags an unambiguous novel personal fact
+    purpose: >
+      Baseline positive case — unambiguous novel personal facts must be flagged for writing.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: My favorite programming language is Rust and I work at Acme Corp as a backend engineer.
+      ai: Got it, thanks for sharing!
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: true
+
+  - id: cls-002-smalltalk-no-write
+    name: Classify does not flag small talk
+    purpose: >
+      Baseline negative case — no factual content at all.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: Thanks, that's really helpful!
+      ai: You're welcome!
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: false
+
+  - id: cls-003-question-not-statement
+    name: Classify does not flag general-knowledge answers
+    purpose: >
+      Guards against treating every informative agent answer as wiki-worthy — general knowledge
+      the agent recites isn't novel info about the user.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: What's the weather like on Mars?
+      ai: Mars has a thin atmosphere and average surface temperatures around -60°C, with dust storms
+      that can last for weeks.
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: false
+
+  - id: cls-004-correction-of-prior-fact
+    name: Classify flags a correction to a previously recorded fact
+    purpose: >
+      Corrections to previously-recorded facts must still trigger a write (feeds the
+      merge/contradiction-resolution path exercised by mrg-002).
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: User's favorite language is Python.
+
+
+      Latest turn:
+      human: Actually, I misspoke earlier — my favorite language is actually Rust, not Python.
+      ai: Thanks for the correction, noted!
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: true
+
+  - id: cls-005-already-known-repeat
+    name: Classify does not flag a fact already covered by the summary
+    purpose: >
+      Tests that classify actually uses the rolling summary to detect redundancy rather than
+      flagging every mention of a known fact.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: User works at Acme Corp as a backend engineer.
+
+
+      Latest turn:
+      human: Yeah, I still work at Acme Corp.
+      ai: Good to know!
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: false
+
+  # ---------------------------------------------------------------------------------------------
+  # Extract scenarios — outputSchema mirrors after-agent.ts's ExtractOutputSchema
+  # ---------------------------------------------------------------------------------------------
+
+  - id: ext-001-entity-fact-basic
+    name: Extract produces an entity page for a basic personal fact
+    purpose: >
+      Baseline entity extraction shape.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: I work at Acme Corp as a backend engineer.
+      ai: Got it, thanks for sharing!
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: domainId
+        match: equals
+        value: user
+      - path: type
+        match: equals
+        value: entity
+      - path: tags
+        match: exists
+      - path: title
+        match: exists
+
+  - id: ext-002-concept-explanation
+    name: Extract chooses type "concept" for a conceptual explanation
+    purpose: >
+      Confirms the model distinguishes conceptual explanations from entity facts.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: GraphQL is a query language for APIs that lets clients request exactly the data they
+      need, unlike REST's fixed endpoints.
+      ai: That's a great summary of GraphQL!
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: type
+        match: equals
+        value: concept
+
+  - id: ext-003-comparison-content
+    name: Extract chooses type "comparison" for contrastive content
+    purpose: >
+      Confirms "comparison" is chosen when the content is explicitly contrastive.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: Rust and Go both compile to native binaries, but Rust has no garbage collector while
+      Go does.
+      ai: Nicely put — that's a key distinction between the two.
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: type
+        match: equals
+        value: comparison
+
+  - id: ext-004-domain-routing-multi-domain
+    name: Extract routes to the correct domain among multiple registered domains
+    purpose: >
+      Confirms domain routing actually uses the routing notes to pick among multiple registered
+      domains, not just defaulting to the first/only one.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal context and biography])
+      - id: "projects" (domain: projects, tags: [work projects, deploy pipelines, and engineering
+      systems])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: The Phoenix project's deploy pipeline runs on GitHub Actions and deploys to AWS ECS.
+      ai: Got it, that's useful context about the Phoenix project.
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: domainId
+        match: equals
+        value: projects
+
+  - id: ext-005-never-index-or-log
+    name: Extract never produces the reserved index/log page types
+    purpose: >
+      Regression check for the index/log path-collision bug found during design: llm-wiki's
+      TYPE_DIR maps "index" and "log" to the wiki root, colliding with the wiki's real
+      index.md/log.md files. The primary safeguard is that ExtractOutputSchema's Zod enum (and
+      this scenario's outputSchema) exclude those two values entirely at the structured-output
+      binding level — this scenario confirms the model still produces a valid, sensible type for
+      log-flavored input rather than erroring or being coerced into an excluded value.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: Here's a log of everything that happened today — I fixed three bugs and had two
+      meetings.
+      ai: Sounds like a productive day!
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: type
+        match: oneOf
+        value: [entity, concept, comparison, query, summary]
+
+  # ---------------------------------------------------------------------------------------------
+  # Summarize scenarios — judged over the JSON-stringified {summary} output. llm-judge
+  # interpolates actualOutput as raw text regardless of shape, so no harness change was needed
+  # for this pair.
+  # ---------------------------------------------------------------------------------------------
+
+  - id: sum-001-first-turn-no-prior
+    name: Summarize produces a grounded summary on the first turn
+    purpose: >
+      Baseline cold-start summarization.
+    type: llm-judge
+    input: >
+      You maintain a rolling summary of an ongoing conversation between a user and an AI assistant.
+      Fold the latest turn into the existing summary. Preserve every fact already present unless the
+      latest turn explicitly corrects or supersedes it. Keep the summary concise — a few sentences per
+      distinct fact, not a transcript. Do not editorialize or add facts that were not stated.
+
+
+      Existing summary: (none — this is the first turn)
+
+
+      Latest turn:
+      human: I just moved to Seattle for a new job at a fintech startup.
+      ai: Congratulations on the move and the new job!
+
+
+      Return the updated summary.
+    rubric: >
+      The summary (returned as a JSON object with a "summary" field) must mention that the user
+      moved to Seattle and works at a fintech startup. It must not be empty or generic filler text.
+    minScore: 7
+
+  - id: sum-002-rolling-fold-in
+    name: Summarize retains prior facts while folding in a new one
+    purpose: >
+      Core rolling-summary correctness — this is the single most important property of the
+      summarize step. No dropped information.
+    type: llm-judge
+    input: >
+      You maintain a rolling summary of an ongoing conversation between a user and an AI assistant.
+      Fold the latest turn into the existing summary. Preserve every fact already present unless the
+      latest turn explicitly corrects or supersedes it. Keep the summary concise — a few sentences per
+      distinct fact, not a transcript. Do not editorialize or add facts that were not stated.
+
+
+      Existing summary:
+      User lives in Seattle and works at a fintech startup called Northwind Finance.
+
+
+      Latest turn:
+      human: I just adopted a dog named Biscuit.
+      ai: Aww, congratulations on the new addition to the family!
+
+
+      Return the updated summary.
+    rubric: >
+      The updated summary must retain BOTH the Seattle/Northwind Finance facts from the existing
+      summary AND mention the new dog named Biscuit. Losing either the prior facts or the new fact
+      is a failure — this is the single most important property of the summarize step.
+    minScore: 7
+
+  - id: sum-003-summary-stays-concise
+    name: Summarize does not balloon in length for a trivial aside
+    purpose: >
+      Guards against unbounded summary growth over a long-running thread.
+    type: llm-judge
+    input: >
+      You maintain a rolling summary of an ongoing conversation between a user and an AI assistant.
+      Fold the latest turn into the existing summary. Preserve every fact already present unless the
+      latest turn explicitly corrects or supersedes it. Keep the summary concise — a few sentences per
+      distinct fact, not a transcript. Do not editorialize or add facts that were not stated.
+
+
+      Existing summary:
+      User lives in Seattle and works as a backend engineer at Acme Corp, a fintech company founded
+      in 2015. They favorite programming language is Rust, and they previously worked at a startup
+      called Northwind Finance before joining Acme Corp. User has a dog named Biscuit and enjoys
+      rock climbing on weekends. User is currently working on the Phoenix project, whose deploy
+      pipeline runs on GitHub Actions and deploys to AWS ECS.
+
+
+      Latest turn:
+      human: By the way, it's raining today.
+      ai: Hope you stay dry!
+
+
+      Return the updated summary.
+    rubric: >
+      The updated summary should remain reasonably concise (not dramatically longer than the
+      existing summary), retain all the important prior facts (Seattle, Acme Corp, Rust, Northwind
+      Finance, Biscuit, rock climbing, Phoenix project), and not over-elaborate on the trivial
+      weather aside — a passing mention or omission of the weather comment is fine.
+    minScore: 6
+
+  # ---------------------------------------------------------------------------------------------
+  # Merge scenarios — judged over the JSON-stringified {body} output.
+  # ---------------------------------------------------------------------------------------------
+
+  - id: mrg-001-complementary-facts
+    name: Merge combines complementary facts without losing either
+    purpose: >
+      Baseline additive merge — no information loss.
+    type: llm-judge
+    input: >
+      Merge new information into an existing wiki page. Combine both into a single coherent page
+      body: keep everything from the existing page that is still accurate, incorporate the new
+      content, and do not repeat the same fact twice. If the new content contradicts or corrects the
+      existing content, prefer the new content and note that it changed rather than presenting both
+      as equally true.
+
+
+      Existing page body:
+      Acme Corp is where the user works as a backend engineer.
+
+
+      New content to merge in:
+      Acme Corp is a fintech company founded in 2015, and the user's team works on the payments
+      platform.
+
+
+      Return the merged page body as markdown.
+    rubric: >
+      The merged body (returned as a JSON object with a "body" field) must contain BOTH the
+      "backend engineer" fact from the existing page AND the "fintech company founded in 2015" /
+      "payments platform" facts from the new content. Losing either side is a failure.
+    minScore: 7
+
+  - id: mrg-002-contradiction-resolution
+    name: Merge resolves a contradiction in favor of the corrected fact
+    purpose: >
+      Directly exercises the cls-004 correction case through to a correct merged result — the two
+      scenarios together cover the full correction flow end-to-end.
+    type: llm-judge
+    input: >
+      Merge new information into an existing wiki page. Combine both into a single coherent page
+      body: keep everything from the existing page that is still accurate, incorporate the new
+      content, and do not repeat the same fact twice. If the new content contradicts or corrects the
+      existing content, prefer the new content and note that it changed rather than presenting both
+      as equally true.
+
+
+      Existing page body:
+      The user's favorite language is Python.
+
+
+      New content to merge in:
+      The user says their favorite language is actually Rust, not Python — they corrected
+      themselves.
+
+
+      Return the merged page body as markdown.
+    rubric: >
+      The merged body must reflect Rust as the user's CURRENT favorite language, not present Python
+      and Rust as equally true or leave it ambiguous which is current. A brief note that the
+      preference changed from Python to Rust is acceptable and encouraged.
+    minScore: 7
+
+  - id: mrg-003-no-duplication
+    name: Merge does not duplicate a fact already present in both sources
+    purpose: >
+      Guards against naive concatenation instead of a real merge.
+    type: llm-judge
+    input: >
+      Merge new information into an existing wiki page. Combine both into a single coherent page
+      body: keep everything from the existing page that is still accurate, incorporate the new
+      content, and do not repeat the same fact twice. If the new content contradicts or corrects the
+      existing content, prefer the new content and note that it changed rather than presenting both
+      as equally true.
+
+
+      Existing page body:
+      The user works at Acme Corp as a backend engineer.
+
+
+      New content to merge in:
+      The user works at Acme Corp as a backend engineer, and also mentioned enjoying rock climbing.
+
+
+      Return the merged page body as markdown.
+    rubric: >
+      The merged body must NOT repeat the "works at Acme Corp as a backend engineer" sentence
+      verbatim twice — that fact should appear once. The rock climbing fact should be incorporated
+      exactly once. Naive concatenation that duplicates the shared sentence is a failure.
+    minScore: 7

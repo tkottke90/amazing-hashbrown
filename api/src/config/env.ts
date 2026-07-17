@@ -31,6 +31,10 @@ const CostEntrySchema = z.object({
 
 export type CostEntry = z.infer<typeof CostEntrySchema>;
 
+const AfterAgentSchema = z.object({
+  enabled: z.boolean().default(true),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -40,6 +44,7 @@ const AppConfigSchema = z.object({
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
+  afterAgent: AfterAgentSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
@@ -94,6 +99,16 @@ export const env = {
       >;
     } catch {
       return ObservabilitySchema.parse({});
+    }
+  },
+  get afterAgent(): z.infer<typeof AfterAgentSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('afterAgent', AfterAgentSchema) as z.infer<
+        typeof AfterAgentSchema
+      >;
+    } catch {
+      return AfterAgentSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

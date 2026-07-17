@@ -4,6 +4,7 @@ import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
+import { runStructured } from './executors/structured.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -13,6 +14,7 @@ import type {
   DeterministicScenario,
   SemanticScenario,
   LlmJudgeScenario,
+  StructuredScenario,
   HumanScenario,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
@@ -56,6 +58,17 @@ async function invokeModel(
   const response = await model.invoke(input);
   const latencyMs = Date.now() - start;
   return { content: extractContent(response), latencyMs };
+}
+
+async function invokeStructuredModel(
+  model: BaseChatModel,
+  input: string,
+  outputSchema: Record<string, unknown>,
+): Promise<{ parsed: unknown; content: string; latencyMs: number }> {
+  const start = Date.now();
+  const parsed = await model.withStructuredOutput(outputSchema).invoke(input);
+  const latencyMs = Date.now() - start;
+  return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
 async function executeScenario(
@@ -121,6 +134,25 @@ async function executeScenario(
         ...baseResult,
         passed,
         score: details.score / 10,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
+    if (scenario.type === 'structured') {
+      const s = scenario as StructuredScenario;
+      const { parsed, content, latencyMs } = await invokeStructuredModel(
+        config.model,
+        s.input,
+        s.outputSchema,
+      );
+      const details = runStructured(s, parsed);
+      const passed = details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
         actualOutput: content,
         latencyMs,
         details,

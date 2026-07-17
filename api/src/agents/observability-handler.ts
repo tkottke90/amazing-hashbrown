@@ -31,9 +31,14 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     _prompts: string[],
     runId: string,
     parentRunId?: string,
+    _extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    _metadata?: Record<string, unknown>,
+    runName?: string,
   ): Promise<void> {
-    const name =
+    const derivedName =
       (llm as { id?: string[] }).id?.at(-1) ?? (llm as { name?: string }).name ?? 'unknown-model';
+    const name = runName ?? derivedName;
 
     this.pending.set(runId, {
       spanId: runId,
@@ -159,6 +164,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
   override async handleChainEnd(): Promise<void> {
     if (this.completed.length > 0) {
       this.store.saveSpans(this.completed);
+      this.completed.length = 0;
     }
   }
 

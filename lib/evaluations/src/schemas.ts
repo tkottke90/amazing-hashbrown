@@ -29,6 +29,24 @@ export const LlmJudgeScenarioSchema = BaseScenario.extend({
   minScore: z.number().min(0).max(10).default(7),
 });
 
+const FieldCheckSchema = z.object({
+  // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
+  path: z.string().min(1),
+  match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
+  // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
+  // Omitted for 'exists'.
+  value: z.unknown().optional(),
+});
+
+export const StructuredScenarioSchema = BaseScenario.extend({
+  type: z.literal('structured'),
+  // JSON-Schema-shaped object passed directly to model.withStructuredOutput().
+  outputSchema: z.record(z.string(), z.unknown()),
+  fieldChecks: z.array(FieldCheckSchema).min(1),
+  // Fraction of fieldChecks that must pass for the scenario to pass.
+  minScore: z.number().min(0).max(1).default(1),
+});
+
 const ChoiceOption = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
@@ -60,6 +78,7 @@ export const ScenarioSchema = z.discriminatedUnion('type', [
   DeterministicScenarioSchema,
   SemanticScenarioSchema,
   LlmJudgeScenarioSchema,
+  StructuredScenarioSchema,
   HumanScenarioSchema,
 ]);
 
@@ -124,10 +143,25 @@ const HumanDetails = z.object({
   reviewerNotes: z.string().optional(),
 });
 
+const FieldCheckResultSchema = z.object({
+  path: z.string(),
+  match: z.string(),
+  expected: z.unknown(),
+  actual: z.unknown(),
+  passed: z.boolean(),
+});
+
+const StructuredDetails = z.object({
+  type: z.literal('structured'),
+  fieldResults: z.array(FieldCheckResultSchema),
+  score: z.number(),
+});
+
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   DeterministicDetails,
   SemanticDetails,
   LlmJudgeDetails,
+  StructuredDetails,
   HumanDetails,
 ]);
 
@@ -167,6 +201,7 @@ export type Scenario = z.infer<typeof ScenarioSchema>;
 export type DeterministicScenario = z.infer<typeof DeterministicScenarioSchema>;
 export type SemanticScenario = z.infer<typeof SemanticScenarioSchema>;
 export type LlmJudgeScenario = z.infer<typeof LlmJudgeScenarioSchema>;
+export type StructuredScenario = z.infer<typeof StructuredScenarioSchema>;
 export type HumanScenario = z.infer<typeof HumanScenarioSchema>;
 export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
