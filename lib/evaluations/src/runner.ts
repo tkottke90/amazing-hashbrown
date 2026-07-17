@@ -41,11 +41,15 @@ export interface RunResult {
 }
 
 // ---------------------------------------------------------------------------
-// Jest-style live progress — one line per scenario, colored pass/fail icon
-// plus duration. In a real terminal, an in-progress "RUNS" line is
-// overwritten in place once the scenario finishes; when output isn't a TTY
-// (piped, redirected to a file, CI logs) only the completed line is printed,
-// so captured logs don't end up full of \r control characters.
+// Jest-style live progress board — the full scenario list prints up front
+// (pending scenarios marked "-"), and each line updates in place as its
+// scenario starts running and then completes, so progress against the whole
+// suite is visible the entire time, not just a trailing log of finished
+// scenarios. In a real terminal this uses ANSI cursor movement to rewrite
+// individual lines; when output isn't a TTY (piped, redirected to a file, CI
+// logs) cursor movement can't do anything useful, so it falls back to
+// printing only each completed line as it finishes — the same behavior as
+// before, and safe for captured logs.
 // ---------------------------------------------------------------------------
 
 const isTTY = Boolean(process.stdout.isTTY);
@@ -58,12 +62,15 @@ const red = (s: string) => colorize('31', s);
 const yellow = (s: string) => colorize('33', s);
 const dim = (s: string) => colorize('2', s);
 
-function logScenarioStart(scenario: Scenario): void {
-  if (!isTTY) return;
-  process.stdout.write(`  ${dim('RUNS')} ${scenario.name}`);
+function formatPendingLine(scenario: Scenario): string {
+  return `  ${dim('-')} ${scenario.name}`;
 }
 
-function formatScenarioLine(scenario: Scenario, result: ScenarioResult): string {
+function formatRunningLine(scenario: Scenario): string {
+  return `  ${dim('›')} ${scenario.name}`;
+}
+
+function formatDoneLine(scenario: Scenario, result: ScenarioResult): string {
   if (result.details.type === 'human') {
     const label = result.details.status === 'skipped' ? '(skipped)' : '(awaiting human review)';
     return `  ${yellow('○')} ${scenario.name} ${dim(label)}`;
@@ -72,14 +79,42 @@ function formatScenarioLine(scenario: Scenario, result: ScenarioResult): string 
   return `  ${icon} ${scenario.name} ${dim(`(${result.latencyMs}ms)`)}`;
 }
 
-function logScenarioResult(scenario: Scenario, result: ScenarioResult): void {
-  const line = formatScenarioLine(scenario, result);
-  if (isTTY) {
-    // \r returns to column 0, \x1b[2K clears the in-progress "RUNS" line.
-    process.stdout.write(`\r\x1b[2K${line}\n`);
-  } else {
-    console.log(line);
+interface ProgressBoard {
+  markRunning(index: number): void;
+  markDone(index: number, result: ScenarioResult): void;
+}
+
+function createProgressBoard(scenarios: Scenario[]): ProgressBoard {
+  const lines = scenarios.map(formatPendingLine);
+
+  if (!isTTY) {
+    // No cursor control available — print each completed line as it happens.
+    return {
+      markRunning: () => {},
+      markDone: (index, result) => {
+        console.log(formatDoneLine(scenarios[index]!, result));
+      },
+    };
   }
+
+  for (const line of lines) console.log(line);
+
+  function rewrite(index: number, line: string): void {
+    lines[index] = line;
+    const linesFromBottom = lines.length - index;
+    process.stdout.write(`\x1b[${linesFromBottom}A`); // up to the target line
+    process.stdout.write(`\r\x1b[2K${line}`); // clear it and write the new content
+    process.stdout.write(`\x1b[${linesFromBottom}B\r`); // back down to the bottom, column 0
+  }
+
+  return {
+    markRunning(index) {
+      rewrite(index, formatRunningLine(scenarios[index]!));
+    },
+    markDone(index, result) {
+      rewrite(index, formatDoneLine(scenarios[index]!, result));
+    },
+  };
 }
 
 function extractContent(raw: unknown): string {
@@ -298,11 +333,12 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
 
   // Execute all scenarios; collect partial results
   console.log(`\n${suite.suite.name}`);
+  const board = createProgressBoard(suite.scenarios);
   const results: Array<ScenarioResult & { _humanScenario?: HumanScenario }> = [];
-  for (const scenario of suite.scenarios) {
-    logScenarioStart(scenario);
+  for (const [index, scenario] of suite.scenarios.entries()) {
+    board.markRunning(index);
     const result = await executeScenario(scenario, suite, runId, config, humanIndex);
-    logScenarioResult(scenario, result);
+    board.markDone(index, result);
     results.push(result as ScenarioResult & { _humanScenario?: HumanScenario });
   }
   console.log();
