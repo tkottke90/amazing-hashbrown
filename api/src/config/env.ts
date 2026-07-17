@@ -1,4 +1,3 @@
-import path from 'path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
