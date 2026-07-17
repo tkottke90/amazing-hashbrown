@@ -38,8 +38,8 @@ const AfterAgentSchema = z.object({
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
-  wikiRoot: z.string().default('./config/kb'),
-  mcpConfigDir: z.string().default('./config'),
+  wikiRoot: z.string().default('./wiki'),
+  mcpConfigDir: z.string().default('./mcp'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
@@ -66,10 +66,10 @@ export const env = {
     return configManager.get('logLevel', 'info') as string;
   },
   get wikiRoot() {
-    return configManager.get('wikiRoot', './config/kb') as string;
+    return configManager.getConfigDir(configManager.get('wikiRoot') as string);
   },
   get mcpConfigDir() {
-    return configManager.get('mcpConfigDir', './config') as string;
+    return configManager.getConfigDir(configManager.get('mcpConfigDir') as string);
   },
   get providers(): ProviderConfig[] {
     try {
@@ -91,10 +91,7 @@ export const env = {
       const raw = (configManager as any).getSection('database', DatabaseSchema) as z.infer<
         typeof DatabaseSchema
       >;
-      if (path.isAbsolute(raw.path)) return raw;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const configDir = (configManager as any).getConfigDir() as string;
-      return { ...raw, path: path.join(configDir, raw.path) };
+      return { ...raw, path: configManager.getConfigDir() + '/' + raw.path };
     } catch {
       return DatabaseSchema.parse({});
     }

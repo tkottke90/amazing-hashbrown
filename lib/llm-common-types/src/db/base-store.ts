@@ -12,7 +12,7 @@ export type SqliteDatabase = Database.Database;
 //
 // Call this once at application startup and pass the returned connection to
 // every store constructor. Sharing one connection across all stores keeps the
-// write path serialised (SQLite's one-writer model) and lets WAL readers
+// write path serialized (SQLite's one-writer model) and lets WAL readers
 // proceed without blocking each other.
 export function openDatabase(dbPath: string): Database.Database {
   const db = new Database(dbPath);
