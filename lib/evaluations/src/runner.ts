@@ -40,6 +40,48 @@ export interface RunResult {
   htmlPath?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Jest-style live progress — one line per scenario, colored pass/fail icon
+// plus duration. In a real terminal, an in-progress "RUNS" line is
+// overwritten in place once the scenario finishes; when output isn't a TTY
+// (piped, redirected to a file, CI logs) only the completed line is printed,
+// so captured logs don't end up full of \r control characters.
+// ---------------------------------------------------------------------------
+
+const isTTY = Boolean(process.stdout.isTTY);
+
+function colorize(code: string, text: string): string {
+  return isTTY ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+const green = (s: string) => colorize('32', s);
+const red = (s: string) => colorize('31', s);
+const yellow = (s: string) => colorize('33', s);
+const dim = (s: string) => colorize('2', s);
+
+function logScenarioStart(scenario: Scenario): void {
+  if (!isTTY) return;
+  process.stdout.write(`  ${dim('RUNS')} ${scenario.name}`);
+}
+
+function formatScenarioLine(scenario: Scenario, result: ScenarioResult): string {
+  if (result.details.type === 'human') {
+    const label = result.details.status === 'skipped' ? '(skipped)' : '(awaiting human review)';
+    return `  ${yellow('○')} ${scenario.name} ${dim(label)}`;
+  }
+  const icon = result.passed ? green('✓') : red('✕');
+  return `  ${icon} ${scenario.name} ${dim(`(${result.latencyMs}ms)`)}`;
+}
+
+function logScenarioResult(scenario: Scenario, result: ScenarioResult): void {
+  const line = formatScenarioLine(scenario, result);
+  if (isTTY) {
+    // \r returns to column 0, \x1b[2K clears the in-progress "RUNS" line.
+    process.stdout.write(`\r\x1b[2K${line}\n`);
+  } else {
+    console.log(line);
+  }
+}
+
 function extractContent(raw: unknown): string {
   if (typeof raw === 'string') return raw;
   if (raw && typeof raw === 'object' && 'content' in raw) {
@@ -255,11 +297,15 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
   const humanIndex = { count: 0, total: suite.scenarios.filter((s) => s.type === 'human').length };
 
   // Execute all scenarios; collect partial results
+  console.log(`\n${suite.suite.name}`);
   const results: Array<ScenarioResult & { _humanScenario?: HumanScenario }> = [];
   for (const scenario of suite.scenarios) {
+    logScenarioStart(scenario);
     const result = await executeScenario(scenario, suite, runId, config, humanIndex);
+    logScenarioResult(scenario, result);
     results.push(result as ScenarioResult & { _humanScenario?: HumanScenario });
   }
+  console.log();
 
   // Interactive human scoring TUI (only when not in CI mode)
   if (!config.ci) {
