@@ -279,6 +279,55 @@ summary {
   color: var(--text-muted);
 }
 
+.scenario-row {
+  cursor: pointer;
+}
+.scenario-row:hover td {
+  background: var(--bg-hover);
+}
+.scenario-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.chevron-cell {
+  width: 1.5rem;
+  text-align: right;
+}
+.chevron {
+  display: inline-block;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+.scenario-row.expanded .chevron {
+  transform: rotate(90deg);
+}
+.detail-row td {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+.detail-row .detail-panel {
+  margin: 0;
+  border-radius: 0;
+}
+
+.field-check-table {
+  width: 100%;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+}
+.field-check-table th {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.7rem;
+}
+.field-check-table td {
+  padding: 0.3rem 0.5rem;
+}
+.field-check-table code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .theme-toggle {
   position: fixed;
   top: 1rem;

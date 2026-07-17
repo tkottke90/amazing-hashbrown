@@ -70,6 +70,17 @@ observability:
   spanOutputPreviewChars: 500
 
 # ---------------------------------------------------------------------------
+# AfterAgent Middleware
+#
+# Background post-response layer that inspects each conversational turn for
+# novel knowledge and writes it into the wiki. Runs after the turn's SSE
+# stream completes; never blocks or slows the user-facing response. Can also
+# be disabled per-request via the `afterAgent` field on POST /api/v1/chat/:threadId.
+# ---------------------------------------------------------------------------
+afterAgent:
+  enabled: true
+
+# ---------------------------------------------------------------------------
 # Cost Rates
 #
 # Optional. Maps "providerName/model" keys to per-1k-token prices in USD.

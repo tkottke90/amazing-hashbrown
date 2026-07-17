@@ -54,7 +54,7 @@
         <th>Type</th>
         <th>Latency</th>
         <th>Score</th>
-        <th>Detail</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -71,6 +71,25 @@ function toggleTheme() {
   const current = root.getAttribute('data-theme');
   root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
 }
+
+function toggleScenarioDetail(row) {
+  const detailRow = document.getElementById(row.dataset.target);
+  if (!detailRow) return;
+  const expanded = row.getAttribute('aria-expanded') === 'true';
+  row.setAttribute('aria-expanded', String(!expanded));
+  row.classList.toggle('expanded', !expanded);
+  detailRow.hidden = expanded;
+}
+
+document.querySelectorAll('.scenario-row').forEach((row) => {
+  row.addEventListener('click', () => toggleScenarioDetail(row));
+  row.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Enter' || evt.key === ' ') {
+      evt.preventDefault();
+      toggleScenarioDetail(row);
+    }
+  });
+});
 </script>
 </body>
 </html>

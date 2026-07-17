@@ -1,4 +1,3 @@
-import path from 'path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -31,15 +30,20 @@ const CostEntrySchema = z.object({
 
 export type CostEntry = z.infer<typeof CostEntrySchema>;
 
+const AfterAgentSchema = z.object({
+  enabled: z.boolean().default(true),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
-  wikiRoot: z.string().default('./config/kb'),
-  mcpConfigDir: z.string().default('./config'),
+  wikiRoot: z.string().default('./wiki'),
+  mcpConfigDir: z.string().default('./mcp'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
+  afterAgent: AfterAgentSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
@@ -61,13 +65,21 @@ export const env = {
     return configManager.get('logLevel', 'info') as string;
   },
   get wikiRoot() {
-    return configManager.get('wikiRoot', './config/kb') as string;
+    return configManager.getConfigDir(configManager.get('wikiRoot') as string);
   },
   get mcpConfigDir() {
-    return configManager.get('mcpConfigDir', './config') as string;
+    return configManager.getConfigDir(configManager.get('mcpConfigDir') as string);
   },
-  get providers() {
-    return (configManager.get('providers', []) ?? []) as ProviderConfig[];
+  get providers(): ProviderConfig[] {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection(
+        'providers',
+        z.array(ProviderSchema),
+      ) as ProviderConfig[];
+    } catch {
+      return [];
+    }
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
@@ -78,10 +90,7 @@ export const env = {
       const raw = (configManager as any).getSection('database', DatabaseSchema) as z.infer<
         typeof DatabaseSchema
       >;
-      if (path.isAbsolute(raw.path)) return raw;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const configDir = (configManager as any).getConfigDir() as string;
-      return { ...raw, path: path.join(configDir, raw.path) };
+      return { ...raw, path: configManager.getConfigDir() + '/' + raw.path };
     } catch {
       return DatabaseSchema.parse({});
     }
@@ -96,7 +105,25 @@ export const env = {
       return ObservabilitySchema.parse({});
     }
   },
+  get afterAgent(): z.infer<typeof AfterAgentSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('afterAgent', AfterAgentSchema) as z.infer<
+        typeof AfterAgentSchema
+      >;
+    } catch {
+      return AfterAgentSchema.parse({});
+    }
+  },
   get costs(): Record<string, CostEntry> {
-    return (configManager.get('costs', {}) ?? {}) as Record<string, CostEntry>;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection(
+        'costs',
+        z.record(z.string(), CostEntrySchema),
+      ) as Record<string, CostEntry>;
+    } catch {
+      return {};
+    }
   },
 };

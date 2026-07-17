@@ -4,6 +4,7 @@ import {
   ScenarioSchema,
   HumanScenarioSchema,
   SemanticScenarioSchema,
+  StructuredScenarioSchema,
   SuiteSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
@@ -76,10 +77,82 @@ describe('ScenarioSchema', () => {
     }
   });
 
+  it('parses structured scenario with defaults', () => {
+    const result = ScenarioSchema.parse({
+      id: 'test-5',
+      name: 'Test',
+      purpose: 'Purpose',
+      input: 'Input',
+      type: 'structured',
+      outputSchema: { type: 'object', properties: { shouldWrite: { type: 'boolean' } } },
+      fieldChecks: [{ path: 'shouldWrite', match: 'equals', value: true }],
+    });
+    assert.equal(result.type, 'structured');
+    if (result.type === 'structured') {
+      assert.equal(result.minScore, 1);
+    }
+  });
+
   it('throws on unknown type', () => {
     assert.throws(() => {
       ScenarioSchema.parse({ id: 'x', name: 'x', purpose: 'x', input: 'x', type: 'unknown' });
     });
+  });
+});
+
+describe('StructuredScenarioSchema', () => {
+  it('defaults minScore to 1', () => {
+    const result = StructuredScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'structured',
+      outputSchema: {},
+      fieldChecks: [{ path: 'a', match: 'exists' }],
+    });
+    assert.equal(result.minScore, 1);
+  });
+
+  it('accepts custom minScore', () => {
+    const result = StructuredScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'structured',
+      outputSchema: {},
+      fieldChecks: [{ path: 'a', match: 'exists' }],
+      minScore: 0.5,
+    });
+    assert.equal(result.minScore, 0.5);
+  });
+
+  it('accepts the oneOf match type with an array value', () => {
+    const result = StructuredScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'structured',
+      outputSchema: {},
+      fieldChecks: [{ path: 'type', match: 'oneOf', value: ['entity', 'concept'] }],
+    });
+    assert.equal(result.fieldChecks[0].match, 'oneOf');
+  });
+
+  it('throws when fieldChecks is empty', () => {
+    assert.throws(() =>
+      StructuredScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'structured',
+        outputSchema: {},
+        fieldChecks: [],
+      }),
+    );
   });
 });
 

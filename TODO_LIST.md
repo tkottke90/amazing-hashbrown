@@ -12,6 +12,7 @@
 8. [Evaluation Harness](#evaluation-harness) — `lib/evaluations` package; deterministic/semantic/LLM-as-judge eval methods; SQLite result store; `POST /api/v1/evaluations/run` endpoint; `npm run eval` CLI
 9. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — `WikiUpdatedSchema` added to `ChatSSEEvent`; `wiki_update` `ThreadMessage` kind; `WikiUpdateMessage` chip component in UI
 10. [Connect LLM-Wiki to Chat Agent](#connect-llm-wiki-to-chat-agent) — `wiki_search` (hybrid BM25 + embedding, all domains) and `wiki_read_page` tools added to the ReAct agent; graceful degradation when wiki unavailable
+11. [AfterAgent Middleware](#afteragent-middleware) — heuristic post-hoc LLM pipeline (summarize → classify → extract → merge) fires as a `createAgent` `afterAgent` middleware hook; writes go through `ingestPrep`/`commitPage` with raw-source provenance; `wiki_updated` SSE events queue per-thread and flush at the start of the next turn
 
 ---
 
@@ -19,26 +20,25 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [AfterAgent Middleware](#afteragent-middleware) — depends on: Connect LLM-Wiki to Chat Agent; closes the conversational wiki-write loop
-2. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer; completes the v1 conversational product
-3. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #2 as a persistence sprint
-4. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
-5. [Wiki Write Tooling](#wiki-write-tooling) — depends on: Connect LLM-Wiki to Chat Agent; unified write/commit tools used by all agent patterns
-6. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
-7. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
-8. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
-9. [Task System](#task-system) — depends on: #2; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-10. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #4, #5, #6, #7, #8, #9
-11. [Trigger System](#trigger-system) — depends on: #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-12. [Escalation System](#escalation-system) — depends on: #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-13. [Dashboard System](#dashboard-system) — depends on: #9, #12; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-14. [Multi-Conversation Support](#multi-conversation-support) — depends on: #2
-15. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #6; UI wiring already stubbed
-16. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-17. [Skills Integration](#skills-integration) — depends on: #19; `skills-manager` library is complete; needs API + UI
-18. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #19
-19. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #17
-20. [Notification Delivery](#notification-delivery) — depends on: #15; external channels deferred; interim: `action_required` flag on threads/tasks
+1. [Persistent Conversation Memory](#persistent-conversation-memory) — establishes SQLite as the shared persistence layer; completes the v1 conversational product
+2. [Persistent Artifact Store](#persistent-artifact-store) — shared storage for uploaded files and agent-generated artifacts; pairs with #1 as a persistence sprint
+3. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
+4. [Wiki Write Tooling](#wiki-write-tooling) — depends on: Connect LLM-Wiki to Chat Agent; unified write/commit tools used by all agent patterns
+5. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
+6. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
+7. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
+8. [Task System](#task-system) — depends on: #1; foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+9. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #3, #4, #5, #6, #7, #8
+10. [Trigger System](#trigger-system) — depends on: #8; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+11. [Escalation System](#escalation-system) — depends on: #8; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+12. [Dashboard System](#dashboard-system) — depends on: #8, #11; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+13. [Multi-Conversation Support](#multi-conversation-support) — depends on: #1
+14. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: #5; UI wiring already stubbed
+15. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+16. [Skills Integration](#skills-integration) — depends on: #18; `skills-manager` library is complete; needs API + UI
+17. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #18
+18. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #16
+19. [Notification Delivery](#notification-delivery) — depends on: #14; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 

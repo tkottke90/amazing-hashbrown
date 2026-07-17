@@ -6,6 +6,7 @@ import { getChatAgent } from './chat-agent.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { drainPendingWikiUpdates } from './after-agent.js';
 
 // ---- SSE write helper ----
 
@@ -146,7 +147,7 @@ async function emitHitlOrDone(
 ): Promise<void> {
   const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
-  const state = await agent.getState(config);
+  const state = await agent.graph.getState(config);
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
   if (interrupt) {
@@ -186,10 +187,15 @@ export async function streamChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  afterAgent?: boolean,
 ): Promise<void> {
   const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
+
+  for (const event of drainPendingWikiUpdates(threadId)) {
+    writeSseEvent(res, event);
+  }
 
   const obsConfig = env.observability;
   const store = getObservabilityStore();
@@ -206,7 +212,16 @@ export async function streamChatToSse(
 
   const eventStream = agent.streamEvents(
     { messages: [{ role: 'human', content }] },
-    { ...config, version: 'v2', callbacks: [obsHandler] },
+    {
+      ...config,
+      version: 'v2',
+      callbacks: [obsHandler],
+      context: {
+        provider: provider ?? env.defaultProvider,
+        model: model ?? '',
+        afterAgentEnabled: afterAgent,
+      },
+    },
   );
 
   await pipeEvents(res, msgId, eventStream);
@@ -225,10 +240,15 @@ export async function resumeChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  afterAgent?: boolean,
 ): Promise<void> {
   const agent = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
+
+  for (const event of drainPendingWikiUpdates(threadId)) {
+    writeSseEvent(res, event);
+  }
 
   const obsConfig = env.observability;
   const store = getObservabilityStore();
@@ -247,6 +267,11 @@ export async function resumeChatToSse(
     ...config,
     version: 'v2',
     callbacks: [obsHandler],
+    context: {
+      provider: provider ?? env.defaultProvider,
+      model: model ?? '',
+      afterAgentEnabled: afterAgent,
+    },
   });
 
   await pipeEvents(res, msgId, eventStream);

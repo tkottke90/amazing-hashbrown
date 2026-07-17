@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { MemorySaver } from '@langchain/langgraph';
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { logger } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
@@ -9,8 +9,34 @@ import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
+import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 
 const checkpointer = new MemorySaver();
+
+// Fires once per completed turn (does not fire on a turn that pauses via
+// interrupt() — only once the turn, including a resumed HITL turn, actually
+// completes). The pipeline itself is fire-and-forget: this hook must not
+// await it, or the framework would hold the turn's response open until the
+// background wiki-write pipeline finishes.
+const afterAgentMiddleware = createMiddleware({
+  name: 'AfterAgentMiddleware',
+  contextSchema: getAfterAgentContextSchema(),
+  afterAgent: (state, runtime) => {
+    const threadId = runtime.configurable?.thread_id;
+    if (threadId) {
+      void runAfterAgentPipeline({
+        threadId,
+        messages: state.messages,
+        provider: runtime.context?.provider,
+        model: runtime.context?.model,
+        requestAfterAgentEnabled: runtime.context?.afterAgentEnabled,
+      }).catch((err: unknown) => {
+        logger.error('after-agent: pipeline failed to start', { threadId, err });
+      });
+    }
+    return undefined;
+  },
+});
 
 export function mcpToolToLangChain(t: RegisteredTool) {
   return tool(
@@ -46,12 +72,13 @@ async function buildChatAgent(provider?: string, model?: string) {
     });
   }
 
-  return createReactAgent({
-    llm,
+  return createAgent({
+    model: llm,
     // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
     // MCP tools are converted from RegisteredTool.
     tools: [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool, ...mcpTools],
-    checkpointSaver: checkpointer,
+    checkpointer,
+    middleware: [afterAgentMiddleware],
   });
 }
 

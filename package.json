@@ -17,7 +17,7 @@
     "zod": "^4.0.0"
   },
   "scripts": {
-    "dev:api": "npm run build:libs && npm run dev --workspace api",
+    "dev:api": "npm run build:libs && CONFIG_DIR='../config' npm run dev --workspace api",
     "dev:ui": "npm run dev --workspace ui",
     "build:libs": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/observability && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager && npm run build --workspace lib/evaluations",
     "build": "npm run build:libs && npm run build --workspace api && npm run build --workspace ui",
@@ -40,5 +40,8 @@
     "prettier": "^3.3.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.0.0"
+  },
+  "dependencies": {
+    "sharp": "0.35.3"
   }
 }

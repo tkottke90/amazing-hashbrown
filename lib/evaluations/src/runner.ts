@@ -4,6 +4,7 @@ import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
+import { runStructured } from './executors/structured.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -13,6 +14,7 @@ import type {
   DeterministicScenario,
   SemanticScenario,
   LlmJudgeScenario,
+  StructuredScenario,
   HumanScenario,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
@@ -38,6 +40,83 @@ export interface RunResult {
   htmlPath?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Jest-style live progress board — the full scenario list prints up front
+// (pending scenarios marked "-"), and each line updates in place as its
+// scenario starts running and then completes, so progress against the whole
+// suite is visible the entire time, not just a trailing log of finished
+// scenarios. In a real terminal this uses ANSI cursor movement to rewrite
+// individual lines; when output isn't a TTY (piped, redirected to a file, CI
+// logs) cursor movement can't do anything useful, so it falls back to
+// printing only each completed line as it finishes — the same behavior as
+// before, and safe for captured logs.
+// ---------------------------------------------------------------------------
+
+const isTTY = Boolean(process.stdout.isTTY);
+
+function colorize(code: string, text: string): string {
+  return isTTY ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+const green = (s: string) => colorize('32', s);
+const red = (s: string) => colorize('31', s);
+const yellow = (s: string) => colorize('33', s);
+const dim = (s: string) => colorize('2', s);
+
+function formatPendingLine(scenario: Scenario): string {
+  return `  ${dim('-')} ${scenario.name}`;
+}
+
+function formatRunningLine(scenario: Scenario): string {
+  return `  ${dim('›')} ${scenario.name}`;
+}
+
+function formatDoneLine(scenario: Scenario, result: ScenarioResult): string {
+  if (result.details.type === 'human') {
+    const label = result.details.status === 'skipped' ? '(skipped)' : '(awaiting human review)';
+    return `  ${yellow('○')} ${scenario.name} ${dim(label)}`;
+  }
+  const icon = result.passed ? green('✓') : red('✕');
+  return `  ${icon} ${scenario.name} ${dim(`(${result.latencyMs}ms)`)}`;
+}
+
+interface ProgressBoard {
+  markRunning(index: number): void;
+  markDone(index: number, result: ScenarioResult): void;
+}
+
+function createProgressBoard(scenarios: Scenario[]): ProgressBoard {
+  const lines = scenarios.map(formatPendingLine);
+
+  if (!isTTY) {
+    // No cursor control available — print each completed line as it happens.
+    return {
+      markRunning: () => {},
+      markDone: (index, result) => {
+        console.log(formatDoneLine(scenarios[index]!, result));
+      },
+    };
+  }
+
+  for (const line of lines) console.log(line);
+
+  function rewrite(index: number, line: string): void {
+    lines[index] = line;
+    const linesFromBottom = lines.length - index;
+    process.stdout.write(`\x1b[${linesFromBottom}A`); // up to the target line
+    process.stdout.write(`\r\x1b[2K${line}`); // clear it and write the new content
+    process.stdout.write(`\x1b[${linesFromBottom}B\r`); // back down to the bottom, column 0
+  }
+
+  return {
+    markRunning(index) {
+      rewrite(index, formatRunningLine(scenarios[index]!));
+    },
+    markDone(index, result) {
+      rewrite(index, formatDoneLine(scenarios[index]!, result));
+    },
+  };
+}
+
 function extractContent(raw: unknown): string {
   if (typeof raw === 'string') return raw;
   if (raw && typeof raw === 'object' && 'content' in raw) {
@@ -56,6 +135,17 @@ async function invokeModel(
   const response = await model.invoke(input);
   const latencyMs = Date.now() - start;
   return { content: extractContent(response), latencyMs };
+}
+
+async function invokeStructuredModel(
+  model: BaseChatModel,
+  input: string,
+  outputSchema: Record<string, unknown>,
+): Promise<{ parsed: unknown; content: string; latencyMs: number }> {
+  const start = Date.now();
+  const parsed = await model.withStructuredOutput(outputSchema).invoke(input);
+  const latencyMs = Date.now() - start;
+  return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
 async function executeScenario(
@@ -127,6 +217,25 @@ async function executeScenario(
       };
     }
 
+    if (scenario.type === 'structured') {
+      const s = scenario as StructuredScenario;
+      const { parsed, content, latencyMs } = await invokeStructuredModel(
+        config.model,
+        s.input,
+        s.outputSchema,
+      );
+      const details = runStructured(s, parsed);
+      const passed = details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
     if (scenario.type === 'human') {
       const s = scenario as HumanScenario;
       if (config.ci) {
@@ -155,12 +264,14 @@ async function executeScenario(
     }
 
     throw new Error(`Unknown scenario type: ${(scenario as Scenario).type}`);
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[eval] scenario "${scenario.id}" (${scenario.type}) errored: ${message}`);
     return {
       ...baseResult,
       passed: false,
       score: 0,
-      actualOutput: '',
+      actualOutput: `[scenario error] ${message}`,
       latencyMs: 0,
       details: {
         type: 'deterministic',
@@ -221,11 +332,16 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
   const humanIndex = { count: 0, total: suite.scenarios.filter((s) => s.type === 'human').length };
 
   // Execute all scenarios; collect partial results
+  console.log(`\n${suite.suite.name}`);
+  const board = createProgressBoard(suite.scenarios);
   const results: Array<ScenarioResult & { _humanScenario?: HumanScenario }> = [];
-  for (const scenario of suite.scenarios) {
+  for (const [index, scenario] of suite.scenarios.entries()) {
+    board.markRunning(index);
     const result = await executeScenario(scenario, suite, runId, config, humanIndex);
+    board.markDone(index, result);
     results.push(result as ScenarioResult & { _humanScenario?: HumanScenario });
   }
+  console.log();
 
   // Interactive human scoring TUI (only when not in CI mode)
   if (!config.ci) {

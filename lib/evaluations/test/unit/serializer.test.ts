@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { describe, it } from 'mocha';
+import { readFileSync } from 'node:fs';
 import {
   writeResultYaml,
   readResultYaml,
   writeReviewManifest,
   readReviewManifest,
+  writeResultHtml,
 } from '../../src/serializer.js';
 import type { EvalRun, ScenarioResult, Suite } from '../../src/schemas.js';
 
@@ -98,6 +100,152 @@ describe('writeResultYaml + readResultYaml', () => {
         assert.equal(results[0].details.score, 8);
         assert.equal(results[0].details.reasoning, 'This was a well-reasoned response.');
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('writeResultHtml', () => {
+  function makeSuite(scenarios: Suite['scenarios']): Suite {
+    return {
+      suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' },
+      scenarios,
+    };
+  }
+
+  it('writes an HTML file containing the scenario name, purpose, and input', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-test-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'My Scenario Name',
+          purpose: 'Verifies a thing.',
+          input: 'the scenario input text',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'output',
+        },
+      ]);
+      const filePath = await writeResultHtml(run, [makeResult(run.id)], suite, dir);
+      assert.ok(existsSync(filePath));
+      assert.ok(filePath.endsWith('.html'));
+
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('My Scenario Name'));
+      assert.ok(html.includes('Verifies a thing.'));
+      assert.ok(html.includes('the scenario input text'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('formats latency in ms below 1s, seconds below 1min, and minutes beyond that', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-duration-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-ms',
+          name: 'Ms scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+        {
+          id: 'sc-s',
+          name: 'Sec scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+        {
+          id: 'sc-m',
+          name: 'Min scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+      ]);
+      const results = [
+        makeResult(run.id, { scenarioId: 'sc-ms', latencyMs: 842 }),
+        makeResult(run.id, { scenarioId: 'sc-s', latencyMs: 2300 }),
+        makeResult(run.id, { scenarioId: 'sc-m', latencyMs: 90000 }),
+      ];
+      const filePath = await writeResultHtml(run, results, suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('842ms'));
+      assert.ok(html.includes('2.3s'));
+      assert.ok(html.includes('1m 30s'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders a field-check table for structured scenario details', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-structured-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-struct',
+          name: 'Structured scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'structured',
+          outputSchema: {},
+          fieldChecks: [{ path: 'shouldWrite', match: 'equals', value: true }],
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-struct',
+        details: {
+          type: 'structured',
+          score: 1,
+          fieldResults: [
+            { path: 'shouldWrite', match: 'equals', expected: true, actual: true, passed: true },
+          ],
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('field-check-table'));
+      assert.ok(html.includes('shouldWrite'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks every scenario row as clickable/expandable, not just failures', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-expand-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'Passing scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+      ]);
+      const result = makeResult(run.id, { scenarioId: 'sc-1', passed: true });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('scenario-row'));
+      assert.ok(html.includes(`data-target="detail-${result.id}"`));
+      assert.ok(html.includes(`id="detail-${result.id}"`));
+      assert.ok(html.includes('hidden'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
