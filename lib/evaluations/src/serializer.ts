@@ -16,10 +16,24 @@ import type { ComparisonResult } from './comparator.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, '../templates');
 
+// Relative-scale duration formatting for the HTML report: sub-second
+// durations are hard to compare as raw milliseconds once scenarios start
+// taking several seconds against a live model, so scale the unit to the
+// magnitude — ms below 1s, seconds below 1min, minutes+seconds beyond that.
+function formatDuration(ms: number): string {
+  if (typeof ms !== 'number' || Number.isNaN(ms)) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 let njkEnv: nunjucks.Environment | null = null;
 function getNjkEnv(): nunjucks.Environment {
   if (!njkEnv) {
     njkEnv = nunjucks.configure(TEMPLATES_DIR, { autoescape: true });
+    njkEnv.addFilter('duration', formatDuration);
   }
   return njkEnv;
 }
@@ -68,10 +82,12 @@ export async function writeResultHtml(
   await mkdir(resultPath, { recursive: true });
   const styles = await readFile(join(TEMPLATES_DIR, 'base.css'), 'utf-8');
   const env = getNjkEnv();
+  const scenariosById = Object.fromEntries(suite.scenarios.map((s) => [s.id, s]));
   const html = env.render('result.njk', {
     run,
     results,
     suiteName: suite.suite.name,
+    scenariosById,
     styles,
   });
   const ts = sanitizeTimestamp(run.startedAt);

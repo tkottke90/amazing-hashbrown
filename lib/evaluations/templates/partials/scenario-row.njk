@@ -1,8 +1,10 @@
 {% set details = result.details %}
 {% set isPending = details.type === 'human' and details.status === 'pending' %}
 {% set isSkipped = details.type === 'human' and details.status === 'skipped' %}
+{% set scenario = scenariosById[result.scenarioId] %}
+{% set detailId = 'detail-' + result.id %}
 
-<tr>
+<tr class="scenario-row" data-target="{{ detailId }}" tabindex="0" role="button" aria-expanded="false" aria-controls="{{ detailId }}">
   <td>
     {% if result.passed %}
       <span class="badge badge-pass">✓ pass</span>
@@ -14,9 +16,9 @@
       <span class="badge badge-fail">✗ fail</span>
     {% endif %}
   </td>
-  <td>{{ result.scenarioId }}</td>
+  <td>{{ scenario.name if scenario else result.scenarioId }}</td>
   <td><span class="badge badge-type">{{ details.type }}</span></td>
-  <td>{{ result.latencyMs }}ms</td>
+  <td>{{ result.latencyMs | duration }}</td>
   <td>
     {% if result.score !== null %}
       {{ (result.score * 100) | round(1) }}%
@@ -24,31 +26,74 @@
       —
     {% endif %}
   </td>
-  <td>
-    {% if not result.passed and not isPending and not isSkipped %}
-    <details>
-      <summary>Details</summary>
-      <div class="detail-panel">
-        <div><strong>Output:</strong></div>
-        <pre>{{ result.actualOutput }}</pre>
-        {% if details.type === 'deterministic' %}
-          <div style="margin-top:0.5rem"><strong>Expected ({{ details.match }}):</strong></div>
-          <pre>{{ details.expected }}</pre>
-        {% elif details.type === 'semantic' %}
-          <div style="margin-top:0.5rem">Similarity: {{ (details.similarity * 100) | round(2) }}% (threshold: {{ (details.threshold * 100) | round(0) }}%)</div>
-        {% elif details.type === 'llm-judge' %}
-          <div style="margin-top:0.5rem">
-            Score: {{ details.score }}/10
-            {% if details.biasRisk %}<span class="badge badge-bias">⚠ bias risk</span>{% endif %}
-          </div>
-          <div style="margin-top:0.5rem"><strong>Judge reasoning:</strong></div>
-          <pre>{{ details.reasoning }}</pre>
-        {% elif details.type === 'human' %}
-          <div>Status: {{ details.status }}</div>
-          {% if details.reviewerNotes %}<pre>{{ details.reviewerNotes }}</pre>{% endif %}
+  <td class="chevron-cell"><span class="chevron">▸</span></td>
+</tr>
+<tr class="detail-row" id="{{ detailId }}" hidden>
+  <td colspan="6">
+    <div class="detail-panel">
+      {% if scenario %}
+        <div><strong>Purpose:</strong></div>
+        <pre>{{ scenario.purpose }}</pre>
+        <div style="margin-top:0.5rem"><strong>Input:</strong></div>
+        <pre>{{ scenario.input }}</pre>
+      {% endif %}
+
+      <div style="margin-top:0.5rem"><strong>Output:</strong></div>
+      <pre>{{ result.actualOutput }}</pre>
+
+      {% if details.type === 'deterministic' %}
+        <div style="margin-top:0.5rem"><strong>Expected ({{ details.match }}):</strong></div>
+        <pre>{{ details.expected }}</pre>
+      {% elif details.type === 'semantic' %}
+        <div style="margin-top:0.5rem">Similarity: {{ (details.similarity * 100) | round(2) }}% (threshold: {{ (details.threshold * 100) | round(0) }}%)</div>
+      {% elif details.type === 'llm-judge' %}
+        <div style="margin-top:0.5rem">
+          Score: {{ details.score }}/10
+          {% if details.biasRisk %}<span class="badge badge-bias">⚠ bias risk</span>{% endif %}
+        </div>
+        <div style="margin-top:0.5rem"><strong>Judge feedback:</strong></div>
+        <pre>{{ details.reasoning }}</pre>
+      {% elif details.type === 'structured' %}
+        <div style="margin-top:0.5rem"><strong>Field checks ({{ (details.score * 100) | round(0) }}% passed):</strong></div>
+        <table class="field-check-table">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Match</th>
+              <th>Expected</th>
+              <th>Actual</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field in details.fieldResults %}
+            <tr>
+              <td><code>{{ field.path }}</code></td>
+              <td>{{ field.match }}</td>
+              <td><code>{{ field.expected }}</code></td>
+              <td><code>{{ field.actual }}</code></td>
+              <td>
+                {% if field.passed %}
+                  <span class="badge badge-pass">✓</span>
+                {% else %}
+                  <span class="badge badge-fail">✗</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% elif details.type === 'human' %}
+        <div style="margin-top:0.5rem">Status: {{ details.status }}</div>
+        {% if details.response %}
+          <div style="margin-top:0.5rem"><strong>Human feedback:</strong></div>
+          <pre>{{ details.response }}</pre>
         {% endif %}
-      </div>
-    </details>
-    {% endif %}
+        {% if details.reviewerNotes %}
+          <div style="margin-top:0.5rem"><strong>Reviewer notes:</strong></div>
+          <pre>{{ details.reviewerNotes }}</pre>
+        {% endif %}
+      {% endif %}
+    </div>
   </td>
 </tr>
