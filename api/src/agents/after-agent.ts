@@ -112,8 +112,8 @@ function buildSummarizePrompt(priorSummary: string, turnText: string): string {
 function buildClassifyPrompt(turnText: string, summary: string): string {
   return [
     'You decide whether a conversation turn contains novel, durable knowledge worth saving to a',
-    "personal knowledge base (a wiki). Say yes only for facts about the user, their work, their",
-    "projects, or corrections to previously known facts — not for general knowledge the assistant",
+    'personal knowledge base (a wiki). Say yes only for facts about the user, their work, their',
+    'projects, or corrections to previously known facts — not for general knowledge the assistant',
     'recites, questions the user asks, or small talk. If the fact is already covered by the summary',
     'below and the turn does not add or change anything, say no.',
     '',

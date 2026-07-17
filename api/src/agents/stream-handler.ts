@@ -216,7 +216,11 @@ export async function streamChatToSse(
       ...config,
       version: 'v2',
       callbacks: [obsHandler],
-      context: { provider: provider ?? env.defaultProvider, model: model ?? '', afterAgentEnabled: afterAgent },
+      context: {
+        provider: provider ?? env.defaultProvider,
+        model: model ?? '',
+        afterAgentEnabled: afterAgent,
+      },
     },
   );
 
@@ -263,7 +267,11 @@ export async function resumeChatToSse(
     ...config,
     version: 'v2',
     callbacks: [obsHandler],
-    context: { provider: provider ?? env.defaultProvider, model: model ?? '', afterAgentEnabled: afterAgent },
+    context: {
+      provider: provider ?? env.defaultProvider,
+      model: model ?? '',
+      afterAgentEnabled: afterAgent,
+    },
   });
 
   await pipeEvents(res, msgId, eventStream);
