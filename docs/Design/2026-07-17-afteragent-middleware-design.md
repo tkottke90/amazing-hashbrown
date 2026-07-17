@@ -47,15 +47,20 @@ The riskiest change is the `createReactAgent` → `createAgent` migration, since
 9. `api/src/agents/after-agent.ts` (new) — see full shape below.
 10. Unit tests for the LLM-independent pieces (transcript-slicing helper, pending-events map mechanics).
 
-**Phase E — Wire the middleware in**
-11. `chat-agent.ts`: add the `afterAgent` middleware via `createMiddleware(...)`, pass into `createAgent({ middleware: [...] })`.
-12. `stream-handler.ts`: pass `context: { provider, model, afterAgentEnabled }` (a sibling key to `configurable`, not nested in it) into both `streamEvents()` calls; drain+emit pending `wiki_updated` events at the very start of `streamChatToSse`/`resumeChatToSse`, before the new turn's own events.
-13. `chat.route.ts`: accept `afterAgent?: boolean` in both routes' request bodies, thread through positionally.
+**Phase E — Evaluation coverage** (new; depends on Phase D's `buildXPrompt` functions existing; must land before Phase F wires the pipeline into live traffic — verify the prompts behave as intended before they're exposed to real chat turns)
+11. Extend `lib/evaluations` with the `structured` scenario type — schema (`StructuredScenarioSchema`, `StructuredDetails`), executor (`executors/structured.ts`), and `runner.ts`'s new branch/`invokeStructuredModel` helper. This part has no dependency on Phase D and could technically be done earlier, but is sequenced here to keep all eval work together (see the "Evaluation Coverage" section below for full detail).
+12. Write `suites/after-agent.yaml` — the 16 classify/extract/summarize/merge scenarios (see "Evaluation Coverage" below), using literal rendered prompt text copied from `after-agent.ts`'s `buildXPrompt` functions (this part *does* depend on Phase D).
+13. Run `npm run eval -- --suite after-agent --model <provider/model>` against a baseline model and review results.
 
-**Phase F — Manual end-to-end verification** (see below — this is what actually proves the feature works; LLM output quality isn't unit-testable)
+**Phase F — Wire the middleware in**
+14. `chat-agent.ts`: add the `afterAgent` middleware via `createMiddleware(...)`, pass into `createAgent({ middleware: [...] })`.
+15. `stream-handler.ts`: pass `context: { provider, model, afterAgentEnabled }` (a sibling key to `configurable`, not nested in it) into both `streamEvents()` calls; drain+emit pending `wiki_updated` events at the very start of `streamChatToSse`/`resumeChatToSse`, before the new turn's own events.
+16. `chat.route.ts`: accept `afterAgent?: boolean` in both routes' request bodies, thread through positionally.
 
-**Phase G — Docs**
-14. Move "AfterAgent Middleware" from Outstanding to the end of Completed Items in `TODO_LIST.md`, matching the existing one-line summary style; leave the `### AfterAgent Middleware` prose section under "Item Details" untouched (matches how other completed items keep their original requirements prose).
+**Phase G — Manual end-to-end verification** (see below — this is what actually proves the feature works; LLM output quality isn't unit-testable)
+
+**Phase H — Docs**
+17. Move "AfterAgent Middleware" from Outstanding to the end of Completed Items in `TODO_LIST.md`, matching the existing one-line summary style; leave the `### AfterAgent Middleware` prose section under "Item Details" untouched (matches how other completed items keep their original requirements prose).
 
 ---
 
@@ -314,35 +319,9 @@ Leave the `### AfterAgent Middleware` prose section under "Item Details" untouch
 
 ---
 
-## Testing Strategy
+## Phase E — Evaluation Coverage
 
-**Unit-testable (Mocha/Chai):**
-- `observability-handler.test.ts` — buffer-clear fix, `runName` preference (both pure logic against a fake store).
-- `after-agent.test.ts` — `extractLatestTurnText`, `drainPendingWikiUpdates` map mechanics.
-
-**Not reasonably unit-testable — requires manual verification (Phase F):**
-LLM output quality (summarize/classify/extract/merge correctness), the full `createMiddleware` wiring against a real `createAgent`/`streamEvents()` call, cross-request timing of the `wiki_updated` queue, HITL interaction with `afterAgent` (per LangChain's contract, it does not fire on a turn that pauses via `interrupt()`, only once a turn — including a resumed HITL turn — actually completes), and the observability trace-per-pipeline-run behavior.
-
-**Manual verification plan** (run against a live Ollama instance, `afterAgent.enabled: true`):
-1. Send a message with clearly novel info ("My favorite language is Rust and I work at Acme Corp"). Confirm the HTTP response completes normally and promptly — the pipeline must not add response latency.
-2. Check `GET /api/v1/traces` for a second trace on the thread (distinct from the chat trace) with spans named `after-agent:summarize`, `after-agent:classify`, `after-agent:extract` (and `:merge-page` if applicable).
-3. Inspect the wiki root for a newly created/updated page with correct frontmatter, and a new raw source file under `raw/` whose `source_url` is `conversation:<threadId>`.
-4. Send a second message in the same thread — confirm the SSE stream's first event(s) are `wiki_updated`, rendered by the existing `WikiUpdateMessage` UI component before the new turn's own `text_delta` events.
-5. Send a low-content message ("thanks!") — confirm only 2 spans (summarize+classify), no wiki write.
-6. Repeat step 1 with `afterAgent: false` in the request body — confirm no pipeline trace/write despite global config being enabled.
-7. Set `afterAgent.enabled: false` globally, retry with `afterAgent: true` in the body — confirm the global kill switch wins.
-8. Start a HITL (`ask_user`) flow — confirm no premature wiki write before resuming; confirm the write happens after the resumed turn completes.
-9. Send several turns with incremental facts about the same entity — confirm the merge/update path kicks in on turns 2/3 instead of creating duplicate pages, and `commitPage`'s source-merging/`created`-date preservation behaves as expected.
-
-## Known Deferred Items (flagged, not blocking)
-- Per-thread state maps (`threadState`, `pendingWikiUpdates`) are unbounded/in-memory, consistent with the existing `_agents` cache and `artifact-store.ts` precedent; real eviction is deferred to the already-planned "Persistent Conversation Memory" TODO item.
-- `wiki_updated`'s `wikiName` field uses the domain's registry `id` (e.g. `"user"`) since `WikiEntry` has no persisted human-readable display name — serviceable for v1 chip rendering, revisit if a friendlier name is wanted later.
-
----
-
-## Phase H — Evaluation Coverage (added per explicit user request)
-
-The user asked for evaluations covering both the AfterAgent pipeline's individual prompts and its agent-level behavior, using the existing Evaluation Harness (`lib/evaluations`, a completed TODO item). Research surfaced two real gaps in that harness that this phase must address:
+Sequenced between Phase D (the pipeline module, which defines the `buildXPrompt` functions these scenarios reuse) and Phase F (wiring the middleware into live chat traffic) — the intent is eval-driven verification: confirm the pipeline's prompts behave as intended against a baseline model *before* they're exposed to real users. This phase covers both the AfterAgent pipeline's individual prompts and its agent-level behavior, using the existing Evaluation Harness (`lib/evaluations`, a completed TODO item). Research surfaced two real gaps in that harness that this phase must address:
 
 1. **No structured-output scenario type.** Every existing scenario type (`deterministic`, `semantic`, `llm-judge`, `human`) invokes a plain `model.invoke(input)` and coerces the response to a string (`ScenarioResultSchema.actualOutput: z.string()`). AfterAgent's `classify`/`extract` prompts produce structured JSON (`{shouldWrite, reason}`, `{domainId, type, title, tags, body}`) via `.withStructuredOutput()` — there's no existing way to score that natively. **Decision: extend the harness with a new `structured` scenario type** rather than working around it with stringified-JSON regex/judge scenarios.
 2. **`POST /api/v1/evaluations/run` doesn't exist**, despite TODO_LIST.md marking it "completed" (only the `lib/evaluations` package, SQLite store, and `npm run eval` CLI actually shipped — the evaluation-harness design doc itself correctly scoped the API route as deferred, so this is a `TODO_LIST.md` phrasing inaccuracy rather than a missed spec). **Decision: don't build it now** — out of scope for this feature. Run the new suite via the existing `npm run eval` CLI (`bin/eval.ts`), same as `wiki-search`.
@@ -366,7 +345,7 @@ The user asked for evaluations covering both the AfterAgent pipeline's individua
 
 ### `suites/after-agent.yaml` (new)
 
-Mirrors `suites/wiki-search.yaml`'s structure (`suite: {id, name, purpose, passingThreshold}` + `scenarios: [...]`). Each scenario's `input` field must ultimately be the fully-rendered prompt string produced by `after-agent.ts`'s `buildClassifyPrompt`/`buildExtractPrompt`/`buildSummarizePrompt`/`buildMergePrompt` for the fixture arguments shown below — write these fixtures now, fill in the literal rendered `input` text after Phase D lands (see Sequencing). This creates a maintenance coupling (prompt template changes require updating fixtures by hand); accepted for v1, no automated fixture generation.
+Mirrors `suites/wiki-search.yaml`'s structure (`suite: {id, name, purpose, passingThreshold}` + `scenarios: [...]`). Each scenario's `input` field must ultimately be the fully-rendered prompt string produced by `after-agent.ts`'s `buildClassifyPrompt`/`buildExtractPrompt`/`buildSummarizePrompt`/`buildMergePrompt` for the fixture arguments shown below — write these fixtures now, fill in the literal rendered `input` text once Phase D lands (its `buildXPrompt` functions must exist first — see the Sequencing note below). This creates a maintenance coupling (prompt template changes require updating fixtures by hand); accepted for v1, no automated fixture generation.
 
 **Agent-level scenario scoping decision**: the harness's `runEval` invokes a bare `BaseChatModel`, not the full `createAgent` graph/tool-execution loop, and has no mechanism to assert on side effects (actual wiki file writes) via the real `POST /api/v1/chat/:threadId` route. True end-to-end HTTP-level agent evals are therefore **out of scope for this suite** — "agent api" coverage means scenarios exercise the same prompts/model configuration the AfterAgent pipeline actually uses, not the live Express endpoint.
 
@@ -388,7 +367,7 @@ Mirrors `suites/wiki-search.yaml`'s structure (`suite: {id, name, purpose, passi
 | `ext-002-concept-explanation` | turn: *"GraphQL is a query language for APIs that lets clients request exactly the data they need, unlike REST's fixed endpoints."* | `type equals 'concept'` | Confirms the model distinguishes conceptual explanations from entity facts. |
 | `ext-003-comparison-content` | turn: *"Rust and Go both compile to native binaries, but Rust has no garbage collector while Go does."* | `type equals 'comparison'` | Confirms `comparison` is chosen when the content is explicitly contrastive. |
 | `ext-004-domain-routing-multi-domain` | domains: `[{id: 'user', routingNotes: 'personal context and biography'}, {id: 'projects', routingNotes: 'work projects, deploy pipelines, and engineering systems'}]`; turn: *"The Phoenix project's deploy pipeline runs on GitHub Actions and deploys to AWS ECS."* | `domainId equals 'projects'` | Confirms domain routing actually uses the routing notes to pick among multiple registered domains, not just defaulting to the first/only one. |
-| `ext-005-never-index-or-log` | turn: *"Here's a log of everything that happened today: I fixed three bugs and had two meetings."* (deliberately log-flavored phrasing) | `type oneOf ['entity', 'concept', 'comparison', 'query', 'summary']` | Regression check for the `index`/`log` path-collision bug (see the `chat-agent.ts`/`after-agent.ts` phase) — the primary safeguard is that `outputSchema` itself excludes `index`/`log` at the structured-output binding level, so this scenario's real purpose is confirming the model still produces a valid, sensible type for log-flavored input rather than erroring or being coerced into an excluded value. |
+| `ext-005-never-index-or-log` | turn: *"Here's a log of everything that happened today: I fixed three bugs and had two meetings."* (deliberately log-flavored phrasing) | `type oneOf ['entity', 'concept', 'comparison', 'query', 'summary']` | Regression check for the `index`/`log` path-collision bug (see Phase A) — the primary safeguard is that `outputSchema` itself excludes `index`/`log` at the structured-output binding level, so this scenario's real purpose is confirming the model still produces a valid, sensible type for log-flavored input rather than erroring or being coerced into an excluded value. |
 
 #### Summarize scenarios (`type: llm-judge`, judged over the JSON-stringified `{summary}` output — `llm-judge` interpolates `actualOutput` as raw text regardless of shape, so no harness change is needed for this pair)
 
@@ -412,4 +391,30 @@ Run via `npm run eval -- --suite after-agent --model <provider/model>` (existing
 
 ### Sequencing
 
-This phase's `lib/evaluations` schema/runner/executor changes are independent of Phases A-G and can be done in parallel with them, but the `suites/after-agent.yaml` scenario fixtures should be written **after** Phase D (the actual `buildXPrompt` functions exist) so the fixture `input` strings can be copied from real rendered output rather than guessed.
+The `lib/evaluations` schema/runner/executor changes have no dependency on Phase D and could technically be done alongside Phases A-C, but are kept together with the suite work in this single phase for clarity. The `suites/after-agent.yaml` scenario fixtures genuinely do depend on Phase D — write the fixture table now (done above), fill in the literal rendered `input` prompt text once `after-agent.ts`'s `buildXPrompt` functions exist. This whole phase must complete — including a passing `npm run eval` run — before Phase F wires the pipeline into live chat traffic.
+
+---
+
+## Testing Strategy
+
+**Unit-testable (Mocha/Chai):**
+- `observability-handler.test.ts` — buffer-clear fix, `runName` preference (both pure logic against a fake store).
+- `after-agent.test.ts` — `extractLatestTurnText`, `drainPendingWikiUpdates` map mechanics.
+
+**Not reasonably unit-testable — requires manual verification (Phase G):**
+LLM output quality (summarize/classify/extract/merge correctness), the full `createMiddleware` wiring against a real `createAgent`/`streamEvents()` call, cross-request timing of the `wiki_updated` queue, HITL interaction with `afterAgent` (per LangChain's contract, it does not fire on a turn that pauses via `interrupt()`, only once a turn — including a resumed HITL turn — actually completes), and the observability trace-per-pipeline-run behavior.
+
+**Manual verification plan** (run against a live Ollama instance, `afterAgent.enabled: true`):
+1. Send a message with clearly novel info ("My favorite language is Rust and I work at Acme Corp"). Confirm the HTTP response completes normally and promptly — the pipeline must not add response latency.
+2. Check `GET /api/v1/traces` for a second trace on the thread (distinct from the chat trace) with spans named `after-agent:summarize`, `after-agent:classify`, `after-agent:extract` (and `:merge-page` if applicable).
+3. Inspect the wiki root for a newly created/updated page with correct frontmatter, and a new raw source file under `raw/` whose `source_url` is `conversation:<threadId>`.
+4. Send a second message in the same thread — confirm the SSE stream's first event(s) are `wiki_updated`, rendered by the existing `WikiUpdateMessage` UI component before the new turn's own `text_delta` events.
+5. Send a low-content message ("thanks!") — confirm only 2 spans (summarize+classify), no wiki write.
+6. Repeat step 1 with `afterAgent: false` in the request body — confirm no pipeline trace/write despite global config being enabled.
+7. Set `afterAgent.enabled: false` globally, retry with `afterAgent: true` in the body — confirm the global kill switch wins.
+8. Start a HITL (`ask_user`) flow — confirm no premature wiki write before resuming; confirm the write happens after the resumed turn completes.
+9. Send several turns with incremental facts about the same entity — confirm the merge/update path kicks in on turns 2/3 instead of creating duplicate pages, and `commitPage`'s source-merging/`created`-date preservation behaves as expected.
+
+## Known Deferred Items (flagged, not blocking)
+- Per-thread state maps (`threadState`, `pendingWikiUpdates`) are unbounded/in-memory, consistent with the existing `_agents` cache and `artifact-store.ts` precedent; real eviction is deferred to the already-planned "Persistent Conversation Memory" TODO item.
+- `wiki_updated`'s `wikiName` field uses the domain's registry `id` (e.g. `"user"`) since `WikiEntry` has no persisted human-readable display name — serviceable for v1 chip rendering, revisit if a friendlier name is wanted later.
