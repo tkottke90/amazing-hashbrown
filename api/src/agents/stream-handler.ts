@@ -330,7 +330,12 @@ export async function streamChatToSse(
         callbacks: [obsHandler],
         context: {
           provider: provider ?? env.defaultProvider,
-          model: model ?? '',
+          // Left as `model` (not `model ?? ''`) so an unset request model stays
+          // undefined here — AfterAgent reads this straight into
+          // createProvider(provider, model), where `'' ?? config.defaultModel`
+          // would resolve to '' (an empty string isn't nullish) instead of
+          // falling through to the provider's configured defaultModel.
+          model,
           afterAgentEnabled: afterAgent,
         },
       },
@@ -409,7 +414,8 @@ export async function resumeChatToSse(
       callbacks: [obsHandler],
       context: {
         provider: provider ?? env.defaultProvider,
-        model: model ?? '',
+        // See streamChatToSse's comment — must stay `model`, not `model ?? ''`.
+        model,
         afterAgentEnabled: afterAgent,
       },
     });
@@ -495,7 +501,8 @@ export async function retryChatToSse(
       callbacks: [obsHandler],
       context: {
         provider: provider ?? env.defaultProvider,
-        model: model ?? '',
+        // See streamChatToSse's comment — must stay `model`, not `model ?? ''`.
+        model,
         afterAgentEnabled: afterAgent,
       },
     });
