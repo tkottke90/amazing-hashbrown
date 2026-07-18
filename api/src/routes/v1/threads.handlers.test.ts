@@ -87,6 +87,31 @@ describe('routes/v1/threads.handlers', () => {
         expect(result.data.messages).to.have.lengthOf(1);
       }
     });
+
+    it('flattens each message to the client shape: id/kind/seq/status alongside payload fields, no nested payload', () => {
+      store.upsertThreadOnFirstMessage('t2', 'Flatten test');
+      store.insertMessage('t2', {
+        id: 'm-assistant',
+        kind: 'assistant',
+        status: 'done',
+        payload: { content: 'hello there', sentAt: '2026-07-18T00:00:00.000Z' },
+      });
+
+      const result = getThreadHandler(store, 't2');
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+
+      const [msg] = result.data.messages;
+      expect(msg).to.deep.equal({
+        id: 'm-assistant',
+        kind: 'assistant',
+        seq: 1,
+        status: 'done',
+        content: 'hello there',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
+      expect(msg).to.not.have.property('payload');
+    });
   });
 
   describe('renameThreadHandler', () => {

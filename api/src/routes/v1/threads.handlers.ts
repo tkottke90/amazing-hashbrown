@@ -1,6 +1,37 @@
 import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
-import type { ThreadDetail, ThreadStore, ThreadSummary } from '../../services/thread-store.js';
+import type {
+  ThreadDetail,
+  ThreadMessageRecord,
+  ThreadStore,
+  ThreadSummary,
+} from '../../services/thread-store.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
+
+// The client-facing shape (ui/src/types/thread-message.ts's ThreadMessage
+// union): id/kind/seq/status live as their own DB columns in
+// ThreadMessageRecord, while every other field (content, toolName, question,
+// ...) lives inside `payload`, stored without id/seq/status to avoid
+// duplicating them. This flattens a record back into the single object the
+// client expects — payload spread first so id/kind/seq/status (the
+// authoritative column values) always win over anything accidentally
+// duplicated inside payload itself.
+function toClientMessage(record: ThreadMessageRecord): Record<string, unknown> {
+  const payload =
+    record.payload && typeof record.payload === 'object'
+      ? (record.payload as Record<string, unknown>)
+      : {};
+  return {
+    ...payload,
+    id: record.id,
+    kind: record.kind,
+    seq: record.seq,
+    ...(record.status !== null ? { status: record.status } : {}),
+  };
+}
+
+export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
+  messages: Record<string, unknown>[];
+}
 
 // Plain, Express-agnostic handler functions — no req/res anywhere. The
 // (untested, thin) threads.route.ts maps HandlerResult failures to HTTP
@@ -35,10 +66,10 @@ export function getThreadHandler(
   store: ThreadStore,
   id: string,
   opts: { showErrors?: boolean } = {},
-): HandlerResult<ThreadDetail> {
+): HandlerResult<ClientThreadDetail> {
   const detail = store.getThread(id, opts);
   if (!detail) return notFound(`Thread "${id}" not found`);
-  return ok(detail);
+  return ok({ ...detail, messages: detail.messages.map(toClientMessage) });
 }
 
 export function renameThreadHandler(
@@ -68,7 +99,7 @@ export async function forkThreadHandler(
   checkpointer: SqliteSaver,
   id: string,
   atSeq: number,
-): Promise<HandlerResult<ThreadDetail>> {
+): Promise<HandlerResult<ClientThreadDetail>> {
   if (!Number.isInteger(atSeq) || atSeq < 1) {
     return invalid('atSeq must be a positive integer');
   }
@@ -94,5 +125,5 @@ export async function forkThreadHandler(
     // but keeps the return type honest without a non-null assertion.
     return notFound(`Forked thread "${newThreadId}" not found immediately after creation`);
   }
-  return ok(forked);
+  return ok({ ...forked, messages: forked.messages.map(toClientMessage) });
 }

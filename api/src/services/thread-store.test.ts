@@ -159,6 +159,71 @@ describe('services/thread-store', () => {
     });
   });
 
+  describe('getMessage', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns a single message by id', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      store.insertMessage('t1', { id: 'm1', kind: 'user', payload: { content: 'hi' } });
+
+      const msg = store.getMessage('t1', 'm1');
+      expect(msg).to.not.equal(null);
+      expect(msg!.payload).to.deep.equal({ content: 'hi' });
+    });
+
+    it('returns null for an unknown id', () => {
+      expect(store.getMessage('t1', 'no-such-id')).to.equal(null);
+    });
+  });
+
+  describe('resolveRetryTarget', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns null for an empty thread', () => {
+      store.upsertThreadOnFirstMessage('empty', 'Empty');
+      expect(store.resolveRetryTarget('empty')).to.equal(null);
+    });
+
+    it('returns null when the last message is a successful assistant turn', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      store.insertMessage('t1', { id: 'a1', kind: 'assistant', status: 'done', payload: {} });
+      expect(store.resolveRetryTarget('t1')).to.equal(null);
+    });
+
+    it('returns the id when the last message is a failed assistant turn', () => {
+      store.upsertThreadOnFirstMessage('t2', 'Hello');
+      store.insertMessage('t2', { id: 'a1', kind: 'assistant', status: 'error', payload: {} });
+      expect(store.resolveRetryTarget('t2')).to.equal('a1');
+    });
+
+    it('returns null once the failed turn is no longer the tail (e.g. after a retry landed)', () => {
+      store.upsertThreadOnFirstMessage('t3', 'Hello');
+      store.insertMessage('t3', { id: 'a1', kind: 'assistant', status: 'error', payload: {} });
+      store.insertMessage('t3', {
+        id: 'a2',
+        kind: 'assistant',
+        status: 'done',
+        retryOf: 'a1',
+        payload: {},
+      });
+      expect(store.resolveRetryTarget('t3')).to.equal(null);
+    });
+  });
+
   describe('interruptPendingToolCalls', () => {
     let store: ThreadStore;
     let dir: string;

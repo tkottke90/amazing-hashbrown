@@ -303,6 +303,32 @@ export class ThreadStore extends BaseStore {
       .run(...values, threadId, id);
   }
 
+  // A single row, or null if it doesn't exist. updateMessage() replaces
+  // `payload` wholesale rather than merging (see its own tests), so a caller
+  // that needs to patch just one field of an existing payload (e.g.
+  // resolveHitlPrompt adding `answer`) fetches the current row first.
+  getMessage(threadId: string, id: string): ThreadMessageRecord | null {
+    const row = this.db
+      .prepare(`SELECT * FROM thread_messages WHERE thread_id = ? AND id = ?`)
+      .get(threadId, id) as RawMessageRow | undefined;
+    return row ? mapMessageRow(row) : null;
+  }
+
+  // Returns the id of the thread's most recent message if it's a failed
+  // (status: 'error') assistant turn, or null otherwise. Retry only ever
+  // targets the tail — see the design doc's retry scope constraint. Always
+  // considers the raw last row regardless of showErrorMessages, since this
+  // checks actual state, not display visibility.
+  resolveRetryTarget(threadId: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, kind, status FROM thread_messages WHERE thread_id = ? ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(threadId) as { id: string; kind: string; status: string | null } | undefined;
+    if (row && row.kind === 'assistant' && row.status === 'error') return row.id;
+    return null;
+  }
+
   // Sweeps any tool_call rows still 'pending' for this thread to 'interrupted'
   // when the enclosing turn fails — see the design doc's "Dangling tool_call
   // rows" note. There is only ever one turn in flight per thread, so no
