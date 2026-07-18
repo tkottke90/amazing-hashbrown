@@ -2,15 +2,187 @@ import { signal, batch } from '@preact/signals';
 import { ChatSSEEventSchema, type ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 
-const THREAD_ID = crypto.randomUUID();
+// ---- localStorage-backed signals ----
+// use-theme.tsx is the only other localStorage consumer in this app, and it
+// uses Context/useState rather than signals (a different state model for a
+// different kind of value). These two are plain module-level signals, same
+// as everything else in this file — persistence is just a side effect on
+// write, not a different state shape.
 
-export const threadId = THREAD_ID;
+const ACTIVE_THREAD_KEY = 'ah-active-thread-id';
+const SHOW_ERRORS_KEY = 'ah-show-error-messages';
+
+function readStoredThreadId(): string {
+  try {
+    return localStorage.getItem(ACTIVE_THREAD_KEY) ?? crypto.randomUUID();
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+function persistActiveThreadId(id: string): void {
+  try {
+    localStorage.setItem(ACTIVE_THREAD_KEY, id);
+  } catch {
+    // localStorage unavailable (e.g. private browsing) — in-memory only for this session
+  }
+}
+
+function readStoredShowErrors(): boolean {
+  try {
+    return localStorage.getItem(SHOW_ERRORS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export const activeThreadId = signal<string>(readStoredThreadId());
+persistActiveThreadId(activeThreadId.value);
+
+export const showErrorMessages = signal<boolean>(readStoredShowErrors());
+
+export function setShowErrorMessages(value: boolean): void {
+  showErrorMessages.value = value;
+  try {
+    localStorage.setItem(SHOW_ERRORS_KEY, String(value));
+  } catch {
+    // best-effort only
+  }
+  // The setting changes what GET /threads/:id returns — re-fetch so the
+  // currently-open thread reflects it immediately. Skipped mid-stream so
+  // toggling doesn't clobber an in-progress turn.
+  if (!isStreaming.value) {
+    void hydrateThread(activeThreadId.value);
+  }
+}
+
+// ---- Sidebar thread list ----
+
+export interface ThreadSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  forkedFromThreadId: string | null;
+  forkedFromSeq: number | null;
+}
+
+export const threads = signal<ThreadSummary[]>([]);
+
+export async function refreshThreadList(): Promise<void> {
+  try {
+    const res = await fetch('/api/v1/threads');
+    if (!res.ok) return;
+    threads.value = (await res.json()) as ThreadSummary[];
+  } catch {
+    // best-effort — sidebar just stays stale until the next successful refresh
+  }
+}
+
+// ---- Message state ----
+
 export const messages = signal<ThreadMessage[]>([]);
 export const isStreaming = signal(false);
 export const pendingHitlId = signal<string | null>(null);
 
 let _currentAssistantId: string | null = null;
+let _currentUserId: string | null = null;
 let _abortController: AbortController | null = null;
+
+// The server returns sentAt as an ISO string (JSON has no Date type);
+// ThreadMessage expects a real Date for user/assistant kinds.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reviveMessage(raw: any): ThreadMessage {
+  if (typeof raw.sentAt === 'string') {
+    return { ...raw, sentAt: new Date(raw.sentAt) } as ThreadMessage;
+  }
+  return raw as ThreadMessage;
+}
+
+async function hydrateThread(id: string): Promise<void> {
+  try {
+    const url = `/api/v1/threads/${id}${showErrorMessages.value ? '?showErrors=true' : ''}`;
+    const res = await fetch(url);
+    if (!res.ok) return; // 404 (fresh thread) or any other failure — start empty, not an error
+    const data = (await res.json()) as { messages: unknown[] };
+    const hydrated = data.messages.map(reviveMessage);
+    batch(() => {
+      messages.value = hydrated;
+      const last = hydrated[hydrated.length - 1];
+      pendingHitlId.value =
+        last && last.kind === 'hitl_prompt' && last.status === 'pending' ? last.promptId : null;
+    });
+  } catch {
+    // leave messages empty — the thread may just not have loaded yet
+  }
+}
+
+export async function switchThread(id: string): Promise<void> {
+  if (isStreaming.value) stopGeneration();
+  activeThreadId.value = id;
+  persistActiveThreadId(id);
+  batch(() => {
+    messages.value = [];
+    pendingHitlId.value = null;
+  });
+  await hydrateThread(id);
+}
+
+export function newThread(): void {
+  if (isStreaming.value) stopGeneration();
+  const id = crypto.randomUUID();
+  activeThreadId.value = id;
+  persistActiveThreadId(id);
+  batch(() => {
+    messages.value = [];
+    pendingHitlId.value = null;
+  });
+}
+
+// ---- Thread CRUD (sidebar actions) ----
+
+export async function renameThread(id: string, title: string): Promise<void> {
+  await fetch(`/api/v1/threads/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  await refreshThreadList();
+}
+
+export async function deleteThread(id: string): Promise<void> {
+  await fetch(`/api/v1/threads/${id}`, { method: 'DELETE' });
+  await refreshThreadList();
+  if (activeThreadId.value === id) {
+    newThread();
+  }
+}
+
+export async function forkThread(id: string, atSeq: number): Promise<void> {
+  const res = await fetch(`/api/v1/threads/${id}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ atSeq }),
+  });
+  if (!res.ok) return;
+  const data = (await res.json()) as { id: string; messages: unknown[] };
+
+  if (isStreaming.value) stopGeneration();
+  activeThreadId.value = data.id;
+  persistActiveThreadId(data.id);
+  batch(() => {
+    messages.value = data.messages.map(reviveMessage);
+    pendingHitlId.value = null;
+  });
+  await refreshThreadList();
+}
+
+export async function regenerateTitle(id: string): Promise<void> {
+  await fetch(`/api/v1/threads/${id}/generate-title`, { method: 'POST' });
+  await refreshThreadList();
+}
+
+// ---- SSE plumbing ----
 
 async function consumeSsePost(
   url: string,
@@ -84,6 +256,7 @@ function handleEvent(evt: ChatSSEEvent): void {
           toolName: evt.toolName,
           inputs: evt.inputs,
           status: 'pending',
+          seq: evt.seq,
         },
       ];
       break;
@@ -111,8 +284,10 @@ function handleEvent(evt: ChatSSEEvent): void {
           approveType: evt.approveType,
           rejectLabel: evt.rejectLabel,
           status: 'pending',
+          seq: evt.seq,
         },
       ];
+      applyTurnSeq(evt.assistantSeq, evt.userSeq);
       batch(() => {
         pendingHitlId.value = evt.promptId;
         isStreaming.value = false;
@@ -120,13 +295,22 @@ function handleEvent(evt: ChatSSEEvent): void {
       break;
 
     case 'iframe_content':
-      messages.value = [...messages.value, { kind: 'iframe', id: evt.messageId, html: evt.html }];
+      messages.value = [
+        ...messages.value,
+        { kind: 'iframe', id: evt.messageId, html: evt.html, seq: evt.seq },
+      ];
       break;
 
     case 'audio_content':
       messages.value = [
         ...messages.value,
-        { kind: 'audio', id: evt.messageId, audioBase64: evt.audioBase64, mimeType: evt.mimeType },
+        {
+          kind: 'audio',
+          id: evt.messageId,
+          audioBase64: evt.audioBase64,
+          mimeType: evt.mimeType,
+          seq: evt.seq,
+        },
       ];
       break;
 
@@ -139,6 +323,7 @@ function handleEvent(evt: ChatSSEEvent): void {
           pageTitle: evt.pageTitle,
           pageKind: evt.pageKind,
           wikiName: evt.wikiName,
+          seq: evt.seq,
         },
       ];
       break;
@@ -149,10 +334,13 @@ function handleEvent(evt: ChatSSEEvent): void {
           ? { ...m, status: 'done', durationMs: evt.durationMs }
           : m,
       );
+      applyTurnSeq(evt.assistantSeq, evt.userSeq);
       batch(() => {
         isStreaming.value = false;
         _currentAssistantId = null;
+        _currentUserId = null;
       });
+      void refreshThreadList();
       break;
 
     case 'stream_error':
@@ -162,20 +350,43 @@ function handleEvent(evt: ChatSSEEvent): void {
       batch(() => {
         isStreaming.value = false;
         _currentAssistantId = null;
+        _currentUserId = null;
       });
+      void refreshThreadList();
       break;
   }
 }
 
+// Patches the current turn's user/assistant local messages with their real
+// server-assigned seq — carried on the terminal event since neither has a
+// dedicated SSE event of its own. Lets "fork from here" work immediately on
+// a message from the current live session, without waiting for a reload.
+function applyTurnSeq(assistantSeq: number | undefined, userSeq: number | undefined): void {
+  if (assistantSeq === undefined && userSeq === undefined) return;
+  messages.value = messages.value.map((m) => {
+    if (assistantSeq !== undefined && m.kind === 'assistant' && m.id === _currentAssistantId) {
+      return { ...m, seq: assistantSeq };
+    }
+    if (userSeq !== undefined && m.kind === 'user' && m.id === _currentUserId) {
+      return { ...m, seq: userSeq };
+    }
+    return m;
+  });
+}
+
+// ---- Public actions ----
+
 export async function sendMessage(content: string): Promise<void> {
+  const userId = crypto.randomUUID();
   const assistantId = crypto.randomUUID();
+  _currentUserId = userId;
   _currentAssistantId = assistantId;
   _abortController = new AbortController();
 
   batch(() => {
     messages.value = [
       ...messages.value,
-      { kind: 'user', id: crypto.randomUUID(), content, sentAt: new Date() },
+      { kind: 'user', id: userId, content, sentAt: new Date() },
       { kind: 'assistant', id: assistantId, status: 'streaming', content: '', sentAt: new Date() },
     ];
     isStreaming.value = true;
@@ -183,7 +394,7 @@ export async function sendMessage(content: string): Promise<void> {
 
   try {
     await consumeSsePost(
-      `/api/v1/chat/${THREAD_ID}`,
+      `/api/v1/chat/${activeThreadId.value}`,
       { content },
       handleEvent,
       _abortController.signal,
@@ -205,6 +416,7 @@ export async function submitHitlAnswer(promptId: string, answer: string): Promis
 
   const assistantId = crypto.randomUUID();
   _currentAssistantId = assistantId;
+  _currentUserId = null;
   _abortController = new AbortController();
 
   batch(() => {
@@ -217,8 +429,48 @@ export async function submitHitlAnswer(promptId: string, answer: string): Promis
 
   try {
     await consumeSsePost(
-      `/api/v1/chat/${THREAD_ID}/hitl`,
+      `/api/v1/chat/${activeThreadId.value}/hitl`,
       { promptId, answer },
+      handleEvent,
+      _abortController.signal,
+    );
+  } catch (err: unknown) {
+    if ((err as { name?: string }).name !== 'AbortError') {
+      handleEvent({ type: 'stream_error', error: String(err) });
+    }
+  } finally {
+    _abortController = null;
+  }
+}
+
+// Retries the thread's most recent turn if it failed — reuses the SAME
+// local message id so incoming deltas update the existing bubble in place,
+// rather than appending a new one (matching the backend's retry_of chain,
+// which the client doesn't need to know about for this to look right live).
+export async function retryTurn(): Promise<void> {
+  const target = [...messages.value]
+    .reverse()
+    .find((m) => m.kind === 'assistant' && m.status === 'error');
+  if (!target) return;
+  const targetId = target.id;
+
+  _currentAssistantId = targetId;
+  _currentUserId = null;
+  _abortController = new AbortController();
+
+  batch(() => {
+    messages.value = messages.value.map((m) =>
+      m.kind === 'assistant' && m.id === targetId
+        ? { ...m, status: 'streaming', content: '', thoughtContent: undefined }
+        : m,
+    );
+    isStreaming.value = true;
+  });
+
+  try {
+    await consumeSsePost(
+      `/api/v1/chat/${activeThreadId.value}/retry`,
+      {},
       handleEvent,
       _abortController.signal,
     );

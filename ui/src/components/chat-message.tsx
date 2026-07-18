@@ -23,13 +23,13 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-interface ActionButtonProps {
+export interface ActionButtonProps {
   label: string;
   onClick: () => void;
   children: ComponentChildren;
 }
 
-function ActionButton({ label, onClick, children }: ActionButtonProps) {
+export function ActionButton({ label, onClick, children }: ActionButtonProps) {
   return (
     <button
       type="button"

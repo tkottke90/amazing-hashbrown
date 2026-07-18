@@ -7,9 +7,12 @@ import {
   messages,
   isStreaming,
   pendingHitlId,
+  activeThreadId,
   sendMessage,
   submitHitlAnswer,
   stopGeneration,
+  retryTurn,
+  forkThread,
 } from '@/hooks/use-thread';
 
 export function ThreadView() {
@@ -37,7 +40,13 @@ export function ThreadView() {
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">
           {scrollMessages.map((msg) => (
-            <ThreadMessageItem key={msg.id} message={msg} onHitlAnswer={submitHitlAnswer} />
+            <ThreadMessageItem
+              key={msg.id}
+              message={msg}
+              onHitlAnswer={submitHitlAnswer}
+              onRetry={retryTurn}
+              onFork={(seq) => forkThread(activeThreadId.value, seq)}
+            />
           ))}
         </div>
       </ChatMessageScrollWrapper>
