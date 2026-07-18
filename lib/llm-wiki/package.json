@@ -28,7 +28,7 @@
     "gray-matter": "4.0.3",
     "openai": "6.45.0",
     "voyageai": "0.4.0",
-    "zod": "4.0.0"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/chai": "4.3.0",

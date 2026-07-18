@@ -71,7 +71,8 @@ export function createProvider(name?: string, model?: string): BaseChatModel {
     throw new Error('No providers configured. Add a providers[] block to config.yaml.');
   }
 
-  const targetName = name ?? env.defaultProvider ?? providers[0].name;
+  // providers.length === 0 already threw above, so providers[0] is guaranteed to exist.
+  const targetName = name ?? env.defaultProvider ?? providers[0]!.name;
   const providerConfig = providers.find((p) => p.name === targetName);
 
   if (!providerConfig) {
