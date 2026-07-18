@@ -6,6 +6,7 @@ import {
   writeSseEvent,
 } from '../../agents/stream-handler.js';
 import { getThreadStore } from '../../services/thread-store.js';
+import { serializeError } from '../../config/logger.js';
 
 export const chatRouter = Router();
 
@@ -38,7 +39,7 @@ chatRouter.post('/:threadId', async (req, res) => {
     req.logger.info(`Inference started for thread`, { threadId, provider, model });
     await streamChatToSse(res, threadId, content.trim(), startedAt, provider, model, afterAgent);
   } catch (err) {
-    req.logger.error('Chat stream error', { err });
+    req.logger.error('Chat stream error', { err: serializeError(err) });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
     req.logger.info(`Inference completed for thread`, { threadId });
@@ -67,7 +68,7 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   try {
     await resumeChatToSse(res, threadId, promptId, answer, startedAt, provider, model, afterAgent);
   } catch (err) {
-    req.logger.error('HITL resume error', { err });
+    req.logger.error('HITL resume error', { err: serializeError(err) });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
@@ -98,7 +99,7 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
   try {
     await retryChatToSse(res, threadId, startedAt, provider, model, afterAgent);
   } catch (err) {
-    req.logger.error('Retry stream error', { err });
+    req.logger.error('Retry stream error', { err: serializeError(err) });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
     res.end();

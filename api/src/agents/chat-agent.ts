@@ -3,7 +3,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
-import { logger } from '../config/logger.js';
+import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
@@ -52,7 +52,10 @@ const afterAgentMiddleware = createMiddleware({
         model: runtime.context?.model,
         requestAfterAgentEnabled: runtime.context?.afterAgentEnabled,
       }).catch((err: unknown) => {
-        logger.error('after-agent: pipeline failed to start', { threadId, err });
+        logger.error('after-agent: pipeline failed to start', {
+          threadId,
+          err: serializeError(err),
+        });
       });
     }
     return undefined;

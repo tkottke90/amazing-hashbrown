@@ -6,7 +6,7 @@ import { getWikiRegistry } from '../services/wiki.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { env } from '../config/env.js';
-import { logger } from '../config/logger.js';
+import { logger, serializeError } from '../config/logger.js';
 
 // ---------------------------------------------------------------------------
 // Per-thread state — in-memory, process-lifetime. Consistent with the
@@ -352,7 +352,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       warnings: commitResult.warnings,
     });
   } catch (err) {
-    logger.error('after-agent: pipeline error', { threadId, err });
+    logger.error('after-agent: pipeline error', { threadId, err: serializeError(err) });
     // Never throw — this must not surface back into the afterAgent hook.
   } finally {
     store.endTrace(traceId, {

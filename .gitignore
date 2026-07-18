@@ -143,7 +143,10 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Local dev runtime config (MCP servers, checkpoints, artifacts, knowledge base)
-config/
+# Anchored and explicit — a bare "config/" also matches api/src/config/
+# (application source, must stay tracked), which it silently did before.
+/config/
+/api/config/
 
 # Playwright E2E artifacts
 e2e/playwright-report/

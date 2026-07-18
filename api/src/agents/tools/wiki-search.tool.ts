@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { logger } from '../../config/logger.js';
+import { logger, serializeError } from '../../config/logger.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 
 const WikiSearchSchema = z.object({
@@ -40,7 +40,10 @@ export const wikiSearchTool = tool(
           })),
         );
       } catch (err) {
-        logger.warn('wiki_search: error searching wiki', { wikiId: entry.id, err });
+        logger.warn('wiki_search: error searching wiki', {
+          wikiId: entry.id,
+          err: serializeError(err),
+        });
       }
     }
 

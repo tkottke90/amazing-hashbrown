@@ -1,5 +1,5 @@
 import type { ThreadStore } from '../services/thread-store.js';
-import { logger } from '../config/logger.js';
+import { logger, serializeError } from '../config/logger.js';
 
 // The actual "what to write" logic behind persisting a live chat turn to
 // thread_messages, extracted from stream-handler.ts so it's testable
@@ -19,7 +19,7 @@ function safe<T>(threadId: string, action: string, fn: () => T): T | null {
   try {
     return fn();
   } catch (err) {
-    logger.error(`thread-message-writer: ${action} failed`, { threadId, err });
+    logger.error(`thread-message-writer: ${action} failed`, { threadId, err: serializeError(err) });
     return null;
   }
 }
