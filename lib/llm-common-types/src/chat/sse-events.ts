@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { HitlKindSchema } from './hitl.js';
 
+// `seq` is the persisted display-order value from `thread_messages.seq` (see
+// docs/Design/2026-07-18-persistent-conversation-memory-design.md). It is
+// optional here because it is only known once the corresponding row has been
+// written server-side — populated on the events emitted at/after that write,
+// left undefined on purely transient events (e.g. streaming deltas).
+
 const TextDeltaSchema = z.object({
   type: z.literal('text_delta'),
   messageId: z.string(),
@@ -19,6 +25,7 @@ const ToolCallStartSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   inputs: z.record(z.string(), z.unknown()),
+  seq: z.number().optional(),
 });
 
 const ToolCallEndSchema = z.object({
@@ -38,12 +45,14 @@ const HitlPromptSchema = z.object({
   approveLabel: z.string().optional(),
   approveType: z.enum(['primary', 'secondary', 'destructive']).optional(),
   rejectLabel: z.string().optional(),
+  seq: z.number().optional(),
 });
 
 const IframeContentSchema = z.object({
   type: z.literal('iframe_content'),
   messageId: z.string(),
   html: z.string(),
+  seq: z.number().optional(),
 });
 
 const AudioContentSchema = z.object({
@@ -51,6 +60,7 @@ const AudioContentSchema = z.object({
   messageId: z.string(),
   audioBase64: z.string(),
   mimeType: z.string(),
+  seq: z.number().optional(),
 });
 
 const StreamDoneSchema = z.object({
@@ -68,6 +78,7 @@ const WikiUpdatedSchema = z.object({
   pageTitle: z.string(),
   pageKind: z.string(),
   wikiName: z.string(),
+  seq: z.number().optional(),
 });
 
 export const ChatSSEEventSchema = z.discriminatedUnion('type', [

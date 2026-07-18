@@ -1,15 +1,20 @@
 import type { HitlKind } from '@tkottke90/llm-common-types/chat';
 
 export type AssistantStatus = 'streaming' | 'done' | 'error';
-export type ToolCallStatus = 'pending' | 'done';
+export type ToolCallStatus = 'pending' | 'done' | 'interrupted';
 export type HitlStatus = 'pending' | 'answered';
 
+// `seq` is the persisted display-order value from `thread_messages.seq`
+// (see docs/Design/2026-07-18-persistent-conversation-memory-design.md).
+// Undefined for a message that hasn't been persisted yet (e.g. still
+// streaming in the current live session before the server round-trip).
 export type ThreadMessage =
   | {
       kind: 'user';
       id: string;
       content: string;
       sentAt: Date;
+      seq?: number;
     }
   | {
       kind: 'assistant';
@@ -19,6 +24,7 @@ export type ThreadMessage =
       thoughtContent?: string;
       sentAt: Date;
       durationMs?: number;
+      seq?: number;
     }
   | {
       kind: 'tool_call';
@@ -28,6 +34,7 @@ export type ThreadMessage =
       inputs: Record<string, unknown>;
       outputs?: unknown;
       status: ToolCallStatus;
+      seq?: number;
     }
   | {
       kind: 'hitl_prompt';
@@ -42,17 +49,20 @@ export type ThreadMessage =
       rejectLabel?: string;
       status: HitlStatus;
       answer?: string;
+      seq?: number;
     }
   | {
       kind: 'iframe';
       id: string;
       html: string;
+      seq?: number;
     }
   | {
       kind: 'audio';
       id: string;
       audioBase64: string;
       mimeType: string;
+      seq?: number;
     }
   | {
       kind: 'wiki_update';
@@ -60,6 +70,7 @@ export type ThreadMessage =
       pageTitle: string;
       pageKind: string;
       wikiName: string;
+      seq?: number;
     };
 
 export type UserThreadMessage = Extract<ThreadMessage, { kind: 'user' }>;
