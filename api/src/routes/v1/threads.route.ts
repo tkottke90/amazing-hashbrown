@@ -2,12 +2,14 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { getThreadStore } from '../../services/thread-store.js';
 import { getCheckpointer } from '../../agents/chat-agent.js';
+import { createProvider } from '../../services/provider-factory.js';
 import {
   listThreadsHandler,
   getThreadHandler,
   renameThreadHandler,
   deleteThreadHandler,
   forkThreadHandler,
+  generateTitleHandler,
 } from './threads.handlers.js';
 
 export const threadsRouter = Router();
@@ -60,6 +62,28 @@ threadsRouter.post('/:id/fork', async (req: Request, res: Response) => {
     return;
   }
   const result = await forkThreadHandler(getThreadStore(), getCheckpointer(), id, atSeq);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.post('/:id/generate-title', async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { provider, model: modelName } = req.body as { provider?: string; model?: string };
+
+  let model;
+  try {
+    model = createProvider(provider, modelName);
+  } catch (err) {
+    res
+      .status(500)
+      .json({ error: `No provider available: ${err instanceof Error ? err.message : String(err)}` });
+    return;
+  }
+
+  const result = await generateTitleHandler(getThreadStore(), model, id, provider, modelName);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

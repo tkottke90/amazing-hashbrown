@@ -1,4 +1,5 @@
 import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
   ThreadDetail,
   ThreadMessageRecord,
@@ -6,6 +7,9 @@ import type {
   ThreadSummary,
 } from '../../services/thread-store.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
+import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
+import { getObservabilityStore } from '../../services/observability.js';
+import { env } from '../../config/env.js';
 
 // The client-facing shape (ui/src/types/thread-message.ts's ThreadMessage
 // union): id/kind/seq/status live as their own DB columns in
@@ -40,7 +44,7 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
 
 export interface HandlerFailure {
   ok: false;
-  status: 404 | 400;
+  status: 404 | 400 | 500;
   error: string;
 }
 
@@ -52,6 +56,10 @@ function ok<T>(data: T): HandlerResult<T> {
 
 function notFound(error: string): HandlerFailure {
   return { ok: false, status: 404, error };
+}
+
+function serverError(error: string): HandlerFailure {
+  return { ok: false, status: 500, error };
 }
 
 function invalid(error: string): HandlerFailure {
@@ -126,4 +134,92 @@ export async function forkThreadHandler(
     return notFound(`Forked thread "${newThreadId}" not found immediately after creation`);
   }
   return ok({ ...forked, messages: forked.messages.map(toClientMessage) });
+}
+
+// Keep this in sync with suites/thread-titles.yaml's scenario `input`
+// fields — the eval suite tests this exact prompt template.
+const TITLE_PROMPT_PREFIX =
+  'Summarize the following conversation as a short, specific title (no more than 6 words). Do not use quotation marks or end with punctuation. Respond with only the title, nothing else.\n\nConversation:\n';
+
+const MAX_TITLE_MESSAGES = 20;
+const MAX_TRANSCRIPT_CHARS = 4000;
+
+// A single plain (non-streaming, non-agentic) completion over the thread's
+// user/assistant content — no tools, no checkpointer. `model` is passed in
+// already constructed (createProvider(provider, modelName)) so this stays
+// unit-testable with a fake BaseChatModel, matching this codebase's rule to
+// always mock external services in developer tests.
+export async function generateTitleHandler(
+  store: ThreadStore,
+  model: BaseChatModel,
+  threadId: string,
+  provider: string | undefined,
+  modelName: string | undefined,
+): Promise<HandlerResult<ThreadSummary>> {
+  const detail = store.getThread(threadId, { showErrors: true });
+  if (!detail) return notFound(`Thread "${threadId}" not found`);
+
+  const conversational = detail.messages.filter((m) => m.kind === 'user' || m.kind === 'assistant');
+  if (conversational.length === 0) {
+    return invalid(`Thread "${threadId}" has no messages to summarize`);
+  }
+
+  const transcript = conversational
+    .slice(-MAX_TITLE_MESSAGES)
+    .map((m) => {
+      const payload = (m.payload ?? {}) as { content?: unknown };
+      const speaker = m.kind === 'user' ? 'User' : 'Assistant';
+      return `${speaker}: ${typeof payload.content === 'string' ? payload.content : ''}`;
+    })
+    .join('\n');
+  const truncated =
+    transcript.length > MAX_TRANSCRIPT_CHARS ? transcript.slice(-MAX_TRANSCRIPT_CHARS) : transcript;
+
+  const prompt = `${TITLE_PROMPT_PREFIX}${truncated}`;
+
+  const obsStore = getObservabilityStore();
+  const traceId = obsStore.startTrace({
+    threadId,
+    provider: provider ?? env.defaultProvider,
+    model: modelName ?? '',
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    obsStore,
+    env.observability.spanOutputPreviewChars,
+  );
+
+  let responseContent: unknown;
+  try {
+    const response = await model.invoke(prompt, { callbacks: [obsHandler] });
+    responseContent = response.content;
+  } catch (err) {
+    // A bare model.invoke() (no chain/graph wrapping it) never fires
+    // handleChainEnd on its own — confirmed empirically, see the design
+    // doc's "ObservabilityCallbackHandler integration" note — so the span
+    // buffered by handleLLMStart/End would otherwise never be saved.
+    await obsHandler.handleChainEnd();
+    obsStore.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+    });
+    return serverError(
+      `Title generation failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  await obsHandler.handleChainEnd();
+  obsStore.endTrace(traceId, {
+    totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+  });
+
+  const rawTitle = typeof responseContent === 'string' ? responseContent : String(responseContent ?? '');
+  const title = rawTitle.trim().replace(/^["']+|["']+$/g, '').trim();
+  if (!title) return serverError('Title generation produced an empty result');
+
+  // Same operation a rename performs (title + bumps updated_at) — reused
+  // rather than duplicated, per the design doc's "generate-title also
+  // bumps updated_at" decision.
+  const updated = store.renameThread(threadId, title);
+  if (!updated) return notFound(`Thread "${threadId}" not found`);
+  return ok(updated);
 }
