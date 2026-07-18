@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 4,
@@ -33,12 +34,13 @@ test.describe(
   () => {
     test.use({ viewport: { width: 375, height: 812 } });
 
-    test('theme toggle switches between dark and light', async ({ page }) => {
+    test('theme toggle switches between dark and light', async ({ page }, testInfo) => {
       await page.goto('/');
       const html = page.locator('html');
 
       const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
       const toggleLabel = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
+      await pauseBeforeAction(page, testInfo);
       await page.locator(`button[aria-label="${toggleLabel}"]`).click();
 
       if (startsDark) {
@@ -48,13 +50,14 @@ test.describe(
       }
     });
 
-    test('theme toggle switches back on second click', async ({ page }) => {
+    test('theme toggle switches back on second click', async ({ page }, testInfo) => {
       await page.goto('/');
       const html = page.locator('html');
 
       const startsDark = await html.evaluate((el) => el.classList.contains('dark'));
 
       const label1 = startsDark ? 'Switch to light theme' : 'Switch to dark theme';
+      await pauseBeforeAction(page, testInfo);
       await page.locator(`button[aria-label="${label1}"]`).click();
 
       const label2 = startsDark ? 'Switch to dark theme' : 'Switch to light theme';

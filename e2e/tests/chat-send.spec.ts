@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 5,
@@ -42,8 +43,9 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('user message bubble appears immediately after send', async ({ page }) => {
+    test('user message bubble appears immediately after send', async ({ page }, testInfo) => {
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
 
       const message = 'Hello from Playwright';
       await page.locator('[data-slot="textarea"]').fill(message);
@@ -54,8 +56,9 @@ test.describe(
       await expect(userBubble.locator('[data-slot="chat-message-body"]')).toContainText(message);
     });
 
-    test('assistant response appears after send', async ({ page }) => {
+    test('assistant response appears after send', async ({ page }, testInfo) => {
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
 
       await page.locator('[data-slot="textarea"]').fill('Say exactly: pong');
       await page.locator('button[aria-label="Send message"]').click();
@@ -68,7 +71,7 @@ test.describe(
       });
     });
 
-    test('stop generation halts streaming and restores send button', async ({ page }) => {
+    test('stop generation halts streaming and restores send button', async ({ page }, testInfo) => {
       test.slow();
       await page.goto('/');
 
@@ -80,6 +83,7 @@ test.describe(
       const stopBtn = page.locator('button[aria-label="Stop generating"]');
       await expect(stopBtn).toBeVisible({ timeout: 15_000 });
 
+      await pauseBeforeAction(page, testInfo);
       await stopBtn.click();
 
       await expect(page.locator('button[aria-label="Send message"]')).toBeVisible({
@@ -87,7 +91,7 @@ test.describe(
       });
     });
 
-    test('copy button writes user message to clipboard', async ({ page, context }) => {
+    test('copy button writes user message to clipboard', async ({ page, context }, testInfo) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await page.goto('/');
 
@@ -100,6 +104,7 @@ test.describe(
 
       const copyBtn = userBubble.locator('button[aria-label="Copy to clipboard"]');
       await expect(copyBtn).toBeVisible();
+      await pauseBeforeAction(page, testInfo);
       await copyBtn.click();
 
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText());

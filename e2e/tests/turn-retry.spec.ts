@@ -1,5 +1,6 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 9,
@@ -52,7 +53,9 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('failed send shows an error bubble with Retry, and retry recovers', async ({ page }) => {
+    test('failed send shows an error bubble with Retry, and retry recovers', async ({
+      page,
+    }, testInfo) => {
       await page.goto('/');
       await forceNextSendToFail(page);
 
@@ -70,6 +73,7 @@ test.describe(
 
       // The retry request goes to /retry, which is left unmodified by
       // forceNextSendToFail, so it hits the real (working) default provider.
+      await pauseBeforeAction(page, testInfo);
       await retryBtn.click();
 
       await expect(
@@ -84,7 +88,7 @@ test.describe(
 
     test('show-failed-attempts toggle reveals and hides the superseded error after reload', async ({
       page,
-    }) => {
+    }, testInfo) => {
       await page.goto('/');
       await forceNextSendToFail(page);
 
@@ -108,6 +112,7 @@ test.describe(
       await expect(page.getByText('Something went wrong. Please try again.')).not.toBeVisible();
 
       const toggle = page.getByRole('switch');
+      await pauseBeforeAction(page, testInfo);
       await toggle.click();
 
       await expect(page.getByText('Something went wrong. Please try again.')).toBeVisible({
@@ -117,6 +122,7 @@ test.describe(
         'Something went wrong',
       );
 
+      await pauseBeforeAction(page, testInfo);
       await toggle.click();
       await expect(page.getByText('Something went wrong. Please try again.')).not.toBeVisible();
     });

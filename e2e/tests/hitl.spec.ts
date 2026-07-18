@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 6,
@@ -31,7 +32,9 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('HITL yes/no: pending prompt disables textarea; Yes re-enables it', async ({ page }) => {
+    test('HITL yes/no: pending prompt disables textarea; Yes re-enables it', async ({
+      page,
+    }, testInfo) => {
       await page.goto('/');
 
       await page
@@ -47,13 +50,14 @@ test.describe(
       await expect(yesButton).toBeVisible();
       await expect(noButton).toBeVisible();
 
+      await pauseBeforeAction(page, testInfo);
       await yesButton.click();
       await expect(textarea).toBeEnabled({ timeout: 10_000 });
     });
 
     test('HITL free-text: inline input accepts answer and re-enables textarea', async ({
       page,
-    }) => {
+    }, testInfo) => {
       await page.goto('/');
 
       await page
@@ -68,6 +72,7 @@ test.describe(
       await expect(hitlInput).toBeVisible();
       await hitlInput.fill('My detailed answer here');
 
+      await pauseBeforeAction(page, testInfo);
       await page.locator('button[type="submit"]', { hasText: 'Submit' }).click();
       await expect(textarea).toBeEnabled({ timeout: 10_000 });
     });

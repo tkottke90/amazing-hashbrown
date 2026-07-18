@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 1,
@@ -41,25 +42,29 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('page loads and textarea is visible', async ({ page }) => {
+    test('page loads and textarea is visible', async ({ page }, testInfo) => {
+      await pauseBeforeAction(page, testInfo);
       await page.goto('/');
       await expect(page.locator('[data-slot="textarea"]')).toBeVisible();
     });
 
-    test('send button is disabled when textarea is empty', async ({ page }) => {
+    test('send button is disabled when textarea is empty', async ({ page }, testInfo) => {
+      await pauseBeforeAction(page, testInfo);
       await page.goto('/');
       await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
     });
 
-    test('send button becomes enabled when text is typed', async ({ page }) => {
+    test('send button becomes enabled when text is typed', async ({ page }, testInfo) => {
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await expect(page.locator('button[aria-label="Send message"]')).toBeEnabled();
     });
 
-    test('clearing textarea disables send button again', async ({ page }) => {
+    test('clearing textarea disables send button again', async ({ page }, testInfo) => {
       await page.goto('/');
       await page.locator('[data-slot="textarea"]').fill('Hello');
+      await pauseBeforeAction(page, testInfo);
       await page.locator('[data-slot="textarea"]').fill('');
       await expect(page.locator('button[aria-label="Send message"]')).toBeDisabled();
     });

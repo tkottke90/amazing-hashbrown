@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 8,
@@ -53,7 +54,9 @@ const suite: TestSuite = {
 async function sendAndAwaitReply(
   page: import('@playwright/test').Page,
   message: string,
+  testInfo?: import('@playwright/test').TestInfo,
 ): Promise<void> {
+  if (testInfo) await pauseBeforeAction(page, testInfo);
   await page.locator('[data-slot="textarea"]').fill(message);
   await page.locator('button[aria-label="Send message"]').click();
 
@@ -70,20 +73,23 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('sending a message creates a sidebar entry with a truncated title', async ({ page }) => {
+    test('sending a message creates a sidebar entry with a truncated title', async ({
+      page,
+    }, testInfo) => {
       await page.goto('/');
       const message = `Persistence check ${Date.now()}`;
-      await sendAndAwaitReply(page, message);
+      await sendAndAwaitReply(page, message, testInfo);
 
       const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
       await expect(sidebar.getByText(message)).toBeVisible();
     });
 
-    test('reloading the page rehydrates the conversation', async ({ page }) => {
+    test('reloading the page rehydrates the conversation', async ({ page }, testInfo) => {
       await page.goto('/');
       const message = `Reload check ${Date.now()}`;
       await sendAndAwaitReply(page, message);
 
+      await pauseBeforeAction(page, testInfo);
       await page.reload();
 
       const userBubble = page.locator('[data-slot="chat-message"][data-mirrored]');
@@ -92,12 +98,13 @@ test.describe(
       await expect(page.locator('[data-testid="assistant-message"]')).toBeVisible();
     });
 
-    test('renaming a thread persists across reload', async ({ page }) => {
+    test('renaming a thread persists across reload', async ({ page }, testInfo) => {
       await page.goto('/');
       await sendAndAwaitReply(page, `Rename check ${Date.now()}`);
 
       const newTitle = `Renamed by e2e ${Date.now()}`;
       const activeRow = page.locator('[data-slot="thread-row"][data-active]');
+      await pauseBeforeAction(page, testInfo);
       await activeRow.hover();
       await activeRow.locator('button[aria-haspopup="menu"]').click();
       await page.getByRole('menuitem', { name: 'Rename' }).click();
@@ -120,12 +127,13 @@ test.describe(
 
     test('deleting the active thread clears the view and removes the sidebar row', async ({
       page,
-    }) => {
+    }, testInfo) => {
       await page.goto('/');
       const message = `Delete check ${Date.now()}`;
       await sendAndAwaitReply(page, message);
 
       const activeRow = page.locator('[data-slot="thread-row"][data-active]');
+      await pauseBeforeAction(page, testInfo);
       await activeRow.hover();
       await activeRow.locator('button[aria-haspopup="menu"]').click();
       await page.getByRole('menuitem', { name: 'Delete' }).click();
@@ -137,13 +145,16 @@ test.describe(
       await expect(page.locator('[data-testid="assistant-message"]')).not.toBeVisible();
     });
 
-    test('forking from a completed turn creates a new lineage-linked thread', async ({ page }) => {
+    test('forking from a completed turn creates a new lineage-linked thread', async ({
+      page,
+    }, testInfo) => {
       await page.goto('/');
       await sendAndAwaitReply(page, `Fork check ${Date.now()}`);
 
       const assistantMsg = page.locator('[data-testid="assistant-message"]').last();
       const forkBtn = assistantMsg.locator('button[aria-label="Fork conversation"]');
       await expect(forkBtn).toBeVisible();
+      await pauseBeforeAction(page, testInfo);
       await forkBtn.click();
 
       const activeRow = page.locator('[data-slot="thread-row"][data-active]');
@@ -151,12 +162,13 @@ test.describe(
       await expect(page.locator('[data-testid="assistant-message"]')).toBeVisible();
     });
 
-    test('regenerating a title updates the sidebar entry', async ({ page }) => {
+    test('regenerating a title updates the sidebar entry', async ({ page }, testInfo) => {
       await page.goto('/');
       const message = `Regenerate title check ${Date.now()}`;
       await sendAndAwaitReply(page, message);
 
       const activeRow = page.locator('[data-slot="thread-row"][data-active]');
+      await pauseBeforeAction(page, testInfo);
       await activeRow.hover();
       await activeRow.locator('button[aria-haspopup="menu"]').click();
       await page.getByRole('menuitem', { name: 'Regenerate title' }).click();

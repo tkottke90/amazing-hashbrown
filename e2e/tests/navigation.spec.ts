@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 3,
@@ -43,8 +44,11 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('desktop sidebar is visible with a New conversation button', async ({ page }) => {
+    test('desktop sidebar is visible with a New conversation button', async ({
+      page,
+    }, testInfo) => {
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
       const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
       await expect(sidebar).toBeVisible();
       await expect(sidebar.locator('button[aria-label="New conversation"]')).toBeVisible();
@@ -53,18 +57,21 @@ test.describe(
     test.describe('mobile viewport', () => {
       test.use({ viewport: { width: 375, height: 812 } });
 
-      test('bottom navigation bar is visible on mobile', async ({ page }) => {
+      test('bottom navigation bar is visible on mobile', async ({ page }, testInfo) => {
         await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
         await expect(page.locator('nav[aria-label="Bottom navigation"]')).toBeVisible();
       });
 
-      test('desktop sidebar is hidden on mobile', async ({ page }) => {
+      test('desktop sidebar is hidden on mobile', async ({ page }, testInfo) => {
         await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
         await expect(page.locator('aside[aria-label="Sidebar navigation"]')).not.toBeVisible();
       });
 
-      test('mobile menu button opens navigation sheet', async ({ page }) => {
+      test('mobile menu button opens navigation sheet', async ({ page }, testInfo) => {
         await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
         await page.locator('button[aria-label="Open navigation menu"]').click();
         await expect(page.getByRole('button', { name: 'New conversation' }).first()).toBeVisible();
       });

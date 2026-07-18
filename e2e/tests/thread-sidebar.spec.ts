@@ -1,5 +1,6 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { pauseBeforeAction } from '../lib/video.js';
 
 const suite: TestSuite = {
   id: 7,
@@ -127,29 +128,32 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('sidebar renders both mocked threads', async ({ page }) => {
+    test('sidebar renders both mocked threads', async ({ page }, testInfo) => {
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
 
       const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
       await expect(sidebar.getByText('First conversation')).toBeVisible();
       await expect(sidebar.getByText('Second conversation')).toBeVisible();
     });
 
-    test('clicking a row switches the active thread', async ({ page }) => {
+    test('clicking a row switches the active thread', async ({ page }, testInfo) => {
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
 
       const row = page
         .locator('[data-slot="thread-row"]')
         .filter({ hasText: 'Second conversation' });
+      await pauseBeforeAction(page, testInfo);
       await row.click();
       await expect(row).toHaveAttribute('data-active', 'true');
     });
 
-    test('rename via kebab menu updates the sidebar title', async ({ page }) => {
+    test('rename via kebab menu updates the sidebar title', async ({ page }, testInfo) => {
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
 
       const row = page
         .locator('[data-slot="thread-row"]')
@@ -172,9 +176,10 @@ test.describe(
 
     test('delete via kebab menu shows an inline confirm, then removes the row', async ({
       page,
-    }) => {
+    }, testInfo) => {
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
 
       const row = page
         .locator('[data-slot="thread-row"]')
