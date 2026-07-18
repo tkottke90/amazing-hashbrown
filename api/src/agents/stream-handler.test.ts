@@ -88,7 +88,7 @@ describe('agents/stream-handler', () => {
     });
 
     it('records a tool call start/end pair and finalizes with the right toolName/inputs/outputs', async () => {
-      const { res } = fakeRes();
+      const { res, events } = fakeRes();
       await pipeEvents(
         res,
         'msg3',
@@ -106,6 +106,11 @@ describe('agents/stream-handler', () => {
       );
 
       const toolMsg = store.getMessage('t1', 'tc1')!;
+      // The SSE tool_call_start event carries the row's real seq — not a
+      // fork target itself, but populated for consistency with the DB truth
+      // now that insertMessage's return value is threaded through.
+      const startEvent = events().find((e) => e.type === 'tool_call_start')!;
+      expect(startEvent.seq).to.equal(toolMsg.seq);
       expect(toolMsg.status).to.equal('done');
       expect(toolMsg.payload).to.deep.equal({
         toolCallId: 'tc1',

@@ -9,13 +9,18 @@ import { logger } from '../config/logger.js';
 // Every function here swallows its own errors (logs, never throws) — a
 // thread_messages write failure must never break the live, user-visible
 // turn, matching the AfterAgent Middleware's existing "must not block the
-// main response" rule.
+// main response" rule. Insert functions return the assigned `seq` (or null
+// if the write was swallowed) so stream-handler.ts can round-trip it onto
+// the corresponding SSE event — needed so the UI's "fork from here" action
+// works on a message from the current live session, not only after a
+// reload re-hydrates seq values from GET /threads/:id.
 
-function safe(threadId: string, action: string, fn: () => void): void {
+function safe<T>(threadId: string, action: string, fn: () => T): T | null {
   try {
-    fn();
+    return fn();
   } catch (err) {
     logger.error(`thread-message-writer: ${action} failed`, { threadId, err });
+    return null;
   }
 }
 
@@ -25,9 +30,9 @@ export function recordUserMessage(
   id: string,
   content: string,
   sentAt: string,
-): void {
-  safe(threadId, 'recordUserMessage', () => {
-    store.insertMessage(threadId, { id, kind: 'user', payload: { content, sentAt } });
+): number | null {
+  return safe(threadId, 'recordUserMessage', () => {
+    return store.insertMessage(threadId, { id, kind: 'user', payload: { content, sentAt } }).seq;
   });
 }
 
@@ -36,14 +41,14 @@ export function recordAssistantStart(
   threadId: string,
   id: string,
   sentAt: string,
-): void {
-  safe(threadId, 'recordAssistantStart', () => {
-    store.insertMessage(threadId, {
+): number | null {
+  return safe(threadId, 'recordAssistantStart', () => {
+    return store.insertMessage(threadId, {
       id,
       kind: 'assistant',
       status: 'streaming',
       payload: { content: '', sentAt },
-    });
+    }).seq;
   });
 }
 
@@ -87,15 +92,15 @@ export function recordRetryAttempt(
   newId: string,
   failedId: string,
   sentAt: string,
-): void {
-  safe(threadId, 'recordRetryAttempt', () => {
-    store.insertMessage(threadId, {
+): number | null {
+  return safe(threadId, 'recordRetryAttempt', () => {
+    return store.insertMessage(threadId, {
       id: newId,
       kind: 'assistant',
       status: 'streaming',
       retryOf: failedId,
       payload: { content: '', sentAt },
-    });
+    }).seq;
   });
 }
 
@@ -105,14 +110,14 @@ export function recordToolCallStart(
   toolCallId: string,
   toolName: string,
   inputs: Record<string, unknown>,
-): void {
-  safe(threadId, 'recordToolCallStart', () => {
-    store.insertMessage(threadId, {
+): number | null {
+  return safe(threadId, 'recordToolCallStart', () => {
+    return store.insertMessage(threadId, {
       id: toolCallId,
       kind: 'tool_call',
       status: 'pending',
       payload: { toolCallId, toolName, inputs },
-    });
+    }).seq;
   });
 }
 
@@ -147,14 +152,14 @@ export function recordHitlPrompt(
   threadId: string,
   promptId: string,
   fields: HitlPromptFields,
-): void {
-  safe(threadId, 'recordHitlPrompt', () => {
-    store.insertMessage(threadId, {
+): number | null {
+  return safe(threadId, 'recordHitlPrompt', () => {
+    return store.insertMessage(threadId, {
       id: promptId,
       kind: 'hitl_prompt',
       status: 'pending',
       payload: { promptId, ...fields },
-    });
+    }).seq;
   });
 }
 
@@ -193,12 +198,12 @@ export function recordWikiUpdate(
   pageTitle: string,
   pageKind: string,
   wikiName: string,
-): void {
-  safe(threadId, 'recordWikiUpdate', () => {
-    store.insertMessage(threadId, {
+): number | null {
+  return safe(threadId, 'recordWikiUpdate', () => {
+    return store.insertMessage(threadId, {
       id,
       kind: 'wiki_update',
       payload: { pageTitle, pageKind, wikiName },
-    });
+    }).seq;
   });
 }

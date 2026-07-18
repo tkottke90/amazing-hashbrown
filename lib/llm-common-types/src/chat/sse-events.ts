@@ -45,7 +45,14 @@ const HitlPromptSchema = z.object({
   approveLabel: z.string().optional(),
   approveType: z.enum(['primary', 'secondary', 'destructive']).optional(),
   rejectLabel: z.string().optional(),
+  // The hitl_prompt row's own seq — not currently a fork target, but
+  // populated for correctness/consistency with the DB truth.
   seq: z.number().optional(),
+  // Same purpose as StreamDoneSchema's fields — a turn can end via either
+  // event, and the assistant (and possibly user) message finalized just
+  // before still needs its seq conveyed either way.
+  assistantSeq: z.number().optional(),
+  userSeq: z.number().optional(),
 });
 
 const IframeContentSchema = z.object({
@@ -66,6 +73,15 @@ const AudioContentSchema = z.object({
 const StreamDoneSchema = z.object({
   type: z.literal('stream_done'),
   durationMs: z.number(),
+  // seq for the two messages this turn may have just created — carried on
+  // the terminal event since neither user nor assistant messages otherwise
+  // round-trip a seq during a live turn. Lets the UI's "fork from here"
+  // action work immediately, without waiting for a reload to re-hydrate
+  // seq from GET /threads/:id. assistantSeq is always present once a turn
+  // completes successfully; userSeq only on the turn that created a new
+  // user message (absent on HITL-resume/retry turns).
+  assistantSeq: z.number().optional(),
+  userSeq: z.number().optional(),
 });
 
 const StreamErrorSchema = z.object({

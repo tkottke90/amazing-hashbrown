@@ -39,18 +39,21 @@ describe('agents/thread-message-writer', () => {
       rmSync(dir, { recursive: true });
     });
 
-    it('inserts a user row with content and sentAt, no status', () => {
-      recordUserMessage(store, 't1', 'u1', 'hi there', '2026-07-18T00:00:00.000Z');
+    it('inserts a user row with content and sentAt, no status, returns the assigned seq', () => {
+      const seq = recordUserMessage(store, 't1', 'u1', 'hi there', '2026-07-18T00:00:00.000Z');
       const msg = store.getMessage('t1', 'u1')!;
       expect(msg.kind).to.equal('user');
       expect(msg.status).to.equal(null);
       expect(msg.payload).to.deep.equal({ content: 'hi there', sentAt: '2026-07-18T00:00:00.000Z' });
+      expect(seq).to.equal(msg.seq);
     });
 
-    it('never throws, even against a thread that does not exist (FK violation swallowed)', () => {
-      expect(() =>
-        recordUserMessage(store, 'no-such-thread', 'u2', 'hi', '2026-07-18T00:00:00.000Z'),
-      ).to.not.throw();
+    it('never throws, even against a thread that does not exist (FK violation swallowed), returns null', () => {
+      let seq: number | null = -1;
+      expect(() => {
+        seq = recordUserMessage(store, 'no-such-thread', 'u2', 'hi', '2026-07-18T00:00:00.000Z');
+      }).to.not.throw();
+      expect(seq).to.equal(null);
       expect(store.getMessage('no-such-thread', 'u2')).to.equal(null);
     });
   });

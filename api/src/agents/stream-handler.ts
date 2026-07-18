@@ -139,13 +139,14 @@ export async function pipeEvents(
           const toolName = evt.name as string;
           const inputs = (evt.data?.input ?? {}) as Record<string, unknown>;
           toolCallsInFlight.set(toolCallId, { toolName, inputs });
-          recordToolCallStart(threadStore, threadId, toolCallId, toolName, inputs);
+          const seq = recordToolCallStart(threadStore, threadId, toolCallId, toolName, inputs);
           writeSseEvent(res, {
             type: 'tool_call_start',
             messageId: randomUUID(),
             toolCallId,
             toolName,
             inputs,
+            ...(seq !== null ? { seq } : {}),
           });
         }
         break;
@@ -186,6 +187,8 @@ async function finalizeTurn(
   content: string,
   thoughtContent: string,
   turnSentAt: string,
+  assistantSeq: number | null,
+  userSeq: number | null,
 ): Promise<void> {
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.graph.getState(config);
@@ -207,7 +210,7 @@ async function finalizeTurn(
         rejectLabel?: string;
       };
     const promptId = randomUUID();
-    recordHitlPrompt(threadStore, threadId, promptId, {
+    const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
       question,
       promptKind: kind,
       choices,
@@ -227,17 +230,34 @@ async function finalizeTurn(
       approveLabel,
       approveType,
       rejectLabel,
+      ...(promptSeq !== null ? { seq: promptSeq } : {}),
+      ...(assistantSeq !== null ? { assistantSeq } : {}),
+      ...(userSeq !== null ? { userSeq } : {}),
     });
   } else {
-    writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+    writeSseEvent(res, {
+      type: 'stream_done',
+      durationMs: Date.now() - startedAt,
+      ...(assistantSeq !== null ? { assistantSeq } : {}),
+      ...(userSeq !== null ? { userSeq } : {}),
+    });
   }
 }
 
 function drainAndRecordWikiUpdates(res: Response, threadStore: ThreadStore, threadId: string): void {
   for (const event of drainPendingWikiUpdates(threadId)) {
-    writeSseEvent(res, event);
     if (event.type === 'wiki_updated') {
-      recordWikiUpdate(threadStore, threadId, randomUUID(), event.pageTitle, event.pageKind, event.wikiName);
+      const seq = recordWikiUpdate(
+        threadStore,
+        threadId,
+        randomUUID(),
+        event.pageTitle,
+        event.pageKind,
+        event.wikiName,
+      );
+      writeSseEvent(res, seq !== null ? { ...event, seq } : event);
+    } else {
+      writeSseEvent(res, event);
     }
   }
 }
@@ -260,7 +280,7 @@ export async function streamChatToSse(
   const turnSentAt = new Date().toISOString();
 
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50));
-  recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
+  const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);
 
@@ -277,7 +297,7 @@ export async function streamChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
   try {
     const eventStream = agent.streamEvents(
@@ -306,7 +326,19 @@ export async function streamChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
     });
 
-    await finalizeTurn(res, threadStore, agent, threadId, msgId, startedAt, finalContent, thoughtContent, turnSentAt);
+    await finalizeTurn(
+      res,
+      threadStore,
+      agent,
+      threadId,
+      msgId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+    );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
@@ -346,7 +378,7 @@ export async function resumeChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
   try {
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
@@ -372,7 +404,19 @@ export async function resumeChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
     });
 
-    await finalizeTurn(res, threadStore, agent, threadId, msgId, startedAt, finalContent, thoughtContent, turnSentAt);
+    await finalizeTurn(
+      res,
+      threadStore,
+      agent,
+      threadId,
+      msgId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
@@ -405,7 +449,7 @@ export async function retryChatToSse(
 
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
-  recordRetryAttempt(threadStore, threadId, msgId, failedId, turnSentAt);
+  const assistantSeq = recordRetryAttempt(threadStore, threadId, msgId, failedId, turnSentAt);
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);
 
@@ -446,7 +490,19 @@ export async function retryChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
     });
 
-    await finalizeTurn(res, threadStore, agent, threadId, msgId, startedAt, finalContent, thoughtContent, turnSentAt);
+    await finalizeTurn(
+      res,
+      threadStore,
+      agent,
+      threadId,
+      msgId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
