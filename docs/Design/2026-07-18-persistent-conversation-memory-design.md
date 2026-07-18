@@ -149,7 +149,9 @@ CREATE INDEX idx_thread_messages_thread ON thread_messages(thread_id, seq);
 
 **Config** (`api/src/config/env.ts`): new `ChatSchema = z.object({ showErrorMessages: z.boolean().default(false) })`, added to `AppConfigSchema`, exposed as `env.chat.showErrorMessages`, following the exact pattern `ObservabilitySchema`/`AfterAgentSchema` already use.
 
-**Retry mechanics:** LangGraph checkpoints after each step, so retrying a failed turn does not need the HITL-style `Command({ resume })` mechanism — re-invoking `agent.streamEvents(null, config)` on the same `thread_id` with no new input resumes from the last good checkpoint and re-executes the failed step. **Scope constraint:** retry only applies to the thread's most recent turn — retrying something mid-history is "fork + regenerate," already covered by the fork feature, so retry doesn't need to solve that too. This resume pattern should be confirmed against the exact installed `@langchain/langgraph` version during implementation rather than taken as guaranteed at design time.
+**Retry mechanics:** LangGraph checkpoints after each step, so retrying a failed turn does not need the HITL-style `Command({ resume })` mechanism — re-invoking `agent.streamEvents(null, config)` on the same `thread_id` with no new input resumes from the last good checkpoint and re-executes the failed step. **Scope constraint:** retry only applies to the thread's most recent turn — retrying something mid-history is "fork + regenerate," already covered by the fork feature, so retry doesn't need to solve that too.
+
+Confirmed empirically against the real installed `@langchain/langgraph`/`createAgent` (not just inferred from the type signature): a scripted fake model made to throw on a specific call showed the failed turn's human message was already checkpointed and `state.next` correctly reported `["model_request"]` as the pending step; `agent.invoke(null, config)` re-executed exactly that step — no duplicated human message, correct final response. This is genuinely the LangGraph-native retry mechanism, distinct from `resumeChatToSse`'s `Command({ resume })` HITL path.
 
 ---
 
