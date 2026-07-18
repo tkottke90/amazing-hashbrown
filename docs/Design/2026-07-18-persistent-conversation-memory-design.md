@@ -50,6 +50,8 @@ CREATE TABLE threads (
 
 **Row lifecycle:** no dedicated "create thread" call. The first `POST /api/v1/chat/:threadId` for a given id upserts the row (`title` = first ~50 chars of the message); every subsequent turn bumps `updated_at`. A thread that never receives a message never gets a row, so opening "new conversation" and not sending anything doesn't clutter the list.
 
+**`updated_at` also bumps on rename (`PATCH`) and `generate-title`** — any edit to a thread counts as activity and moves it to the top of the sidebar, not just new messages.
+
 **Dangling lineage:** if a thread is deleted, any threads forked from it keep their `forked_from_thread_id` value pointing at a now-missing row. This is intentional and harmless — a fork already copied its full checkpoint lineage and message history at fork time, so it has no runtime dependency on the original thread continuing to exist. The UI falls back to a generic "Forked" label if the referenced title can't be resolved.
 
 ### `thread_messages` table (new — same store)
@@ -60,7 +62,7 @@ CREATE TABLE thread_messages (
   thread_id      TEXT NOT NULL REFERENCES threads(id),
   seq            INTEGER NOT NULL,     -- display order within the thread
   kind           TEXT NOT NULL,        -- 'user' | 'assistant' | 'tool_call' | 'hitl_prompt' | 'wiki_update' | ...
-  status         TEXT,                 -- for assistant rows: 'streaming' | 'done' | 'error'
+  status         TEXT,                 -- assistant: 'streaming' | 'done' | 'error'; tool_call: 'pending' | 'done' | 'interrupted'
   retry_of       TEXT,                 -- id of the row this row retried, if any
   checkpoint_id  TEXT,                 -- LangGraph checkpoint id, stamped when an assistant row reaches 'done'
   payload        TEXT NOT NULL,        -- the ThreadMessage object, JSON-serialized, verbatim
@@ -72,6 +74,8 @@ CREATE INDEX idx_thread_messages_thread ON thread_messages(thread_id, seq);
 ```
 
 **Composite primary key** (`thread_id`, `id`) rather than `id` alone — message ids are only meaningful scoped to a thread, and this lets a forked copy preserve the original ids without a remapping pass.
+
+**`seq` generation:** `SELECT COALESCE(MAX(seq), 0) + 1 FROM thread_messages WHERE thread_id = ?`, computed inside the same insert call in `ThreadStore`. `better-sqlite3` is synchronous and single-connection, so this is atomic in practice for personal use — no separate sequence table needed.
 
 **Write points**, all in `stream-handler.ts` alongside the `writeSseEvent(...)` calls that already exist for each of these — inserting the finalized/updated row, never on streaming deltas:
 
@@ -98,11 +102,11 @@ CREATE INDEX idx_thread_messages_thread ON thread_messages(thread_id, seq);
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/v1/threads` | List all threads for the sidebar: `{ id, title, createdAt, updatedAt, forkedFromThreadId?, forkedFromSeq? }[]`, ordered by `updatedAt` desc. No pagination for v1. |
-| `GET` | `/api/v1/threads/:id` | Hydrate a thread: `{ id, title, createdAt, updatedAt, forkedFromThreadId?, forkedFromSeq?, messages: ThreadMessage[] }`. `404` if the thread has no rows yet — UI treats that as "start empty," not an error. Accepts `?showErrors=true` to override the `chat.showErrorMessages` config default for this request. |
-| `PATCH` | `/api/v1/threads/:id` | Rename. Body `{ title }`, returns the updated thread row. `404` if the thread doesn't exist. |
+| `GET` | `/api/v1/threads/:id` | Hydrate a thread: `{ id, title, createdAt, updatedAt, forkedFromThreadId?, forkedFromSeq?, messages: ThreadMessage[] }`. `404` if the thread has no rows yet — UI treats that as "start empty," not an error. Accepts `?showErrors=true` to override the `chat.showErrorMessages` config default for this request. **Soft-capped to the most recent ~200 messages** (by `seq`) — older history isn't returned; no `load more` affordance in v1 (see "Out of Scope"). |
+| `PATCH` | `/api/v1/threads/:id` | Rename. Body `{ title }`, returns the updated thread row, bumping `updated_at`. `404` if the thread doesn't exist. |
 | `DELETE` | `/api/v1/threads/:id` | Deletes the `threads` row, its `thread_messages` rows, and calls `checkpointer.deleteThread(id)` to purge LangGraph state. `404` if the thread doesn't exist. |
 | `POST` | `/api/v1/threads/:id/fork` | Body `{ atSeq }`. Returns the new thread fully hydrated (same shape as `GET /:id`) in one round trip. `400` if `atSeq` doesn't resolve to a completed-turn checkpoint. |
-| `POST` | `/api/v1/threads/:id/generate-title` | Body `{ provider?, model? }` (mirrors the chat endpoints' optional override pattern — currently always omitted, since the UI has no provider/model selector yet). Returns `{ id, title, createdAt, updatedAt }`. A single plain (non-streaming, non-agentic) LLM completion over the thread's `user`/`assistant` message content, run through `ObservabilityCallbackHandler` tagged with `threadId` so it counts toward usage/cost tracking. `400` on an empty thread, `500` on provider failure. |
+| `POST` | `/api/v1/threads/:id/generate-title` | Body `{ provider?, model? }` (mirrors the chat endpoints' optional override pattern — currently always omitted, since the UI has no provider/model selector yet). Returns `{ id, title, createdAt, updatedAt }`, bumping `updated_at`. A single plain (non-streaming, non-agentic) LLM completion over the thread's `user`/`assistant` message content — capped to the last ~20 such messages, then hard-truncated to a ~4000-char budget as a backstop — run through `ObservabilityCallbackHandler` tagged with `threadId` so it counts toward usage/cost tracking. `400` on an empty thread, `500` on provider failure. |
 | `POST` | `/api/v1/chat/:threadId/retry` *(new, in `chat.route.ts`)* | No body. Retries the thread's last turn if its assistant message is `status: 'error'`; `400` otherwise. SSE response, same shape as `POST /chat/:threadId`. |
 | `POST` | `/api/v1/chat/:threadId` *(existing)* | Now also upserts the `threads` row on first turn and writes to `thread_messages` at each of the points listed above. |
 | `POST` | `/api/v1/chat/:threadId/hitl` *(existing)* | Now also updates the matching `hitl_prompt` row and stamps `checkpoint_id` once the resumed turn completes. |
@@ -136,6 +140,8 @@ CREATE INDEX idx_thread_messages_thread ON thread_messages(thread_id, seq);
 **Problem:** without explicit handling, a failed turn simply has no row written, so on reload the conversation silently ends after the user's last message with no indication anything went wrong.
 
 **Design:** the assistant row is inserted at turn start (not only on success — see write points above), so there is always a row to mark `status: 'error'` if the turn fails, in `chat.route.ts`'s catch block or any error path within `stream-handler.ts`. `threads.updated_at` still bumps on a failed turn.
+
+**Dangling `tool_call` rows:** if the turn fails mid-sequence, any `tool_call` rows still `status: 'pending'` for that turn are swept to a new terminal status, `'interrupted'`, at the same time the assistant row is marked `'error'` — distinct from `'done'` so the transcript shows the call was genuinely in flight when things broke, not that it silently finished with an empty result.
 
 **Retry preserves history rather than overwriting.** `retry_of` on `thread_messages` links a retry attempt back to the row it retried. A retry **inserts a new row** (fresh id, next `seq`) rather than mutating the failed one — a failed-then-retried-then-succeeded turn becomes a chain: `error(A) → error(B, retryOf=A) → done(C, retryOf=B)`.
 
@@ -185,7 +191,9 @@ This repo's EDD rule requires a failing eval scenario to be written *before* imp
 
 - Client-side routing / bookmarkable `/thread/:id` URLs (separate "Home / Conversation List Page" TODO item).
 - Pagination on the thread list.
+- Cursor pagination / "load older messages" for a single thread's history — `GET /threads/:id` is soft-capped to the most recent ~200 messages instead. Accepted for v1 since realistic personal-use conversation lengths stay well under that; revisit if it turns out to bite in practice.
 - Forking from a mid-stream or pending-HITL point.
 - A provider/model selector UI — doesn't exist yet; `generate-title` uses the server default until that's built.
 - Thread search/filter in the sidebar.
 - Crash-recovery reconciliation for assistant rows stuck at `status: 'streaming'` after an unhandled server crash.
+- Multi-tab/multi-device coordination — `activeThreadId` lives in `localStorage`, shared per browser origin. Sending messages to the same thread from two open tabs at once can race (interleaved SSE responses, competing writes). Accepted as a known limitation, not solved here.
