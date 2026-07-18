@@ -220,6 +220,8 @@ export interface RunAfterAgentPipelineParams {
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
   const { threadId, messages, provider, model, requestAfterAgentEnabled } = params;
 
+  logger.info('AfterAgent triggered', { threadId });
+
   // Global kill switch wins even if a request tries to force it on.
   if (!env.afterAgent.enabled) return;
   if (requestAfterAgentEnabled === false) return;
@@ -260,7 +262,10 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       handler,
       'after-agent:classify',
     );
-    if (!classify.shouldWrite) return;
+    if (!classify.shouldWrite) {
+      logger.info('AfterAgent no-op', { threadId, reason: classify.reason });
+      return;
+    }
 
     const registry = await getWikiRegistry();
     const domains = registry.list();
@@ -334,10 +339,16 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       wikiName: domainEntry.id,
     });
 
-    logger.info('after-agent: wrote wiki page', {
+    // The pipeline extracts and commits exactly one page per turn today — no
+    // batch/delete path exists yet — so these counts are always 0 or 1, but
+    // the shape stays stable if that ever changes.
+    logger.info('AfterAgent identified', {
       threadId,
+      created: commitResult.created ? 1 : 0,
+      updated: commitResult.created ? 0 : 1,
+      deleted: 0,
+      wikis: [domainEntry.id],
       path: commitResult.path,
-      created: commitResult.created,
       warnings: commitResult.warnings,
     });
   } catch (err) {
