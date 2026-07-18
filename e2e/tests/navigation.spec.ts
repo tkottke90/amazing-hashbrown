@@ -4,14 +4,15 @@ import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 const suite: TestSuite = {
   id: 3,
   name: 'Navigation',
-  description: 'Verifies sidebar navigation on desktop and the bottom nav / sheet on mobile',
+  description:
+    'Verifies the thread sidebar renders on desktop and the bottom nav / sheet on mobile',
   purpose: 'Ensure navigation landmarks are accessible and visible at all supported viewports',
   tags: ['@smoke', '@user-workflow'],
   steps: [
     {
       tags: ['@smoke'],
       action: 'Load / on a desktop viewport',
-      expectedOutcome: 'Sidebar is visible with Home and Settings links',
+      expectedOutcome: 'Sidebar is visible with a New conversation button',
       test: () => {},
     },
     {
@@ -29,7 +30,7 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: 'Click the mobile menu button',
-      expectedOutcome: 'Navigation sheet slides up with Home and Settings links',
+      expectedOutcome: 'Navigation sheet slides up with the thread sidebar (New conversation button)',
       test: () => {},
     },
   ],
@@ -41,12 +42,11 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('desktop sidebar is visible with Home and Settings links', async ({ page }) => {
+    test('desktop sidebar is visible with a New conversation button', async ({ page }) => {
       await page.goto('/');
       const sidebar = page.locator('aside[aria-label="Sidebar navigation"]');
       await expect(sidebar).toBeVisible();
-      await expect(sidebar.locator('a', { hasText: 'Home' })).toBeVisible();
-      await expect(sidebar.locator('a', { hasText: 'Settings' })).toBeVisible();
+      await expect(sidebar.locator('button[aria-label="New conversation"]')).toBeVisible();
     });
 
     test.describe('mobile viewport', () => {
@@ -65,7 +65,9 @@ test.describe(
       test('mobile menu button opens navigation sheet', async ({ page }) => {
         await page.goto('/');
         await page.locator('button[aria-label="Open navigation menu"]').click();
-        await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'New conversation' }).first(),
+        ).toBeVisible();
       });
     });
   },
