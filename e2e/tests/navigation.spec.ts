@@ -30,7 +30,8 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: 'Click the mobile menu button',
-      expectedOutcome: 'Navigation sheet slides up with the thread sidebar (New conversation button)',
+      expectedOutcome:
+        'Navigation sheet slides up with the thread sidebar (New conversation button)',
       test: () => {},
     },
   ],
@@ -65,9 +66,7 @@ test.describe(
       test('mobile menu button opens navigation sheet', async ({ page }) => {
         await page.goto('/');
         await page.locator('button[aria-label="Open navigation menu"]').click();
-        await expect(
-          page.getByRole('button', { name: 'New conversation' }).first(),
-        ).toBeVisible();
+        await expect(page.getByRole('button', { name: 'New conversation' }).first()).toBeVisible();
       });
     });
   },

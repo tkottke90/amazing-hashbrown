@@ -37,7 +37,8 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow', '@llm'],
       action: 'Fork from a completed assistant turn',
-      expectedOutcome: 'A new thread is created with the "Forked from" lineage subtitle and copied history',
+      expectedOutcome:
+        'A new thread is created with the "Forked from" lineage subtitle and copied history',
       test: () => {},
     },
     {
@@ -130,7 +131,9 @@ test.describe(
       await page.getByRole('menuitem', { name: 'Delete' }).click();
       await page.getByRole('button', { name: 'Confirm delete' }).click();
 
-      await expect(page.locator('aside[aria-label="Sidebar navigation"]').getByText(message)).not.toBeVisible();
+      await expect(
+        page.locator('aside[aria-label="Sidebar navigation"]').getByText(message),
+      ).not.toBeVisible();
       await expect(page.locator('[data-testid="assistant-message"]')).not.toBeVisible();
     });
 

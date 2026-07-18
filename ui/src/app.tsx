@@ -28,7 +28,6 @@ export function App() {
     switchThread(activeThreadId.value);
     // Runs once on mount — hydrates whatever thread was active in the
     // previous session (or a fresh one) and populates the sidebar list.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

@@ -81,7 +81,10 @@ export function failAssistant(
   sentAt: string,
 ): void {
   safe(threadId, 'failAssistant', () => {
-    store.updateMessage(threadId, id, { status: 'error', payload: { content: partialContent, sentAt } });
+    store.updateMessage(threadId, id, {
+      status: 'error',
+      payload: { content: partialContent, sentAt },
+    });
     store.interruptPendingToolCalls(threadId);
   });
 }

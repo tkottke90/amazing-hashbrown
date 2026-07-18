@@ -121,7 +121,10 @@ export async function pipeEvents(
   // updateMessage() replaces payload wholesale rather than merging, so
   // finalizeToolCall needs the original toolName/inputs back — tracked here
   // for the lifetime of this one turn.
-  const toolCallsInFlight = new Map<string, { toolName: string; inputs: Record<string, unknown> }>();
+  const toolCallsInFlight = new Map<
+    string,
+    { toolName: string; inputs: Record<string, unknown> }
+  >();
 
   for await (const evt of eventStream) {
     switch (evt.event) {
@@ -158,7 +161,14 @@ export async function pipeEvents(
           const outputs = evt.data?.output;
           const started = toolCallsInFlight.get(toolCallId);
           if (started) {
-            finalizeToolCall(threadStore, threadId, toolCallId, started.toolName, started.inputs, outputs);
+            finalizeToolCall(
+              threadStore,
+              threadId,
+              toolCallId,
+              started.toolName,
+              started.inputs,
+              outputs,
+            );
           }
           writeSseEvent(res, {
             type: 'tool_call_end',
@@ -194,7 +204,15 @@ async function finalizeTurn(
   const state = await agent.graph.getState(config);
   const checkpointId = (state.config.configurable?.checkpoint_id as string | undefined) ?? null;
 
-  finalizeAssistant(threadStore, threadId, msgId, content, thoughtContent, turnSentAt, checkpointId);
+  finalizeAssistant(
+    threadStore,
+    threadId,
+    msgId,
+    content,
+    thoughtContent,
+    turnSentAt,
+    checkpointId,
+  );
 
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
@@ -244,7 +262,11 @@ async function finalizeTurn(
   }
 }
 
-function drainAndRecordWikiUpdates(res: Response, threadStore: ThreadStore, threadId: string): void {
+function drainAndRecordWikiUpdates(
+  res: Response,
+  threadStore: ThreadStore,
+  threadId: string,
+): void {
   for (const event of drainPendingWikiUpdates(threadId)) {
     if (event.type === 'wiki_updated') {
       const seq = recordWikiUpdate(

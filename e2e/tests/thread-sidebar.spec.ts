@@ -140,7 +140,9 @@ test.describe(
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
 
-      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'Second conversation' });
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Second conversation' });
       await row.click();
       await expect(row).toHaveAttribute('data-active', 'true');
     });
@@ -149,7 +151,9 @@ test.describe(
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
 
-      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'First conversation' });
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'First conversation' });
       await row.hover();
       await row.locator('button[aria-haspopup="menu"]').click();
       await page.getByRole('menuitem', { name: 'Rename' }).click();
@@ -166,11 +170,15 @@ test.describe(
       ).toBeVisible();
     });
 
-    test('delete via kebab menu shows an inline confirm, then removes the row', async ({ page }) => {
+    test('delete via kebab menu shows an inline confirm, then removes the row', async ({
+      page,
+    }) => {
       await mockThreadsApi(page, seedThreads());
       await page.goto('/');
 
-      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'Second conversation' });
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Second conversation' });
       await row.hover();
       await row.locator('button[aria-haspopup="menu"]').click();
       await page.getByRole('menuitem', { name: 'Delete' }).click();

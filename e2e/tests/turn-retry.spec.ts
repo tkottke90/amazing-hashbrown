@@ -72,7 +72,9 @@ test.describe(
       // forceNextSendToFail, so it hits the real (working) default provider.
       await retryBtn.click();
 
-      await expect(assistantMsg.getByText('Something went wrong. Please try again.')).not.toBeVisible({
+      await expect(
+        assistantMsg.getByText('Something went wrong. Please try again.'),
+      ).not.toBeVisible({
         timeout: 30_000,
       });
       await expect(assistantMsg.locator('.animate-bounce').first()).not.toBeVisible({

@@ -44,7 +44,10 @@ describe('agents/thread-message-writer', () => {
       const msg = store.getMessage('t1', 'u1')!;
       expect(msg.kind).to.equal('user');
       expect(msg.status).to.equal(null);
-      expect(msg.payload).to.deep.equal({ content: 'hi there', sentAt: '2026-07-18T00:00:00.000Z' });
+      expect(msg.payload).to.deep.equal({
+        content: 'hi there',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
       expect(seq).to.equal(msg.seq);
     });
 
@@ -79,7 +82,15 @@ describe('agents/thread-message-writer', () => {
     });
 
     it('finalizeAssistant updates to done, stamps checkpointId, includes thoughtContent when present', () => {
-      finalizeAssistant(store, 't1', 'a1', 'final answer', 'my reasoning', '2026-07-18T00:00:00.000Z', 'cp-1');
+      finalizeAssistant(
+        store,
+        't1',
+        'a1',
+        'final answer',
+        'my reasoning',
+        '2026-07-18T00:00:00.000Z',
+        'cp-1',
+      );
       const msg = store.getMessage('t1', 'a1')!;
       expect(msg.status).to.equal('done');
       expect(msg.checkpointId).to.equal('cp-1');
@@ -92,9 +103,20 @@ describe('agents/thread-message-writer', () => {
 
     it('finalizeAssistant omits thoughtContent when empty', () => {
       recordAssistantStart(store, 't1', 'a2', '2026-07-18T00:00:00.000Z');
-      finalizeAssistant(store, 't1', 'a2', 'no thinking here', '', '2026-07-18T00:00:00.000Z', null);
+      finalizeAssistant(
+        store,
+        't1',
+        'a2',
+        'no thinking here',
+        '',
+        '2026-07-18T00:00:00.000Z',
+        null,
+      );
       const msg = store.getMessage('t1', 'a2')!;
-      expect(msg.payload).to.deep.equal({ content: 'no thinking here', sentAt: '2026-07-18T00:00:00.000Z' });
+      expect(msg.payload).to.deep.equal({
+        content: 'no thinking here',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
       expect(msg.checkpointId).to.equal(null);
     });
 
@@ -157,7 +179,12 @@ describe('agents/thread-message-writer', () => {
       finalizeToolCall(store, 't1', 'tc1', 'add_numbers', { a: 2, b: 3 }, '5');
       const msg = store.getMessage('t1', 'tc1')!;
       expect(msg.status).to.equal('done');
-      expect(msg.payload).to.deep.equal({ toolCallId: 'tc1', toolName: 'add_numbers', inputs: { a: 2, b: 3 }, outputs: '5' });
+      expect(msg.payload).to.deep.equal({
+        toolCallId: 'tc1',
+        toolName: 'add_numbers',
+        inputs: { a: 2, b: 3 },
+        outputs: '5',
+      });
     });
   });
 
@@ -229,7 +256,11 @@ describe('agents/thread-message-writer', () => {
       const msg = store.getMessage('t1', 'w1')!;
       expect(msg.kind).to.equal('wiki_update');
       expect(msg.status).to.equal(null);
-      expect(msg.payload).to.deep.equal({ pageTitle: 'Entity: Foo', pageKind: 'entity', wikiName: 'user' });
+      expect(msg.payload).to.deep.equal({
+        pageTitle: 'Entity: Foo',
+        pageKind: 'entity',
+        wikiName: 'user',
+      });
     });
   });
 });

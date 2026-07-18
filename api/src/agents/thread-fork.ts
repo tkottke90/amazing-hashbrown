@@ -1,5 +1,9 @@
 import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
-import type { CheckpointMetadata, CheckpointTuple, PendingWrite } from '@langchain/langgraph-checkpoint';
+import type {
+  CheckpointMetadata,
+  CheckpointTuple,
+  PendingWrite,
+} from '@langchain/langgraph-checkpoint';
 
 // Forks the checkpoint chain for a thread — no library-provided "clone a
 // thread" API exists in the OSS LangGraph checkpointer (see
@@ -48,8 +52,7 @@ export async function forkThreadCheckpoints(
   for (const tuple of chain) {
     const checkpointNs = (tuple.config.configurable?.['checkpoint_ns'] as string | undefined) ?? '';
     const parentCheckpointId = tuple.parentConfig?.configurable?.['checkpoint_id'] as
-      | string
-      | undefined;
+      string | undefined;
 
     const metadata: CheckpointMetadata = tuple.metadata
       ? { ...tuple.metadata, source: 'fork' }

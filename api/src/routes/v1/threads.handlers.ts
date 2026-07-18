@@ -212,8 +212,12 @@ export async function generateTitleHandler(
     totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
   });
 
-  const rawTitle = typeof responseContent === 'string' ? responseContent : String(responseContent ?? '');
-  const title = rawTitle.trim().replace(/^["']+|["']+$/g, '').trim();
+  const rawTitle =
+    typeof responseContent === 'string' ? responseContent : String(responseContent ?? '');
+  const title = rawTitle
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim();
   if (!title) return serverError('Title generation produced an empty result');
 
   // Same operation a rename performs (title + bumps updated_at) — reused

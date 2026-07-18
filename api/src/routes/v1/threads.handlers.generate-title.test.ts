@@ -64,7 +64,11 @@ describe('routes/v1/threads.handlers — generateTitleHandler', () => {
 
   it('renames the thread with the model output, trimmed and unquoted, bumping updated_at', async () => {
     store.upsertThreadOnFirstMessage('t1', 'placeholder');
-    store.insertMessage('t1', { id: 'u1', kind: 'user', payload: { content: 'How do I use Docker?' } });
+    store.insertMessage('t1', {
+      id: 'u1',
+      kind: 'user',
+      payload: { content: 'How do I use Docker?' },
+    });
     store.insertMessage('t1', {
       id: 'a1',
       kind: 'assistant',

@@ -48,7 +48,9 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
         )}
         <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
         <code className="font-mono text-xs font-semibold">{message.toolName}</code>
-        <span className={cn('ml-auto rounded-full px-2 py-0.5 text-xs font-medium', statusClassName)}>
+        <span
+          className={cn('ml-auto rounded-full px-2 py-0.5 text-xs font-medium', statusClassName)}
+        >
           {label}
         </span>
       </button>

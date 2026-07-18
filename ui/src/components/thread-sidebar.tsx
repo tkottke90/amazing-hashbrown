@@ -134,7 +134,9 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
       >
         <span className="w-full truncate">{thread.title}</span>
         <span className="text-xs text-muted-foreground">
-          {sourceThread ? `Forked from ${sourceThread.title}` : formatRelativeTime(thread.updatedAt)}
+          {sourceThread
+            ? `Forked from ${sourceThread.title}`
+            : formatRelativeTime(thread.updatedAt)}
         </span>
       </button>
 
@@ -197,7 +199,11 @@ export function ThreadSidebar() {
 
       <div className="flex flex-1 flex-col gap-0.5">
         {threads.value.map((thread) => (
-          <ThreadRow key={thread.id} thread={thread} isActive={thread.id === activeThreadId.value} />
+          <ThreadRow
+            key={thread.id}
+            thread={thread}
+            isActive={thread.id === activeThreadId.value}
+          />
         ))}
       </div>
 

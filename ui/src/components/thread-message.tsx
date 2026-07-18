@@ -14,7 +14,12 @@ interface ThreadMessageItemProps {
   onFork?: (seq: number) => void;
 }
 
-export function ThreadMessageItem({ message, onHitlAnswer, onRetry, onFork }: ThreadMessageItemProps) {
+export function ThreadMessageItem({
+  message,
+  onHitlAnswer,
+  onRetry,
+  onFork,
+}: ThreadMessageItemProps) {
   switch (message.kind) {
     case 'user':
       return (

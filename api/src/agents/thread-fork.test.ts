@@ -87,7 +87,10 @@ describe('agents/thread-fork', () => {
       // Turn 1: plain text.
       await agent.invoke({ messages: [{ role: 'human', content: 'hello' }] }, sourceConfig);
       // Turn 2: triggers a real tool-call/tool-result pair.
-      await agent.invoke({ messages: [{ role: 'human', content: 'please add these' }] }, sourceConfig);
+      await agent.invoke(
+        { messages: [{ role: 'human', content: 'please add these' }] },
+        sourceConfig,
+      );
 
       const stateAfterTurn2 = await agent.getState(sourceConfig);
       checkpointIdAfterTurn2 = stateAfterTurn2.config.configurable.checkpoint_id as string;
@@ -96,7 +99,12 @@ describe('agents/thread-fork', () => {
       // Turn 3: more plain text, after the fork point.
       await agent.invoke({ messages: [{ role: 'human', content: 'thanks' }] }, sourceConfig);
 
-      await forkThreadCheckpoints(checkpointer, sourceThreadId, checkpointIdAfterTurn2, forkedThreadId);
+      await forkThreadCheckpoints(
+        checkpointer,
+        sourceThreadId,
+        checkpointIdAfterTurn2,
+        forkedThreadId,
+      );
     });
 
     after(() => {
@@ -119,17 +127,26 @@ describe('agents/thread-fork', () => {
     });
 
     it('the forked thread can be continued — proving checkpoint state is genuinely resumable, not just readable', async () => {
-      await agent.invoke({ messages: [{ role: 'human', content: 'one more please add' }] }, forkedConfig);
+      await agent.invoke(
+        { messages: [{ role: 'human', content: 'one more please add' }] },
+        forkedConfig,
+      );
       const forkedStateAfterContinue = await agent.getState(forkedConfig);
       const toolMsg = forkedStateAfterContinue.values.messages.find(
         (m: BaseMessage) => m.getType() === 'tool',
       );
-      expect(toolMsg, 'forked thread should have executed a new, real tool call after continuing').to.exist;
+      expect(
+        toolMsg,
+        'forked thread should have executed a new, real tool call after continuing',
+      ).to.not.equal(undefined);
       expect(humanTypes(forkedStateAfterContinue.values.messages)).to.equal(3);
     });
 
     it('leaves the original thread completely independent of the fork', async () => {
-      await agent.invoke({ messages: [{ role: 'human', content: 'one more on the original' }] }, sourceConfig);
+      await agent.invoke(
+        { messages: [{ role: 'human', content: 'one more on the original' }] },
+        sourceConfig,
+      );
       const origState = await agent.getState(sourceConfig);
       expect(humanTypes(origState.values.messages)).to.equal(4);
     });
@@ -137,7 +154,12 @@ describe('agents/thread-fork', () => {
     it('throws when the target checkpoint does not exist on the source thread', async () => {
       let threw = false;
       try {
-        await forkThreadCheckpoints(checkpointer, sourceThreadId, 'no-such-checkpoint', 'another-fork');
+        await forkThreadCheckpoints(
+          checkpointer,
+          sourceThreadId,
+          'no-such-checkpoint',
+          'another-fork',
+        );
       } catch {
         threw = true;
       }

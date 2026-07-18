@@ -76,7 +76,10 @@ describe('agents/stream-handler', () => {
         res,
         'msg2',
         eventsFrom([
-          { event: 'on_chat_model_stream', data: { chunk: { content: 'Before <think>reasoning</think> after' } } },
+          {
+            event: 'on_chat_model_stream',
+            data: { chunk: { content: 'Before <think>reasoning</think> after' } },
+          },
         ]),
         store,
         't1',
@@ -84,7 +87,11 @@ describe('agents/stream-handler', () => {
 
       expect(result.content).to.equal('Before  after');
       expect(result.thoughtContent).to.equal('reasoning');
-      expect(events().map((e) => e.type)).to.deep.equal(['text_delta', 'thought_delta', 'text_delta']);
+      expect(events().map((e) => e.type)).to.deep.equal([
+        'text_delta',
+        'thought_delta',
+        'text_delta',
+      ]);
     });
 
     it('records a tool call start/end pair and finalizes with the right toolName/inputs/outputs', async () => {
