@@ -1,7 +1,8 @@
 import { tool } from '@langchain/core/tools';
-import { MemorySaver } from '@langchain/langgraph';
+import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
+import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
@@ -11,7 +12,25 @@ import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 
-const checkpointer = new MemorySaver();
+// Set once at startup (see api/src/index.ts) with the same shared db
+// connection every other store uses. SqliteSaver accepts the connection
+// directly — no separate file, no separate connection.
+let _checkpointerDb: SqliteDatabase | null = null;
+let _checkpointer: SqliteSaver | null = null;
+
+export function initChatAgent(db: SqliteDatabase): void {
+  _checkpointerDb = db;
+}
+
+function getCheckpointer(): SqliteSaver {
+  if (!_checkpointer) {
+    if (!_checkpointerDb) {
+      throw new Error('Chat agent not initialised — call initChatAgent() first');
+    }
+    _checkpointer = new SqliteSaver(_checkpointerDb);
+  }
+  return _checkpointer;
+}
 
 // Fires once per completed turn (does not fire on a turn that pauses via
 // interrupt() — only once the turn, including a resumed HITL turn, actually
@@ -77,7 +96,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
     // MCP tools are converted from RegisteredTool.
     tools: [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool, ...mcpTools],
-    checkpointer,
+    checkpointer: getCheckpointer(),
     middleware: [afterAgentMiddleware],
   });
 }
