@@ -81,6 +81,18 @@ afterAgent:
   enabled: true
 
 # ---------------------------------------------------------------------------
+# Chat
+#
+# showErrorMessages: when false (default), a failed turn that has since been
+# retried is hidden from the conversation history — only the successful
+# retry shows. A failed turn nobody has retried yet is always shown
+# regardless of this setting. Override per-request via
+# GET /api/v1/threads/:id?showErrors=true.
+# ---------------------------------------------------------------------------
+chat:
+  showErrorMessages: false
+
+# ---------------------------------------------------------------------------
 # Cost Rates
 #
 # Optional. Maps "providerName/model" keys to per-1k-token prices in USD.

@@ -22,7 +22,9 @@ export function initChatAgent(db: SqliteDatabase): void {
   _checkpointerDb = db;
 }
 
-function getCheckpointer(): SqliteSaver {
+// Exported so the threads route/handlers can call deleteThread()/list()/put()
+// directly for delete and fork support — same singleton the agent itself uses.
+export function getCheckpointer(): SqliteSaver {
   if (!_checkpointer) {
     if (!_checkpointerDb) {
       throw new Error('Chat agent not initialised — call initChatAgent() first');
