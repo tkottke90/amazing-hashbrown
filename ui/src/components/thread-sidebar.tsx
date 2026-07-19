@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { Plus, MoreHorizontal, Pencil, Sparkles, Trash2, Loader2 } from 'lucide-preact';
+import { Plus, MoreHorizontal, Pencil, Sparkles, Copy, Trash2, Loader2 } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,10 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
     } finally {
       isRegenerating.value = false;
     }
+  }
+
+  function handleCopyThreadId() {
+    navigator.clipboard.writeText(thread.id).catch(() => {});
   }
 
   if (isEditing.value) {
@@ -166,6 +170,10 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
             <DropdownMenuItem onSelect={handleRegenerateTitle}>
               <Sparkles className="size-4" />
               Regenerate title
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleCopyThreadId}>
+              <Copy className="size-4" />
+              Copy thread ID
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"

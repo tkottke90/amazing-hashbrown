@@ -35,6 +35,12 @@ const suite: TestSuite = {
       expectedOutcome: 'DELETE is sent and the row disappears from the sidebar',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open the kebab menu and click Copy thread ID',
+      expectedOutcome: "The thread's id is written to the clipboard",
+      test: () => {},
+    },
   ],
 };
 
@@ -208,6 +214,26 @@ test.describe(
 
       await expect(page.getByText('Second conversation')).not.toBeVisible();
       await expect(page.getByText('First conversation')).toBeVisible();
+    });
+
+    test('copy thread ID via kebab menu writes the id to the clipboard', async ({
+      page,
+      context,
+    }, testInfo) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await mockThreadsApi(page, seedThreads());
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'First conversation' });
+      await row.hover();
+      await row.locator('button[aria-haspopup="menu"]').click();
+      await page.getByRole('menuitem', { name: 'Copy thread ID' }).click();
+
+      const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+      expect(clipboardText).toBe('thread-a');
     });
   },
 );
