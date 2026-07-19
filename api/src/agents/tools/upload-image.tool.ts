@@ -17,10 +17,7 @@ const UploadImageSchema = z.object({
 });
 
 export const uploadImageTool = tool(
-  async (
-    { imageBase64, mimeType, alt, nsfw }: z.infer<typeof UploadImageSchema>,
-    config,
-  ) => {
+  async ({ imageBase64, mimeType, alt, nsfw }: z.infer<typeof UploadImageSchema>, config) => {
     const original = Buffer.from(imageBase64, 'base64');
     const { web, preview } = await processImage(original);
 

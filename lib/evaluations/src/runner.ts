@@ -157,7 +157,9 @@ async function invokeToolCallModel(
   tools: BindToolsInput[],
 ): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
   if (!model.bindTools) {
-    throw new Error('the configured model does not support bindTools — required for tool-call scenarios');
+    throw new Error(
+      'the configured model does not support bindTools — required for tool-call scenarios',
+    );
   }
   const start = Date.now();
   const response = await model.bindTools(tools).invoke(input);

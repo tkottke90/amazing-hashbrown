@@ -62,7 +62,13 @@ export function runToolCall(
   const match = toolCalls.find((call) => call.name === scenario.tool);
 
   if (!match) {
-    return { type: 'tool-call', expectedTool: scenario.tool, toolCalled: null, fieldResults: [], score: 0 };
+    return {
+      type: 'tool-call',
+      expectedTool: scenario.tool,
+      toolCalled: null,
+      fieldResults: [],
+      score: 0,
+    };
   }
 
   const fieldResults: FieldCheckResult[] = (scenario.argChecks ?? []).map((check) => {
@@ -80,9 +86,13 @@ export function runToolCall(
   // malformed scenario there), an empty argChecks here is the common case:
   // "was the right tool called at all" is the primary assertion.
   const score =
-    fieldResults.length > 0
-      ? fieldResults.filter((r) => r.passed).length / fieldResults.length
-      : 1;
+    fieldResults.length > 0 ? fieldResults.filter((r) => r.passed).length / fieldResults.length : 1;
 
-  return { type: 'tool-call', expectedTool: scenario.tool, toolCalled: match.name, fieldResults, score };
+  return {
+    type: 'tool-call',
+    expectedTool: scenario.tool,
+    toolCalled: match.name,
+    fieldResults,
+    score,
+  };
 }

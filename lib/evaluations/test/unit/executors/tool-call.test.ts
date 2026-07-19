@@ -23,9 +23,7 @@ function makeScenario(
 describe('runToolCall', () => {
   describe('tool matching', () => {
     it('reports toolCalled: null and score 0 when the expected tool was not called', () => {
-      const result = runToolCall(makeScenario('upload_image'), [
-        { name: 'ask_user', args: {} },
-      ]);
+      const result = runToolCall(makeScenario('upload_image'), [{ name: 'ask_user', args: {} }]);
       assert.equal(result.toolCalled, null);
       assert.equal(result.score, 0);
     });
