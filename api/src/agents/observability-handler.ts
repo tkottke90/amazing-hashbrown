@@ -15,6 +15,18 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
   private readonly pending = new Map<string, Partial<SpanRecord>>();
   private readonly completed: SpanRecord[] = [];
 
+  // Set by callers ahead of an .invoke() and read by the next handleLLMStart.
+  // Needed because RunnableConfig's `runName` (the 8th handleLLMStart param
+  // below) only labels the outermost run of a chain — it does NOT propagate
+  // down through .withStructuredOutput()/.withRetry() to the inner chat
+  // model's own LLM-call run, which is what actually reaches this handler.
+  // Confirmed empirically: handleLLMStart's runName param is always
+  // undefined for such chains, regardless of the runName passed to invoke().
+  // Not cleared after one use — .withRetry() re-invokes the whole chain
+  // (and therefore handleLLMStart) internally on each retry attempt, all of
+  // which are still the same logical step and should get the same name.
+  private nextSpanName: string | null = null;
+
   totalInputTokens = 0;
   totalOutputTokens = 0;
 
@@ -24,6 +36,13 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
     private readonly previewChars: number,
   ) {
     super();
+  }
+
+  /** Names the next LLM-call span(s), overriding both the derived model name
+   * and any (non-functional, for chained/retried calls) runName param. Stays
+   * in effect until the next call — see field comment above. */
+  setNextSpanName(name: string): void {
+    this.nextSpanName = name;
   }
 
   override async handleLLMStart(
@@ -38,7 +57,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const derivedName =
       (llm as { id?: string[] }).id?.at(-1) ?? (llm as { name?: string }).name ?? 'unknown-model';
-    const name = runName ?? derivedName;
+    const name = this.nextSpanName ?? runName ?? derivedName;
 
     this.pending.set(runId, {
       spanId: runId,

@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { logger } from '../../config/logger.js';
+import { logger, serializeError } from '../../config/logger.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 
 const WikiReadPageSchema = z.object({
@@ -36,7 +36,7 @@ export const wikiReadPageTool = tool(
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         return `Page "${path}" not found in wiki "${wikiId}". Use wiki_search to find available pages.`;
       }
-      logger.warn('wiki_read_page: error reading page', { wikiId, path, err });
+      logger.warn('wiki_read_page: error reading page', { wikiId, path, err: serializeError(err) });
       return `Error reading page "${path}": ${(err as Error).message}`;
     }
   },

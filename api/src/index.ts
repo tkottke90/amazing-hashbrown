@@ -3,8 +3,9 @@ import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
+import { bootThreadStore } from './services/thread-store.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
-import { getChatAgent } from './agents/chat-agent.js';
+import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 
@@ -23,6 +24,9 @@ seedProviderCosts();
 app.logger.info('Usage tracking booted');
 bootEvaluations(db);
 app.logger.info('Evaluations booted');
+bootThreadStore(db);
+app.logger.info('Thread store booted');
+initChatAgent(db);
 await bootKnowledgeBase();
 app.logger.info('Knowledge base booted');
 

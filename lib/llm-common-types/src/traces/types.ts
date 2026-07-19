@@ -3,6 +3,13 @@ import type { PaginationOptions } from '../db/types.js';
 
 export const SpanTypeSchema = z.enum(['llm-call', 'tool-call']);
 
+// Which subsystem opened this trace. Explicit rather than inferred from span
+// names/content, so a trace is correctly attributable even when it has zero
+// spans (e.g. a background pipeline that errors before its first LLM call —
+// the exact case span-name inference cannot distinguish from a plain chat
+// turn, since neither has recorded anything to infer from).
+export const TraceSourceSchema = z.enum(['chat', 'after-agent', 'generate-title']);
+
 export const SpanRecordSchema = z.object({
   spanId: z.string(),
   traceId: z.string(),
@@ -40,6 +47,7 @@ export const TraceRecordSchema = z.object({
   taskId: z.string().nullable(),
   provider: z.string(), // e.g. "local", "anthropic"
   model: z.string(), // e.g. "llama3.2", "claude-sonnet-4-6"
+  source: TraceSourceSchema,
   startedAt: z.string(), // ISO 8601; satisfies BaseRecord.createdAt semantics
   endedAt: z.string().nullable(),
   totalTokens: z.number(),
@@ -62,6 +70,7 @@ export const TraceWithSpansSchema = TraceRecordSchema.extend({
 });
 
 export type SpanType = z.infer<typeof SpanTypeSchema>;
+export type TraceSource = z.infer<typeof TraceSourceSchema>;
 export type SpanRecord = z.infer<typeof SpanRecordSchema>;
 export type TraceRecord = z.infer<typeof TraceRecordSchema>;
 export type TraceSummary = z.infer<typeof TraceSummarySchema>;

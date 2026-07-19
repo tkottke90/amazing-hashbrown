@@ -3,13 +3,18 @@ import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
+import { AfterAgentIndicator } from '@/components/after-agent-indicator';
 import {
   messages,
   isStreaming,
   pendingHitlId,
+  activeThreadId,
+  activeThreadAfterAgentState,
   sendMessage,
   submitHitlAnswer,
   stopGeneration,
+  retryTurn,
+  forkThread,
 } from '@/hooks/use-thread';
 
 export function ThreadView() {
@@ -37,7 +42,13 @@ export function ThreadView() {
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">
           {scrollMessages.map((msg) => (
-            <ThreadMessageItem key={msg.id} message={msg} onHitlAnswer={submitHitlAnswer} />
+            <ThreadMessageItem
+              key={msg.id}
+              message={msg}
+              onHitlAnswer={submitHitlAnswer}
+              onRetry={retryTurn}
+              onFork={(seq) => forkThread(activeThreadId.value, seq)}
+            />
           ))}
         </div>
       </ChatMessageScrollWrapper>
@@ -59,6 +70,7 @@ export function ThreadView() {
           isGenerating={isStreaming.value}
           disabled={!!pendingHitlId.value}
         />
+        <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>
     </div>
   );

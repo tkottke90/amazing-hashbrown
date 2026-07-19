@@ -17,6 +17,9 @@ export default defineConfig({
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    launchOptions: {
+      executablePath: process.env['PLAYWRIGHT_CHROMIUM_PATH'],
+    },
   },
   outputDir: 'test-results',
 
@@ -40,8 +43,23 @@ export default defineConfig({
 
   projects: [
     {
+      // Everything NOT tagged @user-workflow (e.g. @functional health checks) —
+      // default asset capture (screenshot only on failure, no video) is enough.
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      grepInvert: /@user-workflow/,
+    },
+    {
+      // @user-workflow specs simulate a real user completing a task, so a
+      // screenshot and a video are captured for every run (pass or fail) —
+      // reviewers can see the actual flow, not just debug a failure.
+      name: 'chromium-user-workflow',
+      use: {
+        ...devices['Desktop Chrome'],
+        screenshot: 'on',
+        video: 'on',
+      },
+      grep: /@user-workflow/,
     },
   ],
 });

@@ -1,11 +1,15 @@
+import { RotateCcw } from 'lucide-preact';
 import { Markdown } from './markdown';
 import { ThoughtBlock } from './thought-block';
+import { ActionButton, ChatMessageForkAction } from './chat-message';
 import { cn } from '@/lib/utils';
 import type { AssistantThreadMessage } from '../types/thread-message';
 
 interface AssistantMessageProps {
   message: AssistantThreadMessage;
   className?: string;
+  onRetry?: () => void;
+  onFork?: () => void;
 }
 
 function LoadingDots() {
@@ -18,10 +22,11 @@ function LoadingDots() {
   );
 }
 
-export function AssistantMessage({ message, className }: AssistantMessageProps) {
+export function AssistantMessage({ message, className, onRetry, onFork }: AssistantMessageProps) {
   const isStreaming = message.status === 'streaming';
   const hasContent = message.content.length > 0;
   const hasThought = !!message.thoughtContent;
+  const canFork = message.status === 'done' && message.seq !== undefined;
 
   return (
     <div
@@ -51,6 +56,20 @@ export function AssistantMessage({ message, className }: AssistantMessageProps) 
           <Markdown>{message.content}</Markdown>
         )}
       </div>
+
+      {message.status === 'error' && onRetry && (
+        <div className="flex items-center gap-0.5">
+          <ActionButton label="Retry" onClick={onRetry}>
+            <RotateCcw className="size-4" />
+          </ActionButton>
+        </div>
+      )}
+
+      {canFork && onFork && (
+        <div className="flex items-center gap-0.5">
+          <ChatMessageForkAction onFork={onFork} />
+        </div>
+      )}
 
       {!isStreaming && message.durationMs !== undefined && (
         <span className="text-xs text-muted-foreground/60">

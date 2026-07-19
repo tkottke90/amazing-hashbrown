@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createWikiRegistry } from '../src/index.js';
+import { NullEmbeddingProvider } from '../src/providers/null.js';
 
 async function tmpRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'wiki-root-'));
@@ -73,6 +74,59 @@ describe('WikiRegistry', () => {
     await registry.create({ id: 'homelab', domain: 'infrastructure', tags: ['dns'] });
     const wiki = await registry.load('homelab');
     expect(wiki.basePath).to.equal(path.join(root, 'homelab'));
+  });
+
+  it('threads a registry-level embeddingProvider into every wiki it creates and loads', async () => {
+    const root = await tmpRoot();
+    const provider = new NullEmbeddingProvider();
+    const registry = await createWikiRegistry({ wikiRoot: root, embeddingProvider: provider });
+
+    // An empty wiki short-circuits semanticSearch before ever touching the
+    // provider (see LlmWiki.semanticSearch's contentPaths.length === 0
+    // check) — commit a page first so the provider-required path is
+    // actually exercised, not just the vacuous empty-wiki case.
+    const page = {
+      type: 'entity' as const,
+      title: 'Router',
+      tags: [],
+      sources: [],
+      body: 'A router forwards network packets.',
+    };
+
+    // create() must pass it through too, not just load() — semantic/hybrid
+    // search must work immediately on a freshly-created wiki, not just after
+    // a reload.
+    const created = await registry.create({ id: 'homelab', domain: 'infrastructure' });
+    await created.commitPage(page);
+    const createdResults = await created.semanticSearch('router', { mode: 'semantic' });
+    expect(createdResults).to.have.length(1);
+
+    const loaded = await registry.load('homelab');
+    const loadedResults = await loaded.semanticSearch('router', { mode: 'semantic' });
+    expect(loadedResults).to.have.length(1);
+  });
+
+  it('leaves semantic/hybrid search unavailable when no embeddingProvider is configured', async () => {
+    const registry = await createWikiRegistry({ wikiRoot: await tmpRoot() });
+    const wiki = await registry.create({ id: 'homelab', domain: 'infrastructure' });
+    // Non-empty wiki required — an empty wiki short-circuits before the
+    // provider check (see the test above).
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Router',
+      tags: [],
+      sources: [],
+      body: 'A router forwards network packets.',
+    });
+
+    let err: Error | undefined;
+    try {
+      await wiki.semanticSearch('anything', { mode: 'semantic' });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err).to.be.instanceOf(Error);
+    expect(err!.message).to.include('embeddingProvider');
   });
 
   it('saves routing notes and round-trips them', async () => {

@@ -1,0 +1,113 @@
+suite:
+  id: thread-titles
+  name: Thread Title Generation
+  purpose: >
+    Verify that POST /api/v1/threads/:id/generate-title produces a short,
+    non-empty, topically accurate title from a conversation's content. This
+    is the only genuinely LLM-quality-facing piece of the Persistent
+    Conversation Memory feature (see
+    docs/Design/2026-07-18-persistent-conversation-memory-design.md) —
+    everything else in that feature is deterministic persistence/CRUD and
+    does not belong in an eval suite. The `input` field on every scenario
+    below is the exact prompt api/src/routes/v1/threads.handlers.ts's
+    generateTitleHandler sends to the model — keep them in sync if the
+    prompt template changes.
+  passingThreshold: 0.75
+
+scenarios:
+  - id: tt-001-non-empty
+    name: Title is non-empty
+    purpose: >
+      A blank or whitespace-only title would render as an empty sidebar row
+      — the most basic acceptance bar before anything else matters.
+    type: deterministic
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: How do I set up a multi-stage Docker build for a Node.js app?
+      Assistant: Use a build stage with the full node image to compile, then
+      copy only the built artifacts into a slim runtime image based on
+      node:alpine. This keeps your final image small since dev dependencies
+      and build tools never ship.
+    match: regex
+    expected: '\S'
+
+  - id: tt-002-reasonable-length
+    name: Title stays within a reasonable length
+    purpose: >
+      generate-title is meant to produce a short sidebar label, not a
+      restated summary of the conversation. A title that runs on for
+      paragraphs indicates the model ignored the length instruction.
+    type: deterministic
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: How do I set up a multi-stage Docker build for a Node.js app?
+      Assistant: Use a build stage with the full node image to compile, then
+      copy only the built artifacts into a slim runtime image based on
+      node:alpine. This keeps your final image small since dev dependencies
+      and build tools never ship.
+    match: regex
+    expected: '^[\s\S]{1,80}$'
+
+  - id: tt-003-topical-accuracy
+    name: Title reflects the conversation's actual topic
+    purpose: >
+      A generic title ("Chat conversation", "Help request") defeats the
+      purpose of the feature — the sidebar needs to let you distinguish
+      threads at a glance. Checks semantic similarity against a
+      hand-written reference title for a fixed sample conversation.
+    type: semantic
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: How do I set up a multi-stage Docker build for a Node.js app?
+      Assistant: Use a build stage with the full node image to compile, then
+      copy only the built artifacts into a slim runtime image based on
+      node:alpine. This keeps your final image small since dev dependencies
+      and build tools never ship.
+    expectedSimilarTo: 'Multi-stage Docker build for Node.js'
+    minSimilarity: 0.6
+
+  - id: tt-004-not-generic-or-fabricated
+    name: Title is specific, not generic or fabricated
+    purpose: >
+      LLM-judged check for the failure modes a similarity score alone can
+      miss — a title that's technically on-topic but vague ("Docker
+      question"), or one that invents details not present in the
+      conversation (e.g. naming a specific cloud provider that was never
+      mentioned).
+    type: llm-judge
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: How do I set up a multi-stage Docker build for a Node.js app?
+      Assistant: Use a build stage with the full node image to compile, then
+      copy only the built artifacts into a slim runtime image based on
+      node:alpine. This keeps your final image small since dev dependencies
+      and build tools never ship.
+    rubric: >
+      The title should: (1) specifically mention Docker, multi-stage
+      builds, or Node.js — not a vague generic phrase like "Chat
+      conversation" or "Docker question", (2) not invent details absent
+      from the conversation (no specific cloud provider, CI tool, or
+      version number was mentioned — inventing one is a fabrication), (3)
+      read as a short title, not a sentence. Score higher for specificity
+      grounded in what was actually discussed.
+    minScore: 6

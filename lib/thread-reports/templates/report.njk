@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thread Report — {{ thread.title }}</title>
+  <style>{{ styles | safe }}</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+
+<div class="header">
+  <h1>Thread Report: {{ thread.title }}</h1>
+  <div class="subtitle">
+    Thread <code>{{ threadId }}</code> &middot; generated {{ generatedAt | reportTime }}
+    {% if thread.forkedFromThreadId %}&middot; forked from <code>{{ thread.forkedFromThreadId }}</code> at seq {{ thread.forkedFromSeq }}{% endif %}
+  </div>
+</div>
+
+<h2>Stats</h2>
+<div class="meta-grid">
+  <div class="meta-card">
+    <div class="label">Turns</div>
+    <div class="value">{{ stats.turnCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Tool calls</div>
+    <div class="value">{{ stats.toolCallCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Most popular tool</div>
+    <div class="value">{{ stats.mostPopularTool or '—' }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Failures</div>
+    <div class="value" style="{{ 'color:var(--fail)' if stats.failureCount > 0 }}">{{ stats.failureCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Wiki writes</div>
+    <div class="value">{{ stats.wikiWriteCount }}</div>
+  </div>
+</div>
+
+<h2>Trace</h2>
+<div class="timeline">
+  {% for event in timeline %}
+    {% if event.kind == 'trace' %}
+      <div class="timeline-trace lane-{{ event.trace.source }}">
+        <div class="timeline-trace-header">
+          <span class="lane-label">
+            {% if event.trace.source == 'after-agent' %}AfterAgent
+            {% elif event.trace.source == 'generate-title' %}Generate Title
+            {% else %}Turn
+            {% endif %}
+          </span>
+          <span class="trace-time">{{ event.trace.startedAt | reportTime }}</span>
+          {% if event.outcome %}
+            <span class="outcome-badge outcome-{{ event.outcome }}">{{ event.outcome }}</span>
+          {% endif %}
+          <span class="trace-meta">{{ event.trace.provider }}/{{ event.trace.model }} &middot; {{ event.trace.totalTokens }} tokens</span>
+        </div>
+        {% if event.userMessage %}
+          <div class="trace-user-message">
+            <span class="icon">💬</span>
+            <span>{{ event.userMessage.payload.content }}</span>
+          </div>
+        {% endif %}
+        <div class="span-list">
+          {% for span in event.trace.spans %}
+            <details class="span-row {{ 'span-error' if span.error }}" {{ 'open' if span.error }}>
+              <summary>
+                <span class="span-type">{{ span.type }}</span>
+                <span class="span-name">{{ span.name }}</span>
+                <span class="span-tokens">
+                  {{ span.latencyMs | duration }}
+                  {% if span.inputTokens != None or span.outputTokens != None %}
+                    &middot; {{ span.inputTokens or 0 }} in / {{ span.outputTokens or 0 }} out
+                  {% endif %}
+                </span>
+              </summary>
+              {% if span.inputPreview %}
+                <div class="span-preview"><strong>Input:</strong> {{ span.inputPreview | json }}</div>
+              {% endif %}
+              {% if span.outputPreview %}
+                <div class="span-preview"><strong>Output:</strong> {{ span.outputPreview | json }}</div>
+              {% endif %}
+              {% if span.error %}
+                <div class="span-error-text">{{ span.error }}</div>
+              {% endif %}
+            </details>
+          {% else %}
+            <div class="span-row"><em style="color:var(--text-muted)">No spans recorded</em></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      <div class="timeline-wiki-update">
+        <span class="icon">📖</span>
+        <span>Wrote/updated <strong>{{ event.pageTitle }}</strong> ({{ event.pageKind }}) in <code>{{ event.wikiName }}</code> wiki</span>
+        <span class="trace-meta">{{ event.at | reportTime }}</span>
+      </div>
+    {% endif %}
+  {% else %}
+    <p style="color:var(--text-muted)">No observability traces recorded for this thread.</p>
+  {% endfor %}
+</div>
+
+<h2>Conversation</h2>
+<div class="conversation">
+  {% for message in thread.messages %}
+    {% if message.kind == 'user' %}
+      <div class="msg msg-user">
+        <span class="msg-time">{{ message.payload.sentAt | reportTime }}</span>
+        <div class="msg-bubble">{{ message.payload.content | markdown }}</div>
+      </div>
+    {% elif message.kind == 'assistant' %}
+      <div class="msg msg-assistant {{ 'msg-error' if message.status == 'error' }}">
+        <span class="msg-time">
+          {{ message.payload.sentAt | reportTime }}
+          {% if message.status %}&middot; {{ message.status }}{% endif %}
+          {% if message.retryOf %}<span class="msg-retry-tag">&middot; retry of {{ message.retryOf }}</span>{% endif %}
+        </span>
+        {% if message.payload.thoughtContent %}
+          <details class="chip chip-tool">
+            <summary class="chip-header">Thinking</summary>
+            <div class="chip-body">{{ message.payload.thoughtContent }}</div>
+          </details>
+        {% endif %}
+        <div class="msg-bubble">
+          {% if message.status == 'error' %}
+            Something went wrong.
+          {% else %}
+            {{ message.payload.content | markdown }}
+          {% endif %}
+        </div>
+      </div>
+    {% elif message.kind == 'tool_call' %}
+      <details class="chip chip-tool">
+        <summary class="chip-header">
+          🔧 <code>{{ message.payload.toolName }}</code>
+          <span class="status">{{ message.status or 'pending' }}</span>
+        </summary>
+        <div class="chip-body"><strong>Input:</strong> {{ message.payload.inputs | json }}</div>
+        {% if message.payload.outputs != None %}
+          <div class="chip-body"><strong>Output:</strong> {{ message.payload.outputs | json }}</div>
+        {% endif %}
+      </details>
+    {% elif message.kind == 'hitl_prompt' %}
+      <details class="chip chip-hitl">
+        <summary class="chip-header">
+          ⏸ HITL: {{ message.payload.question }}
+          <span class="status">{{ message.status }}</span>
+        </summary>
+        <div class="chip-body">
+          {% if message.payload.answer != None %}Answer: {{ message.payload.answer }}{% else %}Awaiting answer{% endif %}
+        </div>
+      </details>
+    {% elif message.kind == 'wiki_update' %}
+      <div class="chip chip-wiki">
+        <div class="chip-header">📖 Wiki updated: {{ message.payload.pageTitle }} ({{ message.payload.pageKind }})</div>
+      </div>
+    {% endif %}
+  {% else %}
+    <p style="color:var(--text-muted)">This thread has no messages.</p>
+  {% endfor %}
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>

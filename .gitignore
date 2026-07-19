@@ -143,7 +143,10 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Local dev runtime config (MCP servers, checkpoints, artifacts, knowledge base)
-config/
+# Anchored and explicit — a bare "config/" also matches api/src/config/
+# (application source, must stay tracked), which it silently did before.
+/config/
+/api/config/
 
 # Playwright E2E artifacts
 e2e/playwright-report/
@@ -151,3 +154,7 @@ e2e/test-results/
 
 # Evaluation run artifacts (YAML results, HTML reports, review manifests)
 eval-results/
+
+# Thread report CLI output (bin/thread-report.ts) — anchored so it doesn't
+# also match lib/thread-reports/ (see the api/src/config/ fix earlier).
+/thread-reports/

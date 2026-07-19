@@ -1,16 +1,31 @@
 import { useSignal } from '@preact/signals';
 import { ChevronDown, ChevronRight, Wrench } from 'lucide-preact';
 import { cn } from '@/lib/utils';
-import type { ToolCallThreadMessage } from '../types/thread-message';
+import type { ToolCallStatus, ToolCallThreadMessage } from '../types/thread-message';
 
 interface ToolCallMessageProps {
   message: ToolCallThreadMessage;
   className?: string;
 }
 
+const STATUS_STYLES: Record<ToolCallStatus, { label: string; className: string }> = {
+  pending: {
+    label: 'running',
+    className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  done: {
+    label: 'done',
+    className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  },
+  interrupted: {
+    label: 'interrupted',
+    className: 'bg-muted text-muted-foreground',
+  },
+};
+
 export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
   const isOpen = useSignal(false);
-  const isPending = message.status === 'pending';
+  const { label, className: statusClassName } = STATUS_STYLES[message.status];
 
   return (
     <div
@@ -34,14 +49,9 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
         <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
         <code className="font-mono text-xs font-semibold">{message.toolName}</code>
         <span
-          className={cn(
-            'ml-auto rounded-full px-2 py-0.5 text-xs font-medium',
-            isPending
-              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-              : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-          )}
+          className={cn('ml-auto rounded-full px-2 py-0.5 text-xs font-medium', statusClassName)}
         >
-          {isPending ? 'running' : 'done'}
+          {label}
         </span>
       </button>
 

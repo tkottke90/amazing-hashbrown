@@ -1,6 +1,7 @@
 // Schemas (for runtime validation)
 export {
   SpanTypeSchema,
+  TraceSourceSchema,
   SpanRecordSchema,
   TraceRecordSchema,
   TraceSummarySchema,
@@ -10,6 +11,7 @@ export {
 // Types
 export type {
   SpanType,
+  TraceSource,
   SpanRecord,
   TraceRecord,
   TraceSummary,

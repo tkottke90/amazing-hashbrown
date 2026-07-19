@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { logger } from '../../config/logger.js';
+import { logger, serializeError } from '../../config/logger.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 
 const WikiSearchSchema = z.object({
@@ -32,7 +32,10 @@ export const wikiSearchTool = tool(
     for (const entry of wikis) {
       try {
         const wiki = await registry.load(entry.id);
-        const results = await wiki.semanticSearch(query, { limit, mode: 'hybrid' });
+        // No explicit mode — semanticSearch already defaults to 'hybrid' when
+        // an embeddingProvider is configured and falls back to 'keyword'
+        // otherwise, so this degrades gracefully with embeddings disabled.
+        const results = await wiki.semanticSearch(query, { limit });
         allResults.push(
           ...results.map((r: { path: string; score: number; title: string }) => ({
             wikiId: entry.id,
@@ -40,7 +43,10 @@ export const wikiSearchTool = tool(
           })),
         );
       } catch (err) {
-        logger.warn('wiki_search: error searching wiki', { wikiId: entry.id, err });
+        logger.warn('wiki_search: error searching wiki', {
+          wikiId: entry.id,
+          err: serializeError(err),
+        });
       }
     }
 

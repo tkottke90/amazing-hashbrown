@@ -6,7 +6,7 @@ import { getWikiRegistry } from '../services/wiki.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { env } from '../config/env.js';
-import { logger } from '../config/logger.js';
+import { logger, serializeError } from '../config/logger.js';
 
 // ---------------------------------------------------------------------------
 // Per-thread state — in-memory, process-lifetime. Consistent with the
@@ -38,6 +38,41 @@ function queueWikiUpdate(threadId: string, event: WikiUpdatedEvent): void {
   const events = pendingWikiUpdates.get(threadId) ?? [];
   events.push(event);
   pendingWikiUpdates.set(threadId, events);
+}
+
+// ---------------------------------------------------------------------------
+// Live status — lets the UI show a subtle "working in the background"
+// indicator without any persistence. Same in-memory, process-lifetime
+// precedent as threadState/pendingWikiUpdates above.
+// ---------------------------------------------------------------------------
+
+export type AfterAgentState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; outcome: 'identified' | 'no-op' | 'error'; finishedAt: string };
+
+// Generous headroom so a slow poller or a second tab still catches the
+// outcome before it's swept — not a correctness requirement, just UX.
+const DONE_TTL_MS = 60_000;
+
+const afterAgentStatus = new Map<string, AfterAgentState>();
+
+export function getAfterAgentState(threadId: string): AfterAgentState {
+  const entry = afterAgentStatus.get(threadId);
+  if (!entry) return { status: 'idle' };
+  if (entry.status === 'done' && Date.now() - Date.parse(entry.finishedAt) > DONE_TTL_MS) {
+    afterAgentStatus.delete(threadId);
+    return { status: 'idle' };
+  }
+  return entry;
+}
+
+function setAfterAgentDone(threadId: string, outcome: 'identified' | 'no-op' | 'error'): void {
+  afterAgentStatus.set(threadId, {
+    status: 'done',
+    outcome,
+    finishedAt: new Date().toISOString(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +229,10 @@ function stringifyContent(content: BaseMessage['content']): string {
     .join(' ');
 }
 
-async function invokeStructured<T extends z.ZodTypeAny>(
+// Exported for unit testing — verifies setNextSpanName() is actually called
+// ahead of invoke(), which real Runnable chains have no other way to prove
+// (see ObservabilityCallbackHandler.setNextSpanName's doc for why).
+export async function invokeStructured<T extends z.ZodTypeAny>(
   llm: ReturnType<typeof createProvider>,
   schema: T,
   prompt: string,
@@ -202,6 +240,9 @@ async function invokeStructured<T extends z.ZodTypeAny>(
   runName: string,
 ): Promise<z.infer<T>> {
   const chain = llm.withStructuredOutput(schema).withRetry({ stopAfterAttempt: 3 });
+  // RunnableConfig's runName only labels the outer chain run, not the inner
+  // LLM call this handler actually observes — see setNextSpanName()'s doc.
+  handler.setNextSpanName(runName);
   return chain.invoke(prompt, { callbacks: [handler], runName }) as Promise<z.infer<T>>;
 }
 
@@ -215,10 +256,15 @@ export interface RunAfterAgentPipelineParams {
   provider?: string;
   model?: string;
   requestAfterAgentEnabled?: boolean;
+  // Test-only escape hatch: an already-constructed model, used in place of
+  // createProvider(provider, model). Production callers never set this.
+  llm?: ReturnType<typeof createProvider>;
 }
 
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
   const { threadId, messages, provider, model, requestAfterAgentEnabled } = params;
+
+  logger.info('AfterAgent triggered', { threadId });
 
   // Global kill switch wins even if a request tries to force it on.
   if (!env.afterAgent.enabled) return;
@@ -232,7 +278,9 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     threadId,
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
+    source: 'after-agent',
   });
+  afterAgentStatus.set(threadId, { status: 'running' });
   const handler = new ObservabilityCallbackHandler(
     traceId,
     store,
@@ -240,13 +288,18 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
   );
 
   try {
-    const llm = createProvider(provider, model);
+    const llm = params.llm ?? createProvider(provider, model);
     const state = threadState.get(threadId) ?? { rollingSummary: '' };
+    // Captured before summarize() folds this turn into the rolling summary —
+    // classify must judge novelty against what was known BEFORE this turn,
+    // not against a summary that already includes the very facts being
+    // classified (which would make every turn look "already covered").
+    const priorSummary = state.rollingSummary;
 
     const { summary } = await invokeStructured(
       llm,
       SummarizeOutputSchema,
-      buildSummarizePrompt(state.rollingSummary, turnText),
+      buildSummarizePrompt(priorSummary, turnText),
       handler,
       'after-agent:summarize',
     );
@@ -256,11 +309,15 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     const classify = await invokeStructured(
       llm,
       ClassifyOutputSchema,
-      buildClassifyPrompt(turnText, state.rollingSummary),
+      buildClassifyPrompt(turnText, priorSummary),
       handler,
       'after-agent:classify',
     );
-    if (!classify.shouldWrite) return;
+    if (!classify.shouldWrite) {
+      logger.info('AfterAgent no-op', { threadId, reason: classify.reason });
+      setAfterAgentDone(threadId, 'no-op');
+      return;
+    }
 
     const registry = await getWikiRegistry();
     const domains = registry.list();
@@ -268,6 +325,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       logger.warn('after-agent: classify said shouldWrite but no wiki domains are registered', {
         threadId,
       });
+      setAfterAgentDone(threadId, 'no-op');
       return;
     }
 
@@ -285,6 +343,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
         domainId: extract.domainId,
         availableDomains: domains.map((d) => d.id),
       });
+      setAfterAgentDone(threadId, 'no-op');
       return;
     }
 
@@ -333,15 +392,23 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       pageKind: extract.type,
       wikiName: domainEntry.id,
     });
+    setAfterAgentDone(threadId, 'identified');
 
-    logger.info('after-agent: wrote wiki page', {
+    // The pipeline extracts and commits exactly one page per turn today — no
+    // batch/delete path exists yet — so these counts are always 0 or 1, but
+    // the shape stays stable if that ever changes.
+    logger.info('AfterAgent identified', {
       threadId,
+      created: commitResult.created ? 1 : 0,
+      updated: commitResult.created ? 0 : 1,
+      deleted: 0,
+      wikis: [domainEntry.id],
       path: commitResult.path,
-      created: commitResult.created,
       warnings: commitResult.warnings,
     });
   } catch (err) {
-    logger.error('after-agent: pipeline error', { threadId, err });
+    logger.error('after-agent: pipeline error', { threadId, err: serializeError(err) });
+    setAfterAgentDone(threadId, 'error');
     // Never throw — this must not surface back into the afterAgent hook.
   } finally {
     store.endTrace(traceId, {

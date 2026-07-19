@@ -48,6 +48,7 @@ export function ChatMessageScrollWrapper({ children, className }: ChatMessageScr
 
     const observer = new IntersectionObserver(
       ([entry]) => {
+        if (!entry) return;
         isNearBottomRef.current = entry.isIntersecting;
       },
       { root: container, threshold: 0 },

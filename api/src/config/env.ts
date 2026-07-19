@@ -34,6 +34,16 @@ const AfterAgentSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const ChatSchema = z.object({
+  showErrorMessages: z.boolean().default(false),
+});
+
+const EmbeddingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  model: z.string().default('nomic-embed-text'),
+  baseUrl: z.string().default('http://localhost:11434/v1'),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -44,6 +54,8 @@ const AppConfigSchema = z.object({
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
   afterAgent: AfterAgentSchema.optional(),
+  chat: ChatSchema.optional(),
+  embeddings: EmbeddingsSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
@@ -113,6 +125,24 @@ export const env = {
       >;
     } catch {
       return AfterAgentSchema.parse({});
+    }
+  },
+  get chat(): z.infer<typeof ChatSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('chat', ChatSchema) as z.infer<typeof ChatSchema>;
+    } catch {
+      return ChatSchema.parse({});
+    }
+  },
+  get embeddings(): z.infer<typeof EmbeddingsSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('embeddings', EmbeddingsSchema) as z.infer<
+        typeof EmbeddingsSchema
+      >;
+    } catch {
+      return EmbeddingsSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

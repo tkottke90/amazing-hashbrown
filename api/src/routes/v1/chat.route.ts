@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { streamChatToSse, resumeChatToSse, writeSseEvent } from '../../agents/stream-handler.js';
+import {
+  streamChatToSse,
+  resumeChatToSse,
+  retryChatToSse,
+  writeSseEvent,
+} from '../../agents/stream-handler.js';
+import { getThreadStore } from '../../services/thread-store.js';
+import { serializeError } from '../../config/logger.js';
 
 export const chatRouter = Router();
 
@@ -32,7 +39,7 @@ chatRouter.post('/:threadId', async (req, res) => {
     req.logger.info(`Inference started for thread`, { threadId, provider, model });
     await streamChatToSse(res, threadId, content.trim(), startedAt, provider, model, afterAgent);
   } catch (err) {
-    req.logger.error('Chat stream error', { err });
+    req.logger.error('Chat stream error', { err: serializeError(err) });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
     req.logger.info(`Inference completed for thread`, { threadId });
@@ -42,7 +49,7 @@ chatRouter.post('/:threadId', async (req, res) => {
 
 chatRouter.post('/:threadId/hitl', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { answer, provider, model, afterAgent } = req.body as {
+  const { promptId, answer, provider, model, afterAgent } = req.body as {
     promptId?: string;
     answer?: string;
     provider?: string;
@@ -50,8 +57,8 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
     afterAgent?: boolean;
   };
 
-  if (!threadId || answer === undefined) {
-    res.status(400).json({ error: 'threadId and answer are required' });
+  if (!threadId || answer === undefined || !promptId) {
+    res.status(400).json({ error: 'threadId, promptId, and answer are required' });
     return;
   }
 
@@ -59,9 +66,40 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   const startedAt = Date.now();
 
   try {
-    await resumeChatToSse(res, threadId, answer, startedAt, provider, model, afterAgent);
+    await resumeChatToSse(res, threadId, promptId, answer, startedAt, provider, model, afterAgent);
   } catch (err) {
-    req.logger.error('HITL resume error', { err });
+    req.logger.error('HITL resume error', { err: serializeError(err) });
+    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+  } finally {
+    res.end();
+  }
+});
+
+chatRouter.post('/:threadId/retry', async (req, res) => {
+  const { threadId } = req.params as { threadId: string };
+  const { provider, model, afterAgent } = req.body as {
+    provider?: string;
+    model?: string;
+    afterAgent?: boolean;
+  };
+
+  if (!threadId) {
+    res.status(400).json({ error: 'threadId is required' });
+    return;
+  }
+
+  if (!getThreadStore().resolveRetryTarget(threadId)) {
+    res.status(400).json({ error: 'Thread has no retryable (failed) turn' });
+    return;
+  }
+
+  setSseHeaders(res);
+  const startedAt = Date.now();
+
+  try {
+    await retryChatToSse(res, threadId, startedAt, provider, model, afterAgent);
+  } catch (err) {
+    req.logger.error('Retry stream error', { err: serializeError(err) });
     writeSseEvent(res, { type: 'stream_error', error: String(err) });
   } finally {
     res.end();

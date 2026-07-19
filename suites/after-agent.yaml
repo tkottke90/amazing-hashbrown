@@ -184,6 +184,53 @@ scenarios:
         match: equals
         value: false
 
+  - id: cls-006-multi-fact-first-mention
+    name: Classify flags a dense, multi-fact personal introduction not yet in the summary
+    purpose: >
+      Regression coverage for a real dogfooding bug: a rich first-mention turn (name, age,
+      family, hobbies) was incorrectly classified as "already covered" because the pipeline's
+      classify step was — at the time — being handed a rolling summary that had already been
+      updated to include this very turn's facts (summarize() ran first and mutated the shared
+      rolling-summary state in place before classify() read it). This scenario alone can't
+      exercise that pipeline call-ordering bug directly — it only checks the classify prompt in
+      isolation with a correctly-scoped prior summary (as after-agent.ts now guarantees by
+      capturing priorSummary before calling summarize()). The ordering itself is regression-
+      tested at the pipeline level in
+      api/src/agents/after-agent.test.ts ("runAfterAgentPipeline() — classify sees the PRIOR
+      summary, not the just-updated one").
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        shouldWrite: { type: boolean }
+        reason: { type: string }
+      required: [shouldWrite, reason]
+    input: >
+      You decide whether a conversation turn contains novel, durable knowledge worth saving to a
+      personal knowledge base (a wiki). Say yes only for facts about the user, their work, their
+      projects, or corrections to previously known facts — not for general knowledge the assistant
+      recites, questions the user asks, or small talk. If the fact is already covered by the summary
+      below and the turn does not add or change anything, say no.
+
+
+      Rolling summary of the conversation so far: User greeted the assistant and asked to introduce
+      themselves; the assistant explained it has no traditional name and described its capabilities.
+
+
+      Latest turn:
+      human: My name is Thomas. I am a software engineer and your creator. I am 36 years old. I have
+      2 kids (Abigail - 8, and Audrey - 2). My wife and I have been married since June 21st 2019. My
+      hobbies are gaming (big fan of Minecraft and Rocket League), sim racing with iRacing, carpentry,
+      slow pitch softball, Dungeons and Dragons, 3D printing, and electronics.
+      ai: Thomas, welcome! It's wonderful to meet you and learn about your family and hobbies.
+
+
+      Decide whether this turn should be written to the wiki.
+    fieldChecks:
+      - path: shouldWrite
+        match: equals
+        value: true
+
   # ---------------------------------------------------------------------------------------------
   # Extract scenarios — outputSchema mirrors after-agent.ts's ExtractOutputSchema
   # ---------------------------------------------------------------------------------------------

@@ -5,12 +5,13 @@ import {
   type DbMigration,
   type SqliteDatabase,
 } from '@tkottke90/llm-common-types/db';
-import { SpanTypeSchema } from '@tkottke90/llm-common-types/traces';
+import { SpanTypeSchema, TraceSourceSchema } from '@tkottke90/llm-common-types/traces';
 import type {
   TraceSummary,
   TraceWithSpans,
   SpanRecord,
   TraceFilters,
+  TraceSource,
 } from '@tkottke90/llm-common-types/traces';
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,11 @@ export interface StartTraceParams {
   taskId?: string;
   provider: string;
   model: string;
+  // Which subsystem is opening this trace. Optional so existing callers that
+  // genuinely don't care (most test fixtures) don't need updating — defaults
+  // to 'chat', the common case. Every real call site in api/ passes this
+  // explicitly.
+  source?: TraceSource;
 }
 
 export interface EndTraceParams {
@@ -41,6 +47,7 @@ const RawTraceSummarySchema = z
     task_id: z.string().nullable(),
     provider: z.string(),
     model: z.string(),
+    source: TraceSourceSchema,
     started_at: z.string(),
     ended_at: z.string().nullable(),
     total_tokens: z.number(),
@@ -62,6 +69,7 @@ const RawTraceSummarySchema = z
     taskId: row.task_id,
     provider: row.provider,
     model: row.model,
+    source: row.source,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     totalTokens: row.total_tokens,
@@ -79,6 +87,7 @@ const RawTraceRecordSchema = z
     task_id: z.string().nullable(),
     provider: z.string(),
     model: z.string(),
+    source: TraceSourceSchema,
     started_at: z.string(),
     ended_at: z.string().nullable(),
     total_tokens: z.number(),
@@ -90,6 +99,7 @@ const RawTraceRecordSchema = z
     taskId: row.task_id,
     provider: row.provider,
     model: row.model,
+    source: row.source,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     totalTokens: row.total_tokens,
@@ -173,6 +183,17 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_observability_traces_time   ON observability_traces(started_at);
     `,
   },
+  {
+    // Explicit source ('chat' | 'after-agent' | 'generate-title') so a trace
+    // is correctly attributable even with zero spans (e.g. a background
+    // pipeline erroring before its first LLM call) — previously only
+    // inferable from span names, which is blind to exactly that case.
+    // Existing rows default to 'chat', the common case.
+    version: 5,
+    sql: `
+      ALTER TABLE observability_traces ADD COLUMN source TEXT NOT NULL DEFAULT 'chat';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -198,8 +219,8 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
     const traceId = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO observability_traces (trace_id, thread_id, task_id, provider, model, started_at, total_tokens)
-         VALUES (?, ?, ?, ?, ?, ?, 0)`,
+        `INSERT INTO observability_traces (trace_id, thread_id, task_id, provider, model, source, started_at, total_tokens)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
       )
       .run(
         traceId,
@@ -207,6 +228,7 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
         params.taskId ?? null,
         params.provider,
         params.model,
+        params.source ?? 'chat',
         new Date().toISOString(),
       );
     return traceId;
