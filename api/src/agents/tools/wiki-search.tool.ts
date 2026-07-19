@@ -32,7 +32,10 @@ export const wikiSearchTool = tool(
     for (const entry of wikis) {
       try {
         const wiki = await registry.load(entry.id);
-        const results = await wiki.semanticSearch(query, { limit, mode: 'hybrid' });
+        // No explicit mode — semanticSearch already defaults to 'hybrid' when
+        // an embeddingProvider is configured and falls back to 'keyword'
+        // otherwise, so this degrades gracefully with embeddings disabled.
+        const results = await wiki.semanticSearch(query, { limit });
         allResults.push(
           ...results.map((r: { path: string; score: number; title: string }) => ({
             wikiId: entry.id,

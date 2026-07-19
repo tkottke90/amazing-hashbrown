@@ -6,7 +6,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import type { LintReport, Logger, RegistryFile, ResolveResult, WikiEntry } from './types.js';
+import type {
+  EmbeddingAdapter,
+  LintReport,
+  Logger,
+  RegistryFile,
+  ResolveResult,
+  WikiEntry,
+} from './types.js';
 import { computeRouting } from './internal/routing.js';
 import { SCHEMA_FILE } from './internal/paths.js';
 import { LlmWiki } from './llm-wiki.js';
@@ -37,6 +44,9 @@ const RegistrySchema = z.object({
 export interface CreateWikiRegistryOptions {
   wikiRoot: string;
   logger?: Logger;
+  /** Shared across every wiki this registry loads/creates. Omit to fall back
+   * to keyword-only search (see LlmWiki.semanticSearch). */
+  embeddingProvider?: EmbeddingAdapter;
 }
 
 export interface CreateWikiInput {
@@ -54,6 +64,7 @@ export class WikiRegistry {
     readonly wikiRoot: string,
     private data: RegistryFile,
     private readonly logger: Logger,
+    private readonly embeddingProvider?: EmbeddingAdapter,
   ) {}
 
   /** Construct a registry, loading `<wikiRoot>/registry.json` if it exists. */
@@ -70,7 +81,7 @@ export class WikiRegistry {
     } catch {
       data = { version: 1, wikis: [], routingNotes: [] };
     }
-    return new WikiRegistry(root, data, logger);
+    return new WikiRegistry(root, data, logger, opts.embeddingProvider);
   }
 
   // ── Routing / lookup ────────────────────────────────────────────────────────
@@ -109,7 +120,10 @@ export class WikiRegistry {
   /** Load a registered wiki by id. */
   async load(id: string): Promise<LlmWiki> {
     const entry = this.entry(id);
-    return LlmWiki.load(this.resolvePath(entry), { logger: this.logger });
+    return LlmWiki.load(this.resolvePath(entry), {
+      logger: this.logger,
+      embeddingProvider: this.embeddingProvider,
+    });
   }
 
   /** Resolve free-text context and load the matched wiki when unambiguous. */
@@ -135,6 +149,7 @@ export class WikiRegistry {
       domain: input.domain,
       tags: input.tags,
       logger: this.logger,
+      embeddingProvider: this.embeddingProvider,
     });
 
     this.data.wikis.push({

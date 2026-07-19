@@ -6,6 +6,7 @@
 
 import path from 'node:path';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
+import { OllamaEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -16,6 +17,12 @@ export function getWikiRegistry(): Promise<WikiRegistry> {
   registryPromise ??= createWikiRegistry({
     wikiRoot: path.resolve(process.cwd(), env.wikiRoot ?? './config/kb'),
     logger,
+    embeddingProvider: env.embeddings.enabled
+      ? new OllamaEmbeddingProvider({
+          baseUrl: env.embeddings.baseUrl,
+          model: env.embeddings.model,
+        })
+      : undefined,
   });
   return registryPromise;
 }

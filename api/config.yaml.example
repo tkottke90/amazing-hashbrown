@@ -45,6 +45,19 @@ providers:
 defaultProvider: local
 
 # ---------------------------------------------------------------------------
+# Embeddings
+#
+# Powers semantic/hybrid wiki search (wiki_search tool's `mode`). When
+# disabled, wiki search falls back to keyword-only matching — no error, just
+# lower-quality ranking. Currently a single local Ollama embedding model;
+# no API key needed.
+# ---------------------------------------------------------------------------
+embeddings:
+  enabled: true
+  model: nomic-embed-text
+  baseUrl: http://localhost:11434/v1
+
+# ---------------------------------------------------------------------------
 # Database
 #
 # Shared SQLite database used by all application features (observability,
