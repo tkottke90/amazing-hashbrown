@@ -194,7 +194,10 @@ function stringifyContent(content: BaseMessage['content']): string {
     .join(' ');
 }
 
-async function invokeStructured<T extends z.ZodTypeAny>(
+// Exported for unit testing — verifies setNextSpanName() is actually called
+// ahead of invoke(), which real Runnable chains have no other way to prove
+// (see ObservabilityCallbackHandler.setNextSpanName's doc for why).
+export async function invokeStructured<T extends z.ZodTypeAny>(
   llm: ReturnType<typeof createProvider>,
   schema: T,
   prompt: string,
@@ -202,6 +205,9 @@ async function invokeStructured<T extends z.ZodTypeAny>(
   runName: string,
 ): Promise<z.infer<T>> {
   const chain = llm.withStructuredOutput(schema).withRetry({ stopAfterAttempt: 3 });
+  // RunnableConfig's runName only labels the outer chain run, not the inner
+  // LLM call this handler actually observes — see setNextSpanName()'s doc.
+  handler.setNextSpanName(runName);
   return chain.invoke(prompt, { callbacks: [handler], runName }) as Promise<z.infer<T>>;
 }
 

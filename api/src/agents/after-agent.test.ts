@@ -5,12 +5,15 @@ import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { z } from 'zod';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { bootObservability } from '../services/observability.js';
+import type { ObservabilityCallbackHandler } from './observability-handler.js';
 import {
   extractLatestTurnText,
   drainPendingWikiUpdates,
   runAfterAgentPipeline,
+  invokeStructured,
 } from './after-agent.js';
 
 // A fake BaseChatModel satisfying only the .withStructuredOutput().withRetry().invoke()
@@ -85,6 +88,29 @@ describe('agents/after-agent', () => {
       const threadId = 'drain-test-thread';
       expect(drainPendingWikiUpdates(threadId)).to.deep.equal([]);
       expect(drainPendingWikiUpdates(threadId)).to.deep.equal([]);
+    });
+  });
+
+  describe('invokeStructured()', () => {
+    it('calls handler.setNextSpanName(runName) before invoking the chain — RunnableConfig.runName does not reach the inner LLM call for .withStructuredOutput().withRetry() chains, confirmed empirically', async () => {
+      const setNextSpanNameCalls: string[] = [];
+      const fakeHandler = {
+        setNextSpanName: (name: string) => setNextSpanNameCalls.push(name),
+      } as unknown as ObservabilityCallbackHandler;
+
+      const { llm } = fakeStructuredLlm({
+        'after-agent:classify': { shouldWrite: true, reason: 'x' },
+      });
+
+      await invokeStructured(
+        llm,
+        z.object({ shouldWrite: z.boolean(), reason: z.string() }),
+        'some prompt',
+        fakeHandler,
+        'after-agent:classify',
+      );
+
+      expect(setNextSpanNameCalls).to.deep.equal(['after-agent:classify']);
     });
   });
 
