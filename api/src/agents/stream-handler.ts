@@ -312,6 +312,7 @@ export async function streamChatToSse(
     threadId,
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
+    source: 'chat',
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,
@@ -398,6 +399,7 @@ export async function resumeChatToSse(
     threadId,
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
+    source: 'chat',
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,
@@ -487,6 +489,7 @@ export async function retryChatToSse(
     threadId,
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
+    source: 'chat',
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,

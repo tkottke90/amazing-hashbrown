@@ -234,6 +234,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     threadId,
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
+    source: 'after-agent',
   });
   const handler = new ObservabilityCallbackHandler(
     traceId,

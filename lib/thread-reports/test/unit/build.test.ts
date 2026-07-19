@@ -145,7 +145,12 @@ describe('build/buildThreadReport', () => {
   it('classifies AfterAgent traces as no-op, identified, or unknown, and counts span failures', () => {
     const threadId = 't2';
 
-    const mainTraceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    const mainTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'chat',
+    });
     store.saveSpans([
       {
         spanId: 'span-main-1',
@@ -165,7 +170,12 @@ describe('build/buildThreadReport', () => {
     ]);
     store.endTrace(mainTraceId, { totalTokens: 60 });
 
-    const noOpTraceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    const noOpTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'after-agent',
+    });
     store.saveSpans([
       {
         spanId: 'span-noop-1',
@@ -200,7 +210,12 @@ describe('build/buildThreadReport', () => {
     ]);
     store.endTrace(noOpTraceId, { totalTokens: 75 });
 
-    const identifiedTraceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    const identifiedTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'after-agent',
+    });
     store.saveSpans([
       {
         spanId: 'span-id-1',
@@ -235,6 +250,18 @@ describe('build/buildThreadReport', () => {
     ]);
     store.endTrace(identifiedTraceId, { totalTokens: 125 });
 
+    // Regression case: AfterAgent errors before its first LLM call completes
+    // (e.g. createProvider() throwing) — startTrace()/endTrace() both run,
+    // but zero spans are ever saved. Span-name inference alone is blind to
+    // this (there's nothing to infer from); trace.source must carry it.
+    const zeroSpanTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'after-agent',
+    });
+    store.endTrace(zeroSpanTraceId, { totalTokens: 0 });
+
     const thread = makeThread({ id: threadId, messages: [] });
     const result = buildThreadReport(threadId, {
       threadStore: fakeThreadStore(thread),
@@ -242,25 +269,26 @@ describe('build/buildThreadReport', () => {
     });
 
     expect(result).to.not.equal(null);
-    expect(result!.timeline).to.have.lengthOf(3);
+    expect(result!.timeline).to.have.lengthOf(4);
 
-    // ObservabilityStore.startTrace() stamps real wall-clock time, so three
+    // ObservabilityStore.startTrace() stamps real wall-clock time, so
     // synchronous calls can land in the same millisecond — look events up by
     // their traceId rather than relying on array position under such ties.
     const traceEvents = result!.timeline.filter((e) => e.kind === 'trace');
     const byTraceId = new Map(traceEvents.map((e) => [e.trace.traceId, e]));
 
-    expect(byTraceId.get(mainTraceId)).to.include({ kind: 'trace', source: 'main-turn' });
-    expect(byTraceId.get(noOpTraceId)).to.include({
-      kind: 'trace',
-      source: 'after-agent',
-      outcome: 'no-op',
-    });
-    expect(byTraceId.get(identifiedTraceId)).to.include({
-      kind: 'trace',
-      source: 'after-agent',
-      outcome: 'identified',
-    });
+    expect(byTraceId.get(mainTraceId)!.trace.source).to.equal('chat');
+    expect(byTraceId.get(mainTraceId)).to.not.have.property('outcome');
+
+    expect(byTraceId.get(noOpTraceId)).to.include({ kind: 'trace', outcome: 'no-op' });
+    expect(byTraceId.get(noOpTraceId)!.trace.source).to.equal('after-agent');
+
+    expect(byTraceId.get(identifiedTraceId)).to.include({ kind: 'trace', outcome: 'identified' });
+    expect(byTraceId.get(identifiedTraceId)!.trace.source).to.equal('after-agent');
+
+    expect(byTraceId.get(zeroSpanTraceId)).to.include({ kind: 'trace', outcome: 'unknown' });
+    expect(byTraceId.get(zeroSpanTraceId)!.trace.source).to.equal('after-agent');
+    expect(byTraceId.get(zeroSpanTraceId)!.trace.spans).to.have.lengthOf(0);
 
     // One span (the failed extract call) has a non-null error.
     expect(result!.stats.failureCount).to.equal(1);

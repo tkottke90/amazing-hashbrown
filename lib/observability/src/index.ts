@@ -12,6 +12,7 @@ export { buildSpanTree } from './tree.js';
 // Wire types (re-exported so consumers only need one import)
 export type {
   SpanType,
+  TraceSource,
   SpanRecord,
   TraceRecord,
   TraceSummary,
@@ -22,6 +23,7 @@ export type {
 
 export {
   SpanTypeSchema,
+  TraceSourceSchema,
   SpanRecordSchema,
   TraceRecordSchema,
   TraceSummarySchema,

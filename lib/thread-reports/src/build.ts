@@ -1,3 +1,4 @@
+import type { TraceWithSpans } from '@tkottke90/observability';
 import type {
   ThreadReportData,
   ThreadReportStats,
@@ -45,6 +46,16 @@ function classifyAfterAgentOutcome(spanNames: Set<string>): TraceOutcome {
   return hasExtract ? 'identified' : 'no-op';
 }
 
+// trace.source is the authoritative signal (set explicitly by every caller
+// of startTrace() — see @tkottke90/observability's migration 5). The
+// span-name fallback only matters for rows written before that migration
+// existed, which defaulted to source: 'chat' but may still carry real
+// after-agent:*-prefixed spans.
+function isAfterAgentTrace(trace: TraceWithSpans): boolean {
+  if (trace.source === 'after-agent') return true;
+  return trace.spans.some((s) => s.name.startsWith(AFTER_AGENT_PREFIX));
+}
+
 export function buildThreadReport(
   threadId: string,
   stores: { threadStore: ThreadStoreLike; observabilityStore: ObservabilityStoreLike },
@@ -61,20 +72,14 @@ export function buildThreadReport(
   const timeline: TimelineEvent[] = [];
 
   for (const trace of traces) {
-    const spanNames = new Set(trace.spans.map((s) => s.name));
-    const isAfterAgent = [...spanNames].some((n) => n.startsWith(AFTER_AGENT_PREFIX));
     failureCount += trace.spans.filter((s) => s.error !== null).length;
 
-    timeline.push(
-      isAfterAgent
-        ? {
-            kind: 'trace',
-            source: 'after-agent',
-            trace,
-            outcome: classifyAfterAgentOutcome(spanNames),
-          }
-        : { kind: 'trace', source: 'main-turn', trace },
-    );
+    if (isAfterAgentTrace(trace)) {
+      const spanNames = new Set(trace.spans.map((s) => s.name));
+      timeline.push({ kind: 'trace', trace, outcome: classifyAfterAgentOutcome(spanNames) });
+    } else {
+      timeline.push({ kind: 'trace', trace });
+    }
   }
 
   for (const m of thread.messages) {

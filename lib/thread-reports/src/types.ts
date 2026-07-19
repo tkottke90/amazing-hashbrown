@@ -105,9 +105,10 @@ export type TraceOutcome = 'no-op' | 'identified' | 'unknown';
 
 export interface TraceTimelineEvent {
   kind: 'trace';
-  source: 'main-turn' | 'after-agent';
+  // Read straight off trace.source (authoritative — see TraceSource) rather
+  // than duplicating it here; templates branch on event.trace.source.
   trace: TraceWithSpans;
-  outcome?: TraceOutcome; // only set for source: 'after-agent'
+  outcome?: TraceOutcome; // only set when trace.source === 'after-agent'
 }
 
 export interface WikiUpdateTimelineEvent {

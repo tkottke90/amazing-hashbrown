@@ -182,6 +182,7 @@ export async function generateTitleHandler(
     threadId,
     provider: provider ?? env.defaultProvider,
     model: modelName ?? '',
+    source: 'generate-title',
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,

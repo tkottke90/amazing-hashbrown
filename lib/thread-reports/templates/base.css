@@ -357,11 +357,14 @@ summary {
   border-radius: var(--radius);
   overflow: hidden;
 }
-.timeline-trace.lane-main-turn {
+.timeline-trace.lane-chat {
   border-left: 4px solid var(--accent);
 }
 .timeline-trace.lane-after-agent {
   border-left: 4px solid var(--warn);
+}
+.timeline-trace.lane-generate-title {
+  border-left: 4px solid var(--neutral);
 }
 
 .timeline-trace-header {

@@ -45,9 +45,14 @@
 <div class="timeline">
   {% for event in timeline %}
     {% if event.kind == 'trace' %}
-      <div class="timeline-trace lane-{{ event.source }}">
+      <div class="timeline-trace lane-{{ event.trace.source }}">
         <div class="timeline-trace-header">
-          <span class="lane-label">{{ 'AfterAgent' if event.source == 'after-agent' else 'Turn' }}</span>
+          <span class="lane-label">
+            {% if event.trace.source == 'after-agent' %}AfterAgent
+            {% elif event.trace.source == 'generate-title' %}Generate Title
+            {% else %}Turn
+            {% endif %}
+          </span>
           <span class="trace-time">{{ event.trace.startedAt | reportTime }}</span>
           {% if event.outcome %}
             <span class="outcome-badge outcome-{{ event.outcome }}">{{ event.outcome }}</span>
