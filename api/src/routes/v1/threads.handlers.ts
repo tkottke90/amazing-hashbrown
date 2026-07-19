@@ -9,6 +9,7 @@ import type {
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
 import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
 import { getObservabilityStore } from '../../services/observability.js';
+import { getAfterAgentState, type AfterAgentState } from '../../agents/after-agent.js';
 import { env } from '../../config/env.js';
 
 // The client-facing shape (ui/src/types/thread-message.ts's ThreadMessage
@@ -66,8 +67,35 @@ function invalid(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
 }
 
-export function listThreadsHandler(store: ThreadStore): ThreadSummary[] {
-  return store.listThreads();
+// The list response is enriched with live, non-persisted AfterAgent status —
+// ThreadSummary (thread-store.ts) stays a pure DB-row shape; this is an
+// API-response-only type, same layering toClientMessage() already uses.
+export interface ThreadSummaryResponse extends ThreadSummary {
+  afterAgentState: AfterAgentState;
+  links: { self: string; afterAgentStatus: string };
+}
+
+function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
+  return {
+    ...thread,
+    afterAgentState: getAfterAgentState(thread.id),
+    links: {
+      self: `/api/v1/threads/${thread.id}`,
+      afterAgentStatus: `/api/v1/threads/${thread.id}/after-agent-status`,
+    },
+  };
+}
+
+export function listThreadsHandler(store: ThreadStore): ThreadSummaryResponse[] {
+  return store.listThreads().map(withAfterAgentInfo);
+}
+
+export function getAfterAgentStatusHandler(
+  store: ThreadStore,
+  id: string,
+): HandlerResult<AfterAgentState> {
+  if (!store.getThreadMeta(id)) return notFound(`Thread "${id}" not found`);
+  return ok(getAfterAgentState(id));
 }
 
 export function getThreadHandler(

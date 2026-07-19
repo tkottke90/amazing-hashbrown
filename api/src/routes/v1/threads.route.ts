@@ -10,6 +10,7 @@ import {
   deleteThreadHandler,
   forkThreadHandler,
   generateTitleHandler,
+  getAfterAgentStatusHandler,
 } from './threads.handlers.js';
 
 export const threadsRouter = Router();
@@ -22,6 +23,16 @@ threadsRouter.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const { showErrors } = req.query as { showErrors?: string };
   const result = getThreadHandler(getThreadStore(), id, { showErrors: showErrors === 'true' });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.get('/:id/after-agent-status', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = getAfterAgentStatusHandler(getThreadStore(), id);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

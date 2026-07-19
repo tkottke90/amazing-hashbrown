@@ -41,6 +41,41 @@ function queueWikiUpdate(threadId: string, event: WikiUpdatedEvent): void {
 }
 
 // ---------------------------------------------------------------------------
+// Live status — lets the UI show a subtle "working in the background"
+// indicator without any persistence. Same in-memory, process-lifetime
+// precedent as threadState/pendingWikiUpdates above.
+// ---------------------------------------------------------------------------
+
+export type AfterAgentState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; outcome: 'identified' | 'no-op' | 'error'; finishedAt: string };
+
+// Generous headroom so a slow poller or a second tab still catches the
+// outcome before it's swept — not a correctness requirement, just UX.
+const DONE_TTL_MS = 60_000;
+
+const afterAgentStatus = new Map<string, AfterAgentState>();
+
+export function getAfterAgentState(threadId: string): AfterAgentState {
+  const entry = afterAgentStatus.get(threadId);
+  if (!entry) return { status: 'idle' };
+  if (entry.status === 'done' && Date.now() - Date.parse(entry.finishedAt) > DONE_TTL_MS) {
+    afterAgentStatus.delete(threadId);
+    return { status: 'idle' };
+  }
+  return entry;
+}
+
+function setAfterAgentDone(threadId: string, outcome: 'identified' | 'no-op' | 'error'): void {
+  afterAgentStatus.set(threadId, {
+    status: 'done',
+    outcome,
+    finishedAt: new Date().toISOString(),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Context schema — consumed by the afterAgent middleware in chat-agent.ts.
 // Every field is optional so `context` is an optional argument at the
 // streamEvents() call site.
@@ -245,6 +280,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     model: model ?? '',
     source: 'after-agent',
   });
+  afterAgentStatus.set(threadId, { status: 'running' });
   const handler = new ObservabilityCallbackHandler(
     traceId,
     store,
@@ -279,6 +315,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     );
     if (!classify.shouldWrite) {
       logger.info('AfterAgent no-op', { threadId, reason: classify.reason });
+      setAfterAgentDone(threadId, 'no-op');
       return;
     }
 
@@ -288,6 +325,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       logger.warn('after-agent: classify said shouldWrite but no wiki domains are registered', {
         threadId,
       });
+      setAfterAgentDone(threadId, 'no-op');
       return;
     }
 
@@ -305,6 +343,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
         domainId: extract.domainId,
         availableDomains: domains.map((d) => d.id),
       });
+      setAfterAgentDone(threadId, 'no-op');
       return;
     }
 
@@ -353,6 +392,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       pageKind: extract.type,
       wikiName: domainEntry.id,
     });
+    setAfterAgentDone(threadId, 'identified');
 
     // The pipeline extracts and commits exactly one page per turn today — no
     // batch/delete path exists yet — so these counts are always 0 or 1, but
@@ -368,6 +408,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     });
   } catch (err) {
     logger.error('after-agent: pipeline error', { threadId, err: serializeError(err) });
+    setAfterAgentDone(threadId, 'error');
     // Never throw — this must not surface back into the afterAgent hook.
   } finally {
     store.endTrace(traceId, {

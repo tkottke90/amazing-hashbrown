@@ -7,14 +7,43 @@ import Database from 'better-sqlite3';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { emptyCheckpoint } from '@langchain/langgraph-checkpoint';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { HumanMessage } from '@langchain/core/messages';
 import { ThreadStore } from '../../services/thread-store.js';
+import { bootObservability } from '../../services/observability.js';
+import { runAfterAgentPipeline } from '../../agents/after-agent.js';
 import {
   listThreadsHandler,
   getThreadHandler,
   renameThreadHandler,
   deleteThreadHandler,
   forkThreadHandler,
+  getAfterAgentStatusHandler,
 } from './threads.handlers.js';
+
+// Minimal fake satisfying the .withStructuredOutput().withRetry().invoke()
+// chain runAfterAgentPipeline's invokeStructured() calls — same pattern as
+// after-agent.test.ts's fakeStructuredLlm, duplicated here since this file
+// only needs it for one test (driving a real status transition).
+function fakeStructuredLlm(responses: Record<string, unknown>): BaseChatModel {
+  return {
+    withStructuredOutput() {
+      return {
+        withRetry() {
+          return {
+            async invoke(_prompt: string, opts: { runName: string }) {
+              const response = responses[opts.runName];
+              if (response === undefined) {
+                throw new Error(`fakeStructuredLlm: no response configured for "${opts.runName}"`);
+              }
+              return response;
+            },
+          };
+        },
+      };
+    },
+  } as unknown as BaseChatModel;
+}
 
 // A stub satisfying only the SqliteSaver methods threads.handlers.ts actually
 // calls (deleteThread) — used for tests that never reach the fork path,
@@ -41,22 +70,52 @@ describe('routes/v1/threads.handlers', () => {
   describe('listThreadsHandler', () => {
     let store: ThreadStore;
     let dir: string;
+    let obsDir: string;
 
-    before(() => ({ store, dir } = makeStore()));
+    before(() => {
+      ({ store, dir } = makeStore());
+      obsDir = mkdtempSync(join(tmpdir(), 'threads-handlers-obs-test-'));
+      bootObservability(openDatabase(join(obsDir, 'obs.db')));
+    });
     after(() => {
       store.close();
       rmSync(dir, { recursive: true });
+      rmSync(obsDir, { recursive: true });
     });
 
     it('returns an empty array when there are no threads', () => {
       expect(listThreadsHandler(store)).to.deep.equal([]);
     });
 
-    it('returns thread summaries once threads exist', () => {
+    it('returns thread summaries once threads exist, enriched with idle afterAgentState and links', () => {
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       const list = listThreadsHandler(store);
       expect(list).to.have.lengthOf(1);
       expect(list[0]!.id).to.equal('t1');
+      expect(list[0]!.afterAgentState).to.deep.equal({ status: 'idle' });
+      expect(list[0]!.links).to.deep.equal({
+        self: '/api/v1/threads/t1',
+        afterAgentStatus: '/api/v1/threads/t1/after-agent-status',
+      });
+    });
+
+    it('reflects a done/no-op afterAgentState once a real pipeline run finishes', async () => {
+      store.upsertThreadOnFirstMessage('t2', 'Second thread');
+      const llm = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'nothing notable' },
+        'after-agent:classify': { shouldWrite: false, reason: 'small talk' },
+      });
+
+      await runAfterAgentPipeline({
+        threadId: 't2',
+        messages: [new HumanMessage('thanks!')],
+        llm,
+      });
+
+      const list = listThreadsHandler(store);
+      const t2 = list.find((t) => t.id === 't2');
+      expect(t2?.afterAgentState.status).to.equal('done');
+      expect((t2?.afterAgentState as { outcome?: string }).outcome).to.equal('no-op');
     });
   });
 
@@ -240,6 +299,30 @@ describe('routes/v1/threads.handlers', () => {
       });
       expect(forkedTuple).to.not.equal(undefined);
       expect(forkedTuple!.checkpoint.id).to.equal(checkpoint.id);
+    });
+  });
+
+  describe('getAfterAgentStatusHandler', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns 404 for an unknown thread', () => {
+      const result = getAfterAgentStatusHandler(store, 'no-such-thread');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns idle for an existing thread with no AfterAgent activity', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      const result = getAfterAgentStatusHandler(store, 't1');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal({ status: 'idle' });
     });
   });
 });

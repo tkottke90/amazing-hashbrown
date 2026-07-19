@@ -45,6 +45,18 @@ interface MockThread {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
+  afterAgentState: { status: 'idle' };
+  links: { self: string; afterAgentStatus: string };
+}
+
+function afterAgentFields(id: string): Pick<MockThread, 'afterAgentState' | 'links'> {
+  return {
+    afterAgentState: { status: 'idle' },
+    links: {
+      self: `/api/v1/threads/${id}`,
+      afterAgentStatus: `/api/v1/threads/${id}/after-agent-status`,
+    },
+  };
 }
 
 function seedThreads(): MockThread[] {
@@ -56,6 +68,7 @@ function seedThreads(): MockThread[] {
       updatedAt: '2026-07-18T10:05:00.000Z',
       forkedFromThreadId: null,
       forkedFromSeq: null,
+      ...afterAgentFields('thread-a'),
     },
     {
       id: 'thread-b',
@@ -64,6 +77,7 @@ function seedThreads(): MockThread[] {
       updatedAt: '2026-07-18T09:05:00.000Z',
       forkedFromThreadId: null,
       forkedFromSeq: null,
+      ...afterAgentFields('thread-b'),
     },
   ];
 }

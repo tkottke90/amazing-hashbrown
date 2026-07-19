@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { AfterAgentIndicator } from '@/components/after-agent-indicator';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -142,6 +143,8 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
 
       {isRegenerating.value ? (
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+      ) : thread.afterAgentState.status !== 'idle' ? (
+        <AfterAgentIndicator state={thread.afterAgentState} className="shrink-0 px-1" />
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger

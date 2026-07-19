@@ -14,6 +14,7 @@ import {
   drainPendingWikiUpdates,
   runAfterAgentPipeline,
   invokeStructured,
+  getAfterAgentState,
 } from './after-agent.js';
 
 // A fake BaseChatModel satisfying only the .withStructuredOutput().withRetry().invoke()
@@ -167,6 +168,75 @@ describe('agents/after-agent', () => {
       expect(classifyCall!.prompt).to.not.include(
         'Rolling summary of the conversation so far:\nUser is named Thomas, 36 years old.',
       );
+    });
+  });
+
+  describe('getAfterAgentState() / live status tracking', () => {
+    let dir: string;
+
+    before(() => {
+      dir = mkdtempSync(join(tmpdir(), 'after-agent-status-test-'));
+      bootObservability(openDatabase(join(dir, 'test.db')));
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('returns idle for a thread that has never had AfterAgent activity', () => {
+      expect(getAfterAgentState(`never-seen-${crypto.randomUUID()}`)).to.deep.equal({
+        status: 'idle',
+      });
+    });
+
+    it('ends at done/no-op after a classify:false run', async () => {
+      const threadId = `status-no-op-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'nothing notable yet' },
+        'after-agent:classify': { shouldWrite: false, reason: 'small talk' },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: [new HumanMessage('thanks!')],
+        llm,
+      });
+
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('no-op');
+    });
+
+    it('ends at done/error when a pipeline step throws', async () => {
+      const threadId = `status-error-${crypto.randomUUID()}`;
+      // No responses configured at all — the very first invokeStructured()
+      // call (summarize) throws, landing in runAfterAgentPipeline's catch.
+      const { llm } = fakeStructuredLlm({});
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: [new HumanMessage('this will blow up')],
+        llm,
+      });
+
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('error');
+    });
+
+    it('leaves the status untouched when the pipeline is globally disabled or the turn text is empty', async () => {
+      const threadId = `status-untouched-${crypto.randomUUID()}`;
+      expect(getAfterAgentState(threadId)).to.deep.equal({ status: 'idle' });
+
+      // requestAfterAgentEnabled: false short-circuits before startTrace()/the
+      // 'running' write — status must stay exactly as it was (idle here).
+      await runAfterAgentPipeline({
+        threadId,
+        messages: [new HumanMessage('hello')],
+        requestAfterAgentEnabled: false,
+      });
+
+      expect(getAfterAgentState(threadId)).to.deep.equal({ status: 'idle' });
     });
   });
 });

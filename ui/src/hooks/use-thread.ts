@@ -1,4 +1,4 @@
-import { signal, batch } from '@preact/signals';
+import { signal, batch, computed } from '@preact/signals';
 import { ChatSSEEventSchema, type ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 
@@ -58,6 +58,14 @@ export function setShowErrorMessages(value: boolean): void {
 
 // ---- Sidebar thread list ----
 
+// Non-persisted, best-effort live status of the fire-and-forget AfterAgent
+// background pipeline (api/src/agents/after-agent.ts) — never reconciled on
+// page load/refresh, only ever refreshed via the poll loop below.
+export type AfterAgentState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; outcome: 'identified' | 'no-op' | 'error'; finishedAt: string };
+
 export interface ThreadSummary {
   id: string;
   title: string;
@@ -65,6 +73,8 @@ export interface ThreadSummary {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
+  afterAgentState: AfterAgentState;
+  links: { self: string; afterAgentStatus: string };
 }
 
 export const threads = signal<ThreadSummary[]>([]);
@@ -77,6 +87,44 @@ export async function refreshThreadList(): Promise<void> {
   } catch {
     // best-effort — sidebar just stays stale until the next successful refresh
   }
+}
+
+// The active thread's AfterAgent status, derived from the same list data the
+// sidebar already polls — no separate per-thread fetch needed for the
+// composer-area indicator.
+export const activeThreadAfterAgentState = computed<AfterAgentState>(
+  () =>
+    threads.value.find((t) => t.id === activeThreadId.value)?.afterAgentState ?? {
+      status: 'idle',
+    },
+);
+
+// ---- AfterAgent background-status watch ----
+// Started right after a turn completes (stream_done only — AfterAgent's
+// middleware hook never fires on an interrupted/errored turn). Polls the
+// thread list (which already carries afterAgentState per thread) until
+// nothing is running anymore, then stops — no persistence, no reconciliation
+// on page load, matches AfterAgent's own "ephemeral, best-effort" design.
+
+let _afterAgentPollTimer: ReturnType<typeof setInterval> | null = null;
+let _afterAgentPollStartedAt = 0;
+const AFTER_AGENT_POLL_INTERVAL_MS = 3500;
+const AFTER_AGENT_POLL_MAX_MS = 10 * 60 * 1000; // safety net only
+
+function startAfterAgentWatch(): void {
+  if (_afterAgentPollTimer) return; // already watching
+  _afterAgentPollStartedAt = Date.now();
+  _afterAgentPollTimer = setInterval(() => {
+    void (async () => {
+      await refreshThreadList();
+      const stillRunning = threads.value.some((t) => t.afterAgentState.status === 'running');
+      const timedOut = Date.now() - _afterAgentPollStartedAt > AFTER_AGENT_POLL_MAX_MS;
+      if ((!stillRunning || timedOut) && _afterAgentPollTimer) {
+        clearInterval(_afterAgentPollTimer);
+        _afterAgentPollTimer = null;
+      }
+    })();
+  }, AFTER_AGENT_POLL_INTERVAL_MS);
 }
 
 // ---- Message state ----
@@ -341,6 +389,10 @@ function handleEvent(evt: ChatSSEEvent): void {
         _currentUserId = null;
       });
       void refreshThreadList();
+      // AfterAgent's middleware hook only fires once a turn actually
+      // completes (never on interrupt()/an uncaught error) — only start
+      // watching here, not on stream_error/hitl_prompt.
+      startAfterAgentWatch();
       break;
 
     case 'stream_error':
