@@ -59,6 +59,12 @@
           {% endif %}
           <span class="trace-meta">{{ event.trace.provider }}/{{ event.trace.model }} &middot; {{ event.trace.totalTokens }} tokens</span>
         </div>
+        {% if event.userMessage %}
+          <div class="trace-user-message">
+            <span class="icon">💬</span>
+            <span>{{ event.userMessage.payload.content }}</span>
+          </div>
+        {% endif %}
         <div class="span-list">
           {% for span in event.trace.spans %}
             <details class="span-row {{ 'span-error' if span.error }}" {{ 'open' if span.error }}>

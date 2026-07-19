@@ -109,6 +109,13 @@ export interface TraceTimelineEvent {
   // than duplicating it here; templates branch on event.trace.source.
   trace: TraceWithSpans;
   outcome?: TraceOutcome; // only set when trace.source === 'after-agent'
+  // The user message that triggered this trace — only set for
+  // trace.source === 'chat'. recordUserMessage() always runs before
+  // startTrace() (see stream-handler.ts), so this is the last 'user'
+  // message at or before the trace's startedAt. Also correctly resolves
+  // for HITL-resume/retry traces, which don't insert a fresh user message
+  // of their own — they fall back to the same original triggering message.
+  userMessage?: ThreadReportMessageRecord;
 }
 
 export interface WikiUpdateTimelineEvent {

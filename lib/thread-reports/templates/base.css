@@ -414,6 +414,22 @@ summary {
   color: var(--warn);
 }
 
+.trace-user-message {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.trace-user-message .icon {
+  font-style: normal;
+  flex-shrink: 0;
+}
+
 .span-list {
   display: flex;
   flex-direction: column;

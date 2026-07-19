@@ -362,4 +362,73 @@ describe('build/buildThreadReport', () => {
 
     expect(result!.timeline.map((e) => e.kind)).to.deep.equal(['trace', 'wiki_update']);
   });
+
+  it('attaches the triggering user message to chat traces, but not to after-agent/generate-title traces', () => {
+    const threadId = 't4';
+
+    const chatTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'chat',
+    });
+    store.endTrace(chatTraceId, { totalTokens: 0 });
+    const chatTraceStartedAt = store.getTrace(chatTraceId)!.startedAt;
+
+    const afterAgentTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'after-agent',
+    });
+    store.endTrace(afterAgentTraceId, { totalTokens: 0 });
+
+    // Two user messages: one clearly before the chat trace (the one that
+    // should be picked), one clearly after (must NOT be picked — a trace
+    // can't be triggered by a message that hadn't been sent yet).
+    const before = new Date(new Date(chatTraceStartedAt).getTime() - 5000).toISOString();
+    const after = new Date(new Date(chatTraceStartedAt).getTime() + 5000).toISOString();
+
+    const thread = makeThread({
+      id: threadId,
+      messages: [
+        {
+          id: 'u1',
+          threadId,
+          seq: 1,
+          kind: 'user',
+          status: null,
+          retryOf: null,
+          checkpointId: null,
+          payload: { content: 'I like Minecraft', sentAt: before },
+          createdAt: before,
+          updatedAt: before,
+        },
+        {
+          id: 'u2',
+          threadId,
+          seq: 2,
+          kind: 'user',
+          status: null,
+          retryOf: null,
+          checkpointId: null,
+          payload: { content: 'A later, unrelated message', sentAt: after },
+          createdAt: after,
+          updatedAt: after,
+        },
+      ],
+    });
+
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    const byTraceId = new Map(
+      result!.timeline.filter((e) => e.kind === 'trace').map((e) => [e.trace.traceId, e]),
+    );
+
+    expect(byTraceId.get(chatTraceId)!.userMessage?.id).to.equal('u1');
+    expect(byTraceId.get(afterAgentTraceId)!.userMessage).to.equal(undefined);
+  });
 });

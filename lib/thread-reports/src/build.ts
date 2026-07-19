@@ -2,6 +2,7 @@ import type { TraceWithSpans } from '@tkottke90/observability';
 import type {
   ThreadReportData,
   ThreadReportStats,
+  ThreadReportMessageRecord,
   ThreadStoreLike,
   ObservabilityStoreLike,
   TimelineEvent,
@@ -56,6 +57,24 @@ function isAfterAgentTrace(trace: TraceWithSpans): boolean {
   return trace.spans.some((s) => s.name.startsWith(AFTER_AGENT_PREFIX));
 }
 
+// recordUserMessage() always runs before startTrace() in every chat call
+// path (send/HITL-resume/retry — see stream-handler.ts), so the last user
+// message at or before a chat trace's startedAt is the message that
+// triggered it. HITL-resume/retry traces don't insert a fresh user message,
+// so this correctly falls back to the original triggering message for them
+// too. `userMessages` must be sorted ascending by createdAt.
+function findTriggeringUserMessage(
+  userMessages: ThreadReportMessageRecord[],
+  traceStartedAt: string,
+): ThreadReportMessageRecord | undefined {
+  let match: ThreadReportMessageRecord | undefined;
+  for (const m of userMessages) {
+    if (m.createdAt > traceStartedAt) break;
+    match = m;
+  }
+  return match;
+}
+
 export function buildThreadReport(
   threadId: string,
   stores: { threadStore: ThreadStoreLike; observabilityStore: ObservabilityStoreLike },
@@ -68,6 +87,10 @@ export function buildThreadReport(
     .map((s) => stores.observabilityStore.getTrace(s.traceId))
     .filter((t) => t !== null);
 
+  const userMessages = thread.messages
+    .filter((m) => m.kind === 'user')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
   let failureCount = 0;
   const timeline: TimelineEvent[] = [];
 
@@ -77,6 +100,12 @@ export function buildThreadReport(
     if (isAfterAgentTrace(trace)) {
       const spanNames = new Set(trace.spans.map((s) => s.name));
       timeline.push({ kind: 'trace', trace, outcome: classifyAfterAgentOutcome(spanNames) });
+    } else if (trace.source === 'chat') {
+      timeline.push({
+        kind: 'trace',
+        trace,
+        userMessage: findTriggeringUserMessage(userMessages, trace.startedAt),
+      });
     } else {
       timeline.push({ kind: 'trace', trace });
     }
