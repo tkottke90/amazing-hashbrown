@@ -108,6 +108,9 @@ The UI dev server proxies `/api` requests to the API, so you only need to open `
 | `LLM_MODEL`    | `llama3`                 | Model name passed to the inference backend        |
 | `WIKI_ROOT`    | `./config/kb`            | Root directory for the knowledge-base domains     |
 
+For the full `config/config.yaml` reference (providers, embeddings, database, observability,
+afterAgent, chat, cost rates), see [`docs/App-Docs/configuration.md`](./docs/App-Docs/configuration.md).
+
 ---
 
 ## Scripts
