@@ -1,10 +1,11 @@
-import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
 import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
+import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -15,6 +16,7 @@ import type {
   SemanticScenario,
   LlmJudgeScenario,
   StructuredScenario,
+  ToolCallScenario,
   HumanScenario,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
@@ -26,6 +28,7 @@ export interface RunConfig {
   judgeModel: BaseChatModel;
   judgeModelId: string;
   embeddings?: Embeddings;
+  tools?: BindToolsInput[];
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -148,6 +151,24 @@ async function invokeStructuredModel(
   return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
+async function invokeToolCallModel(
+  model: BaseChatModel,
+  input: string,
+  tools: BindToolsInput[],
+): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
+  if (!model.bindTools) {
+    throw new Error('the configured model does not support bindTools — required for tool-call scenarios');
+  }
+  const start = Date.now();
+  const response = await model.bindTools(tools).invoke(input);
+  const latencyMs = Date.now() - start;
+  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
+    name: call.name,
+    args: call.args,
+  }));
+  return { toolCalls, content: extractContent(response), latencyMs };
+}
+
 async function executeScenario(
   scenario: Scenario,
   suite: Suite,
@@ -226,6 +247,28 @@ async function executeScenario(
       );
       const details = runStructured(s, parsed);
       const passed = details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
+    if (scenario.type === 'tool-call') {
+      const s = scenario as ToolCallScenario;
+      if (!config.tools || config.tools.length === 0) {
+        throw new Error('tools are required for tool-call scenarios');
+      }
+      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+        config.model,
+        s.input,
+        config.tools,
+      );
+      const details = runToolCall(s, toolCalls);
+      const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
         passed,

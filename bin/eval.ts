@@ -5,6 +5,17 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { runEval, bootEvaluations, getEvaluationsStore } from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
+import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
+import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
+import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
+import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
+
+// The static built-in tool set the production chat agent binds (see
+// api/src/agents/chat-agent.ts) — used to give tool-call eval scenarios the
+// same choices the real agent has. MCP tools are excluded: they're
+// dynamic/live-server-dependent, which would make the eval non-deterministic
+// to run.
+const evalTools = [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool];
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
@@ -61,6 +72,7 @@ try {
     modelId,
     judgeModel,
     judgeModelId,
+    tools: evalTools,
     suitePaths: { bundledPath: suitesPath },
     resultPath,
     ci: values.ci,

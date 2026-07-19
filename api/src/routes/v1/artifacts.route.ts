@@ -3,8 +3,8 @@ import { getArtifact } from '../../artifacts/artifact-store.js';
 
 export const artifactsRouter = Router();
 
-artifactsRouter.get('/:id', (req, res) => {
-  const artifact = getArtifact(req.params.id);
+artifactsRouter.get('/:id', async (req, res) => {
+  const artifact = await getArtifact(req.params.id);
   if (!artifact) {
     res.status(404).json({ error: 'Artifact not found' });
     return;
@@ -14,8 +14,8 @@ artifactsRouter.get('/:id', (req, res) => {
   res.send(artifact.web);
 });
 
-artifactsRouter.get('/:id/preview', (req, res) => {
-  const artifact = getArtifact(req.params.id);
+artifactsRouter.get('/:id/preview', async (req, res) => {
+  const artifact = await getArtifact(req.params.id);
   if (!artifact) {
     res.status(404).json({ error: 'Artifact not found' });
     return;
@@ -25,8 +25,8 @@ artifactsRouter.get('/:id/preview', (req, res) => {
   res.send(artifact.preview);
 });
 
-artifactsRouter.get('/:id/original', (req, res) => {
-  const artifact = getArtifact(req.params.id);
+artifactsRouter.get('/:id/original', async (req, res) => {
+  const artifact = await getArtifact(req.params.id);
   if (!artifact) {
     res.status(404).json({ error: 'Artifact not found' });
     return;

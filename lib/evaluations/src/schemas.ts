@@ -47,6 +47,17 @@ export const StructuredScenarioSchema = BaseScenario.extend({
   minScore: z.number().min(0).max(1).default(1),
 });
 
+export const ToolCallScenarioSchema = BaseScenario.extend({
+  type: z.literal('tool-call'),
+  // Expected tool name, matched against AIMessage.tool_calls[].name.
+  tool: z.string().min(1),
+  // Optional assertions on the matched call's args, same shape as structured's fieldChecks.
+  argChecks: z.array(FieldCheckSchema).optional(),
+  // Fraction of argChecks that must pass for the scenario to pass (irrelevant
+  // if argChecks is omitted — the tool-name match alone determines pass/fail).
+  minScore: z.number().min(0).max(1).default(1),
+});
+
 const ChoiceOption = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
@@ -79,6 +90,7 @@ export const ScenarioSchema = z.discriminatedUnion('type', [
   SemanticScenarioSchema,
   LlmJudgeScenarioSchema,
   StructuredScenarioSchema,
+  ToolCallScenarioSchema,
   HumanScenarioSchema,
 ]);
 
@@ -157,11 +169,20 @@ const StructuredDetails = z.object({
   score: z.number(),
 });
 
+const ToolCallDetails = z.object({
+  type: z.literal('tool-call'),
+  expectedTool: z.string(),
+  toolCalled: z.string().nullable(),
+  fieldResults: z.array(FieldCheckResultSchema),
+  score: z.number(),
+});
+
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   DeterministicDetails,
   SemanticDetails,
   LlmJudgeDetails,
   StructuredDetails,
+  ToolCallDetails,
   HumanDetails,
 ]);
 
@@ -202,6 +223,7 @@ export type DeterministicScenario = z.infer<typeof DeterministicScenarioSchema>;
 export type SemanticScenario = z.infer<typeof SemanticScenarioSchema>;
 export type LlmJudgeScenario = z.infer<typeof LlmJudgeScenarioSchema>;
 export type StructuredScenario = z.infer<typeof StructuredScenarioSchema>;
+export type ToolCallScenario = z.infer<typeof ToolCallScenarioSchema>;
 export type HumanScenario = z.infer<typeof HumanScenarioSchema>;
 export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;

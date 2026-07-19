@@ -17,11 +17,21 @@ const UploadImageSchema = z.object({
 });
 
 export const uploadImageTool = tool(
-  async ({ imageBase64, mimeType, alt, nsfw }: z.infer<typeof UploadImageSchema>) => {
+  async (
+    { imageBase64, mimeType, alt, nsfw }: z.infer<typeof UploadImageSchema>,
+    config,
+  ) => {
     const original = Buffer.from(imageBase64, 'base64');
     const { web, preview } = await processImage(original);
 
-    const id = storeArtifact({ mimeType, original, web, preview });
+    const id = await storeArtifact({
+      mimeType,
+      original,
+      web,
+      preview,
+      origin: 'agent-generated',
+      threadId: config?.configurable?.thread_id as string | undefined,
+    });
     const hash = nsfw ? '#nsfw' : '';
 
     return `![${alt ?? 'Image'}](/api/v1/artifacts/${id}${hash})`;

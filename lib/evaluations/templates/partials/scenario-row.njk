@@ -83,6 +83,42 @@
             {% endfor %}
           </tbody>
         </table>
+      {% elif details.type === 'tool-call' %}
+        <div style="margin-top:0.5rem">
+          Expected tool: <code>{{ details.expectedTool }}</code> —
+          Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% else %}<span class="badge badge-fail">none</span>{% endif %}
+        </div>
+        {% if details.fieldResults.length %}
+        <div style="margin-top:0.5rem"><strong>Arg checks ({{ (details.score * 100) | round(0) }}% passed):</strong></div>
+        <table class="field-check-table">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Match</th>
+              <th>Expected</th>
+              <th>Actual</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field in details.fieldResults %}
+            <tr>
+              <td><code>{{ field.path }}</code></td>
+              <td>{{ field.match }}</td>
+              <td><code>{{ field.expected }}</code></td>
+              <td><code>{{ field.actual }}</code></td>
+              <td>
+                {% if field.passed %}
+                  <span class="badge badge-pass">✓</span>
+                {% else %}
+                  <span class="badge badge-fail">✗</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
       {% elif details.type === 'human' %}
         <div style="margin-top:0.5rem">Status: {{ details.status }}</div>
         {% if details.response %}

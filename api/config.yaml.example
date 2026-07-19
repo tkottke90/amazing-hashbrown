@@ -22,6 +22,11 @@ wikiRoot: ./config/kb
 # When MCP_CONFIG_PATH is set, use: dirname(MCP_CONFIG_PATH)
 mcpConfigDir: ./config
 
+# Directory where uploaded and agent-generated artifacts (images, files) are
+# stored. Each artifact gets its own subdirectory containing the original
+# file, processed web/preview variants, and a meta.json.
+artifactRoot: ./config/artifacts
+
 # ---------------------------------------------------------------------------
 # LLM Providers
 #

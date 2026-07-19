@@ -5,6 +5,7 @@ import {
   HumanScenarioSchema,
   SemanticScenarioSchema,
   StructuredScenarioSchema,
+  ToolCallScenarioSchema,
   SuiteSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
@@ -93,6 +94,22 @@ describe('ScenarioSchema', () => {
     }
   });
 
+  it('parses tool-call scenario with defaults', () => {
+    const result = ScenarioSchema.parse({
+      id: 'test-6',
+      name: 'Test',
+      purpose: 'Purpose',
+      input: 'Input',
+      type: 'tool-call',
+      tool: 'upload_image',
+    });
+    assert.equal(result.type, 'tool-call');
+    if (result.type === 'tool-call') {
+      assert.equal(result.minScore, 1);
+      assert.equal(result.argChecks, undefined);
+    }
+  });
+
   it('throws on unknown type', () => {
     assert.throws(() => {
       ScenarioSchema.parse({ id: 'x', name: 'x', purpose: 'x', input: 'x', type: 'unknown' });
@@ -151,6 +168,60 @@ describe('StructuredScenarioSchema', () => {
         type: 'structured',
         outputSchema: {},
         fieldChecks: [],
+      }),
+    );
+  });
+});
+
+describe('ToolCallScenarioSchema', () => {
+  it('defaults minScore to 1 and allows argChecks to be omitted', () => {
+    const result = ToolCallScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-call',
+      tool: 'upload_image',
+    });
+    assert.equal(result.minScore, 1);
+    assert.equal(result.argChecks, undefined);
+  });
+
+  it('accepts argChecks using the same shape as structured fieldChecks', () => {
+    const result = ToolCallScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-call',
+      tool: 'upload_image',
+      argChecks: [{ path: 'mimeType', match: 'exists' }],
+    });
+    assert.equal(result.argChecks?.[0].match, 'exists');
+  });
+
+  it('accepts custom minScore', () => {
+    const result = ToolCallScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-call',
+      tool: 'upload_image',
+      argChecks: [{ path: 'mimeType', match: 'exists' }],
+      minScore: 0.5,
+    });
+    assert.equal(result.minScore, 0.5);
+  });
+
+  it('throws when tool is missing', () => {
+    assert.throws(() =>
+      ToolCallScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'tool-call',
       }),
     );
   });
