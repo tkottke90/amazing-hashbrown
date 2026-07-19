@@ -215,6 +215,9 @@ export interface RunAfterAgentPipelineParams {
   provider?: string;
   model?: string;
   requestAfterAgentEnabled?: boolean;
+  // Test-only escape hatch: an already-constructed model, used in place of
+  // createProvider(provider, model). Production callers never set this.
+  llm?: ReturnType<typeof createProvider>;
 }
 
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
@@ -243,13 +246,18 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
   );
 
   try {
-    const llm = createProvider(provider, model);
+    const llm = params.llm ?? createProvider(provider, model);
     const state = threadState.get(threadId) ?? { rollingSummary: '' };
+    // Captured before summarize() folds this turn into the rolling summary —
+    // classify must judge novelty against what was known BEFORE this turn,
+    // not against a summary that already includes the very facts being
+    // classified (which would make every turn look "already covered").
+    const priorSummary = state.rollingSummary;
 
     const { summary } = await invokeStructured(
       llm,
       SummarizeOutputSchema,
-      buildSummarizePrompt(state.rollingSummary, turnText),
+      buildSummarizePrompt(priorSummary, turnText),
       handler,
       'after-agent:summarize',
     );
@@ -259,7 +267,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     const classify = await invokeStructured(
       llm,
       ClassifyOutputSchema,
-      buildClassifyPrompt(turnText, state.rollingSummary),
+      buildClassifyPrompt(turnText, priorSummary),
       handler,
       'after-agent:classify',
     );
