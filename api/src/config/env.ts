@@ -49,6 +49,7 @@ const AppConfigSchema = z.object({
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./wiki'),
   mcpConfigDir: z.string().default('./mcp'),
+  artifactRoot: z.string().default('./artifacts'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
@@ -81,6 +82,9 @@ export const env = {
   },
   get mcpConfigDir() {
     return configManager.getConfigDir(configManager.get('mcpConfigDir') as string);
+  },
+  get artifactRoot() {
+    return configManager.getConfigDir(configManager.get('artifactRoot') as string);
   },
   get providers(): ProviderConfig[] {
     try {

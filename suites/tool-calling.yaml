@@ -1,0 +1,48 @@
+suite:
+  id: tool-calling
+  name: Tool Calling
+  purpose: >
+    Verifies the chat agent actually invokes the correct built-in tool when a
+    prompt calls for it, rather than just describing what it would do. New
+    tools should add a scenario here alongside their implementation.
+  passingThreshold: 1.0
+
+scenarios:
+  - id: tools-001-upload-image
+    name: Agent calls upload_image to embed a generated image
+    purpose: >
+      Confirms the agent invokes the upload_image tool — not just claims to —
+      when asked to produce and embed an image, and that the call includes a
+      mimeType argument.
+    type: tool-call
+    input: >
+      Generate a small solid red square image and embed it in your response
+      using your image tool.
+    tool: upload_image
+    argChecks:
+      - path: mimeType
+        match: exists
+
+  - id: tools-002-comfyui-then-upload
+    name: Agent uploads a previously-generated image via upload_image
+    purpose: >
+      Simulates a ComfyUI-style image-generation tool (generate_image) having
+      already run and returned real bytes earlier in the conversation.
+      Confirms the agent correctly follows up by calling upload_image with
+      those exact bytes, rather than ignoring the result or fabricating new
+      ones — the general "any image-producing tool must hand off to
+      upload_image" contract.
+    type: tool-sequence
+    input: Generate an image of a red dragon and embed it in your response.
+    priorTurns:
+      - tool: generate_image
+        args: { prompt: 'a red dragon' }
+        result: { imageBase64: 'ZmFrZS1kcmFnb24tYnl0ZXM=', mimeType: 'image/png' }
+    tool: upload_image
+    argChecks:
+      - path: imageBase64
+        match: equals
+        value: 'ZmFrZS1kcmFnb24tYnl0ZXM='
+      - path: mimeType
+        match: equals
+        value: 'image/png'

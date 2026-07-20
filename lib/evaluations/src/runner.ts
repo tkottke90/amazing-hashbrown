@@ -1,10 +1,13 @@
-import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
+import { HumanMessage, AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
+import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
+import { runToolSequence } from './executors/tool-sequence.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -15,6 +18,8 @@ import type {
   SemanticScenario,
   LlmJudgeScenario,
   StructuredScenario,
+  ToolCallScenario,
+  ToolSequenceScenario,
   HumanScenario,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
@@ -26,6 +31,7 @@ export interface RunConfig {
   judgeModel: BaseChatModel;
   judgeModelId: string;
   embeddings?: Embeddings;
+  tools?: BindToolsInput[];
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -148,6 +154,50 @@ async function invokeStructuredModel(
   return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
+// Seeds a synthetic conversation history — as if `priorTurns` had already
+// happened — for tool-sequence scenarios. Each turn becomes its own
+// AIMessage(tool_call) + ToolMessage(result) pair, in order, so the final
+// invoke() sees a conversation where those tool calls already completed.
+export function buildSeededMessages(
+  input: string,
+  priorTurns: ToolSequenceScenario['priorTurns'],
+): BaseMessage[] {
+  const messages: BaseMessage[] = [new HumanMessage(input)];
+  priorTurns.forEach((turn, i) => {
+    const toolCallId = `eval-seed-${i}`;
+    messages.push(
+      new AIMessage({
+        content: '',
+        tool_calls: [{ id: toolCallId, name: turn.tool, args: turn.args }],
+      }),
+    );
+    messages.push(
+      new ToolMessage({ tool_call_id: toolCallId, content: JSON.stringify(turn.result) }),
+    );
+  });
+  return messages;
+}
+
+async function invokeToolCallModel(
+  model: BaseChatModel,
+  input: string | BaseMessage[],
+  tools: BindToolsInput[],
+): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
+  if (!model.bindTools) {
+    throw new Error(
+      'the configured model does not support bindTools — required for tool-call scenarios',
+    );
+  }
+  const start = Date.now();
+  const response = await model.bindTools(tools).invoke(input);
+  const latencyMs = Date.now() - start;
+  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
+    name: call.name,
+    args: call.args,
+  }));
+  return { toolCalls, content: extractContent(response), latencyMs };
+}
+
 async function executeScenario(
   scenario: Scenario,
   suite: Suite,
@@ -226,6 +276,51 @@ async function executeScenario(
       );
       const details = runStructured(s, parsed);
       const passed = details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
+    if (scenario.type === 'tool-call') {
+      const s = scenario as ToolCallScenario;
+      if (!config.tools || config.tools.length === 0) {
+        throw new Error('tools are required for tool-call scenarios');
+      }
+      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+        config.model,
+        s.input,
+        config.tools,
+      );
+      const details = runToolCall(s, toolCalls);
+      const passed = details.toolCalled === s.tool && details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
+    if (scenario.type === 'tool-sequence') {
+      const s = scenario as ToolSequenceScenario;
+      if (!config.tools || config.tools.length === 0) {
+        throw new Error('tools are required for tool-sequence scenarios');
+      }
+      const seeded = buildSeededMessages(s.input, s.priorTurns);
+      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+        config.model,
+        seeded,
+        config.tools,
+      );
+      const details = runToolSequence(s, toolCalls);
+      const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
         passed,
