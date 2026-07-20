@@ -24,7 +24,7 @@ wiring into `chat-agent.ts`, following the existing pattern established by
 
 **`wiki_locate` vs. `wiki_search` — domain-level vs. content-level.**
 `wiki_search` already loops every registered domain and searches page
-*content* (`wiki-search.tool.ts:27-51`), answering "which pages match this
+_content_ (`wiki-search.tool.ts:27-51`), answering "which pages match this
 query" — but only once matching content exists. `wiki_locate` answers a
 coarser, prior question — "which domain applies to this topic at all" —
 using the registry's deterministic id/domain/tag/routing-note scorer,
@@ -39,8 +39,8 @@ registry metadata; `wiki_search` operates on page bodies.
 The TODO list names a single item, "Wiki Orient Tool," and its stated
 requirement was to check whether `LlmWiki.orient()` exists and add it if not.
 It already exists and is fully tested. Working through the design surfaced
-that the TODO's description conflated two distinct jobs — *picking* a domain
-and *orienting inside* one already-picked domain — that map cleanly onto two
+that the TODO's description conflated two distinct jobs — _picking_ a domain
+and _orienting inside_ one already-picked domain — that map cleanly onto two
 separate, single-purpose tools rather than one tool with two modes. This spec
 covers both as one unit of work since they were discovered together and are
 small individually.
@@ -71,7 +71,7 @@ small individually.
   already supports this (`WikiRegistry.create()`), but it is a write
   operation with real disk side effects (new directories, `registry.json`
   mutation) and belongs with the not-yet-built "Wiki Write Tooling" TODO
-  item. `wiki_locate` only *detects and reports* a no-match state.
+  item. `wiki_locate` only _detects and reports_ a no-match state.
 - Any change to `LlmWiki`, `WikiRegistry`, or their underlying tests in
   `lib/llm-wiki` — this spec only adds an application-layer wrapper.
 - Unit tests for the new tool files (see Testing, below).
@@ -152,7 +152,11 @@ because it's hardcoded for a single-domain deployment).
 
 ```ts
 const WikiOrientSchema = z.object({
-  wikiId: z.string().describe('Wiki domain ID to orient on (e.g. "user"), as returned by wiki_locate or wiki_search.'),
+  wikiId: z
+    .string()
+    .describe(
+      'Wiki domain ID to orient on (e.g. "user"), as returned by wiki_locate or wiki_search.',
+    ),
 });
 ```
 
@@ -246,6 +250,7 @@ Run these by hand against the real `config/kb` wiki during implementation,
 since there is no automated test net (see above):
 
 **`wiki_locate`**
+
 - [ ] `context` matches exactly one domain cleanly
 - [ ] `context` produces an ambiguous tie between two+ domains
 - [ ] `context` matches no domain
@@ -254,6 +259,7 @@ since there is no automated test net (see above):
 - [ ] Registry unavailable (e.g. point `WIKI_ROOT` somewhere invalid)
 
 **`wiki_orient`**
+
 - [ ] Known `wikiId` with a small index — full content returned, no truncation
 - [ ] Known `wikiId` with an artificially oversized index — truncates cleanly
       on a line boundary with an accurate omitted-count note
@@ -268,7 +274,7 @@ multi-tool coordination testing this feature needs, via the `tool-sequence`
 scenario type (`lib/evaluations/src/executors/tool-sequence.ts`): it seeds N
 prior tool calls into a conversation as if they already happened (each
 becoming its own `AIMessage(tool_call)` + `ToolMessage(result)` pair — see
-`runner.ts`'s `buildSeededMessages`), then checks the agent's *next* live
+`runner.ts`'s `buildSeededMessages`), then checks the agent's _next_ live
 tool call. `suites/tool-calling.yaml`'s `tools-002-comfyui-then-upload`
 scenario is the existing precedent for this pattern.
 
@@ -277,14 +283,14 @@ Add a new suite, `suites/wiki-navigation.yaml` (auto-discovered by
 manifest registration needed), covering coordination across `wiki_locate` →
 `wiki_orient` → `wiki_search`/`wiki_read_page`/`ask_user`:
 
-| id | type | what it proves |
-|----|------|-----------------|
-| `wnav-001-locate-picks-domain` | `tool-call` | Given a topic clearly belonging to one domain, the agent calls `wiki_locate` with a `context` arg. |
-| `wnav-002-orient-after-locate` | `tool-sequence` | Seeded `wiki_locate` result shows a clean match; the agent's next call is `wiki_orient({ wikiId })` with that id. |
-| `wnav-003-read-page-after-orient` | `tool-sequence` | Seeded `wiki_locate` + `wiki_orient` results show a relevant page in the index; asked a question that page answers, the agent's next call is `wiki_read_page` with the right path. |
-| `wnav-004-ambiguous-locate-asks-user` | `tool-sequence` | Seeded `wiki_locate` result has `ambiguous: true` with two tied candidates; the agent's next call is `ask_user`, not a guess. |
-| `wnav-005-no-match-reports-honestly` | `llm-judge` | For a topic no real domain covers, the agent states plainly that nothing matched instead of fabricating an answer. No seeding needed — the live registry naturally returns no match. |
-| `wnav-006-unknown-wikiid-recovers` | `tool-sequence` | Seeded `wiki_orient` call with a bad id returns the tool's own "not registered — use wiki_locate" string; the agent's next call is `wiki_locate`. |
+| id                                    | type            | what it proves                                                                                                                                                                       |
+| ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `wnav-001-locate-picks-domain`        | `tool-call`     | Given a topic clearly belonging to one domain, the agent calls `wiki_locate` with a `context` arg.                                                                                   |
+| `wnav-002-orient-after-locate`        | `tool-sequence` | Seeded `wiki_locate` result shows a clean match; the agent's next call is `wiki_orient({ wikiId })` with that id.                                                                    |
+| `wnav-003-read-page-after-orient`     | `tool-sequence` | Seeded `wiki_locate` + `wiki_orient` results show a relevant page in the index; asked a question that page answers, the agent's next call is `wiki_read_page` with the right path.   |
+| `wnav-004-ambiguous-locate-asks-user` | `tool-sequence` | Seeded `wiki_locate` result has `ambiguous: true` with two tied candidates; the agent's next call is `ask_user`, not a guess.                                                        |
+| `wnav-005-no-match-reports-honestly`  | `llm-judge`     | For a topic no real domain covers, the agent states plainly that nothing matched instead of fabricating an answer. No seeding needed — the live registry naturally returns no match. |
+| `wnav-006-unknown-wikiid-recovers`    | `tool-sequence` | Seeded `wiki_orient` call with a bad id returns the tool's own "not registered — use wiki_locate" string; the agent's next call is `wiki_locate`.                                    |
 
 Note: `PriorToolTurnSchema.result` is `z.record(string, unknown)`
 (`schemas.ts:61-65`) — since these tools return plain strings, wrap seeded
@@ -300,7 +306,7 @@ suite's `passingThreshold`:
 - `wnav-007-locate-orient-update-existing-page` — locate+orient show an
   existing on-topic page; asked to update it, the agent should call the
   future `wiki_update_page`.
-- `wnav-008-locate-orient-create-new-page` — locate+orient show *nothing*
+- `wnav-008-locate-orient-create-new-page` — locate+orient show _nothing_
   on-topic; asked to add something, the agent should call the future
   `wiki_create_page` rather than hallucinating an edit to an unrelated page.
 

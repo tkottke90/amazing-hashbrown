@@ -32,7 +32,10 @@ scenarios:
     priorTurns:
       - tool: wiki_locate
         args: { context: 'personal preferences' }
-        result: { text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
     tool: wiki_orient
     argChecks:
       - path: wikiId
@@ -50,10 +53,16 @@ scenarios:
     priorTurns:
       - tool: wiki_locate
         args: { context: 'morning routine preferences' }
-        result: { text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
       - tool: wiki_orient
         args: { wikiId: 'user' }
-        result: { text: "# Wiki Orientation: user\n## Index\n- entities/morning-routine.md — user's morning routine preferences" }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/morning-routine.md — user's morning routine preferences",
+          }
     tool: wiki_read_page
     argChecks:
       - path: wikiId
@@ -73,7 +82,10 @@ scenarios:
     priorTurns:
       - tool: wiki_locate
         args: { context: 'training and fitness scheduling' }
-        result: { text: 'Multiple domains match equally well: health-fitness, homelab. Narrow the context, or ask the user to pick one.' }
+        result:
+          {
+            text: 'Multiple domains match equally well: health-fitness, homelab. Narrow the context, or ask the user to pick one.',
+          }
     tool: ask_user
     argChecks:
       - path: question
@@ -106,7 +118,8 @@ scenarios:
     priorTurns:
       - tool: wiki_orient
         args: { wikiId: 'archive' }
-        result: { text: 'Wiki "archive" is not registered. Use wiki_locate to find available domains.' }
+        result:
+          { text: 'Wiki "archive" is not registered. Use wiki_locate to find available domains.' }
     tool: wiki_locate
     argChecks:
       - path: context

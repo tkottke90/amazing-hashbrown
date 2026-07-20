@@ -5,7 +5,9 @@ import { getWikiRegistry } from '../../services/wiki.js';
 const WikiOrientSchema = z.object({
   wikiId: z
     .string()
-    .describe('Wiki domain ID to orient on (e.g. "user"), as returned by wiki_locate or wiki_search.'),
+    .describe(
+      'Wiki domain ID to orient on (e.g. "user"), as returned by wiki_locate or wiki_search.',
+    ),
 });
 
 const MAX_INDEX_CHARS = 4000;
