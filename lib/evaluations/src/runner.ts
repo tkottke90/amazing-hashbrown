@@ -1,11 +1,13 @@
 import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
+import { HumanMessage, AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
 import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
 import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
+import { runToolSequence } from './executors/tool-sequence.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -17,6 +19,7 @@ import type {
   LlmJudgeScenario,
   StructuredScenario,
   ToolCallScenario,
+  ToolSequenceScenario,
   HumanScenario,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
@@ -151,9 +154,33 @@ async function invokeStructuredModel(
   return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
+// Seeds a synthetic conversation history — as if `priorTurns` had already
+// happened — for tool-sequence scenarios. Each turn becomes its own
+// AIMessage(tool_call) + ToolMessage(result) pair, in order, so the final
+// invoke() sees a conversation where those tool calls already completed.
+export function buildSeededMessages(
+  input: string,
+  priorTurns: ToolSequenceScenario['priorTurns'],
+): BaseMessage[] {
+  const messages: BaseMessage[] = [new HumanMessage(input)];
+  priorTurns.forEach((turn, i) => {
+    const toolCallId = `eval-seed-${i}`;
+    messages.push(
+      new AIMessage({
+        content: '',
+        tool_calls: [{ id: toolCallId, name: turn.tool, args: turn.args }],
+      }),
+    );
+    messages.push(
+      new ToolMessage({ tool_call_id: toolCallId, content: JSON.stringify(turn.result) }),
+    );
+  });
+  return messages;
+}
+
 async function invokeToolCallModel(
   model: BaseChatModel,
-  input: string,
+  input: string | BaseMessage[],
   tools: BindToolsInput[],
 ): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
   if (!model.bindTools) {
@@ -270,6 +297,29 @@ async function executeScenario(
         config.tools,
       );
       const details = runToolCall(s, toolCalls);
+      const passed = details.toolCalled === s.tool && details.score >= s.minScore;
+      return {
+        ...baseResult,
+        passed,
+        score: details.score,
+        actualOutput: content,
+        latencyMs,
+        details,
+      };
+    }
+
+    if (scenario.type === 'tool-sequence') {
+      const s = scenario as ToolSequenceScenario;
+      if (!config.tools || config.tools.length === 0) {
+        throw new Error('tools are required for tool-sequence scenarios');
+      }
+      const seeded = buildSeededMessages(s.input, s.priorTurns);
+      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+        config.model,
+        seeded,
+        config.tools,
+      );
+      const details = runToolSequence(s, toolCalls);
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,

@@ -83,7 +83,7 @@
             {% endfor %}
           </tbody>
         </table>
-      {% elif details.type === 'tool-call' %}
+      {% elif details.type === 'tool-call' or details.type === 'tool-sequence' %}
         <div style="margin-top:0.5rem">
           Expected tool: <code>{{ details.expectedTool }}</code> —
           Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% else %}<span class="badge badge-fail">none</span>{% endif %}

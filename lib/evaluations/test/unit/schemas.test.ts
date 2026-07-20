@@ -6,6 +6,7 @@ import {
   SemanticScenarioSchema,
   StructuredScenarioSchema,
   ToolCallScenarioSchema,
+  ToolSequenceScenarioSchema,
   SuiteSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
@@ -107,6 +108,23 @@ describe('ScenarioSchema', () => {
     if (result.type === 'tool-call') {
       assert.equal(result.minScore, 1);
       assert.equal(result.argChecks, undefined);
+    }
+  });
+
+  it('parses tool-sequence scenario with defaults', () => {
+    const result = ScenarioSchema.parse({
+      id: 'test-7',
+      name: 'Test',
+      purpose: 'Purpose',
+      input: 'Input',
+      type: 'tool-sequence',
+      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      tool: 'upload_image',
+    });
+    assert.equal(result.type, 'tool-sequence');
+    if (result.type === 'tool-sequence') {
+      assert.equal(result.minScore, 1);
+      assert.deepEqual(result.priorTurns[0].args, {});
     }
   });
 
@@ -222,6 +240,82 @@ describe('ToolCallScenarioSchema', () => {
         purpose: 'x',
         input: 'x',
         type: 'tool-call',
+      }),
+    );
+  });
+});
+
+describe('ToolSequenceScenarioSchema', () => {
+  it('defaults minScore to 1, argChecks omitted, and turn args default to {}', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-sequence',
+      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      tool: 'upload_image',
+    });
+    assert.equal(result.minScore, 1);
+    assert.equal(result.argChecks, undefined);
+    assert.deepEqual(result.priorTurns[0].args, {});
+  });
+
+  it('accepts explicit prior turn args and multiple chained turns', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-sequence',
+      priorTurns: [
+        { tool: 'tool_a', args: { a: 1 }, result: { out: 'a' } },
+        { tool: 'tool_b', args: { b: 2 }, result: { out: 'b' } },
+      ],
+      tool: 'upload_image',
+    });
+    assert.equal(result.priorTurns.length, 2);
+    assert.deepEqual(result.priorTurns[0].args, { a: 1 });
+    assert.deepEqual(result.priorTurns[1].args, { b: 2 });
+  });
+
+  it('accepts argChecks using the same shape as tool-call', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-sequence',
+      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      tool: 'upload_image',
+      argChecks: [{ path: 'imageBase64', match: 'equals', value: 'abc' }],
+    });
+    assert.equal(result.argChecks?.[0].match, 'equals');
+  });
+
+  it('throws when priorTurns is empty', () => {
+    assert.throws(() =>
+      ToolSequenceScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'tool-sequence',
+        priorTurns: [],
+        tool: 'upload_image',
+      }),
+    );
+  });
+
+  it('throws when tool is missing', () => {
+    assert.throws(() =>
+      ToolSequenceScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'tool-sequence',
+        priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
       }),
     );
   });

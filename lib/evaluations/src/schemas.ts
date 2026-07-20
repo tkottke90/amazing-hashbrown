@@ -58,6 +58,25 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   minScore: z.number().min(0).max(1).default(1),
 });
 
+const PriorToolTurnSchema = z.object({
+  tool: z.string().min(1),
+  args: z.record(z.string(), z.unknown()).default({}),
+  result: z.record(z.string(), z.unknown()),
+});
+
+export const ToolSequenceScenarioSchema = BaseScenario.extend({
+  type: z.literal('tool-sequence'),
+  // Prior tool calls to seed into the conversation before the final invoke —
+  // each becomes its own AIMessage(tool_call) + ToolMessage(result) pair, in
+  // order, simulating turns that already "happened". An array (not a single
+  // object) so this generalizes to N chained prior tool calls, matching how
+  // a real ReAct loop can chain arbitrarily many tool calls.
+  priorTurns: z.array(PriorToolTurnSchema).min(1),
+  tool: z.string().min(1),
+  argChecks: z.array(FieldCheckSchema).optional(),
+  minScore: z.number().min(0).max(1).default(1),
+});
+
 const ChoiceOption = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
@@ -91,6 +110,7 @@ export const ScenarioSchema = z.discriminatedUnion('type', [
   LlmJudgeScenarioSchema,
   StructuredScenarioSchema,
   ToolCallScenarioSchema,
+  ToolSequenceScenarioSchema,
   HumanScenarioSchema,
 ]);
 
@@ -177,12 +197,21 @@ const ToolCallDetails = z.object({
   score: z.number(),
 });
 
+const ToolSequenceDetails = z.object({
+  type: z.literal('tool-sequence'),
+  expectedTool: z.string(),
+  toolCalled: z.string().nullable(),
+  fieldResults: z.array(FieldCheckResultSchema),
+  score: z.number(),
+});
+
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   DeterministicDetails,
   SemanticDetails,
   LlmJudgeDetails,
   StructuredDetails,
   ToolCallDetails,
+  ToolSequenceDetails,
   HumanDetails,
 ]);
 
@@ -224,6 +253,7 @@ export type SemanticScenario = z.infer<typeof SemanticScenarioSchema>;
 export type LlmJudgeScenario = z.infer<typeof LlmJudgeScenarioSchema>;
 export type StructuredScenario = z.infer<typeof StructuredScenarioSchema>;
 export type ToolCallScenario = z.infer<typeof ToolCallScenarioSchema>;
+export type ToolSequenceScenario = z.infer<typeof ToolSequenceScenarioSchema>;
 export type HumanScenario = z.infer<typeof HumanScenarioSchema>;
 export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
