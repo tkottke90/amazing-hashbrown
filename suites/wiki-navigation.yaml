@@ -1,0 +1,113 @@
+suite:
+  id: wiki-navigation
+  name: Wiki Navigation
+  purpose: >
+    Verifies the chat agent coordinates wiki_locate, wiki_orient,
+    wiki_search, and wiki_read_page correctly in sequence — picking a
+    domain before orienting, orienting before reading, and recovering
+    sensibly from ambiguous, no-match, and unknown-id results rather than
+    guessing.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: wnav-001-locate-picks-domain
+    name: Agent calls wiki_locate for an unfamiliar topic
+    purpose: >
+      Confirms the agent reaches for wiki_locate with a context argument
+      before assuming a domain.
+    type: tool-call
+    input: 'I need to look something up about my personal preferences. Which part of the knowledge base should I check?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-002-orient-after-locate
+    name: Agent orients on the domain wiki_locate matched
+    purpose: >
+      Given wiki_locate already returned a clean match, confirms the next
+      call is wiki_orient on that exact domain.
+    type: tool-sequence
+    input: 'What do we already know in the knowledge base before I ask my question?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'personal preferences' }
+        result: { text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.' }
+    tool: wiki_orient
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+
+  - id: wnav-003-read-page-after-orient
+    name: Agent reads the matching page found via orient
+    purpose: >
+      Given locate + orient already ran and the index shows a relevant
+      page, confirms the agent reads that specific page rather than
+      re-searching or guessing.
+    type: tool-sequence
+    input: 'What do I prefer for my morning routine?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'morning routine preferences' }
+        result: { text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.' }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result: { text: "# Wiki Orientation: user\n## Index\n- entities/morning-routine.md — user's morning routine preferences" }
+    tool: wiki_read_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/morning-routine.md
+
+  - id: wnav-004-ambiguous-locate-asks-user
+    name: Agent asks for clarification on an ambiguous domain match
+    purpose: >
+      Given wiki_locate returns tied candidates, confirms the agent asks
+      the user to disambiguate rather than picking one arbitrarily.
+    type: tool-sequence
+    input: 'Look into the knowledge base for this and get back to me.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'training and fitness scheduling' }
+        result: { text: 'Multiple domains match equally well: health-fitness, homelab. Narrow the context, or ask the user to pick one.' }
+    tool: ask_user
+    argChecks:
+      - path: question
+        match: exists
+
+  - id: wnav-005-no-match-reports-honestly
+    name: Agent reports honestly when no domain matches
+    purpose: >
+      For a wildly unrelated topic, wiki_locate naturally returns no match
+      against the real registry. The agent must say so plainly instead of
+      fabricating an answer from an unrelated domain.
+    type: llm-judge
+    input: 'Search the knowledge base for information about deep-sea marine biology research.'
+    rubric: >
+      The response should: (1) indicate that no wiki domain covers this
+      topic, or that nothing relevant was found, (2) not fabricate content
+      by treating an unrelated domain as if it matched, (3) optionally
+      offer alternative help. Deduct points for confidently answering from
+      the wrong domain.
+    minScore: 6
+
+  - id: wnav-006-unknown-wikiid-recovers
+    name: Agent recovers from an unknown wikiId by calling wiki_locate
+    purpose: >
+      If wiki_orient is called with a bad id and returns its own
+      "not registered" error, confirms the agent's next call is
+      wiki_locate rather than retrying blindly or giving up.
+    type: tool-sequence
+    input: 'Check the archive wiki for anything relevant.'
+    priorTurns:
+      - tool: wiki_orient
+        args: { wikiId: 'archive' }
+        result: { text: 'Wiki "archive" is not registered. Use wiki_locate to find available domains.' }
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists

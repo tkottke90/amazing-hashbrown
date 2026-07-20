@@ -8,6 +8,8 @@ import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
+import { wikiLocateTool } from './tools/wiki-locate.tool.js';
+import { wikiOrientTool } from './tools/wiki-orient.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
@@ -100,7 +102,15 @@ async function buildChatAgent(provider?: string, model?: string) {
     model: llm,
     // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
     // MCP tools are converted from RegisteredTool.
-    tools: [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool, ...mcpTools],
+    tools: [
+      askUserTool,
+      uploadImageTool,
+      wikiSearchTool,
+      wikiReadPageTool,
+      wikiLocateTool,
+      wikiOrientTool,
+      ...mcpTools,
+    ],
     checkpointer: getCheckpointer(),
     middleware: [afterAgentMiddleware],
   });
