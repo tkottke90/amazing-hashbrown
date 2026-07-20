@@ -50,7 +50,7 @@ outputs:
     description: Full public URL to the uploaded report's index.html.
     value: ${{ steps.upload.outputs.report-url }}
   report-key-prefix:
-    description: Computed <repo>/<timestamp>-<sha> key prefix.
+    description: Computed playwright/<repo>/<timestamp>-<sha> key prefix.
     value: ${{ steps.upload.outputs.report-key-prefix }}
 
 runs:
@@ -99,7 +99,7 @@ runs:
 
         timestamp=$(date -u +"%Y-%m-%d_%H-%M-%SZ")
         short_sha="${COMMIT_SHA:0:7}"
-        key_prefix="${REPO_NAME}/${timestamp}-${short_sha}"
+        key_prefix="playwright/${REPO_NAME}/${timestamp}-${short_sha}"
 
         # Force path-style addressing (host/bucket/key) rather than the
         # aws-cli v2 default of virtual-hosted style (bucket.host/key), since
