@@ -7,7 +7,7 @@
 3. [File-based Configuration](#file-based-configuration) — `config.yaml` as primary config source; `${ENV_VAR}` interpolation; auto-created on first run; `POST /api/v1/settings/reload` endpoint
 4. [Provider Registration](#provider-registration) — `providers[]` config block; `createProvider()` factory for Ollama/OpenAI/Anthropic; `GET /api/v1/providers` endpoint; legacy `llmBaseUrl`/`llmModel` fields removed
 5. [Observability](#observability) — `lib/observability` library with SQLite-backed trace/span store; LangChain callback handler; `/v1/traces` REST endpoints; shared `openDatabase()` connection factory
-6. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — disk-driven `WikiRegistry`; auto-initialises "user" domain on first boot; `bootKnowledgeBase()` wired into startup sequence
+6. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — disk-driven `WikiRegistry`; auto-initialises "user" and "self" domains on first boot (checked individually so an existing install missing one still picks it up); `bootKnowledgeBase()` wired into startup sequence
 7. [Usage and Cost Tracking](#usage-and-cost-tracking) — `CostStore` in `lib/observability`; pricing config in `config.yaml`; `seedProviderCosts()` syncs on startup; `GET /api/v1/usage` endpoint
 8. [Evaluation Harness](#evaluation-harness) — `lib/evaluations` package; deterministic/semantic/LLM-as-judge eval methods; SQLite result store; `POST /api/v1/evaluations/run` endpoint; `npm run eval` CLI
 9. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — `WikiUpdatedSchema` added to `ChatSSEEvent`; `wiki_update` `ThreadMessage` kind; `WikiUpdateMessage` chip component in UI
