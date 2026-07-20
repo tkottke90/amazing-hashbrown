@@ -1,0 +1,157 @@
+name: Upload Playwright Report
+description: >-
+  Uploads a Playwright HTML report to an S3-compatible bucket for CDN-hosted
+  viewing, tagging each object with a TTL expiry date for a bucket-side
+  lifecycle rule to clean up later.
+
+inputs:
+  report-dir:
+    description: Local path to the Playwright HTML report directory to upload.
+    required: false
+    default: e2e/playwright-report
+  bucket-url:
+    description: >-
+      Base URL of the S3-compatible bucket, format https://<host>/<bucket-name>.
+      Used as the S3 API endpoint for upload, and as the base of the public
+      report URL unless public-url is set. When public-url is not set, the
+      bucket must be reachable at this same origin for both the S3 API and
+      public GET requests (path-style addressing).
+    required: true
+  public-url:
+    description: >-
+      Optional alternate base URL used only for building the public report
+      link (report-url output / PR comment), in place of bucket-url. Use
+      this when bucket-url points at a write-only endpoint (e.g. a domain
+      that only allows PUT/POST) and reads need to go through a different,
+      GET-enabled domain fronting the same bucket (e.g. an internal CDN or
+      reverse proxy). Should include the same path segments bucket-url
+      would need for a GET request to resolve (e.g. a bucket-name segment,
+      if the fronting domain doesn't already strip/rewrite it). Defaults to
+      bucket-url when not set.
+    required: false
+    default: ''
+  aws-access-key-id:
+    description: Access key ID for the S3-compatible bucket.
+    required: true
+  aws-secret-access-key:
+    description: Secret access key for the S3-compatible bucket.
+    required: true
+  aws-region:
+    description: >-
+      Region string passed to the AWS CLI. Some S3-compatible providers
+      require a placeholder value even though it's not otherwise used.
+    required: false
+    default: us-east-1
+  repo-name:
+    description: Repository name, used as the top-level key prefix.
+    required: true
+  commit-sha:
+    description: Full commit SHA; the action derives the short SHA itself.
+    required: true
+  ttl-days:
+    description: Number of days until the uploaded report should expire.
+    required: false
+    default: '5'
+  ttl-tag-key:
+    description: >-
+      Tag key written to every uploaded object with the computed expiry date.
+      Must match whatever key the bucket's lifecycle rule filters on.
+    required: false
+    default: expires-on
+
+outputs:
+  report-url:
+    description: Full public URL to the uploaded report's index.html.
+    value: ${{ steps.upload.outputs.report-url }}
+  report-key-prefix:
+    description: Computed playwright/<repo>/<timestamp>-<sha> key prefix.
+    value: ${{ steps.upload.outputs.report-key-prefix }}
+
+runs:
+  using: composite
+  steps:
+    - name: Upload report to S3-compatible bucket
+      id: upload
+      shell: bash
+      env:
+        REPORT_DIR: ${{ inputs.report-dir }}
+        BUCKET_URL: ${{ inputs.bucket-url }}
+        PUBLIC_URL: ${{ inputs.public-url }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+        REPO_NAME: ${{ inputs.repo-name }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        TTL_DAYS: ${{ inputs.ttl-days }}
+        TTL_TAG_KEY: ${{ inputs.ttl-tag-key }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -d "$REPORT_DIR" ]; then
+          echo "::warning::report-dir '$REPORT_DIR' does not exist, skipping upload"
+          echo "report-url=" >> "$GITHUB_OUTPUT"
+          echo "report-key-prefix=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if ! command -v aws >/dev/null 2>&1; then
+          echo "::error::aws CLI is not available on this runner"
+          exit 1
+        fi
+
+        # Parse bucket-url into an S3 endpoint (scheme + host) and a bucket
+        # name (first path segment) since one URL serves both roles here.
+        proto="${BUCKET_URL%%://*}"
+        rest="${BUCKET_URL#*://}"
+        host="${rest%%/*}"
+        bucket_name="${rest#*/}"
+        bucket_name="${bucket_name%%/*}"
+        if [ -z "$bucket_name" ] || [ "$bucket_name" = "$rest" ]; then
+          echo "::error::bucket-url must include a bucket name path segment, e.g. https://host/bucket-name"
+          exit 1
+        fi
+        endpoint_url="${proto}://${host}"
+
+        timestamp=$(date -u +"%Y-%m-%d_%H-%M-%SZ")
+        short_sha="${COMMIT_SHA:0:7}"
+        key_prefix="playwright/${REPO_NAME}/${timestamp}-${short_sha}"
+
+        # Force path-style addressing (host/bucket/key) rather than the
+        # aws-cli v2 default of virtual-hosted style (bucket.host/key), since
+        # bucket-url is used as a single origin for both upload and the
+        # public link.
+        aws_config_file="${RUNNER_TEMP}/aws-config-upload-playwright-report"
+        cat > "$aws_config_file" <<EOF
+        [default]
+        s3 =
+            addressing_style = path
+        EOF
+        echo "AWS_CONFIG_FILE=${aws_config_file}" >> "$GITHUB_ENV"
+        export AWS_CONFIG_FILE="$aws_config_file"
+
+        aws s3 cp "$REPORT_DIR" "s3://${bucket_name}/${key_prefix}" \
+          --recursive \
+          --endpoint-url "$endpoint_url"
+
+        # aws s3 cp has no --tagging flag, so tag each object in a second
+        # pass. Tags (not metadata) are what a bucket lifecycle rule filters
+        # on to actually delete expired reports.
+        ttl_days="${TTL_DAYS//[^0-9]/}"
+        if [ -z "$ttl_days" ]; then
+          echo "::error::ttl-days must be a positive integer number of days, got '${TTL_DAYS}'"
+          exit 1
+        fi
+        expires_on=$(date -u -d "+${ttl_days} days" +"%Y-%m-%d")
+        while IFS= read -r -d '' file; do
+          rel="${file#"$REPORT_DIR"/}"
+          aws s3api put-object-tagging \
+            --bucket "$bucket_name" \
+            --key "${key_prefix}/${rel}" \
+            --tagging "TagSet=[{Key=${TTL_TAG_KEY},Value=${expires_on}}]" \
+            --endpoint-url "$endpoint_url"
+        done < <(find "$REPORT_DIR" -type f -print0)
+
+        report_url_base="${PUBLIC_URL:-$BUCKET_URL}"
+        report_url="${report_url_base%/}/${key_prefix}/index.html"
+        echo "report-url=${report_url}" >> "$GITHUB_OUTPUT"
+        echo "report-key-prefix=${key_prefix}" >> "$GITHUB_OUTPUT"
