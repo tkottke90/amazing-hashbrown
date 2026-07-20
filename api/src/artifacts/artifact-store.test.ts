@@ -59,14 +59,17 @@ describe('artifacts/artifact-store', () => {
       expect(artifact).to.not.equal(undefined);
       expect(artifact!.mimeType).to.equal('image/png');
       expect(artifact!.original.toString()).to.equal('original-bytes');
-      expect(artifact!.web.toString()).to.equal('web-bytes');
-      expect(artifact!.preview.toString()).to.equal('preview-bytes');
+      expect(artifact!.web).to.not.equal(null);
+      expect(artifact!.web!.toString()).to.equal('web-bytes');
+      expect(artifact!.preview).to.not.equal(null);
+      expect(artifact!.preview!.toString()).to.equal('preview-bytes');
 
       const meta = getArtifactMeta(id);
       expect(meta).to.not.equal(undefined);
       expect(meta!.id).to.equal(id);
       expect(meta!.mimeType).to.equal('image/png');
       expect(meta!.originalFilename).to.equal('original.png');
+      expect(meta!.hasVariants).to.equal(true);
       expect(meta!.origin).to.equal('user-upload');
       expect(meta!.threadId).to.equal(null);
       expect(meta!.taskId).to.equal(null);
@@ -86,6 +89,34 @@ describe('artifacts/artifact-store', () => {
       expect(meta!.origin).to.equal('agent-generated');
       expect(meta!.threadId).to.equal('thread-1');
       expect(meta!.taskId).to.equal('task-1');
+    });
+  });
+
+  describe('non-image artifacts (no processed variants)', () => {
+    let dir: string;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'artifact-store-no-variants-test-'));
+      await bootArtifactStore(dir);
+    });
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('stores just original + meta.json when web/preview are omitted', async () => {
+      const id = await storeArtifact({
+        mimeType: 'text/markdown',
+        original: Buffer.from('# Hello'),
+      });
+
+      const meta = getArtifactMeta(id);
+      expect(meta!.hasVariants).to.equal(false);
+      expect(meta!.originalFilename).to.equal('original.markdown');
+
+      const artifact = await getArtifact(id);
+      expect(artifact!.original.toString()).to.equal('# Hello');
+      expect(artifact!.web).to.equal(null);
+      expect(artifact!.preview).to.equal(null);
     });
   });
 

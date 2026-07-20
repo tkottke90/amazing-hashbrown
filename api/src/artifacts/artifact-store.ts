@@ -7,8 +7,8 @@ import { logger } from '../config/logger.js';
 export interface Artifact {
   mimeType: string; // original MIME type
   original: Buffer;
-  web: Buffer; // WebP ≤1200px wide
-  preview: Buffer; // 32px wide JPEG for blur-up
+  web: Buffer | null; // WebP ≤1200px wide — null for non-image artifacts
+  preview: Buffer | null; // 32px wide JPEG for blur-up — null for non-image artifacts
 }
 
 export type ArtifactOrigin = 'user-upload' | 'agent-generated';
@@ -17,6 +17,10 @@ export interface ArtifactMeta {
   id: string;
   mimeType: string;
   originalFilename: string;
+  // Whether web.webp/preview.jpg were written for this artifact. A stored
+  // fact rather than re-derived from mimeType, so getArtifact() never has to
+  // guess or risk reading files that were never written.
+  hasVariants: boolean;
   origin: ArtifactOrigin;
   threadId: string | null;
   taskId: string | null;
@@ -26,8 +30,8 @@ export interface ArtifactMeta {
 export interface NewArtifactInput {
   mimeType: string;
   original: Buffer;
-  web: Buffer;
-  preview: Buffer;
+  web?: Buffer;
+  preview?: Buffer;
   origin?: ArtifactOrigin;
   threadId?: string;
   taskId?: string;
@@ -86,10 +90,12 @@ export async function bootArtifactStore(root: string = env.artifactRoot): Promis
 
 export async function storeArtifact(input: NewArtifactInput): Promise<string> {
   const id = randomUUID();
+  const hasVariants = input.web !== undefined && input.preview !== undefined;
   const meta: ArtifactMeta = {
     id,
     mimeType: input.mimeType,
     originalFilename: `original.${extensionForMimeType(input.mimeType)}`,
+    hasVariants,
     origin: input.origin ?? 'user-upload',
     threadId: input.threadId ?? null,
     taskId: input.taskId ?? null,
@@ -101,12 +107,17 @@ export async function storeArtifact(input: NewArtifactInput): Promise<string> {
   // Buffer -> Uint8Array: works around a Buffer/Uint8Array<ArrayBufferLike>
   // generic type mismatch between TS 5.9's stricter typed-array lib and
   // @types/node@20's Buffer typings — no-op at runtime (Buffer already is one).
-  await Promise.all([
+  const writes = [
     writeFile(path.join(dir, meta.originalFilename), new Uint8Array(input.original)),
-    writeFile(path.join(dir, WEB_FILENAME), new Uint8Array(input.web)),
-    writeFile(path.join(dir, PREVIEW_FILENAME), new Uint8Array(input.preview)),
     writeFile(path.join(dir, META_FILENAME), JSON.stringify(meta, null, 2)),
-  ]);
+  ];
+  if (hasVariants) {
+    writes.push(
+      writeFile(path.join(dir, WEB_FILENAME), new Uint8Array(input.web!)),
+      writeFile(path.join(dir, PREVIEW_FILENAME), new Uint8Array(input.preview!)),
+    );
+  }
+  await Promise.all(writes);
 
   index.set(id, meta);
   return id;
@@ -122,8 +133,13 @@ export async function getArtifact(id: string): Promise<Artifact | undefined> {
   if (!meta) return undefined;
 
   const dir = artifactDir(id);
-  const [original, web, preview] = await Promise.all([
-    readFile(path.join(dir, meta.originalFilename)),
+  const original = await readFile(path.join(dir, meta.originalFilename));
+
+  if (!meta.hasVariants) {
+    return { mimeType: meta.mimeType, original, web: null, preview: null };
+  }
+
+  const [web, preview] = await Promise.all([
     readFile(path.join(dir, WEB_FILENAME)),
     readFile(path.join(dir, PREVIEW_FILENAME)),
   ]);
