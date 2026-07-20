@@ -121,7 +121,12 @@ runs:
         # aws s3 cp has no --tagging flag, so tag each object in a second
         # pass. Tags (not metadata) are what a bucket lifecycle rule filters
         # on to actually delete expired reports.
-        expires_on=$(date -u -d "+${TTL_DAYS} days" +"%Y-%m-%d")
+        ttl_days="${TTL_DAYS//[^0-9]/}"
+        if [ -z "$ttl_days" ]; then
+          echo "::error::ttl-days must be a positive integer number of days, got '${TTL_DAYS}'"
+          exit 1
+        fi
+        expires_on=$(date -u -d "+${ttl_days} days" +"%Y-%m-%d")
         while IFS= read -r -d '' file; do
           rel="${file#"$REPORT_DIR"/}"
           aws s3api put-object-tagging \
