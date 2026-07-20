@@ -70,20 +70,35 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
+      - name: Upload Playwright report to S3
+        id: upload-s3-report
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/upload-playwright-report
+        with:
+          report-dir: e2e/playwright-report
+          bucket-url: ${{ vars.PLAYWRIGHT_REPORT_BUCKET_URL }}
+          aws-access-key-id: ${{ secrets.PLAYWRIGHT_REPORT_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PLAYWRIGHT_REPORT_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.PLAYWRIGHT_REPORT_AWS_REGION || 'us-east-1' }}
+          repo-name: ${{ github.event.repository.name }}
+          commit-sha: ${{ github.sha }}
+          ttl-days: ${{ vars.PLAYWRIGHT_REPORT_TTL_DAYS || '5' }}
+
       - name: Comment on PR with report link
         uses: actions/github-script@v7
         if: always() && github.event_name == 'pull_request'
         env:
-          ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
+          REPORT_URL: ${{ steps.upload-s3-report.outputs.report-url }}
           E2E_STATUS: ${{ steps.run-tests.outcome }}
         with:
           script: |
             const marker = '<!-- playwright-e2e-report -->';
             const status = process.env.E2E_STATUS;
             const icon = status === 'success' ? '✅' : '❌';
-            const artifactId = process.env.ARTIFACT_ID;
-            const reportLink = artifactId
-              ? `**Report:** [Download HTML report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${artifactId})`
+            const reportUrl = process.env.REPORT_URL;
+            const reportLink = reportUrl
+              ? `**Report:** [View HTML report](${reportUrl})`
               : `**Report:** not generated (check run logs)`;
             const body = [
               marker,
