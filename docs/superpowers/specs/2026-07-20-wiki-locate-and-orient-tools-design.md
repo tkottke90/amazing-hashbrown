@@ -22,6 +22,18 @@ entirely to the thin `api/src/agents/tools/*.tool.ts` wrapper layer and its
 wiring into `chat-agent.ts`, following the existing pattern established by
 `wiki-search.tool.ts` and `wiki-read-page.tool.ts`.
 
+**`wiki_locate` vs. `wiki_search` — domain-level vs. content-level.**
+`wiki_search` already loops every registered domain and searches page
+*content* (`wiki-search.tool.ts:27-51`), answering "which pages match this
+query" — but only once matching content exists. `wiki_locate` answers a
+coarser, prior question — "which domain applies to this topic at all" —
+using the registry's deterministic id/domain/tag/routing-note scorer,
+independent of whether any page content exists yet. This distinction
+matters most before writing (no page exists yet for search to find) or when
+a domain is relevant but has no content on the specific topic yet. The two
+tools are complementary, not overlapping: `wiki_locate` operates on
+registry metadata; `wiki_search` operates on page bodies.
+
 ## Scope note: two tools, one TODO item
 
 The TODO list names a single item, "Wiki Orient Tool," and its stated
@@ -40,6 +52,14 @@ small individually.
 - `wiki_orient` tool: full orientation on one named domain, with index
   truncation for oversized wikis.
 - Wiring both into `buildChatAgent`'s tool list in `chat-agent.ts`.
+- A light, description-only edit to the existing `wiki-search.tool.ts` —
+  no behavior change, just clarifying it already searches content across
+  all domains, and pointing to `wiki_locate`/`wiki_orient` for the
+  domain-level and full-catalog cases respectively.
+- A new evaluation suite (`suites/wiki-navigation.yaml`) regression-testing
+  tool coordination across `wiki_locate` → `wiki_orient` →
+  `wiki_search`/`wiki_read_page`/`ask_user` (see Evaluation Scenarios,
+  below).
 
 ## Out of scope
 
@@ -96,6 +116,24 @@ const WikiLocateSchema = z.object({
    tags, status) formatted as a short table/list, followed by
    `registry.routingNotes()` (the raw `"<triggers> -> <wiki-id>"` lines) so
    the agent can read the routing hints directly.
+
+**Tool description** (the LangChain `description` field, distinct from the
+per-field zod `.describe()`):
+
+> Find which wiki domain matches a topic, using deterministic routing
+> (id/domain/tag/routing-note hits) — a domain-level lookup, not a content
+> search. Or list all domains and their routing hints if you don't have a
+> specific topic yet. Call this first when you don't already know a
+> wikiId — before wiki_orient, wiki_search, or wiki_read_page. Score
+> reflects match strength: double digits is a strong signal (an id or
+> routing-note hit); a lone score of 2-3 is a weak, single-tag coincidence —
+> use judgement.
+
+The score-reading guidance exists because `registry.resolve()`'s scorer has
+no built-in confidence threshold — any score > 0 is reported as a match,
+even a single coincidental tag hit (+3). Surfacing the raw score and how to
+read it lets the agent apply judgement rather than treating every non-zero
+score as equally confident.
 
 **Error handling:** mirrors `wiki-search.tool.ts` — registry construction
 failures are caught and return a plain-text fallback rather than throwing;
@@ -155,8 +193,26 @@ no cross-domain payload-size composition to worry about.
    `schema` and `recentLog` are not truncated — they're small by
    construction (a tag taxonomy and the last 30 log entries).
 
+**Tool description:**
+
+> Load a wiki domain's full structural state — tag taxonomy, page index,
+> recent activity — before searching or writing in it. Call this once you
+> already have a wikiId (from wiki_locate or a wiki_search result) and want
+> the lay of the land before deciding what to search for or write.
+
 **Error handling:** same fallback-string style as the other wiki tools;
 no throwing across the tool boundary.
+
+## Existing tool update: `wiki_search` description
+
+Light, description-only edit to `api/src/agents/tools/wiki-search.tool.ts`
+(no behavior change) to disambiguate it from the two new tools:
+
+> Search page content for a query across every registered wiki domain.
+> Returns ranked results with wikiId and path. Use wiki_locate first if you
+> want to know which domain covers a topic before any matching pages exist,
+> or wiki_orient for a domain's full catalog rather than a ranked subset.
+> Use wiki_read_page to fetch the full content of a specific result.
 
 ## Wiring
 
@@ -164,15 +220,7 @@ Both tools are added to `buildChatAgent`'s tool list in
 `api/src/agents/chat-agent.ts`, alongside the existing wiki tools:
 
 ```ts
-tools: [
-  askUserTool,
-  uploadImageTool,
-  wikiSearchTool,
-  wikiReadPageTool,
-  wikiLocateTool,
-  wikiOrientTool,
-  ...mcpTools,
-],
+tools: [askUserTool, uploadImageTool, wikiSearchTool, wikiReadPageTool, wikiLocateTool, wikiOrientTool, ...mcpTools],
 ```
 
 They are available to the current chat agent (Thread Type 1) immediately,
@@ -191,6 +239,72 @@ established convention: no unit tests for `wiki-locate.tool.ts` or
 coverage for `WikiRegistry` and `LlmWiki` (89 tests per the library's
 README), plus a manual sanity check (build + a scripted tool call against
 the real `config/kb` wiki) during implementation.
+
+### Manual verification checklist
+
+Run these by hand against the real `config/kb` wiki during implementation,
+since there is no automated test net (see above):
+
+**`wiki_locate`**
+- [ ] `context` matches exactly one domain cleanly
+- [ ] `context` produces an ambiguous tie between two+ domains
+- [ ] `context` matches no domain
+- [ ] `context` omitted — browse mode lists all domains + routing notes
+- [ ] Zero domains registered
+- [ ] Registry unavailable (e.g. point `WIKI_ROOT` somewhere invalid)
+
+**`wiki_orient`**
+- [ ] Known `wikiId` with a small index — full content returned, no truncation
+- [ ] Known `wikiId` with an artificially oversized index — truncates cleanly
+      on a line boundary with an accurate omitted-count note
+- [ ] Empty schema/index/log (freshly created domain)
+- [ ] Unknown `wikiId` — points back to `wiki_locate`
+- [ ] Registry unavailable
+
+## Evaluation Scenarios
+
+The evaluation harness (`lib/evaluations`) already supports the kind of
+multi-tool coordination testing this feature needs, via the `tool-sequence`
+scenario type (`lib/evaluations/src/executors/tool-sequence.ts`): it seeds N
+prior tool calls into a conversation as if they already happened (each
+becoming its own `AIMessage(tool_call)` + `ToolMessage(result)` pair — see
+`runner.ts`'s `buildSeededMessages`), then checks the agent's *next* live
+tool call. `suites/tool-calling.yaml`'s `tools-002-comfyui-then-upload`
+scenario is the existing precedent for this pattern.
+
+Add a new suite, `suites/wiki-navigation.yaml` (auto-discovered by
+`loader.ts`'s recursive directory scan of the suites directory — no
+manifest registration needed), covering coordination across `wiki_locate` →
+`wiki_orient` → `wiki_search`/`wiki_read_page`/`ask_user`:
+
+| id | type | what it proves |
+|----|------|-----------------|
+| `wnav-001-locate-picks-domain` | `tool-call` | Given a topic clearly belonging to one domain, the agent calls `wiki_locate` with a `context` arg. |
+| `wnav-002-orient-after-locate` | `tool-sequence` | Seeded `wiki_locate` result shows a clean match; the agent's next call is `wiki_orient({ wikiId })` with that id. |
+| `wnav-003-read-page-after-orient` | `tool-sequence` | Seeded `wiki_locate` + `wiki_orient` results show a relevant page in the index; asked a question that page answers, the agent's next call is `wiki_read_page` with the right path. |
+| `wnav-004-ambiguous-locate-asks-user` | `tool-sequence` | Seeded `wiki_locate` result has `ambiguous: true` with two tied candidates; the agent's next call is `ask_user`, not a guess. |
+| `wnav-005-no-match-reports-honestly` | `llm-judge` | For a topic no real domain covers, the agent states plainly that nothing matched instead of fabricating an answer. No seeding needed — the live registry naturally returns no match. |
+| `wnav-006-unknown-wikiid-recovers` | `tool-sequence` | Seeded `wiki_orient` call with a bad id returns the tool's own "not registered — use wiki_locate" string; the agent's next call is `wiki_locate`. |
+
+Note: `PriorToolTurnSchema.result` is `z.record(string, unknown)`
+(`schemas.ts:61-65`) — since these tools return plain strings, wrap seeded
+results as `{ text: "<tool's actual string output>" }` (`runner.ts`
+JSON-stringifies whatever object is given verbatim into the `ToolMessage`
+content, so this is a convention, not a schema requirement).
+
+**Deferred, documented but not added as runnable scenarios yet** — these
+would require a tool that doesn't exist until "Wiki Write Tooling" ships;
+adding them now would just be permanent failing entries dragging down the
+suite's `passingThreshold`:
+
+- `wnav-007-locate-orient-update-existing-page` — locate+orient show an
+  existing on-topic page; asked to update it, the agent should call the
+  future `wiki_update_page`.
+- `wnav-008-locate-orient-create-new-page` — locate+orient show *nothing*
+  on-topic; asked to add something, the agent should call the future
+  `wiki_create_page` rather than hallucinating an edit to an unrelated page.
+
+Add these two for real once Wiki Write Tooling exists.
 
 ## Open items deferred to later TODO work
 
