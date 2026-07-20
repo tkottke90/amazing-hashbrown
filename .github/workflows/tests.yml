@@ -78,6 +78,7 @@ jobs:
         with:
           report-dir: e2e/playwright-report
           bucket-url: ${{ vars.PLAYWRIGHT_REPORT_BUCKET_URL }}
+          public-url: ${{ vars.PLAYWRIGHT_REPORT_PUBLIC_URL }}
           aws-access-key-id: ${{ secrets.PLAYWRIGHT_REPORT_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.PLAYWRIGHT_REPORT_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.PLAYWRIGHT_REPORT_AWS_REGION || 'us-east-1' }}

@@ -12,10 +12,24 @@ inputs:
   bucket-url:
     description: >-
       Base URL of the S3-compatible bucket, format https://<host>/<bucket-name>.
-      Used both as the S3 API endpoint for upload and as the base of the
-      public report URL, so the bucket must be reachable at this same origin
-      for both the S3 API and public GET requests (path-style addressing).
+      Used as the S3 API endpoint for upload, and as the base of the public
+      report URL unless public-url is set. When public-url is not set, the
+      bucket must be reachable at this same origin for both the S3 API and
+      public GET requests (path-style addressing).
     required: true
+  public-url:
+    description: >-
+      Optional alternate base URL used only for building the public report
+      link (report-url output / PR comment), in place of bucket-url. Use
+      this when bucket-url points at a write-only endpoint (e.g. a domain
+      that only allows PUT/POST) and reads need to go through a different,
+      GET-enabled domain fronting the same bucket (e.g. an internal CDN or
+      reverse proxy). Should include the same path segments bucket-url
+      would need for a GET request to resolve (e.g. a bucket-name segment,
+      if the fronting domain doesn't already strip/rewrite it). Defaults to
+      bucket-url when not set.
+    required: false
+    default: ''
   aws-access-key-id:
     description: Access key ID for the S3-compatible bucket.
     required: true
@@ -62,6 +76,7 @@ runs:
       env:
         REPORT_DIR: ${{ inputs.report-dir }}
         BUCKET_URL: ${{ inputs.bucket-url }}
+        PUBLIC_URL: ${{ inputs.public-url }}
         AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
         AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
         AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
@@ -136,6 +151,7 @@ runs:
             --endpoint-url "$endpoint_url"
         done < <(find "$REPORT_DIR" -type f -print0)
 
-        report_url="${BUCKET_URL%/}/${key_prefix}/index.html"
+        report_url_base="${PUBLIC_URL:-$BUCKET_URL}"
+        report_url="${report_url_base%/}/${key_prefix}/index.html"
         echo "report-url=${report_url}" >> "$GITHUB_OUTPUT"
         echo "report-key-prefix=${key_prefix}" >> "$GITHUB_OUTPUT"
