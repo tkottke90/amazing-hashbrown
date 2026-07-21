@@ -158,3 +158,6 @@ eval-results/
 # Thread report CLI output (bin/thread-report.ts) — anchored so it doesn't
 # also match lib/thread-reports/ (see the api/src/config/ fix earlier).
 /thread-reports/
+
+# Mac OS
+.DS_Store
