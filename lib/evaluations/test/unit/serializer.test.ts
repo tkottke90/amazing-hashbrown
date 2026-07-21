@@ -332,6 +332,42 @@ describe('writeResultHtml', () => {
     }
   });
 
+  it('shows a skipped badge, not fail, for a generically-skipped scenario', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-skipped-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-skip',
+          name: 'Skipped scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+          skip: true,
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        actualOutput: '',
+        details: { type: 'skipped' },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('badge-skipped'));
+      assert.ok(html.includes('⊘ skipped'));
+      // The stylesheet always defines .badge-fail's CSS rule regardless of
+      // whether any row uses it, so check the rendered badge text instead
+      // of the class name to confirm this row didn't render as a failure.
+      assert.ok(!html.includes('✗ fail'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('marks every scenario row as clickable/expandable, not just failures', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-html-expand-'));
     try {

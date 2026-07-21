@@ -9,6 +9,11 @@ const BaseScenario = z.object({
   name: z.string().min(1),
   purpose: z.string().min(1),
   input: z.string().min(1),
+  // When true, the scenario is never run — no model invocation, no cost.
+  // Excluded from the suite's pass-rate calculation (see computeRunSummary
+  // in runner.ts) but still listed in results, marked "skipped" in the
+  // terminal and HTML report. For scenarios paused pending unrelated work.
+  skip: z.boolean().optional(),
 });
 
 export const DeterministicScenarioSchema = BaseScenario.extend({
@@ -224,6 +229,12 @@ const ToolSequenceDetails = z.object({
   reasoningContent: z.string().optional(),
 });
 
+// Independent of the scenario's own declared type (tool-call, etc.) —
+// once a scenario is skipped, its type-specific logic never runs at all.
+const SkippedDetails = z.object({
+  type: z.literal('skipped'),
+});
+
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   DeterministicDetails,
   SemanticDetails,
@@ -232,6 +243,7 @@ export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   ToolCallDetails,
   ToolSequenceDetails,
   HumanDetails,
+  SkippedDetails,
 ]);
 
 export const ScenarioResultSchema = z.object({

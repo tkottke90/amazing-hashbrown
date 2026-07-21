@@ -1,6 +1,6 @@
 {% set details = result.details %}
 {% set isPending = details.type === 'human' and details.status === 'pending' %}
-{% set isSkipped = details.type === 'human' and details.status === 'skipped' %}
+{% set isSkipped = details.type === 'skipped' or (details.type === 'human' and details.status === 'skipped') %}
 {% set scenario = scenariosById[result.scenarioId] %}
 {% set detailId = 'detail-' + result.id %}
 

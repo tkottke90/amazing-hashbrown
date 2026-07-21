@@ -85,6 +85,9 @@ function formatRunningLine(scenario: Scenario): string {
 }
 
 function formatDoneLine(scenario: Scenario, result: ScenarioResult): string {
+  if (result.details.type === 'skipped') {
+    return `  ${yellow('S')} ${scenario.name} ${dim('(skipped)')}`;
+  }
   if (result.details.type === 'human') {
     const label = result.details.status === 'skipped' ? '(skipped)' : '(awaiting human review)';
     return `  ${yellow('○')} ${scenario.name} ${dim(label)}`;
@@ -273,7 +276,7 @@ async function invokeToolCallModel(
   return { ...extractToolCallData(response), latencyMs };
 }
 
-async function executeScenario(
+export async function executeScenario(
   scenario: Scenario,
   suite: Suite,
   runId: string,
@@ -287,6 +290,17 @@ async function executeScenario(
     suiteId: suite.suite.id,
     estimatedCostUsd: 0,
   };
+
+  if (scenario.skip) {
+    return {
+      ...baseResult,
+      passed: false,
+      score: null,
+      actualOutput: '',
+      latencyMs: 0,
+      details: { type: 'skipped' },
+    };
+  }
 
   try {
     if (scenario.type === 'deterministic') {
@@ -477,7 +491,7 @@ async function executeScenario(
   }
 }
 
-function computeRunSummary(
+export function computeRunSummary(
   results: ScenarioResult[],
   suite: Suite,
   runId: string,
@@ -487,6 +501,7 @@ function computeRunSummary(
 ): EvalRun {
   const scorable = results.filter(
     (r) =>
+      r.details.type !== 'skipped' &&
       !(
         r.details.type === 'human' &&
         (r.details.status === 'pending' || r.details.status === 'skipped')

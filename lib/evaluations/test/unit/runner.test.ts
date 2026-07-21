@@ -1,7 +1,45 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
-import { buildSeededMessages, withSystemPrompt, extractToolCallData } from '../../src/runner.js';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import {
+  buildSeededMessages,
+  withSystemPrompt,
+  extractToolCallData,
+  executeScenario,
+  computeRunSummary,
+  type RunConfig,
+} from '../../src/runner.js';
+import type { DeterministicScenario, ScenarioResult, Suite } from '../../src/schemas.js';
+
+// Throws if any method is called — proves the skip short-circuit never
+// touches the model at all.
+function neverInvokedModel(): BaseChatModel {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('model should never be invoked for a skipped scenario');
+      },
+    },
+  ) as BaseChatModel;
+}
+
+function makeRunConfig(): RunConfig {
+  return {
+    suiteId: 'test-suite',
+    model: neverInvokedModel(),
+    modelId: 'test-model',
+    judgeModel: neverInvokedModel(),
+    judgeModelId: 'test-model',
+    suitePaths: { bundledPath: '/dev/null' },
+    resultPath: '/dev/null',
+  };
+}
+
+function makeSuite(scenarios: Suite['scenarios']): Suite {
+  return { suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' }, scenarios };
+}
 
 describe('buildSeededMessages', () => {
   it('starts with a HumanMessage carrying the input', () => {
@@ -158,5 +196,101 @@ describe('extractToolCallData', () => {
     });
     const result = extractToolCallData(response);
     assert.equal(result.reasoningContent, undefined);
+  });
+});
+
+describe('executeScenario — skip', () => {
+  function makeScenario(overrides: Partial<DeterministicScenario> = {}): DeterministicScenario {
+    return {
+      id: 'sc-skip',
+      name: 'Skippable scenario',
+      purpose: 'p',
+      input: 'i',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+      ...overrides,
+    };
+  }
+
+  it('short-circuits without invoking the model when skip is true', async () => {
+    const scenario = makeScenario({ skip: true });
+    const suite = makeSuite([scenario]);
+    const result = await executeScenario(scenario, suite, 'run-1', makeRunConfig(), {
+      count: 0,
+      total: 0,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.score, null);
+    assert.equal(result.actualOutput, '');
+    assert.equal(result.latencyMs, 0);
+    assert.equal(result.details.type, 'skipped');
+  });
+
+  it('actually invokes the model (and hits our throwing fake) when skip is false', async () => {
+    // executeScenario's outer try/catch converts a scenario-execution error
+    // into a normal (non-rejecting) "scenario errored" result — so this
+    // proves the model really was called, distinct from the skip-true
+    // case above, without needing to assert a rejection.
+    const scenario = makeScenario({ skip: false });
+    const suite = makeSuite([scenario]);
+    const result = await executeScenario(scenario, suite, 'run-1', makeRunConfig(), {
+      count: 0,
+      total: 0,
+    });
+    assert.ok(result.actualOutput.includes('model should never be invoked'));
+  });
+});
+
+describe('computeRunSummary', () => {
+  function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
+    return {
+      id: 'r-1',
+      runId: 'run-1',
+      scenarioId: 'sc-1',
+      suiteId: 'test-suite',
+      passed: true,
+      score: 1,
+      actualOutput: 'ok',
+      latencyMs: 10,
+      estimatedCostUsd: 0,
+      details: { type: 'deterministic', match: 'contains', expected: 'e', passed: true },
+      ...overrides,
+    };
+  }
+
+  it('counts skipped results in totalScenarios but excludes them from passRate', () => {
+    const results: ScenarioResult[] = [
+      makeResult({ scenarioId: 'sc-pass', passed: true }),
+      makeResult({
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        details: { type: 'skipped' },
+      }),
+    ];
+    const suite = makeSuite([]);
+    const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.totalScenarios, 2);
+    assert.equal(run.passedScenarios, 1);
+    assert.equal(run.passRate, 1);
+    assert.equal(run.passed, true);
+  });
+
+  it('a failing non-skipped scenario still counts against passRate alongside a skip', () => {
+    const results: ScenarioResult[] = [
+      makeResult({ scenarioId: 'sc-fail', passed: false }),
+      makeResult({
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        details: { type: 'skipped' },
+      }),
+    ];
+    const suite = makeSuite([]);
+    const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.totalScenarios, 2);
+    assert.equal(run.passedScenarios, 0);
+    assert.equal(run.passRate, 0);
   });
 });
