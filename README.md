@@ -150,6 +150,7 @@ npx prettier --check . # check formatting without writing (used in CI)
 
 ```sh
 npm run eval -- --suite wiki-search --model ollama   # run a suite
+npm run eval -- --suite wiki-search --model ollama --llm-review  # + Claude Code review of the results
 npm run eval:new -- --suite wiki-search              # author a new scenario
 npm run eval:from-trace -- --trace-id <id> --suite wiki-search
 npm run eval:review -- --run-id <id>

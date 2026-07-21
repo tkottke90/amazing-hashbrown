@@ -224,6 +224,150 @@ describe('writeResultHtml', () => {
     }
   });
 
+  it('shows a malformed-tool-call warning when no tool was called but invalidToolCalls is present', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-invalid-tool-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          invalidToolCalls: [
+            { name: 'wiki_search', args: '{bad json', error: 'failed to parse arguments' },
+          ],
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('malformed tool call'));
+      assert.ok(html.includes('failed to parse arguments'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows response metadata when no tool was called and no invalidToolCalls exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-response-metadata-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          responseMetadata: { done_reason: 'stop' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('response metadata'));
+      assert.ok(html.includes('done_reason'));
+      assert.ok(html.includes('stop'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows reasoning/thinking output when no tool was called and no invalidToolCalls exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-reasoning-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          reasoningContent: 'the model thinking out loud instead of calling a tool',
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes("model's reasoning/thinking output"));
+      assert.ok(html.includes('the model thinking out loud instead of calling a tool'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows a skipped badge, not fail, for a generically-skipped scenario', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-skipped-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-skip',
+          name: 'Skipped scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+          skip: true,
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        actualOutput: '',
+        details: { type: 'skipped' },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('badge-skipped'));
+      assert.ok(html.includes('⊘ skipped'));
+      // The stylesheet always defines .badge-fail's CSS rule regardless of
+      // whether any row uses it, so check the rendered badge text instead
+      // of the class name to confirm this row didn't render as a failure.
+      assert.ok(!html.includes('✗ fail'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('marks every scenario row as clickable/expandable, not just failures', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-html-expand-'));
     try {

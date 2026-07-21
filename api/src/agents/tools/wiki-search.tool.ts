@@ -58,7 +58,10 @@ export const wikiSearchTool = tool(
   {
     name: 'wiki_search',
     description:
-      'Search the knowledge base for pages relevant to a query. Returns ranked results with wikiId and path. Use wiki_read_page to fetch the full content of a specific page.',
+      'Search page content for a query across every registered wiki domain. Returns ranked results with wikiId ' +
+      'and path. Use wiki_locate first if you want to know which domain covers a topic before any matching pages ' +
+      "exist, or wiki_orient for a domain's full catalog rather than a ranked subset. Use wiki_read_page to fetch " +
+      'the full content of a specific result.',
     schema: WikiSearchSchema,
   },
 );

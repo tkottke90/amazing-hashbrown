@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { runEval, bootEvaluations, getEvaluationsStore } from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
@@ -9,6 +10,9 @@ import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
 import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
 import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
 import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
+import { wikiLocateTool } from '../api/src/agents/tools/wiki-locate.tool.js';
+import { wikiOrientTool } from '../api/src/agents/tools/wiki-orient.tool.js';
+import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
 // The static built-in tool set the production chat agent binds (see
@@ -22,6 +26,8 @@ const evalTools = [
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,
+  wikiLocateTool,
+  wikiOrientTool,
   fakeGenerateImageTool,
 ];
 
@@ -33,6 +39,7 @@ const { values } = parseArgs({
     'judge-model': { type: 'string' },
     ci: { type: 'boolean', default: false },
     'no-html': { type: 'boolean', default: false },
+    'llm-review': { type: 'boolean', default: false },
   },
   strict: false,
 });
@@ -73,6 +80,51 @@ const projectRoot = resolve(import.meta.url.replace('file://', ''), '../..');
 const suitesPath = resolve(projectRoot, 'suites');
 const resultPath = resolve(projectRoot, 'eval-results');
 
+// Spawns `claude -p` to review a completed run's output. Never affects the
+// eval's own exit code — a missing claude binary or a non-zero exit from it
+// just warns and continues, matching the graceful-degradation pattern used
+// above for the optional SQLite store. Args are passed as an array (not a
+// shell string), so there's no shell-quoting/injection concern regardless
+// of what the prompt or file paths contain.
+async function runLlmReview(opts: {
+  suiteId: string;
+  modelId: string;
+  yamlPath: string;
+  htmlPath?: string;
+}): Promise<void> {
+  const files = opts.htmlPath
+    ? `- YAML (structured data): ${opts.yamlPath}\n- HTML (rendered report): ${opts.htmlPath}`
+    : `- YAML (structured data): ${opts.yamlPath}\n(no HTML report was generated for this run — --no-html was set)`;
+
+  const prompt = [
+    `Review the evaluation results for the "${opts.suiteId}" eval suite (model: ${opts.modelId}).`,
+    `Read these files:`,
+    files,
+    '',
+    'Give a concise, terminal-readable overview (plain text, no markdown tables):',
+    '- which scenarios passed/failed',
+    '- any concerning pattern across the failures',
+    '- for each failure, your judgment on whether it looks like a real product/prompt/model issue',
+    '  versus a scenario-design issue (e.g. an overly strict or ambiguous assertion)',
+  ].join('\n');
+
+  console.log('\n🔎 Running LLM review (claude -p)...\n');
+
+  await new Promise<void>((resolveReview) => {
+    const child = spawn('claude', ['-p', prompt], { stdio: 'inherit' });
+    child.on('error', (err) => {
+      console.warn(`[eval] Warning: could not run "claude" for --llm-review: ${err.message}`);
+      resolveReview();
+    });
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        console.warn(`[eval] Warning: claude -p exited with code ${code}`);
+      }
+      resolveReview();
+    });
+  });
+}
+
 try {
   const result = await runEval({
     suiteId: values.suite,
@@ -81,6 +133,7 @@ try {
     judgeModel,
     judgeModelId,
     tools: evalTools,
+    systemPrompt: buildSystemPrompt(),
     suitePaths: { bundledPath: suitesPath },
     resultPath,
     ci: values.ci,
@@ -101,6 +154,15 @@ try {
   console.log(`\n  Result:    ${result.yamlPath}`);
   if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
   console.log();
+
+  if (values['llm-review']) {
+    await runLlmReview({
+      suiteId: run.suiteId,
+      modelId,
+      yamlPath: result.yamlPath,
+      htmlPath: result.htmlPath,
+    });
+  }
 
   process.exit(run.passed ? 0 : 1);
 } catch (err) {

@@ -1,7 +1,45 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
-import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
-import { buildSeededMessages } from '../../src/runner.js';
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import {
+  buildSeededMessages,
+  withSystemPrompt,
+  extractToolCallData,
+  executeScenario,
+  computeRunSummary,
+  type RunConfig,
+} from '../../src/runner.js';
+import type { DeterministicScenario, ScenarioResult, Suite } from '../../src/schemas.js';
+
+// Throws if any method is called — proves the skip short-circuit never
+// touches the model at all.
+function neverInvokedModel(): BaseChatModel {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('model should never be invoked for a skipped scenario');
+      },
+    },
+  ) as BaseChatModel;
+}
+
+function makeRunConfig(): RunConfig {
+  return {
+    suiteId: 'test-suite',
+    model: neverInvokedModel(),
+    modelId: 'test-model',
+    judgeModel: neverInvokedModel(),
+    judgeModelId: 'test-model',
+    suitePaths: { bundledPath: '/dev/null' },
+    resultPath: '/dev/null',
+  };
+}
+
+function makeSuite(scenarios: Suite['scenarios']): Suite {
+  return { suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' }, scenarios };
+}
 
 describe('buildSeededMessages', () => {
   it('starts with a HumanMessage carrying the input', () => {
@@ -56,5 +94,203 @@ describe('buildSeededMessages', () => {
     assert.equal(toolB.content, JSON.stringify({ out: 'b' }));
 
     assert.notEqual(aiA.tool_calls?.[0]?.id, aiB.tool_calls?.[0]?.id);
+  });
+});
+
+describe('withSystemPrompt', () => {
+  it('returns string input unchanged when no systemPrompt is given', () => {
+    const result = withSystemPrompt('hello');
+    assert.equal(result, 'hello');
+  });
+
+  it('returns message-array input unchanged when no systemPrompt is given', () => {
+    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    assert.equal(withSystemPrompt(messages), messages);
+  });
+
+  it('wraps string input in a SystemMessage + HumanMessage pair when systemPrompt is given', () => {
+    const result = withSystemPrompt('hello', 'be nice');
+    assert.ok(Array.isArray(result));
+    const [sys, human] = result as [SystemMessage, HumanMessage];
+    assert.ok(sys instanceof SystemMessage);
+    assert.equal(sys.content, 'be nice');
+    assert.ok(human instanceof HumanMessage);
+    assert.equal(human.content, 'hello');
+  });
+
+  it('prepends a SystemMessage ahead of existing messages when systemPrompt is given', () => {
+    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const result = withSystemPrompt(messages, 'be nice') as (typeof messages)[number][];
+    assert.equal(result.length, messages.length + 1);
+    assert.ok(result[0] instanceof SystemMessage);
+    assert.equal(result[0].content, 'be nice');
+    assert.deepEqual(result.slice(1), messages);
+  });
+});
+
+describe('extractToolCallData', () => {
+  it('maps tool_calls into toolCalls, leaving invalidToolCalls empty', () => {
+    const response = new AIMessage({
+      content: '',
+      tool_calls: [{ id: '1', name: 'wiki_search', args: { query: 'x' } }],
+    });
+    const result = extractToolCallData(response);
+    assert.deepEqual(result.toolCalls, [{ name: 'wiki_search', args: { query: 'x' } }]);
+    assert.deepEqual(result.invalidToolCalls, []);
+  });
+
+  it('maps invalid_tool_calls, preserving name/args/error, when tool_calls is empty', () => {
+    const response = new AIMessage({
+      content: '',
+      invalid_tool_calls: [
+        { name: 'wiki_search', args: '{bad json', error: 'failed to parse arguments' },
+      ],
+    });
+    const result = extractToolCallData(response);
+    assert.deepEqual(result.toolCalls, []);
+    assert.deepEqual(result.invalidToolCalls, [
+      { name: 'wiki_search', args: '{bad json', error: 'failed to parse arguments' },
+    ]);
+  });
+
+  it('passes through a non-empty response_metadata as responseMetadata', () => {
+    const response = new AIMessage({
+      content: '',
+      response_metadata: { done_reason: 'stop' },
+    });
+    const result = extractToolCallData(response);
+    assert.deepEqual(result.responseMetadata, { done_reason: 'stop' });
+  });
+
+  it('returns undefined responseMetadata for an empty response_metadata object', () => {
+    const response = new AIMessage({ content: '', response_metadata: {} });
+    const result = extractToolCallData(response);
+    assert.equal(result.responseMetadata, undefined);
+  });
+
+  it('still extracts content correctly alongside the new fields', () => {
+    const response = new AIMessage({ content: 'hello there' });
+    const result = extractToolCallData(response);
+    assert.equal(result.content, 'hello there');
+  });
+
+  it('captures additional_kwargs.reasoning_content as reasoningContent', () => {
+    const response = new AIMessage({
+      content: '',
+      additional_kwargs: { reasoning_content: 'the model thinking out loud' },
+    });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, 'the model thinking out loud');
+  });
+
+  it('returns undefined reasoningContent when additional_kwargs has no reasoning_content', () => {
+    const response = new AIMessage({ content: '', additional_kwargs: {} });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, undefined);
+  });
+
+  it('returns undefined reasoningContent for an empty reasoning_content string', () => {
+    const response = new AIMessage({
+      content: '',
+      additional_kwargs: { reasoning_content: '' },
+    });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, undefined);
+  });
+});
+
+describe('executeScenario — skip', () => {
+  function makeScenario(overrides: Partial<DeterministicScenario> = {}): DeterministicScenario {
+    return {
+      id: 'sc-skip',
+      name: 'Skippable scenario',
+      purpose: 'p',
+      input: 'i',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+      ...overrides,
+    };
+  }
+
+  it('short-circuits without invoking the model when skip is true', async () => {
+    const scenario = makeScenario({ skip: true });
+    const suite = makeSuite([scenario]);
+    const result = await executeScenario(scenario, suite, 'run-1', makeRunConfig(), {
+      count: 0,
+      total: 0,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.score, null);
+    assert.equal(result.actualOutput, '');
+    assert.equal(result.latencyMs, 0);
+    assert.equal(result.details.type, 'skipped');
+  });
+
+  it('actually invokes the model (and hits our throwing fake) when skip is false', async () => {
+    // executeScenario's outer try/catch converts a scenario-execution error
+    // into a normal (non-rejecting) "scenario errored" result — so this
+    // proves the model really was called, distinct from the skip-true
+    // case above, without needing to assert a rejection.
+    const scenario = makeScenario({ skip: false });
+    const suite = makeSuite([scenario]);
+    const result = await executeScenario(scenario, suite, 'run-1', makeRunConfig(), {
+      count: 0,
+      total: 0,
+    });
+    assert.ok(result.actualOutput.includes('model should never be invoked'));
+  });
+});
+
+describe('computeRunSummary', () => {
+  function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
+    return {
+      id: 'r-1',
+      runId: 'run-1',
+      scenarioId: 'sc-1',
+      suiteId: 'test-suite',
+      passed: true,
+      score: 1,
+      actualOutput: 'ok',
+      latencyMs: 10,
+      estimatedCostUsd: 0,
+      details: { type: 'deterministic', match: 'contains', expected: 'e', passed: true },
+      ...overrides,
+    };
+  }
+
+  it('counts skipped results in totalScenarios but excludes them from passRate', () => {
+    const results: ScenarioResult[] = [
+      makeResult({ scenarioId: 'sc-pass', passed: true }),
+      makeResult({
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        details: { type: 'skipped' },
+      }),
+    ];
+    const suite = makeSuite([]);
+    const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.totalScenarios, 2);
+    assert.equal(run.passedScenarios, 1);
+    assert.equal(run.passRate, 1);
+    assert.equal(run.passed, true);
+  });
+
+  it('a failing non-skipped scenario still counts against passRate alongside a skip', () => {
+    const results: ScenarioResult[] = [
+      makeResult({ scenarioId: 'sc-fail', passed: false }),
+      makeResult({
+        scenarioId: 'sc-skip',
+        passed: false,
+        score: null,
+        details: { type: 'skipped' },
+      }),
+    ];
+    const suite = makeSuite([]);
+    const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.totalScenarios, 2);
+    assert.equal(run.passedScenarios, 0);
+    assert.equal(run.passRate, 0);
   });
 });

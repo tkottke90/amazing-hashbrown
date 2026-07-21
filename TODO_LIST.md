@@ -7,7 +7,7 @@
 3. [File-based Configuration](#file-based-configuration) — `config.yaml` as primary config source; `${ENV_VAR}` interpolation; auto-created on first run; `POST /api/v1/settings/reload` endpoint
 4. [Provider Registration](#provider-registration) — `providers[]` config block; `createProvider()` factory for Ollama/OpenAI/Anthropic; `GET /api/v1/providers` endpoint; legacy `llmBaseUrl`/`llmModel` fields removed
 5. [Observability](#observability) — `lib/observability` library with SQLite-backed trace/span store; LangChain callback handler; `/v1/traces` REST endpoints; shared `openDatabase()` connection factory
-6. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — disk-driven `WikiRegistry`; auto-initialises "user" domain on first boot; `bootKnowledgeBase()` wired into startup sequence
+6. [Wire Up Domain Knowledge Bases](#wire-up-domain-knowledge-bases) — disk-driven `WikiRegistry`; auto-initialises "user" and "self" domains on first boot (checked individually so an existing install missing one still picks it up); `bootKnowledgeBase()` wired into startup sequence
 7. [Usage and Cost Tracking](#usage-and-cost-tracking) — `CostStore` in `lib/observability`; pricing config in `config.yaml`; `seedProviderCosts()` syncs on startup; `GET /api/v1/usage` endpoint
 8. [Evaluation Harness](#evaluation-harness) — `lib/evaluations` package; deterministic/semantic/LLM-as-judge eval methods; SQLite result store; `POST /api/v1/evaluations/run` endpoint; `npm run eval` CLI
 9. [`wiki_updated` SSE Event](#wiki_updated-sse-event) — `WikiUpdatedSchema` added to `ChatSSEEvent`; `wiki_update` `ThreadMessage` kind; `WikiUpdateMessage` chip component in UI
@@ -15,6 +15,7 @@
 11. [AfterAgent Middleware](#afteragent-middleware) — heuristic post-hoc LLM pipeline (summarize → classify → extract → merge) fires as a `createAgent` `afterAgent` middleware hook; writes go through `ingestPrep`/`commitPage` with raw-source provenance; `wiki_updated` SSE events queue per-thread and flush at the start of the next turn
 12. [Persistent Conversation Memory](#persistent-conversation-memory) — `SqliteSaver` checkpointer for LangGraph execution state; new `ThreadStore` read-projection (`threads`/`thread_messages`) for UI display, decoupled from checkpoint internals; thread CRUD + fork + retry + `generate-title` endpoints; sidebar for browsing/switching/renaming/deleting/forking threads; visible, retryable turn failures with a `showErrorMessages` history toggle
 13. [Persistent Artifact Store](#persistent-artifact-store) — disk-backed storage under `artifactRoot` (`config.yaml`); per-artifact `meta.json` captures origin/thread/task provenance; index hydrated from disk on boot so artifacts survive restarts; `tool-call` eval scenario type added to the evaluation harness to regression-test tool-invocation behavior, starting with `upload_image`
+14. [Wiki Locate & Orient Tools](#wiki-locate--orient-tools) — `wiki_locate` (domain-level lookup via the registry's deterministic routing scorer, plus a browse mode) and `wiki_orient` (full structural state of one domain via the already-existing `LlmWiki.orient()`) added to the ReAct agent; `wiki_search`'s description clarified to disambiguate the three; `wiki-navigation` eval suite added to regression-test locate → orient → search/read coordination; a code-level `buildSystemPrompt()` template (harness wiki-navigation guidance + an unwired user-instructions slot) wired into the chat agent; `bin/eval.ts` fixed to register `wiki_locate`/`wiki_orient` (previously missing — every prior `wiki-navigation` scenario expecting them was silently unrunnable) and to pass the real system prompt into eval runs; eval harness gained optional `systemPrompt` support for `tool-call`/`tool-sequence` scenarios
 
 ---
 
@@ -22,13 +23,13 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [Wiki Orient Tool (`wiki.orient()`)](#wiki-orient-tool-wikiorient) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
+1. [Agent Behavior Baseline (System Prompt)](#agent-behavior-baseline-system-prompt) — broadens `system-prompt.ts`'s harness content beyond wiki tool-navigation into general tone/identity/formatting; expected to exercise the evaluation system heavily
 2. [Wiki Write Tooling](#wiki-write-tooling) — depends on: Connect LLM-Wiki to Chat Agent; unified write/commit tools used by all agent patterns
 3. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
 4. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
 5. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
 6. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-7. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1, #2, #3, #4, #5, #6
+7. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #2, #3, #4, #5, #6 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools) now complete — no longer blocking)
 8. [Trigger System](#trigger-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 9. [Escalation System](#escalation-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 10. [Dashboard System](#dashboard-system) — depends on: #6, #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
@@ -43,6 +44,21 @@ Items are ordered first by priority/necessity, then by dependency.
 ---
 
 ## 3. Item Details
+
+### Agent Behavior Baseline (System Prompt)
+
+**Goal:** Broaden the chat agent's system prompt beyond wiki tool-navigation guidance into a general behavior baseline — tone, identity, how to handle uncertainty, formatting conventions — informed by real usage rather than guessed upfront.
+
+**Ideas / Requirements:**
+
+- Extend `HARNESS_PROMPT` in `api/src/agents/system-prompt.ts` (currently scoped only to wiki tool-navigation — see the "Wiki Locate & Orient Tools" completed entry) rather than introducing a second, competing prompt mechanism
+- Content should come from observed gaps in real conversations, not a one-shot guess — this is explicitly expected to lean on the evaluation harness heavily: write `llm-judge`/`semantic` scenarios first to pin down what "good" looks like, then iterate the prompt against them
+- Consider whether any of this baseline should eventually move to `config.yaml` (the user-instructions slot already exists as an unwired parameter on `buildSystemPrompt()` for exactly this kind of follow-up)
+- Should not regress the wiki tool-navigation guidance already proven out — new eval scenarios here should run alongside, not replace, `wiki-navigation.yaml`
+
+**Dependencies:** none (builds on the already-shipped `system-prompt.ts` template)
+
+---
 
 ### Automated E2E Tests
 
@@ -516,16 +532,17 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ---
 
-### Wiki Orient Tool (`wiki.orient()`)
+### Wiki Locate & Orient Tools
 
-**Goal:** Give the agent a single call to load the wiki's structural context (schema, index, recent log entries) before planning an automated task.
+**Goal:** Give the agent a way to pick which wiki domain applies to a topic, and a way to load one domain's structural context (schema, index, recent log entries) before searching or writing in it.
 
-**Ideas / Requirements:**
+**Delivered as two tools** (design surfaced that the original single-item description conflated two distinct jobs — see [spec](docs/superpowers/specs/2026-07-20-wiki-locate-and-orient-tools-design.md)):
 
-- Add a `wiki_orient` tool in `api/src/agents/tools/` that returns the wiki's `SCHEMA.md`, `index.md`, and the last N entries from `log.md`
-- Check whether `wiki.orient()` already exists on the `LlmWiki` class; if not, add it as a method that assembles the three documents
-- The result is injected as context at the start of Thread Type 2 turns so the agent knows the knowledge graph shape before searching
-- Keep the payload small: summarise the index if it exceeds a token budget rather than passing the full file
+- `wiki_locate` (`api/src/agents/tools/wiki-locate.tool.ts`) — domain-level lookup using the registry's existing deterministic id/domain/tag/routing-note scorer (`WikiRegistry.resolve()`); a no-argument browse mode lists all domains + routing notes via `.list()`/`.routingNotes()`. Read-only; never creates a domain on no-match.
+- `wiki_orient` (`api/src/agents/tools/wiki-orient.tool.ts`) — full structural state of one named domain via the already-existing, already-tested `LlmWiki.orient()`; index truncated by whole lines past 4000 characters, not mid-entry.
+- `wiki_search`'s tool description was lightly edited (no behavior change) to disambiguate it from the other two — it searches page content across all domains, distinct from `wiki_locate`'s domain-level lookup and `wiki_orient`'s full-catalog read.
+- `suites/wiki-navigation.yaml` eval suite added, regression-testing locate → orient → search/read/ask_user coordination via the harness's `tool-call`/`tool-sequence`/`llm-judge` scenario types.
+- Automatic orientation-context injection at the start of a Thread Type 2 turn is deferred to Thread Type 2 itself, since that thread type doesn't exist yet.
 
 **Dependencies:** Connect LLM-Wiki to Chat Agent
 

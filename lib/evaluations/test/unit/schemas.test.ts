@@ -27,6 +27,33 @@ describe('ScenarioSchema', () => {
     assert.equal(result.type, 'deterministic');
   });
 
+  it('defaults skip to undefined', () => {
+    const result = ScenarioSchema.parse({
+      id: 'test-skip-default',
+      name: 'Test',
+      purpose: 'Purpose',
+      input: 'Input',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'expected value',
+    });
+    assert.equal(result.skip, undefined);
+  });
+
+  it('accepts skip: true on any scenario type', () => {
+    const result = ScenarioSchema.parse({
+      id: 'test-skip-true',
+      name: 'Test',
+      purpose: 'Purpose',
+      input: 'Input',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'expected value',
+      skip: true,
+    });
+    assert.equal(result.skip, true);
+  });
+
   it('parses semantic scenario with defaults', () => {
     const result = ScenarioSchema.parse({
       id: 'test-2',
@@ -446,5 +473,10 @@ describe('JsonOf helper', () => {
       }),
     );
     assert.equal(result.type, 'deterministic');
+  });
+
+  it('parses a skipped ScenarioResultDetailsSchema value', () => {
+    const result = ScenarioResultDetailsSchema.parse({ type: 'skipped' });
+    assert.equal(result.type, 'skipped');
   });
 });

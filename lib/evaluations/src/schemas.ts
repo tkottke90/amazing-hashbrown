@@ -9,6 +9,11 @@ const BaseScenario = z.object({
   name: z.string().min(1),
   purpose: z.string().min(1),
   input: z.string().min(1),
+  // When true, the scenario is never run — no model invocation, no cost.
+  // Excluded from the suite's pass-rate calculation (see computeRunSummary
+  // in runner.ts) but still listed in results, marked "skipped" in the
+  // terminal and HTML report. For scenarios paused pending unrelated work.
+  skip: z.boolean().optional(),
 });
 
 export const DeterministicScenarioSchema = BaseScenario.extend({
@@ -189,12 +194,28 @@ const StructuredDetails = z.object({
   score: z.number(),
 });
 
+// Populated when the model attempted a tool call that failed to parse or
+// validate — distinct from simply not calling a tool at all. See
+// runner.ts's extractToolCallData for where this comes from.
+const InvalidToolCallSchema = z.object({
+  name: z.string().optional(),
+  args: z.string().optional(),
+  error: z.string().optional(),
+});
+
 const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
+  invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
+  // Raw, provider-specific passthrough (e.g. Ollama's done_reason) — not
+  // normalized across providers. See runner.ts's extractToolCallData.
+  responseMetadata: z.record(z.string(), z.unknown()).optional(),
+  // Ollama "thinking" models can put chain-of-thought here instead of
+  // actualOutput — see runner.ts's extractToolCallData.
+  reasoningContent: z.string().optional(),
 });
 
 const ToolSequenceDetails = z.object({
@@ -203,6 +224,15 @@ const ToolSequenceDetails = z.object({
   toolCalled: z.string().nullable(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
+  invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
+  responseMetadata: z.record(z.string(), z.unknown()).optional(),
+  reasoningContent: z.string().optional(),
+});
+
+// Independent of the scenario's own declared type (tool-call, etc.) —
+// once a scenario is skipped, its type-specific logic never runs at all.
+const SkippedDetails = z.object({
+  type: z.literal('skipped'),
 });
 
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
@@ -213,6 +243,7 @@ export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   ToolCallDetails,
   ToolSequenceDetails,
   HumanDetails,
+  SkippedDetails,
 ]);
 
 export const ScenarioResultSchema = z.object({

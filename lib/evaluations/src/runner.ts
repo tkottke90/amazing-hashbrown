@@ -1,6 +1,12 @@
 import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
-import { HumanMessage, AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
+import {
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+  type BaseMessage,
+} from '@langchain/core/messages';
 import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
@@ -32,6 +38,8 @@ export interface RunConfig {
   judgeModelId: string;
   embeddings?: Embeddings;
   tools?: BindToolsInput[];
+  /** Prepended as a SystemMessage for tool-call/tool-sequence scenarios only. */
+  systemPrompt?: string;
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -77,6 +85,9 @@ function formatRunningLine(scenario: Scenario): string {
 }
 
 function formatDoneLine(scenario: Scenario, result: ScenarioResult): string {
+  if (result.details.type === 'skipped') {
+    return `  ${yellow('S')} ${scenario.name} ${dim('(skipped)')}`;
+  }
   if (result.details.type === 'human') {
     const label = result.details.status === 'skipped' ? '(skipped)' : '(awaiting human review)';
     return `  ${yellow('○')} ${scenario.name} ${dim(label)}`;
@@ -178,11 +189,82 @@ export function buildSeededMessages(
   return messages;
 }
 
+// Prepends a SystemMessage ahead of the given input for tool-call/tool-sequence
+// scenarios when a systemPrompt is configured; returns input unchanged otherwise.
+export function withSystemPrompt(
+  input: string | BaseMessage[],
+  systemPrompt?: string,
+): string | BaseMessage[] {
+  if (!systemPrompt) return input;
+  const messages = typeof input === 'string' ? [new HumanMessage(input)] : input;
+  return [new SystemMessage(systemPrompt), ...messages];
+}
+
+// Distinct from InvokedToolCall — populated when the model attempts a tool
+// call that fails to parse/validate against the tool's schema. A non-empty
+// invalidToolCalls with empty toolCalls means "the model tried and failed,"
+// not "the model chose not to act" — those look identical if you only read
+// response.tool_calls and response.content, which is all this file used to do.
+export interface InvalidToolCallInfo {
+  name?: string;
+  args?: string;
+  error?: string;
+}
+
+export interface ExtractedToolCallData {
+  toolCalls: InvokedToolCall[];
+  invalidToolCalls: InvalidToolCallInfo[];
+  // Raw passthrough, not normalized — response_metadata's shape is
+  // provider-specific (Ollama uses done_reason, OpenAI uses finish_reason,
+  // etc.), and guessing a single canonical field name would be wrong more
+  // often than it'd help.
+  responseMetadata?: Record<string, unknown>;
+  // Ollama "thinking" models (e.g. qwen3) can put chain-of-thought here
+  // instead of .content — if the model spends its whole generation
+  // "thinking" without a distinct final-answer segment, .content is
+  // legitimately empty while this holds everything it actually generated.
+  reasoningContent?: string;
+  content: string;
+}
+
+export function extractToolCallData(response: AIMessage): ExtractedToolCallData {
+  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
+    name: call.name,
+    args: call.args,
+  }));
+  const invalidToolCalls: InvalidToolCallInfo[] = (response.invalid_tool_calls ?? []).map(
+    (call) => ({ name: call.name, args: call.args, error: call.error }),
+  );
+  const responseMetadata =
+    response.response_metadata && Object.keys(response.response_metadata).length > 0
+      ? response.response_metadata
+      : undefined;
+  const reasoningContent =
+    typeof response.additional_kwargs?.reasoning_content === 'string' &&
+    response.additional_kwargs.reasoning_content !== ''
+      ? response.additional_kwargs.reasoning_content
+      : undefined;
+  return {
+    toolCalls,
+    invalidToolCalls,
+    responseMetadata,
+    reasoningContent,
+    content: extractContent(response),
+  };
+}
+
 async function invokeToolCallModel(
   model: BaseChatModel,
   input: string | BaseMessage[],
   tools: BindToolsInput[],
-): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
+): Promise<{
+  toolCalls: InvokedToolCall[];
+  invalidToolCalls: InvalidToolCallInfo[];
+  responseMetadata?: Record<string, unknown>;
+  reasoningContent?: string;
+  content: string;
+  latencyMs: number;
+}> {
   if (!model.bindTools) {
     throw new Error(
       'the configured model does not support bindTools — required for tool-call scenarios',
@@ -191,14 +273,10 @@ async function invokeToolCallModel(
   const start = Date.now();
   const response = await model.bindTools(tools).invoke(input);
   const latencyMs = Date.now() - start;
-  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
-    name: call.name,
-    args: call.args,
-  }));
-  return { toolCalls, content: extractContent(response), latencyMs };
+  return { ...extractToolCallData(response), latencyMs };
 }
 
-async function executeScenario(
+export async function executeScenario(
   scenario: Scenario,
   suite: Suite,
   runId: string,
@@ -212,6 +290,17 @@ async function executeScenario(
     suiteId: suite.suite.id,
     estimatedCostUsd: 0,
   };
+
+  if (scenario.skip) {
+    return {
+      ...baseResult,
+      passed: false,
+      score: null,
+      actualOutput: '',
+      latencyMs: 0,
+      details: { type: 'skipped' },
+    };
+  }
 
   try {
     if (scenario.type === 'deterministic') {
@@ -291,12 +380,24 @@ async function executeScenario(
       if (!config.tools || config.tools.length === 0) {
         throw new Error('tools are required for tool-call scenarios');
       }
-      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+      const {
+        toolCalls,
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+        content,
+        latencyMs,
+      } = await invokeToolCallModel(
         config.model,
-        s.input,
+        withSystemPrompt(s.input, config.systemPrompt),
         config.tools,
       );
-      const details = runToolCall(s, toolCalls);
+      const details = {
+        ...runToolCall(s, toolCalls),
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+      };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
@@ -314,12 +415,24 @@ async function executeScenario(
         throw new Error('tools are required for tool-sequence scenarios');
       }
       const seeded = buildSeededMessages(s.input, s.priorTurns);
-      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
+      const {
+        toolCalls,
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+        content,
+        latencyMs,
+      } = await invokeToolCallModel(
         config.model,
-        seeded,
+        withSystemPrompt(seeded, config.systemPrompt),
         config.tools,
       );
-      const details = runToolSequence(s, toolCalls);
+      const details = {
+        ...runToolSequence(s, toolCalls),
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+      };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
@@ -378,7 +491,7 @@ async function executeScenario(
   }
 }
 
-function computeRunSummary(
+export function computeRunSummary(
   results: ScenarioResult[],
   suite: Suite,
   runId: string,
@@ -388,6 +501,7 @@ function computeRunSummary(
 ): EvalRun {
   const scorable = results.filter(
     (r) =>
+      r.details.type !== 'skipped' &&
       !(
         r.details.type === 'human' &&
         (r.details.status === 'pending' || r.details.status === 'skipped')
