@@ -197,11 +197,54 @@ export function withSystemPrompt(
   return [new SystemMessage(systemPrompt), ...messages];
 }
 
+// Distinct from InvokedToolCall — populated when the model attempts a tool
+// call that fails to parse/validate against the tool's schema. A non-empty
+// invalidToolCalls with empty toolCalls means "the model tried and failed,"
+// not "the model chose not to act" — those look identical if you only read
+// response.tool_calls and response.content, which is all this file used to do.
+export interface InvalidToolCallInfo {
+  name?: string;
+  args?: string;
+  error?: string;
+}
+
+export interface ExtractedToolCallData {
+  toolCalls: InvokedToolCall[];
+  invalidToolCalls: InvalidToolCallInfo[];
+  // Raw passthrough, not normalized — response_metadata's shape is
+  // provider-specific (Ollama uses done_reason, OpenAI uses finish_reason,
+  // etc.), and guessing a single canonical field name would be wrong more
+  // often than it'd help.
+  responseMetadata?: Record<string, unknown>;
+  content: string;
+}
+
+export function extractToolCallData(response: AIMessage): ExtractedToolCallData {
+  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
+    name: call.name,
+    args: call.args,
+  }));
+  const invalidToolCalls: InvalidToolCallInfo[] = (response.invalid_tool_calls ?? []).map(
+    (call) => ({ name: call.name, args: call.args, error: call.error }),
+  );
+  const responseMetadata =
+    response.response_metadata && Object.keys(response.response_metadata).length > 0
+      ? response.response_metadata
+      : undefined;
+  return { toolCalls, invalidToolCalls, responseMetadata, content: extractContent(response) };
+}
+
 async function invokeToolCallModel(
   model: BaseChatModel,
   input: string | BaseMessage[],
   tools: BindToolsInput[],
-): Promise<{ toolCalls: InvokedToolCall[]; content: string; latencyMs: number }> {
+): Promise<{
+  toolCalls: InvokedToolCall[];
+  invalidToolCalls: InvalidToolCallInfo[];
+  responseMetadata?: Record<string, unknown>;
+  content: string;
+  latencyMs: number;
+}> {
   if (!model.bindTools) {
     throw new Error(
       'the configured model does not support bindTools — required for tool-call scenarios',
@@ -210,11 +253,7 @@ async function invokeToolCallModel(
   const start = Date.now();
   const response = await model.bindTools(tools).invoke(input);
   const latencyMs = Date.now() - start;
-  const toolCalls: InvokedToolCall[] = (response.tool_calls ?? []).map((call) => ({
-    name: call.name,
-    args: call.args,
-  }));
-  return { toolCalls, content: extractContent(response), latencyMs };
+  return { ...extractToolCallData(response), latencyMs };
 }
 
 async function executeScenario(
@@ -310,12 +349,13 @@ async function executeScenario(
       if (!config.tools || config.tools.length === 0) {
         throw new Error('tools are required for tool-call scenarios');
       }
-      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
-        config.model,
-        withSystemPrompt(s.input, config.systemPrompt),
-        config.tools,
-      );
-      const details = runToolCall(s, toolCalls);
+      const { toolCalls, invalidToolCalls, responseMetadata, content, latencyMs } =
+        await invokeToolCallModel(
+          config.model,
+          withSystemPrompt(s.input, config.systemPrompt),
+          config.tools,
+        );
+      const details = { ...runToolCall(s, toolCalls), invalidToolCalls, responseMetadata };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
@@ -333,12 +373,13 @@ async function executeScenario(
         throw new Error('tools are required for tool-sequence scenarios');
       }
       const seeded = buildSeededMessages(s.input, s.priorTurns);
-      const { toolCalls, content, latencyMs } = await invokeToolCallModel(
-        config.model,
-        withSystemPrompt(seeded, config.systemPrompt),
-        config.tools,
-      );
-      const details = runToolSequence(s, toolCalls);
+      const { toolCalls, invalidToolCalls, responseMetadata, content, latencyMs } =
+        await invokeToolCallModel(
+          config.model,
+          withSystemPrompt(seeded, config.systemPrompt),
+          config.tools,
+        );
+      const details = { ...runToolSequence(s, toolCalls), invalidToolCalls, responseMetadata };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,

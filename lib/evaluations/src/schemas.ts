@@ -189,12 +189,25 @@ const StructuredDetails = z.object({
   score: z.number(),
 });
 
+// Populated when the model attempted a tool call that failed to parse or
+// validate — distinct from simply not calling a tool at all. See
+// runner.ts's extractToolCallData for where this comes from.
+const InvalidToolCallSchema = z.object({
+  name: z.string().optional(),
+  args: z.string().optional(),
+  error: z.string().optional(),
+});
+
 const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
+  invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
+  // Raw, provider-specific passthrough (e.g. Ollama's done_reason) — not
+  // normalized across providers. See runner.ts's extractToolCallData.
+  responseMetadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const ToolSequenceDetails = z.object({
@@ -203,6 +216,8 @@ const ToolSequenceDetails = z.object({
   toolCalled: z.string().nullable(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
+  invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
+  responseMetadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [

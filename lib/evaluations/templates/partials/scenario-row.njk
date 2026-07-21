@@ -88,6 +88,25 @@
           Expected tool: <code>{{ details.expectedTool }}</code> —
           Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% else %}<span class="badge badge-fail">none</span>{% endif %}
         </div>
+        {% if not details.toolCalled %}
+          {% if details.invalidToolCalls and details.invalidToolCalls.length %}
+            <div style="margin-top:0.5rem">
+              <span class="badge badge-fail">⚠ malformed tool call</span>
+              The model attempted a tool call that failed to parse or validate:
+            </div>
+            {% for invalid in details.invalidToolCalls %}
+              <pre>name: {{ invalid.name }}
+args: {{ invalid.args }}
+error: {{ invalid.error }}</pre>
+            {% endfor %}
+          {% elif details.responseMetadata %}
+            <div style="margin-top:0.5rem">
+              <strong>No tool attempted — response metadata:</strong>
+            </div>
+            <pre>{% for key, value in details.responseMetadata %}{{ key }}: {{ value }}
+{% endfor %}</pre>
+          {% endif %}
+        {% endif %}
         {% if details.fieldResults.length %}
         <div style="margin-top:0.5rem"><strong>Arg checks ({{ (details.score * 100) | round(0) }}% passed):</strong></div>
         <table class="field-check-table">

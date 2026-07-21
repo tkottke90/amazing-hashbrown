@@ -224,6 +224,79 @@ describe('writeResultHtml', () => {
     }
   });
 
+  it('shows a malformed-tool-call warning when no tool was called but invalidToolCalls is present', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-invalid-tool-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          invalidToolCalls: [
+            { name: 'wiki_search', args: '{bad json', error: 'failed to parse arguments' },
+          ],
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('malformed tool call'));
+      assert.ok(html.includes('failed to parse arguments'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows response metadata when no tool was called and no invalidToolCalls exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-response-metadata-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          responseMetadata: { done_reason: 'stop' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('response metadata'));
+      assert.ok(html.includes('done_reason'));
+      assert.ok(html.includes('stop'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('marks every scenario row as clickable/expandable, not just failures', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-html-expand-'));
     try {
