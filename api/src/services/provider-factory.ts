@@ -30,12 +30,12 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
           `Provider "${config.name}" has no apiKey — will rely on OPENAI_API_KEY environment variable`,
         );
       }
-      return new ChatOpenAI({ 
+      return new ChatOpenAI({
         model: resolvedModel,
         apiKey: config.apiKey,
         configuration: {
           baseURL: config.baseUrl,
-        }
+        },
       });
     case 'anthropic':
       if (!config.apiKey) {
