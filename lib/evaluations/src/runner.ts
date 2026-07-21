@@ -1,6 +1,12 @@
 import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
-import { HumanMessage, AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
+import {
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+  type BaseMessage,
+} from '@langchain/core/messages';
 import { loadSuite, type SuiteLoaderConfig } from './loader.js';
 import { runDeterministic } from './executors/deterministic.js';
 import { runSemantic } from './executors/semantic.js';
@@ -32,6 +38,8 @@ export interface RunConfig {
   judgeModelId: string;
   embeddings?: Embeddings;
   tools?: BindToolsInput[];
+  /** Prepended as a SystemMessage for tool-call/tool-sequence scenarios only. */
+  systemPrompt?: string;
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -178,6 +186,17 @@ export function buildSeededMessages(
   return messages;
 }
 
+// Prepends a SystemMessage ahead of the given input for tool-call/tool-sequence
+// scenarios when a systemPrompt is configured; returns input unchanged otherwise.
+export function withSystemPrompt(
+  input: string | BaseMessage[],
+  systemPrompt?: string,
+): string | BaseMessage[] {
+  if (!systemPrompt) return input;
+  const messages = typeof input === 'string' ? [new HumanMessage(input)] : input;
+  return [new SystemMessage(systemPrompt), ...messages];
+}
+
 async function invokeToolCallModel(
   model: BaseChatModel,
   input: string | BaseMessage[],
@@ -293,7 +312,7 @@ async function executeScenario(
       }
       const { toolCalls, content, latencyMs } = await invokeToolCallModel(
         config.model,
-        s.input,
+        withSystemPrompt(s.input, config.systemPrompt),
         config.tools,
       );
       const details = runToolCall(s, toolCalls);
@@ -316,7 +335,7 @@ async function executeScenario(
       const seeded = buildSeededMessages(s.input, s.priorTurns);
       const { toolCalls, content, latencyMs } = await invokeToolCallModel(
         config.model,
-        seeded,
+        withSystemPrompt(seeded, config.systemPrompt),
         config.tools,
       );
       const details = runToolSequence(s, toolCalls);

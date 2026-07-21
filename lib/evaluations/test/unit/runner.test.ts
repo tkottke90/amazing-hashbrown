@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
-import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
-import { buildSeededMessages } from '../../src/runner.js';
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import { buildSeededMessages, withSystemPrompt } from '../../src/runner.js';
 
 describe('buildSeededMessages', () => {
   it('starts with a HumanMessage carrying the input', () => {
@@ -56,5 +56,36 @@ describe('buildSeededMessages', () => {
     assert.equal(toolB.content, JSON.stringify({ out: 'b' }));
 
     assert.notEqual(aiA.tool_calls?.[0]?.id, aiB.tool_calls?.[0]?.id);
+  });
+});
+
+describe('withSystemPrompt', () => {
+  it('returns string input unchanged when no systemPrompt is given', () => {
+    const result = withSystemPrompt('hello');
+    assert.equal(result, 'hello');
+  });
+
+  it('returns message-array input unchanged when no systemPrompt is given', () => {
+    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    assert.equal(withSystemPrompt(messages), messages);
+  });
+
+  it('wraps string input in a SystemMessage + HumanMessage pair when systemPrompt is given', () => {
+    const result = withSystemPrompt('hello', 'be nice');
+    assert.ok(Array.isArray(result));
+    const [sys, human] = result as [SystemMessage, HumanMessage];
+    assert.ok(sys instanceof SystemMessage);
+    assert.equal(sys.content, 'be nice');
+    assert.ok(human instanceof HumanMessage);
+    assert.equal(human.content, 'hello');
+  });
+
+  it('prepends a SystemMessage ahead of existing messages when systemPrompt is given', () => {
+    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const result = withSystemPrompt(messages, 'be nice') as (typeof messages)[number][];
+    assert.equal(result.length, messages.length + 1);
+    assert.ok(result[0] instanceof SystemMessage);
+    assert.equal(result[0].content, 'be nice');
+    assert.deepEqual(result.slice(1), messages);
   });
 });
