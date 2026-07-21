@@ -124,3 +124,35 @@ scenarios:
     argChecks:
       - path: context
         match: exists
+
+  - id: wnav-007-organic-locate-genuinely-ambiguous
+    name: Agent calls wiki_locate on live, unseeded, genuinely ambiguous input
+    purpose: >
+      Unlike wnav-001 (which explicitly says "which part of the knowledge
+      base should I check" — a giveaway), this uses natural phrasing on a
+      topic that could plausibly belong to either the user or self domain
+      ("growth" appears in both domains' routing signals in spirit). No
+      priorTurns are seeded — this tests whether the harness system prompt
+      actually steers live, organic tool choice, not just a seeded
+      continuation.
+    type: tool-call
+    input: 'What have you noticed about growth lately?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-008-no-overcall-on-obvious-topic
+    name: Agent skips wiki_locate on an unambiguous topic
+    purpose: >
+      The harness prompt explicitly says to skip wiki_locate when the
+      domain is already obvious. This asserts the model goes straight to
+      wiki_search for a clearly single-domain query rather than always
+      routing through wiki_locate first — guarding against the prompt
+      overcorrecting into forced, unnecessary tool-chaining.
+    type: tool-call
+    input: "What's my favorite color?"
+    tool: wiki_search
+    argChecks:
+      - path: query
+        match: exists
