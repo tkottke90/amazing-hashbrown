@@ -99,6 +99,11 @@
 args: {{ invalid.args }}
 error: {{ invalid.error }}</pre>
             {% endfor %}
+          {% elif details.reasoningContent %}
+            <div style="margin-top:0.5rem">
+              <strong>No tool attempted — model's reasoning/thinking output:</strong>
+            </div>
+            <pre>{{ details.reasoningContent }}</pre>
           {% elif details.responseMetadata %}
             <div style="margin-top:0.5rem">
               <strong>No tool attempted — response metadata:</strong>

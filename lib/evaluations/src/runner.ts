@@ -216,6 +216,11 @@ export interface ExtractedToolCallData {
   // etc.), and guessing a single canonical field name would be wrong more
   // often than it'd help.
   responseMetadata?: Record<string, unknown>;
+  // Ollama "thinking" models (e.g. qwen3) can put chain-of-thought here
+  // instead of .content — if the model spends its whole generation
+  // "thinking" without a distinct final-answer segment, .content is
+  // legitimately empty while this holds everything it actually generated.
+  reasoningContent?: string;
   content: string;
 }
 
@@ -231,7 +236,18 @@ export function extractToolCallData(response: AIMessage): ExtractedToolCallData 
     response.response_metadata && Object.keys(response.response_metadata).length > 0
       ? response.response_metadata
       : undefined;
-  return { toolCalls, invalidToolCalls, responseMetadata, content: extractContent(response) };
+  const reasoningContent =
+    typeof response.additional_kwargs?.reasoning_content === 'string' &&
+    response.additional_kwargs.reasoning_content !== ''
+      ? response.additional_kwargs.reasoning_content
+      : undefined;
+  return {
+    toolCalls,
+    invalidToolCalls,
+    responseMetadata,
+    reasoningContent,
+    content: extractContent(response),
+  };
 }
 
 async function invokeToolCallModel(
@@ -242,6 +258,7 @@ async function invokeToolCallModel(
   toolCalls: InvokedToolCall[];
   invalidToolCalls: InvalidToolCallInfo[];
   responseMetadata?: Record<string, unknown>;
+  reasoningContent?: string;
   content: string;
   latencyMs: number;
 }> {
@@ -349,13 +366,24 @@ async function executeScenario(
       if (!config.tools || config.tools.length === 0) {
         throw new Error('tools are required for tool-call scenarios');
       }
-      const { toolCalls, invalidToolCalls, responseMetadata, content, latencyMs } =
-        await invokeToolCallModel(
-          config.model,
-          withSystemPrompt(s.input, config.systemPrompt),
-          config.tools,
-        );
-      const details = { ...runToolCall(s, toolCalls), invalidToolCalls, responseMetadata };
+      const {
+        toolCalls,
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+        content,
+        latencyMs,
+      } = await invokeToolCallModel(
+        config.model,
+        withSystemPrompt(s.input, config.systemPrompt),
+        config.tools,
+      );
+      const details = {
+        ...runToolCall(s, toolCalls),
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+      };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
@@ -373,13 +401,24 @@ async function executeScenario(
         throw new Error('tools are required for tool-sequence scenarios');
       }
       const seeded = buildSeededMessages(s.input, s.priorTurns);
-      const { toolCalls, invalidToolCalls, responseMetadata, content, latencyMs } =
-        await invokeToolCallModel(
-          config.model,
-          withSystemPrompt(seeded, config.systemPrompt),
-          config.tools,
-        );
-      const details = { ...runToolSequence(s, toolCalls), invalidToolCalls, responseMetadata };
+      const {
+        toolCalls,
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+        content,
+        latencyMs,
+      } = await invokeToolCallModel(
+        config.model,
+        withSystemPrompt(seeded, config.systemPrompt),
+        config.tools,
+      );
+      const details = {
+        ...runToolSequence(s, toolCalls),
+        invalidToolCalls,
+        responseMetadata,
+        reasoningContent,
+      };
       const passed = details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,

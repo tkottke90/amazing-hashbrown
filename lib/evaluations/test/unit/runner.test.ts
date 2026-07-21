@@ -135,4 +135,28 @@ describe('extractToolCallData', () => {
     const result = extractToolCallData(response);
     assert.equal(result.content, 'hello there');
   });
+
+  it('captures additional_kwargs.reasoning_content as reasoningContent', () => {
+    const response = new AIMessage({
+      content: '',
+      additional_kwargs: { reasoning_content: 'the model thinking out loud' },
+    });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, 'the model thinking out loud');
+  });
+
+  it('returns undefined reasoningContent when additional_kwargs has no reasoning_content', () => {
+    const response = new AIMessage({ content: '', additional_kwargs: {} });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, undefined);
+  });
+
+  it('returns undefined reasoningContent for an empty reasoning_content string', () => {
+    const response = new AIMessage({
+      content: '',
+      additional_kwargs: { reasoning_content: '' },
+    });
+    const result = extractToolCallData(response);
+    assert.equal(result.reasoningContent, undefined);
+  });
 });

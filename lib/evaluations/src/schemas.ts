@@ -208,6 +208,9 @@ const ToolCallDetails = z.object({
   // Raw, provider-specific passthrough (e.g. Ollama's done_reason) — not
   // normalized across providers. See runner.ts's extractToolCallData.
   responseMetadata: z.record(z.string(), z.unknown()).optional(),
+  // Ollama "thinking" models can put chain-of-thought here instead of
+  // actualOutput — see runner.ts's extractToolCallData.
+  reasoningContent: z.string().optional(),
 });
 
 const ToolSequenceDetails = z.object({
@@ -218,6 +221,7 @@ const ToolSequenceDetails = z.object({
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
   responseMetadata: z.record(z.string(), z.unknown()).optional(),
+  reasoningContent: z.string().optional(),
 });
 
 export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
