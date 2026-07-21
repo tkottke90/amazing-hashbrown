@@ -9,6 +9,9 @@ import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
 import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
 import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
 import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
+import { wikiLocateTool } from '../api/src/agents/tools/wiki-locate.tool.js';
+import { wikiOrientTool } from '../api/src/agents/tools/wiki-orient.tool.js';
+import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
 // The static built-in tool set the production chat agent binds (see
@@ -22,6 +25,8 @@ const evalTools = [
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,
+  wikiLocateTool,
+  wikiOrientTool,
   fakeGenerateImageTool,
 ];
 
@@ -81,6 +86,7 @@ try {
     judgeModel,
     judgeModelId,
     tools: evalTools,
+    systemPrompt: buildSystemPrompt(),
     suitePaths: { bundledPath: suitesPath },
     resultPath,
     ci: values.ci,
