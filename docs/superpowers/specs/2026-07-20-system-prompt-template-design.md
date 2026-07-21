@@ -6,13 +6,13 @@
 
 ## Purpose
 
-The chat agent (`buildChatAgent` in `api/src/agents/chat-agent.ts`) runs today with **no system prompt at all** — `createAgent({ model, tools, checkpointer, middleware })` passes nothing for the `prompt` option. Every steering signal the model gets comes from four independent, per-tool `description` strings, which it reads in isolation rather than as a coherent strategy. That's a plausible reason organic tool-chaining is inconsistent: a capable model might infer the intended locate → orient → search/read sequence from the descriptions alone, but there's nothing establishing it as an explicit strategy, and `wiki_search` alone already answers most single-domain queries — the rational shortcut for a model with no other guidance.
+The chat agent (`buildChatAgent` in `api/src/agents/chat-agent.ts`) runs today with **no system prompt at all** — `createAgent({ model, tools, checkpointer, middleware })` passes nothing for the `systemPrompt` option. Every steering signal the model gets comes from four independent, per-tool `description` strings, which it reads in isolation rather than as a coherent strategy. That's a plausible reason organic tool-chaining is inconsistent: a capable model might infer the intended locate → orient → search/read sequence from the descriptions alone, but there's nothing establishing it as an explicit strategy, and `wiki_search` alone already answers most single-domain queries — the rational shortcut for a model with no other guidance.
 
 This introduces a small, code-level system prompt template — a harness-authored base layer, composable with an (currently unwired) user-instructions layer — and wires it into the chat agent. Its first content is scoped narrowly to wiki tool-navigation guidance, the exact gap that motivated this work.
 
 ## Scope note: this also surfaces and fixes an eval-tooling gap
 
-While designing how to *test* this change, two pre-existing gaps in the evaluation harness surfaced:
+While designing how to _test_ this change, two pre-existing gaps in the evaluation harness surfaced:
 
 1. **The eval harness never includes a system prompt.** `lib/evaluations/src/runner.ts`'s `tool-call`/`tool-sequence` execution paths (`invokeToolCallModel`) invoke the model with only the scenario's raw input or seeded messages — no `SystemMessage`, ever. Without a fix, new eval scenarios would test the same no-system-prompt behavior as today, proving nothing about this change.
 2. **`bin/eval.ts`'s `evalTools` array never included `wikiLocateTool`/`wikiOrientTool`** — a defect from the earlier wiki-locate-and-orient-tools work, caught only now. Every existing `wiki-navigation.yaml` scenario that expects the model to call `wiki_locate` or `wiki_orient` has been silently unrunnable — the model was never given those tools to choose from, so `runToolCall`/`runToolSequence` would report `toolCalled: null` for all of them.
@@ -22,10 +22,10 @@ Both are fixed as part of this same unit of work, since fixing #1 requires touch
 ## In scope
 
 - `api/src/agents/system-prompt.ts` — new module: `buildSystemPrompt(userInstructions?: string): string`, composing a harness base with an optional user-instructions block.
-- Wiring `buildSystemPrompt()` into `chat-agent.ts`'s `createAgent({...})` call via the `prompt` option.
+- Wiring `buildSystemPrompt()` into `chat-agent.ts`'s `createAgent({...})` call via the `systemPrompt` option.
 - `lib/evaluations/src/runner.ts`: optional `systemPrompt?: string` on `RunConfig`, prepended as a `SystemMessage` for `tool-call` and `tool-sequence` scenario execution only.
 - `bin/eval.ts`: add `wikiLocateTool`/`wikiOrientTool` to `evalTools` (bugfix), and pass `buildSystemPrompt()`'s output as `config.systemPrompt`.
-- New scenarios in `suites/wiki-navigation.yaml` using natural, non-leading phrasing to test organic (non-seeded) first-tool-call behavior, in both directions (calls `wiki_locate` when genuinely ambiguous; does *not* over-call it when the domain is already obvious).
+- New scenarios in `suites/wiki-navigation.yaml` using natural, non-leading phrasing to test organic (non-seeded) first-tool-call behavior, in both directions (calls `wiki_locate` when genuinely ambiguous; does _not_ over-call it when the domain is already obvious).
 - `TODO_LIST.md`: note this addition against the existing "Wiki Locate & Orient Tools" completed entry, and add a new Outstanding Item for the broader agent-behavior-baseline follow-up.
 
 ## Out of scope
@@ -64,9 +64,10 @@ domain is already obvious or was established earlier in the conversation, skip w
 
 No caller passes `userInstructions` yet — `buildChatAgent()` calls `buildSystemPrompt()` with no argument. The parameter and composition logic exist now so wiring a real source later is a one-line change at the call site, not a redesign.
 
-**Wiring:** `chat-agent.ts` imports `buildSystemPrompt` and adds `prompt: buildSystemPrompt()` to the existing `createAgent({...})` call in `buildChatAgent`.
+**Wiring:** `chat-agent.ts` imports `buildSystemPrompt` and adds `systemPrompt: buildSystemPrompt()` to the existing `createAgent({...})` call in `buildChatAgent`.
 
 **Testing:** unlike the wiki tools, this is a pure function with no I/O — genuinely unit-testable. New `api/src/agents/system-prompt.test.ts`:
+
 - returns harness-only content with no arguments
 - returns harness-only content for an empty or whitespace-only `userInstructions`
 - appends a clearly delimited user-instructions block for real input, with the harness content still present unmodified
@@ -90,7 +91,7 @@ No caller passes `userInstructions` yet — `buildChatAgent()` calls `buildSyste
 Additive to the six existing scenarios (`wnav-001` through `wnav-006`, which remain unchanged and now become actually runnable once the `bin/eval.ts` bugfix lands). New scenarios, using natural phrasing rather than `wnav-001`'s deliberately explicit "which part of the knowledge base should I check" wording:
 
 - **Organic locate-first, genuinely ambiguous topic** (`tool-call`): a query that could plausibly belong to either the `user` or `self` domain (e.g. something touching "growth," which appears in both domains' routing signals in spirit), checking the model's first call is `wiki_locate` — proof the harness prompt actually steers behavior on live, unseeded input, not just seeded continuations.
-- **No over-calling on an obvious topic** (`tool-call` or `llm-judge`): a query unambiguously about one domain, checking the model does *not* call `wiki_locate` first (or scores the response for going straight to a reasonable next step) — proof the prompt's "skip it when obvious" instruction actually prevents the overcorrection we were worried about.
+- **No over-calling on an obvious topic** (`tool-call` or `llm-judge`): a query unambiguously about one domain, checking the model does _not_ call `wiki_locate` first (or scores the response for going straight to a reasonable next step) — proof the prompt's "skip it when obvious" instruction actually prevents the overcorrection we were worried about.
 
 Exact scenario wording and pass criteria are finalized during implementation, since natural-language phrasing that reliably reads as "ambiguous" vs. "obvious" to a live model benefits from a little empirical iteration rather than being locked down in the spec.
 
@@ -101,12 +102,12 @@ Exact scenario wording and pass criteria are finalized during implementation, si
 
 ## Testing summary
 
-| Component | Test approach |
-|---|---|
-| `system-prompt.ts` | New unit tests (pure function — genuinely testable, unlike the wiki tools) |
-| `runner.ts`'s `systemPrompt` support | Existing `lib/evaluations` test suite gets cases confirming a `SystemMessage` is prepended for `tool-call`/`tool-sequence` when `systemPrompt` is set, and that behavior is unchanged when it's omitted |
-| `bin/eval.ts` changes | No unit tests (CLI script, matches existing convention — the file has none today); verified by actually running `npm run eval -- --suite wiki-navigation` against a live model |
-| New/existing `wiki-navigation.yaml` scenarios | Run via `npm run eval`, not CI (no CI job runs `npm run eval` today — this remains a manual verification step, same limitation already documented in the wiki-locate-and-orient-tools spec) |
+| Component                                     | Test approach                                                                                                                                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system-prompt.ts`                            | New unit tests (pure function — genuinely testable, unlike the wiki tools)                                                                                                                              |
+| `runner.ts`'s `systemPrompt` support          | Existing `lib/evaluations` test suite gets cases confirming a `SystemMessage` is prepended for `tool-call`/`tool-sequence` when `systemPrompt` is set, and that behavior is unchanged when it's omitted |
+| `bin/eval.ts` changes                         | No unit tests (CLI script, matches existing convention — the file has none today); verified by actually running `npm run eval -- --suite wiki-navigation` against a live model                          |
+| New/existing `wiki-navigation.yaml` scenarios | Run via `npm run eval`, not CI (no CI job runs `npm run eval` today — this remains a manual verification step, same limitation already documented in the wiki-locate-and-orient-tools spec)             |
 
 ## Open items deferred to later work
 
