@@ -5,11 +5,14 @@ import {
   ScenarioResultSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
+  JudgeCalibrationSchema,
   type EvalRun,
   type ScenarioResult,
+  type JudgeCalibration,
 } from './schemas.js';
 
 // Version 1: ObservabilityStore  Version 2: CostStore  Version 3: EvaluationsStore
+// Version 4: EvaluationsStore judge_calibrations
 const MIGRATIONS: DbMigration[] = [
   {
     version: 3,
@@ -46,6 +49,23 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_eval_results_run    ON eval_results(run_id);
       CREATE INDEX IF NOT EXISTS idx_eval_runs_suite     ON eval_runs(suite_id);
       CREATE INDEX IF NOT EXISTS idx_eval_runs_started   ON eval_runs(started_at);
+    `,
+  },
+  {
+    version: 4,
+    sql: `
+      CREATE TABLE IF NOT EXISTS judge_calibrations (
+        id              TEXT PRIMARY KEY,
+        result_id       TEXT NOT NULL REFERENCES eval_results(result_id),
+        judge_score     REAL NOT NULL,
+        judge_passed    INTEGER NOT NULL,
+        human_passed    INTEGER NOT NULL,
+        agree           INTEGER NOT NULL,
+        reviewer_notes  TEXT,
+        graded_at       TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_judge_calibrations_result ON judge_calibrations(result_id);
     `,
   },
 ];
@@ -111,6 +131,28 @@ const RawEvalResultSchema = z
     details: row.details,
   }));
 
+const RawJudgeCalibrationSchema = z
+  .object({
+    id: z.string(),
+    result_id: z.string(),
+    judge_score: z.number(),
+    judge_passed: z.number().transform(Boolean),
+    human_passed: z.number().transform(Boolean),
+    agree: z.number().transform(Boolean),
+    reviewer_notes: z.string().nullable(),
+    graded_at: z.string(),
+  })
+  .transform((row) => ({
+    id: row.id,
+    resultId: row.result_id,
+    judgeScore: row.judge_score,
+    judgePassed: row.judge_passed,
+    humanPassed: row.human_passed,
+    agree: row.agree,
+    reviewerNotes: row.reviewer_notes ?? undefined,
+    gradedAt: row.graded_at,
+  }));
+
 // ---------------------------------------------------------------------------
 // Interfaces
 // ---------------------------------------------------------------------------
@@ -127,6 +169,33 @@ export interface HumanResultUpdate {
   status: 'approved' | 'rejected';
   response: string;
   reviewerNotes?: string;
+}
+
+export interface JudgeCalibrationInput {
+  id: string;
+  resultId: string;
+  judgeScore: number;
+  judgePassed: boolean;
+  humanPassed: boolean;
+  reviewerNotes?: string;
+  gradedAt: string;
+}
+
+export interface CalibrationDisagreement {
+  resultId: string;
+  scenarioId: string;
+  judgeScore: number;
+  judgePassed: boolean;
+  humanPassed: boolean;
+  reviewerNotes?: string;
+}
+
+export interface CalibrationSummary {
+  runId: string;
+  total: number;
+  agreeCount: number;
+  agreementRate: number;
+  disagreements: CalibrationDisagreement[];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +319,70 @@ export class EvaluationsStore extends BaseStore {
       )
       .all(runId);
     return rows.map((row) => ScenarioResultSchema.parse(RawEvalResultSchema.parse(row)));
+  }
+
+  findJudgeResultsForRun(runId: string): ScenarioResult[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM eval_results WHERE run_id = ? AND type = 'llm-judge'`)
+      .all(runId);
+    return rows.map((row) => ScenarioResultSchema.parse(RawEvalResultSchema.parse(row)));
+  }
+
+  recordJudgeCalibration(input: JudgeCalibrationInput): void {
+    const agree = input.judgePassed === input.humanPassed;
+    this.db
+      .prepare(
+        `INSERT INTO judge_calibrations
+           (id, result_id, judge_score, judge_passed, human_passed, agree, reviewer_notes, graded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.resultId,
+        input.judgeScore,
+        input.judgePassed ? 1 : 0,
+        input.humanPassed ? 1 : 0,
+        agree ? 1 : 0,
+        input.reviewerNotes ?? null,
+        input.gradedAt,
+      );
+  }
+
+  getCalibrationSummary(runId: string): CalibrationSummary {
+    const rows = this.db
+      .prepare(
+        `SELECT jc.*, er.scenario_id AS scenario_id
+         FROM judge_calibrations jc
+         JOIN eval_results er ON er.result_id = jc.result_id
+         WHERE er.run_id = ?`,
+      )
+      .all(runId) as Array<Record<string, unknown> & { scenario_id: string }>;
+
+    const calibrations: Array<JudgeCalibration & { scenarioId: string }> = rows.map((row) => ({
+      ...JudgeCalibrationSchema.parse(RawJudgeCalibrationSchema.parse(row)),
+      scenarioId: row.scenario_id,
+    }));
+
+    const total = calibrations.length;
+    const agreeCount = calibrations.filter((c) => c.agree).length;
+    const disagreements: CalibrationDisagreement[] = calibrations
+      .filter((c) => !c.agree)
+      .map((c) => ({
+        resultId: c.resultId,
+        scenarioId: c.scenarioId,
+        judgeScore: c.judgeScore,
+        judgePassed: c.judgePassed,
+        humanPassed: c.humanPassed,
+        reviewerNotes: c.reviewerNotes,
+      }));
+
+    return {
+      runId,
+      total,
+      agreeCount,
+      agreementRate: total > 0 ? agreeCount / total : 0,
+      disagreements,
+    };
   }
 }
 

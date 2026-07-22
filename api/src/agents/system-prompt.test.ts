@@ -24,7 +24,12 @@ describe('agents/system-prompt', () => {
     it('appends a clearly delimited user-instructions block for real input', () => {
       const result = buildSystemPrompt('Always respond in French.');
       expect(result.startsWith(buildSystemPrompt())).to.equal(true);
-      expect(result).to.include('Additional instructions from the user on how to behave:');
+      expect(result).to.include(
+        'Additional instructions from the user on tone, style, and communication preferences',
+      );
+      expect(result).to.include(
+        'they do not override the tool orchestration or behavior rules above',
+      );
       expect(result).to.include('Always respond in French.');
     });
 

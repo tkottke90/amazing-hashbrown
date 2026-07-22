@@ -16,11 +16,11 @@ export function runHumanPending(): HumanDetails {
   return { type: 'human', status: 'pending' };
 }
 
-function printDivider(): void {
+export function printDivider(): void {
   process.stdout.write('────────────────────────────────────────\n');
 }
 
-function promptForNotes(): Promise<string> {
+export function promptForNotes(): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question('Notes (optional — press Enter to skip): ', (answer) => {
@@ -30,7 +30,7 @@ function promptForNotes(): Promise<string> {
   });
 }
 
-function promptKeypress(validKeys: string[]): Promise<string> {
+export function promptKeypress(validKeys: string[]): Promise<string> {
   return new Promise((resolve) => {
     const lower = validKeys.map((k) => k.toLowerCase());
     process.stdin.setRawMode(true);

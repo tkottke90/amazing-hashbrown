@@ -119,13 +119,13 @@ Existing tooling (`bin/eval-review.ts`, `bin/eval-submit.ts`) already provides i
 
 ## Testing summary
 
-| Component                                   | Test approach                                                                                                                |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `system-prompt.ts` composer                 | `[unit]` tests in `system-prompt.test.ts` — structure/order/precedence, not behavior                                          |
-| Each new harness section                    | Its own eval suite (`tool-call`/`tool-sequence` for orchestration, `llm-judge`/`semantic` for subjective behavior)             |
-| `config/AGENT.md` loading + reload wiring   | `[unit]` test for `agent-instructions.ts` (mock filesystem); `[orchestration]` test for the `/settings/reload` route calling it |
-| `eval:calibrate` script                     | Matches existing convention for `bin/eval-*.ts` scripts — no unit tests (CLI script), verified by running it against a real run |
-| Regression coverage                         | `wiki-navigation.yaml` re-run after every new section, per the eval-driven build workflow above                               |
+| Component                                 | Test approach                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `system-prompt.ts` composer               | `[unit]` tests in `system-prompt.test.ts` — structure/order/precedence, not behavior                                            |
+| Each new harness section                  | Its own eval suite (`tool-call`/`tool-sequence` for orchestration, `llm-judge`/`semantic` for subjective behavior)              |
+| `config/AGENT.md` loading + reload wiring | `[unit]` test for `agent-instructions.ts` (mock filesystem); `[orchestration]` test for the `/settings/reload` route calling it |
+| `eval:calibrate` script                   | Matches existing convention for `bin/eval-*.ts` scripts — no unit tests (CLI script), verified by running it against a real run |
+| Regression coverage                       | `wiki-navigation.yaml` re-run after every new section, per the eval-driven build workflow above                                 |
 
 ## Open items deferred to later work
 

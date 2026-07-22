@@ -3,6 +3,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
+import { getAgentInstructions } from '../config/agent-instructions.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
@@ -112,7 +113,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiOrientTool,
       ...mcpTools,
     ],
-    systemPrompt: buildSystemPrompt(),
+    systemPrompt: buildSystemPrompt(getAgentInstructions()),
     checkpointer: getCheckpointer(),
     middleware: [afterAgentMiddleware],
   });

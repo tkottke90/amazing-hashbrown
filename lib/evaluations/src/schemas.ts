@@ -260,6 +260,22 @@ export const ScenarioResultSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Judge calibration — human-vs-llm-judge agreement records (see
+// EvaluationsStore.recordJudgeCalibration / getCalibrationSummary)
+// ---------------------------------------------------------------------------
+
+export const JudgeCalibrationSchema = z.object({
+  id: z.string(),
+  resultId: z.string(),
+  judgeScore: z.number(),
+  judgePassed: z.boolean(),
+  humanPassed: z.boolean(),
+  agree: z.boolean(),
+  reviewerNotes: z.string().optional(),
+  gradedAt: z.string(),
+});
+
+// ---------------------------------------------------------------------------
 // JsonOf helper — transforms a TEXT column containing JSON into a typed value
 // ---------------------------------------------------------------------------
 
@@ -290,3 +306,4 @@ export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
 export type ScenarioResult = z.infer<typeof ScenarioResultSchema>;
 export type ScenarioResultDetails = z.infer<typeof ScenarioResultDetailsSchema>;
+export type JudgeCalibration = z.infer<typeof JudgeCalibrationSchema>;
