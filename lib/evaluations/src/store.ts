@@ -11,8 +11,14 @@ import {
   type JudgeCalibration,
 } from './schemas.js';
 
-// Version 1: ObservabilityStore  Version 2: CostStore  Version 3: EvaluationsStore
-// Version 4: EvaluationsStore judge_calibrations
+// schema_migrations is one shared table across every store on the shared db
+// connection (see BaseStore.runMigrations) — version numbers must be unique
+// across the whole app, not just within this file. Known versions in use
+// elsewhere: 1 (ObservabilityStore), 2 (CostStore), 4 (ThreadStore),
+// 5 (ObservabilityStore). Check every *.MIGRATIONS array in the repo before
+// picking the next number here — don't just increment the last one in this file.
+// Version 3: EvaluationsStore (eval_runs/eval_results)
+// Version 6: EvaluationsStore judge_calibrations
 const MIGRATIONS: DbMigration[] = [
   {
     version: 3,
@@ -52,7 +58,7 @@ const MIGRATIONS: DbMigration[] = [
     `,
   },
   {
-    version: 4,
+    version: 6,
     sql: `
       CREATE TABLE IF NOT EXISTS judge_calibrations (
         id              TEXT PRIMARY KEY,

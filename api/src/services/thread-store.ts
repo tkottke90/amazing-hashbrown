@@ -103,7 +103,10 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // ---------------------------------------------------------------------------
 
 // Version numbers must be unique across ALL stores sharing this database.
-// 1=observability, 2=cost-store, 3=evaluations, 4=threads.
+// 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
+// 6=evaluations (judge_calibrations). Check every store's MIGRATIONS array
+// before adding a new one here — a colliding version silently no-ops instead
+// of erroring (BaseStore.runMigrations skips any version already recorded).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 4,

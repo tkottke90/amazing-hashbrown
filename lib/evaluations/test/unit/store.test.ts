@@ -344,7 +344,7 @@ describe('EvaluationsStore', () => {
 });
 
 describe('EvaluationsStore migration versioning', () => {
-  it('records versions 3 and 4 in schema_migrations', () => {
+  it('records versions 3 and 6 in schema_migrations', () => {
     const tmpDir2 = mkdtempSync(join(tmpdir(), 'eval-migration-test-'));
     try {
       const db = openDatabase(join(tmpDir2, 'shared.db'));
@@ -358,8 +358,8 @@ describe('EvaluationsStore migration versioning', () => {
         `Expected version 3 in migrations, got: ${JSON.stringify(versions)}`,
       );
       assert.ok(
-        versions.includes(4),
-        `Expected version 4 in migrations, got: ${JSON.stringify(versions)}`,
+        versions.includes(6),
+        `Expected version 6 in migrations, got: ${JSON.stringify(versions)}`,
       );
 
       evalStore.close();
