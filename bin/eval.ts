@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import { runEval, bootEvaluations, getEvaluationsStore } from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
@@ -65,6 +66,19 @@ try {
   console.error(`Error creating model: ${String(err)}`);
   process.exit(2);
 }
+
+// Powers `semantic`-type scenarios (embedding similarity). Matches
+// config.yaml's embeddings block — an OpenAI-compatible client pointed at
+// baseUrl, since that's what the documented default (a `/v1`-suffixed local
+// Ollama URL) targets. Omitted entirely when disabled; runEval only requires
+// this for scenarios that actually use it, so other suites are unaffected.
+const embeddings = env.embeddings.enabled
+  ? new OpenAIEmbeddings({
+      model: env.embeddings.model,
+      configuration: { baseURL: env.embeddings.baseUrl },
+      apiKey: process.env.OPENAI_API_KEY || 'not-needed-for-local-server',
+    })
+  : undefined;
 
 // Try to open the SQLite store; degrade gracefully if unavailable
 let store: ReturnType<typeof getEvaluationsStore> | undefined;
@@ -134,6 +148,7 @@ try {
     judgeModelId,
     tools: evalTools,
     systemPrompt: buildSystemPrompt(),
+    embeddings,
     suitePaths: { bundledPath: suitesPath },
     resultPath,
     ci: values.ci,
