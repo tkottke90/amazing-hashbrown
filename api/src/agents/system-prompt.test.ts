@@ -10,7 +10,17 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('wiki_orient');
       expect(result).to.include('wiki_search');
       expect(result).to.include('wiki_read_page');
+      expect(result).to.include('ask_user');
       expect(result).to.not.include('Additional instructions');
+    });
+
+    it('composes sections in a fixed order — wiki navigation before ask_user routing', () => {
+      const result = buildSystemPrompt();
+      const wikiIndex = result.indexOf('wiki_locate');
+      const askUserIndex = result.indexOf('call the ask_user tool');
+      expect(wikiIndex).to.be.greaterThan(-1);
+      expect(askUserIndex).to.be.greaterThan(-1);
+      expect(wikiIndex).to.be.lessThan(askUserIndex);
     });
 
     it('returns the harness prompt verbatim for an empty string', () => {
