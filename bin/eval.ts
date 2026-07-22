@@ -4,7 +4,12 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { runEval, bootEvaluations, getEvaluationsStore } from '../lib/evaluations/src/index.js';
+import {
+  runEval,
+  bootEvaluations,
+  getEvaluationsStore,
+  loadSuites,
+} from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
 import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
@@ -45,10 +50,8 @@ const { values } = parseArgs({
   strict: false,
 });
 
-if (!values.suite) {
-  console.error('Error: --suite <id> is required');
-  process.exit(2);
-}
+// --suite is optional: when omitted, every suite discovered under suites/ is
+// run in turn (see the "no --suite" branch near the bottom of this file).
 if (!values.model) {
   console.error('Error: --model <name> is required');
   process.exit(2);
@@ -139,48 +142,100 @@ async function runLlmReview(opts: {
   });
 }
 
-try {
-  const result = await runEval({
-    suiteId: values.suite,
-    model,
-    modelId,
-    judgeModel,
-    judgeModelId,
-    tools: evalTools,
-    systemPrompt: buildSystemPrompt(),
-    embeddings,
-    suitePaths: { bundledPath: suitesPath },
-    resultPath,
-    ci: values.ci,
-    noHtml: values['no-html'],
-    store,
-  });
-
-  const { run } = result;
-  const icon = run.passed ? '✓' : '✗';
-  const status = run.passed ? 'PASS' : 'FAIL';
-
-  console.log(`\n${icon} ${status} — ${run.suiteId}`);
-  console.log(
-    `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
-  );
-  console.log(`  Latency:   ${run.totalLatencyMs}ms`);
-  console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
-  console.log(`\n  Result:    ${result.yamlPath}`);
-  if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
-  console.log();
-
-  if (values['llm-review']) {
-    await runLlmReview({
-      suiteId: run.suiteId,
-      modelId,
-      yamlPath: result.yamlPath,
-      htmlPath: result.htmlPath,
-    });
-  }
-
-  process.exit(run.passed ? 0 : 1);
-} catch (err) {
-  console.error(`\nRuntime error: ${String(err)}`);
-  process.exit(3);
+interface SuiteOutcome {
+  suiteId: string;
+  passed: boolean;
+  passRate?: number;
+  errored?: boolean;
 }
+
+// Runs one suite end to end (eval + printed summary + optional --llm-review)
+// and reports the outcome rather than exiting the process itself, so the
+// "run everything" branch below can keep going after one suite errors
+// instead of aborting the whole batch.
+async function runOneSuite(suiteId: string): Promise<SuiteOutcome> {
+  try {
+    const result = await runEval({
+      suiteId,
+      model,
+      modelId,
+      judgeModel,
+      judgeModelId,
+      tools: evalTools,
+      systemPrompt: buildSystemPrompt(),
+      embeddings,
+      suitePaths: { bundledPath: suitesPath },
+      resultPath,
+      ci: values.ci,
+      noHtml: values['no-html'],
+      store,
+    });
+
+    const { run } = result;
+    const icon = run.passed ? '✓' : '✗';
+    const status = run.passed ? 'PASS' : 'FAIL';
+
+    console.log(`\n${icon} ${status} — ${run.suiteId}`);
+    console.log(
+      `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
+    );
+    console.log(`  Latency:   ${run.totalLatencyMs}ms`);
+    console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
+    console.log(`\n  Result:    ${result.yamlPath}`);
+    if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
+    console.log();
+
+    if (values['llm-review']) {
+      await runLlmReview({
+        suiteId: run.suiteId,
+        modelId,
+        yamlPath: result.yamlPath,
+        htmlPath: result.htmlPath,
+      });
+    }
+
+    return { suiteId, passed: run.passed, passRate: run.passRate };
+  } catch (err) {
+    console.error(`\nRuntime error running suite "${suiteId}": ${String(err)}`);
+    return { suiteId, passed: false, errored: true };
+  }
+}
+
+if (typeof values.suite === 'string' && values.suite.length > 0) {
+  // Single explicit suite — preserve the original exit-code contract exactly
+  // (3 for a runtime error, 0/1 for pass/fail) rather than folding it into
+  // the batch summary below. runOneSuite() catches its own errors, so there's
+  // nothing left that can throw here.
+  const outcome = await runOneSuite(values.suite);
+  process.exit(outcome.errored ? 3 : outcome.passed ? 0 : 1);
+}
+
+// No --suite given: discover and run every suite under suites/, in a stable
+// (alphabetical) order — loadSuites' own discovery order depends on
+// filesystem readdir order, which isn't guaranteed.
+const suites = await loadSuites({ bundledPath: suitesPath });
+const suiteIds = [...suites.keys()].sort();
+if (suiteIds.length === 0) {
+  console.error(`Error: no suites found in ${suitesPath}`);
+  process.exit(2);
+}
+
+console.log(`No --suite given — running all ${suiteIds.length} suite(s): ${suiteIds.join(', ')}`);
+
+const outcomes: SuiteOutcome[] = [];
+for (const suiteId of suiteIds) {
+  outcomes.push(await runOneSuite(suiteId));
+}
+
+console.log('─'.repeat(50));
+console.log('Summary\n');
+for (const o of outcomes) {
+  const icon = o.errored ? '⚠' : o.passed ? '✓' : '✗';
+  const label = o.errored ? 'ERROR' : o.passed ? 'PASS' : 'FAIL';
+  const rate = o.passRate !== undefined ? `  ${(o.passRate * 100).toFixed(1)}%` : '';
+  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}`);
+}
+const passedCount = outcomes.filter((o) => o.passed).length;
+console.log(`\n${passedCount}/${outcomes.length} suite(s) passed\n`);
+
+process.exit(outcomes.every((o) => o.passed) ? 0 : 1);
