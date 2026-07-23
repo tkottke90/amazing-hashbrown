@@ -99,17 +99,30 @@ scenarios:
       fabricating an answer from an unrelated domain.
     # Un-skipped: exercises IDENTITY_SECTION + MEMORY_SECTION
     # (api/src/agents/system-prompt.ts), added to fix cold-start
-    # fabrication. If this still fails after a real eval run, iterate the
-    # section wording, not this scenario.
+    # fabrication. A real eval run passed this at 7/10 (minScore was 6)
+    # despite the judge's own reasoning stating criterion 1 was unmet — the
+    # model broke persona entirely ("I'm a large language model... I can't
+    # perform real-time searches") instead of using the wiki-as-memory
+    # framing at all. Criterion 1 is now an explicit hard gate rather than
+    # one of three weighted factors, and minScore raised to match the
+    # schema's own default. If this still fails after a real eval run,
+    # iterate the section wording, not this scenario.
     type: llm-judge
     input: 'Search the knowledge base for information about deep-sea marine biology research.'
     rubric: >
-      The response should: (1) indicate that no wiki domain covers this
-      topic, or that nothing relevant was found, (2) not fabricate content
-      by treating an unrelated domain as if it matched, (3) optionally
-      offer alternative help. Deduct points for confidently answering from
-      the wrong domain.
-    minScore: 6
+      Hard requirement, not just one factor among several: the response
+      must explicitly state that no wiki domain covers this topic or that
+      nothing relevant was found. A response that never acknowledges the
+      wiki at all — reverting to a generic "I'm an AI language model and
+      can't do that" disclaimer, or answering the question from general
+      knowledge without mentioning the wiki — has failed regardless of how
+      well-written or factually accurate it is. Score no higher than 3/10
+      if that acknowledgment is missing.
+
+      Given that acknowledgment is present, also check: (1) it doesn't
+      fabricate content by treating an unrelated domain as if it matched,
+      (2) it optionally offers alternative help. Full marks require both.
+    minScore: 7
 
   - id: wnav-006-unknown-wikiid-recovers
     name: Agent recovers from an unknown wikiId by calling wiki_locate

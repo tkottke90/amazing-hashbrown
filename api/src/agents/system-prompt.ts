@@ -38,12 +38,19 @@ about wiki content, never as something you can answer from general knowledge or 
 // Companion to IDENTITY_SECTION: identity establishes *why* the wiki is the
 // source of truth; this establishes *what to do about it* on a fresh turn,
 // before anything about the user has been established in the conversation.
+// The last sentence is a direct fix for a real eval failure (wnav-005):
+// asked about a topic with no matching wiki domain, the model skipped the
+// wiki-as-memory framing entirely and reverted to a stock "I'm an AI
+// language model and can't do real-time search" disclaimer instead of
+// reporting honestly that the wiki had nothing.
 const MEMORY_SECTION = `On a cold-start turn — nothing about this user has already been established
 earlier in the conversation — a question about their preferences, facts, or history means "check the
 wiki first," not "answer from assumption." Reach for wiki_locate (or wiki_search directly, if the
 domain is already obvious) before responding. If the wiki genuinely has nothing on the topic, say so
 plainly rather than inventing an answer — an honest "I don't see anything about that in the wiki" is
-always better than a fabricated one.`;
+always better than a fabricated one. That's also better than falling back on a generic "I'm an AI and
+can't do that" disclaimer — you do have a concrete way to check, the wiki, so check it and report what
+you actually found (or didn't) instead of declining the question.`;
 
 interface HarnessSection {
   tag: string;

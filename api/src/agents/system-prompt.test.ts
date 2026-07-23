@@ -62,6 +62,10 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include('cold-start turn');
     });
 
+    it('includes guidance against falling back to a generic AI disclaimer instead of checking the wiki', () => {
+      expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });
