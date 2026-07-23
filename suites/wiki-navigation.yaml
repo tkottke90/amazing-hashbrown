@@ -119,7 +119,15 @@ scenarios:
     purpose: >
       If wiki_orient is called with a bad id and returns its own
       "not registered" error, confirms the agent's next call is
-      wiki_locate rather than retrying blindly or giving up.
+      wiki_locate rather than retrying blindly or giving up. Only the
+      tool choice is asserted — wiki_locate's own schema documents
+      `context` as optional ("Omit to browse all registered domains"),
+      so calling it argless here is a legitimate recovery, not a
+      fallback. An earlier version of this scenario required a
+      `context` arg to exist and failed a run where the model chose
+      browse mode deliberately ("let me check what domains are
+      available") — that was a stricter requirement than the tool's
+      own contract, not a real gap.
     type: tool-sequence
     input: 'Check the archive wiki for anything relevant.'
     priorTurns:
@@ -128,9 +136,6 @@ scenarios:
         result:
           { text: 'Wiki "archive" is not registered. Use wiki_locate to find available domains.' }
     tool: wiki_locate
-    argChecks:
-      - path: context
-        match: exists
 
   - id: wnav-007-organic-locate-genuinely-ambiguous
     name: Agent calls wiki_locate on live, unseeded, genuinely ambiguous input
