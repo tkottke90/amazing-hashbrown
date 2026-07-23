@@ -23,18 +23,59 @@ your reply. Only ask_user actually pauses the turn and gives the user a structur
 (buttons, a choice list, or free text); a question phrased as an ordinary reply doesn't wait for an
 answer, it just ends your turn as if you were done.`;
 
+// Motivated by suites/wiki-navigation.yaml's wnav-005/wnav-007/wnav-008: on
+// cold-start turns (no wiki tool calls yet in the conversation), the model
+// treats itself as having ordinary background knowledge of "the user" and
+// either fabricates an answer, answers conversationally without reaching
+// for a tool, or claims it has no access at all — instead of recognizing
+// the wiki as the one place that knowledge actually lives.
+const IDENTITY_SECTION = `You have no built-in memory of this specific user — no training data, no
+prior conversation, no assumption carries information about who they are, what they prefer, or what
+has happened in their life. Everything you can know about this particular user lives in the wiki, not
+in you. Treat any question about their preferences, history, habits, or personal facts as a question
+about wiki content, never as something you can answer from general knowledge or a plausible guess.`;
+
+// Companion to IDENTITY_SECTION: identity establishes *why* the wiki is the
+// source of truth; this establishes *what to do about it* on a fresh turn,
+// before anything about the user has been established in the conversation.
+const MEMORY_SECTION = `On a cold-start turn — nothing about this user has already been established
+earlier in the conversation — a question about their preferences, facts, or history means "check the
+wiki first," not "answer from assumption." Reach for wiki_locate (or wiki_search directly, if the
+domain is already obvious) before responding. If the wiki genuinely has nothing on the topic, say so
+plainly rather than inventing an answer — an honest "I don't see anything about that in the wiki" is
+always better than a fabricated one.`;
+
+interface HarnessSection {
+  tag: string;
+  content: string;
+}
+
 // One entry per internal tool group or behavior area, in a fixed order. Every
 // section is always included — MCP/external tool relevance is a future
 // llmToolSelectorMiddleware concern, not a system-prompt one (see
 // docs/superpowers/specs/2026-07-21-agent-behavior-baseline-system-prompt-pattern-design.md).
-const HARNESS_SECTIONS: string[] = [
-  WIKI_NAVIGATION_SECTION,
-  ASK_USER_SECTION,
-  // future: IDENTITY_SECTION, UNCERTAINTY_SECTION, FORMATTING_SECTION, ...
+// identity/memory lead the list — they frame how the model should read the
+// tool-orchestration rules that follow, not the other way around.
+const HARNESS_SECTIONS: HarnessSection[] = [
+  { tag: 'identity', content: IDENTITY_SECTION },
+  { tag: 'memory', content: MEMORY_SECTION },
+  { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
+  { tag: 'ask_user_routing', content: ASK_USER_SECTION },
+  // future: uncertainty, formatting, ...
 ];
 
+// Distinct, descriptive tags per section rather than a generic wrapper with
+// an id attribute — matches Anthropic's own prompt-engineering guidance
+// ("wrapping each type of content in its own tag... use consistent,
+// descriptive tag names"). The attribute-indexed pattern they document
+// (<document index="n">) is for repeated instances of the *same* kind of
+// content, not for distinguishing different kinds — which is our case here.
+function wrapSection(section: HarnessSection): string {
+  return `<${section.tag}>\n${section.content}\n</${section.tag}>`;
+}
+
 function buildHarnessPrompt(): string {
-  return HARNESS_SECTIONS.join('\n\n');
+  return HARNESS_SECTIONS.map(wrapSection).join('\n\n');
 }
 
 export function buildSystemPrompt(userInstructions?: string): string {

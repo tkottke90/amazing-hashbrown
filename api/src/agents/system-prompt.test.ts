@@ -23,6 +23,45 @@ describe('agents/system-prompt', () => {
       expect(wikiIndex).to.be.lessThan(askUserIndex);
     });
 
+    it('wraps each harness section in a well-formed, distinctly-tagged XML element', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('<identity>');
+      expect(result).to.include('</identity>');
+      expect(result).to.include('<memory>');
+      expect(result).to.include('</memory>');
+      expect(result).to.include('<wiki_navigation>');
+      expect(result).to.include('</wiki_navigation>');
+      expect(result).to.include('<ask_user_routing>');
+      expect(result).to.include('</ask_user_routing>');
+      const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
+      const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
+      expect(opens).to.equal(4);
+      expect(closes).to.equal(4);
+    });
+
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, ask_user routing', () => {
+      const result = buildSystemPrompt();
+      const identityTagIndex = result.indexOf('<identity>');
+      const memoryTagIndex = result.indexOf('<memory>');
+      const wikiTagIndex = result.indexOf('<wiki_navigation>');
+      const askUserTagIndex = result.indexOf('<ask_user_routing>');
+      expect(identityTagIndex).to.be.greaterThan(-1);
+      expect(memoryTagIndex).to.be.greaterThan(-1);
+      expect(wikiTagIndex).to.be.greaterThan(-1);
+      expect(askUserTagIndex).to.be.greaterThan(-1);
+      expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
+      expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
+      expect(wikiTagIndex).to.be.lessThan(askUserTagIndex);
+    });
+
+    it('includes identity framing establishing the wiki as the source of truth about the user', () => {
+      expect(buildSystemPrompt()).to.include('no built-in memory of this specific user');
+    });
+
+    it('includes memory framing establishing cold-start wiki-check behavior', () => {
+      expect(buildSystemPrompt()).to.include('cold-start turn');
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

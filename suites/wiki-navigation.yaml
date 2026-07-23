@@ -97,13 +97,10 @@ scenarios:
       For a wildly unrelated topic, wiki_locate naturally returns no match
       against the real registry. The agent must say so plainly instead of
       fabricating an answer from an unrelated domain.
-    # Skipped: an --llm-review pass found the model doesn't believe the
-    # wiki is its source of truth on cold-start turns (no prior tool calls
-    # in context), so it fabricates instead of admitting no domain
-    # matched. Root cause is the harness system prompt, not this scenario.
-    # Revisit once the "Agent Behavior Baseline (System Prompt)" TODO item
-    # establishes the wiki as the model's memory.
-    skip: true
+    # Un-skipped: exercises IDENTITY_SECTION + MEMORY_SECTION
+    # (api/src/agents/system-prompt.ts), added to fix cold-start
+    # fabrication. If this still fails after a real eval run, iterate the
+    # section wording, not this scenario.
     type: llm-judge
     input: 'Search the knowledge base for information about deep-sea marine biology research.'
     rubric: >
@@ -147,14 +144,13 @@ scenarios:
       priorTurns are seeded — this tests whether the harness system prompt
       actually steers live, organic tool choice, not just a seeded
       continuation.
-    # Skipped: an --llm-review pass found the model doesn't reach for
-    # tools unprompted on cold-start turns — root cause is the harness
-    # system prompt, not this scenario (though the review also noted this
-    # specific prompt is a coin-flip between "check the wiki" and
-    # "answer conversationally," worth softening once revisited). Revisit
-    # alongside wnav-005/wnav-008 once the "Agent Behavior Baseline
-    # (System Prompt)" TODO item lands.
-    skip: true
+    # Un-skipped: exercises IDENTITY_SECTION + MEMORY_SECTION
+    # (api/src/agents/system-prompt.ts). Note: an earlier --llm-review pass
+    # also flagged this input as a coin-flip phrasing between "check the
+    # wiki" and "answer conversationally," independent of the prompt fix —
+    # if this still fails after a real eval run and the failure looks like
+    # an input-ambiguity artifact rather than a prompt gap, reword the
+    # input as a separate follow-up rather than iterating the section.
     type: tool-call
     input: 'What have you noticed about growth lately?'
     tool: wiki_locate
@@ -170,13 +166,11 @@ scenarios:
       wiki_search for a clearly single-domain query rather than always
       routing through wiki_locate first — guarding against the prompt
       overcorrecting into forced, unnecessary tool-chaining.
-    # Skipped: an --llm-review pass found the model calls no tool at all
-    # here and answers "I don't have access to their personal
-    # preferences" — it doesn't believe the wiki is its source of truth
-    # on cold-start turns. Root cause is the harness system prompt, not
-    # this scenario. Revisit alongside wnav-005/wnav-007 once the "Agent
-    # Behavior Baseline (System Prompt)" TODO item lands.
-    skip: true
+    # Un-skipped: exercises IDENTITY_SECTION + MEMORY_SECTION
+    # (api/src/agents/system-prompt.ts), added to fix the model calling no
+    # tool at all and answering "I don't have access..." instead of
+    # checking the wiki. If this still fails after a real eval run,
+    # iterate the section wording, not this scenario.
     type: tool-call
     input: "What's my favorite color?"
     tool: wiki_search
