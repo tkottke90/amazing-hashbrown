@@ -129,6 +129,12 @@ export const SuiteSchema = z.object({
     name: z.string().min(1),
     purpose: z.string().min(1),
     passingThreshold: z.number().min(0).max(1).optional(),
+    // Suite-level (not scenario-level) simulated AGENT.md content, used only
+    // by bin/eval.ts to exercise buildSystemPrompt()'s user-instructions
+    // branch — see suites/instruction-hierarchy.yaml. Every existing suite
+    // omits this and is unaffected. .min(1) so an accidentally-empty string
+    // fails validation loudly instead of silently behaving like "no override".
+    simulatedUserInstructions: z.string().min(1).optional(),
   }),
   scenarios: z.array(ScenarioSchema).min(1),
 });

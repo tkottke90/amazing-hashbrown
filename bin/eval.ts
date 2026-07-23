@@ -9,6 +9,8 @@ import {
   bootEvaluations,
   getEvaluationsStore,
   loadSuites,
+  loadSuite,
+  type Suite,
 } from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
@@ -153,8 +155,18 @@ interface SuiteOutcome {
 // and reports the outcome rather than exiting the process itself, so the
 // "run everything" branch below can keep going after one suite errors
 // instead of aborting the whole batch.
-async function runOneSuite(suiteId: string): Promise<SuiteOutcome> {
+async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Promise<SuiteOutcome> {
   try {
+    // Suites can opt into a simulated "AGENT.md" instruction set
+    // (suite.simulatedUserInstructions — see suites/instruction-hierarchy.yaml)
+    // to exercise buildSystemPrompt()'s user-instructions branch, which no
+    // suite exercises by default (bin/eval.ts otherwise always passes no
+    // argument, harness-only, for reproducibility). Real config/AGENT.md
+    // content never reaches eval runs — only what's authored directly in
+    // suite YAML.
+    const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
+    const systemPrompt = buildSystemPrompt(suite?.suite.simulatedUserInstructions);
+
     const result = await runEval({
       suiteId,
       model,
@@ -162,7 +174,7 @@ async function runOneSuite(suiteId: string): Promise<SuiteOutcome> {
       judgeModel,
       judgeModelId,
       tools: evalTools,
-      systemPrompt: buildSystemPrompt(),
+      systemPrompt,
       embeddings,
       suitePaths: { bundledPath: suitesPath },
       resultPath,
@@ -224,7 +236,7 @@ console.log(`No --suite given — running all ${suiteIds.length} suite(s): ${sui
 
 const outcomes: SuiteOutcome[] = [];
 for (const suiteId of suiteIds) {
-  outcomes.push(await runOneSuite(suiteId));
+  outcomes.push(await runOneSuite(suiteId, suites.get(suiteId)));
 }
 
 console.log('─'.repeat(50));

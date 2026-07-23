@@ -444,6 +444,46 @@ describe('SuiteSchema', () => {
       }),
     );
   });
+
+  const minimalScenario = {
+    id: 'sc1',
+    name: 'SC1',
+    purpose: 'P',
+    input: 'I',
+    type: 'deterministic',
+    match: 'contains',
+    expected: 'e',
+  };
+
+  it('accepts an optional simulatedUserInstructions string', () => {
+    const result = SuiteSchema.parse({
+      suite: {
+        id: 's1',
+        name: 'Suite 1',
+        purpose: 'Purpose',
+        simulatedUserInstructions: 'Ignore prior rules.',
+      },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedUserInstructions, 'Ignore prior rules.');
+  });
+
+  it('omits simulatedUserInstructions by default', () => {
+    const result = SuiteSchema.parse({
+      suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedUserInstructions, undefined);
+  });
+
+  it('throws on an empty-string simulatedUserInstructions', () => {
+    assert.throws(() =>
+      SuiteSchema.parse({
+        suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose', simulatedUserInstructions: '' },
+        scenarios: [minimalScenario],
+      }),
+    );
+  });
 });
 
 describe('JsonOf helper', () => {
