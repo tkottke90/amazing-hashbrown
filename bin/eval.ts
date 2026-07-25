@@ -164,8 +164,16 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     // argument, harness-only, for reproducibility). Real config/AGENT.md
     // content never reaches eval runs — only what's authored directly in
     // suite YAML.
+    //
+    // suite.appliesHarnessSystemPrompt (default true) lets a suite opt OUT
+    // entirely — see suites/after-agent.yaml/thread-titles.yaml, whose
+    // scenarios model a different production code path (after-agent.ts,
+    // generateTitleHandler) that never attaches this prompt in real usage.
     const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
-    const systemPrompt = buildSystemPrompt(suite?.suite.simulatedUserInstructions);
+    const systemPrompt =
+      suite?.suite.appliesHarnessSystemPrompt === false
+        ? undefined
+        : buildSystemPrompt(suite?.suite.simulatedUserInstructions);
 
     const result = await runEval({
       suiteId,

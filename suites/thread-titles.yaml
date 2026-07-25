@@ -13,6 +13,11 @@ suite:
     generateTitleHandler sends to the model — keep them in sync if the
     prompt template changes.
   passingThreshold: 0.75
+  # generateTitleHandler calls model.invoke(prompt) directly in production —
+  # no system message at all. The `input` field above already is that exact
+  # prompt, so attaching the chat agent's harness system prompt on top would
+  # test a combination that never happens in production.
+  appliesHarnessSystemPrompt: false
 
 scenarios:
   - id: tt-001-non-empty

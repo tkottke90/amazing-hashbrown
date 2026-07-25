@@ -190,3 +190,80 @@ scenarios:
     argChecks:
       - path: query
         match: exists
+
+  - id: wnav-009-scoped-orient-follows-routing-hints
+    name: Agent orients only into the domain routing hints actually point to
+    purpose: >
+      Given wiki_locate surfaces both "user" and "self" as candidate domains
+      but the routing notes cleanly attribute the question to only one of
+      them, confirms wiki_orient's wikiId is constrained to that domain —
+      guards against orienting into an irrelevant domain (self) for a
+      question routing hints say belongs only to another (user). Motivated
+      by a real thread transcript where the agent, asked a purely
+      user-directed question, additionally oriented into "self" (the
+      agent's own identity/reflection domain) and then confusingly wrote
+      that domain's empty state into the reply as if it were relevant to
+      the user.
+    type: tool-sequence
+    input: 'What have I told you I prefer for my morning routine?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'morning routine preferences' }
+        result:
+          text: >-
+            Candidates: "user" (domain: user, score 14) — routing note:
+            user preferences, personal context, and biography. "self"
+            (domain: agent identity, values, decisions, and reflection,
+            score 3) — routing note: the agent's own reasoning, values,
+            principles, decisions, mistakes, and growth. This question is
+            about the user's own stated preference, which only the
+            "user" routing note covers.
+    tool: wiki_orient
+    argChecks:
+      - path: wikiId
+        match: oneOf
+        value: ['user']
+
+  - id: wnav-010-procedural-question-triggers-locate
+    name: Agent checks the wiki for a stored how-to before answering from general knowledge
+    purpose: >
+      Verifies MEMORY_SECTION's "check the wiki first" framing generalizes
+      past personal-fact phrasing ("what do I prefer") to procedural/how-to
+      phrasing — a stored, previously-documented procedure should be
+      treated the same as a stored personal fact, not answered from the
+      model's own general knowledge of NPM/Verdaccio. First-person
+      need-statement phrasing.
+    type: tool-call
+    input: 'I need to generate a new NPM token for my Verdaccio instance.'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-010b-procedural-question-triggers-locate-how-do-i
+    name: Agent checks the wiki for a stored how-to (interrogative phrasing)
+    purpose: >
+      Same intent as wnav-010, different phrasing — an interrogative
+      "how do I" framing rather than a first-person need statement, to
+      confirm the routing isn't an artifact of one specific phrasing.
+    type: tool-call
+    input: 'How do I generate a new NPM token for Verdaccio?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-010c-procedural-question-triggers-locate-past-tense
+    name: Agent checks the wiki for a stored how-to (past-tense recall phrasing)
+    purpose: >
+      Same intent as wnav-010, phrased as a recall of a previously
+      established process rather than a fresh request — this phrasing
+      most directly implies "this was already documented somewhere,"
+      making it the strongest case that skipping the wiki would be a real
+      regression.
+    type: tool-call
+    input: 'What was the process for generating a new NPM token for Verdaccio?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists

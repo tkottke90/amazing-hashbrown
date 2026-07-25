@@ -100,7 +100,8 @@ async function buildChatAgent(provider?: string, model?: string) {
     });
   }
 
-  return createAgent({
+  const systemPrompt = buildSystemPrompt(getAgentInstructions());
+  const agent = createAgent({
     model: llm,
     // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
     // MCP tools are converted from RegisteredTool.
@@ -113,17 +114,26 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiOrientTool,
       ...mcpTools,
     ],
-    systemPrompt: buildSystemPrompt(getAgentInstructions()),
+    systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [afterAgentMiddleware],
   });
+
+  return { agent, systemPrompt };
 }
 
-export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>;
+export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>['agent'];
 
-const _agents = new Map<string, ChatAgent>();
+// Caches both the agent and the exact system prompt string it was built
+// with, so a caller reading systemPrompt always matches the cached agent
+// instance — a getter that recomputed buildSystemPrompt() independently
+// could drift from it if config/AGENT.md changes between cache builds.
+const _agents = new Map<string, { agent: ChatAgent; systemPrompt: string }>();
 
-export async function getChatAgent(provider?: string, model?: string): Promise<ChatAgent> {
+export async function getChatAgent(
+  provider?: string,
+  model?: string,
+): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const key = `${provider ?? ''}:${model ?? ''}`;
   if (!_agents.has(key)) {
     _agents.set(key, await buildChatAgent(provider, model));

@@ -68,6 +68,21 @@ describe('writeResultYaml + readResultYaml', () => {
     }
   });
 
+  it('roundtrips a non-null systemPrompt', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-serial-sysprompt-'));
+    try {
+      const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
+      const filePath = await writeResultYaml(run, [makeResult(run.id)], dir);
+      const { run: parsedRun } = await readResultYaml(filePath);
+      assert.equal(
+        parsedRun.systemPrompt,
+        'You have no built-in memory of this specific user.',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('creates resultPath directory if it does not exist', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-serial-test-'));
     const nested = join(dir, 'nested', 'path');
@@ -109,7 +124,12 @@ describe('writeResultYaml + readResultYaml', () => {
 describe('writeResultHtml', () => {
   function makeSuite(scenarios: Suite['scenarios']): Suite {
     return {
-      suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' },
+      suite: {
+        id: 'test-suite',
+        name: 'Test Suite',
+        purpose: 'Testing',
+        appliesHarnessSystemPrompt: true,
+      },
       scenarios,
     };
   }
@@ -137,6 +157,53 @@ describe('writeResultHtml', () => {
       assert.ok(html.includes('My Scenario Name'));
       assert.ok(html.includes('Verifies a thing.'));
       assert.ok(html.includes('the scenario input text'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders a System Prompt block when run.systemPrompt is set', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-sysprompt-'));
+    try {
+      const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'My Scenario Name',
+          purpose: 'Verifies a thing.',
+          input: 'the scenario input text',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'output',
+        },
+      ]);
+      const filePath = await writeResultHtml(run, [makeResult(run.id)], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('System Prompt'));
+      assert.ok(html.includes('You have no built-in memory of this specific user.'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the System Prompt block when run.systemPrompt is unset', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-nosysprompt-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'My Scenario Name',
+          purpose: 'Verifies a thing.',
+          input: 'the scenario input text',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'output',
+        },
+      ]);
+      const filePath = await writeResultHtml(run, [makeResult(run.id)], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(!html.includes('System Prompt'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -402,7 +469,12 @@ describe('writeReviewManifest + readReviewManifest', () => {
     try {
       const run = makeRun();
       const humanSuite: Suite = {
-        suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' },
+        suite: {
+          id: 'test-suite',
+          name: 'Test Suite',
+          purpose: 'Testing',
+          appliesHarnessSystemPrompt: true,
+        },
         scenarios: [
           {
             id: 'h-1',

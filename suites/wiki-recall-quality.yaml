@@ -1,0 +1,139 @@
+suite:
+  id: wiki-recall-quality
+  name: Wiki Recall Quality
+  purpose: >
+    Verifies the agent's final answers, once wiki content has been located
+    (or found absent), read conversationally and faithfully to what's
+    actually stored — no wiki-internal vocabulary leaking into replies, no
+    narration of the agent's own tool-checking process, and no fabrication
+    of steps beyond what a stored page actually documents. Complements
+    suites/wiki-navigation.yaml, which tests tool-call sequencing rather
+    than the quality of the resulting text answer.
+  passingThreshold: 1
+
+scenarios:
+  - id: wrq-001-empty-wiki-reads-as-recall-not-report
+    name: Cold-start "nothing found" reads as a natural admission, not a system report
+    purpose: >
+      Reuses wnav-005's cold-start-empty-wiki input, but with a distinct
+      rubric: wnav-005 gates whether the agent admits nothing was found;
+      this gates HOW that admission is phrased — conversationally, without
+      exposing wiki-internal vocabulary (domain, initialized, zero pages)
+      or narrating its own tool-checking process ("let me check/explore
+      ..."). Motivated by a real thread transcript where the agent's
+      cold-start reply read like a status report on two wiki domains
+      instead of a plain "I don't know anything about you yet."
+      Only meaningful once runner.ts attaches the harness system prompt to
+      llm-judge scenarios — previously it never did.
+    type: llm-judge
+    input: 'Search the knowledge base for information about deep-sea marine biology research.'
+    rubric: >
+      Hard requirement: the response must NOT use wiki-internal/implementation
+      vocabulary the user has no reason to know — words like "domain",
+      "initialized", "zero pages", "wikiId", or similar internal terms — when
+      explaining that nothing was found. Score no higher than 4/10 if any such
+      term leaks into the reply.
+
+      Also hard requirement: the response must NOT narrate the agent's own
+      tool-checking process as if thinking aloud to the user — phrases like
+      "let me check", "let me search", "I'll look that up and get back to
+      you" describing a process rather than reporting its outcome. The reply
+      should read as a direct, already-completed answer ("I don't see
+      anything in the wiki about that"), not a play-by-play of the lookup.
+      Score no higher than 4/10 if this is present.
+
+      Given both hard requirements are met, score on how natural and concise
+      the admission reads — full marks for a plain, conversational "I don't
+      have anything on that" style answer.
+    minScore: 7
+
+  - id: wrq-002-procedural-answer-surfaces-the-actual-steps
+    name: Final answer surfaces the concrete stored steps, not just "there's a page about this"
+    purpose: >
+      Seeds a wiki_search + wiki_read_page pair whose result contains a
+      concrete, one-line docker command plus auth context for a stored
+      Verdaccio NPM-token procedure. Requires the final answer to actually
+      surface the concrete command, not just gesture at "there's a page
+      about this." Motivated by real usage (llm-wiki storing an NPM-token
+      generation procedure for a private Verdaccio registry) — the whole
+      point of storing a procedure is getting the actual steps back, not a
+      pointer to their existence.
+    type: llm-judge
+    input: 'How do I generate a new NPM token for Verdaccio?'
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'verdaccio npm token' }
+        result:
+          {
+            text: 'Found 1 match: entities/verdaccio-npm-token.md — "Generating a Verdaccio NPM token"',
+          }
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/verdaccio-npm-token.md' }
+        result:
+          text: >-
+            # Generating a Verdaccio NPM token
+
+            Authenticate using the CI service account, then run:
+
+            `docker exec -it verdaccio npm token create --registry
+            https://verdaccio.internal --readonly=false`
+
+            The token prints to stdout — copy it into the CI secret store
+            immediately, it isn't shown again.
+    rubric: >
+      Hard requirement: the response must include the literal docker command
+      from the stored page (`docker exec -it verdaccio npm token create ...`)
+      or a clearly equivalent restatement of it — not just a reference like
+      "there's a wiki page about this" or "I found documentation on
+      generating a token" without the command itself. Score no higher than
+      3/10 if the concrete command is missing.
+
+      Given the command is present, also check: (1) it mentions the CI
+      service account authentication step, (2) it mentions the token is
+      shown only once / should be copied immediately. Full marks require
+      both.
+    minScore: 7
+
+  - id: wrq-003-partial-knowledge-doesnt-get-filled-in
+    name: Agent reports only what's stored, without fabricating missing steps
+    purpose: >
+      Seeds a prior-turn result representing an EARLIER, incomplete stage
+      of the same stored procedure (auth context documented, but no docker
+      command yet) — extends the no-fabrication principle established by
+      wnav-005 into procedural knowledge: the agent must not invent the
+      missing docker command just because the topic and auth step are
+      known. Motivated by real usage — a stored procedure is often built up
+      incrementally over multiple sessions, and an agent that fills gaps
+      with a plausible-sounding guess is worse than one that says what it
+      doesn't know yet.
+    type: llm-judge
+    input: 'How do I generate a new NPM token for Verdaccio?'
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'verdaccio npm token' }
+        result:
+          {
+            text: 'Found 1 match: entities/verdaccio-npm-token.md — "Generating a Verdaccio NPM token"',
+          }
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/verdaccio-npm-token.md' }
+        result:
+          text: >-
+            # Generating a Verdaccio NPM token
+
+            Authenticate using the CI service account. (Exact command
+            still being documented.)
+    rubric: >
+      Hard requirement: the response must NOT include a specific docker/npm
+      command for generating the token — none was actually stored, only the
+      authentication step. Any invented command (e.g. a plausible-looking
+      `docker exec ...` or `npm token create ...` the model fabricates from
+      its own general knowledge of npm/Verdaccio) is a fabrication and must
+      score no higher than 2/10, regardless of how plausible or well-written
+      it looks.
+
+      Given no command is fabricated, check: (1) it reports what IS known
+      (authenticate via the CI service account), (2) it's honest that the
+      exact command isn't in the stored notes yet, rather than silently
+      omitting the topic. Full marks require both.
+    minScore: 7

@@ -15,10 +15,12 @@ import {
 // connection (see BaseStore.runMigrations) — version numbers must be unique
 // across the whole app, not just within this file. Known versions in use
 // elsewhere: 1 (ObservabilityStore), 2 (CostStore), 4 (ThreadStore),
-// 5 (ObservabilityStore). Check every *.MIGRATIONS array in the repo before
-// picking the next number here — don't just increment the last one in this file.
+// 5 (ObservabilityStore), 7 (ObservabilityStore, system_prompt column).
+// Check every *.MIGRATIONS array in the repo before picking the next number
+// here — don't just increment the last one in this file.
 // Version 3: EvaluationsStore (eval_runs/eval_results)
 // Version 6: EvaluationsStore judge_calibrations
+// Version 8: EvaluationsStore eval_runs.system_prompt column
 const MIGRATIONS: DbMigration[] = [
   {
     version: 3,
@@ -74,6 +76,16 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_judge_calibrations_result ON judge_calibrations(result_id);
     `,
   },
+  {
+    // Surfaces which harness system prompt was in effect for a run — see
+    // runner.ts's computeRunSummary and bin/eval.ts's buildSystemPrompt()
+    // call. Version 7 is ObservabilityStore's parallel system_prompt column
+    // on observability_traces — see that file's MIGRATIONS.
+    version: 8,
+    sql: `
+      ALTER TABLE eval_runs ADD COLUMN system_prompt TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -94,6 +106,7 @@ const RawEvalRunSchema = z
     passed_scenarios: z.number(),
     total_latency_ms: z.number(),
     estimated_cost_usd: z.number(),
+    system_prompt: z.string().nullable(),
   })
   .transform((row) => ({
     id: row.run_id,
@@ -108,6 +121,7 @@ const RawEvalRunSchema = z
     passedScenarios: row.passed_scenarios,
     totalLatencyMs: row.total_latency_ms,
     estimatedCostUsd: row.estimated_cost_usd,
+    systemPrompt: row.system_prompt,
   }));
 
 const RawEvalResultSchema = z
@@ -219,8 +233,8 @@ export class EvaluationsStore extends BaseStore {
       `INSERT INTO eval_runs
          (run_id, suite_id, model, judge_model, started_at, ended_at,
           passed, pass_rate, total_scenarios, passed_scenarios,
-          total_latency_ms, estimated_cost_usd)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          total_latency_ms, estimated_cost_usd, system_prompt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertResult = this.db.prepare(
@@ -244,6 +258,7 @@ export class EvaluationsStore extends BaseStore {
         run.passedScenarios,
         run.totalLatencyMs,
         run.estimatedCostUsd,
+        run.systemPrompt ?? null,
       );
       for (const r of results) {
         insertResult.run(

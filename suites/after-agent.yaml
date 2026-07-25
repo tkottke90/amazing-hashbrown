@@ -9,6 +9,12 @@ suite:
     POST /api/v1/chat/:threadId endpoint (the eval harness invokes a bare model, not the full
     createAgent graph, and has no mechanism to assert on side effects like actual wiki writes).
   passingThreshold: 0.75
+  # after-agent.ts never attaches the chat agent's harness system prompt to
+  # its summarize/classify/extract/merge calls in production (each is a bare
+  # invokeStructured(llm, schema, prompt) call) — the `input` field on every
+  # scenario below already IS that exact production prompt. Applying the
+  # harness prompt on top would test a combination that never happens.
+  appliesHarnessSystemPrompt: false
 
 scenarios:
   # ---------------------------------------------------------------------------------------------
