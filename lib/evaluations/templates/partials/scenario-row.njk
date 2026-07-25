@@ -99,14 +99,19 @@
 args: {{ invalid.args }}
 error: {{ invalid.error }}</pre>
             {% endfor %}
-          {% elif details.reasoningContent %}
+          {% endif %}
+          {% if details.reasoningContent %}
             <div style="margin-top:0.5rem">
               <strong>No tool attempted — model's reasoning/thinking output:</strong>
             </div>
             <pre>{{ details.reasoningContent }}</pre>
-          {% elif details.responseMetadata %}
+          {% endif %}
+          {% if details.responseMetadata %}
             <div style="margin-top:0.5rem">
-              <strong>No tool attempted — response metadata:</strong>
+              <strong>Response metadata:</strong>
+              {% if details.responseMetadata.finish_reason === 'tool_calls' %}
+                <span class="badge badge-fail" title="The provider reports a tool call ended this response, but none was extracted — likely a serving-side bug, not a harness parsing gap.">⚠ finish_reason: tool_calls but none extracted</span>
+              {% endif %}
             </div>
             <pre>{% for key, value in details.responseMetadata %}{{ key }}: {{ value }}
 {% endfor %}</pre>

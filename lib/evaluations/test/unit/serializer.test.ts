@@ -356,9 +356,80 @@ describe('writeResultHtml', () => {
       });
       const filePath = await writeResultHtml(run, [result], suite, dir);
       const html = readFileSync(filePath, 'utf-8');
-      assert.ok(html.includes('response metadata'));
+      assert.ok(html.includes('Response metadata'));
       assert.ok(html.includes('done_reason'));
       assert.ok(html.includes('stop'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('flags finish_reason: tool_calls with no extracted tool call as a likely serving-side bug', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-finish-reason-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          responseMetadata: { finish_reason: 'tool_calls' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('finish_reason: tool_calls but none extracted'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows BOTH reasoning and response metadata when a scenario has both, instead of only one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-reasoning-and-metadata-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          reasoningContent: 'Let me search the wiki for this.',
+          responseMetadata: { finish_reason: 'tool_calls' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('Let me search the wiki for this.'));
+      assert.ok(html.includes('Response metadata'));
+      assert.ok(html.includes('finish_reason: tool_calls'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
