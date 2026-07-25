@@ -31,12 +31,21 @@ scenarios:
       confounds "is the phrasing natural" with "can it call a tool here
       at all." Only meaningful once runner.ts attaches the harness system
       prompt to llm-judge scenarios — previously it never did.
+    # A real eval run showed this same confound recurring one tool later:
+    # with only wiki_locate's no-match seeded, the model reasonably wants to
+    # try wiki_search next (domain-agnostic — a routing miss doesn't mean
+    # the content isn't anywhere), and falls back to writing a pseudo
+    # wiki_search tool-call as text since llm-judge doesn't bind tools. See
+    # wnav-005's matching fix in wiki-navigation.yaml for the full writeup.
     type: llm-judge
     input: 'Search the knowledge base for information about deep-sea marine biology research.'
     priorTurns:
       - tool: wiki_locate
         args: { context: 'deep-sea marine biology research' }
         result: { text: 'No domain matches. Available domains: user, self.' }
+      - tool: wiki_search
+        args: { query: 'deep-sea marine biology research' }
+        result: { text: 'No results found for the given query.' }
     rubric: >
       Hard requirement: the response must NOT use wiki-internal/implementation
       vocabulary the user has no reason to know — words like "domain",
