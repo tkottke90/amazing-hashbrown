@@ -80,6 +80,12 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('"What\'s my favorite color?" has no plausible domain other than');
+      expect(result).to.include('"What have you noticed about growth lately?" could mean');
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

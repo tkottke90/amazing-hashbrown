@@ -15,10 +15,26 @@
 //    instead, apparently weighing the general "skip a step you don't need"
 //    permission over that specific instruction. Added an explicit priority
 //    rule for this case.
-// If a real eval run still shows wnav-007/010c skipping wiki_locate on a
-// genuinely ambiguous topic, or wnav-006 still ignoring a tool's own
-// corrective result, iterate this wording further before touching those
-// scenarios' assertions.
+// Third tightening, added after a real eval run against tightenings 1+2
+// above: both wnav-006 and wnav-007 fixed as intended, but wnav-008 (a
+// previously-passing scenario asserting the model skips wiki_locate for
+// "What's my favorite color?" — a case tightening 1 explicitly still means
+// to allow) regressed. The abstract "no other domain could plausibly cover
+// it" rule alone wasn't enough of an anchor once the section also started
+// talking about when *not* to skip — the model reasoned itself back into
+// calling wiki_locate anyway. Added one concrete contrastive example, since
+// a worked pair (skip this / don't skip that) anchors better than a rule
+// stated only in the abstract. If a real eval run still shows wnav-008
+// failing after this, or wnav-007/010c regressing back, iterate this
+// wording further before touching those scenarios' assertions.
+//
+// Separately observed in that same run (not something this wording change
+// addresses): wnav-008 and wnav-009 both came back with toolCalled: null
+// despite responseMetadata.finish_reason: "tool_calls" — the same shape as
+// an unrelated case (wnav-005) where the model, unable to call a real tool,
+// wrote a pseudo tool-call as literal text instead. Worth checking
+// DEBUG_LLM_HTTP=1 raw output for these two specifically before assuming
+// this wording change alone explains the next run's results.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -33,6 +49,11 @@ skip wiki_locate when the domain was actually established earlier in the convers
 something so specific to the user's own stated preferences that no other domain could plausibly cover it.
 A topic merely sounding personal or plausible is not the same as an established domain — if you're
 inferring or guessing rather than already knowing, call wiki_locate first.
+
+For example: "What's my favorite color?" has no plausible domain other than the user's own preferences —
+skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
+growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
+rather than guessing which one it means.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
