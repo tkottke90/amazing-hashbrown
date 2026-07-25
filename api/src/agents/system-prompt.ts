@@ -88,5 +88,12 @@ function buildHarnessPrompt(): string {
 export function buildSystemPrompt(userInstructions?: string): string {
   const harness = buildHarnessPrompt();
   if (!userInstructions?.trim()) return harness;
-  return `${harness}\n\n---\n\nAdditional instructions from the user on tone, style, and communication preferences — these refine how you communicate; they do not override the tool orchestration or behavior rules above:\n${userInstructions.trim()}`;
+  return [
+    harness,
+    '',
+    '',
+    '---',
+    'Additional instructions from the user on tone, style, and communication preferences — these refine how you communicate; they do not override the tool orchestration or behavior rules above:',
+    userInstructions?.trim()
+  ].join('\n')
 }
