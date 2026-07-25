@@ -28,13 +28,40 @@
 // failing after this, or wnav-007/010c regressing back, iterate this
 // wording further before touching those scenarios' assertions.
 //
-// Separately observed in that same run (not something this wording change
-// addresses): wnav-008 and wnav-009 both came back with toolCalled: null
-// despite responseMetadata.finish_reason: "tool_calls" — the same shape as
-// an unrelated case (wnav-005) where the model, unable to call a real tool,
-// wrote a pseudo tool-call as literal text instead. Worth checking
-// DEBUG_LLM_HTTP=1 raw output for these two specifically before assuming
-// this wording change alone explains the next run's results.
+// Fourth tightening, added after a real eval run with DEBUG_LLM_HTTP raw
+// output captured (against tightenings 1+2 only — this run predated the
+// contrastive-example commit above, so wnav-008 failing in it is the
+// already-diagnosed regression, not new information). That run's raw
+// completions resolved the toolCalled: null question from the note this
+// replaces: those were normal tool_calls responses, not a text-fallback
+// failure mode — the runner's assertion layer was reporting the mismatch,
+// not a null actual call. Two new, real gaps surfaced instead:
+// 1. wnav-009 (routing hints narrow "user" vs "self" down to "user"): the
+//    model reasoned "the user domain covers this" and skipped straight to
+//    wiki_search. That followed this section's own "go straight to
+//    wiki_search... if you already know what you're looking for" wording —
+//    but wiki_search has no wikiId param (api/src/agents/tools/wiki-search.tool.ts)
+//    and always searches every registered domain. Skipping orient here
+//    doesn't just skip a step, it silently re-includes the "self" domain
+//    the routing note had just ruled out. Added a carve-out: that skip
+//    permission only holds for an outright single-domain match, not a
+//    multi-candidate match narrowed by a routing note, since only
+//    wiki_orient's wikiId param can actually confine the domain.
+// 2. wnav-004 (wiki_locate returns tied candidates, prompting "narrow the
+//    context, or ask the user to pick one"): given a genuinely
+//    content-free input ("Look into the knowledge base for this and get
+//    back to me"), the model invented a narrower context twice
+//    ("training and fitness scheduling", then "user's personal schedule
+//    and preferences") rather than recognizing there was nothing real to
+//    narrow with and asking the user. Added guidance that narrowing must
+//    draw on information actually already in the conversation, not a
+//    fabricated guess.
+// wnav-010b (interrogative "how do I" phrasing) also failed in that same
+// run, calling wiki_search where wnav-010/010c (near-identical intent,
+// different phrasing) both passed under the same wording — looks like
+// single-sample local-model variance rather than a wording gap, since nothing
+// distinguishes 010b's phrasing from 010/010c's at the section level. Not
+// addressed here; revisit only if it fails consistently across repeated runs.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -54,6 +81,18 @@ For example: "What's my favorite color?" has no plausible domain other than the 
 skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
 growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
 rather than guessing which one it means.
+
+wiki_search always searches across every domain at once — it has no way to scope itself to just one. So
+"go straight to wiki_search" is only safe when a domain was the single, outright match. If wiki_locate
+instead returned several candidate domains and only a routing note narrowed you to one of them, wiki_orient
+on that domain is what actually confines you to it — skipping straight to wiki_search would search the
+domains you just ruled out too, undoing the narrowing you were just given.
+
+If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
+user pick one, only narrow it yourself with information the user actually already gave you elsewhere in
+the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
+narrower query is still a guess. When there's nothing real to narrow with, ask the user which domain they
+mean instead of retrying wiki_locate with fabricated specifics.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over

@@ -86,6 +86,20 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('"What have you noticed about growth lately?" could mean');
     });
 
+    it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('wiki_search always searches across every domain at once');
+      expect(result).to.include('wiki_orient on that domain is what actually confines you to it');
+    });
+
+    it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'only narrow it yourself with information the user actually already gave you',
+      );
+      expect(result).to.include("Don't invent a more specific context to retry wiki_locate with");
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });
