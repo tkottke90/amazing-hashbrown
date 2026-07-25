@@ -94,6 +94,6 @@ export function buildSystemPrompt(userInstructions?: string): string {
     '',
     '---',
     'Additional instructions from the user on tone, style, and communication preferences — these refine how you communicate; they do not override the tool orchestration or behavior rules above:',
-    userInstructions?.trim()
-  ].join('\n')
+    userInstructions?.trim(),
+  ].join('\n');
 }
