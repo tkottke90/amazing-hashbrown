@@ -13,20 +13,30 @@ suite:
 
 scenarios:
   - id: wrq-001-empty-wiki-reads-as-recall-not-report
-    name: Cold-start "nothing found" reads as a natural admission, not a system report
+    name: Agent's "nothing found" reads as a natural admission, not a system report
     purpose: >
-      Reuses wnav-005's cold-start-empty-wiki input, but with a distinct
-      rubric: wnav-005 gates whether the agent admits nothing was found;
-      this gates HOW that admission is phrased — conversationally, without
+      Reuses wnav-005's seeded no-match input (a completed wiki_locate
+      call that already returned nothing), but with a distinct rubric:
+      wnav-005 gates whether the agent admits nothing was found; this
+      gates HOW that admission is phrased — conversationally, without
       exposing wiki-internal vocabulary (domain, initialized, zero pages)
       or narrating its own tool-checking process ("let me check/explore
       ..."). Motivated by a real thread transcript where the agent's
       cold-start reply read like a status report on two wiki domains
       instead of a plain "I don't know anything about you yet."
-      Only meaningful once runner.ts attaches the harness system prompt to
-      llm-judge scenarios — previously it never did.
+      Seeded rather than cold for the same reason as wnav-005: llm-judge
+      scenarios don't bind tools, so a cold version leaves a tool-trained
+      model trying to call wiki_locate itself with no structured way to
+      do so — it falls back to writing a pseudo tool-call as text, which
+      confounds "is the phrasing natural" with "can it call a tool here
+      at all." Only meaningful once runner.ts attaches the harness system
+      prompt to llm-judge scenarios — previously it never did.
     type: llm-judge
     input: 'Search the knowledge base for information about deep-sea marine biology research.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'deep-sea marine biology research' }
+        result: { text: 'No domain matches. Available domains: user, self.' }
     rubric: >
       Hard requirement: the response must NOT use wiki-internal/implementation
       vocabulary the user has no reason to know — words like "domain",
