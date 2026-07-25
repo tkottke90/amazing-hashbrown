@@ -66,6 +66,12 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
     });
 
+    it('generalizes the cold-start wiki-check rule to stored how-tos, not just preferences/facts/history', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('This applies just as much to a stored how-to as to a stored personal fact');
+      expect(result).to.include("Don't reason your way out of checking just because the topic sounds like something you");
+    });
+
     it('gives a tool\'s own result priority over the default step-skipping guidance', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('A tool\'s own result is more current than this default guidance');

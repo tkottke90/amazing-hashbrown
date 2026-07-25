@@ -91,6 +91,41 @@
 // wnav-004 still fails after this with real (non-empty, non-serving-glitch)
 // output, iterate this wording further; if wnav-007/009/010c keep failing
 // with the same null+empty shape, that's the server, not this file.
+//
+// Correction to the fifth tightening above, made during the sixth: the
+// "toolCalled: null ⇒ serving-side bug" attribution for wnav-007/009/010c
+// turned out to rest on an actual harness gap, not just the server.
+// lib/evaluations/src/executors/{tool-call,tool-sequence}.ts's `.find(call
+// => call.name === scenario.tool)` reports toolCalled: null whenever no
+// call matches the expected tool — which is indistinguishable, from the
+// eval report alone, from "the model called a different real tool" vs.
+// "the model called no tool at all." Two runs across two different models
+// (ornith and glm) against the fifth tightening's wording confirmed real,
+// coherent tool-call intent behind several of these null results (e.g.
+// wnav-009's "Got the user domain... let me search for that" — a genuine
+// wiki_search call, not silence). Fixed the harness itself: both executors
+// and the report template now surface calledTools (every tool name
+// actually invoked, regardless of match) instead of collapsing "wrong
+// tool" and "no tool" into the same null/"none" reporting. Future runs
+// should show which is which without a DEBUG_LLM_HTTP round-trip.
+//
+// Sixth tightening, from the same two-model run: wnav-010 (first-person
+// "I need to generate a new NPM token for my Verdaccio instance") failed
+// for glm with real, coherent reasoning — it explicitly noticed the
+// tension ("the instructions say to check the wiki for preferences/facts/
+// history... but this isn't really about preferences, it's a technical
+// procedure") and resolved it by answering from general knowledge instead
+// of calling wiki_locate. That's a real gap in MEMORY_SECTION's literal
+// wording: it only ever names "preferences, facts, or history," never
+// procedures/how-tos, even though wnav-010's own scenario purpose (see
+// suites/wiki-navigation.yaml) was written specifically to test that
+// generalization. Extended MEMORY_SECTION to name stored how-tos
+// explicitly, so a careful reader (model) can't reason its way to the
+// literal wording excluding them. wnav-010b/010c passed for glm under the
+// old wording despite testing the same intent — that split looks like
+// genuine phrasing-sensitivity in a small quantized model rather than
+// proof the gap doesn't exist, given the reasoning trace shows the model
+// itself identifying the exact ambiguity this fix closes.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -173,7 +208,14 @@ for exactly when it's safe to skip straight to wiki_search instead. If the wiki 
 plainly rather than inventing an answer — an honest "I don't see anything about that in the wiki" is
 always better than a fabricated one. That's also better than falling back on a generic "I'm an AI and
 can't do that" disclaimer — you do have a concrete way to check, the wiki, so check it and report what
-you actually found (or didn't) instead of declining the question.`;
+you actually found (or didn't) instead of declining the question.
+
+This applies just as much to a stored how-to as to a stored personal fact. A question about a process —
+"how do I...", "what's the process for...", "I need to..." — reads as generic and technical on its own,
+but the wiki may hold a version documented specifically for this user's own setup, which general knowledge
+can't know about. Don't reason your way out of checking just because the topic sounds like something you
+could plausibly answer without it — checking first and finding nothing costs one extra call; skipping the
+check and missing a documented, setup-specific answer is the actual failure.`;
 
 interface HarnessSection {
   tag: string;
