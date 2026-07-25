@@ -32,10 +32,11 @@
 // output captured (against tightenings 1+2 only — this run predated the
 // contrastive-example commit above, so wnav-008 failing in it is the
 // already-diagnosed regression, not new information). That run's raw
-// completions resolved the toolCalled: null question from the note this
-// replaces: those were normal tool_calls responses, not a text-fallback
-// failure mode — the runner's assertion layer was reporting the mismatch,
-// not a null actual call. Two new, real gaps surfaced instead:
+// completions showed toolCalled: null cases were all ordinary tool_calls
+// responses (correction: a later run, see fifth tightening below, showed
+// this call was premature — toolCalled: null recurred and turned out to be
+// a real, separate serving-layer issue, not fully resolved here). Two new,
+// real gaps surfaced from that run's wording analysis:
 // 1. wnav-009 (routing hints narrow "user" vs "self" down to "user"): the
 //    model reasoned "the user domain covers this" and skipped straight to
 //    wiki_search. That followed this section's own "go straight to
@@ -62,6 +63,34 @@
 // single-sample local-model variance rather than a wording gap, since nothing
 // distinguishes 010b's phrasing from 010/010c's at the section level. Not
 // addressed here; revisit only if it fails consistently across repeated runs.
+//
+// Fifth tightening, added after a real eval run against the fourth
+// tightening. A dedicated read-only investigation of the eval runner
+// (lib/evaluations/src/{runner,executors/tool-call}.ts) confirmed
+// toolCalled: null is a plain "no tool_calls entry named X" result, with no
+// swallowed exceptions in this repo's extraction code — it passes through
+// LangChain's already-parsed tool_calls/invalid_tool_calls/content
+// verbatim. wnav-007/009/010c all came back toolCalled: null with *empty*
+// actualOutput and empty invalidToolCalls despite finish_reason:
+// "tool_calls" — the report template already has a badge for exactly this
+// shape (lib/evaluations/templates/partials/scenario-row.njk) labeled
+// "likely a serving-side bug, not a harness parsing gap." That's the local
+// llama.cpp-compatible server misreporting finish_reason, not something
+// prompt wording can fix — left alone pending confirmation via
+// DEBUG_LLM_HTTP=1 on the raw wire response.
+// wnav-004 was different: toolCalled: null but actualOutput held real,
+// substantive prose ("I'll proceed with the health-fitness domain since
+// it's the most plausible match") — genuine model output, not a serving
+// glitch. The fourth tightening's "don't invent a narrower context" fix
+// worked (the model stopped retrying wiki_locate with fabricated
+// specifics) but the model found a new way around asking: overriding the
+// tool's own "domains match equally well" result with its own plausibility
+// judgment and answering in prose instead of calling ask_user at all.
+// Added an explicit rule that a reported tie outranks the model's own
+// hunch about which candidate seems likelier, closing that path too. If
+// wnav-004 still fails after this with real (non-empty, non-serving-glitch)
+// output, iterate this wording further; if wnav-007/009/010c keep failing
+// with the same null+empty shape, that's the server, not this file.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -93,6 +122,12 @@ user pick one, only narrow it yourself with information the user actually alread
 the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
 narrower query is still a guess. When there's nothing real to narrow with, ask the user which domain they
 mean instead of retrying wiki_locate with fabricated specifics.
+
+A reported tie is a tie even if one candidate feels more plausible to you. Your own sense of which domain
+seems more likely is not "information the user actually gave you" — proceeding on that hunch, or announcing
+your pick in your reply, is the same mistake as inventing a narrower context, just skipping the retry step
+first. If you can't point to something the user actually said that breaks the tie, the only correct move is
+to call ask_user, not to decide for them.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over

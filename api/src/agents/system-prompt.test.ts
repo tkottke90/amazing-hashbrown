@@ -100,6 +100,12 @@ describe('agents/system-prompt', () => {
       expect(result).to.include("Don't invent a more specific context to retry wiki_locate with");
     });
 
+    it("doesn't let the model's own plausibility hunch override a reported tie", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('A reported tie is a tie even if one candidate feels more plausible to you');
+      expect(result).to.include('the only correct move is\nto call ask_user, not to decide for them');
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });
