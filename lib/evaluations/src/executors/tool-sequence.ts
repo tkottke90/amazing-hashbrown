@@ -13,6 +13,10 @@ interface ToolSequenceDetails {
   type: 'tool-sequence';
   expectedTool: string;
   toolCalled: string | null;
+  // See tool-call.ts's identical field: all tool names actually invoked
+  // this turn, so a null toolCalled (wrong tool vs. no tool) doesn't have
+  // to be re-diagnosed from raw HTTP logs every time.
+  calledTools: string[];
   fieldResults: FieldCheckResult[];
   score: number;
 }
@@ -61,12 +65,14 @@ export function runToolSequence(
   toolCalls: InvokedToolCall[],
 ): ToolSequenceDetails {
   const match = toolCalls.find((call) => call.name === scenario.tool);
+  const calledTools = toolCalls.map((call) => call.name);
 
   if (!match) {
     return {
       type: 'tool-sequence',
       expectedTool: scenario.tool,
       toolCalled: null,
+      calledTools,
       fieldResults: [],
       score: 0,
     };
@@ -90,6 +96,7 @@ export function runToolSequence(
     type: 'tool-sequence',
     expectedTool: scenario.tool,
     toolCalled: match.name,
+    calledTools,
     fieldResults,
     score,
   };

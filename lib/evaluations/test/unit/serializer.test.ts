@@ -470,6 +470,45 @@ describe('writeResultHtml', () => {
     }
   });
 
+  it('shows which wrong tool was actually called, distinct from "none"', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-wrong-tool-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_orient',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_orient',
+          toolCalled: null,
+          calledTools: ['wiki_search'],
+          fieldResults: [],
+          score: 0,
+          reasoningContent: 'Let me search for that.',
+          responseMetadata: { finish_reason: 'tool_calls' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('wrong tool: wiki_search'));
+      assert.ok(!html.includes('>none<'));
+      assert.ok(html.includes('Wrong tool called'));
+      assert.ok(!html.includes('finish_reason: tool_calls but none extracted'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('shows a skipped badge, not fail, for a generically-skipped scenario', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-html-skipped-'));
     try {

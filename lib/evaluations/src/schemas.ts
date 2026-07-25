@@ -236,6 +236,10 @@ const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
+  // All tool names actually invoked this turn — see executors/tool-call.ts.
+  // Optional so older persisted results (recorded before this field existed)
+  // still parse.
+  calledTools: z.array(z.string()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
@@ -251,6 +255,8 @@ const ToolSequenceDetails = z.object({
   type: z.literal('tool-sequence'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
+  // See ToolCallDetails's identical field.
+  calledTools: z.array(z.string()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),

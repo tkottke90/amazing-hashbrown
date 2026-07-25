@@ -86,7 +86,7 @@
       {% elif details.type === 'tool-call' or details.type === 'tool-sequence' %}
         <div style="margin-top:0.5rem">
           Expected tool: <code>{{ details.expectedTool }}</code> —
-          Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% else %}<span class="badge badge-fail">none</span>{% endif %}
+          Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% elif details.calledTools and details.calledTools.length %}<span class="badge badge-fail">wrong tool: {{ details.calledTools | join(', ') }}</span>{% else %}<span class="badge badge-fail">none</span>{% endif %}
         </div>
         {% if not details.toolCalled %}
           {% if details.invalidToolCalls and details.invalidToolCalls.length %}
@@ -102,14 +102,14 @@ error: {{ invalid.error }}</pre>
           {% endif %}
           {% if details.reasoningContent %}
             <div style="margin-top:0.5rem">
-              <strong>No tool attempted — model's reasoning/thinking output:</strong>
+              <strong>{% if details.calledTools and details.calledTools.length %}Wrong tool called{% else %}No tool attempted{% endif %} — model's reasoning/thinking output:</strong>
             </div>
             <pre>{{ details.reasoningContent }}</pre>
           {% endif %}
           {% if details.responseMetadata %}
             <div style="margin-top:0.5rem">
               <strong>Response metadata:</strong>
-              {% if details.responseMetadata.finish_reason === 'tool_calls' %}
+              {% if details.responseMetadata.finish_reason === 'tool_calls' and (not details.calledTools or not details.calledTools.length) %}
                 <span class="badge badge-fail" title="The provider reports a tool call ended this response, but none was extracted — likely a serving-side bug, not a harness parsing gap.">⚠ finish_reason: tool_calls but none extracted</span>
               {% endif %}
             </div>
