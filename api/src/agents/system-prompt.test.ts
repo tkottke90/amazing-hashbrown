@@ -66,6 +66,20 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
     });
 
+    it('gives a tool\'s own result priority over the default step-skipping guidance', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('A tool\'s own result is more current than this default guidance');
+      expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
+    });
+
+    it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('no other domain could plausibly cover it');
+      expect(result).to.include(
+        'A topic merely sounding personal or plausible is not the same as an established domain',
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });
