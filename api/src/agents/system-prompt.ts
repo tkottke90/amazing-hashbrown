@@ -126,6 +126,49 @@
 // genuine phrasing-sensitivity in a small quantized model rather than
 // proof the gap doesn't exist, given the reasoning trace shows the model
 // itself identifying the exact ambiguity this fix closes.
+//
+// Seventh tightening, from a real eval run with the calledTools harness
+// fix (sixth tightening) in place — the first run where a null toolCalled
+// could actually be read with confidence instead of guessed at. ornith
+// jumped to 11/12 (up from 8/12): the fifth tightening's tie-breaking rule
+// and sixth's memory generalization both held under a second run, and
+// wnav-004/010b/010c's earlier failures didn't recur. The one ornith
+// failure left, wnav-009, is now unambiguous: calledTools: [wiki_search],
+// reasoning "The user domain is a clear match... let me search there" —
+// the model correctly resolved the routing note to "user" but then treated
+// that resolution as if it made the original wiki_locate result a single,
+// outright match, skipping wiki_orient. This is the third run reproducing
+// this exact shape for ornith specifically (glm has passed wnav-009 in
+// every run so far), so it's a stable, targetable gap, not noise. Added a
+// concrete, countable test — did wiki_locate's result name more than one
+// domain, at all, regardless of whether it (or you) then resolved it to
+// one — since the failure mode is specifically the model treating its own
+// successful disambiguation as retroactively making the match a clean
+// single one, when in fact the multi-candidate-ness is a property of what
+// wiki_locate returned, not of whether you personally still find it
+// confusing. If wnav-009 still fails after this, this specific confusion
+// (successfully resolving ambiguity != it was never ambiguous) may be a
+// harder instruction-following gap in this model than wording alone can
+// close — consider that before iterating further.
+//
+// The same run's glm results (9/12 → 8/12, see suites/wiki-navigation.yaml
+// comments) showed a related-looking but distinct pattern on wnav-010/010c:
+// the sixth tightening's fix worked in the sense that glm now reasons
+// explicitly about checking the wiki for a stored, setup-specific
+// how-to (quoting the new MEMORY_SECTION wording back near-verbatim in one
+// case) — a real improvement over the prior run's full generic-knowledge
+// answer — but then calls wiki_search directly instead of wiki_locate,
+// in one case (wnav-010c) after literally restating "I should call
+// wiki_locate first" in its own reasoning and not following through.
+// wnav-010b passed with the identical wording and near-identical intent.
+// Left unaddressed here: the model already has the correct rule in hand in
+// its own trace, which points to an instruction-following/execution
+// reliability gap in a small quantized model rather than a wording
+// ambiguity a rewrite could fix. wnav-006 also newly failed for glm
+// (answered in prose instead of calling wiki_locate to browse domains) —
+// nothing in this or prior tightenings touches that scenario's wording,
+// and it passed under identical text last run, so this reads as ordinary
+// sampling variance, not a regression to chase.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -151,6 +194,12 @@ wiki_search always searches across every domain at once — it has no way to sco
 instead returned several candidate domains and only a routing note narrowed you to one of them, wiki_orient
 on that domain is what actually confines you to it — skipping straight to wiki_search would search the
 domains you just ruled out too, undoing the narrowing you were just given.
+
+A concrete test for which case you're in: if wiki_locate's result named more than one domain, that's the
+multi-candidate case, even after you've worked out which one actually applies — wiki_orient on the resolved
+domain is still the required next call, not wiki_search. Only skip straight to wiki_search when
+wiki_locate's result named exactly one domain to begin with. Figuring out the right answer yourself doesn't
+turn a multi-candidate result into a single-match one.
 
 If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
 user pick one, only narrow it yourself with information the user actually already gave you elsewhere in

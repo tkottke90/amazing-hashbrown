@@ -98,6 +98,16 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('wiki_orient on that domain is what actually confines you to it');
     });
 
+    it('gives a concrete, countable test for multi-candidate vs. single-match, independent of self-resolution', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "if wiki_locate's result named more than one domain, that's the\nmulti-candidate case, even after you've worked out which one actually applies",
+      );
+      expect(result).to.include(
+        "Figuring out the right answer yourself doesn't\nturn a multi-candidate result into a single-match one.",
+      );
+    });
+
     it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
