@@ -68,13 +68,17 @@ describe('agents/system-prompt', () => {
 
     it('generalizes the cold-start wiki-check rule to stored how-tos, not just preferences/facts/history', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('This applies just as much to a stored how-to as to a stored personal fact');
-      expect(result).to.include("Don't reason your way out of checking just because the topic sounds like something you");
+      expect(result).to.include(
+        'This applies just as much to a stored how-to as to a stored personal fact',
+      );
+      expect(result).to.include(
+        "Don't reason your way out of checking just because the topic sounds like something you",
+      );
     });
 
-    it('gives a tool\'s own result priority over the default step-skipping guidance', () => {
+    it("gives a tool's own result priority over the default step-skipping guidance", () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('A tool\'s own result is more current than this default guidance');
+      expect(result).to.include("A tool's own result is more current than this default guidance");
       expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
     });
 
@@ -148,8 +152,12 @@ describe('agents/system-prompt', () => {
 
     it("doesn't let the model's own plausibility hunch override a reported tie", () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('A reported tie is a tie even if one candidate feels more plausible to you');
-      expect(result).to.include('the only correct move is\nto call ask_user, not to decide for them');
+      expect(result).to.include(
+        'A reported tie is a tie even if one candidate feels more plausible to you',
+      );
+      expect(result).to.include(
+        'the only correct move is\nto call ask_user, not to decide for them',
+      );
     });
 
     it('returns the harness prompt verbatim for an empty string', () => {

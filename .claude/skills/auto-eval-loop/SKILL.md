@@ -93,7 +93,7 @@ runs:
         total: 12
         result: fail
         details: eval-results/wiki-navigation-2026-07-26T14-00-10-000Z.yaml
-        debug: eval-logs/run-logs/round-1-ornith.log   # only present if debug logging was used
+        debug: eval-logs/run-logs/round-1-ornith.log # only present if debug logging was used
       - name: glm
         judge: local
         score: 11
@@ -159,13 +159,13 @@ Field notes:
   `DEBUG_LLM_HTTP=1` (see `references/interpreting-results.md` §6 for when
   that's actually warranted). Omit the key entirely otherwise, don't set it
   to null or empty string.
-- `log[].debugHttp`: whether *any* model this round used debug logging — a
+- `log[].debugHttp`: whether _any_ model this round used debug logging — a
   quick per-round summary, detail lives in the per-model `debug` field.
 - `log[].summary`: wrap prose to a human-readable width (aim for ~70-80
   columns) using YAML's `|` block literal, the way the example above does —
   don't emit one giant unwrapped line. Be concrete: name scenario IDs,
   compare to the previous round's numbers, and say what you concluded about
-  *why* something failed, not just that it did.
+  _why_ something failed, not just that it did.
 - `log[].modifications`: one entry per file touched, keyed by a short
   relative path, value is a short prose description of the change and its
   motivation. If a round made no code changes (e.g. it was purely a rerun
@@ -180,7 +180,7 @@ Each round:
 **1. Decide whether debug logging is warranted** for each model this round
 — default no; see `references/interpreting-results.md` §6 for the specific
 signature that justifies it (empty `calledTools`, empty output, and
-`finish_reason: "tool_calls"` all at once, in a *previous* round's result you
+`finish_reason: "tool_calls"` all at once, in a _previous_ round's result you
 can't otherwise explain).
 
 **2. Run the suite for each configured model, in series** (not parallel —
@@ -239,7 +239,7 @@ failing and your best read on why), and tell the user directly rather than
 silently giving up mid-loop.
 
 **Plateau detection.** Before starting a new round's fix, check: did the
-*same* scenario fail, in the *same* shape (same wrong tool via
+_same_ scenario fail, in the _same_ shape (same wrong tool via
 `calledTools`, or the same kind of reasoning gap), in the round immediately
 after a fix specifically targeted that scenario? If so, per
 `references/interpreting-results.md` §5, this is very likely a model

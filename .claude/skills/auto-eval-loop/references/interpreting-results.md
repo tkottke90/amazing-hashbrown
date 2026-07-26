@@ -37,7 +37,7 @@ happen silently.
 
 ## 2. A failing scenario isn't always a real bug — check the scenario itself first
 
-If `calledTools` shows the *right* tool was called but an `argCheck` still
+If `calledTools` shows the _right_ tool was called but an `argCheck` still
 failed, don't assume the model did something wrong. Check the tool's own zod
 schema (`api/src/agents/tools/*.tool.ts`) for the argument in question. If
 it's documented as optional with a legitimate alternate mode — e.g.
@@ -66,12 +66,12 @@ current contrastive examples before adding a new one, and prefer extending
 an existing example over writing a new abstract sentence.
 
 **Watch for over-generalization.** A contrastive example anchors on its
-*specific wording*, and a model can pattern-match the surface phrasing onto
+_specific wording_, and a model can pattern-match the surface phrasing onto
 inputs that only superficially resemble it. This has happened concretely:
 an example using "favorite color" as a stand-in for "obviously the user's
 own domain" got over-applied to a genuinely different question ("which part
 of the knowledge base should I check?") that merely mentioned "personal
-preferences." When a fix for one scenario causes a *different*,
+preferences." When a fix for one scenario causes a _different_,
 previously-passing scenario to regress in the same direction, that's usually
 this — the cure is a second, narrower contrastive example distinguishing the
 two cases, not reverting the first fix.
@@ -81,7 +81,7 @@ anchored to one exact phrasing may not transfer to a semantically identical
 but cosmetically different input. This happened with "Verdaccio" (bare noun
 phrase, fixed) vs. "my Verdaccio instance" (possessive, still failed) — same
 topic, same intended rule, different surface form. When you see this, extend
-the *same* example to explicitly cover the missed phrasing rather than
+the _same_ example to explicitly cover the missed phrasing rather than
 writing a third, separate example for what's really one lesson.
 
 ## 4. Document every change the same way this file's neighbor does
@@ -99,7 +99,7 @@ Whenever you touch `WIKI_NAVIGATION_SECTION`, `MEMORY_SECTION`, or any other
 exported section constant, also add or extend a matching assertion in
 `api/src/agents/system-prompt.test.ts`. Because these are template literals
 with real line breaks baked into the source (not auto-wrapped), a test
-string has to match the *actual* wrapped text exactly, whitespace and all.
+string has to match the _actual_ wrapped text exactly, whitespace and all.
 Since this environment usually can't run `npm test` directly (no
 `node_modules`, no network to install), verify a new assertion string
 matches before committing to it, using something like:
@@ -115,7 +115,7 @@ console.log(section.includes("your new substring here"));
 '
 ```
 
-If you *do* have a working `npm test`/`npm run build` in your environment,
+If you _do_ have a working `npm test`/`npm run build` in your environment,
 prefer running those for real over this manual check — this is a fallback,
 not a replacement.
 
@@ -133,7 +133,7 @@ just a restated abstraction). Two forms this has taken in practice:
   result that named two candidate domains as if it had only ever named one,
   even when told explicitly and concretely to check for exactly that.
 
-If you see either shape recur on the *same scenario* in two consecutive
+If you see either shape recur on the _same scenario_ in two consecutive
 rounds where a round in between specifically added wording for it, stop
 iterating on that scenario. Say so plainly in the log entry (don't just mark
 it "still failing" — note that it looks like a model capability limit, not a
@@ -151,12 +151,12 @@ weaker model's specific miss can just as easily degrade the stronger one.
 ## 6. When DEBUG_LLM_HTTP is actually worth it
 
 `api/src/services/provider-factory.ts` has a `DEBUG_LLM_HTTP=1` env var that
-logs the *raw*, pre-parse HTTP response body from the model server. It was
+logs the _raw_, pre-parse HTTP response body from the model server. It was
 originally added to answer one question: was a `toolCalled: null` result a
 genuinely empty response, or a bug swallowing a real tool call? The
 `calledTools` field (§1) now answers that question directly for most cases,
 so reach for `DEBUG_LLM_HTTP` less often than you might expect — mainly when
-a result is *still* unexplained after reading `calledTools`,
+a result is _still_ unexplained after reading `calledTools`,
 `invalidToolCalls`, `responseMetadata`, and `reasoningContent` together. The
 one shape that still warrants it: `calledTools: []`, empty `actualOutput`,
 and `finish_reason: "tool_calls"` all at once — that combination says the

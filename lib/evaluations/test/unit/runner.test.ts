@@ -336,9 +336,7 @@ describe('executeScenario — llm-judge', () => {
 
   it('seeds priorTurns into the conversation before invoking', async () => {
     const scenario = makeScenario({
-      priorTurns: [
-        { tool: 'wiki_search', args: { query: 'q' }, result: { text: 'found it' } },
-      ],
+      priorTurns: [{ tool: 'wiki_search', args: { query: 'q' }, result: { text: 'found it' } }],
     });
     const suite = makeSuite([scenario]);
     const { model, getLastInput } = makeCapturingModel('Here is what I found.');

@@ -74,10 +74,7 @@ describe('writeResultYaml + readResultYaml', () => {
       const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
       const filePath = await writeResultYaml(run, [makeResult(run.id)], dir);
       const { run: parsedRun } = await readResultYaml(filePath);
-      assert.equal(
-        parsedRun.systemPrompt,
-        'You have no built-in memory of this specific user.',
-      );
+      assert.equal(parsedRun.systemPrompt, 'You have no built-in memory of this specific user.');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

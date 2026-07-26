@@ -17,10 +17,7 @@ import { logger } from '../config/logger.js';
 // which forwards it to the underlying `openai` client. Gated behind
 // DEBUG_LLM_HTTP=1 so it's a no-op otherwise — remove once the
 // investigation concludes.
-async function loggingFetch(
-  input: string | URL | Request,
-  init?: RequestInit,
-): Promise<Response> {
+async function loggingFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const response = await fetch(input, init);
   response
     .clone()
