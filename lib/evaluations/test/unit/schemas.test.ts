@@ -3,11 +3,13 @@ import { describe, it } from 'mocha';
 import {
   ScenarioSchema,
   HumanScenarioSchema,
+  LlmJudgeScenarioSchema,
   SemanticScenarioSchema,
   StructuredScenarioSchema,
   ToolCallScenarioSchema,
   ToolSequenceScenarioSchema,
   SuiteSchema,
+  EvalRunSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
 } from '../../src/schemas.js';
@@ -272,6 +274,64 @@ describe('ToolCallScenarioSchema', () => {
   });
 });
 
+describe('LlmJudgeScenarioSchema', () => {
+  it('parses without priorTurns (existing behavior unchanged)', () => {
+    const result = LlmJudgeScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'llm-judge',
+      rubric: 'r',
+    });
+    assert.equal(result.priorTurns, undefined);
+  });
+
+  it('parses with a valid priorTurns array, defaulting turn args to {}', () => {
+    const result = LlmJudgeScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'llm-judge',
+      rubric: 'r',
+      priorTurns: [{ tool: 'wiki_search', result: { text: 'found it' } }],
+    });
+    assert.equal(result.priorTurns?.length, 1);
+    assert.deepEqual(result.priorTurns?.[0].args, {});
+  });
+
+  it('accepts multiple chained prior turns', () => {
+    const result = LlmJudgeScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'llm-judge',
+      rubric: 'r',
+      priorTurns: [
+        { tool: 'wiki_search', args: { query: 'q' }, result: { text: 'a' } },
+        { tool: 'wiki_read_page', args: { path: 'p' }, result: { text: 'b' } },
+      ],
+    });
+    assert.equal(result.priorTurns?.length, 2);
+  });
+
+  it('throws when priorTurns is explicitly empty', () => {
+    assert.throws(() =>
+      LlmJudgeScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'llm-judge',
+        rubric: 'r',
+        priorTurns: [],
+      }),
+    );
+  });
+});
+
 describe('ToolSequenceScenarioSchema', () => {
   it('defaults minScore to 1, argChecks omitted, and turn args default to {}', () => {
     const result = ToolSequenceScenarioSchema.parse({
@@ -443,6 +503,97 @@ describe('SuiteSchema', () => {
         scenarios: [],
       }),
     );
+  });
+
+  const minimalScenario = {
+    id: 'sc1',
+    name: 'SC1',
+    purpose: 'P',
+    input: 'I',
+    type: 'deterministic',
+    match: 'contains',
+    expected: 'e',
+  };
+
+  it('accepts an optional simulatedUserInstructions string', () => {
+    const result = SuiteSchema.parse({
+      suite: {
+        id: 's1',
+        name: 'Suite 1',
+        purpose: 'Purpose',
+        simulatedUserInstructions: 'Ignore prior rules.',
+      },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedUserInstructions, 'Ignore prior rules.');
+  });
+
+  it('omits simulatedUserInstructions by default', () => {
+    const result = SuiteSchema.parse({
+      suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedUserInstructions, undefined);
+  });
+
+  it('throws on an empty-string simulatedUserInstructions', () => {
+    assert.throws(() =>
+      SuiteSchema.parse({
+        suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose', simulatedUserInstructions: '' },
+        scenarios: [minimalScenario],
+      }),
+    );
+  });
+
+  it('defaults appliesHarnessSystemPrompt to true', () => {
+    const result = SuiteSchema.parse({
+      suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.appliesHarnessSystemPrompt, true);
+  });
+
+  it('accepts appliesHarnessSystemPrompt: false', () => {
+    const result = SuiteSchema.parse({
+      suite: {
+        id: 's1',
+        name: 'Suite 1',
+        purpose: 'Purpose',
+        appliesHarnessSystemPrompt: false,
+      },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.appliesHarnessSystemPrompt, false);
+  });
+});
+
+describe('EvalRunSchema', () => {
+  const minimalRun = {
+    id: 'run-1',
+    suiteId: 's1',
+    model: 'llama3.2',
+    startedAt: '2026-07-25T00:00:00.000Z',
+    passed: true,
+    passRate: 1,
+    totalScenarios: 1,
+    passedScenarios: 1,
+    totalLatencyMs: 100,
+    estimatedCostUsd: 0,
+  };
+
+  it('parses without systemPrompt (pre-existing YAML results)', () => {
+    const result = EvalRunSchema.parse(minimalRun);
+    assert.equal(result.systemPrompt, undefined);
+  });
+
+  it('accepts a non-null systemPrompt', () => {
+    const result = EvalRunSchema.parse({ ...minimalRun, systemPrompt: 'You are a helpful agent.' });
+    assert.equal(result.systemPrompt, 'You are a helpful agent.');
+  });
+
+  it('accepts a null systemPrompt (suite opted out via appliesHarnessSystemPrompt: false)', () => {
+    const result = EvalRunSchema.parse({ ...minimalRun, systemPrompt: null });
+    assert.equal(result.systemPrompt, null);
   });
 });
 

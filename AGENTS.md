@@ -276,6 +276,10 @@ This project uses an **Evaluation Harness** (`lib/evaluations`, `bin/eval*`) to 
 # Run a suite
 npm run eval -- --suite wiki-search --model ollama --judge-model ollama
 
+# Run every suite under suites/ (omit --suite) — prints a per-suite summary
+# plus an overall pass/fail table; exits non-zero if any suite didn't pass
+npm run eval -- --model ollama --judge-model ollama
+
 # CI mode (human evals skipped, exit code 1 on failure)
 npm run eval -- --suite wiki-search --model ollama --ci
 

@@ -73,6 +73,22 @@ describe('EvaluationsStore', () => {
       const found = store.findRunById('does-not-exist');
       assert.equal(found, null);
     });
+
+    it('round-trips a non-null systemPrompt', () => {
+      const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.equal(found?.systemPrompt, 'You have no built-in memory of this specific user.');
+    });
+
+    it('reads back null when systemPrompt is omitted (suite opted out)', () => {
+      const run = makeRun();
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.equal(found?.systemPrompt, null);
+    });
   });
 
   describe('findResultsByRunId', () => {
@@ -212,10 +228,139 @@ describe('EvaluationsStore', () => {
       }
     });
   });
+
+  describe('judge calibration', () => {
+    function makeJudgeResult(runId: string, overrides: Partial<ScenarioResult> = {}) {
+      return makeResult(runId, {
+        scenarioId: 'judge-sc',
+        details: {
+          type: 'llm-judge',
+          score: 8,
+          reasoning: 'Handles the edge case correctly',
+          judgeModel: 'test-judge-model',
+          biasRisk: false,
+        },
+        ...overrides,
+      });
+    }
+
+    describe('findJudgeResultsForRun', () => {
+      it('returns only llm-judge results for the run', () => {
+        const run = makeRun();
+        const judgeResult = makeJudgeResult(run.id);
+        const det = makeResult(run.id, { scenarioId: 'det-sc' });
+        store.saveRun(run, [judgeResult, det]);
+
+        const found = store.findJudgeResultsForRun(run.id);
+        assert.equal(found.length, 1);
+        assert.equal(found[0]?.scenarioId, 'judge-sc');
+        assert.equal(found[0]?.details.type, 'llm-judge');
+      });
+
+      it('does not return llm-judge results from a different run', () => {
+        const run1 = makeRun();
+        const run2 = makeRun();
+        store.saveRun(run1, [makeJudgeResult(run1.id)]);
+        store.saveRun(run2, [makeJudgeResult(run2.id)]);
+
+        const found = store.findJudgeResultsForRun(run1.id);
+        assert.equal(found.length, 1);
+        assert.equal(found[0]?.runId, run1.id);
+      });
+    });
+
+    describe('recordJudgeCalibration + getCalibrationSummary', () => {
+      it('computes agreement when the human verdict matches the judge', () => {
+        const run = makeRun();
+        const result = makeJudgeResult(run.id, { passed: true });
+        store.saveRun(run, [result]);
+
+        store.recordJudgeCalibration({
+          id: crypto.randomUUID(),
+          resultId: result.id,
+          judgeScore: 8,
+          judgePassed: true,
+          humanPassed: true,
+          gradedAt: new Date().toISOString(),
+        });
+
+        const summary = store.getCalibrationSummary(run.id);
+        assert.equal(summary.total, 1);
+        assert.equal(summary.agreeCount, 1);
+        assert.equal(summary.agreementRate, 1);
+        assert.equal(summary.disagreements.length, 0);
+      });
+
+      it('lists a disagreement, with scenarioId and reviewer notes, when verdicts differ', () => {
+        const run = makeRun();
+        const result = makeJudgeResult(run.id, { passed: true });
+        store.saveRun(run, [result]);
+
+        store.recordJudgeCalibration({
+          id: crypto.randomUUID(),
+          resultId: result.id,
+          judgeScore: 8,
+          judgePassed: true,
+          humanPassed: false,
+          reviewerNotes: 'Missed a hallucinated claim',
+          gradedAt: new Date().toISOString(),
+        });
+
+        const summary = store.getCalibrationSummary(run.id);
+        assert.equal(summary.total, 1);
+        assert.equal(summary.agreeCount, 0);
+        assert.equal(summary.agreementRate, 0);
+        assert.equal(summary.disagreements.length, 1);
+        assert.equal(summary.disagreements[0]?.scenarioId, 'judge-sc');
+        assert.equal(summary.disagreements[0]?.reviewerNotes, 'Missed a hallucinated claim');
+      });
+
+      it('returns a zeroed summary for a run with no calibrations', () => {
+        const run = makeRun();
+        store.saveRun(run, [makeJudgeResult(run.id)]);
+
+        const summary = store.getCalibrationSummary(run.id);
+        assert.equal(summary.total, 0);
+        assert.equal(summary.agreeCount, 0);
+        assert.equal(summary.agreementRate, 0);
+        assert.deepEqual(summary.disagreements, []);
+      });
+
+      it('aggregates agreement rate across multiple calibrations for the same run', () => {
+        const run = makeRun();
+        const r1 = makeJudgeResult(run.id, { scenarioId: 'judge-sc-1' });
+        const r2 = makeJudgeResult(run.id, { scenarioId: 'judge-sc-2' });
+        store.saveRun(run, [r1, r2]);
+
+        store.recordJudgeCalibration({
+          id: crypto.randomUUID(),
+          resultId: r1.id,
+          judgeScore: 8,
+          judgePassed: true,
+          humanPassed: true,
+          gradedAt: new Date().toISOString(),
+        });
+        store.recordJudgeCalibration({
+          id: crypto.randomUUID(),
+          resultId: r2.id,
+          judgeScore: 3,
+          judgePassed: false,
+          humanPassed: true,
+          gradedAt: new Date().toISOString(),
+        });
+
+        const summary = store.getCalibrationSummary(run.id);
+        assert.equal(summary.total, 2);
+        assert.equal(summary.agreeCount, 1);
+        assert.equal(summary.agreementRate, 0.5);
+        assert.equal(summary.disagreements.length, 1);
+      });
+    });
+  });
 });
 
 describe('EvaluationsStore migration versioning', () => {
-  it('records version 3 in schema_migrations', () => {
+  it('records versions 3 and 6 in schema_migrations', () => {
     const tmpDir2 = mkdtempSync(join(tmpdir(), 'eval-migration-test-'));
     try {
       const db = openDatabase(join(tmpDir2, 'shared.db'));
@@ -228,6 +373,14 @@ describe('EvaluationsStore migration versioning', () => {
         versions.includes(3),
         `Expected version 3 in migrations, got: ${JSON.stringify(versions)}`,
       );
+      assert.ok(
+        versions.includes(6),
+        `Expected version 6 in migrations, got: ${JSON.stringify(versions)}`,
+      );
+      assert.ok(
+        versions.includes(8),
+        `Expected version 8 in migrations, got: ${JSON.stringify(versions)}`,
+      );
 
       evalStore.close();
     } finally {
@@ -235,7 +388,7 @@ describe('EvaluationsStore migration versioning', () => {
     }
   });
 
-  it('creates eval_runs and eval_results tables', () => {
+  it('creates eval_runs, eval_results, and judge_calibrations tables', () => {
     const tmpDir2 = mkdtempSync(join(tmpdir(), 'eval-tables-test-'));
     try {
       const db = openDatabase(join(tmpDir2, 'tables.db'));
@@ -250,6 +403,10 @@ describe('EvaluationsStore migration versioning', () => {
       assert.ok(
         tables.includes('eval_results'),
         `eval_results not found in: ${JSON.stringify(tables)}`,
+      );
+      assert.ok(
+        tables.includes('judge_calibrations'),
+        `judge_calibrations not found in: ${JSON.stringify(tables)}`,
       );
 
       evalStore.close();

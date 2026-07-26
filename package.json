@@ -31,6 +31,7 @@
     "eval:from-trace": "tsx bin/eval-from-trace.ts",
     "eval:review": "tsx bin/eval-review.ts",
     "eval:submit": "tsx bin/eval-submit.ts",
+    "eval:calibrate": "tsx bin/eval-calibrate.ts",
     "eval:compare": "tsx bin/eval-compare.ts",
     "thread-report": "tsx bin/thread-report.ts",
     "lint": "eslint .",

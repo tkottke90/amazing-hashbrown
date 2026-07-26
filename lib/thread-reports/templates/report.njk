@@ -59,6 +59,15 @@
           {% endif %}
           <span class="trace-meta">{{ event.trace.provider }}/{{ event.trace.model }} &middot; {{ event.trace.totalTokens }} tokens</span>
         </div>
+        {% if event.trace.systemPrompt %}
+          <details class="span-row">
+            <summary>
+              <span class="span-type">system</span>
+              <span class="span-name">System Prompt</span>
+            </summary>
+            <div class="span-preview">{{ event.trace.systemPrompt | json }}</div>
+          </details>
+        {% endif %}
         {% if event.userMessage %}
           <div class="trace-user-message">
             <span class="icon">💬</span>

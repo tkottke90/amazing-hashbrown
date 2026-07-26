@@ -13,6 +13,11 @@ suite:
     generateTitleHandler sends to the model — keep them in sync if the
     prompt template changes.
   passingThreshold: 0.75
+  # generateTitleHandler calls model.invoke(prompt) directly in production —
+  # no system message at all. The `input` field above already is that exact
+  # prompt, so attaching the chat agent's harness system prompt on top would
+  # test a combination that never happens in production.
+  appliesHarnessSystemPrompt: false
 
 scenarios:
   - id: tt-001-non-empty
@@ -110,4 +115,109 @@ scenarios:
       version number was mentioned — inventing one is a fabrication), (3)
       read as a short title, not a sentence. Score higher for specificity
       grounded in what was actually discussed.
+    minScore: 6
+
+  # The four scenarios above all summarize the same fixed Docker/Node.js
+  # conversation — a 100% pass rate there only proves the model can title
+  # one technical conversation well, four times over. The scenarios below
+  # exercise the same "specific, not generic, not fabricated" failure mode
+  # against inputs the Docker conversation can't stress: a non-technical
+  # topic, a conversation that pivots between two subjects mid-thread, and a
+  # near-content-free exchange. See the "Agent Behavior Baseline" eval run
+  # from 2026-07-22 for the original motivation.
+
+  - id: tt-005-non-technical-topic
+    name: Title is specific for a non-technical conversation
+    purpose: >
+      Every existing scenario is a Docker/Node.js conversation — this
+      guards against the model (or a future prompt change) implicitly
+      relying on technical vocabulary to sound specific. A travel-planning
+      exchange has no jargon to lean on, so a lazy or generic title has
+      nowhere to hide.
+    type: llm-judge
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: We're thinking about a weekend trip to the coast, any
+      recommendations for a low-key beach town within a few hours of
+      Portland?
+      Assistant: Cannon Beach is a solid pick — walkable town, Haystack
+      Rock right on the beach, and it's about a 90 minute drive. Less
+      crowded than Seaside if you want something quieter.
+    rubric: >
+      The title should: (1) specifically reference Cannon Beach, the
+      coast, or a beach-town weekend trip — not a vague generic phrase
+      like "Travel Chat" or "Weekend Plans", (2) not invent details absent
+      from the conversation (no specific hotel, date, or price was
+      mentioned — inventing one is a fabrication), (3) read as a short
+      title, not a sentence. Score higher for specificity grounded in what
+      was actually discussed.
+    minScore: 6
+
+  - id: tt-006-topic-pivot
+    name: Title reflects a conversation that pivots between two topics
+    purpose: >
+      Real conversations aren't always about one thing — this checks the
+      model doesn't fixate on only the first topic (or the last) when the
+      user pivots mid-thread, and doesn't fall back to something generic
+      because no single topic dominates.
+    type: llm-judge
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: What's a good substitute for buttermilk in a pancake recipe?
+      Assistant: Mix a tablespoon of lemon juice or white vinegar into a
+      cup of regular milk and let it sit for five minutes — it'll curdle
+      slightly and work just like buttermilk.
+      User: Nice, and what wine would pair with a brunch like that?
+      Assistant: A dry sparkling wine like Cava or Prosecco works well with
+      pancakes and brunch food generally — the acidity cuts through the
+      richness of syrup and butter.
+    rubric: >
+      The conversation covers two related topics: a buttermilk substitute
+      for pancakes, then a wine pairing for that same brunch. The title
+      should reflect the conversation reasonably — referencing brunch,
+      pancakes, and/or wine pairing — rather than fixating only on the
+      buttermilk substitute and ignoring the pivot, or falling back to
+      something generic like "Cooking Chat". Do not penalize a title that
+      leads with either topic, as long as it doesn't read as unrelated to
+      what was actually discussed. Not inventing details absent from the
+      conversation (no specific brand or dish name was mentioned).
+    minScore: 6
+
+  - id: tt-007-minimal-content
+    name: Title stays grounded for a near-content-free exchange
+    purpose: >
+      A one-line, low-content exchange gives the model the least material
+      to work with — and the most temptation to pad the title with
+      invented context (e.g. framing a bare arithmetic question as a "tip
+      calculation" or "restaurant bill" when neither was mentioned) rather
+      than admit there isn't much to summarize.
+    type: llm-judge
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: What's 15% of 80?
+      Assistant: 12.
+    rubric: >
+      The title should: (1) reference the actual calculation (a
+      percentage of a number) rather than being so vague it could apply to
+      any conversation, (2) not invent a scenario or context that wasn't
+      stated (no "restaurant bill", "tip calculation", or specific
+      currency — none of that was mentioned; a bare percentage
+      calculation is all that's grounded in the conversation), (3) read as
+      a short title, not a sentence. Score higher for staying grounded in
+      the two lines actually exchanged rather than embellishing them.
     minScore: 6

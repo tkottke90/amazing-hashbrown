@@ -59,6 +59,22 @@ describe('ObservabilityStore', () => {
     it('returns null for an unknown traceId', () => {
       assert.equal(store.findById('no-such-id'), null);
     });
+
+    it('round-trips a non-null systemPrompt via findById', () => {
+      const traceId = store.startTrace({
+        provider: 'openai',
+        model: 'gpt-4o',
+        systemPrompt: 'You have no built-in memory of this specific user.',
+      });
+      const summary = store.findById(traceId);
+      assert.equal(summary?.systemPrompt, 'You have no built-in memory of this specific user.');
+    });
+
+    it('reads back null when systemPrompt is omitted', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+      const summary = store.findById(traceId);
+      assert.equal(summary?.systemPrompt, null);
+    });
   });
 
   describe('endTrace', () => {
@@ -116,6 +132,16 @@ describe('ObservabilityStore', () => {
 
     it('returns null for an unknown traceId from getTrace', () => {
       assert.equal(store.getTrace('no-such-id'), null);
+    });
+
+    it('round-trips systemPrompt via getTrace', () => {
+      const promptTraceId = store.startTrace({
+        provider: 'openai',
+        model: 'gpt-4o',
+        systemPrompt: 'the whole title-generation prompt',
+      });
+      const trace = store.getTrace(promptTraceId);
+      assert.equal(trace?.systemPrompt, 'the whole title-generation prompt');
     });
   });
 

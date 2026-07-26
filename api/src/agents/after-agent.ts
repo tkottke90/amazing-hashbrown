@@ -279,6 +279,10 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
     source: 'after-agent',
+    // No systemPrompt: this pipeline runs 4 distinct prompts (summarize/
+    // classify/extract/merge) within one trace, none of which is "a system
+    // prompt" in the buildSystemPrompt() sense — see TraceRecordSchema's
+    // comment. Left null rather than forcing an ill-fitting single value.
   });
   afterAgentStatus.set(threadId, { status: 'running' });
   const handler = new ObservabilityCallbackHandler(

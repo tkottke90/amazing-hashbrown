@@ -42,6 +42,13 @@
   </div>
 </div>
 
+{% if run.systemPrompt %}
+<details class="system-prompt-details" style="margin-bottom:1.5rem">
+  <summary>System Prompt</summary>
+  <div class="detail-panel"><pre>{{ run.systemPrompt }}</pre></div>
+</details>
+{% endif %}
+
 {% include "partials/suite-summary.njk" %}
 
 <h2>Scenarios</h2>

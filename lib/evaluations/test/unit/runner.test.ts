@@ -10,7 +10,12 @@ import {
   computeRunSummary,
   type RunConfig,
 } from '../../src/runner.js';
-import type { DeterministicScenario, ScenarioResult, Suite } from '../../src/schemas.js';
+import type {
+  DeterministicScenario,
+  LlmJudgeScenario,
+  ScenarioResult,
+  Suite,
+} from '../../src/schemas.js';
 
 // Throws if any method is called — proves the skip short-circuit never
 // touches the model at all.
@@ -37,8 +42,45 @@ function makeRunConfig(): RunConfig {
   };
 }
 
+// Captures whatever executeScenario passed to model.invoke(), so a test can
+// assert on the exact input shape (string vs. seeded/system-prompted
+// message array) without a real model call.
+function makeCapturingModel(content: string): {
+  model: BaseChatModel;
+  getLastInput: () => unknown;
+} {
+  let lastInput: unknown;
+  const model = {
+    invoke: async (input: unknown) => {
+      lastInput = input;
+      return { content };
+    },
+  } as unknown as BaseChatModel;
+  return { model, getLastInput: () => lastInput };
+}
+
+// runLlmJudge calls judgeModel.withStructuredOutput(schema).withRetry(opts).invoke(prompt)
+// — this fake supports exactly that chain, returning a fixed verdict.
+function makeFakeJudgeModel(score: number, reasoning: string): BaseChatModel {
+  return {
+    withStructuredOutput: () => ({
+      withRetry: () => ({
+        invoke: async () => ({ score, reasoning }),
+      }),
+    }),
+  } as unknown as BaseChatModel;
+}
+
 function makeSuite(scenarios: Suite['scenarios']): Suite {
-  return { suite: { id: 'test-suite', name: 'Test Suite', purpose: 'Testing' }, scenarios };
+  return {
+    suite: {
+      id: 'test-suite',
+      name: 'Test Suite',
+      purpose: 'Testing',
+      appliesHarnessSystemPrompt: true,
+    },
+    scenarios,
+  };
 }
 
 describe('buildSeededMessages', () => {
@@ -242,6 +284,111 @@ describe('executeScenario — skip', () => {
   });
 });
 
+describe('executeScenario — llm-judge', () => {
+  function makeScenario(overrides: Partial<LlmJudgeScenario> = {}): LlmJudgeScenario {
+    return {
+      id: 'sc-judge',
+      name: 'Judged scenario',
+      purpose: 'p',
+      input: 'what do you know about me?',
+      type: 'llm-judge',
+      rubric: 'r',
+      minScore: 7,
+      ...overrides,
+    };
+  }
+
+  it('invokes the model with the plain string input when neither systemPrompt nor priorTurns is set', async () => {
+    const scenario = makeScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingModel('I have nothing on you yet.');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(8, 'Good'),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.equal(getLastInput(), 'what do you know about me?');
+  });
+
+  it('attaches the system prompt as a SystemMessage when config.systemPrompt is set', async () => {
+    const scenario = makeScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingModel('I have nothing on you yet.');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(8, 'Good'),
+      systemPrompt: 'You have no built-in memory of this specific user.',
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as [SystemMessage, HumanMessage];
+    assert.ok(Array.isArray(input));
+    assert.ok(input[0] instanceof SystemMessage);
+    assert.equal(input[0].content, 'You have no built-in memory of this specific user.');
+    assert.ok(input[1] instanceof HumanMessage);
+    assert.equal(input[1].content, 'what do you know about me?');
+  });
+
+  it('seeds priorTurns into the conversation before invoking', async () => {
+    const scenario = makeScenario({
+      priorTurns: [{ tool: 'wiki_search', args: { query: 'q' }, result: { text: 'found it' } }],
+    });
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingModel('Here is what I found.');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(9, 'Great'),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as unknown[];
+    assert.ok(Array.isArray(input));
+    // Human, AI(tool_call), Tool(result) — no SystemMessage since config.systemPrompt is unset.
+    assert.equal(input.length, 3);
+    assert.ok(input[0] instanceof HumanMessage);
+    assert.ok(input[1] instanceof AIMessage);
+    assert.ok(input[2] instanceof ToolMessage);
+  });
+
+  it('does not bind tools for llm-judge, even when config.tools is set', async () => {
+    const scenario = makeScenario({
+      priorTurns: [{ tool: 'wiki_search', args: {}, result: { text: 'found it' } }],
+    });
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingModel('Here is what I found.');
+    // bindTools would throw if ever called — proving llm-judge stays on invokeModel.
+    const modelWithThrowingBindTools = new Proxy(model, {
+      get(target, prop) {
+        if (prop === 'bindTools') {
+          throw new Error('bindTools should never be called for llm-judge scenarios');
+        }
+        return Reflect.get(target as object, prop);
+      },
+    }) as BaseChatModel;
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: modelWithThrowingBindTools,
+      judgeModel: makeFakeJudgeModel(9, 'Great'),
+      tools: [],
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'llm-judge');
+    assert.ok(getLastInput());
+  });
+});
+
 describe('computeRunSummary', () => {
   function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
     return {
@@ -292,5 +439,25 @@ describe('computeRunSummary', () => {
     assert.equal(run.totalScenarios, 2);
     assert.equal(run.passedScenarios, 0);
     assert.equal(run.passRate, 0);
+  });
+
+  it('sets systemPrompt to the given value when provided', () => {
+    const suite = makeSuite([]);
+    const run = computeRunSummary(
+      [],
+      suite,
+      'run-1',
+      'model-a',
+      'model-a',
+      '2026-01-01',
+      'be nice',
+    );
+    assert.equal(run.systemPrompt, 'be nice');
+  });
+
+  it('sets systemPrompt to null when omitted (suite opted out)', () => {
+    const suite = makeSuite([]);
+    const run = computeRunSummary([], suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.systemPrompt, null);
   });
 });

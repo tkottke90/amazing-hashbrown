@@ -27,6 +27,7 @@ import type {
   ToolCallScenario,
   ToolSequenceScenario,
   HumanScenario,
+  PriorToolTurn,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
 
@@ -38,7 +39,9 @@ export interface RunConfig {
   judgeModelId: string;
   embeddings?: Embeddings;
   tools?: BindToolsInput[];
-  /** Prepended as a SystemMessage for tool-call/tool-sequence scenarios only. */
+  /** Prepended as a SystemMessage ahead of every scenario type's model call
+   * (see withSystemPrompt) — undefined when the suite opted out via
+   * appliesHarnessSystemPrompt: false. */
   systemPrompt?: string;
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
@@ -146,7 +149,7 @@ function extractContent(raw: unknown): string {
 
 async function invokeModel(
   model: BaseChatModel,
-  input: string,
+  input: string | BaseMessage[],
 ): Promise<{ content: string; latencyMs: number }> {
   const start = Date.now();
   const response = await model.invoke(input);
@@ -156,7 +159,7 @@ async function invokeModel(
 
 async function invokeStructuredModel(
   model: BaseChatModel,
-  input: string,
+  input: string | BaseMessage[],
   outputSchema: Record<string, unknown>,
 ): Promise<{ parsed: unknown; content: string; latencyMs: number }> {
   const start = Date.now();
@@ -166,13 +169,10 @@ async function invokeStructuredModel(
 }
 
 // Seeds a synthetic conversation history — as if `priorTurns` had already
-// happened — for tool-sequence scenarios. Each turn becomes its own
-// AIMessage(tool_call) + ToolMessage(result) pair, in order, so the final
+// happened — for tool-sequence and llm-judge scenarios. Each turn becomes its
+// own AIMessage(tool_call) + ToolMessage(result) pair, in order, so the final
 // invoke() sees a conversation where those tool calls already completed.
-export function buildSeededMessages(
-  input: string,
-  priorTurns: ToolSequenceScenario['priorTurns'],
-): BaseMessage[] {
+export function buildSeededMessages(input: string, priorTurns: PriorToolTurn[]): BaseMessage[] {
   const messages: BaseMessage[] = [new HumanMessage(input)];
   priorTurns.forEach((turn, i) => {
     const toolCallId = `eval-seed-${i}`;
@@ -189,8 +189,9 @@ export function buildSeededMessages(
   return messages;
 }
 
-// Prepends a SystemMessage ahead of the given input for tool-call/tool-sequence
-// scenarios when a systemPrompt is configured; returns input unchanged otherwise.
+// Prepends a SystemMessage ahead of the given input when a systemPrompt is
+// configured (config.systemPrompt is undefined when the suite opted out via
+// appliesHarnessSystemPrompt: false); returns input unchanged otherwise.
 export function withSystemPrompt(
   input: string | BaseMessage[],
   systemPrompt?: string,
@@ -276,6 +277,9 @@ async function invokeToolCallModel(
   return { ...extractToolCallData(response), latencyMs };
 }
 
+// Every branch below attaches config.systemPrompt (via withSystemPrompt) when
+// the suite opts in (SuiteSchema.appliesHarnessSystemPrompt, default true) —
+// a scenario type added here should follow the same pattern.
 export async function executeScenario(
   scenario: Scenario,
   suite: Suite,
@@ -305,7 +309,10 @@ export async function executeScenario(
   try {
     if (scenario.type === 'deterministic') {
       const s = scenario as DeterministicScenario;
-      const { content, latencyMs } = await invokeModel(config.model, s.input);
+      const { content, latencyMs } = await invokeModel(
+        config.model,
+        withSystemPrompt(s.input, config.systemPrompt),
+      );
       const details = runDeterministic(s, content);
       return {
         ...baseResult,
@@ -322,7 +329,10 @@ export async function executeScenario(
       if (!config.embeddings) {
         throw new Error('embeddings are required for semantic scenarios');
       }
-      const { content, latencyMs } = await invokeModel(config.model, s.input);
+      const { content, latencyMs } = await invokeModel(
+        config.model,
+        withSystemPrompt(s.input, config.systemPrompt),
+      );
       const details = await runSemantic(s, content, config.embeddings);
       const passed = details.similarity >= details.threshold;
       return {
@@ -337,7 +347,13 @@ export async function executeScenario(
 
     if (scenario.type === 'llm-judge') {
       const s = scenario as LlmJudgeScenario;
-      const { content, latencyMs } = await invokeModel(config.model, s.input);
+      // Not bound to tools (unlike tool-call/tool-sequence) — priorTurns here
+      // simulate tool calls that already happened, so the model should
+      // synthesize a final text answer from them, not call a real tool again.
+      const input = s.priorTurns
+        ? withSystemPrompt(buildSeededMessages(s.input, s.priorTurns), config.systemPrompt)
+        : withSystemPrompt(s.input, config.systemPrompt);
+      const { content, latencyMs } = await invokeModel(config.model, input);
       const details = await runLlmJudge(
         s,
         content,
@@ -360,7 +376,7 @@ export async function executeScenario(
       const s = scenario as StructuredScenario;
       const { parsed, content, latencyMs } = await invokeStructuredModel(
         config.model,
-        s.input,
+        withSystemPrompt(s.input, config.systemPrompt),
         s.outputSchema,
       );
       const details = runStructured(s, parsed);
@@ -459,7 +475,10 @@ export async function executeScenario(
 
       // In non-ci mode, run the model to get the actual output but defer scoring
       // (interactive TUI runs after all automated scenarios complete)
-      const { content, latencyMs } = await invokeModel(config.model, s.input);
+      const { content, latencyMs } = await invokeModel(
+        config.model,
+        withSystemPrompt(s.input, config.systemPrompt),
+      );
       return {
         ...baseResult,
         passed: false,
@@ -498,6 +517,7 @@ export function computeRunSummary(
   modelId: string,
   judgeModelId: string,
   startedAt: string,
+  systemPrompt?: string,
 ): EvalRun {
   const scorable = results.filter(
     (r) =>
@@ -527,6 +547,7 @@ export function computeRunSummary(
     passedScenarios,
     totalLatencyMs,
     estimatedCostUsd,
+    systemPrompt: systemPrompt ?? null,
   };
 }
 
@@ -577,6 +598,7 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
     config.modelId,
     config.judgeModelId,
     startedAt,
+    config.systemPrompt,
   );
 
   // Dual-write: SQLite (if store provided) and YAML

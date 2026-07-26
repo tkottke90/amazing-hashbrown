@@ -211,6 +211,12 @@ export async function generateTitleHandler(
     provider: provider ?? env.defaultProvider,
     model: modelName ?? '',
     source: 'generate-title',
+    // No separate system message for this source — `prompt` above is the
+    // entire input passed to model.invoke(). Stored as systemPrompt for
+    // consistency with 'chat' traces even though it's not literally a
+    // system message — report/UI code should treat this source's value as
+    // "the effective prompt," not "the system message."
+    systemPrompt: prompt,
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,

@@ -28,18 +28,19 @@ Items are ordered first by priority/necessity, then by dependency.
 3. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
 4. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
 5. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
-6. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-7. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #2, #3, #4, #5, #6 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools) now complete — no longer blocking)
-8. [Trigger System](#trigger-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-9. [Escalation System](#escalation-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-10. [Dashboard System](#dashboard-system) — depends on: #6, #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-11. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-12. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-13. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-14. [Skills Integration](#skills-integration) — depends on: #13; `skills-manager` library is complete; needs API + UI
-15. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #13
-16. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #11
-17. [Notification Delivery](#notification-delivery) — depends on: #9; external channels deferred; interim: `action_required` flag on threads/tasks
+6. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — depends on: Connect LLM-Wiki to Chat Agent; surfaces the wiki in the UI and lets users author/import content directly, so the automation work below starts from a populated wiki instead of a cold one
+7. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+8. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #2, #3, #4, #5, #7 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools) now complete — no longer blocking)
+9. [Trigger System](#trigger-system) — depends on: #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+10. [Escalation System](#escalation-system) — depends on: #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+11. [Dashboard System](#dashboard-system) — depends on: #7, #10; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+12. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+13. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+14. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+15. [Skills Integration](#skills-integration) — depends on: #14; `skills-manager` library is complete; needs API + UI
+16. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #14
+17. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #12
+18. [Notification Delivery](#notification-delivery) — depends on: #10; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -51,9 +52,10 @@ Items are ordered first by priority/necessity, then by dependency.
 
 **Ideas / Requirements:**
 
-- Extend `HARNESS_PROMPT` in `api/src/agents/system-prompt.ts` (currently scoped only to wiki tool-navigation — see the "Wiki Locate & Orient Tools" completed entry) rather than introducing a second, competing prompt mechanism
+- Extend `HARNESS_SECTIONS` in `api/src/agents/system-prompt.ts` (currently scoped to wiki tool-navigation and ask_user routing — see the "Wiki Locate & Orient Tools" completed entry) rather than introducing a second, competing prompt mechanism
 - Content should come from observed gaps in real conversations, not a one-shot guess — this is explicitly expected to lean on the evaluation harness heavily: write `llm-judge`/`semantic` scenarios first to pin down what "good" looks like, then iterate the prompt against them
-- Consider whether any of this baseline should eventually move to `config.yaml` (the user-instructions slot already exists as an unwired parameter on `buildSystemPrompt()` for exactly this kind of follow-up)
+- User-instructions injection is `config/AGENT.md` (auto-created, supplement-only precedence over harness sections) — see the 2026-07-21 Agent Behavior Baseline system-prompt-pattern design doc; superseded the originally-considered `config.yaml` field
+- Once an `IDENTITY_SECTION` exists, a future iteration is expected to make it the injection point for user-defined personality preferences — similar to the Hermes Agent `SOUL.md` pattern, where persona is a dedicated, directly-authored part of the agent's identity rather than an addendum appended after the fact. Revisit how `config/AGENT.md`'s current supplement-only append relates to this once `IDENTITY_SECTION` exists
 - Should not regress the wiki tool-navigation guidance already proven out — new eval scenarios here should run alongside, not replace, `wiki-navigation.yaml`
 
 **Dependencies:** none (builds on the already-shipped `system-prompt.ts` template)
@@ -251,6 +253,21 @@ Items are ordered first by priority/necessity, then by dependency.
 - Consider `wouter` or `preact-iso` for lightweight routing
 
 **Dependencies:** Multi-Conversation Support
+
+---
+
+### LLM Wiki UI & Direct Authoring Tools
+
+**Goal:** Surface the LLM Wiki in the UI as something the user can browse and directly author, not only something the agent reads and writes behind the scenes — including tools to import existing notes and kick-start a domain with real content instead of starting from an empty wiki.
+
+**Ideas / Requirements:**
+
+- A UI view for browsing wiki domains, their index, and individual pages
+- Let the user create, edit, and organize domains/pages directly, without going through the chat agent
+- Import tooling to bootstrap a domain from an existing note collection (e.g. an Obsidian vault export) — identify candidate domains from the source material and seed them with converted content, rather than starting from one or two empty wikis. Motivated by hands-on experience doing this manually (GH Copilot + a prior Obsidian vault) to kick-start a fresh wiki setup
+- Intended to land before the Task System and the rest of the automation work (Task System, Thread Type 2, Trigger System, Escalation System, Dashboard System) — a wiki the user has already populated and organized should make that later automation meaningfully more useful from day one, rather than bootstrapping cold
+
+**Dependencies:** Connect LLM-Wiki to Chat Agent (wiki must already be wired up)
 
 ---
 

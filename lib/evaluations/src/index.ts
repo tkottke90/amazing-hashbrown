@@ -11,6 +11,7 @@ export {
   EvalRunSchema,
   ScenarioResultSchema,
   ScenarioResultDetailsSchema,
+  JudgeCalibrationSchema,
   JsonOf,
 } from './schemas.js';
 export type {
@@ -25,11 +26,18 @@ export type {
   EvalRun,
   ScenarioResult,
   ScenarioResultDetails,
+  JudgeCalibration,
 } from './schemas.js';
 
 // Store
 export { EvaluationsStore, bootEvaluations, getEvaluationsStore } from './store.js';
-export type { EvalRunFilters, HumanResultUpdate } from './store.js';
+export type {
+  EvalRunFilters,
+  HumanResultUpdate,
+  JudgeCalibrationInput,
+  CalibrationDisagreement,
+  CalibrationSummary,
+} from './store.js';
 
 // Loader
 export { loadSuites, loadSuite } from './loader.js';

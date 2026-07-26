@@ -1,0 +1,21 @@
+<!--
+  AGENT.md — user instructions for the chat agent.
+
+  This exact content is written automatically to config/AGENT.md on first
+  boot (see api/src/config/agent-instructions.ts). config/ is gitignored —
+  this committed file is the human-readable reference copy.
+
+  Content here is appended to the system prompt after the harness's own
+  tool-orchestration and behavior guidance. Use it for tone, style,
+  communication preferences, or context about you — it supplements the
+  harness prompt, it never overrides its tool orchestration or behavior
+  rules.
+
+  HTML comments (like this block) are stripped before the file reaches the
+  model, so an unedited file behaves as "no instructions". Anything you
+  write outside a comment becomes part of the prompt on the next
+  POST /api/v1/settings/reload or restart.
+
+  Example (uncomment and edit):
+  Prefer concise answers. Default to metric units. Address me as "boss".
+-->

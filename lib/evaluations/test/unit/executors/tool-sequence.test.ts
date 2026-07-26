@@ -44,6 +44,18 @@ describe('runToolSequence', () => {
       ]);
       assert.equal(result.toolCalled, 'upload_image');
     });
+
+    it('reports calledTools with the actual tool name when a different tool was called', () => {
+      const result = runToolSequence(makeScenario('upload_image'), [
+        { name: 'ask_user', args: {} },
+      ]);
+      assert.deepEqual(result.calledTools, ['ask_user']);
+    });
+
+    it('reports an empty calledTools when no tools were called at all', () => {
+      const result = runToolSequence(makeScenario('upload_image'), []);
+      assert.deepEqual(result.calledTools, []);
+    });
   });
 
   describe('scoring without argChecks', () => {

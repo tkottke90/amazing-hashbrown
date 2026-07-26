@@ -1,4 +1,5 @@
 import { createApp } from './app.js';
+import { loadAgentInstructions } from './config/agent-instructions.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
@@ -32,6 +33,8 @@ app.logger.info('Artifact store booted');
 initChatAgent(db);
 await bootKnowledgeBase();
 app.logger.info('Knowledge base booted');
+await loadAgentInstructions();
+app.logger.info('Agent instructions loaded');
 
 app.start();
 

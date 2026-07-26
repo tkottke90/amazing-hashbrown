@@ -52,6 +52,16 @@ export const TraceRecordSchema = z.object({
   endedAt: z.string().nullable(),
   totalTokens: z.number(),
   totalCostEstimate: z.number().nullable(), // in USD; populated by Usage & Cost Tracking (TODO #2)
+  // The system/framing prompt in effect for this trace, captured once per
+  // trace (not per span) to avoid duplication — see SpanRecordSchema's own
+  // comment on why prompt content isn't stored per-span. Semantics vary by
+  // source: for 'chat' it's the harness system prompt from buildSystemPrompt();
+  // for 'generate-title' it's the whole input prompt (that source has no
+  // separate system message — see threads.handlers.ts); for 'after-agent' it's
+  // always null — that source runs multiple distinct prompts (summarize/
+  // classify/extract/merge) within one trace, none of which is "a system
+  // prompt" in this sense.
+  systemPrompt: z.string().nullable(),
 });
 
 // TraceSummary — metrics only; no content fields.

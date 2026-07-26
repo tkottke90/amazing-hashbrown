@@ -295,7 +295,7 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const agent = await getChatAgent(provider, model);
+  const { agent, systemPrompt } = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -313,6 +313,7 @@ export async function streamChatToSse(
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
     source: 'chat',
+    systemPrompt,
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,
@@ -383,7 +384,7 @@ export async function resumeChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const agent = await getChatAgent(provider, model);
+  const { agent, systemPrompt } = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -400,6 +401,7 @@ export async function resumeChatToSse(
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
     source: 'chat',
+    systemPrompt,
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,
@@ -468,7 +470,7 @@ export async function retryChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const agent = await getChatAgent(provider, model);
+  const { agent, systemPrompt } = await getChatAgent(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const threadStore = getThreadStore();
 
@@ -490,6 +492,7 @@ export async function retryChatToSse(
     provider: provider ?? env.defaultProvider,
     model: model ?? '',
     source: 'chat',
+    systemPrompt,
   });
   const obsHandler = new ObservabilityCallbackHandler(
     traceId,

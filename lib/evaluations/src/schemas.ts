@@ -28,10 +28,26 @@ export const SemanticScenarioSchema = BaseScenario.extend({
   minSimilarity: z.number().min(0).max(1).default(0.75),
 });
 
+// Shared by llm-judge and tool-sequence scenarios — declared here (ahead of
+// both) so either can reference it. Each entry becomes its own
+// AIMessage(tool_call) + ToolMessage(result) pair via runner.ts's
+// buildSeededMessages(), simulating a turn that already "happened".
+export const PriorToolTurnSchema = z.object({
+  tool: z.string().min(1),
+  args: z.record(z.string(), z.unknown()).default({}),
+  result: z.record(z.string(), z.unknown()),
+});
+
 export const LlmJudgeScenarioSchema = BaseScenario.extend({
   type: z.literal('llm-judge'),
   rubric: z.string().min(1),
   minScore: z.number().min(0).max(10).default(7),
+  // Optional — mirrors ToolSequenceScenarioSchema.priorTurns exactly (same
+  // schema, same buildSeededMessages()/withSystemPrompt() seeding path in
+  // runner.ts), so a judge can score a final answer synthesized AFTER
+  // simulated tool results, not just a cold-start reply. Omitted for
+  // llm-judge scenarios that don't need seeded history.
+  priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
 });
 
 const FieldCheckSchema = z.object({
@@ -61,12 +77,6 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   // Fraction of argChecks that must pass for the scenario to pass (irrelevant
   // if argChecks is omitted — the tool-name match alone determines pass/fail).
   minScore: z.number().min(0).max(1).default(1),
-});
-
-const PriorToolTurnSchema = z.object({
-  tool: z.string().min(1),
-  args: z.record(z.string(), z.unknown()).default({}),
-  result: z.record(z.string(), z.unknown()),
 });
 
 export const ToolSequenceScenarioSchema = BaseScenario.extend({
@@ -129,6 +139,20 @@ export const SuiteSchema = z.object({
     name: z.string().min(1),
     purpose: z.string().min(1),
     passingThreshold: z.number().min(0).max(1).optional(),
+    // Suite-level (not scenario-level) simulated AGENT.md content, used only
+    // by bin/eval.ts to exercise buildSystemPrompt()'s user-instructions
+    // branch — see suites/instruction-hierarchy.yaml. Every existing suite
+    // omits this and is unaffected. .min(1) so an accidentally-empty string
+    // fails validation loudly instead of silently behaving like "no override".
+    simulatedUserInstructions: z.string().min(1).optional(),
+    // Whether bin/eval.ts's buildSystemPrompt() (the chat agent's harness
+    // system prompt) should be attached to this suite's scenarios. Defaults
+    // to true — most suites exercise chat-agent behavior. Set false for
+    // suites whose `input` fields already ARE the exact production prompt of
+    // a different code path that never sees the chat harness prompt (e.g.
+    // suites/after-agent.yaml, suites/thread-titles.yaml) — attaching it
+    // there would test a combination that never happens in production.
+    appliesHarnessSystemPrompt: z.boolean().default(true),
   }),
   scenarios: z.array(ScenarioSchema).min(1),
 });
@@ -150,6 +174,11 @@ export const EvalRunSchema = z.object({
   passedScenarios: z.number().int(),
   totalLatencyMs: z.number(),
   estimatedCostUsd: z.number(),
+  // The harness system prompt in effect for this run (null if the suite
+  // opted out via appliesHarnessSystemPrompt: false, or omitted for results
+  // written before this field existed). .optional() so pre-existing on-disk
+  // YAML results without the field still parse.
+  systemPrompt: z.string().nullable().optional(),
 });
 
 const DeterministicDetails = z.object({
@@ -207,6 +236,10 @@ const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
+  // All tool names actually invoked this turn — see executors/tool-call.ts.
+  // Optional so older persisted results (recorded before this field existed)
+  // still parse.
+  calledTools: z.array(z.string()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
@@ -222,6 +255,8 @@ const ToolSequenceDetails = z.object({
   type: z.literal('tool-sequence'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
+  // See ToolCallDetails's identical field.
+  calledTools: z.array(z.string()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
@@ -260,6 +295,22 @@ export const ScenarioResultSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Judge calibration — human-vs-llm-judge agreement records (see
+// EvaluationsStore.recordJudgeCalibration / getCalibrationSummary)
+// ---------------------------------------------------------------------------
+
+export const JudgeCalibrationSchema = z.object({
+  id: z.string(),
+  resultId: z.string(),
+  judgeScore: z.number(),
+  judgePassed: z.boolean(),
+  humanPassed: z.boolean(),
+  agree: z.boolean(),
+  reviewerNotes: z.string().optional(),
+  gradedAt: z.string(),
+});
+
+// ---------------------------------------------------------------------------
 // JsonOf helper — transforms a TEXT column containing JSON into a typed value
 // ---------------------------------------------------------------------------
 
@@ -282,6 +333,7 @@ export type Scenario = z.infer<typeof ScenarioSchema>;
 export type DeterministicScenario = z.infer<typeof DeterministicScenarioSchema>;
 export type SemanticScenario = z.infer<typeof SemanticScenarioSchema>;
 export type LlmJudgeScenario = z.infer<typeof LlmJudgeScenarioSchema>;
+export type PriorToolTurn = z.infer<typeof PriorToolTurnSchema>;
 export type StructuredScenario = z.infer<typeof StructuredScenarioSchema>;
 export type ToolCallScenario = z.infer<typeof ToolCallScenarioSchema>;
 export type ToolSequenceScenario = z.infer<typeof ToolSequenceScenarioSchema>;
@@ -290,3 +342,4 @@ export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
 export type ScenarioResult = z.infer<typeof ScenarioResultSchema>;
 export type ScenarioResultDetails = z.infer<typeof ScenarioResultDetailsSchema>;
+export type JudgeCalibration = z.infer<typeof JudgeCalibrationSchema>;

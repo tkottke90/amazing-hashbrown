@@ -80,4 +80,40 @@ describe('render/renderThreadReportHtml', () => {
     expect(html).to.include('Wrote/updated');
     expect(html).to.include('<code>user</code> wiki');
   });
+
+  function traceFixture(systemPrompt: string | null): ThreadReportData {
+    const data = fixture();
+    data.timeline = [
+      {
+        kind: 'trace',
+        trace: {
+          traceId: 'trace-1',
+          threadId: 'thread-abc-123',
+          taskId: null,
+          provider: 'local',
+          model: 'llama3.2',
+          source: 'chat',
+          startedAt: '2026-07-18T10:00:00.000Z',
+          endedAt: '2026-07-18T10:00:01.000Z',
+          totalTokens: 60,
+          totalCostEstimate: null,
+          systemPrompt,
+          spans: [],
+        },
+      },
+      ...data.timeline,
+    ];
+    return data;
+  }
+
+  it('renders a System Prompt block when trace.systemPrompt is set', async () => {
+    const html = await renderThreadReportHtml(traceFixture('You have no built-in memory.'));
+    expect(html).to.include('System Prompt');
+    expect(html).to.include('You have no built-in memory.');
+  });
+
+  it('omits the System Prompt block when trace.systemPrompt is null', async () => {
+    const html = await renderThreadReportHtml(traceFixture(null));
+    expect(html).to.not.include('System Prompt');
+  });
 });

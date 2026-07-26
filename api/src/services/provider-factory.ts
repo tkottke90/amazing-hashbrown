@@ -8,6 +8,35 @@ import Anthropic from '@anthropic-ai/sdk';
 import { env, type ProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
+// Temporary diagnostic instrumentation for investigating a suspected
+// tool-call extraction bug against a local OpenAI-compatible server
+// (Lemonade): logs the raw HTTP response body for every chat completion
+// BEFORE the openai SDK/LangChain parses it, so a call the eval harness
+// reports as toolCalled: null can be compared byte-for-byte against what
+// the server actually sent. Passed as `configuration.fetch` to ChatOpenAI,
+// which forwards it to the underlying `openai` client. Gated behind
+// DEBUG_LLM_HTTP=1 so it's a no-op otherwise — remove once the
+// investigation concludes.
+async function loggingFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init);
+  response
+    .clone()
+    .text()
+    .then((body) => {
+      logger.info('[debug-llm-http] raw chat completion response', {
+        url: String(input),
+        status: response.status,
+        body,
+      });
+    })
+    .catch((err: unknown) => {
+      logger.warn('[debug-llm-http] failed to log response body', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
+  return response;
+}
+
 /**
  * Pure factory — accepts explicit config rather than reading env.
  * Exported so unit tests can drive it without touching the live configManager.
@@ -35,6 +64,7 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         apiKey: config.apiKey,
         configuration: {
           baseURL: config.baseUrl,
+          fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
         },
       });
     case 'anthropic':

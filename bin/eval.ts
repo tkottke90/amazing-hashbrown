@@ -3,7 +3,15 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { runEval, bootEvaluations, getEvaluationsStore } from '../lib/evaluations/src/index.js';
+import { OpenAIEmbeddings } from '@langchain/openai';
+import {
+  runEval,
+  bootEvaluations,
+  getEvaluationsStore,
+  loadSuites,
+  loadSuite,
+  type Suite,
+} from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
 import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
@@ -44,10 +52,8 @@ const { values } = parseArgs({
   strict: false,
 });
 
-if (!values.suite) {
-  console.error('Error: --suite <id> is required');
-  process.exit(2);
-}
+// --suite is optional: when omitted, every suite discovered under suites/ is
+// run in turn (see the "no --suite" branch near the bottom of this file).
 if (!values.model) {
   console.error('Error: --model <name> is required');
   process.exit(2);
@@ -65,6 +71,19 @@ try {
   console.error(`Error creating model: ${String(err)}`);
   process.exit(2);
 }
+
+// Powers `semantic`-type scenarios (embedding similarity). Matches
+// config.yaml's embeddings block — an OpenAI-compatible client pointed at
+// baseUrl, since that's what the documented default (a `/v1`-suffixed local
+// Ollama URL) targets. Omitted entirely when disabled; runEval only requires
+// this for scenarios that actually use it, so other suites are unaffected.
+const embeddings = env.embeddings.enabled
+  ? new OpenAIEmbeddings({
+      model: env.embeddings.model,
+      configuration: { baseURL: env.embeddings.baseUrl },
+      apiKey: process.env.OPENAI_API_KEY || 'not-needed-for-local-server',
+    })
+  : undefined;
 
 // Try to open the SQLite store; degrade gracefully if unavailable
 let store: ReturnType<typeof getEvaluationsStore> | undefined;
@@ -125,47 +144,118 @@ async function runLlmReview(opts: {
   });
 }
 
-try {
-  const result = await runEval({
-    suiteId: values.suite,
-    model,
-    modelId,
-    judgeModel,
-    judgeModelId,
-    tools: evalTools,
-    systemPrompt: buildSystemPrompt(),
-    suitePaths: { bundledPath: suitesPath },
-    resultPath,
-    ci: values.ci,
-    noHtml: values['no-html'],
-    store,
-  });
-
-  const { run } = result;
-  const icon = run.passed ? '✓' : '✗';
-  const status = run.passed ? 'PASS' : 'FAIL';
-
-  console.log(`\n${icon} ${status} — ${run.suiteId}`);
-  console.log(
-    `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
-  );
-  console.log(`  Latency:   ${run.totalLatencyMs}ms`);
-  console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
-  console.log(`\n  Result:    ${result.yamlPath}`);
-  if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
-  console.log();
-
-  if (values['llm-review']) {
-    await runLlmReview({
-      suiteId: run.suiteId,
-      modelId,
-      yamlPath: result.yamlPath,
-      htmlPath: result.htmlPath,
-    });
-  }
-
-  process.exit(run.passed ? 0 : 1);
-} catch (err) {
-  console.error(`\nRuntime error: ${String(err)}`);
-  process.exit(3);
+interface SuiteOutcome {
+  suiteId: string;
+  passed: boolean;
+  passRate?: number;
+  errored?: boolean;
 }
+
+// Runs one suite end to end (eval + printed summary + optional --llm-review)
+// and reports the outcome rather than exiting the process itself, so the
+// "run everything" branch below can keep going after one suite errors
+// instead of aborting the whole batch.
+async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Promise<SuiteOutcome> {
+  try {
+    // Suites can opt into a simulated "AGENT.md" instruction set
+    // (suite.simulatedUserInstructions — see suites/instruction-hierarchy.yaml)
+    // to exercise buildSystemPrompt()'s user-instructions branch, which no
+    // suite exercises by default (bin/eval.ts otherwise always passes no
+    // argument, harness-only, for reproducibility). Real config/AGENT.md
+    // content never reaches eval runs — only what's authored directly in
+    // suite YAML.
+    //
+    // suite.appliesHarnessSystemPrompt (default true) lets a suite opt OUT
+    // entirely — see suites/after-agent.yaml/thread-titles.yaml, whose
+    // scenarios model a different production code path (after-agent.ts,
+    // generateTitleHandler) that never attaches this prompt in real usage.
+    const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
+    const systemPrompt =
+      suite?.suite.appliesHarnessSystemPrompt === false
+        ? undefined
+        : buildSystemPrompt(suite?.suite.simulatedUserInstructions);
+
+    const result = await runEval({
+      suiteId,
+      model,
+      modelId,
+      judgeModel,
+      judgeModelId,
+      tools: evalTools,
+      systemPrompt,
+      embeddings,
+      suitePaths: { bundledPath: suitesPath },
+      resultPath,
+      ci: values.ci,
+      noHtml: values['no-html'],
+      store,
+    });
+
+    const { run } = result;
+    const icon = run.passed ? '✓' : '✗';
+    const status = run.passed ? 'PASS' : 'FAIL';
+
+    console.log(`\n${icon} ${status} — ${run.suiteId}`);
+    console.log(
+      `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
+    );
+    console.log(`  Latency:   ${run.totalLatencyMs}ms`);
+    console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
+    console.log(`\n  Result:    ${result.yamlPath}`);
+    if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
+    console.log();
+
+    if (values['llm-review']) {
+      await runLlmReview({
+        suiteId: run.suiteId,
+        modelId,
+        yamlPath: result.yamlPath,
+        htmlPath: result.htmlPath,
+      });
+    }
+
+    return { suiteId, passed: run.passed, passRate: run.passRate };
+  } catch (err) {
+    console.error(`\nRuntime error running suite "${suiteId}": ${String(err)}`);
+    return { suiteId, passed: false, errored: true };
+  }
+}
+
+if (typeof values.suite === 'string' && values.suite.length > 0) {
+  // Single explicit suite — preserve the original exit-code contract exactly
+  // (3 for a runtime error, 0/1 for pass/fail) rather than folding it into
+  // the batch summary below. runOneSuite() catches its own errors, so there's
+  // nothing left that can throw here.
+  const outcome = await runOneSuite(values.suite);
+  process.exit(outcome.errored ? 3 : outcome.passed ? 0 : 1);
+}
+
+// No --suite given: discover and run every suite under suites/, in a stable
+// (alphabetical) order — loadSuites' own discovery order depends on
+// filesystem readdir order, which isn't guaranteed.
+const suites = await loadSuites({ bundledPath: suitesPath });
+const suiteIds = [...suites.keys()].sort();
+if (suiteIds.length === 0) {
+  console.error(`Error: no suites found in ${suitesPath}`);
+  process.exit(2);
+}
+
+console.log(`No --suite given — running all ${suiteIds.length} suite(s): ${suiteIds.join(', ')}`);
+
+const outcomes: SuiteOutcome[] = [];
+for (const suiteId of suiteIds) {
+  outcomes.push(await runOneSuite(suiteId, suites.get(suiteId)));
+}
+
+console.log('─'.repeat(50));
+console.log('Summary\n');
+for (const o of outcomes) {
+  const icon = o.errored ? '⚠' : o.passed ? '✓' : '✗';
+  const label = o.errored ? 'ERROR' : o.passed ? 'PASS' : 'FAIL';
+  const rate = o.passRate !== undefined ? `  ${(o.passRate * 100).toFixed(1)}%` : '';
+  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}`);
+}
+const passedCount = outcomes.filter((o) => o.passed).length;
+console.log(`\n${passedCount}/${outcomes.length} suite(s) passed\n`);
+
+process.exit(outcomes.every((o) => o.passed) ? 0 : 1);
