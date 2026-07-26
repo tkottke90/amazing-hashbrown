@@ -169,6 +169,44 @@
 // nothing in this or prior tightenings touches that scenario's wording,
 // and it passed under identical text last run, so this reads as ordinary
 // sampling variance, not a regression to chase.
+//
+// Eighth tightening, from a raw-HTTP-logged glm rerun of the seventh
+// tightening's wording. Correction first: wnav-010c's "sampling variance"
+// call above was wrong — a third consecutive run reproduced the identical
+// shape (calls wiki_search, having just reasoned "I should use wiki_search
+// to look for information about this process," not wiki_locate), while
+// wnav-010b passed 3/3 with the same underlying intent. That's a stable,
+// scenario-specific pattern, not noise.
+// Two real, previously-unseen gaps surfaced this run, both variants of the
+// same root cause — the model over-applying the wnav-008-style
+// "obviously the user's own domain, skip straight to search" permission
+// past the narrow case that example was meant to cover:
+// 1. wnav-001 (a *new* regression): input literally asks "Which part of
+//    the knowledge base should I check?" — the scenario's own purpose is
+//    "before assuming a domain" — but the model matched on the surface
+//    phrase "personal preferences" against the wnav-008 example and
+//    skipped straight to wiki_search anyway. The example never
+//    distinguished "a concrete personal-fact question" (wnav-008) from "a
+//    meta-question about which domain/section to check" (wnav-001) — the
+//    latter is asking for exactly what wiki_locate exists to answer.
+//    Added a contrastive pair naming that distinction directly.
+// 2. wnav-010c (the reproduced pattern above): "What was the process for
+//    generating a new NPM token for Verdaccio?" reads, to the model, as
+//    specific enough to search for directly — the same over-generalized
+//    "specific-sounding topic ⇒ skip locate" reflex, just applied to a
+//    technical/setup topic instead of a personal fact. Added a second
+//    contrastive pair naming that a technical topic could live in its own
+//    dedicated domain, not just the user's, so it doesn't qualify for the
+//    skip either.
+// wnav-004 failed again for glm, third run in a row with the identical
+// shape (finish_reason: stop, calledTools: [], correct "I should ask the
+// user" reasoning with no tool-call attempt) — left alone; see the fifth
+// tightening's note. Notably, ask_user's schema (api/src/agents/tools/
+// ask-user.tool.ts) has a required `kind` enum plus several optional
+// fields, while every wiki_* tool glm handles reliably has one or two
+// plain string params — worth testing whether schema complexity, not this
+// wording, is the actual variable if this is ever revisited outside
+// prompt-engineering.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -188,6 +226,16 @@ For example: "What's my favorite color?" has no plausible domain other than the 
 skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
 growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
 rather than guessing which one it means.
+
+That skip only covers a direct question about a concrete personal fact — not a question about where to
+look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain
+identification outright, so call wiki_locate — the topic sounding like the kind of thing you'd otherwise
+skip for doesn't matter when the question itself is about routing, not the fact.
+
+A technical or setup-specific topic isn't an outright match for the user's own domain either, even when
+it's framed around their setup: "What was the process for generating a new NPM token for Verdaccio?" could
+belong to a dedicated technical domain just as easily as personal notes, so call wiki_locate first rather
+than jumping straight to wiki_search just because the topic feels specific enough to search for directly.
 
 wiki_search always searches across every domain at once — it has no way to scope itself to just one. So
 "go straight to wiki_search" is only safe when a domain was the single, outright match. If wiki_locate

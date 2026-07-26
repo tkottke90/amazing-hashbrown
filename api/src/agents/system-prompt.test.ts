@@ -92,6 +92,26 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('"What have you noticed about growth lately?" could mean');
     });
 
+    it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'That skip only covers a direct question about a concrete personal fact — not a question about where to',
+      );
+      expect(result).to.include(
+        '"Which part of the knowledge base should I check for my personal preferences?" is asking for domain',
+      );
+    });
+
+    it("doesn't extend the skip-to-search permission to a technical or setup-specific topic", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "A technical or setup-specific topic isn't an outright match for the user's own domain either",
+      );
+      expect(result).to.include(
+        '"What was the process for generating a new NPM token for Verdaccio?" could\nbelong to a dedicated technical domain',
+      );
+    });
+
     it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('wiki_search always searches across every domain at once');
