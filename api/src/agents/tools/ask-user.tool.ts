@@ -10,9 +10,13 @@ const AskUserSchema = z.object({
   // while reliably calling every wiki_* tool, all of which require only one
   // or two plain strings. The system-prompt header (eighth tightening)
   // flagged this tool's required enum + five optionals as the untested
-  // variable once wording had plateaued; this tests that hypothesis. zod
+  // variable once wording had plateaued; this tested that hypothesis. zod
   // fills the default before the value reaches interrupt(), so the
   // hitl_prompt payload contract (stream-handler.ts) still always has kind.
+  // Outcome (see system-prompt.ts eleventh entry): glm still failed
+  // wnav-004 the same way with this in place, so schema complexity was NOT
+  // the variable. Kept anyway — a one-required-string surface with a
+  // free_text default is a better tool contract regardless.
   kind: z
     .enum(['yes_no', 'multiple_choice', 'free_text'])
     .default('free_text')

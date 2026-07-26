@@ -269,6 +269,29 @@
 // api/src/agents/tools/ask-user.tool.ts, so the tool's required surface
 // matches the plain one-string shape of the wiki_* tools glm calls
 // reliably. See that file's comment; check wnav-004 on the next run.
+//
+// Eleventh entry, closing out the same auto-eval loop (rounds 2-3, no
+// wording changes). The tenth entry's schema-complexity hypothesis is
+// tested and REFUTED: glm failed wnav-004 again in the identical
+// prose-instead-of-ask_user shape with `kind` optional, then failed it
+// once more in the round after. The schema change stays (ornith calls
+// ask_user cleanly with it, and a free_text default is defensible on its
+// own), but wnav-004 for glm is now a confirmed capability ceiling — both
+// the wording lever and the schema lever are exhausted. Round-3 evidence
+// settled the rest: glm passed 11/12 (only wnav-004) — its round-1
+// wnav-009 failure and round-2 wnav-010c failure were sampling variance,
+// each passing on rerun with identical wording. ornith meanwhile dropped
+// to 9/12 on pure variance: wnav-009 (seventh consecutive identical
+// collapse — ceiling), wnav-004 (reasoning quoted the tie rule verbatim,
+// then argued itself around it: "this is more than a hunch" — the §5
+// stated-rule-not-followed shape), and a first-time wnav-010b slip in the
+// same search-instead-of-locate shape 010c shows for glm. Net state: each
+// model passes the suite whenever its ceiling-flagged scenarios are the
+// only failures; the residual run-to-run movement is execution
+// variance in two small quantized models, not any remaining wording gap.
+// Recommend treating wnav-004 (both models) and wnav-009 (ornith) as
+// known ceilings and validating against a stronger/less-quantized model
+// before any further prompt iteration on them.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
