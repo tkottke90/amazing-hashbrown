@@ -125,7 +125,7 @@ describe('agents/system-prompt', () => {
     it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('wiki_search always searches across every domain at once');
-      expect(result).to.include('wiki_orient on that domain is what actually confines you to it');
+      expect(result).to.include('wiki_orient\non that domain is what actually confines you to it');
     });
 
     it('gives a concrete, countable test for multi-candidate vs. single-match, independent of self-resolution', () => {
