@@ -13,14 +13,21 @@ scenarios:
   - id: wnav-001-locate-picks-domain
     name: Agent calls wiki_locate for an unfamiliar topic
     purpose: >
-      Confirms the agent reaches for wiki_locate with a context argument
-      before assuming a domain.
+      Confirms the agent reaches for wiki_locate before assuming a domain.
+      Only the tool choice is asserted, not a context arg — the input
+      itself ("which part of the knowledge base should I check?") is a
+      browse-style meta-question, and wiki_locate's own schema documents
+      `context` as optional for exactly this case ("Omit to browse all
+      registered domains"). A real eval run (system-prompt.ts's system
+      prompt comments, seventh/eighth tightening) had ornith call
+      wiki_locate argless here — "I should call wiki_locate with no
+      specific context to browse all registered domains and their routing
+      hints" — a legitimate reading of the input, not a fallback. Same
+      precedent as wnav-006's identical fix: requiring a context arg here
+      would be a stricter requirement than the tool's own contract.
     type: tool-call
     input: 'I need to look something up about my personal preferences. Which part of the knowledge base should I check?'
     tool: wiki_locate
-    argChecks:
-      - path: context
-        match: exists
 
   - id: wnav-002-orient-after-locate
     name: Agent orients on the domain wiki_locate matched
@@ -94,9 +101,28 @@ scenarios:
   - id: wnav-005-no-match-reports-honestly
     name: Agent reports honestly when no domain matches
     purpose: >
-      For a wildly unrelated topic, wiki_locate naturally returns no match
-      against the real registry. The agent must say so plainly instead of
-      fabricating an answer from an unrelated domain.
+      Given a wiki_locate call that already returned no match, the agent
+      must say so plainly instead of fabricating an answer from an
+      unrelated domain. Deliberately seeded (not cold) — this scenario
+      owns synthesis quality (is the final text honest, given a completed
+      search), not tool-orchestration (does the model decide to search at
+      all, which is wnav-007's job). A cold version of this scenario
+      previously left the model free to try calling wiki_locate itself;
+      since llm-judge scenarios don't bind tools, a tool-trained model that
+      correctly wants to check the wiki has no structured way to do so and
+      falls back to writing a pseudo tool-call as text (e.g.
+      "<wiki_locate><query>...</query></wiki_locate>") — a real, observed
+      failure mode that has nothing to do with honesty and was confounding
+      this scenario's actual signal.
+    # A real eval run surfaced the exact same confound one tool later: with
+    # only wiki_locate's no-match seeded, the model reasonably wanted to try
+    # wiki_search next (it's domain-agnostic — a routing miss doesn't mean
+    # the content isn't anywhere), and since llm-judge still doesn't bind
+    # tools, it fell back to writing a pseudo wiki_search tool-call as text
+    # instead of a real one. Added a second priorTurns entry seeding a
+    # wiki_search no-result so the model has genuinely exhausted the tool
+    # path — the reasonable next step it wanted to take is already done —
+    # before being asked to write the final honest answer.
     # Un-skipped: exercises IDENTITY_SECTION + MEMORY_SECTION
     # (api/src/agents/system-prompt.ts), added to fix cold-start
     # fabrication. A real eval run passed this at 7/10 (minScore was 6)
@@ -109,6 +135,18 @@ scenarios:
     # iterate the section wording, not this scenario.
     type: llm-judge
     input: 'Search the knowledge base for information about deep-sea marine biology research.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'deep-sea marine biology research' }
+        # Matches wiki-locate.tool.ts's real no-match response format exactly
+        # (`No domain matches. Available domains: ${result.available.join(', ')}.`)
+        # — user/self are the two domains seeded elsewhere in this suite.
+        result: { text: 'No domain matches. Available domains: user, self.' }
+      - tool: wiki_search
+        args: { query: 'deep-sea marine biology research' }
+        # Matches wiki-search.tool.ts's real no-results response format
+        # exactly (`'No results found for the given query.'`, wiki-search.tool.ts:53).
+        result: { text: 'No results found for the given query.' }
     rubric: >
       Hard requirement, not just one factor among several: the response
       must explicitly state that no wiki domain covers this topic or that
@@ -189,4 +227,81 @@ scenarios:
     tool: wiki_search
     argChecks:
       - path: query
+        match: exists
+
+  - id: wnav-009-scoped-orient-follows-routing-hints
+    name: Agent orients only into the domain routing hints actually point to
+    purpose: >
+      Given wiki_locate surfaces both "user" and "self" as candidate domains
+      but the routing notes cleanly attribute the question to only one of
+      them, confirms wiki_orient's wikiId is constrained to that domain —
+      guards against orienting into an irrelevant domain (self) for a
+      question routing hints say belongs only to another (user). Motivated
+      by a real thread transcript where the agent, asked a purely
+      user-directed question, additionally oriented into "self" (the
+      agent's own identity/reflection domain) and then confusingly wrote
+      that domain's empty state into the reply as if it were relevant to
+      the user.
+    type: tool-sequence
+    input: 'What have I told you I prefer for my morning routine?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'morning routine preferences' }
+        result:
+          text: >-
+            Candidates: "user" (domain: user, score 14) — routing note:
+            user preferences, personal context, and biography. "self"
+            (domain: agent identity, values, decisions, and reflection,
+            score 3) — routing note: the agent's own reasoning, values,
+            principles, decisions, mistakes, and growth. This question is
+            about the user's own stated preference, which only the
+            "user" routing note covers.
+    tool: wiki_orient
+    argChecks:
+      - path: wikiId
+        match: oneOf
+        value: ['user']
+
+  - id: wnav-010-procedural-question-triggers-locate
+    name: Agent checks the wiki for a stored how-to before answering from general knowledge
+    purpose: >
+      Verifies MEMORY_SECTION's "check the wiki first" framing generalizes
+      past personal-fact phrasing ("what do I prefer") to procedural/how-to
+      phrasing — a stored, previously-documented procedure should be
+      treated the same as a stored personal fact, not answered from the
+      model's own general knowledge of NPM/Verdaccio. First-person
+      need-statement phrasing.
+    type: tool-call
+    input: 'I need to generate a new NPM token for my Verdaccio instance.'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-010b-procedural-question-triggers-locate-how-do-i
+    name: Agent checks the wiki for a stored how-to (interrogative phrasing)
+    purpose: >
+      Same intent as wnav-010, different phrasing — an interrogative
+      "how do I" framing rather than a first-person need statement, to
+      confirm the routing isn't an artifact of one specific phrasing.
+    type: tool-call
+    input: 'How do I generate a new NPM token for Verdaccio?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
+        match: exists
+
+  - id: wnav-010c-procedural-question-triggers-locate-past-tense
+    name: Agent checks the wiki for a stored how-to (past-tense recall phrasing)
+    purpose: >
+      Same intent as wnav-010, phrased as a recall of a previously
+      established process rather than a fresh request — this phrasing
+      most directly implies "this was already documented somewhere,"
+      making it the strongest case that skipping the wiki would be a real
+      regression.
+    type: tool-call
+    input: 'What was the process for generating a new NPM token for Verdaccio?'
+    tool: wiki_locate
+    argChecks:
+      - path: context
         match: exists

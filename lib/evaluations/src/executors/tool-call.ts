@@ -12,6 +12,12 @@ interface ToolCallDetails {
   type: 'tool-call';
   expectedTool: string;
   toolCalled: string | null;
+  // All tool names actually invoked this turn, regardless of whether any
+  // matched scenario.tool. Distinguishes "the model called a different real
+  // tool" from "the model called no tool at all" — both look identical as
+  // toolCalled: null, but a report reader (or the next debugging pass) needs
+  // to tell them apart without re-running with DEBUG_LLM_HTTP.
+  calledTools: string[];
   fieldResults: FieldCheckResult[];
   score: number;
 }
@@ -60,12 +66,14 @@ export function runToolCall(
   toolCalls: InvokedToolCall[],
 ): ToolCallDetails {
   const match = toolCalls.find((call) => call.name === scenario.tool);
+  const calledTools = toolCalls.map((call) => call.name);
 
   if (!match) {
     return {
       type: 'tool-call',
       expectedTool: scenario.tool,
       toolCalled: null,
+      calledTools,
       fieldResults: [],
       score: 0,
     };
@@ -92,6 +100,7 @@ export function runToolCall(
     type: 'tool-call',
     expectedTool: scenario.tool,
     toolCalled: match.name,
+    calledTools,
     fieldResults,
     score,
   };

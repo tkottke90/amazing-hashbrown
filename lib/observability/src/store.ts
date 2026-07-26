@@ -28,6 +28,11 @@ export interface StartTraceParams {
   // to 'chat', the common case. Every real call site in api/ passes this
   // explicitly.
   source?: TraceSource;
+  // The system/framing prompt in effect for this trace — see
+  // TraceRecordSchema's comment for how semantics vary by source. Omitted
+  // (stored as null) for sources where no single field can represent it
+  // (see api/src/agents/after-agent.ts).
+  systemPrompt?: string;
 }
 
 export interface EndTraceParams {
@@ -52,6 +57,7 @@ const RawTraceSummarySchema = z
     ended_at: z.string().nullable(),
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
+    system_prompt: z.string().nullable(),
     // COUNT() returns 0 for empty sets; SUM() returns null for empty sets.
     span_count: z.number(),
     llm_call_count: z
@@ -74,6 +80,7 @@ const RawTraceSummarySchema = z
     endedAt: row.ended_at,
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
+    systemPrompt: row.system_prompt,
     spanCount: row.span_count,
     llmCallCount: row.llm_call_count,
     toolCallCount: row.tool_call_count,
@@ -92,6 +99,7 @@ const RawTraceRecordSchema = z
     ended_at: z.string().nullable(),
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
+    system_prompt: z.string().nullable(),
   })
   .transform((row) => ({
     traceId: row.trace_id,
@@ -104,6 +112,7 @@ const RawTraceRecordSchema = z
     endedAt: row.ended_at,
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
+    systemPrompt: row.system_prompt,
   }));
 
 // Used by getTrace() for the spans array.
@@ -194,6 +203,16 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE observability_traces ADD COLUMN source TEXT NOT NULL DEFAULT 'chat';
     `,
   },
+  {
+    // Captures the system/framing prompt in effect for a trace — see
+    // TraceRecordSchema's comment on why this lives per-trace, not per-span,
+    // and how semantics differ by source. Version 8 is EvaluationsStore's
+    // parallel eval_runs.system_prompt column — see that file's MIGRATIONS.
+    version: 7,
+    sql: `
+      ALTER TABLE observability_traces ADD COLUMN system_prompt TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -219,8 +238,8 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
     const traceId = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO observability_traces (trace_id, thread_id, task_id, provider, model, source, started_at, total_tokens)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        `INSERT INTO observability_traces (trace_id, thread_id, task_id, provider, model, source, started_at, total_tokens, system_prompt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       )
       .run(
         traceId,
@@ -230,6 +249,7 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
         params.model,
         params.source ?? 'chat',
         new Date().toISOString(),
+        params.systemPrompt ?? null,
       );
     return traceId;
   }

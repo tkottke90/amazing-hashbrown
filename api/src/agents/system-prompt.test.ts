@@ -66,6 +66,100 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
     });
 
+    it('generalizes the cold-start wiki-check rule to stored how-tos, not just preferences/facts/history', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This applies just as much to a stored how-to as to a stored personal fact',
+      );
+      expect(result).to.include(
+        "Don't reason your way out of checking just because the topic sounds like something you",
+      );
+    });
+
+    it("gives a tool's own result priority over the default step-skipping guidance", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include("A tool's own result is more current than this default guidance");
+      expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
+    });
+
+    it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('no other domain could plausibly cover it');
+      expect(result).to.include(
+        'A topic merely sounding personal or plausible is not the same as an established domain',
+      );
+    });
+
+    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('"What\'s my favorite color?" has no plausible domain other than');
+      expect(result).to.include('"What have you noticed about growth lately?" could mean');
+    });
+
+    it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'That skip only covers a direct question about a concrete personal fact — not a question about where to',
+      );
+      expect(result).to.include(
+        '"Which part of the knowledge base should I check for my personal preferences?" is asking for domain',
+      );
+    });
+
+    it("doesn't extend the skip-to-search permission to a technical or setup-specific topic", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "A technical or setup-specific topic isn't an outright match for the user's own domain either",
+      );
+      expect(result).to.include(
+        '"What was the process for generating a new NPM token for Verdaccio?" could\nbelong to a dedicated technical domain',
+      );
+    });
+
+    it('covers possessive phrasing of the same technical topic, not just the bare noun phrase', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"I need to generate a new NPM token for my Verdaccio\ninstance" names the same ambiguous technical topic as before',
+      );
+      expect(result).to.include(
+        "doesn't turn a technical topic into an outright single-domain match either",
+      );
+    });
+
+    it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('wiki_search always searches across every domain at once');
+      expect(result).to.include('wiki_orient\non that domain is what actually confines you to it');
+    });
+
+    it('gives a concrete, countable test for multi-candidate vs. single-match, independent of self-resolution', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "if wiki_locate's result named more than one domain, that's the\nmulti-candidate case, even after you've worked out which one actually applies",
+      );
+      expect(result).to.include(
+        "Figuring out the right answer yourself doesn't\nturn a multi-candidate result into a single-match one.",
+      );
+    });
+
+    it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'only narrow it yourself with information the user actually already gave you',
+      );
+      expect(result).to.include("Don't invent a more specific context to retry wiki_locate with");
+    });
+
+    it("doesn't let the model's own plausibility hunch override a reported tie", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'A reported tie is a tie even if one candidate feels more plausible to you',
+      );
+      expect(result).to.include(
+        'the only correct move is\nto call ask_user, not to decide for them',
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

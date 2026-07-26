@@ -431,4 +431,40 @@ describe('build/buildThreadReport', () => {
     expect(byTraceId.get(chatTraceId)!.userMessage?.id).to.equal('u1');
     expect(byTraceId.get(afterAgentTraceId)!.userMessage).to.equal(undefined);
   });
+
+  it('passes trace.systemPrompt through unchanged, present or absent', () => {
+    const threadId = 't5';
+
+    const chatTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'chat',
+      systemPrompt: 'You have no built-in memory of this specific user.',
+    });
+    store.endTrace(chatTraceId, { totalTokens: 0 });
+
+    const afterAgentTraceId = store.startTrace({
+      threadId,
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'after-agent',
+    });
+    store.endTrace(afterAgentTraceId, { totalTokens: 0 });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    const byTraceId = new Map(
+      result!.timeline.filter((e) => e.kind === 'trace').map((e) => [e.trace.traceId, e]),
+    );
+
+    expect(byTraceId.get(chatTraceId)!.trace.systemPrompt).to.equal(
+      'You have no built-in memory of this specific user.',
+    );
+    expect(byTraceId.get(afterAgentTraceId)!.trace.systemPrompt).to.equal(null);
+  });
 });

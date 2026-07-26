@@ -70,6 +70,20 @@ describe('shared-database migrations (cross-store)', () => {
       `duplicate version recorded: ${JSON.stringify(versions)}`,
     ).to.equal(versions.length);
 
+    // Catches a migration SQL typo (e.g. a misspelled column name) that a
+    // duplicate-version check alone wouldn't surface, since ALTER TABLE ADD
+    // COLUMN silently no-ops if the column already exists but errors loudly
+    // on a genuine typo — this asserts the columns actually landed.
+    const traceColumns = (
+      db.prepare('PRAGMA table_info(observability_traces)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(traceColumns).to.include('system_prompt');
+
+    const evalRunColumns = (
+      db.prepare('PRAGMA table_info(eval_runs)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(evalRunColumns).to.include('system_prompt');
+
     db.close();
   });
 });

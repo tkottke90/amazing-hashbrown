@@ -73,6 +73,22 @@ describe('EvaluationsStore', () => {
       const found = store.findRunById('does-not-exist');
       assert.equal(found, null);
     });
+
+    it('round-trips a non-null systemPrompt', () => {
+      const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.equal(found?.systemPrompt, 'You have no built-in memory of this specific user.');
+    });
+
+    it('reads back null when systemPrompt is omitted (suite opted out)', () => {
+      const run = makeRun();
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.equal(found?.systemPrompt, null);
+    });
   });
 
   describe('findResultsByRunId', () => {
@@ -360,6 +376,10 @@ describe('EvaluationsStore migration versioning', () => {
       assert.ok(
         versions.includes(6),
         `Expected version 6 in migrations, got: ${JSON.stringify(versions)}`,
+      );
+      assert.ok(
+        versions.includes(8),
+        `Expected version 8 in migrations, got: ${JSON.stringify(versions)}`,
       );
 
       evalStore.close();
