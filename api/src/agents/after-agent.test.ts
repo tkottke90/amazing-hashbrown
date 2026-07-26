@@ -7,6 +7,7 @@ import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { z } from 'zod';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { bootObservability } from '../services/observability.js';
 import type { ObservabilityCallbackHandler } from './observability-handler.js';
 import {
@@ -237,6 +238,94 @@ describe('agents/after-agent', () => {
       });
 
       expect(getAfterAgentState(threadId)).to.deep.equal({ status: 'idle' });
+    });
+  });
+
+  describe('runAfterAgentPipeline() — write dispatch (createWikiPage/updateWikiPage)', () => {
+    let dir: string;
+    let registry: WikiRegistry;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'after-agent-write-test-'));
+      bootObservability(openDatabase(join(dir, 'test.db')));
+      registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
+      await registry.create({ id: 'user', domain: 'user', tags: [] });
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('creates a new page when ingestPrep finds no existing match', async () => {
+      const threadId = `write-create-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'User likes tea.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'new preference' },
+        'after-agent:extract': {
+          domainId: 'user',
+          type: 'entity',
+          title: 'Favorite Drink',
+          tags: ['preferences'],
+          body: 'The user prefers tea. See [[dns]] and [[proxy]].',
+        },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: [new HumanMessage('I prefer tea over coffee.')],
+        llm,
+        registry,
+      });
+
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+
+      const wiki = await registry.load('user');
+      const page = await wiki.readPage('entities/favorite-drink.md');
+      expect(page.content).to.contain('The user prefers tea.');
+    });
+
+    it('updates the existing page when ingestPrep finds a match, via the merge step', async () => {
+      // Seed an existing page so the second run's ingestPrep matches it.
+      const wiki = await registry.load('user');
+      await wiki.commitPage({
+        type: 'entity',
+        title: 'Coffee Habit',
+        tags: ['coffeehabit'],
+        sources: [],
+        body: 'The user drinks coffee every morning. See [[dns]] and [[proxy]].',
+      });
+
+      const threadId = `write-update-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'User now drinks decaf.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'correction' },
+        'after-agent:extract': {
+          domainId: 'user',
+          type: 'entity',
+          title: 'Coffee Habit',
+          tags: ['coffeehabit'],
+          body: 'The user now drinks decaf coffee.',
+        },
+        'after-agent:merge-page': {
+          body: 'The user drinks decaf coffee every morning. See [[dns]] and [[proxy]].',
+        },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: [new HumanMessage('Actually I switched to decaf coffee.')],
+        llm,
+        registry,
+      });
+
+      const updated = await wiki.readPage('entities/coffee-habit.md');
+      expect(updated.content).to.contain('decaf');
+
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('identified');
     });
   });
 });

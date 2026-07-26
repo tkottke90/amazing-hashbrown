@@ -305,3 +305,69 @@ scenarios:
     argChecks:
       - path: context
         match: exists
+
+  - id: wnav-011-locate-orient-update-existing-page
+    name: Agent updates an existing on-topic page found via locate+orient
+    purpose: >
+      Given locate+orient already surfaced an existing page directly on
+      topic, and the user asks to update it, confirms the agent calls
+      wiki_update_page on that exact page rather than creating a duplicate
+      or hallucinating an edit some other way. Revives the scenario
+      originally sketched in
+      2026-07-20-wiki-locate-and-orient-tools-design.md as "deferred
+      pending write tools" — now runnable now that wiki_update_page exists.
+      IDs wnav-007/wnav-008 were already taken by real, unrelated
+      scenarios by the time this shipped, so this uses wnav-011/wnav-012
+      instead.
+    type: tool-sequence
+    input: 'Update that page — I actually work from home three days a week now, not two.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'work schedule' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
+    tool: wiki_update_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/work-schedule.md
+
+  - id: wnav-012-locate-orient-create-new-page
+    name: Agent creates a new page when locate+orient show nothing on-topic
+    purpose: >
+      Given locate+orient show an index with nothing related to the new
+      fact, and the user asks to add it, confirms the agent calls
+      wiki_create_page rather than hallucinating an edit onto an unrelated
+      existing page. Companion to wnav-011 — same "deferred pending write
+      tools" origin, see that scenario's purpose note.
+    type: tool-sequence
+    input: 'Add a note that I just started learning to play the violin.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'hobbies' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule\n- entities/morning-routine.md — user's morning routine preferences",
+          }
+    tool: wiki_create_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user

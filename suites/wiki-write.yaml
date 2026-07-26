@@ -1,0 +1,82 @@
+suite:
+  id: wiki-write
+  name: Wiki Write Tooling
+  purpose: >
+    Verifies the chat agent uses wiki_create_page and wiki_update_page
+    correctly — previewing with dryRun on request, recovering from a
+    duplicate-page signal by reading/updating instead of retrying create,
+    and actually writing (not just acknowledging in prose) when asked
+    directly to save something.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: wwrite-001-create-dry-run
+    name: Agent previews a new page with dryRun before writing
+    purpose: >
+      Asked to preview adding a page without saving it, confirms the agent
+      calls wiki_create_page with dryRun true rather than writing for real.
+    type: tool-call
+    input: 'Show me what a wiki page for "home network topology" would look like, but don''t save it yet.'
+    tool: wiki_create_page
+    argChecks:
+      - path: dryRun
+        match: equals
+        value: true
+
+  - id: wwrite-002-update-dry-run
+    name: Agent previews a page update with dryRun before writing
+    purpose: >
+      Given an existing page path already in hand, asked to preview a
+      change, confirms the agent calls wiki_update_page with dryRun true
+      rather than writing for real.
+    type: tool-sequence
+    input: 'Show me what it would look like if we added my new work schedule to that page, without saving it.'
+    priorTurns:
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/work-schedule.md' }
+        result:
+          {
+            text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday.',
+          }
+    tool: wiki_update_page
+    argChecks:
+      - path: dryRun
+        match: equals
+        value: true
+
+  - id: wwrite-003-duplicate-create-then-update
+    name: Agent recovers from a duplicate signal by reading/updating, not retrying create
+    purpose: >
+      Given wiki_create_page's own seeded result reports a duplicate at an
+      existing path, confirms the agent's next call is wiki_read_page on
+      that path — not a retried wiki_create_page.
+    type: tool-sequence
+    input: 'Please save that as a new page about my home network setup.'
+    priorTurns:
+      - tool: wiki_create_page
+        args:
+          {
+            wikiId: 'user',
+            title: 'Home Network Setup',
+            content: 'Details about the home network.',
+            section: 'entity',
+          }
+        result:
+          {
+            text: 'A similar page already exists at entities/home-network.md. Read it with wiki_read_page and call wiki_update_page instead.',
+          }
+    tool: wiki_read_page
+    argChecks:
+      - path: path
+        match: equals
+        value: entities/home-network.md
+
+  - id: wwrite-004-explicit-save-request
+    name: Agent writes to the wiki on an explicit save request, not just prose
+    purpose: >
+      Asked directly to save a specific fact, confirms the agent actually
+      calls wiki_create_page or wiki_update_page rather than only
+      acknowledging the request in text.
+    type: tool-call
+    input: 'Please save this to the wiki: my favorite programming language is Rust.'
+    tool: wiki_create_page

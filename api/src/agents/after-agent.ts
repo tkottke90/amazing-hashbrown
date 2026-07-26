@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { WikiEntry } from '@tkottke90/llm-wiki';
+import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
 import { createProvider } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
+import {
+  createWikiPage,
+  updateWikiPage,
+  type CreateWikiPageResult,
+  type UpdateWikiPageResult,
+} from '../services/wiki-write.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { env } from '../config/env.js';
@@ -259,6 +265,11 @@ export interface RunAfterAgentPipelineParams {
   // Test-only escape hatch: an already-constructed model, used in place of
   // createProvider(provider, model). Production callers never set this.
   llm?: ReturnType<typeof createProvider>;
+  // Test-only escape hatch: an already-constructed registry, used in place
+  // of getWikiRegistry(). Production callers never set this — needed to
+  // exercise the real write-dispatch path (createWikiPage/updateWikiPage)
+  // against a temp wiki instead of the real config/kb singleton.
+  registry?: WikiRegistry;
 }
 
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
@@ -323,7 +334,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       return;
     }
 
-    const registry = await getWikiRegistry();
+    const registry = params.registry ?? (await getWikiRegistry());
     const domains = registry.list();
     if (domains.length === 0) {
       logger.warn('after-agent: classify said shouldWrite but no wiki domains are registered', {
@@ -363,12 +374,10 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       sha256: prep.sha256,
     });
 
-    let finalBody = extract.body;
-    let relPath: string | undefined;
-
     const existingMatch = prep.existingPages[0];
+    let writeResult: CreateWikiPageResult | UpdateWikiPageResult;
+
     if (existingMatch) {
-      relPath = existingMatch;
       const existingPage = await wiki.readPage(existingMatch);
       const merged = await invokeStructured(
         llm,
@@ -377,18 +386,44 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
         handler,
         'after-agent:merge-page',
       );
-      finalBody = merged.body;
+      writeResult = await updateWikiPage(
+        {
+          wikiId: domainEntry.id,
+          path: existingMatch,
+          content: merged.body,
+          tags: extract.tags,
+          sources: [rawSource.path],
+          summary: extract.summary,
+        },
+        params.registry,
+      );
+    } else {
+      writeResult = await createWikiPage(
+        {
+          wikiId: domainEntry.id,
+          title: extract.title,
+          content: extract.body,
+          section: extract.type,
+          tags: extract.tags,
+          sources: [rawSource.path],
+          summary: extract.summary,
+        },
+        params.registry,
+      );
     }
 
-    const commitResult = await wiki.commitPage({
-      type: extract.type,
-      title: extract.title,
-      tags: extract.tags,
-      sources: [rawSource.path],
-      body: finalBody,
-      summary: extract.summary,
-      relPath,
-    });
+    if (writeResult.status !== 'written') {
+      // None expected in practice given the ingestPrep pre-check above, but
+      // handled defensively — same posture as the unknown-domainId branch.
+      logger.warn('after-agent: shared write function returned a non-written status', {
+        threadId,
+        status: writeResult.status,
+      });
+      setAfterAgentDone(threadId, 'no-op');
+      return;
+    }
+
+    const commitResult = writeResult.result;
 
     queueWikiUpdate(threadId, {
       type: 'wiki_updated',
