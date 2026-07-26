@@ -112,6 +112,16 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('covers possessive phrasing of the same technical topic, not just the bare noun phrase', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"I need to generate a new NPM token for my Verdaccio\ninstance" names the same ambiguous technical topic as before',
+      );
+      expect(result).to.include(
+        "doesn't turn a technical topic into an outright single-domain match either",
+      );
+    });
+
     it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('wiki_search always searches across every domain at once');

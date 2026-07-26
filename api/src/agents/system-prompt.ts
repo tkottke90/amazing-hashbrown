@@ -207,6 +207,52 @@
 // plain string params — worth testing whether schema complexity, not this
 // wording, is the actual variable if this is ever revisited outside
 // prompt-engineering.
+//
+// Ninth tightening, from a real eval run against the eighth tightening's
+// two new contrastive examples. Both landed exactly as intended — glm's
+// reasoning quotes the new wnav-001 and wnav-010c wording back near-
+// verbatim, and both scenarios passed — but surfaced two follow-on issues,
+// one wording gap and one pre-existing scenario-assertion issue the new
+// wording happened to expose:
+// 1. glm regressed on wnav-010 (previously passing): "I need to generate a
+//    new NPM token for my Verdaccio instance" — same topic as wnav-010c's
+//    fixed example, but phrased with a possessive ("my Verdaccio
+//    instance") instead of a bare noun phrase ("Verdaccio"). The model's
+//    own reasoning explicitly weighed the new technical-topic caveat and
+//    decided the possessive made it "personal setup information," anchoring
+//    to wnav-008's skip permission instead. The contrastive example only
+//    used non-possessive phrasing, so it didn't cover this variant. Added
+//    "my Verdaccio instance" phrasing explicitly to the same example rather
+//    than adding a third, separate example — same topic, closing the one
+//    phrasing gap directly.
+// 2. ornith regressed on wnav-001 (previously passing every run) — but this
+//    one turned out not to be a wording problem at all. calledTools:
+//    [wiki_locate] (right tool!), but the argCheck requiring a `context` arg
+//    failed: ornith's own reasoning was "I should call wiki_locate with no
+//    specific context to browse all registered domains" — a legitimate
+//    browse-mode call per wiki_locate's own schema ("Omit to browse all
+//    registered domains"), and a defensible reading of wnav-001's actual
+//    input ("which part of the knowledge base should I check?" is itself a
+//    browse-style question). This is the identical situation wnav-006's
+//    scenario comment already documents and fixes for the same reason.
+//    Applied the same fix to wnav-001 in suites/wiki-navigation.yaml:
+//    dropped the context argCheck, asserting only the tool choice.
+// ornith also reproduced wnav-004 and wnav-009 again, both with wording
+// unchanged since the last (11/12) run — wnav-004 in yet another new shape
+// (skipped both ask_user and the tie-breaking rule entirely, going straight
+// to wiki_search off its own "clear personal question" read), wnav-009 with
+// the seventh tightening's countable rule stated nowhere in its own
+// reasoning ("Only one domain — 'user' — is a strong match," flatly
+// contradicting the two-candidate result it was actually given). Fourth
+// consecutive run reproducing wnav-009 for ornith specifically, and the
+// most mechanical, unambiguous version of the rule so far still didn't
+// land — this looks like a genuine limit of what prompt wording can do for
+// this quantized model's tendency to collapse a resolved multi-candidate
+// result into "it was always a single match" in its own reasoning, not a
+// remaining wording gap. Recommend not chasing wnav-009/wnav-004 further
+// with wording alone; both are candidates for confirming against a
+// stronger/less-quantized model to check whether this is a wording ceiling
+// or a capability ceiling.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -236,6 +282,9 @@ A technical or setup-specific topic isn't an outright match for the user's own d
 it's framed around their setup: "What was the process for generating a new NPM token for Verdaccio?" could
 belong to a dedicated technical domain just as easily as personal notes, so call wiki_locate first rather
 than jumping straight to wiki_search just because the topic feels specific enough to search for directly.
+That holds even when the phrasing is possessive — "I need to generate a new NPM token for my Verdaccio
+instance" names the same ambiguous technical topic as before; "my" describes whose instance it is, not
+which domain documents it, so it doesn't turn a technical topic into an outright single-domain match either.
 
 wiki_search always searches across every domain at once — it has no way to scope itself to just one. So
 "go straight to wiki_search" is only safe when a domain was the single, outright match. If wiki_locate

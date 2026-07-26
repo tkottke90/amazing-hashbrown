@@ -13,14 +13,21 @@ scenarios:
   - id: wnav-001-locate-picks-domain
     name: Agent calls wiki_locate for an unfamiliar topic
     purpose: >
-      Confirms the agent reaches for wiki_locate with a context argument
-      before assuming a domain.
+      Confirms the agent reaches for wiki_locate before assuming a domain.
+      Only the tool choice is asserted, not a context arg — the input
+      itself ("which part of the knowledge base should I check?") is a
+      browse-style meta-question, and wiki_locate's own schema documents
+      `context` as optional for exactly this case ("Omit to browse all
+      registered domains"). A real eval run (system-prompt.ts's system
+      prompt comments, seventh/eighth tightening) had ornith call
+      wiki_locate argless here — "I should call wiki_locate with no
+      specific context to browse all registered domains and their routing
+      hints" — a legitimate reading of the input, not a fallback. Same
+      precedent as wnav-006's identical fix: requiring a context arg here
+      would be a stricter requirement than the tool's own contract.
     type: tool-call
     input: 'I need to look something up about my personal preferences. Which part of the knowledge base should I check?'
     tool: wiki_locate
-    argChecks:
-      - path: context
-        match: exists
 
   - id: wnav-002-orient-after-locate
     name: Agent orients on the domain wiki_locate matched
