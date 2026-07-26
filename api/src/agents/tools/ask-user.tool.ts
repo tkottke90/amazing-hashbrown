@@ -4,9 +4,19 @@ import { z } from 'zod';
 
 const AskUserSchema = z.object({
   question: z.string().describe('The question to present to the user'),
+  // `kind` was originally required. Made optional (defaulting to free_text)
+  // after four consecutive wiki-navigation wnav-004 runs where glm reasons
+  // "I should ask the user" and then emits prose with no tool call at all —
+  // while reliably calling every wiki_* tool, all of which require only one
+  // or two plain strings. The system-prompt header (eighth tightening)
+  // flagged this tool's required enum + five optionals as the untested
+  // variable once wording had plateaued; this tests that hypothesis. zod
+  // fills the default before the value reaches interrupt(), so the
+  // hitl_prompt payload contract (stream-handler.ts) still always has kind.
   kind: z
     .enum(['yes_no', 'multiple_choice', 'free_text'])
-    .describe('The format of the expected answer'),
+    .default('free_text')
+    .describe('The format of the expected answer (default: free_text)'),
   choices: z
     .array(z.string())
     .optional()
@@ -43,8 +53,8 @@ export const askUserTool = tool(
     name: 'ask_user',
     description:
       'Ask the human user a question and pause until they respond. ' +
-      'Use kind="yes_no" for boolean decisions, "multiple_choice" with choices for ' +
-      'selecting from a list, "free_text" for open-ended responses.',
+      'Only "question" is required. Optionally set kind="yes_no" for boolean decisions or ' +
+      '"multiple_choice" with choices for selecting from a list; omitting kind means free text.',
     schema: AskUserSchema,
   },
 );

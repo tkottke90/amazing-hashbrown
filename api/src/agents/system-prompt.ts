@@ -253,6 +253,22 @@
 // with wording alone; both are candidates for confirming against a
 // stronger/less-quantized model to check whether this is a wording ceiling
 // or a capability ceiling.
+//
+// Tenth entry, from a two-model auto-eval run against the ninth
+// tightening's wording (ornith 11/12 pass, glm 10/12 fail). No wording
+// change this time. ornith's one failure was wnav-009 again — fifth
+// consecutive run in the identical shape (reasoning claims the seeded
+// two-candidate wiki_locate result "returns exactly one domain") —
+// confirming the ninth entry's ceiling call; not chasing it further. glm
+// failed wnav-009 for the first time ever, in that same shape (one data
+// point — watch the next run to separate variance from a shared ceiling),
+// and wnav-004 in the identical prose-instead-of-ask_user shape for the
+// fourth-plus consecutive run. Since wording for wnav-004 is plateaued,
+// this round instead tested the eighth entry's schema-complexity
+// hypothesis: ask_user's `kind` is now optional (default free_text) in
+// api/src/agents/tools/ask-user.tool.ts, so the tool's required surface
+// matches the plain one-string shape of the wiki_* tools glm calls
+// reliably. See that file's comment; check wnav-004 on the next run.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
