@@ -16,6 +16,7 @@
 12. [Persistent Conversation Memory](#persistent-conversation-memory) — `SqliteSaver` checkpointer for LangGraph execution state; new `ThreadStore` read-projection (`threads`/`thread_messages`) for UI display, decoupled from checkpoint internals; thread CRUD + fork + retry + `generate-title` endpoints; sidebar for browsing/switching/renaming/deleting/forking threads; visible, retryable turn failures with a `showErrorMessages` history toggle
 13. [Persistent Artifact Store](#persistent-artifact-store) — disk-backed storage under `artifactRoot` (`config.yaml`); per-artifact `meta.json` captures origin/thread/task provenance; index hydrated from disk on boot so artifacts survive restarts; `tool-call` eval scenario type added to the evaluation harness to regression-test tool-invocation behavior, starting with `upload_image`
 14. [Wiki Locate & Orient Tools](#wiki-locate--orient-tools) — `wiki_locate` (domain-level lookup via the registry's deterministic routing scorer, plus a browse mode) and `wiki_orient` (full structural state of one domain via the already-existing `LlmWiki.orient()`) added to the ReAct agent; `wiki_search`'s description clarified to disambiguate the three; `wiki-navigation` eval suite added to regression-test locate → orient → search/read coordination; a code-level `buildSystemPrompt()` template (harness wiki-navigation guidance + an unwired user-instructions slot) wired into the chat agent; `bin/eval.ts` fixed to register `wiki_locate`/`wiki_orient` (previously missing — every prior `wiki-navigation` scenario expecting them was silently unrunnable) and to pass the real system prompt into eval runs; eval harness gained optional `systemPrompt` support for `tool-call`/`tool-sequence` scenarios
+15. [Agent Behavior Baseline (System Prompt)](#agent-behavior-baseline-system-prompt) — `HARNESS_SECTIONS` in `system-prompt.ts` extended with `IDENTITY_SECTION` (no built-in memory of the user — the wiki is the source of truth), `MEMORY_SECTION` (cold-start turns must check the wiki before answering from assumption), and `ASK_USER_SECTION` (structured clarification must go through `ask_user`, not plain-text questions); `config/AGENT.md` (auto-created, supplement-only precedence over harness sections) wired in as the user-instructions injection point via `agent-instructions.ts`; new `instruction-hierarchy`, `thread-titles`, and `tool-calling` eval suites added; wording iterated against real `ornith`/`glm` eval runs (documented inline in `system-prompt.ts`) without regressing `wiki-navigation.yaml`
 
 ---
 
@@ -23,24 +24,23 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [Agent Behavior Baseline (System Prompt)](#agent-behavior-baseline-system-prompt) — broadens `system-prompt.ts`'s harness content beyond wiki tool-navigation into general tone/identity/formatting; expected to exercise the evaluation system heavily
-2. [Wiki Write Tooling](#wiki-write-tooling) — depends on: Connect LLM-Wiki to Chat Agent; unified write/commit tools used by all agent patterns
-3. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
-4. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
-5. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
-6. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — depends on: Connect LLM-Wiki to Chat Agent; surfaces the wiki in the UI and lets users author/import content directly, so the automation work below starts from a populated wiki instead of a cold one
-7. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-8. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #2, #3, #4, #5, #7 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools) now complete — no longer blocking)
-9. [Trigger System](#trigger-system) — depends on: #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-10. [Escalation System](#escalation-system) — depends on: #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-11. [Dashboard System](#dashboard-system) — depends on: #7, #10; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-12. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-13. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-14. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-15. [Skills Integration](#skills-integration) — depends on: #14; `skills-manager` library is complete; needs API + UI
-16. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #14
-17. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #12
-18. [Notification Delivery](#notification-delivery) — depends on: #10; external channels deferred; interim: `action_required` flag on threads/tasks
+1. [Wiki Write Tooling](#wiki-write-tooling) — depends on: Connect LLM-Wiki to Chat Agent; unified write/commit tools used by all agent patterns
+2. [Wiki Lint Tool (`wiki.lint()`)](#wiki-lint-tool-wikilint) — depends on: Connect LLM-Wiki to Chat Agent; required for automated tasks
+3. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
+4. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
+5. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — depends on: Connect LLM-Wiki to Chat Agent; surfaces the wiki in the UI and lets users author/import content directly, so the automation work below starts from a populated wiki instead of a cold one
+6. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+7. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1, #2, #3, #4, #6 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools) now complete — no longer blocking)
+8. [Trigger System](#trigger-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+9. [Escalation System](#escalation-system) — depends on: #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+10. [Dashboard System](#dashboard-system) — depends on: #6, #9; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+11. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+12. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+13. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+14. [Skills Integration](#skills-integration) — depends on: #13; `skills-manager` library is complete; needs API + UI
+15. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #13
+16. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #11
+17. [Notification Delivery](#notification-delivery) — depends on: #9; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -177,7 +177,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - Confirm tier needs an undo window — agent commits but notifies the user with a time-limited rollback option
 - Escalate tier needs a push channel (browser notification, email, or future mobile notification) that works when the user is not in the UI
 - The system should log all escalation events so the user can review what happened and why
-- **Interim delivery mechanism:** until Notification Delivery (#28) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
+- **Interim delivery mechanism:** until Notification Delivery (#17) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
 
 **Dependencies:** Task System
 
