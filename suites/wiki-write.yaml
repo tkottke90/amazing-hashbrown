@@ -56,7 +56,15 @@ scenarios:
       saying what it is) — a real eval run showed both models reasonably
       declining to fabricate content for the preview and instead searching
       or asking for more detail. Fixed by stating the concrete new fact in
-      the input.
+      the input. Known model variance since that fix: a real eval run has
+      glm passing and ornith calling the right tool (wiki_update_page) but
+      omitting the dryRun argument entirely — its own reasoning trace
+      explicitly states "I'll use wiki_update_page with dryRun set to
+      true," so this isn't an unclear-input or wording problem, it's a
+      stated-intent-vs-execution gap in the model itself, the same pattern
+      already documented for ornith on wnav-004/wnav-010c in
+      suites/wiki-navigation.yaml. Left as a known ceiling, not chased with
+      further scenario changes.
     type: tool-sequence
     input: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
     priorTurns:
@@ -118,7 +126,13 @@ scenarios:
       very first call with no domain established; both models correctly
       called wiki_locate first instead, since committing to a wikiId for a
       write is a real decision wiki_search doesn't have to make. Converted
-      to a tool-sequence seeding that establishment first.
+      to a tool-sequence seeding that establishment first. A subsequent eval
+      run showed glm calling wiki_search instead of wiki_create_page here —
+      reasonable caution (checking for an existing page before creating),
+      but redundant given the orient result already shows the domain's
+      complete page catalog. Made the seeded index explicitly exhaustive
+      ("1 page total") so there's nothing left to plausibly search for,
+      rather than leaving that ambiguous.
     type: tool-sequence
     input: 'Please save this to the wiki: my favorite programming language is Rust.'
     priorTurns:
@@ -132,6 +146,6 @@ scenarios:
         args: { wikiId: 'user' }
         result:
           {
-            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+            text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule",
           }
     tool: wiki_create_page
