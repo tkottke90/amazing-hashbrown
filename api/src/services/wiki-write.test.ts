@@ -26,7 +26,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           title: 'Router',
-          content: 'A router at home. See [[dns]] and [[proxy]].',
+          content: 'A router at home. See [[dns]] and [[network]].',
           section: 'entity',
           tags: ['router'],
         },
@@ -47,7 +47,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           title: 'Proxy Notes',
-          content: 'The proxy service handles traffic routing. See [[dns]] and [[host]].',
+          content: 'The proxy service handles traffic routing. See [[dns]] and [[gateway]].',
           section: 'entity',
           tags: ['proxy'],
         },
@@ -114,7 +114,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           title: 'Host',
-          content: 'v1. See [[dns]] and [[proxy]].',
+          content: 'v1. See [[dns]] and [[network]].',
           section: 'entity',
           tags: ['host'],
         },
@@ -127,7 +127,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           path: created.result.path,
-          content: 'v2. See [[dns]] and [[proxy]].',
+          content: 'v2. See [[dns]] and [[network]].',
         },
         registry,
       );
@@ -145,7 +145,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           title: 'Carry Forward',
-          content: 'Original body. See [[dns]] and [[proxy]].',
+          content: 'Original body. See [[dns]] and [[network]].',
           section: 'entity',
           tags: ['alpha', 'beta'],
           sources: ['raw/original.md'],
@@ -159,7 +159,7 @@ describe('services/wiki-write', () => {
         {
           wikiId: 'test-wiki',
           path: created.result.path,
-          content: 'Updated body. See [[dns]] and [[proxy]].',
+          content: 'Updated body. See [[dns]] and [[network]].',
           // tags/sources omitted deliberately
         },
         registry,
