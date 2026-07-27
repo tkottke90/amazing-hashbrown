@@ -25,8 +25,24 @@ scenarios:
       wiki_navigation section already argues for generally. Converted to a
       tool-sequence seeding that establishment, matching wnav-011/wnav-012's
       pattern in suites/wiki-navigation.yaml.
+      A later run surfaced a second real wording gap: glm answered in
+      prose with a generic hand-written template and called no tool at
+      all, reasoning "I don't need to read or write anything; I can just
+      describe... a sample page layout." "Show me what a page... would
+      look like" reads ambiguously as either "give me a generic example"
+      (no tool) or "actually draft and preview one" (tool required).
+      Reworded to "Draft a wiki page... and show me what it would look
+      like" so the ask is unambiguously to produce a real draft, not an
+      abstract template.
+      Separately, adding a third model (a local Qwen build) surfaced a
+      genuine capability ceiling, not a wording gap: it calls wiki_search
+      instead of committing to wiki_create_page, reasoning there "may be
+      relevant pages elsewhere" despite wiki_locate having already named
+      "user" as the best match. Left undocumented-fixable — see
+      wwrite-004's purpose for the matching, more clear-cut instance of
+      this same disposition on that scenario.
     type: tool-sequence
-    input: 'Show me what a wiki page for "home network topology" would look like, but don''t save it yet.'
+    input: 'Draft a wiki page for "home network topology" and show me what it would look like — don''t save it yet.'
     priorTurns:
       - tool: wiki_locate
         args: { context: 'home network topology' }
@@ -38,7 +54,7 @@ scenarios:
         args: { wikiId: 'user' }
         result:
           {
-            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+            text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule",
           }
     tool: wiki_create_page
     argChecks:
@@ -132,7 +148,15 @@ scenarios:
       but redundant given the orient result already shows the domain's
       complete page catalog. Made the seeded index explicitly exhaustive
       ("1 page total") so there's nothing left to plausibly search for,
-      rather than leaving that ambiguous.
+      rather than leaving that ambiguous. That fix resolved glm's case (it
+      now passes 001/002/003/004 reliably) but a third model added later
+      (a local Qwen build) still calls wiki_search here, explicitly
+      reasoning "even though only one page exists currently" — i.e. it
+      registered the exhaustiveness and searched anyway "to be thorough."
+      That's a genuine capability/disposition ceiling for this model, not
+      a remaining wording gap the fixture can close — left as a known
+      ceiling rather than chased further, same treatment as ornith's
+      wwrite-002 gap above.
     type: tool-sequence
     input: 'Please save this to the wiki: my favorite programming language is Rust.'
     priorTurns:
