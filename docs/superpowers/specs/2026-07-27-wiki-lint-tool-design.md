@@ -190,10 +190,16 @@ New suite, `tool-call` scenarios seeded with `wiki_locate`/`wiki_orient`
 prior turns so the domain is already established, matching
 `wwrite-001`'s pattern in `suites/wiki-write.yaml`:
 
-| id                          | type        | what it proves                                                                                       |
-| ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------ |
-| `wlint-001-check-wiki-health` | `tool-call` | Asked to check the wiki for issues, with the domain already established, the agent calls `wiki_lint` with the matching `wikiId`. |
-| `wlint-002-no-fabricated-domain` | tbd during authoring | Confirms the agent doesn't call `wiki_lint` with a guessed `wikiId` before a domain has been established — may fold into an existing `wiki-navigation.yaml` scenario instead if coverage already overlaps; decided during implementation, not this spec. |
+| id                             | type        | what it proves                                                                                                                    |
+| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `wlint-001-check-wiki-health`   | `tool-call` | Asked to check the wiki for issues, with the domain already established via seeded `wiki_locate`/`wiki_orient` prior turns, the agent calls `wiki_lint` with the matching `wikiId`. |
+| `wlint-002-locate-before-lint`  | `tool-sequence` | Asked to check the wiki for issues with **no** domain established yet, the agent calls `wiki_locate` first rather than guessing a `wikiId`, matching the established locate-before-act pattern from `wnav-011`/`wnav-012` and `wwrite-001`. |
+
+Two scenarios to start, the same size as the initial pass of
+`suites/wiki-write.yaml`'s dry-run coverage — real eval runs against
+`ornith`/`glm` during implementation may surface additional scenarios or
+wording fixes, following the same iterate-against-real-runs process
+documented inline in those suites and in `system-prompt.ts`.
 
 `wikiLintTool` is registered in `bin/eval.ts` alongside the other wiki
 tools so these scenarios are runnable.
