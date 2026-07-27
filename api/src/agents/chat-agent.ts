@@ -10,6 +10,7 @@ import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
 import { wikiCreatePageTool } from './tools/wiki-create-page.tool.js';
+import { wikiLintTool } from './tools/wiki-lint.tool.js';
 import { wikiLocateTool } from './tools/wiki-locate.tool.js';
 import { wikiOrientTool } from './tools/wiki-orient.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
@@ -114,6 +115,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiReadPageTool,
       wikiLocateTool,
       wikiOrientTool,
+      wikiLintTool,
       wikiCreatePageTool,
       wikiUpdatePageTool,
       ...mcpTools,
