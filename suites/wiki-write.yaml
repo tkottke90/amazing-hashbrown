@@ -13,10 +13,33 @@ scenarios:
   - id: wwrite-001-create-dry-run
     name: Agent previews a new page with dryRun before writing
     purpose: >
-      Asked to preview adding a page without saving it, confirms the agent
-      calls wiki_create_page with dryRun true rather than writing for real.
-    type: tool-call
+      Given the domain is already established via locate+orient, and asked
+      to preview adding a page without saving it, confirms the agent calls
+      wiki_create_page with dryRun true rather than writing for real.
+      Originally a tool-call scenario expecting wiki_create_page as the
+      very first call with no domain established — a real eval run showed
+      both ornith and glm calling wiki_locate first instead. On reflection
+      that's the correct move, not a gap: unlike wiki_search (which scans
+      every domain regardless), a write commits to one specific wikiId, so
+      establishing the domain first is the safer default the harness's own
+      wiki_navigation section already argues for generally. Converted to a
+      tool-sequence seeding that establishment, matching wnav-011/wnav-012's
+      pattern in suites/wiki-navigation.yaml.
+    type: tool-sequence
     input: 'Show me what a wiki page for "home network topology" would look like, but don''t save it yet.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'home network topology' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
     tool: wiki_create_page
     argChecks:
       - path: dryRun
@@ -26,17 +49,22 @@ scenarios:
   - id: wwrite-002-update-dry-run
     name: Agent previews a page update with dryRun before writing
     purpose: >
-      Given an existing page path already in hand, asked to preview a
-      change, confirms the agent calls wiki_update_page with dryRun true
-      rather than writing for real.
+      Given an existing page path already in hand and concrete new content
+      to add, confirms the agent calls wiki_update_page with dryRun true
+      rather than writing for real. Originally the input never stated what
+      the new content actually was ("add my new work schedule" without
+      saying what it is) — a real eval run showed both models reasonably
+      declining to fabricate content for the preview and instead searching
+      or asking for more detail. Fixed by stating the concrete new fact in
+      the input.
     type: tool-sequence
-    input: 'Show me what it would look like if we added my new work schedule to that page, without saving it.'
+    input: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
     priorTurns:
       - tool: wiki_read_page
         args: { wikiId: 'user', path: 'entities/work-schedule.md' }
         result:
           {
-            text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday.',
+            text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday, working from home two days a week.',
           }
     tool: wiki_update_page
     argChecks:
@@ -49,7 +77,16 @@ scenarios:
     purpose: >
       Given wiki_create_page's own seeded result reports a duplicate at an
       existing path, confirms the agent's next call is wiki_read_page on
-      that path — not a retried wiki_create_page.
+      that path — not a retried wiki_create_page. Known model variance: a
+      real eval run had glm pass this as written, but ornith called
+      ask_user instead ("would you like to update it, or is this the
+      content you meant?") — a defensible alternate that doesn't follow the
+      tool message's own explicit "read it... and call wiki_update_page
+      instead" instruction as literally. The scenario schema can't express
+      "either wiki_read_page or ask_user is acceptable" (tool is a single
+      expected value), so this is left as a known ceiling rather than
+      loosened — same treatment as wnav-004/wnav-009's documented gaps in
+      suites/wiki-navigation.yaml.
     type: tool-sequence
     input: 'Please save that as a new page about my home network setup.'
     priorTurns:
@@ -74,9 +111,27 @@ scenarios:
   - id: wwrite-004-explicit-save-request
     name: Agent writes to the wiki on an explicit save request, not just prose
     purpose: >
-      Asked directly to save a specific fact, confirms the agent actually
-      calls wiki_create_page or wiki_update_page rather than only
-      acknowledging the request in text.
-    type: tool-call
+      Given the domain is already established via locate+orient, and asked
+      directly to save a specific fact, confirms the agent actually calls
+      wiki_create_page rather than only acknowledging the request in text.
+      Same fix as wwrite-001 — originally expected wiki_create_page as the
+      very first call with no domain established; both models correctly
+      called wiki_locate first instead, since committing to a wikiId for a
+      write is a real decision wiki_search doesn't have to make. Converted
+      to a tool-sequence seeding that establishment first.
+    type: tool-sequence
     input: 'Please save this to the wiki: my favorite programming language is Rust.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'favorite programming language' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 16). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
     tool: wiki_create_page
