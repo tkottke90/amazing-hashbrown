@@ -1,0 +1,206 @@
+suite:
+  id: wiki-write
+  name: Wiki Write Tooling
+  purpose: >
+    Verifies the chat agent uses wiki_create_page and wiki_update_page
+    correctly — previewing with dryRun on request, recovering from a
+    duplicate-page signal by reading/updating instead of retrying create,
+    and actually writing (not just acknowledging in prose) when asked
+    directly to save something.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: wwrite-001-create-dry-run
+    name: Agent previews a new page with dryRun before writing
+    purpose: >
+      Given the domain is already established via locate+orient, and asked
+      to preview adding a page without saving it, confirms the agent calls
+      wiki_create_page with dryRun true rather than writing for real.
+      Originally a tool-call scenario expecting wiki_create_page as the
+      very first call with no domain established — a real eval run showed
+      both ornith and glm calling wiki_locate first instead. On reflection
+      that's the correct move, not a gap: unlike wiki_search (which scans
+      every domain regardless), a write commits to one specific wikiId, so
+      establishing the domain first is the safer default the harness's own
+      wiki_navigation section already argues for generally. Converted to a
+      tool-sequence seeding that establishment, matching wnav-011/wnav-012's
+      pattern in suites/wiki-navigation.yaml.
+      A later run surfaced a second real wording gap: glm answered in
+      prose with a generic hand-written template and called no tool at
+      all, reasoning "I don't need to read or write anything; I can just
+      describe... a sample page layout." "Show me what a page... would
+      look like" reads ambiguously as either "give me a generic example"
+      (no tool) or "actually draft and preview one" (tool required).
+      Reworded to "Draft a wiki page... and show me what it would look
+      like" so the ask is unambiguously to produce a real draft, not an
+      abstract template.
+      That reword did not close the gap: a follow-up run reproduced the
+      identical failure shape for glm under the new wording too — same
+      all-prose response, same "avoid using any wiki tools that would
+      write anything" reasoning. A further run then had glm pass this
+      scenario cleanly but fail wwrite-002 with the same all-prose shape
+      instead — see that scenario's purpose. Across runs this is
+      nondeterministic sampling variance in glm's tool-use decision, not a
+      remaining wording ambiguity tied to this specific input. Not chased
+      further with more input rewording.
+      Separately, adding a third model (a local Qwen build) surfaced a
+      genuine capability ceiling, not a wording gap: it calls wiki_search
+      instead of committing to wiki_create_page, reasoning there "may be
+      relevant pages elsewhere" despite wiki_locate having already named
+      "user" as the best match — though on a later run it passed this
+      scenario, so this looks like sampling variance for Qwen specifically
+      here (contrast wwrite-004's purpose, where the same disposition
+      reproduced consistently for Qwen even with an exhaustive index).
+    type: tool-sequence
+    input: 'Draft a wiki page for "home network topology" and show me what it would look like — don''t save it yet.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'home network topology' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
+    tool: wiki_create_page
+    argChecks:
+      - path: dryRun
+        match: equals
+        value: true
+
+  - id: wwrite-002-update-dry-run
+    name: Agent previews a page update with dryRun before writing
+    purpose: >
+      Given an existing page path already in hand and concrete new content
+      to add, confirms the agent calls wiki_update_page with dryRun true
+      rather than writing for real. Originally the input never stated what
+      the new content actually was ("add my new work schedule" without
+      saying what it is) — a real eval run showed both models reasonably
+      declining to fabricate content for the preview and instead searching
+      or asking for more detail. Fixed by stating the concrete new fact in
+      the input. Known model variance since that fix: a real eval run has
+      glm passing and ornith calling the right tool (wiki_update_page) but
+      omitting the dryRun argument entirely — its own reasoning trace
+      explicitly states "I'll use wiki_update_page with dryRun set to
+      true," so this isn't an unclear-input or wording problem, it's a
+      stated-intent-vs-execution gap in the model itself, the same pattern
+      already documented for ornith on wnav-004/wnav-010c in
+      suites/wiki-navigation.yaml. Left as a known ceiling, not chased with
+      further scenario changes.
+      glm's dryRun-vs-prose behavior (see wwrite-001's purpose) turns out
+      to be unstable across scenarios, not tied to either one's wording: a
+      later run had glm pass wwrite-001 but fail this scenario with the
+      identical all-prose, no-tool-call pattern ("Here's how the page
+      would look... Would you like me to apply this change?"). Since the
+      same model showed the same failure shape on two different scenarios
+      in different runs, this is nondeterministic sampling variance in the
+      model's tool-use decision, not a per-scenario gap — noted here and on
+      wwrite-001 rather than duplicated as two separate "mysteries."
+    type: tool-sequence
+    input: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
+    priorTurns:
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/work-schedule.md' }
+        result:
+          {
+            text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday, working from home two days a week.',
+          }
+    tool: wiki_update_page
+    argChecks:
+      - path: dryRun
+        match: equals
+        value: true
+
+  - id: wwrite-003-duplicate-create-then-update
+    name: Agent recovers from a duplicate signal by reading/updating, not retrying create
+    purpose: >
+      Given wiki_create_page's own seeded result reports a duplicate at an
+      existing path, confirms the agent's next call is wiki_read_page on
+      that path — not a retried wiki_create_page. Originally the input said
+      "save that" with no content ever actually specified anywhere in the
+      seeded conversation — the same missing-content bug wwrite-002 had, on
+      this scenario too, just not caught until a later real eval run: glm
+      and qwen happened to proceed anyway, but ornith correctly called this
+      out ("There doesn't seem to be any content from earlier in this
+      conversation to save — did you have specific details you'd like
+      added?") and called ask_user instead of reading the page. Fixed by
+      stating concrete content in the input, matching the seeded
+      wiki_create_page attempt's content, the same treatment already
+      applied to wwrite-002's identical class of bug. That fix resolved it
+      for ornith (now passes 001/002/003/004 reliably) and glm, but a run
+      after the fix shows Qwen still failing here — calling wiki_search
+      "to find the exact location" despite the seeded duplicate message
+      already stating the path explicitly ("A similar page already exists
+      at entities/home-network.md"). This is the same "ignores information
+      already given, searches anyway" disposition already documented on
+      wwrite-004 (which explicitly acknowledged a stated fact and searched
+      regardless) — a third occurrence of the identical pattern for this
+      model, confirming it as a stable capability ceiling rather than
+      something specific to any one scenario's wording. Left as a known
+      ceiling.
+    type: tool-sequence
+    input: 'Please save this to the wiki: our home network uses a mesh router system with three access points covering the house.'
+    priorTurns:
+      - tool: wiki_create_page
+        args:
+          {
+            wikiId: 'user',
+            title: 'Home Network Setup',
+            content: 'The home network uses a mesh router system with three access points covering the house.',
+            section: 'entity',
+          }
+        result:
+          {
+            text: 'A similar page already exists at entities/home-network.md. Read it with wiki_read_page and call wiki_update_page instead.',
+          }
+    tool: wiki_read_page
+    argChecks:
+      - path: path
+        match: equals
+        value: entities/home-network.md
+
+  - id: wwrite-004-explicit-save-request
+    name: Agent writes to the wiki on an explicit save request, not just prose
+    purpose: >
+      Given the domain is already established via locate+orient, and asked
+      directly to save a specific fact, confirms the agent actually calls
+      wiki_create_page rather than only acknowledging the request in text.
+      Same fix as wwrite-001 — originally expected wiki_create_page as the
+      very first call with no domain established; both models correctly
+      called wiki_locate first instead, since committing to a wikiId for a
+      write is a real decision wiki_search doesn't have to make. Converted
+      to a tool-sequence seeding that establishment first. A subsequent eval
+      run showed glm calling wiki_search instead of wiki_create_page here —
+      reasonable caution (checking for an existing page before creating),
+      but redundant given the orient result already shows the domain's
+      complete page catalog. Made the seeded index explicitly exhaustive
+      ("1 page total") so there's nothing left to plausibly search for,
+      rather than leaving that ambiguous. That fix resolved glm's case (it
+      now passes 001/002/003/004 reliably) but a third model added later
+      (a local Qwen build) still calls wiki_search here, explicitly
+      reasoning "even though only one page exists currently" — i.e. it
+      registered the exhaustiveness and searched anyway "to be thorough."
+      That's a genuine capability/disposition ceiling for this model, not
+      a remaining wording gap the fixture can close — left as a known
+      ceiling rather than chased further, same treatment as ornith's
+      wwrite-002 gap above.
+    type: tool-sequence
+    input: 'Please save this to the wiki: my favorite programming language is Rust.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'favorite programming language' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 16). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
+    tool: wiki_create_page

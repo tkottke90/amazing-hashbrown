@@ -298,19 +298,22 @@ results as `{ text: "<tool's actual string output>" }` (`runner.ts`
 JSON-stringifies whatever object is given verbatim into the `ToolMessage`
 content, so this is a convention, not a schema requirement).
 
-**Deferred, documented but not added as runnable scenarios yet** — these
-would require a tool that doesn't exist until "Wiki Write Tooling" ships;
-adding them now would just be permanent failing entries dragging down the
-suite's `passingThreshold`:
+**Deferred at the time this spec was written** — these two scenarios needed
+a tool that didn't exist yet, pending "Wiki Write Tooling":
 
-- `wnav-007-locate-orient-update-existing-page` — locate+orient show an
-  existing on-topic page; asked to update it, the agent should call the
-  future `wiki_update_page`.
-- `wnav-008-locate-orient-create-new-page` — locate+orient show _nothing_
-  on-topic; asked to add something, the agent should call the future
-  `wiki_create_page` rather than hallucinating an edit to an unrelated page.
+- locate+orient show an existing on-topic page; asked to update it, the
+  agent should call `wiki_update_page`.
+- locate+orient show _nothing_ on-topic; asked to add something, the agent
+  should call `wiki_create_page` rather than hallucinating an edit to an
+  unrelated page.
 
-Add these two for real once Wiki Write Tooling exists.
+Now implemented as real, runnable `tool-sequence` scenarios — see
+`wnav-011-locate-orient-update-existing-page` and
+`wnav-012-locate-orient-create-new-page` in `suites/wiki-navigation.yaml`
+(the `2026-07-26-wiki-write-tooling-design.md` spec). IDs `wnav-007`/
+`wnav-008` as originally sketched here were already taken by real,
+unrelated scenarios by the time this shipped, hence the `011`/`012`
+numbering instead.
 
 ## Open items deferred to later TODO work
 
