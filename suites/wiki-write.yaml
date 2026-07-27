@@ -37,12 +37,12 @@ scenarios:
       That reword did not close the gap: a follow-up run reproduced the
       identical failure shape for glm under the new wording too — same
       all-prose response, same "avoid using any wiki tools that would
-      write anything" reasoning. Two different wordings producing the same
-      outcome means this is a genuine ceiling, not a remaining wording
-      ambiguity: glm doesn't appear to treat dryRun as "call the tool
-      without writing," defaulting to a prose mockup instead whenever
-      asked to preview something. Not chased further with more input
-      rewording.
+      write anything" reasoning. A further run then had glm pass this
+      scenario cleanly but fail wwrite-002 with the same all-prose shape
+      instead — see that scenario's purpose. Across runs this is
+      nondeterministic sampling variance in glm's tool-use decision, not a
+      remaining wording ambiguity tied to this specific input. Not chased
+      further with more input rewording.
       Separately, adding a third model (a local Qwen build) surfaced a
       genuine capability ceiling, not a wording gap: it calls wiki_search
       instead of committing to wiki_create_page, reasoning there "may be
@@ -91,6 +91,15 @@ scenarios:
       already documented for ornith on wnav-004/wnav-010c in
       suites/wiki-navigation.yaml. Left as a known ceiling, not chased with
       further scenario changes.
+      glm's dryRun-vs-prose behavior (see wwrite-001's purpose) turns out
+      to be unstable across scenarios, not tied to either one's wording: a
+      later run had glm pass wwrite-001 but fail this scenario with the
+      identical all-prose, no-tool-call pattern ("Here's how the page
+      would look... Would you like me to apply this change?"). Since the
+      same model showed the same failure shape on two different scenarios
+      in different runs, this is nondeterministic sampling variance in the
+      model's tool-use decision, not a per-scenario gap — noted here and on
+      wwrite-001 rather than duplicated as two separate "mysteries."
     type: tool-sequence
     input: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
     priorTurns:
@@ -121,7 +130,18 @@ scenarios:
       added?") and called ask_user instead of reading the page. Fixed by
       stating concrete content in the input, matching the seeded
       wiki_create_page attempt's content, the same treatment already
-      applied to wwrite-002's identical class of bug.
+      applied to wwrite-002's identical class of bug. That fix resolved it
+      for ornith (now passes 001/002/003/004 reliably) and glm, but a run
+      after the fix shows Qwen still failing here — calling wiki_search
+      "to find the exact location" despite the seeded duplicate message
+      already stating the path explicitly ("A similar page already exists
+      at entities/home-network.md"). This is the same "ignores information
+      already given, searches anyway" disposition already documented on
+      wwrite-004 (which explicitly acknowledged a stated fact and searched
+      regardless) — a third occurrence of the identical pattern for this
+      model, confirming it as a stable capability ceiling rather than
+      something specific to any one scenario's wording. Left as a known
+      ceiling.
     type: tool-sequence
     input: 'Please save this to the wiki: our home network uses a mesh router system with three access points covering the house.'
     priorTurns:
