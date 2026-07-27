@@ -6,15 +6,39 @@
 
 ## Purpose
 
-Expose the already-implemented `LlmWiki.lint()` / `WikiRegistry.lint(id)`
-engine (12 checks: orphans, broken links, missing index entries,
-frontmatter, page size, tag audit, source drift, log rotation, staleness,
-quality flags, contradictions, registry sync) as an agent-callable
-`wiki_lint` tool, and hook it into AfterAgent Middleware as a background
-health check after every write it commits. Unlike Wiki Write Tooling, this
-item requires no new mechanical layer — `WikiRegistry.lint(id)` already
-loads the wiki and injects the registry data the `registry_sync` check
-needs — so this spec is entirely about the two call sites (the tool
+**Why this is needed:** the wiki now has two independent, largely
+unsupervised write paths — the live agent's `wiki_create_page`/
+`wiki_update_page` tool calls, and AfterAgent's background LLM-extraction
+pipeline, which by explicit design (see `2026-07-26-wiki-write-tooling-design.md`'s
+Purpose) has no de-duplication or human-review guardrail against the
+other. Every one of those writes, and every read (`wiki_search`,
+`wiki_read_page`, `wiki_orient`), currently trusts the wiki's content
+without any way to check it's actually still coherent. That trust is
+misplaced by construction: pages get renamed or replaced and leave dangling
+`[[wikilinks]]` elsewhere, AfterAgent's automated merge step can drift a
+page's frontmatter, content goes stale without anyone revisiting it, and
+nothing currently notices any of this — a broken link or a stale fact
+just gets fed back into the next `wiki_search` result as if it were fine,
+compounding quietly over time. `LlmWiki.lint()` already exists to catch
+exactly these problems; the gap is that nothing calls it. This item closes
+that gap by giving both write paths a way to check their own work: the
+live agent gets a tool to explicitly check wiki health, and AfterAgent —
+the higher-risk path, since its writes ship with no human review at all —
+gets an automatic check after every commit. It's also a hard prerequisite
+for Thread Type 2 (Automated Task), which is specified to call
+`wiki.lint()` before declaring an autonomous task complete; an agent
+operating without a human in the loop needs its own way to verify it
+didn't leave the knowledge base in a broken state.
+
+**What ships:** expose the already-implemented `LlmWiki.lint()` /
+`WikiRegistry.lint(id)` engine (12 checks: orphans, broken links, missing
+index entries, frontmatter, page size, tag audit, source drift, log
+rotation, staleness, quality flags, contradictions, registry sync) as an
+agent-callable `wiki_lint` tool, and hook it into AfterAgent Middleware as
+a background health check after every write it commits. Unlike Wiki Write
+Tooling, this item requires no new mechanical layer — `WikiRegistry.lint(id)`
+already loads the wiki and injects the registry data the `registry_sync`
+check needs — so this spec is entirely about the two call sites (the tool
 wrapper and the AfterAgent hook), not new wiki mechanics.
 
 ## In scope
