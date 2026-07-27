@@ -319,6 +319,21 @@ scenarios:
       IDs wnav-007/wnav-008 were already taken by real, unrelated
       scenarios by the time this shipped, so this uses wnav-011/wnav-012
       instead.
+      Originally asserted wiki_update_page as the call immediately after
+      locate+orient, with no read step. A real eval run showed all three
+      tested models (ornith, glm, and a local Qwen build) unanimously
+      calling wiki_read_page first instead — and that's actually correct,
+      not a gap: wiki_update_page requires the full replacement body, not
+      a diff, and orient's index only gives a one-line summary per page
+      ("user's work-from-home schedule"), not the full current content
+      needed to safely construct a complete replacement. A 3/3 model
+      consensus against the original assertion is about as strong a signal
+      as this harness produces that the scenario, not the models, was
+      wrong. Fixed by seeding the read step too (mirroring wwrite-002's
+      identical pattern in suites/wiki-write.yaml), so the assertion now
+      tests what it actually meant to: that the agent commits to updating
+      the existing page rather than creating a duplicate, once it has
+      enough information to do so.
     type: tool-sequence
     input: 'Update that page — I actually work from home three days a week now, not two.'
     priorTurns:
@@ -333,6 +348,12 @@ scenarios:
         result:
           {
             text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/work-schedule.md' }
+        result:
+          {
+            text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday, working from home two days a week.',
           }
     tool: wiki_update_page
     argChecks:
