@@ -4,9 +4,7 @@ import type { LintReport } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 
 const WikiLintSchema = z.object({
-  wikiId: z
-    .string()
-    .describe('Wiki domain ID to lint, as returned by wiki_locate or wiki_search.'),
+  wikiId: z.string().describe('Wiki domain ID to lint, as returned by wiki_locate or wiki_search.'),
 });
 
 function formatLintReport(wikiId: string, report: LintReport): string {

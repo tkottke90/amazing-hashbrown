@@ -30,7 +30,12 @@ function captureLogCalls(method: 'warn' | 'info') {
     calls.push({ message, meta });
     original(message, meta);
   };
-  return { calls, restore: () => { spy[method] = original; } };
+  return {
+    calls,
+    restore: () => {
+      spy[method] = original;
+    },
+  };
 }
 
 // A fake BaseChatModel satisfying only the .withStructuredOutput().withRetry().invoke()
@@ -302,7 +307,6 @@ describe('agents/after-agent', () => {
     });
 
     it('updates the existing page when ingestPrep finds a match, via the merge step', async () => {
-
       // Seed an existing page so the second run's ingestPrep matches it.
       const wiki = await registry.load('user');
       await wiki.commitPage({
@@ -445,8 +449,13 @@ describe('agents/after-agent', () => {
       const lintInfo = infoSpy.calls.find(
         (c) => c.message === 'after-agent: lint found non-error findings after write',
       );
-      expect(lintErrorWarn, 'no lint error warn should fire when there are no error-level findings').to.equal(undefined);
-      expect(lintInfo, 'lint info should fire when there are non-error lint findings').to.not.equal(undefined);
+      expect(
+        lintErrorWarn,
+        'no lint error warn should fire when there are no error-level findings',
+      ).to.equal(undefined);
+      expect(lintInfo, 'lint info should fire when there are non-error lint findings').to.not.equal(
+        undefined,
+      );
     });
 
     it('catches registry.lint() throws and logs a warn without flipping the write outcome', async () => {

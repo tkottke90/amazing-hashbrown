@@ -78,17 +78,17 @@ Cross-checking each lint check against the existing write tools
 (`wiki_create_page`, `wiki_update_page`) shows the agent can act on only
 a subset of what lint can report:
 
-| Finding                     | Fixable today with existing tools?                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `broken_links`               | Yes — read the referencing page, fix/remove the wikilink, `wiki_update_page`               |
-| `index`                      | Yes — re-save via `wiki_update_page`; `commitPage()` always re-syncs `index.md`             |
-| `stale`                      | Yes — re-save via `wiki_update_page`; `commitPage()` always bumps `updated` to today        |
-| `orphans`                    | Partially — no dedicated cross-link tool exists (`LlmWiki.addCrossLink()` isn't wrapped); the agent would have to hand-edit another page's body |
-| `tag_audit`                  | No — `wiki_update_page`'s tool schema doesn't expose `tags`, even though the service function does |
-| `frontmatter` (title/type)   | No — `updateWikiPage()` always carries forward the existing `title`/`type` verbatim         |
-| `quality` / `contradictions` | No — `confidence`/`contested`/`contradictions` aren't parameters anywhere in the write path |
-| `source_drift` / `registry_sync` | No — no tool touches raw-source re-saving or registry registration                      |
-| `page_size` / `log_rotation` | N/A — informational/structural, not a single-page fix                                       |
+| Finding                          | Fixable today with existing tools?                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `broken_links`                   | Yes — read the referencing page, fix/remove the wikilink, `wiki_update_page`                                                                    |
+| `index`                          | Yes — re-save via `wiki_update_page`; `commitPage()` always re-syncs `index.md`                                                                 |
+| `stale`                          | Yes — re-save via `wiki_update_page`; `commitPage()` always bumps `updated` to today                                                            |
+| `orphans`                        | Partially — no dedicated cross-link tool exists (`LlmWiki.addCrossLink()` isn't wrapped); the agent would have to hand-edit another page's body |
+| `tag_audit`                      | No — `wiki_update_page`'s tool schema doesn't expose `tags`, even though the service function does                                              |
+| `frontmatter` (title/type)       | No — `updateWikiPage()` always carries forward the existing `title`/`type` verbatim                                                             |
+| `quality` / `contradictions`     | No — `confidence`/`contested`/`contradictions` aren't parameters anywhere in the write path                                                     |
+| `source_drift` / `registry_sync` | No — no tool touches raw-source re-saving or registry registration                                                                              |
+| `page_size` / `log_rotation`     | N/A — informational/structural, not a single-page fix                                                                                           |
 
 Given that, `wiki_lint` ships as a pure diagnostic this round. Its tool
 description tells the agent which findings it can act on today
@@ -107,9 +107,7 @@ Item so it gets its own design pass rather than expanding this one.
 
 ```ts
 const WikiLintSchema = z.object({
-  wikiId: z
-    .string()
-    .describe('Wiki domain ID to lint, as returned by wiki_locate or wiki_search.'),
+  wikiId: z.string().describe('Wiki domain ID to lint, as returned by wiki_locate or wiki_search.'),
 });
 ```
 
@@ -124,13 +122,13 @@ calling this once per domain from `wiki_locate`'s domain list.
 - `getWikiRegistry()` fails → `'Wiki knowledge base is not available.'`
 - `registry.lint(wikiId)` throws (unregistered id — same failure mode as
   `registry.load()`) → `'Wiki "<id>" is not registered. Use wiki_locate to
-  find available domains.'`
+find available domains.'`
 - Otherwise, format the `LintReport` as a grouped text block: a status
   line (`ok`/counts by severity), then findings grouped `## Errors` /
   `## Warnings` / `## Info`, each line `- [<check>] <page>: <message>`
   (page omitted for registry-level findings like `registry_sync`). When
   `report.checks.length === 0`: `"Wiki '<id>' is healthy — no issues
-  found."`
+found."`
 
 **Tool description:**
 
@@ -214,10 +212,10 @@ New suite, `tool-call` scenarios seeded with `wiki_locate`/`wiki_orient`
 prior turns so the domain is already established, matching
 `wwrite-001`'s pattern in `suites/wiki-write.yaml`:
 
-| id                             | type        | what it proves                                                                                                                    |
-| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `wlint-001-check-wiki-health`   | `tool-call` | Asked to check the wiki for issues, with the domain already established via seeded `wiki_locate`/`wiki_orient` prior turns, the agent calls `wiki_lint` with the matching `wikiId`. |
-| `wlint-002-locate-before-lint`  | `tool-sequence` | Asked to check the wiki for issues with **no** domain established yet, the agent calls `wiki_locate` first rather than guessing a `wikiId`, matching the established locate-before-act pattern from `wnav-011`/`wnav-012` and `wwrite-001`. |
+| id                             | type            | what it proves                                                                                                                                                                                                                              |
+| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wlint-001-check-wiki-health`  | `tool-call`     | Asked to check the wiki for issues, with the domain already established via seeded `wiki_locate`/`wiki_orient` prior turns, the agent calls `wiki_lint` with the matching `wikiId`.                                                         |
+| `wlint-002-locate-before-lint` | `tool-sequence` | Asked to check the wiki for issues with **no** domain established yet, the agent calls `wiki_locate` first rather than guessing a `wikiId`, matching the established locate-before-act pattern from `wnav-011`/`wnav-012` and `wwrite-001`. |
 
 Two scenarios to start, the same size as the initial pass of
 `suites/wiki-write.yaml`'s dry-run coverage — real eval runs against
@@ -228,7 +226,7 @@ documented inline in those suites and in `system-prompt.ts`.
 `wikiLintTool` is registered in `bin/eval.ts` alongside the other wiki
 tools so these scenarios are runnable.
 
-No scenario asserts the agent *fixes* a lint finding — consistent with
+No scenario asserts the agent _fixes_ a lint finding — consistent with
 "Read-only, on purpose" above, that would test against a capability this
 spec deliberately doesn't ship.
 
