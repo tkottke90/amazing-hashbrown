@@ -21,6 +21,7 @@ import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js
 import { wikiLocateTool } from '../api/src/agents/tools/wiki-locate.tool.js';
 import { wikiOrientTool } from '../api/src/agents/tools/wiki-orient.tool.js';
 import { wikiCreatePageTool } from '../api/src/agents/tools/wiki-create-page.tool.js';
+import { wikiLintTool } from '../api/src/agents/tools/wiki-lint.tool.js';
 import { wikiUpdatePageTool } from '../api/src/agents/tools/wiki-update-page.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
@@ -38,6 +39,7 @@ const evalTools = [
   wikiReadPageTool,
   wikiLocateTool,
   wikiOrientTool,
+  wikiLintTool,
   wikiCreatePageTool,
   wikiUpdatePageTool,
   fakeGenerateImageTool,

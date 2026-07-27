@@ -10,6 +10,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { bootObservability } from '../services/observability.js';
 import type { ObservabilityCallbackHandler } from './observability-handler.js';
+import { logger } from '../config/logger.js';
 import {
   extractLatestTurnText,
   drainPendingWikiUpdates,
@@ -17,6 +18,20 @@ import {
   invokeStructured,
   getAfterAgentState,
 } from './after-agent.js';
+
+// Monkey-patches one logger method to record calls while forwarding to the real
+// implementation — no mocking library needed (this repo uses mocha + chai only).
+// Always call restore() in a finally block.
+function captureLogCalls(method: 'warn' | 'info') {
+  const spy = logger as unknown as Record<string, (msg: string, meta?: unknown) => void>;
+  const original = spy[method].bind(logger);
+  const calls: Array<{ message: string; meta: unknown }> = [];
+  spy[method] = (message: string, meta?: unknown) => {
+    calls.push({ message, meta });
+    original(message, meta);
+  };
+  return { calls, restore: () => { spy[method] = original; } };
+}
 
 // A fake BaseChatModel satisfying only the .withStructuredOutput().withRetry().invoke()
 // chain that after-agent.ts's invokeStructured() actually calls. Dispatches a canned
@@ -287,6 +302,7 @@ describe('agents/after-agent', () => {
     });
 
     it('updates the existing page when ingestPrep finds a match, via the merge step', async () => {
+
       // Seed an existing page so the second run's ingestPrep matches it.
       const wiki = await registry.load('user');
       await wiki.commitPage({
@@ -323,6 +339,159 @@ describe('agents/after-agent', () => {
       const updated = await wiki.readPage('entities/coffee-habit.md');
       expect(updated.content).to.contain('decaf');
 
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+    });
+  });
+
+  describe('runAfterAgentPipeline() — post-write lint hook', () => {
+    // Each test uses its own wiki domain so that wiki.lint() scanning the full
+    // domain doesn't pick up pages left by other tests in this block.
+    let dir: string;
+    let testRegistry: WikiRegistry;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'after-agent-lint-test-'));
+      bootObservability(openDatabase(join(dir, 'test.db')));
+      testRegistry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('calls logger.warn when lint finds error-severity findings after a write', async () => {
+      await testRegistry.create({ id: 'lint-errors', domain: 'lint', tags: [] });
+
+      const threadId = `lint-errors-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Page with broken link.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'new info' },
+        'after-agent:extract': {
+          domainId: 'lint-errors',
+          type: 'entity',
+          title: 'Broken Page',
+          tags: ['test'],
+          body: 'This page references a missing page. See [[does-not-exist]].',
+        },
+      });
+
+      const warnSpy = captureLogCalls('warn');
+      try {
+        await runAfterAgentPipeline({
+          threadId,
+          messages: [new HumanMessage('Write a page with a broken link.')],
+          llm,
+          registry: testRegistry,
+        });
+      } finally {
+        warnSpy.restore();
+      }
+
+      const lintWarn = warnSpy.calls.find(
+        (c) => c.message === 'after-agent: lint found errors after write',
+      );
+      expect(lintWarn, 'lint error warn should have fired').to.not.equal(undefined);
+      const meta = lintWarn!.meta as Record<string, unknown>;
+      expect(meta.wikiId).to.equal('lint-errors');
+      expect(meta.threadId).to.equal(threadId);
+      const errors = meta.errors as Array<{ check: string }>;
+      expect(errors.some((e) => e.check === 'broken_links')).to.equal(true);
+
+      // Write outcome is unaffected — lint runs after setAfterAgentDone.
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+    });
+
+    it('calls logger.info (not warn) when lint finds only non-error findings after a write', async () => {
+      // A freshly-written page with a minimal body and a non-taxonomy tag naturally
+      // triggers non-error lint checks (few-wikilinks, unknown-tag) without any
+      // error-level findings. This covers the hook's info branch (checks.length > 0
+      // but no errors) and verifies the hook never calls the error warn for these.
+      await testRegistry.create({ id: 'lint-warn-only', domain: 'lint', tags: [] });
+
+      const threadId = `lint-warn-only-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Brief note written.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'new info' },
+        'after-agent:extract': {
+          domainId: 'lint-warn-only',
+          type: 'entity',
+          title: 'Brief Note',
+          tags: ['test'],
+          body: 'A brief note with no outbound links.',
+        },
+      });
+
+      const warnSpy = captureLogCalls('warn');
+      const infoSpy = captureLogCalls('info');
+      try {
+        await runAfterAgentPipeline({
+          threadId,
+          messages: [new HumanMessage('Write a brief note.')],
+          llm,
+          registry: testRegistry,
+        });
+      } finally {
+        warnSpy.restore();
+        infoSpy.restore();
+      }
+
+      const lintErrorWarn = warnSpy.calls.find(
+        (c) => c.message === 'after-agent: lint found errors after write',
+      );
+      const lintInfo = infoSpy.calls.find(
+        (c) => c.message === 'after-agent: lint found non-error findings after write',
+      );
+      expect(lintErrorWarn, 'no lint error warn should fire when there are no error-level findings').to.equal(undefined);
+      expect(lintInfo, 'lint info should fire when there are non-error lint findings').to.not.equal(undefined);
+    });
+
+    it('catches registry.lint() throws and logs a warn without flipping the write outcome', async () => {
+      await testRegistry.create({ id: 'lint-throws', domain: 'lint', tags: [] });
+
+      const threadId = `lint-throws-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Some fact.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'new info' },
+        'after-agent:extract': {
+          domainId: 'lint-throws',
+          type: 'entity',
+          title: 'Some Page',
+          tags: ['test'],
+          body: 'Some content.',
+        },
+      });
+
+      // Temporarily make registry.lint() throw so the hook's inner try/catch fires.
+      const originalLint = testRegistry.lint;
+      (testRegistry as unknown as Record<string, unknown>).lint = async () => {
+        throw new Error('simulated lint failure');
+      };
+
+      const warnSpy = captureLogCalls('warn');
+      try {
+        await runAfterAgentPipeline({
+          threadId,
+          messages: [new HumanMessage('Write something.')],
+          llm,
+          registry: testRegistry,
+        });
+      } finally {
+        (testRegistry as unknown as Record<string, unknown>).lint = originalLint;
+        warnSpy.restore();
+      }
+
+      const lintFailWarn = warnSpy.calls.find(
+        (c) => c.message === 'after-agent: lint failed after write',
+      );
+      expect(lintFailWarn, 'lint-failed warn should have fired').to.not.equal(undefined);
+      const meta = lintFailWarn!.meta as Record<string, unknown>;
+      expect(meta.threadId).to.equal(threadId);
+
+      // Write outcome is unaffected — the inner try/catch does not re-throw.
       const state = getAfterAgentState(threadId);
       expect(state.status).to.equal('done');
       expect((state as { outcome: string }).outcome).to.equal('identified');

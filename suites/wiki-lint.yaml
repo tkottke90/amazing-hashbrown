@@ -1,0 +1,46 @@
+suite:
+  id: wiki-lint
+  name: Wiki Lint Tooling
+  purpose: >
+    Verifies the chat agent calls wiki_lint to check wiki health when asked,
+    establishing the domain via wiki_locate first when it isn't already known.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: wlint-001-check-wiki-health
+    name: Agent lints the established domain when asked to check wiki health
+    purpose: >
+      Given the domain is already established via locate+orient prior turns, and
+      asked to check the wiki for issues, confirms the agent calls wiki_lint with
+      the matching wikiId. Uses tool-sequence (not tool-call, which has no
+      priorTurns field in ToolCallScenarioSchema — silent strip would make the
+      scenario run cold without established context, matching the same fix
+      applied to wwrite-001 in suites/wiki-write.yaml).
+    type: tool-sequence
+    input: 'Can you check the wiki for any issues or problems?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'wiki health check' }
+        result:
+          text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule"
+    tool: wiki_lint
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+
+  - id: wlint-002-locate-before-lint
+    name: Agent locates the domain before linting when none is established
+    purpose: >
+      Asked to check the wiki for issues with no domain established yet, confirms
+      the agent calls wiki_locate first rather than guessing a wikiId — matching
+      the locate-before-act pattern from wnav-011/012 and wwrite-001. Plain
+      tool-call with no priorTurns, matching how "nothing established yet"
+      scenarios are written elsewhere (e.g. wnav-001 in wiki-navigation.yaml).
+    type: tool-call
+    input: 'Check the wiki for problems before I ask you anything else.'
+    tool: wiki_locate

@@ -445,6 +445,32 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       path: commitResult.path,
       warnings: commitResult.warnings,
     });
+
+    // Post-write health check — logging only, never flips the write's
+    // already-successful 'identified' outcome. Own try/catch, deliberately
+    // separate from the pipeline's outer one.
+    try {
+      const lintReport = await registry.lint(domainEntry.id);
+      const errors = lintReport.checks.filter((c) => c.severity === 'error');
+      if (errors.length) {
+        logger.warn('after-agent: lint found errors after write', {
+          threadId,
+          wikiId: domainEntry.id,
+          errors,
+        });
+      } else if (lintReport.checks.length) {
+        logger.info('after-agent: lint found non-error findings after write', {
+          threadId,
+          wikiId: domainEntry.id,
+          findingCount: lintReport.checks.length,
+        });
+      }
+    } catch (err) {
+      logger.warn('after-agent: lint failed after write', {
+        threadId,
+        err: serializeError(err),
+      });
+    }
   } catch (err) {
     logger.error('after-agent: pipeline error', { threadId, err: serializeError(err) });
     setAfterAgentDone(threadId, 'error');
