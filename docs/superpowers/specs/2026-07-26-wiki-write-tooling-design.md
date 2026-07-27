@@ -152,7 +152,7 @@ export async function updateWikiPage(params: {
    reading `llm-wiki.ts`). Every existing read tool takes a `path` that
    originated from `wiki_search`'s own results, so this has never mattered
    before; `wiki_update_page` is the first tool to accept an arbitrary
-   agent-supplied path used for a *write*, so the guard belongs here.
+   agent-supplied path used for a _write_, so the guard belongs here.
 3. Read the existing page (`readPage` or equivalent). Not found →
    `{ status: 'not_found' }`.
 4. Determine effective `tags`/`sources`: use the params if provided,
@@ -173,7 +173,9 @@ export async function updateWikiPage(params: {
 
 ```ts
 const WikiCreatePageSchema = z.object({
-  wikiId: z.string().describe('Wiki domain ID to create the page in, from wiki_locate or wiki_search.'),
+  wikiId: z
+    .string()
+    .describe('Wiki domain ID to create the page in, from wiki_locate or wiki_search.'),
   title: z.string().describe('Page title.'),
   content: z.string().describe('Page body as markdown (no frontmatter).'),
   section: z
@@ -216,12 +218,16 @@ const WikiCreatePageSchema = z.object({
 ```ts
 const WikiUpdatePageSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the page belongs to.'),
-  path: z.string().describe('Existing page path relative to the wiki root, from wiki_search or wiki_read_page.'),
+  path: z
+    .string()
+    .describe('Existing page path relative to the wiki root, from wiki_search or wiki_read_page.'),
   content: z.string().describe('Full replacement page body as markdown (no frontmatter).'),
   summary: z
     .string()
     .optional()
-    .describe('One-line summary for the wiki index entry, and the closest thing to a commit message this tool supports.'),
+    .describe(
+      'One-line summary for the wiki index entry, and the closest thing to a commit message this tool supports.',
+    ),
   dryRun: z
     .boolean()
     .optional()
@@ -374,12 +380,12 @@ spec just removes the "deferred" status).
 A new suite, `suites/wiki-write.yaml`, covers write-specific behavior the
 navigation suite doesn't:
 
-| id                                        | type        | what it proves                                                                                          |
-| ------------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `wwrite-001-create-dry-run`                | `tool-call` | Asked to preview adding a page without saving it, the agent calls `wiki_create_page` with `dryRun: true`. |
-| `wwrite-002-update-dry-run`                | `tool-call` | Asked to preview a change to an existing page, the agent calls `wiki_update_page` with `dryRun: true`.    |
-| `wwrite-003-duplicate-create-then-update`  | `tool-sequence` | Seeded `wiki_create_page` result is `'duplicate'` (the tool's own string), pointing to an existing path; the agent's next call is `wiki_read_page` or `wiki_update_page` on that path, not a retried `wiki_create_page`. |
-| `wwrite-004-explicit-save-request`         | `tool-call` | Asked directly to save a specific fact to the wiki, the agent calls `wiki_create_page` or `wiki_update_page` (not just a prose acknowledgement). |
+| id                                        | type            | what it proves                                                                                                                                                                                                           |
+| ----------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `wwrite-001-create-dry-run`               | `tool-call`     | Asked to preview adding a page without saving it, the agent calls `wiki_create_page` with `dryRun: true`.                                                                                                                |
+| `wwrite-002-update-dry-run`               | `tool-call`     | Asked to preview a change to an existing page, the agent calls `wiki_update_page` with `dryRun: true`.                                                                                                                   |
+| `wwrite-003-duplicate-create-then-update` | `tool-sequence` | Seeded `wiki_create_page` result is `'duplicate'` (the tool's own string), pointing to an existing path; the agent's next call is `wiki_read_page` or `wiki_update_page` on that path, not a retried `wiki_create_page`. |
+| `wwrite-004-explicit-save-request`        | `tool-call`     | Asked directly to save a specific fact to the wiki, the agent calls `wiki_create_page` or `wiki_update_page` (not just a prose acknowledgement).                                                                         |
 
 As with `wiki-navigation.yaml`, seeded tool results in `wwrite-003` must be
 wrapped as `{ text: "<tool's actual string output>" }` — `PriorToolTurnSchema.result`
