@@ -34,13 +34,23 @@ scenarios:
       Reworded to "Draft a wiki page... and show me what it would look
       like" so the ask is unambiguously to produce a real draft, not an
       abstract template.
+      That reword did not close the gap: a follow-up run reproduced the
+      identical failure shape for glm under the new wording too — same
+      all-prose response, same "avoid using any wiki tools that would
+      write anything" reasoning. Two different wordings producing the same
+      outcome means this is a genuine ceiling, not a remaining wording
+      ambiguity: glm doesn't appear to treat dryRun as "call the tool
+      without writing," defaulting to a prose mockup instead whenever
+      asked to preview something. Not chased further with more input
+      rewording.
       Separately, adding a third model (a local Qwen build) surfaced a
       genuine capability ceiling, not a wording gap: it calls wiki_search
       instead of committing to wiki_create_page, reasoning there "may be
       relevant pages elsewhere" despite wiki_locate having already named
-      "user" as the best match. Left undocumented-fixable — see
-      wwrite-004's purpose for the matching, more clear-cut instance of
-      this same disposition on that scenario.
+      "user" as the best match — though on a later run it passed this
+      scenario, so this looks like sampling variance for Qwen specifically
+      here (contrast wwrite-004's purpose, where the same disposition
+      reproduced consistently for Qwen even with an exhaustive index).
     type: tool-sequence
     input: 'Draft a wiki page for "home network topology" and show me what it would look like — don''t save it yet.'
     priorTurns:
@@ -101,25 +111,26 @@ scenarios:
     purpose: >
       Given wiki_create_page's own seeded result reports a duplicate at an
       existing path, confirms the agent's next call is wiki_read_page on
-      that path — not a retried wiki_create_page. Known model variance: a
-      real eval run had glm pass this as written, but ornith called
-      ask_user instead ("would you like to update it, or is this the
-      content you meant?") — a defensible alternate that doesn't follow the
-      tool message's own explicit "read it... and call wiki_update_page
-      instead" instruction as literally. The scenario schema can't express
-      "either wiki_read_page or ask_user is acceptable" (tool is a single
-      expected value), so this is left as a known ceiling rather than
-      loosened — same treatment as wnav-004/wnav-009's documented gaps in
-      suites/wiki-navigation.yaml.
+      that path — not a retried wiki_create_page. Originally the input said
+      "save that" with no content ever actually specified anywhere in the
+      seeded conversation — the same missing-content bug wwrite-002 had, on
+      this scenario too, just not caught until a later real eval run: glm
+      and qwen happened to proceed anyway, but ornith correctly called this
+      out ("There doesn't seem to be any content from earlier in this
+      conversation to save — did you have specific details you'd like
+      added?") and called ask_user instead of reading the page. Fixed by
+      stating concrete content in the input, matching the seeded
+      wiki_create_page attempt's content, the same treatment already
+      applied to wwrite-002's identical class of bug.
     type: tool-sequence
-    input: 'Please save that as a new page about my home network setup.'
+    input: 'Please save this to the wiki: our home network uses a mesh router system with three access points covering the house.'
     priorTurns:
       - tool: wiki_create_page
         args:
           {
             wikiId: 'user',
             title: 'Home Network Setup',
-            content: 'Details about the home network.',
+            content: 'The home network uses a mesh router system with three access points covering the house.',
             section: 'entity',
           }
         result:
