@@ -359,12 +359,29 @@ whatever step you would otherwise skip.`;
 // of calling ask_user — right intent, wrong mechanism. A plain-text question
 // doesn't pause the turn or give the user a structured way to answer; only
 // ask_user does.
+//
+// Second paragraph added after auto-eval round 2 of suites/wiki-lint.yaml
+// (2026-07-28): the opposite failure showed up — confirmation-seeking on
+// requests the user had already made outright. glm, asked "check the wiki
+// for any issues" (wlint-001), described what wiki_lint would do and asked
+// "Would you like me to proceed?" in prose instead of just linting; local,
+// asked "fix the raw source drift issue" (wlint-003), called ask_user to
+// confirm before rebaselining. Both had passed or acted directly in other
+// runs, so this is a leaning to correct, not a hard gap. The paragraph
+// gives the contrastive rule: an explicit "check X"/"fix X" is itself the
+// decision — act and report. Check wlint-001/wlint-003 on the next run.
 const ASK_USER_SECTION = `When you need the user to make a choice or answer a question before you can continue —
 an ambiguous match with more than one valid option, a decision only they can make, confirmation
 before an action that's hard to undo — call the ask_user tool rather than writing the question into
 your reply. Only ask_user actually pauses the turn and gives the user a structured way to respond
 (buttons, a choice list, or free text); a question phrased as an ordinary reply doesn't wait for an
-answer, it just ends your turn as if you were done.`;
+answer, it just ends your turn as if you were done.
+
+The reverse holds too: when the user has already told you outright to do something — "check the wiki
+for issues", "fix the drift the linter found" — that instruction is the decision, already made. Don't
+ask whether to proceed, in your reply or via ask_user; run the check or apply the fix, then report
+what happened. Reserve confirmation for choices the user hasn't already made: which of several valid
+options to take, or an action that's hard to undo that they didn't explicitly request.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-005/wnav-007/wnav-008: on
 // cold-start turns (no wiki tool calls yet in the conversation), the model

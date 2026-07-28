@@ -110,7 +110,13 @@ scenarios:
       Given a lint report with an orphans finding, confirms the agent calls
       wiki_add_cross_link with the orphaned page as fromPage — after reading it
       to identify a link target. Verifies the tool-sequence pattern where the
-      agent must gather context before acting.
+      agent must gather context before acting. The wiki_orient prior turn was
+      added after auto-eval round 2 (2026-07-28): without it the seeded context
+      never established that any candidate target page (e.g. entities/bob.md)
+      actually exists, and all three evaluated models reasonably went hunting
+      for one (wiki_read_page / wiki_search) instead of linking — a scenario
+      gap, not a model gap. The index below makes the target discoverable from
+      established context, so linking immediately is the correct move.
     type: tool-sequence
     input: 'Fix the orphaned page the linter found in the user wiki.'
     priorTurns:
@@ -118,6 +124,10 @@ scenarios:
         args: { context: 'orphaned page' }
         result:
           text: 'Best match: "user" (domain: user, score 13). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          text: "# Wiki Orientation: user\n## Index (2 pages total)\n- entities/alice.md — profile of Alice, frontend guild lead\n- entities/bob.md — profile of Bob, senior engineer on the platform team"
       - tool: wiki_lint
         args: { wikiId: 'user' }
         result:
