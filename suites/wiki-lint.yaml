@@ -178,6 +178,14 @@ scenarios:
       - path: path
         match: equals
         value: entities/bob.md
+      # oneOf, not equals: the lint report never says which confidence value to
+      # pick, and wiki_update_page's own schema documents no default — "high" vs
+      # "medium" for a short factual page is a judgment call, and round 1 of the
+      # auto-eval loop saw glm and local both reason their way to "medium" while
+      # ornith chose "high", all with defensible rationales. The scenario's
+      # purpose is that a confidence value gets set at all (exercising the newly
+      # exposed param), so accept either sensible tier; "low" stays excluded
+      # because nothing in the page content justifies it.
       - path: confidence
-        match: equals
-        value: high
+        match: oneOf
+        value: [high, medium]
