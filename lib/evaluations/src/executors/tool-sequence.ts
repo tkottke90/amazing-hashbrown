@@ -17,6 +17,9 @@ interface ToolSequenceDetails {
   // this turn, so a null toolCalled (wrong tool vs. no tool) doesn't have
   // to be re-diagnosed from raw HTTP logs every time.
   calledTools: string[];
+  // See tool-call.ts's identical field: the matched call's args, verbatim,
+  // so an argCheck failure shows what the model actually passed.
+  matchedArgs?: Record<string, unknown>;
   fieldResults: FieldCheckResult[];
   score: number;
 }
@@ -97,6 +100,7 @@ export function runToolSequence(
     expectedTool: scenario.tool,
     toolCalled: match.name,
     calledTools,
+    matchedArgs: match.args,
     fieldResults,
     score,
   };

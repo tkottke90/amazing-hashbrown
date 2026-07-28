@@ -44,3 +44,176 @@ scenarios:
     type: tool-call
     input: 'Check the wiki for problems before I ask you anything else.'
     tool: wiki_locate
+
+  - id: wlint-003-rebaseline-source-drift
+    name: Agent calls wiki_rebaseline_source to fix a source_drift finding
+    purpose: >
+      Given a lint report with a source_drift finding, confirms the agent calls
+      wiki_rebaseline_source with the correct wikiId and rawFilePath from the
+      finding's page field — exercising the new SDK method and tool wrapper.
+    type: tool-sequence
+    input: 'Fix the raw source drift issue found in the user wiki.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'raw source drift' }
+        result:
+          text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_lint
+        args: { wikiId: 'user' }
+        result:
+          text: |
+            ## Wiki Lint Report: user
+            **Status:** ⚠ warnings present
+
+            ### Warnings
+            - [source_drift] raw/articles/some-article.md: Stored sha256 does not match file contents (raw/ was modified).
+    tool: wiki_rebaseline_source
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: rawFilePath
+        match: equals
+        value: raw/articles/some-article.md
+
+  - id: wlint-004-register-untracked-domain
+    name: Agent calls wiki_register_domain to fix a registry_sync finding
+    purpose: >
+      Given a lint report with a registry_sync finding, confirms the agent calls
+      wiki_register_domain with the directory name from the finding as wikiId —
+      exercising the new register() SDK method and tool wrapper.
+    type: tool-sequence
+    input: 'Register the untracked wiki directory the linter found.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'registry sync untracked wiki' }
+        result:
+          text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_lint
+        args: { wikiId: 'user' }
+        result:
+          text: |
+            ## Wiki Lint Report: user
+            **Status:** ⚠ warnings present
+
+            ### Warnings
+            - [registry_sync]: Wiki directory "projects" is on disk but missing from the registry.
+    tool: wiki_register_domain
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: projects
+
+  - id: wlint-005-fix-orphaned-page
+    name: Agent reads orphaned page then calls wiki_add_cross_link to fix it
+    purpose: >
+      Given a lint report with an orphans finding, confirms the agent calls
+      wiki_add_cross_link with the orphaned page as the link TARGET (toPage),
+      linking from a related page. The wiki_orient prior turn was added after
+      auto-eval round 2 (2026-07-28): without it the seeded context never
+      established that any candidate page (e.g. entities/bob.md) actually
+      exists, and all three evaluated models reasonably went hunting for one.
+      Round 3 then exposed that this scenario's original assertion (fromPage
+      = the orphan) was semantically wrong: checkOrphans in
+      lib/llm-wiki/src/internal/lint/checks.ts counts INBOUND wikilinks only,
+      so a link from the orphan outward would leave it orphaned on the next
+      lint — ornith reasoned exactly this and read Bob's page to link from it,
+      failing the backwards check. The argChecks now assert the correct
+      direction (fromPage bob, toPage alice), and the wiki_read_page prior
+      turn for bob.md below seeds the target-page content the models kept
+      (reasonably) fetching before linking.
+    type: tool-sequence
+    input: 'Fix the orphaned page the linter found in the user wiki.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'orphaned page' }
+        result:
+          text: 'Best match: "user" (domain: user, score 13). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          text: "# Wiki Orientation: user\n## Index (2 pages total)\n- entities/alice.md — profile of Alice, frontend guild lead\n- entities/bob.md — profile of Bob, senior engineer on the platform team"
+      - tool: wiki_lint
+        args: { wikiId: 'user' }
+        result:
+          text: |
+            ## Wiki Lint Report: user
+            **Status:** ⚠ warnings present
+
+            ### Warnings
+            - [orphans] entities/alice.md: Page has no inbound links from other pages.
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/alice.md' }
+        result:
+          text: |
+            # Alice
+            Alice works closely with Bob on the platform team. She leads the frontend guild.
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/bob.md' }
+        result:
+          text: |
+            # Bob
+            Bob is a senior engineer on the platform team. He owns the backend infrastructure.
+    tool: wiki_add_cross_link
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: fromPage
+        match: equals
+        value: entities/bob.md
+      # oneOf, not equals: wiki_add_cross_link's own toPage schema documents
+      # "Path or slug of the page to link to", so "alice" is as valid as the
+      # full path — local passed exactly that in auto-eval round 4 and was
+      # failed for it. Same too-strict-assertion pattern as wnav-001/wnav-006.
+      - path: toPage
+        match: oneOf
+        value: [entities/alice.md, alice]
+
+  - id: wlint-006-set-confidence-on-quality-finding
+    name: Agent calls wiki_update_page with confidence to fix a quality finding
+    purpose: >
+      Given a lint report with a quality finding (missing confidence), confirms the
+      agent calls wiki_update_page with the correct wikiId, path, and a confidence
+      value — exercising the newly exposed confidence param on the tool schema.
+    type: tool-sequence
+    input: 'Address the quality issue the linter flagged for the bob page.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'quality finding confidence' }
+        result:
+          text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+      - tool: wiki_lint
+        args: { wikiId: 'user' }
+        result:
+          text: |
+            ## Wiki Lint Report: user
+            **Status:** ⚠ warnings present
+
+            ### Warnings
+            - [quality] entities/bob.md: Missing confidence frontmatter field.
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/bob.md' }
+        result:
+          text: |
+            # Bob
+            Bob is a senior engineer on the platform team. He owns the backend infrastructure.
+    tool: wiki_update_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/bob.md
+      # oneOf, not equals: the lint report never says which confidence value to
+      # pick, and wiki_update_page's own schema documents no default — "high" vs
+      # "medium" for a short factual page is a judgment call, and round 1 of the
+      # auto-eval loop saw glm and local both reason their way to "medium" while
+      # ornith chose "high", all with defensible rationales. The scenario's
+      # purpose is that a confidence value gets set at all (exercising the newly
+      # exposed param), so accept either sensible tier; "low" stays excluded
+      # because nothing in the page content justifies it.
+      - path: confidence
+        match: oneOf
+        value: [high, medium]

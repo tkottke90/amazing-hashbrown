@@ -137,9 +137,6 @@ export class WikiRegistry {
 
   /** Scaffold a new wiki and register it. */
   async create(input: CreateWikiInput): Promise<LlmWiki> {
-    if (this.data.wikis.some((w) => w.id === input.id)) {
-      throw new Error(`Wiki id already registered: ${input.id}`);
-    }
     const relPath = input.path ?? input.id;
     const absPath = path.isAbsolute(relPath) ? relPath : path.join(this.wikiRoot, relPath);
 
@@ -152,18 +149,43 @@ export class WikiRegistry {
       embeddingProvider: this.embeddingProvider,
     });
 
-    this.data.wikis.push({
-      id: input.id,
-      path: relPath,
+    await this.register(input.id, {
       domain: input.domain,
-      tags: input.tags ?? [],
-      status: 'active',
+      tags: input.tags,
+      routingNotes: input.routingNotes,
     });
-    if (input.routingNotes?.length) {
-      this.data.routingNotes.push(...input.routingNotes);
-    }
-    await this.persist();
     return wiki;
+  }
+
+  /**
+   * Register an already-existing on-disk wiki directory in registry.json.
+   * Reads the domain from the directory's SCHEMA.md automatically.
+   */
+  async register(
+    id: string,
+    opts?: { domain?: string; tags?: string[]; routingNotes?: string[] },
+  ): Promise<void> {
+    if (this.data.wikis.some((w) => w.id === id)) {
+      throw new Error(`Wiki id already registered: ${id}`);
+    }
+    const wikiDir = path.join(this.wikiRoot, id);
+    try {
+      await fs.access(path.join(wikiDir, SCHEMA_FILE));
+    } catch {
+      throw new Error(`Wiki directory not found or missing SCHEMA.md: ${id}`);
+    }
+    let parsedDomain = '';
+    try {
+      const schema = await fs.readFile(path.join(wikiDir, SCHEMA_FILE), 'utf8');
+      const m = schema.match(/##\s*Domain\s*\n([\s\S]*?)(?=\n##|\n#|$)/);
+      if (m?.[1]) parsedDomain = m[1].trim();
+    } catch {
+      /* fall back to empty string */
+    }
+    const domain = opts?.domain ?? parsedDomain;
+    this.data.wikis.push({ id, path: id, domain, tags: opts?.tags ?? [], status: 'active' });
+    if (opts?.routingNotes?.length) this.data.routingNotes.push(...opts.routingNotes);
+    await this.persist();
   }
 
   /** Replace the routing notes and persist. */

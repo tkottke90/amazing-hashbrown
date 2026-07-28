@@ -18,6 +18,13 @@ interface ToolCallDetails {
   // toolCalled: null, but a report reader (or the next debugging pass) needs
   // to tell them apart without re-running with DEBUG_LLM_HTTP.
   calledTools: string[];
+  // The matched call's full args object, verbatim. Added for the same reason
+  // as calledTools (auto-eval wiki-lint round 4, 2026-07-28): three models
+  // failed a confidence argCheck with actual=null while their reasoning
+  // named a value, and nothing in the persisted result showed what they DID
+  // pass — diagnosing "param omitted vs. put somewhere else" required a
+  // DEBUG_LLM_HTTP rerun. Absent when no call matched.
+  matchedArgs?: Record<string, unknown>;
   fieldResults: FieldCheckResult[];
   score: number;
 }
@@ -101,6 +108,7 @@ export function runToolCall(
     expectedTool: scenario.tool,
     toolCalled: match.name,
     calledTools,
+    matchedArgs: match.args,
     fieldResults,
     score,
   };

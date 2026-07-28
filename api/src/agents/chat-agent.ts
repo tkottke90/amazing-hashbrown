@@ -9,11 +9,14 @@ import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
+import { wikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
 import { wikiCreatePageTool } from './tools/wiki-create-page.tool.js';
 import { wikiLintTool } from './tools/wiki-lint.tool.js';
 import { wikiLocateTool } from './tools/wiki-locate.tool.js';
 import { wikiOrientTool } from './tools/wiki-orient.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
+import { wikiRebaselineSourceTool } from './tools/wiki-rebaseline-source.tool.js';
+import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
@@ -118,6 +121,9 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiLintTool,
       wikiCreatePageTool,
       wikiUpdatePageTool,
+      wikiAddCrossLinkTool,
+      wikiRebaselineSourceTool,
+      wikiRegisterDomainTool,
       ...mcpTools,
     ],
     systemPrompt,

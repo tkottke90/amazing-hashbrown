@@ -23,6 +23,9 @@ import { wikiOrientTool } from '../api/src/agents/tools/wiki-orient.tool.js';
 import { wikiCreatePageTool } from '../api/src/agents/tools/wiki-create-page.tool.js';
 import { wikiLintTool } from '../api/src/agents/tools/wiki-lint.tool.js';
 import { wikiUpdatePageTool } from '../api/src/agents/tools/wiki-update-page.tool.js';
+import { wikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross-link.tool.js';
+import { wikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
+import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
@@ -42,6 +45,9 @@ const evalTools = [
   wikiLintTool,
   wikiCreatePageTool,
   wikiUpdatePageTool,
+  wikiAddCrossLinkTool,
+  wikiRebaselineSourceTool,
+  wikiRegisterDomainTool,
   fakeGenerateImageTool,
 ];
 
