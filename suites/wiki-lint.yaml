@@ -162,9 +162,13 @@ scenarios:
       - path: fromPage
         match: equals
         value: entities/bob.md
+      # oneOf, not equals: wiki_add_cross_link's own toPage schema documents
+      # "Path or slug of the page to link to", so "alice" is as valid as the
+      # full path — local passed exactly that in auto-eval round 4 and was
+      # failed for it. Same too-strict-assertion pattern as wnav-001/wnav-006.
       - path: toPage
-        match: equals
-        value: entities/alice.md
+        match: oneOf
+        value: [entities/alice.md, alice]
 
   - id: wlint-006-set-confidence-on-quality-finding
     name: Agent calls wiki_update_page with confidence to fix a quality finding

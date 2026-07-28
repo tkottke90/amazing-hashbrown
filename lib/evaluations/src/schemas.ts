@@ -240,6 +240,9 @@ const ToolCallDetails = z.object({
   // Optional so older persisted results (recorded before this field existed)
   // still parse.
   calledTools: z.array(z.string()).optional(),
+  // The matched call's args, verbatim — see executors/tool-call.ts. Optional
+  // for the same older-results reason as calledTools.
+  matchedArgs: z.record(z.string(), z.unknown()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
@@ -257,6 +260,8 @@ const ToolSequenceDetails = z.object({
   toolCalled: z.string().nullable(),
   // See ToolCallDetails's identical field.
   calledTools: z.array(z.string()).optional(),
+  // See ToolCallDetails's identical field.
+  matchedArgs: z.record(z.string(), z.unknown()).optional(),
   fieldResults: z.array(FieldCheckResultSchema),
   score: z.number(),
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
