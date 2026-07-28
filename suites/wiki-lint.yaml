@@ -108,15 +108,20 @@ scenarios:
     name: Agent reads orphaned page then calls wiki_add_cross_link to fix it
     purpose: >
       Given a lint report with an orphans finding, confirms the agent calls
-      wiki_add_cross_link with the orphaned page as fromPage — after reading it
-      to identify a link target. Verifies the tool-sequence pattern where the
-      agent must gather context before acting. The wiki_orient prior turn was
-      added after auto-eval round 2 (2026-07-28): without it the seeded context
-      never established that any candidate target page (e.g. entities/bob.md)
-      actually exists, and all three evaluated models reasonably went hunting
-      for one (wiki_read_page / wiki_search) instead of linking — a scenario
-      gap, not a model gap. The index below makes the target discoverable from
-      established context, so linking immediately is the correct move.
+      wiki_add_cross_link with the orphaned page as the link TARGET (toPage),
+      linking from a related page. The wiki_orient prior turn was added after
+      auto-eval round 2 (2026-07-28): without it the seeded context never
+      established that any candidate page (e.g. entities/bob.md) actually
+      exists, and all three evaluated models reasonably went hunting for one.
+      Round 3 then exposed that this scenario's original assertion (fromPage
+      = the orphan) was semantically wrong: checkOrphans in
+      lib/llm-wiki/src/internal/lint/checks.ts counts INBOUND wikilinks only,
+      so a link from the orphan outward would leave it orphaned on the next
+      lint — ornith reasoned exactly this and read Bob's page to link from it,
+      failing the backwards check. The argChecks now assert the correct
+      direction (fromPage bob, toPage alice), and the wiki_read_page prior
+      turn for bob.md below seeds the target-page content the models kept
+      (reasonably) fetching before linking.
     type: tool-sequence
     input: 'Fix the orphaned page the linter found in the user wiki.'
     priorTurns:
@@ -143,12 +148,21 @@ scenarios:
           text: |
             # Alice
             Alice works closely with Bob on the platform team. She leads the frontend guild.
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/bob.md' }
+        result:
+          text: |
+            # Bob
+            Bob is a senior engineer on the platform team. He owns the backend infrastructure.
     tool: wiki_add_cross_link
     argChecks:
       - path: wikiId
         match: equals
         value: user
       - path: fromPage
+        match: equals
+        value: entities/bob.md
+      - path: toPage
         match: equals
         value: entities/alice.md
 

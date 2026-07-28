@@ -33,10 +33,20 @@ export const wikiAddCrossLinkTool = tool(
   },
   {
     name: 'wiki_add_cross_link',
+    // Direction guidance rewritten after auto-eval round 3 (wiki-lint,
+    // 2026-07-28): the old text ("call wiki_read_page on the orphaned page
+    // first to identify a suitable link target") implied linking FROM the
+    // orphan outward, but checkOrphans counts inbound wikilinks only — an
+    // outbound link leaves the page just as orphaned on the next lint run.
+    // Ornith reasoned its way to the correct direction despite the old
+    // wording; the description now states it outright.
     description:
       'Add a cross-link from one wiki page to another under a "## Related Pages" section ' +
-      '(creating the section if absent). Use to fix orphans findings from wiki_lint — ' +
-      'call wiki_read_page on the orphaned page first to identify a suitable link target.',
+      '(creating the section if absent). Use to fix orphans findings from wiki_lint. ' +
+      'An orphan has no inbound links, so the orphaned page must be the link target: pass a ' +
+      'related page as fromPage and the orphaned page as toPage — a link from the orphan ' +
+      'outward does not fix the finding. Read the orphaned page to learn which pages it ' +
+      'relates to, then link from one of those.',
     schema: WikiAddCrossLinkSchema,
   },
 );

@@ -12,10 +12,19 @@ const WikiUpdatePageSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Replacement tag list. Omit to preserve the existing tags.'),
+  // "the only way to set it" clause added after auto-eval round 3 (wiki-lint,
+  // 2026-07-28): asked to fix a missing-confidence quality finding, glm and
+  // local both reasoned "add confidence: high" but passed no confidence param
+  // — apparently writing frontmatter into `content` instead, which the
+  // content param explicitly excludes. The description now closes that path.
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
-    .describe("How reliable this page's content is. Omit to preserve the existing value."),
+    .describe(
+      "How reliable this page's content is. Omit to preserve the existing value. " +
+        'This param is the only way to set the confidence frontmatter field — writing ' +
+        'frontmatter into `content` does not work.',
+    ),
   contested: z
     .boolean()
     .optional()
