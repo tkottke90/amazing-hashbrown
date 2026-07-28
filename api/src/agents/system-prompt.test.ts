@@ -163,9 +163,7 @@ describe('agents/system-prompt', () => {
     it('treats an explicit "check X"/"fix X" request as already-made — no confirmation round-trip', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('that instruction is the decision, already made');
-      expect(result).to.include(
-        'run the check or apply the fix, then report\nwhat happened',
-      );
+      expect(result).to.include('run the check or apply the fix, then report\nwhat happened');
     });
 
     it('returns the harness prompt verbatim for an empty string', () => {
