@@ -16,6 +16,18 @@ const WikiCreatePageSchema = z.object({
         'question-and-answer, "summary" for a higher-level rollup.',
     ),
   tags: z.array(z.string()).optional().describe('Tags for the new page.'),
+  confidence: z
+    .enum(['high', 'medium', 'low'])
+    .optional()
+    .describe('How reliable this page\'s content is.'),
+  contested: z
+    .boolean()
+    .optional()
+    .describe('True when the information on this page is disputed.'),
+  contradictions: z
+    .array(z.string())
+    .optional()
+    .describe('Page paths this page contradicts.'),
   dryRun: z
     .boolean()
     .optional()
@@ -23,8 +35,8 @@ const WikiCreatePageSchema = z.object({
 });
 
 export const wikiCreatePageTool = tool(
-  async ({ wikiId, title, content, section, tags, dryRun }) => {
-    const result = await createWikiPage({ wikiId, title, content, section, tags, dryRun });
+  async ({ wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun }) => {
+    const result = await createWikiPage({ wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun });
 
     switch (result.status) {
       case 'written':

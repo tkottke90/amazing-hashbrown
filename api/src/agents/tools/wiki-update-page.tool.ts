@@ -8,6 +8,22 @@ const WikiUpdatePageSchema = z.object({
     .string()
     .describe('Existing page path relative to the wiki root, from wiki_search or wiki_read_page.'),
   content: z.string().describe('Full replacement page body as markdown (no frontmatter).'),
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe('Replacement tag list. Omit to preserve the existing tags.'),
+  confidence: z
+    .enum(['high', 'medium', 'low'])
+    .optional()
+    .describe('How reliable this page\'s content is. Omit to preserve the existing value.'),
+  contested: z
+    .boolean()
+    .optional()
+    .describe('Whether this information is disputed. Omit to preserve the existing value.'),
+  contradictions: z
+    .array(z.string())
+    .optional()
+    .describe('Page paths this page contradicts. Omit to preserve the existing value.'),
   summary: z
     .string()
     .optional()
@@ -39,8 +55,8 @@ function lineDiff(before: string, after: string): string {
 }
 
 export const wikiUpdatePageTool = tool(
-  async ({ wikiId, path, content, summary, dryRun }) => {
-    const result = await updateWikiPage({ wikiId, path, content, summary, dryRun });
+  async ({ wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun }) => {
+    const result = await updateWikiPage({ wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun });
 
     switch (result.status) {
       case 'written': {

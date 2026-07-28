@@ -59,11 +59,14 @@ export const wikiLintTool = tool(
   {
     name: 'wiki_lint',
     description:
-      "Run the wiki's health checks (broken links, orphaned pages, missing frontmatter, stale " +
-      'content, tag/index drift, and more) against one domain. Read-only — reports issues without ' +
-      'fixing them. For "broken_links", "index", and "stale" findings, use wiki_read_page and ' +
-      'wiki_update_page to fix them; other finding types (tags, confidence, contradictions, orphans) ' +
-      "don't have a fix path with the current toolset — say so rather than attempting a workaround.",
+      "Run the wiki's health checks against one domain and get a grouped severity report. " +
+      'Every finding type now has a fix path: ' +
+      '"broken_links"/"index"/"stale"/"frontmatter"/"page_size"/"log_rotation" → wiki_read_page + wiki_update_page; ' +
+      '"tag_audit" → wiki_update_page with tags param; ' +
+      '"quality"/"contradictions" → wiki_update_page with confidence/contested/contradictions params; ' +
+      '"orphans" → wiki_add_cross_link (read the orphaned page first to identify a link target); ' +
+      '"source_drift" → wiki_rebaseline_source; ' +
+      '"registry_sync" → wiki_register_domain.',
     schema: WikiLintSchema,
   },
 );
