@@ -15,7 +15,7 @@ const WikiUpdatePageSchema = z.object({
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
-    .describe('How reliable this page\'s content is. Omit to preserve the existing value.'),
+    .describe("How reliable this page's content is. Omit to preserve the existing value."),
   contested: z
     .boolean()
     .optional()
@@ -55,8 +55,28 @@ function lineDiff(before: string, after: string): string {
 }
 
 export const wikiUpdatePageTool = tool(
-  async ({ wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun }) => {
-    const result = await updateWikiPage({ wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun });
+  async ({
+    wikiId,
+    path,
+    content,
+    tags,
+    confidence,
+    contested,
+    contradictions,
+    summary,
+    dryRun,
+  }) => {
+    const result = await updateWikiPage({
+      wikiId,
+      path,
+      content,
+      tags,
+      confidence,
+      contested,
+      contradictions,
+      summary,
+      dryRun,
+    });
 
     switch (result.status) {
       case 'written': {

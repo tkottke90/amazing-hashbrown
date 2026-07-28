@@ -16,20 +16,20 @@
 
 All 12 check IDs from `LintCheckId`:
 
-| Finding | Fix mechanism | New work |
-|---|---|---|
-| `broken_links` | `wiki_update_page` to correct wikilink targets | None — already fixable |
-| `orphans` | New `wiki_add_cross_link` tool | New tool (SDK has `addCrossLink()`) |
-| `index` | `wiki_update_page` on index.md | None — already fixable |
-| `frontmatter` | `wiki_update_page` with corrected field values | None — already fixable |
-| `page_size` | `wiki_create_page` (subpage) + `wiki_update_page` (original) | None — agent-composable with existing tools |
-| `tag_audit` | `wiki_update_page` with `tags` param | Expose `tags` in tool schema |
-| `source_drift` | New `wiki_rebaseline_source` tool | New SDK method + new tool |
-| `log_rotation` | `wiki_create_page` (archive file) + `wiki_update_page` (trim log.md) | None — agent-composable with existing tools |
-| `stale` | `wiki_update_page` with refreshed content | None — already fixable |
-| `quality` | `wiki_update_page` with `confidence`/`contested` params | Add fields to service + tool schemas |
-| `contradictions` | `wiki_update_page` with `contradictions` + `contested` | Same as `quality` |
-| `registry_sync` | New `wiki_register_domain` tool | New SDK method + new tool + refactor `create()` |
+| Finding          | Fix mechanism                                                        | New work                                        |
+| ---------------- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| `broken_links`   | `wiki_update_page` to correct wikilink targets                       | None — already fixable                          |
+| `orphans`        | New `wiki_add_cross_link` tool                                       | New tool (SDK has `addCrossLink()`)             |
+| `index`          | `wiki_update_page` on index.md                                       | None — already fixable                          |
+| `frontmatter`    | `wiki_update_page` with corrected field values                       | None — already fixable                          |
+| `page_size`      | `wiki_create_page` (subpage) + `wiki_update_page` (original)         | None — agent-composable with existing tools     |
+| `tag_audit`      | `wiki_update_page` with `tags` param                                 | Expose `tags` in tool schema                    |
+| `source_drift`   | New `wiki_rebaseline_source` tool                                    | New SDK method + new tool                       |
+| `log_rotation`   | `wiki_create_page` (archive file) + `wiki_update_page` (trim log.md) | None — agent-composable with existing tools     |
+| `stale`          | `wiki_update_page` with refreshed content                            | None — already fixable                          |
+| `quality`        | `wiki_update_page` with `confidence`/`contested` params              | Add fields to service + tool schemas            |
+| `contradictions` | `wiki_update_page` with `contradictions` + `contested`               | Same as `quality`                               |
+| `registry_sync`  | New `wiki_register_domain` tool                                      | New SDK method + new tool + refactor `create()` |
 
 After this item, `wiki_lint`'s description is updated to reflect the full fix coverage.
 
@@ -42,6 +42,7 @@ After this item, `wiki_lint`'s description is updated to reflect the full fix co
 New method. Fixes `source_drift` findings by re-establishing the raw file's sha256 baseline against its current content.
 
 **Behavior:**
+
 1. Reads the existing raw file at `relPath` (throws ENOENT if not found)
 2. Parses frontmatter to extract the body and preserve the existing `source_url`
 3. Computes sha256 of the body using the internal `sha256Body()` utility
@@ -56,6 +57,7 @@ Throws if the raw file does not exist. No new public types or exports needed —
 New method. Registers an already-existing on-disk wiki directory in `registry.json`. Fixes `registry_sync` findings.
 
 **Behavior:**
+
 1. Throws `"Wiki id already registered: ${id}"` if the id is already in `registry.json`
 2. Resolves the directory path as `<wikiRoot>/<id>` (uses `id` as the relative path)
 3. Validates the directory exists and contains `SCHEMA.md` — throws `"Wiki directory not found or missing SCHEMA.md: ${id}"` otherwise
@@ -80,6 +82,7 @@ External behavior is identical. This is purely internal decomposition — `creat
 ### `CreateWikiPageParams`
 
 Add three optional fields:
+
 - `confidence?: 'high' | 'medium' | 'low'`
 - `contested?: boolean`
 - `contradictions?: string[]`
@@ -99,6 +102,7 @@ Carry-forward is the correct default because these are epistemological quality s
 ### `wiki_update_page` — schema additions
 
 Add to `WikiUpdatePageSchema`:
+
 - `tags` — `z.array(z.string()).optional()` — already accepted by the service, not previously exposed in the tool wrapper; fixes `tag_audit` findings
 - `confidence` — `z.enum(['high', 'medium', 'low']).optional()`
 - `contested` — `z.boolean().optional()`
@@ -109,6 +113,7 @@ The handler passes all four through to `updateWikiPage()`. Carry-forward semanti
 ### `wiki_create_page` — schema additions
 
 Add to `WikiCreatePageSchema`:
+
 - `confidence` — `z.enum(['high', 'medium', 'low']).optional()`
 - `contested` — `z.boolean().optional()`
 - `contradictions` — `z.array(z.string()).optional()`
@@ -120,6 +125,7 @@ The handler passes them through to `createWikiPage()`.
 File: `api/src/agents/tools/wiki-add-cross-link.tool.ts`
 
 **Schema:**
+
 - `wikiId: string` — wiki domain ID
 - `fromPage: string` — path of the page to add the link from
 - `toPage: string` — path or slug of the page to link to
@@ -133,6 +139,7 @@ File: `api/src/agents/tools/wiki-add-cross-link.tool.ts`
 File: `api/src/agents/tools/wiki-rebaseline-source.tool.ts`
 
 **Schema:**
+
 - `wikiId: string` — wiki domain ID
 - `rawFilePath: string` — value of the `page` field from a `source_drift` lint finding (e.g. `raw/articles/some-source.md`)
 
@@ -145,6 +152,7 @@ File: `api/src/agents/tools/wiki-rebaseline-source.tool.ts`
 File: `api/src/agents/tools/wiki-register-domain.tool.ts`
 
 **Schema:**
+
 - `wikiId: string` — the directory name of the unregistered wiki (from the `registry_sync` finding message)
 - `routingNotes: z.array(z.string()).optional()` — routing hints to append to the global registry
 
@@ -162,12 +170,12 @@ All three new tools are added to the agent's tool list alongside the existing wi
 
 Four new scenarios added to the existing suite:
 
-| ID | Type | Scenario |
-|---|---|---|
-| `wlint-003` | `tool-call` | Agent receives `source_drift` finding; must call `wiki_rebaseline_source` with correct `wikiId` and `rawFilePath` |
-| `wlint-004` | `tool-call` | Agent receives `registry_sync` finding; must call `wiki_register_domain` with the directory name as `wikiId` |
+| ID          | Type            | Scenario                                                                                                              |
+| ----------- | --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `wlint-003` | `tool-call`     | Agent receives `source_drift` finding; must call `wiki_rebaseline_source` with correct `wikiId` and `rawFilePath`     |
+| `wlint-004` | `tool-call`     | Agent receives `registry_sync` finding; must call `wiki_register_domain` with the directory name as `wikiId`          |
 | `wlint-005` | `tool-sequence` | Agent receives `orphans` finding; reads the orphaned page to identify a link target, then calls `wiki_add_cross_link` |
-| `wlint-006` | `tool-call` | Agent receives `quality` finding; calls `wiki_update_page` with an appropriate `confidence` value |
+| `wlint-006` | `tool-call`     | Agent receives `quality` finding; calls `wiki_update_page` with an appropriate `confidence` value                     |
 
 `wlint-005` is a `tool-sequence` because the finding doesn't supply `toPage` — the agent must read context to determine a candidate before calling the cross-link tool.
 

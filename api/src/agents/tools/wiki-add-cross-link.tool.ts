@@ -7,9 +7,7 @@ const WikiAddCrossLinkSchema = z.object({
   fromPage: z
     .string()
     .describe('Path of the page to add the link from, relative to the wiki root.'),
-  toPage: z
-    .string()
-    .describe('Path or slug of the page to link to.'),
+  toPage: z.string().describe('Path or slug of the page to link to.'),
 });
 
 export const wikiAddCrossLinkTool = tool(

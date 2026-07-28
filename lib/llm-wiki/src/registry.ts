@@ -178,8 +178,10 @@ export class WikiRegistry {
     try {
       const schema = await fs.readFile(path.join(wikiDir, SCHEMA_FILE), 'utf8');
       const m = schema.match(/##\s*Domain\s*\n([\s\S]*?)(?=\n##|\n#|$)/);
-      if (m) parsedDomain = m[1].trim();
-    } catch { /* fall back to empty string */ }
+      if (m?.[1]) parsedDomain = m[1].trim();
+    } catch {
+      /* fall back to empty string */
+    }
     const domain = opts?.domain ?? parsedDomain;
     this.data.wikis.push({ id, path: id, domain, tags: opts?.tags ?? [], status: 'active' });
     if (opts?.routingNotes?.length) this.data.routingNotes.push(...opts.routingNotes);

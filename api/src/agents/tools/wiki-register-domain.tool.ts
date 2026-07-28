@@ -40,7 +40,7 @@ export const wikiRegisterDomainTool = tool(
     name: 'wiki_register_domain',
     description:
       'Register an existing on-disk wiki directory in the registry. Use to fix registry_sync ' +
-      'findings from wiki_lint. The domain is read automatically from the directory\'s SCHEMA.md. ' +
+      "findings from wiki_lint. The domain is read automatically from the directory's SCHEMA.md. " +
       'Does not scaffold — the directory must already exist.',
     schema: WikiRegisterDomainSchema,
   },

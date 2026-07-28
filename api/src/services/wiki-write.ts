@@ -39,7 +39,19 @@ export async function createWikiPage(
   params: CreateWikiPageParams,
   registry?: WikiRegistry,
 ): Promise<CreateWikiPageResult> {
-  const { wikiId, title, content, section, tags = [], sources = [], summary, confidence, contested, contradictions, dryRun } = params;
+  const {
+    wikiId,
+    title,
+    content,
+    section,
+    tags = [],
+    sources = [],
+    summary,
+    confidence,
+    contested,
+    contradictions,
+    dryRun,
+  } = params;
 
   let reg = registry;
   if (!reg) {
@@ -107,7 +119,18 @@ export async function updateWikiPage(
   params: UpdateWikiPageParams,
   registry?: WikiRegistry,
 ): Promise<UpdateWikiPageResult> {
-  const { wikiId, path: relPath, content, tags, sources, summary, confidence, contested, contradictions, dryRun } = params;
+  const {
+    wikiId,
+    path: relPath,
+    content,
+    tags,
+    sources,
+    summary,
+    confidence,
+    contested,
+    contradictions,
+    dryRun,
+  } = params;
 
   let reg = registry;
   if (!reg) {
@@ -155,15 +178,16 @@ export async function updateWikiPage(
   // keeps the two params symmetric.
   const effectiveTags = tags ?? existing.frontmatter.tags;
   const effectiveSources = sources ?? existing.frontmatter.sources;
-  const effectiveConfidence = confidence !== undefined
-    ? confidence
-    : (existing.frontmatter.confidence as 'high' | 'medium' | 'low' | undefined);
-  const effectiveContested = contested !== undefined
-    ? contested
-    : (existing.frontmatter.contested as boolean | undefined);
-  const effectiveContradictions = contradictions !== undefined
-    ? contradictions
-    : (existing.frontmatter.contradictions as string[] | undefined);
+  const effectiveConfidence =
+    confidence !== undefined
+      ? confidence
+      : (existing.frontmatter.confidence as 'high' | 'medium' | 'low' | undefined);
+  const effectiveContested =
+    contested !== undefined ? contested : (existing.frontmatter.contested as boolean | undefined);
+  const effectiveContradictions =
+    contradictions !== undefined
+      ? contradictions
+      : (existing.frontmatter.contradictions as string[] | undefined);
 
   if (dryRun) {
     return {

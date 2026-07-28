@@ -416,7 +416,8 @@ export class LlmWiki {
   /** Re-establish the sha256 baseline for a raw source file whose body has changed. */
   async rebaselineRawSource(relPath: string): Promise<{ path: string }> {
     const raw = await this.readRawOrNull(relPath);
-    if (raw === null) throw Object.assign(new Error(`Raw file not found: ${relPath}`), { code: 'ENOENT' });
+    if (raw === null)
+      throw Object.assign(new Error(`Raw file not found: ${relPath}`), { code: 'ENOENT' });
     const { data, body } = fm.parse(raw);
     const newSha = sha256Body(raw);
     return this.saveRawSource({

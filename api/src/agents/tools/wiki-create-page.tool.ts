@@ -19,15 +19,9 @@ const WikiCreatePageSchema = z.object({
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
-    .describe('How reliable this page\'s content is.'),
-  contested: z
-    .boolean()
-    .optional()
-    .describe('True when the information on this page is disputed.'),
-  contradictions: z
-    .array(z.string())
-    .optional()
-    .describe('Page paths this page contradicts.'),
+    .describe("How reliable this page's content is."),
+  contested: z.boolean().optional().describe('True when the information on this page is disputed.'),
+  contradictions: z.array(z.string()).optional().describe('Page paths this page contradicts.'),
   dryRun: z
     .boolean()
     .optional()
@@ -35,8 +29,28 @@ const WikiCreatePageSchema = z.object({
 });
 
 export const wikiCreatePageTool = tool(
-  async ({ wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun }) => {
-    const result = await createWikiPage({ wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun });
+  async ({
+    wikiId,
+    title,
+    content,
+    section,
+    tags,
+    confidence,
+    contested,
+    contradictions,
+    dryRun,
+  }) => {
+    const result = await createWikiPage({
+      wikiId,
+      title,
+      content,
+      section,
+      tags,
+      confidence,
+      contested,
+      contradictions,
+      dryRun,
+    });
 
     switch (result.status) {
       case 'written':
