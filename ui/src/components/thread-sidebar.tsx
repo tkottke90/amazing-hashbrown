@@ -55,6 +55,7 @@ interface ThreadRowProps {
 }
 
 function ThreadRow({ thread, isActive }: ThreadRowProps) {
+  const { url, route } = useLocation();
   const isEditing = useSignal(false);
   const isConfirmingDelete = useSignal(false);
   const isRegenerating = useSignal(false);
@@ -144,7 +145,10 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
     >
       <button
         type="button"
-        onClick={() => switchThread(thread.id)}
+        onClick={() => {
+          switchThread(thread.id);
+          if (url !== '/') route('/');
+        }}
         className="flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md px-2 py-1 text-left"
       >
         <span className="w-full truncate">{thread.title}</span>
