@@ -1,6 +1,16 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { Plus, MoreHorizontal, Pencil, Sparkles, Copy, Trash2, Loader2 } from 'lucide-preact';
+import {
+  Plus,
+  MoreHorizontal,
+  Pencil,
+  Sparkles,
+  Copy,
+  Trash2,
+  Loader2,
+  BookOpen,
+} from 'lucide-preact';
+import { useLocation } from 'preact-iso';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -192,6 +202,8 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
 }
 
 export function ThreadSidebar() {
+  const { url } = useLocation();
+
   useEffect(() => {
     refreshThreadList();
   }, []);
@@ -217,6 +229,20 @@ export function ThreadSidebar() {
           />
         ))}
       </div>
+
+      <a
+        href="/wiki"
+        aria-label="Wiki"
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url === '/wiki'
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <BookOpen className="size-4 shrink-0" />
+        Wiki
+      </a>
 
       <label className="flex items-center justify-between gap-2 border-t border-border px-2 pt-3 text-xs text-muted-foreground">
         <span>Show failed attempts</span>
