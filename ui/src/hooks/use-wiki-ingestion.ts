@@ -2,7 +2,14 @@ import { signal, batch } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
-import { activeDomainId, refreshGraph, refreshPages, loadPage, activePagePath } from './use-wiki';
+import {
+  activeDomainId,
+  refreshDomains,
+  refreshGraph,
+  refreshPages,
+  loadPage,
+  activePagePath,
+} from './use-wiki';
 
 // ---- Persistent thread ID ----
 
@@ -153,6 +160,11 @@ function handleWikiEvent(evt: ChatSSEEvent): void {
       }
       break;
     }
+
+    case 'wiki_domain_created':
+      void refreshDomains();
+      void refreshGraph();
+      break;
 
     case 'wiki_oriented':
       wikiOrientedTo.value = evt.wikiId;

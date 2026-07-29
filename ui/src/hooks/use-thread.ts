@@ -336,6 +336,7 @@ function handleEvent(evt: ChatSSEEvent): void {
       break;
 
     case 'wiki_oriented':
+    case 'wiki_domain_created':
       // Handled by the wiki ingestion chat; no-op in the main thread context.
       break;
 

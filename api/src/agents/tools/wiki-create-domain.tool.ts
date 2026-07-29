@@ -1,6 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getWikiRegistry } from '../../services/wiki.js';
+import { getActiveSseWriter } from '../active-sse-writer.js';
 
 const WikiCreateDomainSchema = z.object({
   wikiId: z
@@ -24,7 +25,7 @@ const WikiCreateDomainSchema = z.object({
 });
 
 export const wikiCreateDomainTool = tool(
-  async ({ wikiId, name, domain, routingNotes }) => {
+  async ({ wikiId, name, domain, routingNotes }, config) => {
     let registry;
     try {
       registry = await getWikiRegistry();
@@ -33,6 +34,8 @@ export const wikiCreateDomainTool = tool(
     }
     try {
       await registry.create({ id: wikiId, name, domain, routingNotes });
+      const threadId = (config?.configurable?.thread_id as string | undefined) ?? '';
+      getActiveSseWriter(threadId)?.({ type: 'wiki_domain_created', wikiId });
       return `Created and registered wiki domain "${wikiId}". The directory and SCHEMA.md have been scaffolded. It is now available for routing and loading.`;
     } catch (err) {
       const msg = (err as Error).message ?? '';
