@@ -46,6 +46,14 @@ function AppNavEnd() {
 }
 
 // path prop is consumed by preact-iso's Router for route matching
+function WikiRoot(_props: { path?: string }) {
+  return (
+    <Layout aside={<ThreadSidebar />} navEnd={<AppNavEnd />}>
+      <WikiView />
+    </Layout>
+  );
+}
+
 function ChatRoot(_props: { path?: string }) {
   useEffect(() => {
     refreshThreadList();
@@ -71,7 +79,7 @@ export function App() {
     <LocationProvider>
       <Router>
         <ChatRoot path="/" />
-        <WikiView path="/wiki" />
+        <WikiRoot path="/wiki" />
       </Router>
     </LocationProvider>
   );

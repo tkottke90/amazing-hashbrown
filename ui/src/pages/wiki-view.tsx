@@ -32,9 +32,9 @@ export function WikiView(_props: { path?: string }) {
   }
 
   return (
-    <>
+    <div class="flex h-full flex-col">
       {/* Mobile fallback */}
-      <div class="flex h-dvh flex-col items-center justify-center gap-3 p-8 text-center md:hidden">
+      <div class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center md:hidden">
         <Monitor class="size-10 text-muted-foreground" />
         <p class="text-sm text-muted-foreground">
           The Wiki view requires a larger screen. Please open on a desktop or tablet.
@@ -42,7 +42,7 @@ export function WikiView(_props: { path?: string }) {
       </div>
 
       {/* Desktop two-column layout */}
-      <div class="hidden h-dvh md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
+      <div class="hidden h-full md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
         {/* Canvas column */}
         <div class="flex min-h-0 flex-col overflow-hidden">
           {/* Canvas header */}
@@ -95,6 +95,6 @@ export function WikiView(_props: { path?: string }) {
         {/* Chat column */}
         <IngestionChat chatInputRef={chatInputRef} />
       </div>
-    </>
+    </div>
   );
 }
