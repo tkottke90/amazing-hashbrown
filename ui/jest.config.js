@@ -13,6 +13,8 @@ export default {
     '^remark-gfm$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^rehype-highlight$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
+    '^preact-iso$': '<rootDir>/test/__mocks__/preact-iso.tsx',
+    '^@/pages/wiki-view$': '<rootDir>/test/__mocks__/wiki-view.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-dom/test-utils$': 'preact/test-utils',
     '^react-dom$': 'preact/compat',

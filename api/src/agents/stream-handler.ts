@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
+import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
@@ -187,10 +188,15 @@ export async function pipeEvents(
 
 // ---- Finalize the assistant row, then emit either a HITL prompt or done ----
 
-async function finalizeTurn(
+// Structural interface — any LangGraph-based agent satisfies this.
+interface AgentWithGraph {
+  graph: Pick<ChatAgent['graph'], 'getState'>;
+}
+
+export async function finalizeTurn(
   res: Response,
   threadStore: ThreadStore,
-  agent: ChatAgent,
+  agent: AgentWithGraph,
   threadId: string,
   msgId: string,
   startedAt: number,
@@ -323,6 +329,9 @@ export async function streamChatToSse(
 
   const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
+  setActiveSseWriter(threadId, (event) => {
+    writeSseEvent(res, event);
+  });
   try {
     const eventStream = agent.streamEvents(
       { messages: [{ role: 'human', content }] },
@@ -371,6 +380,8 @@ export async function streamChatToSse(
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
+  } finally {
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -411,6 +422,9 @@ export async function resumeChatToSse(
 
   const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
+  setActiveSseWriter(threadId, (event) => {
+    writeSseEvent(res, event);
+  });
   try {
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
       ...config,
@@ -452,6 +466,8 @@ export async function resumeChatToSse(
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
+  } finally {
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -500,6 +516,9 @@ export async function retryChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
+  setActiveSseWriter(threadId, (event) => {
+    writeSseEvent(res, event);
+  });
   try {
     const eventStream = agent.streamEvents(null, {
       ...config,
@@ -541,5 +560,7 @@ export async function retryChatToSse(
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
+  } finally {
+    clearActiveSseWriter(threadId);
   }
 }

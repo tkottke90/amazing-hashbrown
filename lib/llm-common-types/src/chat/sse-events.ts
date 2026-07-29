@@ -97,6 +97,12 @@ const WikiUpdatedSchema = z.object({
   seq: z.number().optional(),
 });
 
+const WikiOrientedSchema = z.object({
+  type: z.literal('wiki_oriented'),
+  wikiId: z.string(),
+  wikiName: z.string(),
+});
+
 export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   TextDeltaSchema,
   ThoughtDeltaSchema,
@@ -108,6 +114,7 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   StreamDoneSchema,
   StreamErrorSchema,
   WikiUpdatedSchema,
+  WikiOrientedSchema,
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;

@@ -8,7 +8,7 @@ export const SpanTypeSchema = z.enum(['llm-call', 'tool-call']);
 // spans (e.g. a background pipeline that errors before its first LLM call —
 // the exact case span-name inference cannot distinguish from a plain chat
 // turn, since neither has recorded anything to infer from).
-export const TraceSourceSchema = z.enum(['chat', 'after-agent', 'generate-title']);
+export const TraceSourceSchema = z.enum(['chat', 'after-agent', 'generate-title', 'wiki-ingestion']);
 
 export const SpanRecordSchema = z.object({
   spanId: z.string(),

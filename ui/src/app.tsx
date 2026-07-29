@@ -1,15 +1,38 @@
 import { useEffect } from 'preact/hooks';
-import { Settings } from 'lucide-preact';
+import { LocationProvider, Router, useLocation } from 'preact-iso';
+import { BookOpen, Settings } from 'lucide-preact';
 
+import { cn } from '@/lib/utils';
 import { Layout } from '@/components/layout';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ThreadSidebar } from '@/components/thread-sidebar';
 import { ThreadView } from '@/pages/thread-view';
+import { WikiView } from '@/pages/wiki-view';
 import { activeThreadId, switchThread, newThread, refreshThreadList } from '@/hooks/use-thread';
+
+function WikiNavLink() {
+  const { url } = useLocation();
+  const isActive = url === '/wiki';
+  return (
+    <a
+      href="/wiki"
+      aria-label="Wiki"
+      className={cn(
+        'rounded-md p-2 transition-colors',
+        isActive
+          ? 'bg-sidebar-accent text-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+      )}
+    >
+      <BookOpen className="size-4" />
+    </a>
+  );
+}
 
 function AppNavEnd() {
   return (
     <div className="flex items-center gap-1">
+      <WikiNavLink />
       <a
         href="#"
         aria-label="Settings"
@@ -22,7 +45,8 @@ function AppNavEnd() {
   );
 }
 
-export function App() {
+// path prop is consumed by preact-iso's Router for route matching
+function ChatRoot(_props: { path?: string }) {
   useEffect(() => {
     refreshThreadList();
     switchThread(activeThreadId.value);
@@ -39,5 +63,16 @@ export function App() {
     >
       <ThreadView />
     </Layout>
+  );
+}
+
+export function App() {
+  return (
+    <LocationProvider>
+      <Router>
+        <ChatRoot path="/" />
+        <WikiView path="/wiki" />
+      </Router>
+    </LocationProvider>
   );
 }

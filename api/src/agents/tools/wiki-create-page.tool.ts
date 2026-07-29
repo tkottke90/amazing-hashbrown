@@ -1,6 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
+import { getActiveSseWriter } from '../active-sse-writer.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -29,17 +30,20 @@ const WikiCreatePageSchema = z.object({
 });
 
 export const wikiCreatePageTool = tool(
-  async ({
-    wikiId,
-    title,
-    content,
-    section,
-    tags,
-    confidence,
-    contested,
-    contradictions,
-    dryRun,
-  }) => {
+  async (
+    {
+      wikiId,
+      title,
+      content,
+      section,
+      tags,
+      confidence,
+      contested,
+      contradictions,
+      dryRun,
+    },
+    config,
+  ) => {
     const result = await createWikiPage({
       wikiId,
       title,
@@ -53,8 +57,16 @@ export const wikiCreatePageTool = tool(
     });
 
     switch (result.status) {
-      case 'written':
+      case 'written': {
+        const threadId = config?.configurable?.thread_id as string | undefined;
+        getActiveSseWriter(threadId ?? '')?.({
+          type: 'wiki_updated',
+          pageTitle: title,
+          pageKind: section,
+          wikiName: wikiId,
+        });
         return `Created page "${title}" at ${result.result.path}.`;
+      }
       case 'dry_run':
         return `[dry run] Would create a new "${result.section}" page titled "${result.title}" in wiki "${result.wikiId}".`;
       case 'duplicate':

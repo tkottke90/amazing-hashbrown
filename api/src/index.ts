@@ -8,6 +8,7 @@ import { bootThreadStore } from './services/thread-store.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
+import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 
@@ -31,6 +32,7 @@ app.logger.info('Thread store booted');
 await bootArtifactStore();
 app.logger.info('Artifact store booted');
 initChatAgent(db);
+initWikiAgent(db);
 await bootKnowledgeBase();
 app.logger.info('Knowledge base booted');
 await loadAgentInstructions();
