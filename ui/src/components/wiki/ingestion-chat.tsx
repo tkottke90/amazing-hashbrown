@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { RotateCcw } from 'lucide-preact';
+import { Check, Hash, RotateCcw } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
@@ -10,6 +10,7 @@ import {
   wikiMessages,
   wikiIsStreaming,
   wikiPendingHitlId,
+  wikiThreadId,
   sendWikiMessage,
   submitWikiHitlAnswer,
   stopWikiGeneration,
@@ -25,6 +26,16 @@ interface Props {
 export function IngestionChat({ chatInputRef }: Props) {
   const inputValue = useSignal('');
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const copied = useSignal(false);
+
+  function handleCopyThreadId() {
+    void navigator.clipboard.writeText(wikiThreadId.value).then(() => {
+      copied.value = true;
+      setTimeout(() => {
+        copied.value = false;
+      }, 2000);
+    });
+  }
 
   // Assign the inner textarea to chatInputRef so DocumentView can focus it after save
   useEffect(() => {
@@ -64,6 +75,14 @@ export function IngestionChat({ chatInputRef }: Props) {
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <NewDomainForm />
+          <button
+            type="button"
+            onClick={handleCopyThreadId}
+            title="Copy thread ID"
+            class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+          >
+            {copied.value ? <Check class="size-3.5" /> : <Hash class="size-3.5" />}
+          </button>
           <button
             type="button"
             onClick={newWikiThread}
