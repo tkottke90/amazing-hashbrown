@@ -10,6 +10,7 @@ import { wikiLintTool } from './tools/wiki-lint.tool.js';
 import { wikiLocateTool } from './tools/wiki-locate.tool.js';
 import { wikiOrientTool } from './tools/wiki-orient.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
+import { wikiCreateDomainTool } from './tools/wiki-create-domain.tool.js';
 import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
@@ -44,6 +45,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
       wikiUpdatePageTool,
       wikiAddCrossLinkTool,
       wikiLintTool,
+      wikiCreateDomainTool,
       wikiRegisterDomainTool,
     ],
     systemPrompt,

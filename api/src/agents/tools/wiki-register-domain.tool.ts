@@ -39,9 +39,11 @@ export const wikiRegisterDomainTool = tool(
   {
     name: 'wiki_register_domain',
     description:
-      'Register an existing on-disk wiki directory in the registry. Use to fix registry_sync ' +
-      "findings from wiki_lint. The domain is read automatically from the directory's SCHEMA.md. " +
-      'Does not scaffold — the directory must already exist.',
+      'Register an existing on-disk wiki directory that is missing from the registry. ' +
+      'Use ONLY to fix registry_sync findings from wiki_lint — i.e. the directory and SCHEMA.md ' +
+      'already exist on disk but the domain is not yet tracked. ' +
+      'Does NOT create or scaffold anything. ' +
+      'To create a brand-new domain from scratch, use wiki_create_domain instead.',
     schema: WikiRegisterDomainSchema,
   },
 );
