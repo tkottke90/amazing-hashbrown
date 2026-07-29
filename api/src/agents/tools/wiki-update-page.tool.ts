@@ -91,7 +91,11 @@ export const wikiUpdatePageTool = tool(
           wikiName: wikiId,
         });
         const warnings = result.result.warnings.map((w) => w.message).join(' ');
-        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}`;
+        const deletedWarning =
+          result.deletedSections.length > 0
+            ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
+            : '';
+        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
       }
       case 'dry_run':
         return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;
