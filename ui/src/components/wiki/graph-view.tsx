@@ -67,9 +67,7 @@ export function GraphView({ onOpenInEditor }: Props) {
     }));
 
     // Hidden derived_from edges excluded by default
-    const visibleEdges: D3Edge[] = (allEdges as D3Edge[]).filter(
-      (e) => e.type !== 'derived_from',
-    );
+    const visibleEdges: D3Edge[] = (allEdges as D3Edge[]).filter((e) => e.type !== 'derived_from');
 
     // Clear previous render
     const sel = d3Selection.select(svg);

@@ -21,6 +21,7 @@ The agent remains the write path. The UI makes the wiki visible and navigable; i
 ## 2. Scope & Constraints
 
 **In scope:**
+
 - `/wiki` top-level route and nav entry
 - Graph view (all domains, D3 force layout, domain filter)
 - Document view (page list sidebar, raw markdown editor, preview toggle)
@@ -30,6 +31,7 @@ The agent remains the write path. The UI makes the wiki visible and navigable; i
 - `wiki_oriented` SSE event
 
 **Out of scope:**
+
 - Mobile layout (deferred — requires a separate design)
 - WYSIWYG editing
 - Drag-to-resize split panel
@@ -44,10 +46,10 @@ The agent remains the write path. The UI makes the wiki visible and navigable; i
 
 **Routes:**
 
-| Path | Component |
-|---|---|
-| `/` | `ThreadView` (existing, unchanged) |
-| `/wiki` | `WikiView` (new) |
+| Path    | Component                          |
+| ------- | ---------------------------------- |
+| `/`     | `ThreadView` (existing, unchanged) |
+| `/wiki` | `WikiView` (new)                   |
 
 **Nav bar:** Add a `BookOpen` icon link to `/wiki` in the existing nav bar alongside the Settings icon stub. The active route gets a filled-icon active state; inactive routes use outline icons.
 
@@ -61,12 +63,12 @@ All reads go through new REST endpoints. All writes go through the ingestion cha
 
 ### New Endpoints
 
-| Method | Path | Handler |
-|---|---|---|
-| `GET` | `/api/v1/wiki/domains` | `registry.list()` — returns id, name, routing notes for all active domains |
-| `GET` | `/api/v1/wiki/graph` | `buildGraph()` across all domains, merged; metadata page types (schema, log, index) stripped server-side |
-| `GET` | `/api/v1/wiki/domains/:id/pages` | `wiki.listPages()` for one domain, filtered to non-metadata types |
-| `GET` | `/api/v1/wiki/domains/:id/pages/*` | `wiki.readPage()` — returns frontmatter + markdown body |
+| Method | Path                               | Handler                                                                                                  |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/wiki/domains`             | `registry.list()` — returns id, name, routing notes for all active domains                               |
+| `GET`  | `/api/v1/wiki/graph`               | `buildGraph()` across all domains, merged; metadata page types (schema, log, index) stripped server-side |
+| `GET`  | `/api/v1/wiki/domains/:id/pages`   | `wiki.listPages()` for one domain, filtered to non-metadata types                                        |
+| `GET`  | `/api/v1/wiki/domains/:id/pages/*` | `wiki.readPage()` — returns frontmatter + markdown body                                                  |
 
 ### Live Updates
 
@@ -123,19 +125,19 @@ The graph is interactive: drag nodes, zoom, pan.
 
 ### Node Appearance
 
-| Attribute | Encoding |
-|---|---|
-| Domain | Fill color — each domain gets a distinct hue from the domain filter legend |
-| Page type | Shape or border style (entity, concept, comparison, query, summary) |
-| `contested: true` | Dashed border |
-| Edge count | Node radius — more connected nodes render larger |
+| Attribute         | Encoding                                                                   |
+| ----------------- | -------------------------------------------------------------------------- |
+| Domain            | Fill color — each domain gets a distinct hue from the domain filter legend |
+| Page type         | Shape or border style (entity, concept, comparison, query, summary)        |
+| `contested: true` | Dashed border                                                              |
+| Edge count        | Node radius — more connected nodes render larger                           |
 
 ### Edge Appearance
 
-| Type | Style |
-|---|---|
-| `references` | Solid line |
-| `contradicts` | Red dashed line |
+| Type           | Style                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `references`   | Solid line                                                                                |
+| `contradicts`  | Red dashed line                                                                           |
 | `derived_from` | Hidden by default; opt-in toggle in the toolbar (source relationships are noisy at scale) |
 
 ### Domain Filter
@@ -236,6 +238,7 @@ The indicator is blank at the start of a new thread. It clears when the user sta
 ### Domain Creation Form
 
 A `+ New Domain` button in the chat panel header opens a small form:
+
 - Domain name (text, becomes the `wikiId`)
 - Description (text, used for routing notes)
 - Initial routing notes (textarea, optional)
@@ -245,6 +248,7 @@ Submitting the form sends a structured message to the ingestion agent (e.g. `"Cr
 ### URL & Document Affordances (Stubbed)
 
 The chat input area includes:
+
 - A paperclip icon for file attachment
 - A link icon for URL input
 
@@ -289,6 +293,7 @@ Emitted **immediately and inline** within the current turn by the `wiki_orient` 
 ## 11. Files Touched (Expected)
 
 **New files:**
+
 - `ui/src/pages/wiki-view.tsx` — top-level wiki page component
 - `ui/src/components/wiki/graph-view.tsx` — D3 graph canvas
 - `ui/src/components/wiki/document-view.tsx` — page list + editor
@@ -303,6 +308,7 @@ Emitted **immediately and inline** within the current turn by the `wiki_orient` 
 - `api/src/agents/wiki-ingestion-system-prompt.ts` — system prompt for the ingestion agent
 
 **Modified files:**
+
 - `ui/src/app.tsx` — add `wouter` router, `/wiki` route, nav bar icon
 - `ui/src/components/layout.tsx` — nav bar active state
 - `api/src/index.ts` — register new wiki routes

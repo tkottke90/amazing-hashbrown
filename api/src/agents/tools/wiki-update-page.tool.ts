@@ -66,17 +66,7 @@ function lineDiff(before: string, after: string): string {
 
 export const wikiUpdatePageTool = tool(
   async (
-    {
-      wikiId,
-      path,
-      content,
-      tags,
-      confidence,
-      contested,
-      contradictions,
-      summary,
-      dryRun,
-    },
+    { wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun },
     config,
   ) => {
     const result = await updateWikiPage({

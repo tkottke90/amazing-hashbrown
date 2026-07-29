@@ -29,7 +29,9 @@ export function IngestionChat({ chatInputRef }: Props) {
   // Assign the inner textarea to chatInputRef so DocumentView can focus it after save
   useEffect(() => {
     if (!chatInputRef || !wrapperRef.current) return;
-    const ta = wrapperRef.current.querySelector<HTMLTextAreaElement>('[data-slot="chat-input"] textarea');
+    const ta = wrapperRef.current.querySelector<HTMLTextAreaElement>(
+      '[data-slot="chat-input"] textarea',
+    );
     if (ta) {
       (chatInputRef as { current: HTMLTextAreaElement | null }).current = ta;
     }
@@ -77,11 +79,7 @@ export function IngestionChat({ chatInputRef }: Props) {
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">
           {scrollMessages.map((msg) => (
-            <ThreadMessageItem
-              key={msg.id}
-              message={msg}
-              onHitlAnswer={submitWikiHitlAnswer}
-            />
+            <ThreadMessageItem key={msg.id} message={msg} onHitlAnswer={submitWikiHitlAnswer} />
           ))}
         </div>
       </ChatMessageScrollWrapper>

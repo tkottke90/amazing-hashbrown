@@ -31,17 +31,7 @@ const WikiCreatePageSchema = z.object({
 
 export const wikiCreatePageTool = tool(
   async (
-    {
-      wikiId,
-      title,
-      content,
-      section,
-      tags,
-      confidence,
-      contested,
-      contradictions,
-      dryRun,
-    },
+    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun },
     config,
   ) => {
     const result = await createWikiPage({

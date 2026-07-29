@@ -42,10 +42,7 @@ export function WikiView(_props: { path?: string }) {
       </div>
 
       {/* Desktop two-column layout */}
-      <div
-        class="hidden h-dvh md:grid"
-        style={{ gridTemplateColumns: '65fr 35fr' }}
-      >
+      <div class="hidden h-dvh md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
         {/* Canvas column */}
         <div class="flex min-h-0 flex-col overflow-hidden">
           {/* Canvas header */}

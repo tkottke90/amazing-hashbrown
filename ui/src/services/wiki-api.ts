@@ -65,9 +65,7 @@ export async function fetchPages(domainId: string): Promise<WikiPageSummary[]> {
 }
 
 export async function fetchPage(domainId: string, pagePath: string): Promise<WikiPageContent> {
-  const res = await fetch(
-    `/api/v1/wiki/domains/${encodeURIComponent(domainId)}/pages/${pagePath}`,
-  );
+  const res = await fetch(`/api/v1/wiki/domains/${encodeURIComponent(domainId)}/pages/${pagePath}`);
   if (!res.ok) throw new Error(`Failed to fetch page ${pagePath}: ${res.status}`);
   return res.json() as Promise<WikiPageContent>;
 }
