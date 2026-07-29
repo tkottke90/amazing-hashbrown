@@ -55,7 +55,7 @@ export function IngestionChat({ chatInputRef }: Props) {
   );
 
   return (
-    <div class="flex h-full flex-col border-l border-border">
+    <div class="flex h-full min-h-0 flex-col border-l border-border">
       {/* Header */}
       <div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div class="flex min-w-0 items-center gap-2">
