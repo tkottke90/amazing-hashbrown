@@ -177,7 +177,7 @@ export async function switchThread(id: string): Promise<void> {
   await hydrateThread(id);
 }
 
-export function newThread(): void {
+export function newThread(): string {
   if (isStreaming.value) stopGeneration();
   const id = crypto.randomUUID();
   activeThreadId.value = id;
@@ -186,6 +186,7 @@ export function newThread(): void {
     messages.value = [];
     pendingHitlId.value = null;
   });
+  return id;
 }
 
 // ---- Thread CRUD (sidebar actions) ----
@@ -207,13 +208,13 @@ export async function deleteThread(id: string): Promise<void> {
   }
 }
 
-export async function forkThread(id: string, atSeq: number): Promise<void> {
+export async function forkThread(id: string, atSeq: number): Promise<string> {
   const res = await fetch(`/api/v1/threads/${id}/fork`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ atSeq }),
   });
-  if (!res.ok) return;
+  if (!res.ok) return id;
   const data = (await res.json()) as { id: string; messages: unknown[] };
 
   if (isStreaming.value) stopGeneration();
@@ -224,6 +225,7 @@ export async function forkThread(id: string, atSeq: number): Promise<void> {
     pendingHitlId.value = null;
   });
   await refreshThreadList();
+  return data.id;
 }
 
 export async function regenerateTitle(id: string): Promise<void> {
