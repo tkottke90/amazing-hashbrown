@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 import { Plus, FileText } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
@@ -100,10 +101,13 @@ export function DocumentView({ chatInputRef }: Props) {
   const pages = pageList.value;
   const page = activePage.value;
 
+  // Fetch pages whenever the active domain changes, including on initial mount.
+  useEffect(() => {
+    if (domainId) void refreshPages(domainId);
+  }, [domainId]);
+
   function handleDomainChange(e: Event) {
-    const id = (e.target as HTMLSelectElement).value;
-    activeDomainId.value = id;
-    void refreshPages(id);
+    activeDomainId.value = (e.target as HTMLSelectElement).value;
   }
 
   function handlePageClick(filename: string) {
