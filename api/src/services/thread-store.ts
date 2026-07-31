@@ -109,7 +109,8 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 
 // Version numbers must be unique across ALL stores sharing this database.
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
-// 6=evaluations (judge_calibrations), 7-9=threads (type column).
+// 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
+// 9=(free), 10-12=threads (type column).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -144,17 +145,17 @@ const MIGRATIONS: DbMigration[] = [
     `,
   },
   {
-    version: 7,
+    version: 10,
     // Step 1: add nullable column so existing rows don't violate a NOT NULL constraint.
     sql: `ALTER TABLE threads ADD COLUMN type TEXT`,
   },
   {
-    version: 8,
+    version: 11,
     // Step 2: back-fill all pre-existing rows as 'chat' threads.
     sql: `UPDATE threads SET type = 'chat' WHERE type IS NULL`,
   },
   {
-    version: 9,
+    version: 12,
     // Step 3: recreate the table with NOT NULL enforced (SQLite doesn't support
     // adding a NOT NULL constraint to an existing column via ALTER TABLE).
     sql: `
