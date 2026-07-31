@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { Plus, FileText } from 'lucide-preact';
+import { BookOpen, Plus, FileText, Loader2 } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
 import {
@@ -11,8 +11,15 @@ import {
   loadPage,
   refreshPages,
 } from '@/hooks/use-wiki';
+import { fetchPage } from '@/services/wiki-api';
 import { sendWikiMessage } from '@/hooks/use-wiki-ingestion';
 import { PAGE_TYPE_ICON, PAGE_TYPE_LABELS } from './page-type-icons';
+
+const METADATA_FILES = [
+  { path: 'SCHEMA.md', title: 'Schema' },
+  { path: 'index.md', title: 'Index' },
+  { path: 'log.md', title: 'Log' },
+] as const;
 
 const CONTENT_PAGE_TYPES = ['entity', 'concept', 'comparison', 'query', 'summary'] as const;
 
@@ -95,6 +102,9 @@ export function DocumentView({ chatInputRef }: Props) {
   const showNewPage = useSignal(false);
   const editMode = useSignal(false);
   const editContent = useSignal('');
+  const metadataView = useSignal(false);
+  const metadataLoading = useSignal(false);
+  const metadataSections = useSignal<{ title: string; content: string }[]>([]);
 
   const domainId = activeDomainId.value;
   const allDomains = domains.value;
@@ -102,15 +112,37 @@ export function DocumentView({ chatInputRef }: Props) {
   const page = activePage.value;
 
   // Fetch pages whenever the active domain changes, including on initial mount.
+  // Also clear the metadata view so the user lands on the normal page list.
   useEffect(() => {
-    if (domainId) void refreshPages(domainId);
+    if (domainId) {
+      metadataView.value = false;
+      void refreshPages(domainId);
+    }
   }, [domainId]);
 
   function handleDomainChange(e: Event) {
     activeDomainId.value = (e.target as HTMLSelectElement).value;
   }
 
+  async function handleViewMetadata() {
+    if (!domainId) return;
+    metadataView.value = true;
+    metadataLoading.value = true;
+    const results = await Promise.allSettled(
+      METADATA_FILES.map((f) => fetchPage(domainId, f.path)),
+    );
+    metadataSections.value = results
+      .map((r, i) =>
+        r.status === 'fulfilled'
+          ? { title: METADATA_FILES[i]!.title as string, content: r.value.content }
+          : null,
+      )
+      .filter((s): s is { title: string; content: string } => s !== null);
+    metadataLoading.value = false;
+  }
+
   function handlePageClick(filename: string) {
+    metadataView.value = false;
     if (domainId) void loadPage(domainId, filename);
   }
 
@@ -153,6 +185,22 @@ export function DocumentView({ chatInputRef }: Props) {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* View Metadata button */}
+        <div class="flex items-center border-b border-border px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => void handleViewMetadata()}
+            class={`flex items-center gap-1 rounded p-1 text-xs transition-colors ${
+              metadataView.value
+                ? 'bg-sidebar-accent text-foreground'
+                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+            }`}
+          >
+            <BookOpen class="size-3.5" />
+            View Metadata
+          </button>
         </div>
 
         {/* + button */}
@@ -214,9 +262,49 @@ export function DocumentView({ chatInputRef }: Props) {
         </div>
       </div>
 
-      {/* Editor */}
+      {/* Editor / Metadata panel */}
       <div class="flex min-w-0 flex-1 flex-col">
-        {page ? (
+        {metadataView.value ? (
+          <>
+            {/* Metadata header — read-only, no edit controls */}
+            <div class="flex items-center border-b border-border px-4 py-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <div class="truncate font-semibold text-foreground">Wiki Metadata</div>
+                {domainId && (
+                  <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span class="rounded bg-muted px-1.5 py-0.5">{domainId}</span>
+                    <span>read-only</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Metadata content */}
+            <div class="min-h-0 flex-1 overflow-y-auto">
+              {metadataLoading.value ? (
+                <div class="flex h-full items-center justify-center text-muted-foreground">
+                  <Loader2 class="size-4 animate-spin" />
+                </div>
+              ) : (
+                <div class="divide-y divide-border">
+                  {metadataSections.value.map((section) => (
+                    <div key={section.title} class="px-4 py-3">
+                      <h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {section.title}
+                      </h2>
+                      <Markdown className="text-sm">{section.content}</Markdown>
+                    </div>
+                  ))}
+                  {metadataSections.value.length === 0 && (
+                    <div class="px-4 py-8 text-center text-sm text-muted-foreground">
+                      No metadata files found.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        ) : page ? (
           <>
             {/* Header */}
             <div class="flex items-center justify-between border-b border-border px-4 py-2">
