@@ -74,6 +74,7 @@ export interface ThreadSummary {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
+  type: 'chat' | 'wiki';
   afterAgentState: AfterAgentState;
   links: { self: string; afterAgentStatus: string };
 }

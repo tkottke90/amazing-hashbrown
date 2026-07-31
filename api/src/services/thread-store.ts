@@ -5,6 +5,8 @@ import { logger } from '../config/logger.js';
 // Types
 // ---------------------------------------------------------------------------
 
+export type ThreadType = 'chat' | 'wiki';
+
 export interface ThreadSummary {
   id: string;
   title: string;
@@ -12,6 +14,7 @@ export interface ThreadSummary {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
+  type: ThreadType;
 }
 
 export interface ThreadMessageRecord {
@@ -53,6 +56,7 @@ interface RawThreadRow {
   updated_at: string;
   forked_from_thread_id: string | null;
   forked_from_seq: number | null;
+  type: ThreadType;
 }
 
 interface RawMessageRow {
@@ -80,6 +84,7 @@ function mapThreadRow(row: RawThreadRow): ThreadSummary {
     updatedAt: row.updated_at,
     forkedFromThreadId: row.forked_from_thread_id,
     forkedFromSeq: row.forked_from_seq,
+    type: row.type,
   };
 }
 
@@ -104,9 +109,10 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 
 // Version numbers must be unique across ALL stores sharing this database.
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
-// 6=evaluations (judge_calibrations). Check every store's MIGRATIONS array
-// before adding a new one here — a colliding version silently no-ops instead
-// of erroring (BaseStore.runMigrations skips any version already recorded).
+// 6=evaluations (judge_calibrations), 7-9=threads (type column).
+// Check every store's MIGRATIONS array before adding a new one here — a
+// colliding version silently no-ops instead of erroring (BaseStore.runMigrations
+// skips any version already recorded).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 4,
@@ -137,6 +143,35 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id, seq);
     `,
   },
+  {
+    version: 7,
+    // Step 1: add nullable column so existing rows don't violate a NOT NULL constraint.
+    sql: `ALTER TABLE threads ADD COLUMN type TEXT`,
+  },
+  {
+    version: 8,
+    // Step 2: back-fill all pre-existing rows as 'chat' threads.
+    sql: `UPDATE threads SET type = 'chat' WHERE type IS NULL`,
+  },
+  {
+    version: 9,
+    // Step 3: recreate the table with NOT NULL enforced (SQLite doesn't support
+    // adding a NOT NULL constraint to an existing column via ALTER TABLE).
+    sql: `
+      CREATE TABLE threads_new (
+        id                     TEXT PRIMARY KEY,
+        title                  TEXT NOT NULL,
+        created_at             TEXT NOT NULL,
+        updated_at             TEXT NOT NULL,
+        forked_from_thread_id  TEXT,
+        forked_from_seq        INTEGER,
+        type                   TEXT NOT NULL DEFAULT 'chat'
+      );
+      INSERT INTO threads_new SELECT id, title, created_at, updated_at, forked_from_thread_id, forked_from_seq, type FROM threads;
+      DROP TABLE threads;
+      ALTER TABLE threads_new RENAME TO threads;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -156,13 +191,13 @@ export class ThreadStore extends BaseStore {
   // Inserts the threads row on the first message of a new thread; a no-op if
   // the row already exists. Call this before the first insertMessage() of a
   // turn, not on every turn.
-  upsertThreadOnFirstMessage(threadId: string, titleSeed: string): void {
+  upsertThreadOnFirstMessage(threadId: string, titleSeed: string, type: ThreadType = 'chat'): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO threads (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO threads (id, title, created_at, updated_at, type) VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(threadId, titleSeed, now, now);
+      .run(threadId, titleSeed, now, now, type);
   }
 
   // Bumps updated_at — new message activity, a rename, or a title regen all
@@ -173,10 +208,14 @@ export class ThreadStore extends BaseStore {
       .run(new Date().toISOString(), threadId);
   }
 
-  listThreads(): ThreadSummary[] {
-    const rows = this.db
-      .prepare(`SELECT * FROM threads ORDER BY updated_at DESC`)
-      .all() as RawThreadRow[];
+  listThreads(filter?: { type: ThreadType }): ThreadSummary[] {
+    const rows = (
+      filter
+        ? this.db
+            .prepare(`SELECT * FROM threads WHERE type = ? ORDER BY updated_at DESC`)
+            .all(filter.type)
+        : this.db.prepare(`SELECT * FROM threads ORDER BY updated_at DESC`).all()
+    ) as RawThreadRow[];
     return rows.map(mapThreadRow);
   }
 
@@ -214,14 +253,15 @@ export class ThreadStore extends BaseStore {
     title: string,
     forkedFromThreadId: string,
     forkedFromSeq: number,
+    type: ThreadType = 'chat',
   ): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO threads (id, title, created_at, updated_at, forked_from_thread_id, forked_from_seq)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO threads (id, title, created_at, updated_at, forked_from_thread_id, forked_from_seq, type)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(newThreadId, title, now, now, forkedFromThreadId, forkedFromSeq);
+      .run(newThreadId, title, now, now, forkedFromThreadId, forkedFromSeq, type);
   }
 
   // -------------------------------------------------------------------------

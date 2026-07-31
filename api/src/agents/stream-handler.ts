@@ -307,7 +307,7 @@ export async function streamChatToSse(
   const threadStore = getThreadStore();
   const turnSentAt = new Date().toISOString();
 
-  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50));
+  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
   const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);

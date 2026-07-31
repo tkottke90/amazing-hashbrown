@@ -30,7 +30,7 @@ export async function streamWikiChatToSse(
   const threadStore = getThreadStore();
   const turnSentAt = new Date().toISOString();
 
-  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50));
+  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'wiki');
   const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
   const obsConfig = env.observability;
