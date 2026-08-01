@@ -1,69 +1,109 @@
-import { type Signal, effect } from '@preact/signals';
-import { useEffect, useRef } from 'preact/hooks';
-import type { ComponentChildren } from 'preact';
+import { Signal, useSignal } from '@preact/signals';
+import { X as XIcon } from 'lucide-preact';
+import { cloneElement, ComponentChildren, createContext, type JSX } from "preact";
+import { useContext, useRef } from 'preact/hooks';
+import { useHtmlElementListeners } from './eventListeners';
+
+const X = XIcon;
 
 export interface DialogProps {
-  open: Signal<boolean>;
-  title?: string;
-  children: ComponentChildren;
-  class?: string;
+  className?: string
+  children: ComponentChildren,
+  title?: string | JSX.Element;
+  trigger?: JSX.Element,
+  disableClose?: boolean,
+  open?: Signal<boolean>,
+  onClose?: () => void,
+  onCancel?: () => void,
+  onOpen?: () => void,
 }
 
-export function Dialog({ open, title, children, class: className }: DialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+interface iDialogContext {
+  dialog: HTMLDialogElement | null;
+  close: (value?: string) => void;
+  value: string | undefined;
+}
 
-  // effect() from @preact/signals auto-subscribes to open.value; no dep array needed.
-  useEffect(
-    () =>
-      effect(() => {
-        if (open.value) {
-          dialogRef.current?.showModal();
-        } else {
-          dialogRef.current?.close();
-        }
-      }),
-    [],
+const DialogContext = createContext<iDialogContext>({} as never)
+
+export function useDialog() {
+  return useContext(DialogContext)
+}
+
+export function Dialog({ className, children, trigger, disableClose, title, onCancel, onClose, onOpen }: DialogProps) {
+  const modalValue = useSignal<string | undefined>();
+  const modalRef = useRef<HTMLDialogElement>(null)
+
+  const triggerRef = useHtmlElementListeners(
+    [
+      [ 'click', () => openModal(modalRef.current, onOpen) ]
+    ],
+    [ trigger ]
   );
 
-  // Sync the signal when native cancel fires (Escape key) so parent stays in step.
-  useEffect(() => {
-    const el = dialogRef.current;
-    if (!el) return;
-    const onCancel = () => {
-      open.value = false;
-    };
-    el.addEventListener('cancel', onCancel);
-    return () => el.removeEventListener('cancel', onCancel);
-  }, []);
-
-  // The <dialog> element itself is the backdrop; clicks on the inner panel
-  // bubble up but e.target will be the panel div, not the dialog element.
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === dialogRef.current) open.value = false;
-  }
+  const triggerElement = cloneElement(
+    trigger ?? (<button>Open</button>), { ref: triggerRef }
+  );
 
   return (
-    <dialog
-      ref={dialogRef}
-      onClick={handleBackdropClick}
-      class={`w-full max-w-sm rounded-lg bg-card p-6 shadow-xl [&::backdrop]:bg-black/50 ${className ?? ''}`}
-    >
-      {title && (
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-foreground">{title}</h2>
-          <button
-            type="button"
-            onClick={() => {
-              open.value = false;
-            }}
-            class="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="Close"
-          >
-            ✕
-          </button>
+    <DialogContext.Provider value={{
+      dialog: modalRef.current,
+      value: modalValue.value,
+      close: (value?: string) => {
+        if (onClose) {
+          onClose()
+        }
+
+        closeModal(modalRef.current, value)
+      }
+    }}>
+      { triggerElement }
+      <dialog
+        ref={modalRef}
+        className={
+        `p-6 text-neutral-800 dark:text-neutral-200
+        bg-neutral-50/80 dark:bg-neutral-700/80
+        rounded border border-neutral-400/50 backdrop-blur-sm
+        absolute block pointer-events-none opacity-0 mx-auto my-4 translate-y-1 min-w-10/12
+        transition-all transition-discrete duration-200
+        sm:min-w-150
+        backdrop:backdrop-blur-xs backdrop:transition-all backdrop:transition-discrete backdrop:duration-200
+        backdrop:bg-transparent open:backdrop:bg-neutral-900/50 starting:open:backdrop:bg-transparent
+        open:translate-y-0 open:pointer-events-auto open:opacity-100 z-50 ${className ?? ''}`}
+      >
+        <div className="flex">
+          <h2 className="grow">{title}</h2>
+          { !disableClose && <button onClick={() => {cancelModal(modalRef.current, onCancel)}}><X /></button> }
         </div>
-      )}
-      {children}
-    </dialog>
+        <br />
+        { children }
+      </dialog>
+    </DialogContext.Provider>
   );
+}
+
+type ModalRef = HTMLDialogElement | null;
+
+export function openModal(modal: ModalRef, onOpen?: (() => void)) {
+  if (modal) {
+    if (onOpen) {
+      onOpen();
+    }
+
+    modal.showModal();
+  }
+}
+
+export function closeModal(modal: ModalRef, value?: string) {
+  if (modal) {
+    modal.close(value);
+  }
+}
+
+export function cancelModal(modal: ModalRef, onCancel?: (() => void)) {
+  if (onCancel) {
+    onCancel();
+  }
+  
+  closeModal(modal);
 }

@@ -17,7 +17,7 @@ import {
   newWikiThread,
 } from '@/hooks/use-wiki-ingestion';
 import { OrientationBadge } from './orientation-badge';
-import { NewDomainForm } from './new-domain-form';
+import { NewDomainModal } from './new-domain-form';
 
 interface Props {
   chatInputRef?: RefObject<HTMLTextAreaElement>;
@@ -74,7 +74,7 @@ export function IngestionChat({ chatInputRef }: Props) {
           <OrientationBadge />
         </div>
         <div class="flex shrink-0 items-center gap-1">
-          <NewDomainForm />
+          <NewDomainModal  />
           <button
             type="button"
             onClick={handleCopyThreadId}
