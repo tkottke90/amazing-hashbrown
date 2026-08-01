@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tkottke90/llm-common-types": "*",
+    "@tkottke90/preact-dialog": "*",
     "@fontsource-variable/geist": "5.2.9",
     "@preact/signals": "2.9.2",
     "@tailwindcss/vite": "^4.3.2",
