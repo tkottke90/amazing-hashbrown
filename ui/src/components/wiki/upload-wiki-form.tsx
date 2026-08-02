@@ -3,11 +3,7 @@ import { useSignal, effect } from '@preact/signals';
 import { Upload, CheckCircle, XCircle, Loader2, Circle } from 'lucide-preact';
 import { Dialog, useDialog } from '@tkottke90/preact-dialog';
 import { domains, refreshDomains } from '@/hooks/use-wiki';
-import {
-  fetchUploadCapabilities,
-  startWikiUpload,
-  fetchUploadStatus,
-} from '@/services/wiki-api';
+import { fetchUploadCapabilities, startWikiUpload, fetchUploadStatus } from '@/services/wiki-api';
 import type { UploadJobState, UploadCapabilities } from '@/types/wiki-upload';
 import { CodeBlock } from '../markdown';
 
@@ -24,7 +20,13 @@ const STEPS: Array<{ stage: string; label: string }> = [
 ];
 
 const STAGE_ORDER = [
-  'pending', 'unpacking', 'validating', 'registering', 'linting', 'embedding', 'done',
+  'pending',
+  'unpacking',
+  'validating',
+  'registering',
+  'linting',
+  'embedding',
+  'done',
 ];
 
 function stageIndex(stage: string): number {
@@ -35,7 +37,10 @@ function stageIndex(stage: string): number {
 // Step indicator row
 // ---------------------------------------------------------------------------
 
-function StepRow({ step, currentState }: {
+function StepRow({
+  step,
+  currentState,
+}: {
   step: (typeof STEPS)[number];
   currentState: UploadJobState | null;
 }) {
@@ -51,7 +56,11 @@ function StepRow({ step, currentState }: {
     icon = <CheckCircle class="size-4 text-green-500 shrink-0" />;
   } else if (isCurrent && !isFailed) {
     icon = <Loader2 class="size-4 text-primary shrink-0 animate-spin" />;
-  } else if (isFailed && stageIndex(stage as string) >= stageIndex(step.stage) && stageIndex(stage as string) <= stageIndex(step.stage)) {
+  } else if (
+    isFailed &&
+    stageIndex(stage as string) >= stageIndex(step.stage) &&
+    stageIndex(stage as string) <= stageIndex(step.stage)
+  ) {
     icon = <XCircle class="size-4 text-destructive shrink-0" />;
   } else {
     icon = <Circle class="size-4 text-muted-foreground shrink-0" />;
@@ -64,7 +73,9 @@ function StepRow({ step, currentState }: {
   }
 
   return (
-    <div class={`flex items-center gap-2 text-xs ${isDone ? 'text-foreground' : isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+    <div
+      class={`flex items-center gap-2 text-xs ${isDone ? 'text-foreground' : isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
+    >
       {icon}
       <span>{label}</span>
     </div>
@@ -99,14 +110,19 @@ export function UploadWikiForm() {
   }, []);
 
   // Validate name against loaded domains (no extra fetch needed)
-  useEffect(() =>
-    effect(() => {
-      const n = name.value.trim();
-      if (!n) { nameError.value = null; return; }
-      const taken = domains.value.some((d) => d.id === n);
-      nameError.value = taken ? `"${n}" is already registered` : null;
-    }),
-  []);
+  useEffect(
+    () =>
+      effect(() => {
+        const n = name.value.trim();
+        if (!n) {
+          nameError.value = null;
+          return;
+        }
+        const taken = domains.value.some((d) => d.id === n);
+        nameError.value = taken ? `"${n}" is already registered` : null;
+      }),
+    [],
+  );
 
   function reset() {
     file.value = null;
@@ -116,7 +132,10 @@ export function UploadWikiForm() {
     submitting.value = false;
     jobId.value = null;
     jobState.value = null;
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
   }
 
   function handleClose() {
@@ -189,7 +208,6 @@ export function UploadWikiForm() {
 
   return (
     <div class="flex flex-col gap-4 text-xs">
-
       {/* ── Progress view ─────────────────────────────────────────────── */}
       {isInProgress && (
         <div class="flex flex-col gap-3">
@@ -241,7 +259,10 @@ export function UploadWikiForm() {
         <form onSubmit={(e) => void handleSubmit(e)} class="flex flex-col gap-3">
           {/* Drop zone */}
           <div
-            onDragOver={(e) => { e.preventDefault(); dragging.value = true; }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              dragging.value = true;
+            }}
             onDragLeave={() => (dragging.value = false)}
             onDrop={handleDrop}
             class={`relative flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-6 transition-colors ${dragging.value ? 'border-primary bg-primary/5' : 'border-input'}`}
@@ -267,9 +288,7 @@ export function UploadWikiForm() {
               onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
               class="rounded border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             />
-            {nameError.value && (
-              <span class="text-destructive">{nameError.value}</span>
-            )}
+            {nameError.value && <span class="text-destructive">{nameError.value}</span>}
           </div>
 
           {/* Buttons */}
@@ -296,16 +315,12 @@ export function UploadWikiForm() {
             <div class="flex flex-col gap-2">
               <div>
                 <p class="text-muted-foreground mb-1">tar.gz (recommended):</p>
-                <CodeBlock  >
-                  tar -czf my-wiki.tar.gz -C /path/to/wiki .
-                </CodeBlock>
+                <CodeBlock>tar -czf my-wiki.tar.gz -C /path/to/wiki .</CodeBlock>
               </div>
               {capabilities.value?.acceptedFormats.includes('.zip') && (
                 <div>
                   <p class="text-muted-foreground mb-1">zip:</p>
-                  <CodeBlock>
-                    cd /path/to/wiki && zip -r ../my-wiki.zip .
-                  </CodeBlock>
+                  <CodeBlock>cd /path/to/wiki && zip -r ../my-wiki.zip .</CodeBlock>
                 </div>
               )}
             </div>

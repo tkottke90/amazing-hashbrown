@@ -18,7 +18,7 @@ jobs:
       - name: Setup npmrc
         run: echo "//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
         env:
-          NPM_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install Dependencies
         run: npm ci

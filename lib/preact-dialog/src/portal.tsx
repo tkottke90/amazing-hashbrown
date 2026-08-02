@@ -10,17 +10,19 @@ import compat from 'preact/compat';
  */
 export function usePortal(selector: string) {
   const parentElement = compat.useMemo(() => {
-    const parent = document.querySelector(selector)
+    const parent = document.querySelector(selector);
 
     if (!parent) {
-      console.warn(`Could not find portal container: "${selector}" - Falling back to document body`);
+      console.warn(
+        `Could not find portal container: "${selector}" - Falling back to document body`,
+      );
       return document.body;
     }
 
     return parent;
-  }, [selector])
+  }, [selector]);
 
   return (component: VNode) => {
-    return compat.createPortal(component, parentElement)
-  }
+    return compat.createPortal(component, parentElement);
+  };
 }

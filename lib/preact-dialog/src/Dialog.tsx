@@ -1,21 +1,21 @@
 import { Signal, useSignal } from '@preact/signals';
 import { X as XIcon } from 'lucide-preact';
-import { cloneElement, ComponentChildren, createContext, type JSX } from "preact";
+import { cloneElement, ComponentChildren, createContext, type JSX } from 'preact';
 import { useContext, useRef } from 'preact/hooks';
 import { useHtmlElementListeners } from './eventListeners';
 
 const X = XIcon;
 
 export interface DialogProps {
-  className?: string
-  children: ComponentChildren,
+  className?: string;
+  children: ComponentChildren;
   title?: string | JSX.Element;
-  trigger?: JSX.Element,
-  disableClose?: boolean,
-  open?: Signal<boolean>,
-  onClose?: () => void,
-  onCancel?: () => void,
-  onOpen?: () => void,
+  trigger?: JSX.Element;
+  disableClose?: boolean;
+  open?: Signal<boolean>;
+  onClose?: () => void;
+  onCancel?: () => void;
+  onOpen?: () => void;
 }
 
 interface iDialogContext {
@@ -24,44 +24,50 @@ interface iDialogContext {
   value: string | undefined;
 }
 
-const DialogContext = createContext<iDialogContext>({} as never)
+const DialogContext = createContext<iDialogContext>({} as never);
 
 export function useDialog() {
-  return useContext(DialogContext)
+  return useContext(DialogContext);
 }
 
-export function Dialog({ className, children, trigger, disableClose, title, onCancel, onClose, onOpen }: DialogProps) {
+export function Dialog({
+  className,
+  children,
+  trigger,
+  disableClose,
+  title,
+  onCancel,
+  onClose,
+  onOpen,
+}: DialogProps) {
   const modalValue = useSignal<string | undefined>();
-  const modalRef = useRef<HTMLDialogElement>(null)
+  const modalRef = useRef<HTMLDialogElement>(null);
 
   const triggerRef = useHtmlElementListeners(
-    [
-      [ 'click', () => openModal(modalRef.current, onOpen) ]
-    ],
-    [ trigger ]
+    [['click', () => openModal(modalRef.current, onOpen)]],
+    [trigger],
   );
 
-  const triggerElement = cloneElement(
-    trigger ?? (<button>Open</button>), { ref: triggerRef }
-  );
+  const triggerElement = cloneElement(trigger ?? <button>Open</button>, { ref: triggerRef });
 
   return (
-    <DialogContext.Provider value={{
-      dialog: modalRef.current,
-      value: modalValue.value,
-      close: (value?: string) => {
-        if (onClose) {
-          onClose()
-        }
+    <DialogContext.Provider
+      value={{
+        dialog: modalRef.current,
+        value: modalValue.value,
+        close: (value?: string) => {
+          if (onClose) {
+            onClose();
+          }
 
-        closeModal(modalRef.current, value)
-      }
-    }}>
-      { triggerElement }
+          closeModal(modalRef.current, value);
+        },
+      }}
+    >
+      {triggerElement}
       <dialog
         ref={modalRef}
-        className={
-        `p-6 text-neutral-800 dark:text-neutral-200
+        className={`p-6 text-neutral-800 dark:text-neutral-200
         bg-neutral-50/80 dark:bg-neutral-700/80
         rounded border border-neutral-400/50 backdrop-blur-sm
         absolute block pointer-events-none opacity-0 mx-auto my-4 translate-y-1 min-w-10/12
@@ -73,10 +79,18 @@ export function Dialog({ className, children, trigger, disableClose, title, onCa
       >
         <div className="flex">
           <h2 className="grow">{title}</h2>
-          { !disableClose && <button onClick={() => {cancelModal(modalRef.current, onCancel)}}><X /></button> }
+          {!disableClose && (
+            <button
+              onClick={() => {
+                cancelModal(modalRef.current, onCancel);
+              }}
+            >
+              <X />
+            </button>
+          )}
         </div>
         <br />
-        { children }
+        {children}
       </dialog>
     </DialogContext.Provider>
   );
@@ -84,7 +98,7 @@ export function Dialog({ className, children, trigger, disableClose, title, onCa
 
 type ModalRef = HTMLDialogElement | null;
 
-export function openModal(modal: ModalRef, onOpen?: (() => void)) {
+export function openModal(modal: ModalRef, onOpen?: () => void) {
   if (modal) {
     if (onOpen) {
       onOpen();
@@ -100,10 +114,10 @@ export function closeModal(modal: ModalRef, value?: string) {
   }
 }
 
-export function cancelModal(modal: ModalRef, onCancel?: (() => void)) {
+export function cancelModal(modal: ModalRef, onCancel?: () => void) {
   if (onCancel) {
     onCancel();
   }
-  
+
   closeModal(modal);
 }

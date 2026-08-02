@@ -12,11 +12,11 @@ This package is private to the monorepo. It is consumed via the npm workspace al
 
 ### Peer dependencies
 
-| Package | Version |
-|---|---|
-| `preact` | `>=10.0.0` |
-| `@preact/signals` | `>=1.0.0` |
-| `lucide-preact` | any (used for the built-in close icon) |
+| Package           | Version                                |
+| ----------------- | -------------------------------------- |
+| `preact`          | `>=10.0.0`                             |
+| `@preact/signals` | `>=1.0.0`                              |
+| `lucide-preact`   | any (used for the built-in close icon) |
 
 ## Quick start
 
@@ -25,10 +25,7 @@ import { Dialog } from '@tkottke90/preact-dialog';
 
 export function MyFeature() {
   return (
-    <Dialog
-      trigger={<button>Open settings</button>}
-      title="Settings"
-    >
+    <Dialog trigger={<button>Open settings</button>} title="Settings">
       <p>Dialog content goes here.</p>
     </Dialog>
   );
@@ -55,16 +52,16 @@ The `trigger` element is cloned with a `click` listener attached. Clicking it ca
 </Dialog>
 ```
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `children` | `ComponentChildren` | — | Content rendered inside the dialog panel. |
-| `trigger` | `JSX.Element` | `<button>Open</button>` | Element that opens the dialog on click. Receives a `ref` via `cloneElement`. |
-| `title` | `string \| JSX.Element` | — | Rendered in the dialog header alongside the close button. |
-| `disableClose` | `boolean` | `false` | Hides the built-in ✕ close button when `true`. |
-| `className` | `string` | — | Extra CSS classes appended to the `<dialog>` element. |
-| `onOpen` | `() => void` | — | Called just before `showModal()`. |
-| `onClose` | `() => void` | — | Called when the dialog closes via the ✕ button or `useDialog().close()`. |
-| `onCancel` | `() => void` | — | Called when the dialog is dismissed via the ✕ button's cancel path or `cancelModal()`. |
+| Prop           | Type                    | Default                 | Description                                                                            |
+| -------------- | ----------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `children`     | `ComponentChildren`     | —                       | Content rendered inside the dialog panel.                                              |
+| `trigger`      | `JSX.Element`           | `<button>Open</button>` | Element that opens the dialog on click. Receives a `ref` via `cloneElement`.           |
+| `title`        | `string \| JSX.Element` | —                       | Rendered in the dialog header alongside the close button.                              |
+| `disableClose` | `boolean`               | `false`                 | Hides the built-in ✕ close button when `true`.                                         |
+| `className`    | `string`                | —                       | Extra CSS classes appended to the `<dialog>` element.                                  |
+| `onOpen`       | `() => void`            | —                       | Called just before `showModal()`.                                                      |
+| `onClose`      | `() => void`            | —                       | Called when the dialog closes via the ✕ button or `useDialog().close()`.               |
+| `onCancel`     | `() => void`            | —                       | Called when the dialog is dismissed via the ✕ button's cancel path or `cancelModal()`. |
 
 > **Note:** `DialogProps` includes an `open?: Signal<boolean>` field, but the current implementation does not read it. Control the dialog through the `trigger` prop or `useDialog()` instead.
 
@@ -92,18 +89,18 @@ function SaveButton() {
 
   function handleSave() {
     // ... save logic
-    close('saved');   // native dialog returnValue is set to 'saved'
+    close('saved'); // native dialog returnValue is set to 'saved'
   }
 
   return <button onClick={handleSave}>Save</button>;
 }
 ```
 
-| Property | Type | Description |
-|---|---|---|
-| `dialog` | `HTMLDialogElement \| null` | The underlying `<dialog>` DOM node. |
-| `close` | `(value?: string) => void` | Calls `onClose` then closes the dialog; `value` becomes the dialog's `returnValue`. |
-| `value` | `string \| undefined` | The value passed to the last `close()` call (mirrors `HTMLDialogElement.returnValue`). |
+| Property | Type                        | Description                                                                            |
+| -------- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `dialog` | `HTMLDialogElement \| null` | The underlying `<dialog>` DOM node.                                                    |
+| `close`  | `(value?: string) => void`  | Calls `onClose` then closes the dialog; `value` becomes the dialog's `returnValue`.    |
+| `value`  | `string \| undefined`       | The value passed to the last `close()` call (mirrors `HTMLDialogElement.returnValue`). |
 
 ---
 
@@ -165,7 +162,7 @@ function MyButton() {
       ['click', (e) => console.log('clicked', e)],
       ['keydown', (e) => console.log('key', e)],
     ],
-    [] // dependency inputs (same semantics as useCallback)
+    [], // dependency inputs (same semantics as useCallback)
   );
 
   return <button ref={ref}>Click me</button>;

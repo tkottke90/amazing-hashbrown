@@ -7,7 +7,7 @@ export function NewDomainModal() {
   const open = useSignal(false);
 
   return (
-    <Dialog 
+    <Dialog
       title="New Domain"
       className="
         max-w-11/12 md:max-w-lg

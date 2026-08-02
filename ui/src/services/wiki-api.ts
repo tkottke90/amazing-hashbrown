@@ -77,10 +77,7 @@ export async function fetchUploadCapabilities(): Promise<UploadCapabilities> {
   return res.json() as Promise<UploadCapabilities>;
 }
 
-export async function startWikiUpload(
-  name: string,
-  file: File,
-): Promise<{ jobId: string }> {
+export async function startWikiUpload(name: string, file: File): Promise<{ jobId: string }> {
   const body = new FormData();
   body.append('name', name);
   body.append('file', file);

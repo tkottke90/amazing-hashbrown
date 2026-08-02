@@ -58,11 +58,7 @@ const storage = multer.diskStorage({
 });
 
 function buildFileFilter(acceptZip: boolean) {
-  return (
-    _req: Request,
-    file: Express.Multer.File,
-    cb: multer.FileFilterCallback,
-  ) => {
+  return (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     const ok = acceptZip
       ? /\.(tar\.gz|tgz|tar|zip)$/i.test(file.originalname)
       : /\.(tar\.gz|tgz|tar)$/i.test(file.originalname);
@@ -133,7 +129,8 @@ async function validateStructure(extractedDir: string): Promise<string | null> {
       // directory absent — keep checking
     }
   }
-  if (!hasContent) return `Archive must contain at least one content directory (${contentDirs.join(', ')})`;
+  if (!hasContent)
+    return `Archive must contain at least one content directory (${contentDirs.join(', ')})`;
 
   // Path-traversal guard: ensure all files resolve within extractedDir
   const allEntries = await walkDir(extractedDir);
@@ -325,7 +322,9 @@ wikiUploadRouter.post(
     // Server-side name validation (never trust frontend)
     const parsed = UploadBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      await fs.rm(path.join(dmzRoot, jobId), { recursive: true, force: true }).catch(() => undefined);
+      await fs
+        .rm(path.join(dmzRoot, jobId), { recursive: true, force: true })
+        .catch(() => undefined);
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid name' });
       return;
     }
@@ -340,7 +339,9 @@ wikiUploadRouter.post(
       return;
     }
     if (registry.list().some((w) => w.id === wikiId)) {
-      await fs.rm(path.join(dmzRoot, jobId), { recursive: true, force: true }).catch(() => undefined);
+      await fs
+        .rm(path.join(dmzRoot, jobId), { recursive: true, force: true })
+        .catch(() => undefined);
       res.status(409).json({ error: `Wiki domain "${wikiId}" already exists` });
       return;
     }
