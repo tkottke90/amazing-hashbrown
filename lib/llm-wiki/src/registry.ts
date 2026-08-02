@@ -194,6 +194,12 @@ export class WikiRegistry {
     await this.persist();
   }
 
+  /** Remove a registered wiki from registry.json. Does not touch disk files. */
+  async remove(id: string): Promise<void> {
+    this.data.wikis = this.data.wikis.filter((w) => w.id !== id);
+    await this.persist();
+  }
+
   // ── Health ──────────────────────────────────────────────────────────────────
 
   /** Lint a wiki, injecting registry data so registry_sync can run. */

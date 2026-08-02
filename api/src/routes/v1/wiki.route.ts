@@ -10,8 +10,11 @@ import {
 } from '../../agents/wiki-stream-handler.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { serializeError } from '../../config/logger.js';
+import { wikiUploadRouter } from './wiki-upload.route.js';
 
 export const wikiRouter = Router();
+
+wikiRouter.use('/upload', wikiUploadRouter);
 
 function setSseHeaders(res: import('express').Response): void {
   res.setHeader('Content-Type', 'text/event-stream');

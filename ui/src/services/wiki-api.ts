@@ -1,5 +1,6 @@
 // REST read-only wrappers for the wiki API endpoints.
 // All writes go through the ingestion agent via SSE (see use-wiki-ingestion.ts).
+import type { UploadCapabilities, UploadJobState } from '@/types/wiki-upload';
 
 export interface WikiDomain {
   id: string;
@@ -68,4 +69,31 @@ export async function fetchPage(domainId: string, pagePath: string): Promise<Wik
   const res = await fetch(`/api/v1/wiki/domains/${encodeURIComponent(domainId)}/pages/${pagePath}`);
   if (!res.ok) throw new Error(`Failed to fetch page ${pagePath}: ${res.status}`);
   return res.json() as Promise<WikiPageContent>;
+}
+
+export async function fetchUploadCapabilities(): Promise<UploadCapabilities> {
+  const res = await fetch('/api/v1/wiki/upload/capabilities');
+  if (!res.ok) throw new Error(`Failed to fetch upload capabilities: ${res.status}`);
+  return res.json() as Promise<UploadCapabilities>;
+}
+
+export async function startWikiUpload(
+  name: string,
+  file: File,
+): Promise<{ jobId: string }> {
+  const body = new FormData();
+  body.append('name', name);
+  body.append('file', file);
+  const res = await fetch('/api/v1/wiki/upload', { method: 'POST', body });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(detail.error ?? `Upload failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ jobId: string }>;
+}
+
+export async function fetchUploadStatus(jobId: string): Promise<UploadJobState> {
+  const res = await fetch(`/api/v1/wiki/upload/${encodeURIComponent(jobId)}`);
+  if (!res.ok) throw new Error(`Upload job not found: ${res.status}`);
+  return res.json() as Promise<UploadJobState>;
 }
