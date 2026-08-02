@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal, effect } from '@preact/signals';
 import { Upload, CheckCircle, XCircle, Loader2, Circle } from 'lucide-preact';
-import { Dialog } from '@tkottke90/preact-dialog';
+import { Dialog, useDialog } from '@tkottke90/preact-dialog';
 import { domains, refreshDomains } from '@/hooks/use-wiki';
 import {
   fetchUploadCapabilities,
@@ -9,6 +9,7 @@ import {
   fetchUploadStatus,
 } from '@/services/wiki-api';
 import type { UploadJobState, UploadCapabilities } from '@/types/wiki-upload';
+import { CodeBlock } from '../markdown';
 
 // ---------------------------------------------------------------------------
 // Step definitions
@@ -71,11 +72,11 @@ function StepRow({ step, currentState }: {
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// Form
 // ---------------------------------------------------------------------------
 
 export function UploadWikiForm() {
-  const open = useSignal(false);
+  const { close } = useDialog();
   const capabilities = useSignal<UploadCapabilities | null>(null);
 
   // Form state
@@ -119,8 +120,8 @@ export function UploadWikiForm() {
   }
 
   function handleClose() {
-    open.value = false;
     reset();
+    close();
   }
 
   function applyFile(f: File) {
@@ -187,167 +188,153 @@ export function UploadWikiForm() {
   const accept = capabilities.value?.acceptedFormats.join(',') ?? '.tar.gz,.tgz,.tar';
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => (open.value = true)}
-        title="Upload wiki"
-        class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
-      >
-        <Upload class="size-3.5" />
-      </button>
+    <div class="flex flex-col gap-4 text-xs">
 
-      <Dialog open={open} title="Upload Wiki">
-        <div class="flex flex-col gap-4 text-xs">
+      {/* ── Progress view ─────────────────────────────────────────────── */}
+      {isInProgress && (
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
+            {STEPS.map((step) => (
+              <StepRow key={step.stage} step={step} currentState={jobState.value} />
+            ))}
+          </div>
 
-          {/* ── Progress view ─────────────────────────────────────────────── */}
-          {isInProgress && (
-            <div class="flex flex-col gap-3">
-              <div class="flex flex-col gap-2">
-                {STEPS.map((step) => (
-                  <StepRow key={step.stage} step={step} currentState={jobState.value} />
-                ))}
-              </div>
-
-              {isDone && (
-                <div class="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-green-700 dark:text-green-400">
-                  Wiki imported successfully.
-                  {(() => {
-                    const state = jobState.value;
-                    if (state?.stage !== 'done') return null;
-                    const warns = state.lintReport.checks.filter((c) => c.severity !== 'error');
-                    if (!warns.length) return null;
-                    return (
-                      <span class="block mt-1 text-muted-foreground">
-                        {warns.length} lint finding{warns.length !== 1 ? 's' : ''} to review.
-                      </span>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {isFailed && (
-                <div class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
-                  {jobState.value?.stage === 'failed' ? jobState.value.error : 'Upload failed'}
-                </div>
-              )}
-
-              {(isDone || isFailed) && (
-                <div class="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    class="rounded bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90"
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
+          {isDone && (
+            <div class="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-green-700 dark:text-green-400">
+              Wiki imported successfully.
+              {(() => {
+                const state = jobState.value;
+                if (state?.stage !== 'done') return null;
+                const warns = state.lintReport.checks.filter((c) => c.severity !== 'error');
+                if (!warns.length) return null;
+                return (
+                  <span class="block mt-1 text-muted-foreground">
+                    {warns.length} lint finding{warns.length !== 1 ? 's' : ''} to review.
+                  </span>
+                );
+              })()}
             </div>
           )}
 
-          {/* ── Form ──────────────────────────────────────────────────────── */}
-          {!isInProgress && (
-            <form onSubmit={(e) => void handleSubmit(e)} class="flex flex-col gap-3">
-              {/* Drop zone */}
-              <div
-                onDragOver={(e) => { e.preventDefault(); dragging.value = true; }}
-                onDragLeave={() => (dragging.value = false)}
-                onDrop={handleDrop}
-                class={`relative flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-6 transition-colors ${dragging.value ? 'border-primary bg-primary/5' : 'border-input'}`}
+          {isFailed && (
+            <div class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
+              {jobState.value?.stage === 'failed' ? jobState.value.error : 'Upload failed'}
+            </div>
+          )}
+
+          {(isDone || isFailed) && (
+            <div class="flex justify-end">
+              <button
+                type="button"
+                onClick={handleClose}
+                class="rounded bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90"
               >
-                <Upload class="size-5 text-muted-foreground" />
-                <span class="text-muted-foreground">
-                  {file.value ? file.value.name : 'Drop archive here or click to browse'}
-                </span>
-                <input
-                  type="file"
-                  accept={accept}
-                  onChange={handleFileInput}
-                  class="absolute inset-0 cursor-pointer opacity-0"
-                />
-              </div>
-
-              {/* Wiki name */}
-              <div class="flex flex-col gap-1">
-                <input
-                  type="text"
-                  placeholder="Wiki ID (e.g. homelab)"
-                  value={name.value}
-                  onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
-                  class="rounded border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                {nameError.value && (
-                  <span class="text-destructive">{nameError.value}</span>
-                )}
-              </div>
-
-              {/* Buttons */}
-              <div class="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  class="rounded px-2 py-1 text-muted-foreground hover:text-foreground"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  class="rounded bg-primary px-2 py-1 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Upload
-                </button>
-              </div>
-
-              {/* Instructions */}
-              <div class="border-t border-border pt-3">
-                <p class="font-medium text-foreground mb-2">Creating an archive from your wiki:</p>
-                <div class="flex flex-col gap-2">
-                  <div>
-                    <p class="text-muted-foreground mb-1">tar.gz (recommended):</p>
-                    <CopyBlock code="tar -czf my-wiki.tar.gz -C /path/to/wiki ." />
-                  </div>
-                  {capabilities.value?.acceptedFormats.includes('.zip') && (
-                    <div>
-                      <p class="text-muted-foreground mb-1">zip:</p>
-                      <CopyBlock code="cd /path/to/wiki && zip -r ../my-wiki.zip ." />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </form>
+                Close
+              </button>
+            </div>
           )}
         </div>
-      </Dialog>
-    </>
+      )}
+
+      {/* ── Form ──────────────────────────────────────────────────────── */}
+      {!isInProgress && (
+        <form onSubmit={(e) => void handleSubmit(e)} class="flex flex-col gap-3">
+          {/* Drop zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); dragging.value = true; }}
+            onDragLeave={() => (dragging.value = false)}
+            onDrop={handleDrop}
+            class={`relative flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-6 transition-colors ${dragging.value ? 'border-primary bg-primary/5' : 'border-input'}`}
+          >
+            <Upload class="size-5 text-muted-foreground" />
+            <span class="text-muted-foreground">
+              {file.value ? file.value.name : 'Drop archive here or click to browse'}
+            </span>
+            <input
+              type="file"
+              accept={accept}
+              onChange={handleFileInput}
+              class="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </div>
+
+          {/* Wiki name */}
+          <div class="flex flex-col gap-1">
+            <input
+              type="text"
+              placeholder="Wiki ID (e.g. homelab)"
+              value={name.value}
+              onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
+              class="rounded border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            {nameError.value && (
+              <span class="text-destructive">{nameError.value}</span>
+            )}
+          </div>
+
+          {/* Buttons */}
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              class="rounded px-2 py-1 text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              class="rounded bg-primary px-2 py-1 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Upload
+            </button>
+          </div>
+
+          {/* Instructions */}
+          <div class="border-t border-border pt-3">
+            <p class="font-medium text-foreground mb-2">Creating an archive from your wiki:</p>
+            <div class="flex flex-col gap-2">
+              <div>
+                <p class="text-muted-foreground mb-1">tar.gz (recommended):</p>
+                <CodeBlock  >
+                  tar -czf my-wiki.tar.gz -C /path/to/wiki .
+                </CodeBlock>
+              </div>
+              {capabilities.value?.acceptedFormats.includes('.zip') && (
+                <div>
+                  <p class="text-muted-foreground mb-1">zip:</p>
+                  <CodeBlock>
+                    cd /path/to/wiki && zip -r ../my-wiki.zip .
+                  </CodeBlock>
+                </div>
+              )}
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Small copy-to-clipboard code block
+// Dialog wrapper
 // ---------------------------------------------------------------------------
 
-function CopyBlock({ code }: { code: string }) {
-  const copied = useSignal(false);
-
-  function handleCopy() {
-    void navigator.clipboard.writeText(code).then(() => {
-      copied.value = true;
-      setTimeout(() => { copied.value = false; }, 2000);
-    });
-  }
-
+export function UploadWikiDialog() {
   return (
-    <div class="relative rounded bg-muted px-3 py-2 font-mono text-foreground">
-      <code class="block pr-10 text-[10px] leading-relaxed whitespace-pre-wrap break-all">{code}</code>
-      <button
-        type="button"
-        onClick={handleCopy}
-        class="absolute right-2 top-2 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
-      >
-        {copied.value ? 'Copied!' : 'Copy'}
-      </button>
-    </div>
+    <Dialog
+      title="Upload Wiki"
+      trigger={
+        <button
+          type="button"
+          title="Upload Wiki"
+          class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+        >
+          <Upload class="size-3.5" />
+        </button>
+      }
+    >
+      <UploadWikiForm />
+    </Dialog>
   );
 }

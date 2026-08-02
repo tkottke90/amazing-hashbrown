@@ -18,7 +18,7 @@ export function NewDomainModal() {
           type="button"
           onClick={() => (open.value = true)}
           class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
-          title="New domain"
+          title="Start a Domain Creation Workflow"
         >
           <Plus class="size-3" />
           New domain

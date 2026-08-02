@@ -18,7 +18,7 @@ function getCodeLanguage(children: ComponentChildren): string | undefined {
 
 // ---- code block ----
 
-function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
+export function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   const copied = useSignal(false);
   const lang = getCodeLanguage(props.children);
   const ref = { current: null as HTMLPreElement | null };
