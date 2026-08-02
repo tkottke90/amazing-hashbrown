@@ -17,6 +17,34 @@ import {
   retryTurn,
   forkThread,
 } from '@/hooks/use-thread';
+import type { ThreadMessage } from '@/types/thread-message';
+
+// Tool calls execute before the assistant produces its final text response, but
+// the flat messages array stores them after the assistant item (because the
+// assistant item is inserted eagerly at turn start to show streaming state).
+// This reorders tool_call items that immediately follow an assistant item to
+// appear before it, matching actual execution order.
+function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
+  const result: ThreadMessage[] = [];
+  let i = 0;
+  while (i < msgs.length) {
+    const msg = msgs[i];
+    if (msg.kind === 'assistant') {
+      const toolCalls: ThreadMessage[] = [];
+      let j = i + 1;
+      while (j < msgs.length && msgs[j].kind === 'tool_call') {
+        toolCalls.push(msgs[j]);
+        j++;
+      }
+      result.push(...toolCalls, msg);
+      i = j;
+    } else {
+      result.push(msg);
+      i++;
+    }
+  }
+  return result;
+}
 
 export function ThreadView() {
   const { route } = useLocation();
@@ -35,8 +63,8 @@ export function ThreadView() {
     : null;
 
   // Pending HITL is shown pinned below the scroll area, not in the message list
-  const scrollMessages = allMessages.filter(
-    (m) => !(m.kind === 'hitl_prompt' && m.status === 'pending'),
+  const scrollMessages = reorderMessagesForDisplay(
+    allMessages.filter((m) => !(m.kind === 'hitl_prompt' && m.status === 'pending')),
   );
 
   return (
