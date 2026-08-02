@@ -1,6 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { updateWikiPage } from '../../services/wiki-write.js';
+import { getActiveSseWriter } from '../active-sse-writer.js';
 
 const WikiUpdatePageSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the page belongs to.'),
@@ -64,17 +65,10 @@ function lineDiff(before: string, after: string): string {
 }
 
 export const wikiUpdatePageTool = tool(
-  async ({
-    wikiId,
-    path,
-    content,
-    tags,
-    confidence,
-    contested,
-    contradictions,
-    summary,
-    dryRun,
-  }) => {
+  async (
+    { wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun },
+    config,
+  ) => {
     const result = await updateWikiPage({
       wikiId,
       path,
@@ -89,8 +83,19 @@ export const wikiUpdatePageTool = tool(
 
     switch (result.status) {
       case 'written': {
+        const threadId = config?.configurable?.thread_id as string | undefined;
+        getActiveSseWriter(threadId ?? '')?.({
+          type: 'wiki_updated',
+          pageTitle: path,
+          pageKind: 'updated',
+          wikiName: wikiId,
+        });
         const warnings = result.result.warnings.map((w) => w.message).join(' ');
-        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}`;
+        const deletedWarning =
+          result.deletedSections.length > 0
+            ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
+            : '';
+        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
       }
       case 'dry_run':
         return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;

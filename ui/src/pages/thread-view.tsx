@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals';
+import { useLocation } from 'preact-iso';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { ThreadMessageItem } from '@/components/thread-message';
@@ -18,6 +19,7 @@ import {
 } from '@/hooks/use-thread';
 
 export function ThreadView() {
+  const { route } = useLocation();
   const inputValue = useSignal('');
 
   function handleSend() {
@@ -47,7 +49,9 @@ export function ThreadView() {
               message={msg}
               onHitlAnswer={submitHitlAnswer}
               onRetry={retryTurn}
-              onFork={(seq) => forkThread(activeThreadId.value, seq)}
+              onFork={(seq) =>
+                void forkThread(activeThreadId.value, seq).then((id) => route(`/chat/${id}`))
+              }
             />
           ))}
         </div>

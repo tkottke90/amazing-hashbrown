@@ -11,7 +11,8 @@ pre-commit checks.
 
 ```
 src/
-  components/
+  components/   See src/components/AGENTS.md for component conventions
+                (e.g. the Dialog / trigger-as-prop pattern)
     ui/         shadcn/ui components (generated, see below)
   lib/
     utils.ts    cn() helper (clsx + tailwind-merge)

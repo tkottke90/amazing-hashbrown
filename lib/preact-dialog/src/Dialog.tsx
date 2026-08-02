@@ -1,0 +1,123 @@
+import { Signal, useSignal } from '@preact/signals';
+import { X as XIcon } from 'lucide-preact';
+import { cloneElement, ComponentChildren, createContext, type JSX } from 'preact';
+import { useContext, useRef } from 'preact/hooks';
+import { useHtmlElementListeners } from './eventListeners';
+
+const X = XIcon;
+
+export interface DialogProps {
+  className?: string;
+  children: ComponentChildren;
+  title?: string | JSX.Element;
+  trigger?: JSX.Element;
+  disableClose?: boolean;
+  open?: Signal<boolean>;
+  onClose?: () => void;
+  onCancel?: () => void;
+  onOpen?: () => void;
+}
+
+interface iDialogContext {
+  dialog: HTMLDialogElement | null;
+  close: (value?: string) => void;
+  value: string | undefined;
+}
+
+const DialogContext = createContext<iDialogContext>({} as never);
+
+export function useDialog() {
+  return useContext(DialogContext);
+}
+
+export function Dialog({
+  className,
+  children,
+  trigger,
+  disableClose,
+  title,
+  onCancel,
+  onClose,
+  onOpen,
+}: DialogProps) {
+  const modalValue = useSignal<string | undefined>();
+  const modalRef = useRef<HTMLDialogElement>(null);
+
+  const triggerRef = useHtmlElementListeners(
+    [['click', () => openModal(modalRef.current, onOpen)]],
+    [trigger],
+  );
+
+  const triggerElement = cloneElement(trigger ?? <button>Open</button>, { ref: triggerRef });
+
+  return (
+    <DialogContext.Provider
+      value={{
+        dialog: modalRef.current,
+        value: modalValue.value,
+        close: (value?: string) => {
+          if (onClose) {
+            onClose();
+          }
+
+          closeModal(modalRef.current, value);
+        },
+      }}
+    >
+      {triggerElement}
+      <dialog
+        ref={modalRef}
+        className={`p-6 text-neutral-800 dark:text-neutral-200
+        bg-neutral-50/80 dark:bg-neutral-700/80
+        rounded border border-neutral-400/50 backdrop-blur-sm
+        absolute block pointer-events-none opacity-0 mx-auto my-4 translate-y-1 min-w-10/12
+        transition-all transition-discrete duration-200
+        sm:min-w-150
+        backdrop:backdrop-blur-xs backdrop:transition-all backdrop:transition-discrete backdrop:duration-200
+        backdrop:bg-transparent open:backdrop:bg-neutral-900/50 starting:open:backdrop:bg-transparent
+        open:translate-y-0 open:pointer-events-auto open:opacity-100 z-50 ${className ?? ''}`}
+      >
+        <div className="flex">
+          <h2 className="grow">{title}</h2>
+          {!disableClose && (
+            <button
+              onClick={() => {
+                cancelModal(modalRef.current, onCancel);
+              }}
+            >
+              <X />
+            </button>
+          )}
+        </div>
+        <br />
+        {children}
+      </dialog>
+    </DialogContext.Provider>
+  );
+}
+
+type ModalRef = HTMLDialogElement | null;
+
+export function openModal(modal: ModalRef, onOpen?: () => void) {
+  if (modal) {
+    if (onOpen) {
+      onOpen();
+    }
+
+    modal.showModal();
+  }
+}
+
+export function closeModal(modal: ModalRef, value?: string) {
+  if (modal) {
+    modal.close(value);
+  }
+}
+
+export function cancelModal(modal: ModalRef, onCancel?: () => void) {
+  if (onCancel) {
+    onCancel();
+  }
+
+  closeModal(modal);
+}

@@ -95,7 +95,7 @@ export async function createWikiPage(
 }
 
 export type UpdateWikiPageResult =
-  | { status: 'written'; result: WikiWriteResult }
+  | { status: 'written'; result: WikiWriteResult; deletedSections: string[] }
   | { status: 'dry_run'; path: string; existingBody: string; proposedBody: string }
   | { status: 'not_found' }
   | { status: 'invalid_path' }
@@ -113,6 +113,13 @@ export interface UpdateWikiPageParams {
   contested?: boolean; // omitted -> reuse existing page's value
   contradictions?: string[]; // omitted -> reuse existing page's value
   dryRun?: boolean;
+}
+
+function extractH2Sections(body: string): string[] {
+  return body
+    .split('\n')
+    .filter((line) => /^## /.test(line))
+    .map((line) => line.replace(/^## /, '').trim());
 }
 
 export async function updateWikiPage(
@@ -198,6 +205,10 @@ export async function updateWikiPage(
     };
   }
 
+  const existingSections = new Set(extractH2Sections(existing.content));
+  const newSections = new Set(extractH2Sections(content));
+  const deletedSections = [...existingSections].filter((s) => !newSections.has(s));
+
   const result = await wiki.commitPage({
     type: existing.frontmatter.type,
     title: existing.frontmatter.title,
@@ -211,5 +222,5 @@ export async function updateWikiPage(
     relPath,
   });
 
-  return { status: 'written', result };
+  return { status: 'written', result, deletedSections };
 }

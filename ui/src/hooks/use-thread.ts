@@ -1,6 +1,7 @@
 import { signal, batch, computed } from '@preact/signals';
-import { ChatSSEEventSchema, type ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
+import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
+import { consumeSsePost } from '../lib/sse';
 
 // ---- localStorage-backed signals ----
 // use-theme.tsx is the only other localStorage consumer in this app, and it
@@ -73,6 +74,7 @@ export interface ThreadSummary {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
+  type: 'chat' | 'wiki';
   afterAgentState: AfterAgentState;
   links: { self: string; afterAgentStatus: string };
 }
@@ -176,7 +178,7 @@ export async function switchThread(id: string): Promise<void> {
   await hydrateThread(id);
 }
 
-export function newThread(): void {
+export function newThread(): string {
   if (isStreaming.value) stopGeneration();
   const id = crypto.randomUUID();
   activeThreadId.value = id;
@@ -185,6 +187,7 @@ export function newThread(): void {
     messages.value = [];
     pendingHitlId.value = null;
   });
+  return id;
 }
 
 // ---- Thread CRUD (sidebar actions) ----
@@ -206,13 +209,13 @@ export async function deleteThread(id: string): Promise<void> {
   }
 }
 
-export async function forkThread(id: string, atSeq: number): Promise<void> {
+export async function forkThread(id: string, atSeq: number): Promise<string> {
   const res = await fetch(`/api/v1/threads/${id}/fork`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ atSeq }),
   });
-  if (!res.ok) return;
+  if (!res.ok) return id;
   const data = (await res.json()) as { id: string; messages: unknown[] };
 
   if (isStreaming.value) stopGeneration();
@@ -223,6 +226,7 @@ export async function forkThread(id: string, atSeq: number): Promise<void> {
     pendingHitlId.value = null;
   });
   await refreshThreadList();
+  return data.id;
 }
 
 export async function regenerateTitle(id: string): Promise<void> {
@@ -231,50 +235,6 @@ export async function regenerateTitle(id: string): Promise<void> {
 }
 
 // ---- SSE plumbing ----
-
-async function consumeSsePost(
-  url: string,
-  body: Record<string, unknown>,
-  onEvent: (event: ChatSSEEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  if (!response.body) throw new Error('No response body');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let lineBuf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    lineBuf += decoder.decode(value, { stream: true });
-    const lines = lineBuf.split('\n');
-    lineBuf = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const raw = line.slice(6).trim();
-        if (!raw) continue;
-        const parsed = ChatSSEEventSchema.safeParse(JSON.parse(raw));
-        if (parsed.success) {
-          onEvent(parsed.data);
-        }
-      }
-    }
-  }
-}
 
 function handleEvent(evt: ChatSSEEvent): void {
   switch (evt.type) {
@@ -374,6 +334,11 @@ function handleEvent(evt: ChatSSEEvent): void {
           seq: evt.seq,
         },
       ];
+      break;
+
+    case 'wiki_oriented':
+    case 'wiki_domain_created':
+      // Handled by the wiki ingestion chat; no-op in the main thread context.
       break;
 
     case 'stream_done':

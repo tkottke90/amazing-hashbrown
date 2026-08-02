@@ -87,7 +87,7 @@ function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
 }
 
 export function listThreadsHandler(store: ThreadStore): ThreadSummaryResponse[] {
-  return store.listThreads().map(withAfterAgentInfo);
+  return store.listThreads({ type: 'chat' }).map(withAfterAgentInfo);
 }
 
 export function getAfterAgentStatusHandler(
@@ -152,7 +152,7 @@ export async function forkThreadHandler(
 
   const newThreadId = crypto.randomUUID();
   await forkThreadCheckpoints(checkpointer, id, checkpointId, newThreadId);
-  store.createForkedThread(newThreadId, `${source.title} (fork)`, id, atSeq);
+  store.createForkedThread(newThreadId, `${source.title} (fork)`, id, atSeq, source.type);
   store.copyMessagesToNewThread(id, newThreadId, atSeq);
 
   const forked = store.getThread(newThreadId);

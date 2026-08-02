@@ -1,6 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getWikiRegistry } from '../../services/wiki.js';
+import { getActiveSseWriter } from '../active-sse-writer.js';
 
 const WikiOrientSchema = z.object({
   wikiId: z
@@ -35,7 +36,7 @@ function truncateIndex(index: string): string {
 }
 
 export const wikiOrientTool = tool(
-  async ({ wikiId }) => {
+  async ({ wikiId }, config) => {
     let registry;
     try {
       registry = await getWikiRegistry();
@@ -51,6 +52,9 @@ export const wikiOrientTool = tool(
     }
 
     const { schema, index, recentLog } = await wiki.orient();
+
+    const threadId = config?.configurable?.thread_id as string | undefined;
+    getActiveSseWriter(threadId ?? '')?.({ type: 'wiki_oriented', wikiId, wikiName: wikiId });
     const logLines = recentLog.length
       ? recentLog.map((e) => `- [${e.date}] ${e.action} | ${e.subject}`).join('\n')
       : '(no log entries yet)';

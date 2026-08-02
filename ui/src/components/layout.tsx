@@ -31,7 +31,7 @@ export function Layout({
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden lg:z-10 lg:rounded-l-2xl lg:shadow-[-8px_0_24px_-6px_rgb(0_0_0_/_0.15)]">
-        <div className="min-h-0 flex-1 overflow-y-auto pb-20 lg:pb-0">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden pb-20 lg:pb-0">{children}</div>
       </main>
 
       <Sheet>

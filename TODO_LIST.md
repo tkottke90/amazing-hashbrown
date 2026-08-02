@@ -19,6 +19,7 @@
 15. [Agent Behavior Baseline (System Prompt)](#agent-behavior-baseline-system-prompt) — `HARNESS_SECTIONS` in `system-prompt.ts` extended with `IDENTITY_SECTION` (no built-in memory of the user — the wiki is the source of truth), `MEMORY_SECTION` (cold-start turns must check the wiki before answering from assumption), and `ASK_USER_SECTION` (structured clarification must go through `ask_user`, not plain-text questions); `config/AGENT.md` (auto-created, supplement-only precedence over harness sections) wired in as the user-instructions injection point via `agent-instructions.ts`; new `instruction-hierarchy`, `thread-titles`, and `tool-calling` eval suites added; wording iterated against real `ornith`/`glm` eval runs (documented inline in `system-prompt.ts`) without regressing `wiki-navigation.yaml`
 16. [Wiki Write Tooling](#wiki-write-tooling) — shared, non-LLM write functions `createWikiPage`/`updateWikiPage` in `api/src/services/wiki-write.ts`; thin `wiki_create_page`/`wiki_update_page` LangChain tool wrappers wired into the live chat agent (Thread Type 1 now has direct wiki write access, independent of AfterAgent's background pass) and the eval harness; AfterAgent Middleware refactored to call the same shared functions instead of the SDK directly — one write path instead of two; dry-run mode returns a diff without committing; `wiki_create_page` refuses (pointing to `wiki_update_page`) rather than silently overwriting a likely-duplicate page; `wiki_update_page` adds path-escape validation the SDK itself doesn't have; new `wiki-write` eval suite added, plus two previously-deferred `wiki-navigation` scenarios revived
 17. [Wiki Lint Tool](#wiki-lint-tool-wikilint) — `wiki_lint` tool (`api/src/agents/tools/wiki-lint.tool.ts`) wrapping `WikiRegistry.lint(id)`; read-only diagnostic scoped to one domain per call: reports broken links, orphaned pages, missing frontmatter, stale content, tag/index drift, and 8 other checks, formatted as a grouped severity report (errors/warnings/info); deliberately read-only this round (agent can fix `broken_links`/`index`/`stale` via `wiki_read_page`+`wiki_update_page` today; full remediation gap tracked in Wiki Lint Remediation Tools); AfterAgent Middleware gains a logging-only post-write lint check (own try/catch — never flips the write's `identified` outcome); new `wiki-lint` eval suite with `wlint-001` (domain-established, `tool-sequence`) and `wlint-002` (locate-before-lint, `tool-call`) scenarios
+18. [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools) — closed the gap between what `wiki_lint` reports and what the agent can fix: `wiki_update_page` extended with `tags`, `confidence`, `contested`, and `contradictions` params; `wiki_create_page` extended with `confidence`, `contested`, `contradictions`; `wiki_add_cross_link` tool added (wraps `LlmWiki.addCrossLink()`) for `orphans`; `wiki_rebaseline_source` tool added (wraps new `LlmWiki.rebaselineRawSource()`) for `source_drift`; `wiki_register_domain` tool added (wraps new `WikiRegistry.register()`) for `registry_sync` — went beyond original spec to cover all 12 finding types; carry-forward semantics on epistemological fields; four new `wiki-lint` eval scenarios (`wlint-003` through `wlint-006`); `wiki_lint` tool description updated to reflect full fix coverage
 
 ---
 
@@ -26,22 +27,21 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools) — depends on: Wiki Lint Tool (now complete); closes the gap between what wiki_lint can report and what the agent can actually fix with the current write tools
-2. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
-3. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
-4. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — depends on: Connect LLM-Wiki to Chat Agent; surfaces the wiki in the UI and lets users author/import content directly, so the automation work below starts from a populated wiki instead of a cold one
-5. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-6. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #2, #3, #5 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), and [Wiki Lint Tool](#wiki-lint-tool-wikilint) now complete — no longer blocking)
-7. [Trigger System](#trigger-system) — depends on: #5; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-8. [Escalation System](#escalation-system) — depends on: #5; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-9. [Dashboard System](#dashboard-system) — depends on: #5, #8; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-10. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-11. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-12. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-13. [Skills Integration](#skills-integration) — depends on: #12; `skills-manager` library is complete; needs API + UI
-14. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #12
-15. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #10
-16. [Notification Delivery](#notification-delivery) — depends on: #8; external channels deferred; interim: `action_required` flag on threads/tasks
+1. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — depends on: Connect LLM-Wiki to Chat Agent; required for automated task knowledge gaps
+2. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
+3. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — depends on: Connect LLM-Wiki to Chat Agent; surfaces the wiki in the UI and lets users author/import content directly, so the automation work below starts from a populated wiki instead of a cold one
+4. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+5. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1, #2, #4 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), and [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools) now complete — no longer blocking)
+6. [Trigger System](#trigger-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+7. [Escalation System](#escalation-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+8. [Dashboard System](#dashboard-system) — depends on: #4, #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+9. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+10. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+11. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+12. [Skills Integration](#skills-integration) — depends on: #11; `skills-manager` library is complete; needs API + UI
+13. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #11
+14. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #9
+15. [Notification Delivery](#notification-delivery) — depends on: #7; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -539,14 +539,16 @@ Items are ordered first by priority/necessity, then by dependency.
 
 **Goal:** Close the gap between what `wiki_lint` (see below) can report and what the agent can actually fix with the existing write tools, so lint findings become actionable rather than purely diagnostic.
 
-**Ideas / Requirements:**
+**Delivered** (PR #39 — went beyond original spec to cover all 12 finding types):
 
-- Surfaced during the Wiki Lint Tool design (see [design doc](docs/superpowers/specs/2026-07-27-wiki-lint-tool-design.md)): today the agent can only act on `broken_links`, `index`, and `stale` findings via the existing `wiki_read_page`/`wiki_update_page` tools — everything else has no fix path
-- Expose `tags` on `wiki_update_page`'s tool schema — the `updateWikiPage()` service function already accepts it; only the tool wrapper is missing it
-- Add `confidence`, `contested`, and `contradictions` parameters to both `wiki_create_page` and `wiki_update_page` (neither the tools nor the underlying service functions support these today) so `quality`/`contradictions` findings become fixable
-- Add a `wiki_add_cross_link` (or similar) tool wrapping `LlmWiki.addCrossLink()`, which already exists in the SDK but isn't exposed as a tool, so `orphans` findings become fixable without a full-body rewrite
-- `source_drift` (raw source file changed after ingest) and `registry_sync` (on-disk wiki dir missing from the registry) remain deliberately out of scope here — they're about raw-source integrity and registry administration, not page content, and don't fit this item's page-write-tool shape
-- Once shipped, `wiki_lint`'s tool description should be updated to reflect the expanded fix coverage
+- `wiki_update_page` extended with `tags`, `confidence`, `contested`, and `contradictions` parameters; carry-forward semantics prevent agents from silently clearing prior epistemological assessments during routine updates
+- `wiki_create_page` extended with `confidence`, `contested`, and `contradictions` parameters
+- `wiki_add_cross_link` tool added (wraps `LlmWiki.addCrossLink()`) — fixes `orphans` findings without a full-body rewrite
+- `wiki_rebaseline_source` tool added (wraps new `LlmWiki.rebaselineRawSource()`) — fixes `source_drift` findings; preserves original `source_url` while accepting current content as new ground truth
+- `wiki_register_domain` tool added (wraps new `WikiRegistry.register()`) — fixes `registry_sync` findings; auto-extracts domain from SCHEMA.md with optional override
+- `WikiRegistry.create()` refactored to delegate to the new `register()` method, eliminating duplication in the SDK
+- Four new eval scenarios: `wlint-003` (rebaseline source), `wlint-004` (register domain), `wlint-005` (add cross-link, tool-sequence), `wlint-006` (update with confidence)
+- `wiki_lint` tool description updated to reflect full fix coverage across all 12 finding types
 
 **Dependencies:** Wiki Lint Tool
 

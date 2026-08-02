@@ -547,6 +547,47 @@ export class LlmWiki {
     return runLint(ctx);
   }
 
+  /**
+   * Re-embed all content pages whose SHA has changed since the last index run.
+   * No-op when no embeddingProvider was supplied at load time.
+   * Calls onProgress(done, total) after each batch so callers can track progress.
+   */
+  async reIndex(onProgress?: (done: number, total: number) => void): Promise<void> {
+    const provider = this.embeddingProvider;
+    if (!provider) return;
+
+    const paths = await this.listContentPaths();
+    const total = paths.length;
+    if (total === 0) {
+      onProgress?.(0, 0);
+      return;
+    }
+
+    const index = await this.loadEmbeddingIndex(provider);
+
+    const stale: Array<{ rel: string; sha: string; body: string }> = [];
+    for (const rel of paths) {
+      const raw = (await this.readRawOrNull(rel)) ?? '';
+      const sha = sha256Body(raw);
+      if (index.needsUpdate(rel, sha)) {
+        stale.push({ rel, sha, body: extractBody(raw) });
+      }
+    }
+
+    const BATCH_SIZE = 10;
+    let done = 0;
+    for (let i = 0; i < stale.length; i += BATCH_SIZE) {
+      const batch = stale.slice(i, i + BATCH_SIZE);
+      const vecs = await provider.embed(batch.map((p) => p.body));
+      batch.forEach(({ rel, sha }, j) => index.set(rel, sha, vecs[j] ?? []));
+      done += batch.length;
+      onProgress?.(done, total);
+    }
+
+    if (stale.length > 0) await index.save(this.basePath);
+    onProgress?.(total, total);
+  }
+
   // ── Internals ───────────────────────────────────────────────────────────────
 
   private abs(rel: string): string {
