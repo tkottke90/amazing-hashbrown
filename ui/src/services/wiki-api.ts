@@ -45,6 +45,8 @@ export interface WikiPageContent {
   type: string;
   frontmatter: Record<string, unknown>;
   content: string;
+  /** Wiki-link substitution map: raw [[token]] → equivalent markdown link. */
+  links?: Record<string, string>;
 }
 
 export async function fetchDomains(): Promise<WikiDomain[]> {

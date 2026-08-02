@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { BookOpen, Plus, FileText, Loader2 } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
@@ -98,7 +99,16 @@ interface Props {
   chatInputRef?: RefObject<HTMLTextAreaElement>;
 }
 
+function applyWikiLinks(content: string, links: Record<string, string> = {}): string {
+  let result = content;
+  for (const [raw, replacement] of Object.entries(links)) {
+    result = result.replaceAll(raw, replacement);
+  }
+  return result;
+}
+
 export function DocumentView({ chatInputRef }: Props) {
+  const { route } = useLocation();
   const showNewPage = useSignal(false);
   const editMode = useSignal(false);
   const editContent = useSignal('');
@@ -121,7 +131,9 @@ export function DocumentView({ chatInputRef }: Props) {
   }, [domainId]);
 
   function handleDomainChange(e: Event) {
-    activeDomainId.value = (e.target as HTMLSelectElement).value;
+    const newDomainId = (e.target as HTMLSelectElement).value;
+    activeDomainId.value = newDomainId;
+    route(`/wiki?view=document&domain=${encodeURIComponent(newDomainId)}`);
   }
 
   async function handleViewMetadata() {
@@ -143,7 +155,13 @@ export function DocumentView({ chatInputRef }: Props) {
 
   function handlePageClick(filename: string) {
     metadataView.value = false;
-    if (domainId) void loadPage(domainId, filename);
+    if (!domainId) return;
+    // Load immediately for a snappy response; also update the URL so the state
+    // is bookmarkable and browser back/forward works.
+    void loadPage(domainId, filename);
+    route(
+      `/wiki?view=document&domain=${encodeURIComponent(domainId)}&page=${encodeURIComponent(filename)}`,
+    );
   }
 
   function handleEdit() {
@@ -360,7 +378,7 @@ export function DocumentView({ chatInputRef }: Props) {
                   spellcheck={false}
                 />
               ) : (
-                <Markdown className="p-4">{page.content}</Markdown>
+                <Markdown className="p-4">{applyWikiLinks(page.content, page.links)}</Markdown>
               )}
             </div>
           </>

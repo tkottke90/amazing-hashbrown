@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { useSignal } from '@preact/signals';
+import { useLocation } from 'preact-iso';
 import { Monitor } from 'lucide-preact';
 import { GraphView } from '@/components/wiki/graph-view';
 import { DocumentView } from '@/components/wiki/document-view';
@@ -8,27 +8,60 @@ import { DomainFilter } from '@/components/wiki/domain-filter';
 import {
   refreshDomains,
   refreshGraph,
+  refreshPages,
   graphRefreshing,
   loadPage,
   activeDomainId,
+  activePagePath,
 } from '@/hooks/use-wiki';
 import { hydrateWikiThread, wikiThreadId } from '@/hooks/use-wiki-ingestion';
 
 // path prop is consumed by preact-iso's Router for route matching
 export function WikiView(_props: { path?: string }) {
-  const canvasView = useSignal<'graph' | 'document'>('graph');
+  const { query, route } = useLocation();
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Derive view state from URL — default is 'graph' when param is absent or unrecognised.
+  const canvasView = query.view === 'document' ? 'document' : 'graph';
+  const urlDomain = query.domain as string | undefined;
+  const urlPage = query.page as string | undefined;
+
+  // On mount: load global data and hydrate the wiki chat thread.
   useEffect(() => {
     void refreshDomains();
     void refreshGraph();
     void hydrateWikiThread(wikiThreadId.value);
   }, []);
 
+  // Sync signals from URL params whenever the document view params change.
+  // This covers initial deep-link loads AND browser back/forward navigation.
+  useEffect(() => {
+    if (canvasView === 'document' && urlDomain && urlPage) {
+      activeDomainId.value = urlDomain;
+      void refreshPages(urlDomain);
+      void loadPage(urlDomain, urlPage);
+    }
+  }, [canvasView, urlDomain, urlPage]);
+
   function handleOpenInEditor(domainId: string, filename: string) {
-    activeDomainId.value = domainId;
-    void loadPage(domainId, filename);
-    canvasView.value = 'document';
+    route(
+      `/wiki?view=document&domain=${encodeURIComponent(domainId)}&page=${encodeURIComponent(filename)}`,
+    );
+  }
+
+  function handleGraphViewClick() {
+    route('/wiki?view=graph');
+  }
+
+  function handleDocumentViewClick() {
+    // Preserve current domain/page in the URL if one is already loaded.
+    const domainPart = activeDomainId.value
+      ? `&domain=${encodeURIComponent(activeDomainId.value)}`
+      : '';
+    const pagePart = activePagePath.value
+      ? `&page=${encodeURIComponent(activePagePath.value)}`
+      : '';
+    route(`/wiki?view=document${domainPart}${pagePart}`);
   }
 
   return (
@@ -50,9 +83,9 @@ export function WikiView(_props: { path?: string }) {
             <div class="flex items-center gap-1 rounded border border-border text-xs">
               <button
                 type="button"
-                onClick={() => (canvasView.value = 'graph')}
+                onClick={handleGraphViewClick}
                 class={`px-2.5 py-1 transition-colors ${
-                  canvasView.value === 'graph'
+                  canvasView === 'graph'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
@@ -61,9 +94,9 @@ export function WikiView(_props: { path?: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => (canvasView.value = 'document')}
+                onClick={handleDocumentViewClick}
                 class={`px-2.5 py-1 transition-colors ${
-                  canvasView.value === 'document'
+                  canvasView === 'document'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
@@ -72,7 +105,7 @@ export function WikiView(_props: { path?: string }) {
               </button>
             </div>
 
-            {canvasView.value === 'graph' && (
+            {canvasView === 'graph' && (
               <div class="flex min-w-0 items-center gap-2">
                 <DomainFilter />
                 {graphRefreshing.value && (
@@ -84,7 +117,7 @@ export function WikiView(_props: { path?: string }) {
 
           {/* Canvas body */}
           <div class="min-h-0 flex-1">
-            {canvasView.value === 'graph' ? (
+            {canvasView === 'graph' ? (
               <GraphView onOpenInEditor={handleOpenInEditor} />
             ) : (
               <DocumentView chatInputRef={chatInputRef} />

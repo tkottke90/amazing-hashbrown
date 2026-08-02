@@ -137,12 +137,32 @@ wikiRouter.get('/domains/:id/pages/*', async (req, res) => {
 
     try {
       const page = await wiki.readPage(normalizedPath);
+
+      // Build a substitution map for [[wiki-link]] syntax found in the page content.
+      // Keys are raw link tokens (e.g. [[entities/foo]] or [[entities/foo|Label]]);
+      // values are equivalent standard markdown links pointing to the wiki UI.
+      const WIKILINK_RE = /\[\[([^|\]]+)(?:\|([^\]]*))?\]\]/g;
+      const LINK_METADATA = new Set(['SCHEMA.md', 'index.md', 'log.md']);
+      const links: Record<string, string> = {};
+      for (const match of page.content.matchAll(WIKILINK_RE)) {
+        const raw = match[0];
+        const target = match[1]?.trim();
+        if (!target) continue;
+        const label = match[2]?.trim();
+        const pagePath = target.endsWith('.md') ? target : `${target}.md`;
+        if (LINK_METADATA.has(pagePath)) continue;
+        const displayText = label || target;
+        const url = `/wiki?view=document&domain=${encodeURIComponent(id)}&page=${encodeURIComponent(pagePath)}`;
+        links[raw] = `[${displayText}](${url})`;
+      }
+
       res.json({
         filename: page.filename,
         title: page.title,
         type: page.type,
         frontmatter: page.frontmatter,
         content: page.content,
+        links,
       });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
