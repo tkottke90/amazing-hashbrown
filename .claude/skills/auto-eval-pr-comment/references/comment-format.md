@@ -18,8 +18,8 @@ comment should be inventable without the log open next to you.
 
 1. **Heading** — `##`, names the suite in backticks, states the outcome.
    Either shape used so far is fine:
-   - `` ## `wiki-write` eval results ``
-   - `` ## Auto-eval loop: `web-fetch` suite — all providers passing ``
+   - ``## `wiki-write` eval results``
+   - ``## Auto-eval loop: `web-fetch` suite — all providers passing``
 
 2. **Intro paragraph** — which suite, which models (bold the eval ids),
    which judge, how many rounds to convergence, and the converging
@@ -28,17 +28,17 @@ comment should be inventable without the log open next to you.
 3. **Models used** (optional table; include when the eval ids alone are
    cryptic) — one row per model from `config/config.yaml` `providers:`:
 
-   | Eval model id | Served as | Provider |
-   |---|---|---|
-   | `ornith` | `user.Ornith-1.0-35B-GGUF` | local OpenAI-compatible server |
+   | Eval model id | Served as                  | Provider                       |
+   | ------------- | -------------------------- | ------------------------------ |
+   | `ornith`      | `user.Ornith-1.0-35B-GGUF` | local OpenAI-compatible server |
 
 4. **Score trajectory** — from `runs:`. Two shapes in the wild; pick by
    round count:
    - Compact table (`| Model | Initial | Converged |`) when the journey
      itself isn't the story.
-   - Per-round `###` sections (`### Round 1 — ornith 4/5, glm 4/5, local
-     2/5 (all below the 0.85 threshold)`) when the diagnosis differed per
-     round. State scores as `passed/total`, and name the threshold when
+   - Per-round `###` sections when the diagnosis differed per round —
+     e.g. `### Round 1 — ornith 4/5, glm 4/5, local 2/5 (all below the 0.85 threshold)`.
+     State scores as `passed/total`, and name the threshold when
      explaining why a high fraction still failed.
 
 5. **Findings** — the heart of it. One bullet per failure worth
