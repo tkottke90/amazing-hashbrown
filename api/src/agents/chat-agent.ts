@@ -19,6 +19,7 @@ import { wikiRebaselineSourceTool } from './tools/wiki-rebaseline-source.tool.js
 import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
+import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
 
@@ -124,6 +125,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiAddCrossLinkTool,
       wikiRebaselineSourceTool,
       wikiRegisterDomainTool,
+      webFetchTool,
       ...mcpTools,
     ],
     systemPrompt,

@@ -28,12 +28,12 @@ function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
   const result: ThreadMessage[] = [];
   let i = 0;
   while (i < msgs.length) {
-    const msg = msgs[i];
+    const msg = msgs[i]!;
     if (msg.kind === 'assistant') {
       const toolCalls: ThreadMessage[] = [];
       let j = i + 1;
-      while (j < msgs.length && msgs[j].kind === 'tool_call') {
-        toolCalls.push(msgs[j]);
+      while (j < msgs.length && msgs[j]!.kind === 'tool_call') {
+        toolCalls.push(msgs[j]!);
         j++;
       }
       result.push(...toolCalls, msg);

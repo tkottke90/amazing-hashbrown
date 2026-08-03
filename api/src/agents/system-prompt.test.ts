@@ -31,27 +31,32 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</memory>');
       expect(result).to.include('<wiki_navigation>');
       expect(result).to.include('</wiki_navigation>');
+      expect(result).to.include('<web_fetch>');
+      expect(result).to.include('</web_fetch>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(4);
-      expect(closes).to.equal(4);
+      expect(opens).to.equal(5);
+      expect(closes).to.equal(5);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
+      const webFetchTagIndex = result.indexOf('<web_fetch>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
+      expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
-      expect(wikiTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
+      expect(webFetchTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
@@ -157,6 +162,23 @@ describe('agents/system-prompt', () => {
       );
       expect(result).to.include(
         'the only correct move is\nto call ask_user, not to decide for them',
+      );
+    });
+
+    it('orders URL ingestion fetch-first — web_fetch before any wiki tool', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('call web_fetch first, before any\nwiki tool');
+      expect(result).to.include('Fetch, then route,\nthen write.');
+    });
+
+    it('treats "save what you fetched" as an already-made decision with a direct write path', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'the user asks you to save what it returned, that request is the decision',
+      );
+      expect(result).to.include('call wiki_create_page\ndirectly with the fetched content');
+      expect(result).to.include(
+        'is the confirmation round-trip ask_user_routing tells you not to make',
       );
     });
 
