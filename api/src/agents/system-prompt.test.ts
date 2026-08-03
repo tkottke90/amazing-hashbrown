@@ -173,7 +173,9 @@ describe('agents/system-prompt', () => {
 
     it('treats "save what you fetched" as an already-made decision with a direct write path', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('the user asks you to save what it returned, that request is the decision');
+      expect(result).to.include(
+        'the user asks you to save what it returned, that request is the decision',
+      );
       expect(result).to.include('call wiki_create_page\ndirectly with the fetched content');
       expect(result).to.include(
         'is the confirmation round-trip ask_user_routing tells you not to make',
