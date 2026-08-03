@@ -30,18 +30,20 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — depends on: Connect LLM-Wiki to Chat Agent
-2. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-3. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1, #2 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), and [Web/URL Ingestion Tool](#weburl-ingestion-tool) now complete — no longer blocking)
-4. [Trigger System](#trigger-system) — depends on: #2; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-5. [Escalation System](#escalation-system) — depends on: #2; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-6. [Dashboard System](#dashboard-system) — depends on: #2, #5; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-7. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-8. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-9. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-10. [Skills Integration](#skills-integration) — depends on: #9; `skills-manager` library is complete; needs API + UI
-11. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #9
-12. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #7
-13. [Notification Delivery](#notification-delivery) — depends on: #5; external channels deferred; interim: `action_required` flag on threads/tasks
+2. [Agent Skills (Slash Commands)](#agent-skills-slash-commands) — skills per the [AgentSkills specification](https://agentskills.io/specification), invocable by user and agent via slash commands; no dependencies
+3. [Shell Command Execution](#shell-command-execution) — depends on: #2; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call
+4. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+5. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1, #4 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), and [Web/URL Ingestion Tool](#weburl-ingestion-tool) now complete — no longer blocking)
+6. [Trigger System](#trigger-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+7. [Escalation System](#escalation-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+8. [Dashboard System](#dashboard-system) — depends on: #4, #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+9. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+10. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+11. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+12. [Skills Integration](#skills-integration) — depends on: #11; `skills-manager` library is complete; needs API + UI
+13. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #11
+14. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #9
+15. [Notification Delivery](#notification-delivery) — depends on: #7; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -60,6 +62,25 @@ Items are ordered first by priority/necessity, then by dependency.
 - Should not regress the wiki tool-navigation guidance already proven out — new eval scenarios here should run alongside, not replace, `wiki-navigation.yaml`
 
 **Dependencies:** none (builds on the already-shipped `system-prompt.ts` template)
+
+---
+
+### Agent Skills (Slash Commands)
+
+**Goal:** Add skills to the platform based on the [AgentSkills specification](https://agentskills.io/specification), so that reusable instruction sets can be invoked via slash commands instead of every instruction being typed in by hand. Skills are usable by both the user and the agent.
+
+**Ideas / Requirements:**
+
+- Skills follow the AgentSkills spec: a skill is a directory containing a `SKILL.md` (frontmatter with name/description, body with the instructions) plus optional supporting files
+- **Slash command detection:** any message starting with a slash followed by a command name (e.g. `/summarize`) is treated as a slash command — detection happens on the message, so it works for user-typed input and agent-composed messages alike
+- **Expansion:** when a slash command matches a skill, the command is replaced with the contents of that skill's `SKILL.md` file before the message reaches the model — the skill body _is_ the instruction payload
+- Arguments after the command name should be preserved and passed through to the expanded skill content
+- Unmatched slash commands need a defined behavior (pass through as-is vs. error back to the user)
+- The `ChatInput` slash-menu stub (`data-slot="chat-input-slash-menu"`) is the natural UI surface for skill suggestions/autocomplete
+- Relationship to the existing [Skills Integration](#skills-integration) item (the `skills-manager` library, API routes, and Settings UI) needs to be reconciled during design — this item owns the AgentSkills-spec format and the slash-command invocation path; Skills Integration owns API/UI surfacing. They may merge.
+- First follow-up skill planned: [Shell Command Execution](#shell-command-execution)
+
+**Dependencies:** none
 
 ---
 
@@ -178,7 +199,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - Confirm tier needs an undo window — agent commits but notifies the user with a time-limited rollback option
 - Escalate tier needs a push channel (browser notification, email, or future mobile notification) that works when the user is not in the UI
 - The system should log all escalation events so the user can review what happened and why
-- **Interim delivery mechanism:** until Notification Delivery (#16) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
+- **Interim delivery mechanism:** until [Notification Delivery](#notification-delivery) (#15) is built, the Escalation System sets `action_required: true` on the relevant thread or task record; the UI surfaces flagged items prominently (badge, pinned to top of conversation list) — covers the critical user-facing need without requiring an external channel
 
 **Dependencies:** Task System
 
@@ -408,6 +429,22 @@ Items are ordered first by priority/necessity, then by dependency.
 - Sections: General (theme already handled by `ThemeToggle`), Model (LLM model selector, base URL), MCP Servers, Skills
 - Model settings should POST to a new `PATCH /api/v1/settings/model` endpoint that updates env/config and rebuilds the agent
 - The page shell should be built first (empty sections) so MCP and Skills UI can be added incrementally
+
+---
+
+### Shell Command Execution
+
+**Goal:** Give the agent a shell environment for running commands — the first follow-up skill after [Agent Skills (Slash Commands)](#agent-skills-slash-commands) lands. Commands run in a controlled environment, gated by a policy and an approval flow, with results captured as tool calls.
+
+**Ideas / Requirements:**
+
+- **Environment setup:** define where commands execute — working directory, environment variables, and what isolation (if any) wraps the process; the environment should be configurable via `config.yaml`
+- **Command policy:** control which commands are allowed to run — an allowlist (and/or denylist) so safe commands execute directly while everything else requires approval
+- **Approval system:** commands outside the allowed set are routed to the user for approval before execution, probably reusing parts of the existing `ask_user` HITL flow (structured prompt, blocking wait, SSE round-trip) rather than building a second approval mechanism
+- **Result capture:** the execution result (stdout, stderr, exit code) is captured and returned as a tool call, so it renders in the thread like any other tool invocation and lands in the observability trace store
+- Approval decisions should be auditable — log what was requested, what was approved/denied, and what actually ran
+
+**Dependencies:** Agent Skills (Slash Commands)
 
 ---
 
