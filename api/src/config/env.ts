@@ -44,6 +44,11 @@ const EmbeddingsSchema = z.object({
   baseUrl: z.string().default('http://localhost:11434/v1'),
 });
 
+const WebFetchConfigSchema = z.object({
+  timeoutMs: z.number().default(10000),
+  respectRobotsTxt: z.boolean().default(true),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -57,6 +62,7 @@ const AppConfigSchema = z.object({
   afterAgent: AfterAgentSchema.optional(),
   chat: ChatSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
+  webFetch: WebFetchConfigSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
@@ -147,6 +153,17 @@ export const env = {
       >;
     } catch {
       return EmbeddingsSchema.parse({});
+    }
+  },
+  get webFetch(): z.infer<typeof WebFetchConfigSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection(
+        'webFetch',
+        WebFetchConfigSchema,
+      ) as z.infer<typeof WebFetchConfigSchema>;
+    } catch {
+      return WebFetchConfigSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

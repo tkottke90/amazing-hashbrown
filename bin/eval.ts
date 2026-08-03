@@ -26,6 +26,7 @@ import { wikiUpdatePageTool } from '../api/src/agents/tools/wiki-update-page.too
 import { wikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross-link.tool.js';
 import { wikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
+import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
@@ -48,6 +49,7 @@ const evalTools = [
   wikiAddCrossLinkTool,
   wikiRebaselineSourceTool,
   wikiRegisterDomainTool,
+  webFetchTool,
   fakeGenerateImageTool,
 ];
 

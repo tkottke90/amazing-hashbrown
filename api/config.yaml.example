@@ -111,6 +111,22 @@ chat:
   showErrorMessages: false
 
 # ---------------------------------------------------------------------------
+# Web Fetch
+#
+# Controls the web_fetch tool available to the chat agent, wiki ingestion
+# agent, and future automated task agents. The tool fetches HTML and JSON
+# content only — no browser automation.
+# ---------------------------------------------------------------------------
+webFetch:
+  # Milliseconds before a fetch request is aborted. Default: 10000 (10 s).
+  timeoutMs: 10000
+  # When true (default), web_fetch checks robots.txt before fetching and
+  # returns a blocked message if the path is disallowed. Set to false to
+  # skip the robots.txt preflight entirely (useful for internal services or
+  # hosts you control).
+  respectRobotsTxt: true
+
+# ---------------------------------------------------------------------------
 # Cost Rates
 #
 # Optional. Maps "providerName/model" keys to per-1k-token prices in USD.

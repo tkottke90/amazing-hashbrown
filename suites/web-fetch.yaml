@@ -1,0 +1,137 @@
+suite:
+  id: web-fetch
+  name: Web Fetch Tool
+  purpose: >
+    Verifies the agent invokes web_fetch when given an explicit URL or when live
+    data is needed to complete a task, and that it composes the result correctly
+    into downstream actions (wiki writes, answers). Also covers graceful handling
+    of fetch failures — the agent must acknowledge errors without fabricating
+    content. Scenarios use priorTurns to seed tool results so no live HTTP calls
+    are made during eval runs.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: wfetch-001-explicit-url
+    name: Agent calls web_fetch when user gives an explicit URL
+    purpose: >
+      Confirms the agent invokes web_fetch rather than trying to answer from
+      training when the user directly pastes a URL and asks what it contains.
+      The most basic contract for the tool: explicit URL → fetch it.
+    type: tool-call
+    input: >
+      What does this page say? https://example.com/release-notes/v2.1
+    tool: web_fetch
+    argChecks:
+      - path: url
+        match: contains
+        value: 'https://example.com/release-notes/v2.1'
+
+  - id: wfetch-002-wiki-ingestion-url
+    name: Agent calls web_fetch first when asked to ingest a URL into the wiki
+    purpose: >
+      In the wiki ingestion context, when the user pastes a URL and asks the
+      agent to save its contents, the correct sequence is fetch first then
+      write. This checks that web_fetch is the first tool called — not
+      wiki_create_page directly — since the agent has no content yet.
+    type: tool-call
+    input: >
+      Please add this article to the wiki:
+      https://blog.example.com/articles/understanding-rag-pipelines
+    tool: web_fetch
+    argChecks:
+      - path: url
+        match: contains
+        value: 'https://blog.example.com/articles/understanding-rag-pipelines'
+
+  - id: wfetch-003-html-to-wiki-page
+    name: Agent creates a wiki page from a seeded HTML fetch result
+    purpose: >
+      Seeds a completed web_fetch call that returned a plausible HTML article
+      about vector databases, then asks the agent to save what it found. Checks
+      that the agent follows through by calling wiki_create_page with non-empty
+      content derived from the fetched text. Exercises the full fetch → ingest
+      path without a live network call.
+    type: tool-sequence
+    input: 'I fetched that article — now save it to the wiki, please.'
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://docs.example.com/concepts/vector-databases' }
+        result:
+          text: |
+            ## Content
+            Vector databases store high-dimensional embeddings and support
+            approximate nearest-neighbour (ANN) search. Common choices include
+            Qdrant, Weaviate, and Chroma. They are used in RAG pipelines to
+            retrieve semantically relevant context before an LLM call.
+
+            ## Metadata
+            title: "Vector Databases — Concepts"
+            description: "An overview of vector database systems and their role in RAG."
+
+            ## Document Outline
+            H1: Vector Databases — Concepts
+            H2: What is a vector database?
+            H2: Common choices
+            H2: Role in RAG
+    tool: wiki_create_page
+    argChecks:
+      - path: content
+        match: exists
+
+  - id: wfetch-004-json-endpoint-answer
+    name: Agent answers a question using a seeded JSON fetch result
+    purpose: >
+      Seeds a completed web_fetch call that returned JSON from a hypothetical
+      config endpoint, then asks the agent a factual question about that data.
+      Checks that the agent produces a response referencing the seeded JSON
+      content — confirming it uses the fetched data rather than fabricating.
+      Uses llm-judge because the exact phrasing is not deterministic.
+    type: llm-judge
+    input: 'Based on what you fetched, what is the default timeout configured?'
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://api.example.com/config/defaults.json' }
+        result:
+          text: |
+            ## Content
+            {
+              "requestTimeout": 30000,
+              "retryLimit": 3,
+              "cacheEnabled": true,
+              "logLevel": "info"
+            }
+    rubric: >
+      The response must reference the timeout value from the fetched JSON
+      (30000 ms, or 30 seconds, or equivalent). Score at least 8/10 if the
+      value is clearly stated in a natural way. Score no higher than 3/10 if
+      the agent fabricates a different number, says it doesn't know, or ignores
+      the seeded fetch result entirely.
+    minScore: 8
+
+  - id: wfetch-005-http-error-graceful
+    name: Agent acknowledges a fetch failure without fabricating content
+    purpose: >
+      Seeds a completed web_fetch call that returned an HTTP 403 error, then
+      asks the agent to summarise what it found. The agent must acknowledge the
+      failure cleanly — it has no content to report. Fabricating page content
+      after a failed fetch is a trust-breaking hallucination; this scenario
+      guards against it.
+    type: llm-judge
+    input: 'Can you summarise what was on that page?'
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://internal.example.com/restricted/data' }
+        result:
+          text: >-
+            Failed to fetch https://internal.example.com/restricted/data:
+            HTTP 403 Forbidden (HTTP 403).
+    rubric: >
+      Hard requirement: the response must NOT fabricate or invent any content
+      from the page (topics, facts, summaries of what the page "probably" says).
+      Score no higher than 3/10 if the agent produces invented content.
+
+      Given the hard requirement is met, the agent should clearly communicate
+      that the fetch failed and that it has no content to summarise. A brief,
+      honest acknowledgement of the 403 error scores higher than vague hedging.
+      Score at least 7/10 for a clear, honest failure acknowledgement.
+    minScore: 7

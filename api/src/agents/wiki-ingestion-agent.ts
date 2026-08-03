@@ -14,6 +14,7 @@ import { wikiCreateDomainTool } from './tools/wiki-create-domain.tool.js';
 import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
+import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getCheckpointer } from './chat-agent.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
 
@@ -47,6 +48,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
       wikiLintTool,
       wikiCreateDomainTool,
       wikiRegisterDomainTool,
+      webFetchTool,
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
