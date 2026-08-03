@@ -1,7 +1,14 @@
-import robotsParser from 'robots-parser';
+import robotsParserModule from 'robots-parser';
 import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
 import { env } from '../config/env.js';
+
+// robots-parser ships CJS-style exports (export =) which TypeScript's
+// NodeNext resolver doesn't recognise as callable via a default import.
+// Cast to the subset of the API we actually use.
+type RobotsTxt = { isAllowed(url: string, ua?: string): boolean | undefined };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const robotsParser = robotsParserModule as unknown as (url: string, content: string) => RobotsTxt;
 
 export type WebFetchResult =
   | {
@@ -20,9 +27,9 @@ const USER_AGENT = 'amazing-hashbrown/1.0';
 
 // Per-origin robots.txt cache — lives for the process lifetime so the same
 // host is not re-fetched on every tool call within a session.
-const robotsCache = new Map<string, ReturnType<typeof robotsParser>>();
+const robotsCache = new Map<string, RobotsTxt>();
 
-async function getRobots(url: string): Promise<ReturnType<typeof robotsParser> | null> {
+async function getRobots(url: string): Promise<RobotsTxt | null> {
   const { origin } = new URL(url);
   if (robotsCache.has(origin)) {
     return robotsCache.get(origin)!;
