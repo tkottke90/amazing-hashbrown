@@ -162,3 +162,6 @@ eval-logs/
 
 # Mac OS
 .DS_Store
+
+# Local Scripts
+temp.sh
