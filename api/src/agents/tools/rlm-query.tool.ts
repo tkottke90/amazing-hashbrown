@@ -37,7 +37,13 @@ function buildRLMSpans(
   // correlationId → { spanId, startedAt, parentSpanId, name, argsPreview } for tool pairs
   const pendingToolSpans = new Map<
     string,
-    { spanId: string; startedAt: string; parentSpanId: string | null; name: string; argsPreview: string }
+    {
+      spanId: string;
+      startedAt: string;
+      parentSpanId: string | null;
+      name: string;
+      argsPreview: string;
+    }
   >();
 
   for (const event of trace.events as RLMEvent[]) {
@@ -154,7 +160,11 @@ export const rlmQueryTool = tool(
       adapter,
       embeddingAdapter,
       { maxIterations: rlmConfig.maxIterations },
-      { onTrace: (t) => { capturedTrace = t; } },
+      {
+        onTrace: (t) => {
+          capturedTrace = t;
+        },
+      },
     );
 
     let result;

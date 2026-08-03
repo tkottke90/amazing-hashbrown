@@ -49,7 +49,11 @@ export class LangChainInferenceAdapter implements InferenceAdapter {
 
     if (options?.tools && options.tools.length > 0) {
       const bound = this.model.bindTools(
-        options.tools.map((t) => ({ name: t.name, description: t.description, schema: t.parameters })),
+        options.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          schema: t.parameters,
+        })),
       );
       const response = await bound.invoke(lcMessages);
       const toolCalls: ToolCall[] = (response.tool_calls ?? []).map((tc) => ({

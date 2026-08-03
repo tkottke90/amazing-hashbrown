@@ -38,7 +38,9 @@ export type EmbeddingsConfig = {
   apiKey?: string;
 };
 
-export function createEmbeddingAdapter(config: EmbeddingsConfig | undefined): EmbeddingAdapter | undefined {
+export function createEmbeddingAdapter(
+  config: EmbeddingsConfig | undefined,
+): EmbeddingAdapter | undefined {
   if (!config?.enabled) return undefined;
   switch (config.type ?? 'ollama') {
     case 'ollama':
