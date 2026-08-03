@@ -158,10 +158,9 @@ export const env = {
   get webFetch(): z.infer<typeof WebFetchConfigSchema> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection(
-        'webFetch',
-        WebFetchConfigSchema,
-      ) as z.infer<typeof WebFetchConfigSchema>;
+      return (configManager as any).getSection('webFetch', WebFetchConfigSchema) as z.infer<
+        typeof WebFetchConfigSchema
+      >;
     } catch {
       return WebFetchConfigSchema.parse({});
     }
