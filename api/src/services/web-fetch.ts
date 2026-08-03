@@ -97,7 +97,7 @@ export async function fetchUrl(url: string): Promise<WebFetchResult> {
     return {
       status: 'error',
       url,
-      error: `Unsupported content type: ${contentType.split(';')[0].trim() || 'unknown'}`,
+      error: `Unsupported content type: ${(contentType.split(';')[0] ?? '').trim() || 'unknown'}`,
     };
   }
 
@@ -127,14 +127,15 @@ export async function fetchUrl(url: string): Promise<WebFetchResult> {
   // Heading outline (h1–h3) in DOM order
   const outline: Array<{ level: number; text: string }> = [];
   for (const h of document.querySelectorAll('h1, h2, h3')) {
-    const level = parseInt(h.tagName[1], 10);
+    const level = parseInt(h.tagName.charAt(1), 10);
     outline.push({ level, text: h.textContent?.trim() ?? '' });
   }
 
   // Reader-mode body via Readability (mutates the document — run last)
   let text: string;
   try {
-    const article = new Readability(document as unknown as Document).parse();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const article = new Readability(document as any).parse();
     text = article?.textContent?.trim() ?? '';
   } catch {
     text = '';
