@@ -1,0 +1,315 @@
+suite:
+  id: rlm
+  name: RLM Query Tool
+  purpose: >
+    Verifies the agent correctly invokes the rlm_query tool when a wiki page or
+    other large corpus exceeds the read threshold. Covers the full two-step
+    sequence (wiki_read_page with truncate: false → rlm_query), the non-wiki
+    corpus path (web_fetch → rlm_query), and the negative case where a small
+    page should be answered directly without RLM. Scenarios use priorTurns to
+    seed tool results so no live model calls or wiki reads are made during eval
+    runs.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: rlm-001-truncation-triggers-sequence
+    name: Truncation notice causes agent to call wiki_read_page then rlm_query
+    purpose: >
+      When wiki_read_page returns a truncation notice, the agent must re-call
+      it with truncate: false to retrieve the full corpus, then call rlm_query
+      to answer the targeted question. This is the primary RLM workflow — any
+      deviation (answering from the truncated excerpt, skipping the full read,
+      calling rlm_query without a full corpus) is a failure.
+    type: tool-sequence
+    input: >
+      What is the rate limit policy described in the API reference page?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'API reference rate limit' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference including authentication, rate limits, and error codes. (score: 0.91)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering, reference
+
+            ## Authentication
+
+            All requests require a Bearer token in the Authorization header. Tokens are
+            issued via the `/auth/token` endpoint and expire after 24 hours. Rotate tokens
+            before expiry using the `/auth/refresh` endpoint.
+
+            ## Endpoints
+
+            ### POST /api/v1/resources
+
+            Creates a new resource. Request body must be valid JSON matching the Resource
+            schema. Returns 201 on success with the created resource in the response body.
+
+            [TRUNCATED: showing 6,000 of 28,450 characters]
+            This page exceeds the read limit. To search for specific information:
+            1. Re-call wiki_read_page with truncate: false to get the complete text.
+            2. Pass that text as the corpus argument to rlm_query with your specific question.
+    tools:
+      - wiki_read_page
+      - rlm_query
+
+  - id: rlm-002-rlm-receives-full-corpus
+    name: rlm_query receives the full corpus text as its argument
+    purpose: >
+      Guards against the agent passing an empty, truncated, or partial corpus to
+      rlm_query. After reading the full page, the corpus argument must contain
+      substantial text (not just the truncated excerpt). This scenario confirms
+      the argument values — not just that the tool was called.
+    type: tool-call
+    input: >
+      What error codes does the API return for authentication failures?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'API error codes authentication' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference. (score: 0.88)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering
+
+            ## Authentication
+
+            Bearer tokens required.
+
+            [TRUNCATED: showing 6,000 of 31,200 characters]
+            This page exceeds the read limit. To search for specific information:
+            1. Re-call wiki_read_page with truncate: false to get the complete text.
+            2. Pass that text as the corpus argument to rlm_query with your specific question.
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: false }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering
+
+            ## Authentication
+
+            Bearer tokens required. All requests must include an Authorization: Bearer <token>
+            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
+            with error code TOKEN_EXPIRED. Revoked tokens return HTTP 403 with error code
+            TOKEN_REVOKED. Malformed tokens (not a valid JWT) return HTTP 400 with error code
+            INVALID_TOKEN_FORMAT.
+
+            ## Rate Limits
+
+            The API enforces a limit of 500 requests per minute per token. Exceeding this
+            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
+            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
+            code RATE_LIMIT_COOLDOWN.
+
+            ## Error Codes
+
+            | Code                  | HTTP Status | Description                          |
+            |-----------------------|-------------|--------------------------------------|
+            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
+            | TOKEN_REVOKED         | 403         | The bearer token has been revoked.   |
+            | INVALID_TOKEN_FORMAT  | 400         | The token is not a valid JWT.        |
+            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
+            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
+            | RESOURCE_NOT_FOUND    | 404         | The requested resource does not exist.|
+            | VALIDATION_ERROR      | 422         | Request body failed schema validation.|
+    tool: rlm_query
+    argChecks:
+      - path: corpus
+        match: exists
+      - path: corpus
+        match: contains
+        value: TOKEN_EXPIRED
+      - path: question
+        match: exists
+
+  - id: rlm-003-answer-from-rlm-result
+    name: Agent uses the seeded rlm_query result to answer accurately
+    purpose: >
+      Seeds a completed rlm_query call with a realistic answer containing a
+      specific invented fact (rate limit of 500 req/min). The agent must
+      reference that fact in its reply rather than hallucinating a different
+      value or ignoring the tool result. Guards against the agent fabricating
+      information when a precise RLM answer is already in context.
+    type: llm-judge
+    input: >
+      What is the API rate limit?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'API rate limit' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference. (score: 0.94)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering
+
+            [TRUNCATED: showing 6,000 of 28,450 characters]
+            This page exceeds the read limit. To search for specific information:
+            1. Re-call wiki_read_page with truncate: false to get the complete text.
+            2. Pass that text as the corpus argument to rlm_query with your specific question.
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: false }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering
+
+            (full 28,450-character document omitted for eval brevity)
+      - tool: rlm_query
+        args:
+          question: What is the API rate limit?
+          corpus: '# API Reference\n\nType: reference\nTags: api, engineering\n\n(full 28,450-character document omitted for eval brevity)'
+        result:
+          text: |
+            The API enforces a rate limit of 500 requests per minute per token. Exceeding
+            this limit returns HTTP 429 with a Retry-After header. Sustained abuse triggers
+            a 24-hour cooldown with error code RATE_LIMIT_COOLDOWN.
+
+            ---
+            RLM: 2 iteration(s) · final_answer · 1843ms
+            Tools: peek×1, grep×1, final_answer×1
+    rubric: >
+      The response must state that the rate limit is 500 requests per minute (or
+      equivalent phrasing such as "500 req/min" or "500 per minute"). Score at
+      least 8/10 if the specific number is clearly stated. Score no higher than
+      3/10 if the agent gives a different number, says it doesn't know, or
+      ignores the seeded rlm_query result entirely.
+    minScore: 8
+
+  - id: rlm-004-small-page-no-rlm
+    name: Agent answers a small page directly without calling rlm_query
+    purpose: >
+      Confirms the agent does not over-use RLM when a wiki page is small enough
+      to read directly. A small page that fits within the truncation threshold
+      should be answered from the wiki_read_page result — calling rlm_query in
+      this case wastes iterations and adds latency without benefit.
+    type: tool-sequence
+    input: >
+      What does the quick-start guide say about installing the CLI?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'quick-start CLI install' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [Quick Start Guide](engineering:guides/quick-start.md) — Five-minute guide to get up and running. (score: 0.96)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: guides/quick-start.md }
+        result:
+          text: |
+            # Quick Start Guide
+
+            Type: guide
+            Tags: engineering, onboarding
+
+            ## Prerequisites
+
+            - Node.js 20 or later
+            - npm 9 or later
+
+            ## Installation
+
+            Install the CLI globally using npm:
+
+            ```bash
+            npm install -g @example/cli
+            ```
+
+            Verify the installation:
+
+            ```bash
+            example --version
+            ```
+
+            ## First Run
+
+            Run `example init` in your project directory to create a configuration file.
+            Follow the prompts to connect to your workspace.
+    tools:
+      - '!rlm_query'
+
+  - id: rlm-005-non-wiki-corpus
+    name: Agent passes a large web_fetch result as the corpus to rlm_query
+    purpose: >
+      Confirms that rlm_query is wiki-agnostic — the agent can and should use it
+      with any large text source, not only wiki pages. Seeds a large web_fetch
+      result and asks a targeted factual question. The agent must call rlm_query
+      with corpus drawn from the fetched content, not attempt to answer from
+      its training data or the truncated preview.
+    type: tool-call
+    input: >
+      Based on what you fetched, what PostgreSQL version is required by the
+      deployment guide?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://docs.example.com/deployment/requirements' }
+        result:
+          text: |
+            ## Content
+
+            # Deployment Requirements
+
+            This document describes the infrastructure requirements for a production
+            deployment of the platform. It is intentionally long to represent a realistic
+            large-document case.
+
+            ## System Requirements
+
+            ### Operating System
+
+            The platform is supported on Ubuntu 22.04 LTS and Ubuntu 24.04 LTS. Other
+            Linux distributions may work but are not officially tested.
+
+            ### CPU and Memory
+
+            Minimum: 4 vCPU, 8 GB RAM. Recommended: 8 vCPU, 16 GB RAM for production
+            workloads with more than 100 concurrent users.
+
+            ### Database
+
+            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The
+            platform uses features introduced in PostgreSQL 16 including logical replication
+            improvements and new JSON functions.
+
+            ### Node.js Runtime
+
+            Node.js 20 LTS (iron) or Node.js 22 LTS (jod) are supported. Node.js 18 has
+            reached end-of-life and is not supported.
+
+            (document continues for 22,000 additional characters covering network
+            configuration, TLS setup, firewall rules, storage requirements, backup
+            procedures, and monitoring integration — omitted here for eval brevity)
+    tool: rlm_query
+    argChecks:
+      - path: corpus
+        match: exists
+      - path: corpus
+        match: contains
+        value: PostgreSQL
+      - path: question
+        match: exists

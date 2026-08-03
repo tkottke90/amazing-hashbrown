@@ -40,9 +40,20 @@ const ChatSchema = z.object({
 
 const EmbeddingsSchema = z.object({
   enabled: z.boolean().default(true),
+  type: z.enum(['ollama', 'openai']).default('ollama'),
   model: z.string().default('nomic-embed-text'),
   baseUrl: z.string().default('http://localhost:11434/v1'),
+  apiKey: z.string().optional(),
 });
+
+const RLMConfigSchema = z.object({
+  maxIterations: z.number().default(10),
+  truncateThreshold: z.number().default(6000),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export type RLMConfig = z.infer<typeof RLMConfigSchema>;
 
 const WebFetchConfigSchema = z.object({
   timeoutMs: z.number().default(10000),
@@ -63,6 +74,7 @@ const AppConfigSchema = z.object({
   chat: ChatSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
   webFetch: WebFetchConfigSchema.optional(),
+  rlm: RLMConfigSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
 });
 
@@ -163,6 +175,14 @@ export const env = {
       >;
     } catch {
       return WebFetchConfigSchema.parse({});
+    }
+  },
+  get rlm(): RLMConfig {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('rlm', RLMConfigSchema) as RLMConfig;
+    } catch {
+      return RLMConfigSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {
