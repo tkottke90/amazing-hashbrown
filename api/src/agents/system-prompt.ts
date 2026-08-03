@@ -391,6 +391,51 @@ you to wiki_update_page instead, so you don't need a wiki_orient pass first just
 the page already exists. Asking where to save it or whether to summarize first, when the user has
 already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.`;
 
+// Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
+// round where the suite's seeded turns actually reached the models (round 1
+// was consumed by suite-definition bugs — see that suite's comments). No
+// system-prompt section covered rlm_query at all; the only guidance was the
+// truncation notice embedded in wiki_read_page's own result. Three real
+// gaps, all three models consistent on the middle one:
+// 1. rlm-002/rlm-005 (ornith, glm, and local, identically): with a full
+//    document (or a long web_fetch result) already in context and a
+//    targeted factual question asked, every model answered directly from
+//    its own scan of the text instead of delegating to rlm_query — each
+//    one's reasoning shows it spotting the answer mid-document and stopping
+//    there. Second and third paragraphs state the delegation rule and name
+//    that exact temptation ("spotting what looks like the answer").
+// 2. rlm-001 (ornith, this round only — it passed round 1): responded to a
+//    truncation notice by calling wiki_search "to search within" the page.
+//    wiki_search matches pages across domains; it cannot search inside one
+//    page's text. Second paragraph corrects that misconception explicitly.
+// 3. rlm-004 held for all models both rounds (nobody over-used rlm_query on
+//    a small page), so the closing contrastive paragraph exists to keep it
+//    that way, per the contrastive-examples lesson from the wiki-navigation
+//    rounds — a do/don't pair anchors better than the rule alone.
+const RLM_SECTION = `rlm_query answers a targeted question over a large body of text: you pass the full text as its
+corpus argument along with your question, and it searches the corpus iteratively — more reliably
+than you can by reading one long dump inline.
+
+A wiki_read_page truncation notice is the trigger for this workflow, and it names both steps:
+re-call wiki_read_page with truncate: false to get the complete text, then pass that complete text
+as rlm_query's corpus with your specific question. Follow both steps as given. wiki_search is not a
+substitute for either step — it matches pages across every domain and cannot search within one
+page's text. And the second step still applies once the full text is in front of you: hand it to
+rlm_query rather than scanning the dump yourself. Spotting what looks like the answer partway
+through a large document is exactly the temptation to resist — a targeted extraction over the whole
+corpus is how you avoid answering from one visible stretch of a document you haven't really read.
+
+The same applies to large content from outside the wiki. When a web_fetch has returned a long
+document — one whose text says or shows it continues beyond what fits in the result — and the user
+asks a specific factual question about it, call rlm_query with the fetched text as corpus rather
+than answering from your own scan.
+
+The contrast: a page that came back small and complete — no truncation notice, nothing saying the
+text continues past what you can see — is yours to answer from directly. Calling rlm_query on a
+short page you already have in full adds a round-trip for nothing. The truncation notice or the
+document's own signal that there's more text is what flips you into the rlm_query workflow, not the
+mere fact that you read something.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
 // domains they meant, but wrote the question straight into its reply instead
@@ -473,6 +518,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION },
+  { tag: 'rlm', content: RLM_SECTION },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION },
   // future: uncertainty, formatting, ...
 ];

@@ -33,30 +33,35 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
       expect(result).to.include('</web_fetch>');
+      expect(result).to.include('<rlm>');
+      expect(result).to.include('</rlm>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(5);
-      expect(closes).to.equal(5);
+      expect(opens).to.equal(6);
+      expect(closes).to.equal(6);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, rlm, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
+      const rlmTagIndex = result.indexOf('<rlm>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
+      expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
-      expect(webFetchTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(webFetchTagIndex).to.be.lessThan(rlmTagIndex);
+      expect(rlmTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
@@ -180,6 +185,32 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'is the confirmation round-trip ask_user_routing tells you not to make',
       );
+    });
+
+    it('states the full truncation workflow — truncate: false re-read, then rlm_query over the complete text', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        're-call wiki_read_page with truncate: false to get the complete text',
+      );
+      expect(result).to.include('as rlm_query\'s corpus with your specific question');
+    });
+
+    it('rules out wiki_search as a within-page search substitute', () => {
+      expect(buildSystemPrompt()).to.include(
+        'it matches pages across every domain and cannot search within one',
+      );
+    });
+
+    it('names the spotted-answer temptation — no answering from your own scan of a large corpus', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('Spotting what looks like the answer partway');
+      expect(result).to.include('call rlm_query with the fetched text as corpus rather\nthan answering from your own scan');
+    });
+
+    it('anchors the rlm rule with a small-page contrast — no rlm_query on a short, complete page', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('is yours to answer from directly');
+      expect(result).to.include('adds a round-trip for nothing');
     });
 
     it('treats an explicit "check X"/"fix X" request as already-made — no confirmation round-trip', () => {
