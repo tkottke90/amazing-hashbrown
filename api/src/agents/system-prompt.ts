@@ -412,6 +412,17 @@ already said "save it," is the confirmation round-trip ask_user_routing tells yo
 //    a small page), so the closing contrastive paragraph exists to keep it
 //    that way, per the contrastive-examples lesson from the wiki-navigation
 //    rounds — a do/don't pair anchors better than the rule alone.
+// Second tightening, after round 3 (all three models still answering
+// rlm-002/005 directly, prompt confirmed present in the run): two causes,
+// fixed together. (a) The seeded "full" documents were ~1.4k chars while
+// claiming 31,200 — models rationally trusted what they saw over the claim;
+// fixed in suites/rlm.yaml by seeding genuinely long documents. (b) This
+// section's web_fetch paragraph keyed "long" on a document signaling it
+// continues beyond the result — but web_fetch never truncates (see
+// web-fetch.tool.ts), so that situation cannot occur; reworded to make
+// length itself the trigger ("past a few thousand characters"), and the
+// closing contrast to match ("nowhere near the length that would have
+// tripped" the wiki's read limit).
 const RLM_SECTION = `rlm_query answers a targeted question over a large body of text: you pass the full text as its
 corpus argument along with your question, and it searches the corpus iteratively — more reliably
 than you can by reading one long dump inline.
@@ -425,15 +436,15 @@ rlm_query rather than scanning the dump yourself. Spotting what looks like the a
 through a large document is exactly the temptation to resist — a targeted extraction over the whole
 corpus is how you avoid answering from one visible stretch of a document you haven't really read.
 
-The same applies to large content from outside the wiki. When a web_fetch has returned a long
-document — one whose text says or shows it continues beyond what fits in the result — and the user
-asks a specific factual question about it, call rlm_query with the fetched text as corpus rather
-than answering from your own scan.
+The same applies to large content from outside the wiki. web_fetch never truncates — it returns the
+whole document — so length itself is the signal there: when a fetched document runs past a few
+thousand characters and the user asks a specific factual question about it, call rlm_query with the
+fetched text as corpus rather than answering from your own scan.
 
-The contrast: a page that came back small and complete — no truncation notice, nothing saying the
-text continues past what you can see — is yours to answer from directly. Calling rlm_query on a
-short page you already have in full adds a round-trip for nothing. The truncation notice or the
-document's own signal that there's more text is what flips you into the rlm_query workflow, not the
+The contrast: a page that came back small and complete — no truncation notice, and nowhere near the
+length that would have tripped one — is yours to answer from directly. Calling rlm_query on a short
+page you already have in full adds a round-trip for nothing. A truncation notice, or a document long
+enough that reading it inline means skimming, is what flips you into the rlm_query workflow, not the
 mere fact that you read something.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model

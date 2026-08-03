@@ -204,7 +204,13 @@ describe('agents/system-prompt', () => {
     it('names the spotted-answer temptation — no answering from your own scan of a large corpus', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('Spotting what looks like the answer partway');
-      expect(result).to.include('call rlm_query with the fetched text as corpus rather\nthan answering from your own scan');
+      expect(result).to.include('call rlm_query with the\nfetched text as corpus rather than answering from your own scan');
+    });
+
+    it('keys the web_fetch rlm trigger on length itself, since web_fetch never truncates', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('web_fetch never truncates');
+      expect(result).to.include('length itself is the signal there');
     });
 
     it('anchors the rlm rule with a small-page contrast — no rlm_query on a short, complete page', () => {

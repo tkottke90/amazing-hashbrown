@@ -98,6 +98,15 @@ scenarios:
           text: |
             Found 1 result(s):
             - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference. (score: 0.88)
+      # Round-3 finding: both seeded reads here were ~1.4k chars while the
+      # truncation notice claimed 31,200 — every model trusted what it saw
+      # over the claim, judged the "full" document short and complete, and
+      # answered directly (rationally, per the rlm section's own small-page
+      # contrast). The seeded world must be internally consistent: the
+      # truncated read below is the real first 6,000 characters of the full
+      # document, the notice's numbers are its real length, and the answer
+      # (the error-code table) sits past the 6,000-char cut so only the full
+      # read contains it.
       - tool: wiki_read_page
         args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
         result:
@@ -105,13 +114,125 @@ scenarios:
             # API Reference
 
             Type: reference
-            Tags: api, engineering
+            Tags: api, engineering, reference
+
+            ## Overview
+
+            This page is the comprehensive reference for the platform's public HTTP API. All endpoints are served under https://api.example.com and speak JSON exclusively: requests carry Content-Type: application/json and responses return the same. Timestamps are RFC 3339 strings in UTC. Identifiers are opaque strings — do not parse structure out of them, as their format changes without notice.
+
+            The API is versioned in the URL path. The current stable version is v1; breaking changes ship in a new path prefix with at least twelve months of overlap. Deprecations are announced in the changelog section at the bottom of this page and via the Sunset response header on affected endpoints.
 
             ## Authentication
 
-            Bearer tokens required.
+            All requests require a Bearer token in the Authorization header. Tokens are issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens before expiry using the /auth/refresh endpoint. Machine callers should prefer API keys (see the api-keys endpoints below), which do not expire but carry an explicit scope list. The specific failure responses for missing, expired, revoked, and malformed credentials are catalogued in the Error Codes section of this page.
 
-            [TRUNCATED: showing 6,000 of 31,200 characters]
+            ## Endpoints
+
+            ### Resource endpoints (resources)
+
+            Core content objects. Each resource belongs to exactly one project and carries a JSON payload validated against the Resource schema.
+
+            #### POST /api/v1/resources
+
+            Creates a new resource. Request body must be valid JSON matching the Resource schema. Returns 201 on success with the created resource in the response body. Requires the resources:write scope.
+
+            #### GET /api/v1/resources
+
+            Lists resources. Supports cursor pagination via the cursor and limit query parameters (limit defaults to 50, maximum 200). Filter by project with the projectId query parameter.
+
+            #### GET /api/v1/resources/:id
+
+            Fetches a single resource by id. Returns 200 with the resource, or 404 with error code RESOURCE_NOT_FOUND if no resource with that id exists.
+
+            #### PATCH /api/v1/resources/:id
+
+            Partially updates a resource. Only the fields present in the request body are modified. Concurrent updates are resolved last-writer-wins; pass the If-Match header with the resource's current etag to enable optimistic locking instead.
+
+            #### DELETE /api/v1/resources/:id
+
+            Soft-deletes a resource. Deleted resources remain retrievable with includeDeleted=true for 30 days, after which they are purged permanently.
+
+            ### User endpoints (users)
+
+            Accounts that can authenticate against the API. User records are read-mostly; most mutation happens through the invitation and profile flows.
+
+            #### GET /api/v1/users
+
+            Lists users in the calling token's organization. Supports the same cursor pagination as the resources list. Filter by role with the role query parameter (admin, member, or viewer).
+
+            #### GET /api/v1/users/:id
+
+            Fetches a single user. The email field is only present when the caller holds the users:read-pii scope; otherwise it is redacted.
+
+            #### PATCH /api/v1/users/:id
+
+            Updates a user's display name, role, or locale. Role changes require the caller to be an organization admin. Demoting the last remaining admin returns 422 with error code LAST_ADMIN.
+
+            #### POST /api/v1/users/invitations
+
+            Invites a new user by email. Sends an invitation message with a signed acceptance link that expires after 7 days. Re-inviting an address with a pending invitation resends the message and resets the expiry.
+
+            ### Team endpoints (teams)
+
+            Named groups of users used for access control. A user may belong to any number of teams.
+
+            #### POST /api/v1/teams
+
+            Creates a team. Team names must be unique within the organization; a conflict returns 409 with error code TEAM_NAME_TAKEN.
+
+            #### GET /api/v1/teams/:id/members
+
+            Lists a team's members with their per-team roles. Membership records include the joinedAt timestamp.
+
+            #### PUT /api/v1/teams/:id/members/:userId
+
+            Adds a user to a team, or updates their per-team role if they are already a member. Returns 200 with the membership record in both cases.
+
+            #### DELETE /api/v1/teams/:id/members/:userId
+
+            Removes a user from a team. Removing a user who is not a member is a no-op that still returns 204, so callers do not need a read-before-delete round trip.
+
+            ### Project endpoints (projects)
+
+            Top-level containers for resources. Deleting a project cascades to its resources after a 7-day grace period.
+
+            #### POST /api/v1/projects
+
+            Creates a project. The optional template field accepts the id of an existing project to copy settings and webhooks from.
+
+            #### GET /api/v1/projects/:id/activity
+
+            Returns the project's activity feed, newest first. Activity entries are retained for 90 days. This endpoint is served from a read replica and may lag writes by up to five seconds.
+
+            #### POST /api/v1/projects/:id/archive
+
+            Archives a project. Archived projects reject writes with 409 ARCHIVED but remain readable. Archiving is reversible via the unarchive endpoint.
+
+            ### Webhook endpoints (webhooks)
+
+            Outbound HTTP callbacks fired on entity changes. Deliveries are signed with an HMAC-SHA256 signature in the X-Signature header.
+
+            #### POST /api/v1/webhooks
+
+            Registers a webhook. The events array selects which event types fire the hook; the special value * subscribes to everything. The endpoint URL must be HTTPS.
+
+            #### GET /api/v1/webhooks/:id/deliveries
+
+            Lists recent delivery attempts with response status and latency. Failed deliveries are retried with exponential backoff up to 8 attempts over roughly 24 hours.
+
+            #### POST /api/v1/webhooks/:id/ping
+
+            Sends a synthetic ping event to the webhook endpoint and returns the delivery result inline. Useful for verifying the receiver's signature validation without mutating data.
+
+            ### ApiKey endpoints (api-keys)
+
+            Long-lived credentials for machine callers, distinct from user bearer tokens. Keys carry an explicit scope list.
+
+            #### POST /api/v1/api-keys
+
+            Creates an API key. The full secret is returned exactly once, in this response; only a pre
+
+            [TRUNCATED: showing 6,000 of 10,945 characters]
             This page exceeds the read limit. To search for specific information:
             1. Re-call wiki_read_page with truncate: false to get the complete text.
             2. Pass that text as the corpus argument to rlm_query with your specific question.
@@ -122,24 +243,187 @@ scenarios:
             # API Reference
 
             Type: reference
-            Tags: api, engineering
+            Tags: api, engineering, reference
+
+            ## Overview
+
+            This page is the comprehensive reference for the platform's public HTTP API. All endpoints are served under https://api.example.com and speak JSON exclusively: requests carry Content-Type: application/json and responses return the same. Timestamps are RFC 3339 strings in UTC. Identifiers are opaque strings — do not parse structure out of them, as their format changes without notice.
+
+            The API is versioned in the URL path. The current stable version is v1; breaking changes ship in a new path prefix with at least twelve months of overlap. Deprecations are announced in the changelog section at the bottom of this page and via the Sunset response header on affected endpoints.
 
             ## Authentication
 
-            Bearer tokens required. All requests must include an Authorization: Bearer <token>
-            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
-            with error code TOKEN_EXPIRED. Revoked tokens return HTTP 403 with error code
-            TOKEN_REVOKED. Malformed tokens (not a valid JWT) return HTTP 400 with error code
-            INVALID_TOKEN_FORMAT.
+            All requests require a Bearer token in the Authorization header. Tokens are issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens before expiry using the /auth/refresh endpoint. Machine callers should prefer API keys (see the api-keys endpoints below), which do not expire but carry an explicit scope list. The specific failure responses for missing, expired, revoked, and malformed credentials are catalogued in the Error Codes section of this page.
+
+            ## Endpoints
+
+            ### Resource endpoints (resources)
+
+            Core content objects. Each resource belongs to exactly one project and carries a JSON payload validated against the Resource schema.
+
+            #### POST /api/v1/resources
+
+            Creates a new resource. Request body must be valid JSON matching the Resource schema. Returns 201 on success with the created resource in the response body. Requires the resources:write scope.
+
+            #### GET /api/v1/resources
+
+            Lists resources. Supports cursor pagination via the cursor and limit query parameters (limit defaults to 50, maximum 200). Filter by project with the projectId query parameter.
+
+            #### GET /api/v1/resources/:id
+
+            Fetches a single resource by id. Returns 200 with the resource, or 404 with error code RESOURCE_NOT_FOUND if no resource with that id exists.
+
+            #### PATCH /api/v1/resources/:id
+
+            Partially updates a resource. Only the fields present in the request body are modified. Concurrent updates are resolved last-writer-wins; pass the If-Match header with the resource's current etag to enable optimistic locking instead.
+
+            #### DELETE /api/v1/resources/:id
+
+            Soft-deletes a resource. Deleted resources remain retrievable with includeDeleted=true for 30 days, after which they are purged permanently.
+
+            ### User endpoints (users)
+
+            Accounts that can authenticate against the API. User records are read-mostly; most mutation happens through the invitation and profile flows.
+
+            #### GET /api/v1/users
+
+            Lists users in the calling token's organization. Supports the same cursor pagination as the resources list. Filter by role with the role query parameter (admin, member, or viewer).
+
+            #### GET /api/v1/users/:id
+
+            Fetches a single user. The email field is only present when the caller holds the users:read-pii scope; otherwise it is redacted.
+
+            #### PATCH /api/v1/users/:id
+
+            Updates a user's display name, role, or locale. Role changes require the caller to be an organization admin. Demoting the last remaining admin returns 422 with error code LAST_ADMIN.
+
+            #### POST /api/v1/users/invitations
+
+            Invites a new user by email. Sends an invitation message with a signed acceptance link that expires after 7 days. Re-inviting an address with a pending invitation resends the message and resets the expiry.
+
+            ### Team endpoints (teams)
+
+            Named groups of users used for access control. A user may belong to any number of teams.
+
+            #### POST /api/v1/teams
+
+            Creates a team. Team names must be unique within the organization; a conflict returns 409 with error code TEAM_NAME_TAKEN.
+
+            #### GET /api/v1/teams/:id/members
+
+            Lists a team's members with their per-team roles. Membership records include the joinedAt timestamp.
+
+            #### PUT /api/v1/teams/:id/members/:userId
+
+            Adds a user to a team, or updates their per-team role if they are already a member. Returns 200 with the membership record in both cases.
+
+            #### DELETE /api/v1/teams/:id/members/:userId
+
+            Removes a user from a team. Removing a user who is not a member is a no-op that still returns 204, so callers do not need a read-before-delete round trip.
+
+            ### Project endpoints (projects)
+
+            Top-level containers for resources. Deleting a project cascades to its resources after a 7-day grace period.
+
+            #### POST /api/v1/projects
+
+            Creates a project. The optional template field accepts the id of an existing project to copy settings and webhooks from.
+
+            #### GET /api/v1/projects/:id/activity
+
+            Returns the project's activity feed, newest first. Activity entries are retained for 90 days. This endpoint is served from a read replica and may lag writes by up to five seconds.
+
+            #### POST /api/v1/projects/:id/archive
+
+            Archives a project. Archived projects reject writes with 409 ARCHIVED but remain readable. Archiving is reversible via the unarchive endpoint.
+
+            ### Webhook endpoints (webhooks)
+
+            Outbound HTTP callbacks fired on entity changes. Deliveries are signed with an HMAC-SHA256 signature in the X-Signature header.
+
+            #### POST /api/v1/webhooks
+
+            Registers a webhook. The events array selects which event types fire the hook; the special value * subscribes to everything. The endpoint URL must be HTTPS.
+
+            #### GET /api/v1/webhooks/:id/deliveries
+
+            Lists recent delivery attempts with response status and latency. Failed deliveries are retried with exponential backoff up to 8 attempts over roughly 24 hours.
+
+            #### POST /api/v1/webhooks/:id/ping
+
+            Sends a synthetic ping event to the webhook endpoint and returns the delivery result inline. Useful for verifying the receiver's signature validation without mutating data.
+
+            ### ApiKey endpoints (api-keys)
+
+            Long-lived credentials for machine callers, distinct from user bearer tokens. Keys carry an explicit scope list.
+
+            #### POST /api/v1/api-keys
+
+            Creates an API key. The full secret is returned exactly once, in this response; only a prefix is retrievable afterwards. Store it securely on receipt.
+
+            #### DELETE /api/v1/api-keys/:id
+
+            Revokes an API key immediately. In-flight requests authenticated with the key complete; new requests fail with 403 TOKEN_REVOKED.
+
+            ### Export endpoints (exports)
+
+            Asynchronous bulk data exports. Exports are prepared in the background and downloaded as compressed archives.
+
+            #### POST /api/v1/exports
+
+            Starts an export job. The format field accepts jsonl or csv. Returns 202 with a job record; poll the job or subscribe to the export.completed webhook event.
+
+            #### GET /api/v1/exports/:id/download
+
+            Downloads a finished export as a gzip archive. Download URLs are pre-signed and expire after 15 minutes; re-request this endpoint for a fresh URL.
+
+            ### Notification endpoints (notifications)
+
+            In-app notification records for users. Notifications are created by the system and are read-only to API callers apart from acknowledgement.
+
+            #### GET /api/v1/notifications
+
+            Lists the calling user's notifications, unread first. The unreadOnly query parameter restricts the list to unacknowledged entries.
+
+            #### POST /api/v1/notifications/ack
+
+            Acknowledges notifications in bulk. The body's ids array may hold up to 500 ids per call; larger batches return 422 VALIDATION_ERROR.
+
+            ### AuditLog endpoints (audit-logs)
+
+            Immutable records of privileged actions. Audit log entries cannot be modified or deleted through the API by any caller.
+
+            #### GET /api/v1/audit-logs
+
+            Lists audit log entries, newest first, filterable by actor, action, and time range via query parameters. Requires the audit:read scope, which is only grantable to admin-role API keys.
+
+            #### GET /api/v1/audit-logs/:id
+
+            Fetches a single audit entry including the full before/after diff of the affected record. Diffs for records larger than 64 KB are truncated with a truncated: true marker.
+
+            #### POST /api/v1/audit-logs/export
+
+            Starts an asynchronous audit export scoped by the same filters as the list endpoint. Produces a signed, tamper-evident JSONL archive whose manifest includes a SHA-256 digest per file.
+
+            ### Search endpoints (search)
+
+            Full-text and structured search across resources, projects, and users the caller can read.
+
+            #### POST /api/v1/search
+
+            Runs a search query. The q field holds the query string; the types array restricts which entity types are searched. Results are ranked by relevance and permission-filtered before ranking, so counts are stable across callers with different access.
+
+            #### GET /api/v1/search/suggest
+
+            Returns typeahead suggestions for a query prefix. Suggestions are cached for 60 seconds and may briefly lag renames.
 
             ## Rate Limits
 
-            The API enforces a limit of 500 requests per minute per token. Exceeding this
-            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
-            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
-            code RATE_LIMIT_COOLDOWN.
+            The API enforces a limit of 500 requests per minute per token. Exceeding this limit returns HTTP 429 with a Retry-After header indicating how many seconds to wait before retrying. Sustained abuse triggers a 24-hour cooldown with error code RATE_LIMIT_COOLDOWN. Export downloads and webhook ping calls are exempt from the per-token limit but subject to a separate concurrency cap of 4.
 
             ## Error Codes
+
+            Authentication failures are reported with the first four codes: a missing or unparseable Authorization header returns HTTP 401 with no code; an expired bearer token returns HTTP 401 with error code TOKEN_EXPIRED; a revoked token or API key returns HTTP 403 with error code TOKEN_REVOKED; and a token that is not a valid JWT returns HTTP 400 with error code INVALID_TOKEN_FORMAT.
 
             | Code                  | HTTP Status | Description                          |
             |-----------------------|-------------|--------------------------------------|
@@ -150,6 +434,20 @@ scenarios:
             | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
             | RESOURCE_NOT_FOUND    | 404         | The requested resource does not exist.|
             | VALIDATION_ERROR      | 422         | Request body failed schema validation.|
+            | TEAM_NAME_TAKEN       | 409         | Team name already in use.            |
+            | LAST_ADMIN            | 422         | Cannot demote the last admin.        |
+            | ARCHIVED              | 409         | Project is archived and read-only.   |
+
+            ## Pagination
+
+            List endpoints use opaque cursor pagination. Pass the cursor value from a response's nextCursor field to fetch the following page; a null nextCursor means the listing is exhausted. Cursors are valid for one hour. Do not persist them across sessions.
+
+            ## Changelog
+
+            2026-06-14: Added the notifications acknowledgement endpoint and the unreadOnly filter.
+            2026-04-02: Export download URLs are now pre-signed and expire after 15 minutes (previously 60).
+            2026-02-19: The webhooks ping endpoint returns the delivery result inline instead of 202.
+            2025-12-01: Initial v1 release.
     tool: rlm_query
     argChecks:
       - path: corpus
@@ -347,6 +645,13 @@ scenarios:
       Based on what you fetched, what PostgreSQL version is required by the
       deployment guide?
     priorTurns:
+      # Round-3 finding: the seeded fetch was ~1.1k chars with a meta note
+      # claiming 22,000 more characters were "omitted here for eval brevity"
+      # — the same unrealistic-world problem as rlm-002 (and web_fetch never
+      # truncates in production, so a "continues beyond the result" marker
+      # can never occur). Replaced with a genuinely long (~6.8k chars),
+      # complete document with the PostgreSQL requirement buried mid-way,
+      # matching web_fetch's real output format (Content/Metadata/Outline).
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
@@ -355,36 +660,97 @@ scenarios:
 
             # Deployment Requirements
 
-            This document describes the infrastructure requirements for a production
-            deployment of the platform. It is intentionally long to represent a realistic
-            large-document case.
+            This document describes the infrastructure requirements for a production deployment of the platform. It covers supported operating systems, hardware sizing, runtime dependencies, network and TLS configuration, storage layout, backup procedures, and monitoring integration. Read it end to end before provisioning; several requirements interact (for example, the storage layout constrains the backup tooling).
 
             ## System Requirements
 
             ### Operating System
 
-            The platform is supported on Ubuntu 22.04 LTS and Ubuntu 24.04 LTS. Other
-            Linux distributions may work but are not officially tested.
+            The platform is supported on Ubuntu 22.04 LTS and Ubuntu 24.04 LTS. Other Linux distributions may work but are not officially tested, and support requests reproduced only on untested distributions will be redirected to a supported one. Kernel 5.15 or newer is required for the io_uring-based file watcher; on older kernels the watcher falls back to polling, which increases CPU usage noticeably on large installations.
 
             ### CPU and Memory
 
-            Minimum: 4 vCPU, 8 GB RAM. Recommended: 8 vCPU, 16 GB RAM for production
-            workloads with more than 100 concurrent users.
-
-            ### Database
-
-            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The
-            platform uses features introduced in PostgreSQL 16 including logical replication
-            improvements and new JSON functions.
+            Minimum: 4 vCPU, 8 GB RAM. Recommended: 8 vCPU, 16 GB RAM for production workloads with more than 100 concurrent users. The ingest workers are memory-bound: budget roughly 512 MB per concurrent import job beyond the base recommendation. CPU pressure shows up first in search indexing latency, which is the metric to watch when deciding whether to scale up.
 
             ### Node.js Runtime
 
-            Node.js 20 LTS (iron) or Node.js 22 LTS (jod) are supported. Node.js 18 has
-            reached end-of-life and is not supported.
+            Node.js 20 LTS (iron) or Node.js 22 LTS (jod) are supported. Node.js 18 has reached end-of-life and is not supported. The platform pins its own npm dependency tree; do not install global packages into the runtime image, as they can shadow bundled versions.
 
-            (document continues for 22,000 additional characters covering network
-            configuration, TLS setup, firewall rules, storage requirements, backup
-            procedures, and monitoring integration — omitted here for eval brevity)
+            ## Network Configuration
+
+            ### Ports
+
+            The application listens on 3000 (HTTP) and 3001 (metrics) by default; both are configurable. Only the reverse proxy should be reachable from outside the host network — the application ports themselves must not be exposed publicly, as the app relies on the proxy for TLS termination and request-size limits.
+
+            ### Reverse Proxy
+
+            nginx 1.24+ and Caddy 2.7+ are the tested reverse proxies. Enable HTTP/2, set client_max_body_size (or the Caddy equivalent) to at least 50 MB to accommodate archive imports, and forward the standard X-Forwarded-For and X-Forwarded-Proto headers — the application refuses to start in production mode if it detects a proxy that strips them.
+
+            ### TLS
+
+            TLS 1.2 is the floor; TLS 1.3 is strongly recommended. Certificates must cover both the apex domain and the wildcard subdomain if tenant subdomains are enabled. Automated renewal (certbot or Caddy's built-in ACME) is required for production support — expired-certificate outages caused by manual renewal processes are outside the support SLA.
+
+            ### Firewall Rules
+
+            Allow inbound 443 to the proxy, and nothing else from the public internet. Between application hosts, allow 3000-3001 (app and metrics), 5432 (database), and 6379 (cache). Egress must permit HTTPS to the license endpoint at license.example.com; air-gapped deployments should request an offline license bundle instead.
+
+            ## Data Stores
+
+            ### Database
+
+            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The platform uses features introduced in PostgreSQL 16 including logical replication improvements and new JSON functions. Provision the database with a dedicated role owning a single schema; the migration runner needs CREATE and ALTER on that schema but must not have superuser. Connection pooling through PgBouncer in transaction mode is supported and recommended above 200 concurrent users, with a pool of 2x vCPU count as the starting point.
+
+            ### Cache
+
+            Redis 7.2 or later, or Valkey 8, is required for session storage and the job queue. Persistence (AOF or RDB) is optional — all cached state is reconstructible — but enabling AOF shortens recovery time after a cache restart because sessions survive.
+
+            ### Object Storage
+
+            Attachments and export archives are written to S3-compatible object storage. AWS S3, Cloudflare R2, and MinIO 2024+ are tested. The bucket must enforce server-side encryption; the application refuses to write to a bucket that reports encryption disabled.
+
+            ### Storage Layout
+
+            The application host needs 20 GB for the application and logs, plus scratch space equal to the largest expected import archive times the number of concurrent import workers. Database storage grows at roughly 1 GB per 10,000 resources including index overhead; SSDs are required — the query planner assumptions and the default random_page_cost are tuned for solid-state latency.
+
+            ## Backups
+
+            ### Database Backups
+
+            Use pg_dump for logical backups on installations under 50 GB, and switch to pgBackRest with WAL archiving beyond that. Nightly backups with 30-day retention are the supported baseline. Backups must be restored to a scratch database and smoke-tested at least monthly — an unrestorable backup is treated as no backup in support escalations.
+
+            ### Object Storage Backups
+
+            Enable bucket versioning and a 30-day lifecycle rule on noncurrent versions. Cross-region replication is recommended for single-region providers; R2 and S3 multi-region setups can skip it.
+
+            ## Monitoring and Operations
+
+            ### Metrics
+
+            The metrics port serves Prometheus-format metrics at /metrics. The dashboards shipped in the ops/ directory assume Prometheus 2.50+ and Grafana 10+. The four golden signals for this platform are request latency p95, job queue depth, database connection saturation, and search indexing lag; alert thresholds for each are annotated in the shipped dashboard JSON.
+
+            ### Logging
+
+            Structured JSON logs are written to stdout and rotated by the host's journald or container runtime. Set LOG_LEVEL=info in production; debug level logs request bodies and is not safe for production traffic. Ship logs to your aggregator with the host and deployment labels the dashboards expect — the shipped Loki config shows the label set.
+
+            ### Health Checks
+
+            Liveness is GET /healthz (process up), readiness is GET /readyz (database, cache, and object storage reachable). Load balancers must use readiness, not liveness, for rotation decisions — a host that is alive but cannot reach the database will otherwise serve errors.
+
+            ### Upgrades
+
+            Upgrades are rolling: migrate the database first (migrations are backward-compatible for one minor version), then replace application hosts one at a time. Always read the version-specific upgrade notes; steps flagged BREAKING cannot be skipped or batched across multiple versions. Downgrades are supported only to the previous minor version and only before the next migration runs.
+
+            ## Metadata
+            title: "Deployment Requirements"
+            description: "Infrastructure requirements for a production deployment of the platform."
+
+            ## Document Outline
+            H1: Deployment Requirements
+            H2: System Requirements
+            H2: Network Configuration
+            H2: Data Stores
+            H2: Backups
+            H2: Monitoring and Operations
     tool: rlm_query
     argChecks:
       - path: corpus
