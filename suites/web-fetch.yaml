@@ -51,6 +51,16 @@ scenarios:
       that the agent follows through by calling wiki_create_page with non-empty
       content derived from the fetched text. Exercises the full fetch → ingest
       path without a live network call.
+    # Round-1 auto-eval fix (2026-08-03): originally only the web_fetch turn
+    # was seeded, so the model had no wikiId to give wiki_create_page — whose
+    # own schema says the id comes "from wiki_locate or wiki_search." ornith
+    # and local both did the contract-correct thing (called wiki_locate
+    # first) and failed, since tool-sequence scores only the single response
+    # turn. Added a seeded wiki_locate turn naming exactly one domain, which
+    # per the wiki_navigation section's own rules establishes the domain and
+    # licenses a direct write; the wikiId argCheck pins the follow-through to
+    # that established domain. Don't remove the seeded locate turn without
+    # also rethinking what a single-turn scenario can fairly demand.
     type: tool-sequence
     input: 'I fetched that article — now save it to the wiki, please.'
     priorTurns:
@@ -73,8 +83,17 @@ scenarios:
             H2: What is a vector database?
             H2: Common choices
             H2: Role in RAG
+      - tool: wiki_locate
+        args: { context: 'vector databases and RAG concepts' }
+        result:
+          {
+            text: 'Best match: "engineering" (domain: engineering, score 17). Use wiki_orient({ wikiId: "engineering" }) to see what''s inside.',
+          }
     tool: wiki_create_page
     argChecks:
+      - path: wikiId
+        match: equals
+        value: engineering
       - path: content
         match: exists
 

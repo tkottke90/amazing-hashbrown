@@ -353,6 +353,44 @@ A tool's own result is more current than this default guidance. If a call return
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
 whatever step you would otherwise skip.`;
 
+// Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
+// first suite to exercise web_fetch alongside the wiki tools. Nothing in the
+// system prompt covered how fetching composes with wiki navigation, and two
+// real gaps surfaced:
+// 1. wfetch-002 (local/qwen3.5:4b): asked to add a URL's article to the
+//    wiki, the model called wiki_locate before web_fetch — routing before it
+//    had any content to route. ornith and glm both ordered it correctly, but
+//    only from their own priors; the only fetch-first guidance anywhere was
+//    web_fetch's tool description, which says when to fetch, not how
+//    fetching orders against the wiki tools. First paragraph states
+//    fetch → route → write outright.
+// 2. wfetch-003 (glm): with fetched content already seeded in the
+//    conversation and the user saying "now save it to the wiki, please,"
+//    the model called no tool and wrote clarifying questions into its reply
+//    (where to save it, full import or just a summary?) — the exact
+//    already-decided-request shape ASK_USER_SECTION's second paragraph
+//    corrects for lint requests, showing up here for writes. Second
+//    paragraph extends the same rule to saving fetched content, and notes
+//    wiki_create_page's own duplicate detection makes a pre-write
+//    wiki_orient existence check unnecessary. (ornith and local failed
+//    wfetch-003 differently — stalling on wiki_locate because the scenario
+//    gave them no wikiId to write with; that was a scenario gap, fixed in
+//    the suite itself. See suites/web-fetch.yaml's wfetch-003 comment.)
+const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
+
+When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
+wiki tool. Routing needs the content: you can't judge which domain a page belongs in from its URL
+alone, so calling wiki_locate before fetching just orders the steps backwards. Fetch, then route,
+then write.
+
+The reverse applies once the content is already in hand. If a web_fetch already succeeded in this
+conversation and the user asks you to save what it returned, that request is the decision — proceed
+to the write. When a wiki_locate result has already established the domain, call wiki_create_page
+directly with the fetched content; wiki_create_page itself detects near-duplicate pages and points
+you to wiki_update_page instead, so you don't need a wiki_orient pass first just to check whether
+the page already exists. Asking where to save it or whether to summarize first, when the user has
+already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
 // domains they meant, but wrote the question straight into its reply instead
@@ -434,6 +472,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
+  { tag: 'web_fetch', content: WEB_FETCH_SECTION },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION },
   // future: uncertainty, formatting, ...
 ];
