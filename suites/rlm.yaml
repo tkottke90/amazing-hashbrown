@@ -56,9 +56,25 @@ scenarios:
             This page exceeds the read limit. To search for specific information:
             1. Re-call wiki_read_page with truncate: false to get the complete text.
             2. Pass that text as the corpus argument to rlm_query with your specific question.
-    tools:
-      - wiki_read_page
-      - rlm_query
+    # Originally authored as `tools: [wiki_read_page, rlm_query]`, a shape the
+    # suite schema has never supported — tool-sequence scores exactly one
+    # response turn against a single expected `tool`. A one-turn scenario can
+    # only assert the NEXT step of the workflow: re-calling wiki_read_page
+    # with truncate: false on the same page. The rlm_query half of the
+    # sequence is covered by rlm-002, which seeds the full read and asserts
+    # the rlm_query call. Don't "restore" the two-tool list — it fails suite
+    # validation before any scenario runs.
+    tool: wiki_read_page
+    argChecks:
+      - path: truncate
+        match: equals
+        value: false
+      - path: wikiId
+        match: equals
+        value: engineering
+      - path: path
+        match: equals
+        value: docs/api-reference.md
 
   - id: rlm-002-rlm-receives-full-corpus
     name: rlm_query receives the full corpus text as its argument
@@ -67,7 +83,12 @@ scenarios:
       rlm_query. After reading the full page, the corpus argument must contain
       substantial text (not just the truncated excerpt). This scenario confirms
       the argument values — not just that the tool was called.
-    type: tool-call
+    # Was `type: tool-call`, which has no priorTurns field — the schema
+    # silently stripped the seeded turns (pre-strict()), so every model
+    # cold-started, saw no history, and correctly called wiki_locate per the
+    # memory section. tool-sequence is the type that seeds priorTurns; the
+    # tool + argChecks scoring is identical.
+    type: tool-sequence
     input: >
       What error codes does the API return for authentication failures?
     priorTurns:
@@ -170,6 +191,12 @@ scenarios:
             This page exceeds the read limit. To search for specific information:
             1. Re-call wiki_read_page with truncate: false to get the complete text.
             2. Pass that text as the corpus argument to rlm_query with your specific question.
+      # Round-1 finding: the full-read result here used to be the literal
+      # placeholder "(full 28,450-character document omitted for eval
+      # brevity)", and ornith reasonably concluded the document content was
+      # never accessible — so it refused to trust the rlm_query answer and
+      # failed the rubric. The seeded turns must look like a real transcript;
+      # reuse rlm-002's realistic full document instead of a placeholder.
       - tool: wiki_read_page
         args: { wikiId: engineering, path: docs/api-reference.md, truncate: false }
         result:
@@ -179,11 +206,55 @@ scenarios:
             Type: reference
             Tags: api, engineering
 
-            (full 28,450-character document omitted for eval brevity)
+            ## Authentication
+
+            Bearer tokens required. All requests must include an Authorization: Bearer <token>
+            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
+            with error code TOKEN_EXPIRED.
+
+            ## Rate Limits
+
+            The API enforces a limit of 500 requests per minute per token. Exceeding this
+            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
+            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
+            code RATE_LIMIT_COOLDOWN.
+
+            ## Error Codes
+
+            | Code                  | HTTP Status | Description                          |
+            |-----------------------|-------------|--------------------------------------|
+            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
+            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
+            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
       - tool: rlm_query
         args:
           question: What is the API rate limit?
-          corpus: '# API Reference\n\nType: reference\nTags: api, engineering\n\n(full 28,450-character document omitted for eval brevity)'
+          corpus: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering
+
+            ## Authentication
+
+            Bearer tokens required. All requests must include an Authorization: Bearer <token>
+            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
+            with error code TOKEN_EXPIRED.
+
+            ## Rate Limits
+
+            The API enforces a limit of 500 requests per minute per token. Exceeding this
+            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
+            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
+            code RATE_LIMIT_COOLDOWN.
+
+            ## Error Codes
+
+            | Code                  | HTTP Status | Description                          |
+            |-----------------------|-------------|--------------------------------------|
+            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
+            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
+            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
         result:
           text: |
             The API enforces a rate limit of 500 requests per minute per token. Exceeding
@@ -250,8 +321,14 @@ scenarios:
 
             Run `example init` in your project directory to create a configuration file.
             Follow the prompts to connect to your workspace.
-    tools:
-      - '!rlm_query'
+    # Originally authored as `tools: ['!rlm_query']` — a list shape the suite
+    # schema has never supported. The negation intent is now expressible
+    # directly: a '!'-prefixed `tool` passes only when that tool is NOT
+    # called this turn (support added to ToolSequenceScenarioSchema and
+    # executors/tool-sequence.ts for exactly this scenario). Answering in
+    # plain text or reading further is fine; invoking rlm_query on a page
+    # that was never truncated is the one failure this guards against.
+    tool: '!rlm_query'
 
   - id: rlm-005-non-wiki-corpus
     name: Agent passes a large web_fetch result as the corpus to rlm_query
@@ -261,7 +338,11 @@ scenarios:
       result and asks a targeted factual question. The agent must call rlm_query
       with corpus drawn from the fetched content, not attempt to answer from
       its training data or the truncated preview.
-    type: tool-call
+    # Was `type: tool-call` — same silent priorTurns-stripping bug as rlm-002
+    # (see the comment there). All three models correctly reported "nothing
+    # was fetched in this conversation" because the seeded web_fetch turn
+    # never reached them.
+    type: tool-sequence
     input: >
       Based on what you fetched, what PostgreSQL version is required by the
       deployment guide?
