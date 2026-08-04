@@ -15,7 +15,10 @@ import {
   submitWikiHitlAnswer,
   stopWikiGeneration,
   newWikiThread,
+  activeWikiModel,
+  setWikiModel,
 } from '@/hooks/use-wiki-ingestion';
+import { providers, fetchProviders } from '@/hooks/use-providers';
 import { OrientationBadge } from './orientation-badge';
 import { NewDomainModal } from './new-domain-form';
 import { UploadWikiDialog } from './upload-wiki-form';
@@ -38,6 +41,10 @@ export function IngestionChat({ chatInputRef }: Props) {
     });
   }
 
+  useEffect(() => {
+    void fetchProviders();
+  }, []);
+
   // Assign the inner textarea to chatInputRef so DocumentView can focus it after save
   useEffect(() => {
     if (!chatInputRef || !wrapperRef.current) return;
@@ -55,6 +62,15 @@ export function IngestionChat({ chatInputRef }: Props) {
     inputValue.value = '';
     void sendWikiMessage(content);
   }
+
+  const resolvedProvider =
+    activeWikiModel.value?.provider ??
+    providers.value.find((p) => p.defaultModel)?.name ??
+    providers.value[0]?.name;
+  const resolvedModel =
+    activeWikiModel.value?.model ??
+    providers.value.find((p) => p.name === resolvedProvider)?.defaultModel ??
+    providers.value[0]?.models[0]?.id;
 
   const allMessages = wikiMessages.value;
   const pendingHitlId = wikiPendingHitlId.value;
@@ -124,6 +140,10 @@ export function IngestionChat({ chatInputRef }: Props) {
           onStop={stopWikiGeneration}
           isGenerating={wikiIsStreaming.value}
           disabled={!!pendingHitlId}
+          providers={providers.value}
+          activeProvider={resolvedProvider}
+          activeModel={resolvedModel}
+          onModelSelect={setWikiModel}
         />
       </div>
     </div>
