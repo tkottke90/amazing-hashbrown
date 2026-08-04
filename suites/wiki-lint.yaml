@@ -22,7 +22,7 @@ scenarios:
       - tool: wiki_locate
         args: { context: 'wiki health check' }
         result:
-          text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+          text: 'Best match: "user" (domain: user, score 14). wiki_orient({ wikiId: "user" }) shows its structure if you need it.'
       - tool: wiki_orient
         args: { wikiId: 'user' }
         result:
@@ -57,7 +57,7 @@ scenarios:
       - tool: wiki_locate
         args: { context: 'raw source drift' }
         result:
-          text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+          text: 'Best match: "user" (domain: user, score 14). wiki_orient({ wikiId: "user" }) shows its structure if you need it.'
       - tool: wiki_lint
         args: { wikiId: 'user' }
         result:
@@ -88,7 +88,7 @@ scenarios:
       - tool: wiki_locate
         args: { context: 'registry sync untracked wiki' }
         result:
-          text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+          text: 'Best match: "user" (domain: user, score 12). wiki_orient({ wikiId: "user" }) shows its structure if you need it.'
       - tool: wiki_lint
         args: { wikiId: 'user' }
         result:
@@ -128,7 +128,7 @@ scenarios:
       - tool: wiki_locate
         args: { context: 'orphaned page' }
         result:
-          text: 'Best match: "user" (domain: user, score 13). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+          text: 'Best match: "user" (domain: user, score 13). wiki_orient({ wikiId: "user" }) shows its structure if you need it.'
       - tool: wiki_orient
         args: { wikiId: 'user' }
         result:
@@ -182,7 +182,7 @@ scenarios:
       - tool: wiki_locate
         args: { context: 'quality finding confidence' }
         result:
-          text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.'
+          text: 'Best match: "user" (domain: user, score 12). wiki_orient({ wikiId: "user" }) shows its structure if you need it.'
       - tool: wiki_lint
         args: { wikiId: 'user' }
         result:

@@ -61,8 +61,16 @@ scenarios:
     # licenses a direct write; the wikiId argCheck pins the follow-through to
     # that established domain. Don't remove the seeded locate turn without
     # also rethinking what a single-turn scenario can fairly demand.
+    # Round-1 auto-eval fix (2026-08-04 loop): the input formerly read "I
+    # fetched that article — now save it..." — but the seeded turns show the
+    # assistant fetched it. ornith read the pronoun literally, concluded the
+    # user was claiming a fetch that wasn't in the conversation, and asked
+    # for clarification instead of writing. The misattribution was an
+    # authoring artifact, not the behavior under test (follow-through on a
+    # save), so the input now credits the fetch correctly instead of baiting
+    # a pronoun-pedantry stumble.
     type: tool-sequence
-    input: 'I fetched that article — now save it to the wiki, please.'
+    input: 'Great — now save that article you fetched to the wiki, please.'
     priorTurns:
       - tool: web_fetch
         args: { url: 'https://docs.example.com/concepts/vector-databases' }
@@ -87,7 +95,7 @@ scenarios:
         args: { context: 'vector databases and RAG concepts' }
         result:
           {
-            text: 'Best match: "engineering" (domain: engineering, score 17). Use wiki_orient({ wikiId: "engineering" }) to see what''s inside.',
+            text: 'Best match: "engineering" (domain: engineering, score 17). wiki_orient({ wikiId: "engineering" }) shows its structure if you need it.',
           }
     tool: wiki_create_page
     argChecks:

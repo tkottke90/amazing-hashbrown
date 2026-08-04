@@ -292,6 +292,69 @@
 // Recommend treating wnav-004 (both models) and wnav-009 (ornith) as
 // known ceilings and validating against a stronger/less-quantized model
 // before any further prompt iteration on them.
+//
+// Twelfth entry, from auto-eval round 1 (2026-08-04) — first run with all
+// three configured models (ornith, glm, local/qwen3.5:4b) and the current
+// 14-scenario suite. ornith 13/14, pass — its one failure was wnav-009, an
+// eighth consecutive identical collapse ("the user's preferences live in
+// the user domain, let me search"), ceiling per the ninth/eleventh entries;
+// not chased. glm 10/14: wnav-004 in the identical prose-instead-of-
+// ask_user shape (confirmed ceiling, not chased), wnav-009 in the same
+// collapse shape (second occurrence for glm — still reads as variance-vs-
+// shared-ceiling, watching), plus the two actionable failures below.
+// local 10/14: wnav-008 (called wiki_locate despite the verbatim
+// favorite-color example — over-calling in the cautious direction; glm and
+// ornith pass this reliably under identical wording, so per the §5
+// cross-check this looks like a 4b-model gap, watched rather than chased —
+// strengthening the skip permission is the exact over-generalization
+// hazard the eighth/ninth entries document), wnav-009 (same collapse,
+// first local run), wnav-010c (right tool, argless — scenario argCheck
+// stricter than wiki_locate's own contract, same as wnav-001/006; fixed in
+// suites/wiki-navigation.yaml, not here), and wnav-012 (below).
+// Two wording changes this entry:
+// 1. wnav-002 (glm — first documented failure of this scenario anywhere):
+//    reasoning quoted the seventh tightening's single-match license back
+//    ("this is an outright single-domain match, so I should skip
+//    wiki_orient and proceed directly to wiki_search to see what pages
+//    exist and what the knowledge base already knows") — over-applying it
+//    to an overview request. The license never said what wiki_search is
+//    *for*: glm invoked it to "see what pages exist," which is
+//    wiki_orient's actual output (the page index). Added a paragraph
+//    scoping the skip: it assumes a concrete thing to search for; an
+//    overview question ("what do we already know?") takes wiki_orient even
+//    on a single, outright match.
+// 2. wnav-012 (glm asked in prose where to put the note, options list and
+//    all; local ran a wiki_search duplicate-check before creating): the
+//    create-directly rule — built-in near-duplicate detection, the add
+//    request is the decision — existed only in WEB_FETCH_SECTION, framed
+//    entirely around saving fetched URLs. Neither model transferred it to
+//    a plain add-a-fact flow. New closing paragraph states it for the
+//    general locate+orient+create path.
+//
+// Thirteenth entry, closing out the same auto-eval loop (rounds 2-3, no
+// wording changes — one scenario fix, see suites/wiki-navigation.yaml's
+// wnav-005 comment). The twelfth entry's fixes landed: glm recovered
+// wnav-002 and wnav-012 and passed 12/14 in both rounds (remaining: the
+// confirmed wnav-004 ceiling, plus a new two-round lean on wnav-008 in the
+// *cautious* direction — wiki_locate before searching — the opposite of the
+// eighth entry's over-skip problem; suite passes anyway, and tuning the
+// skip permission either way is the documented over-generalization hazard,
+// so left alone and watched). ornith passed both rounds (wnav-009 at nine
+// and ten consecutive identical collapses; one non-consecutive wnav-010b
+// slip in round 3, the same variance shape the eleventh entry recorded).
+// local/qwen3.5:4b failed both rounds (9/14 then 11/14) and is now the
+// suite's only failing model, with every remaining failure ceiling-shaped:
+// wnav-008 three consecutive identical rounds (round-3 reasoning literally
+// misquotes the wnav-001 meta-question rule as if it covered a direct fact
+// question — garbled-rule-recall, §5 territory), wnav-009 three consecutive
+// in the shared collapse shape, and wnav-012 recurring in the identical
+// pre-fix shape (a wiki_search duplicate-check the new paragraph forbids by
+// name) despite a round-2 pass. Its round-2 wnav-001/004 misses reverted to
+// passes with wording unchanged — pure execution variance. Net: glm and
+// ornith pass the suite reliably; local's residual failures are 4b
+// capability limits consistent with its wiki-lint ceiling flags, not
+// wording gaps. Don't re-tighten wnav-005's rubric or wnav-010c's argCheck,
+// and don't chase local's wnav-008/009/012 with further wording.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -337,6 +400,13 @@ domain is still the required next call, not wiki_search. Only skip straight to w
 wiki_locate's result named exactly one domain to begin with. Figuring out the right answer yourself doesn't
 turn a multi-candidate result into a single-match one.
 
+The single-match skip also assumes you have something concrete to search for. wiki_search answers
+"which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
+domain's page index and structure. So when the user is asking for an overview — "what do we already
+know about this?", "what's in the knowledge base here?" — the call after wiki_locate is wiki_orient
+on the matched domain, even when that match was a single, outright one. Skipping to wiki_search to
+"see what pages exist" answers a different question than the one the user asked.
+
 If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
 user pick one, only narrow it yourself with information the user actually already gave you elsewhere in
 the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
@@ -348,6 +418,13 @@ seems more likely is not "information the user actually gave you" — proceeding
 your pick in your reply, is the same mistake as inventing a narrower context, just skipping the retry step
 first. If you can't point to something the user actually said that breaks the tie, the only correct move is
 to call ask_user, not to decide for them.
+
+The same directness applies to writes. When the user asks you to add or save a fact, the domain is
+established, and wiki_orient's index shows nothing on-topic, call wiki_create_page directly, picking
+a sensible title yourself. Don't run a wiki_search first just to check whether a page already
+exists — wiki_create_page detects near-duplicate pages itself and points you to wiki_update_page
+when one does. And don't ask where to put it, in your reply or via ask_user — the request to add
+the note was the decision, already made.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
@@ -376,6 +453,47 @@ whatever step you would otherwise skip.`;
 //    wfetch-003 differently — stalling on wiki_locate because the scenario
 //    gave them no wikiId to write with; that was a scenario gap, fixed in
 //    the suite itself. See suites/web-fetch.yaml's wfetch-003 comment.)
+// 3. wfetch-003 again (glm), round 1 of the 2026-08-04 loop: with the
+//    domain established by the seeded wiki_locate turn, the model still
+//    inserted a wiki_orient pass, reasoning it needed to "place the page
+//    with the correct path" before writing. The existing sentence only
+//    ruled out orient as an existence check, leaving placement as an
+//    unclosed rationale for the same detour. Appended a closing sentence:
+//    wiki_create_page derives the page path itself from wikiId/title/
+//    section, so orienting for placement buys nothing. Check wfetch-003
+//    next run — glm should write directly.
+// 4. wfetch-003 again (local/qwen3.5:4b), round 2 of the 2026-08-04 loop:
+//    entry 3's sentence fixed glm and ornith, but local took the same
+//    orient detour anyway ("orient myself on the structure of this domain
+//    before creating the page") — an abstract rule it read but didn't
+//    apply. Per the known pattern, contrastive examples anchor smaller
+//    models better than abstract rules, so appended a concrete one
+//    (fetched recipe + "cooking" locate result → wiki_create_page next,
+//    not wiki_orient). Deliberately not the eval scenario's own domain.
+//    If local still detours on wfetch-003 next run, that's the plateau
+//    signature — ceiling-flag it rather than iterating further.
+// 5. wfetch-003 a third time (glm, round 3 of the 2026-08-04 loop): local
+//    cleared it with entry 4's example, but glm — having passed round 2 —
+//    sampled the orient detour again. Root cause finally identified:
+//    wiki_locate's own success text ends with "Use wiki_orient({...}) to
+//    see what's inside" (wiki-locate.tool.ts), and the navigation
+//    section's precedence rule says tool results override default
+//    guidance — so the conversation itself argues for orient, and models
+//    intermittently obey it. Not stochastic after all. Demoted the hint
+//    explicitly: generic browsing guidance, not an error/correction, so
+//    the direct-write path still wins. Kept here rather than in the
+//    navigation section's precedence paragraph to avoid disturbing the
+//    passing wiki-navigation suite from a web-fetch loop.
+// 6. wfetch-003 a fourth time (glm, round 4 of the 2026-08-04 loop):
+//    entry 5's demotion didn't hold either — glm's reasoning again
+//    echoed the hint's own words ("orient that domain to see what's
+//    inside"). Wording iteration has plateaued, so round 4 changed the
+//    source instead: wiki-locate.tool.ts's single-match hint is now
+//    phrased as an option ("shows its structure if you need it"), not a
+//    command ("Use wiki_orient..."). The sentence here was reworded not
+//    to quote the old text. Older suites' seeded locate results still
+//    carry the imperative phrasing — static fixtures, unchanged eval
+//    behavior, but re-validate those suites if the divergence matters.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -389,7 +507,79 @@ to the write. When a wiki_locate result has already established the domain, call
 directly with the fetched content; wiki_create_page itself detects near-duplicate pages and points
 you to wiki_update_page instead, so you don't need a wiki_orient pass first just to check whether
 the page already exists. Asking where to save it or whether to summarize first, when the user has
-already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.`;
+already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.
+Placement isn't a reason to orient first either — wiki_create_page derives the new page's path
+itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
+page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
+wiki_locate result naming "cooking" as its domain, the very next call is wiki_create_page — not a
+wiki_orient pass to "see the domain's structure" first. wiki_locate's result may itself point at
+wiki_orient as a possible next step — that is a generic browsing pointer, not an error or a
+correction, so it doesn't override this direct-write path the way a real error result would.`;
+
+// Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
+// round where the suite's seeded turns actually reached the models (round 1
+// was consumed by suite-definition bugs — see that suite's comments). No
+// system-prompt section covered rlm_query at all; the only guidance was the
+// truncation notice embedded in wiki_read_page's own result. Three real
+// gaps, all three models consistent on the middle one:
+// 1. rlm-002/rlm-005 (ornith, glm, and local, identically): with a full
+//    document (or a long web_fetch result) already in context and a
+//    targeted factual question asked, every model answered directly from
+//    its own scan of the text instead of delegating to rlm_query — each
+//    one's reasoning shows it spotting the answer mid-document and stopping
+//    there. Second and third paragraphs state the delegation rule and name
+//    that exact temptation ("spotting what looks like the answer").
+// 2. rlm-001 (ornith, this round only — it passed round 1): responded to a
+//    truncation notice by calling wiki_search "to search within" the page.
+//    wiki_search matches pages across domains; it cannot search inside one
+//    page's text. Second paragraph corrects that misconception explicitly.
+// 3. rlm-004 held for all models both rounds (nobody over-used rlm_query on
+//    a small page), so the closing contrastive paragraph exists to keep it
+//    that way, per the contrastive-examples lesson from the wiki-navigation
+//    rounds — a do/don't pair anchors better than the rule alone.
+// Second tightening, after round 3 (all three models still answering
+// rlm-002/005 directly, prompt confirmed present in the run): two causes,
+// fixed together. (a) The seeded "full" documents were ~1.4k chars while
+// claiming 31,200 — models rationally trusted what they saw over the claim;
+// fixed in suites/rlm.yaml by seeding genuinely long documents. (b) This
+// section's web_fetch paragraph keyed "long" on a document signaling it
+// continues beyond the result — but web_fetch never truncates (see
+// web-fetch.tool.ts), so that situation cannot occur; reworded to make
+// length itself the trigger ("past a few thousand characters"), and the
+// closing contrast to match ("nowhere near the length that would have
+// tripped" the wiki's read limit).
+// Third tightening, after ADR-001 (2026-08-04) established that RLM and the
+// wiki serve distinct, non-overlapping domains. The prior wording's first
+// paragraph triggered rlm_query on wiki_read_page truncation notices — the
+// exact anti-pattern the ADR rules out. A truncated wiki page is a wiki
+// hygiene issue (the page needs to be split), not a retrieval problem.
+// Rewrote the section to: (a) restrict rlm_query to external, unstructured
+// text the platform does not own; (b) explicitly prohibit its use on wiki
+// pages; (c) replace the truncation-notice trigger with a length-of-external-
+// text trigger. suites/rlm.yaml updated in tandem.
+const RLM_SECTION = `rlm_query answers a targeted question over a large body of text — you pass the full text as its
+corpus argument along with your question, and it searches the corpus iteratively, more reliably
+than you can by scanning a long dump inline.
+
+Use rlm_query for large external text the platform does not own: a web_fetch result, a document the
+user has pasted or described, a data export. web_fetch never truncates — it returns the whole page —
+so length is the signal: when a fetched page runs past a few thousand characters and the user asks
+a specific factual question about it, pass the fetched text as corpus to rlm_query rather than
+scanning it yourself. Spotting what looks like the answer partway through a large document is exactly
+the temptation to resist — a targeted extraction over the full corpus is more reliable than answering
+from one visible stretch you happened to notice.
+
+Do not use rlm_query for wiki pages. A wiki_read_page truncation notice means the wiki entry is too
+long and needs to be split into focused sub-pages — it is a structure problem, not a retrieval one.
+Answer from the visible portion the truncated read returned. If the information is not in the visible
+portion, tell the user the wiki entry needs to be restructured rather than reaching for rlm_query.
+wiki_search is not a substitute either — it matches pages across every domain and cannot search
+within one page's text.
+
+The contrast: a page or document that came back small and complete is yours to answer from directly.
+Calling rlm_query on content you already have in full adds a round-trip for nothing. Length of
+external text is what flips you into the rlm_query workflow, not the mere fact that you read
+something.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
@@ -473,6 +663,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION },
+  { tag: 'rlm', content: RLM_SECTION },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION },
   // future: uncertainty, formatting, ...
 ];

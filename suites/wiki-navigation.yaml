@@ -41,7 +41,7 @@ scenarios:
         args: { context: 'personal preferences' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
     tool: wiki_orient
     argChecks:
@@ -62,7 +62,7 @@ scenarios:
         args: { context: 'morning routine preferences' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
@@ -157,9 +157,20 @@ scenarios:
       well-written or factually accurate it is. Score no higher than 3/10
       if that acknowledgment is missing.
 
-      Given that acknowledgment is present, also check: (1) it doesn't
-      fabricate content by treating an unrelated domain as if it matched,
-      (2) it optionally offers alternative help. Full marks require both.
+      Given that acknowledgment is present, also check that it doesn't
+      fabricate content by treating an unrelated domain as if it matched.
+      A response that meets the hard requirement and fabricates nothing
+      has done its job: score it 8 or higher. Offering alternative help
+      or a sensible next step is a bonus that lifts the score to 9-10,
+      not a requirement — do not score an honest, non-fabricating
+      no-match report below 8 just because it stops after reporting.
+    # The closing scale anchor replaced "(2) it optionally offers
+    # alternative help. Full marks require both" — self-contradictory
+    # (optional yet required), and observed in a real auto-eval run
+    # (2026-08-04, judge: local) scoring two near-identical compliant
+    # answers 8 then 6 across consecutive rounds, straddling minScore for
+    # no behavioral difference. The anchor pins compliant answers above
+    # the threshold so the judge's bonus-weighting can't fail them.
     minScore: 7
 
   - id: wnav-006-unknown-wikiid-recovers
@@ -299,12 +310,19 @@ scenarios:
       most directly implies "this was already documented somewhere,"
       making it the strongest case that skipping the wiki would be a real
       regression.
+      A real eval run (auto-eval 2026-08-04, local/qwen3.5:4b) had the
+      model call wiki_locate here with no context arg — right tool, failed
+      only the argCheck. Same situation wnav-001 and wnav-006 already
+      document: wiki_locate's own schema says `context` is optional ("Omit
+      to browse all registered domains"), so requiring it is stricter than
+      the tool's own contract. This scenario's purpose is the tool choice
+      (check the wiki before answering from general knowledge), not arg
+      quality — dropped the context argCheck, asserting only the tool.
+      wnav-010/010b keep theirs: they haven't failed this way, and the
+      precedent is to loosen on evidence, not symmetry.
     type: tool-call
     input: 'What was the process for generating a new NPM token for Verdaccio?'
     tool: wiki_locate
-    argChecks:
-      - path: context
-        match: exists
 
   - id: wnav-011-locate-orient-update-existing-page
     name: Agent updates an existing on-topic page found via locate+orient
@@ -341,7 +359,7 @@ scenarios:
         args: { context: 'work schedule' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
@@ -379,7 +397,7 @@ scenarios:
         args: { context: 'hobbies' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 12). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }

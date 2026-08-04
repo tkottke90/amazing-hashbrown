@@ -52,15 +52,22 @@ defaultProvider: local
 # ---------------------------------------------------------------------------
 # Embeddings
 #
-# Powers semantic/hybrid wiki search (wiki_search tool's `mode`). When
-# disabled, wiki search falls back to keyword-only matching — no error, just
-# lower-quality ranking. Currently a single local Ollama embedding model;
-# no API key needed.
+# Powers semantic/hybrid wiki search (wiki_search tool's `mode`) and the
+# semantic search tool inside rlm_query. When disabled, wiki search falls
+# back to keyword-only matching and rlm_query uses keyword tools only —
+# no error, just lower-quality retrieval.
+#
+# type: ollama (default) or openai
 # ---------------------------------------------------------------------------
 embeddings:
   enabled: true
+  type: ollama
   model: nomic-embed-text
   baseUrl: http://localhost:11434/v1
+  # For OpenAI embeddings:
+  # type: openai
+  # model: text-embedding-3-small
+  # apiKey: ${OPENAI_API_KEY}
 
 # ---------------------------------------------------------------------------
 # Database
@@ -125,6 +132,27 @@ webFetch:
   # skip the robots.txt preflight entirely (useful for internal services or
   # hosts you control).
   respectRobotsTxt: true
+
+# ---------------------------------------------------------------------------
+# RLM (Retrieval Loop Model)
+#
+# Controls the rlm_query tool available to the chat agent. RLM iteratively
+# searches a large text corpus to answer a targeted question, avoiding the
+# context rot that comes from dumping an entire document into the chat.
+#
+# provider: name of a provider in providers[] to use for RLM model calls.
+#           Defaults to defaultProvider when omitted.
+# model:    model name override for RLM. Defaults to the provider's
+#           defaultModel when omitted.
+# maxIterations: maximum search iterations before forcing a final answer.
+# truncateThreshold: character count above which wiki_read_page truncates
+#                    its response and instructs the agent to use rlm_query.
+# ---------------------------------------------------------------------------
+rlm:
+  maxIterations: 10
+  truncateThreshold: 6000
+  # provider: local
+  # model: llama3
 
 # ---------------------------------------------------------------------------
 # Cost Rates

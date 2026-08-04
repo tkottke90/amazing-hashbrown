@@ -2,6 +2,15 @@ import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Scenario schemas — discriminated union on `type`
+//
+// Every schema that parses hand-authored suite YAML is .strict(): an unknown
+// key is an authoring error and must fail loudly at load time. Zod's default
+// is to silently strip unknown keys, which once hid a real bug — two rlm
+// suite scenarios were typed tool-call but carried priorTurns (a
+// tool-sequence-only field), so their seeded turns were dropped without a
+// trace and every model "failed" scenarios it was never actually given.
+// Result schemas further down stay non-strict — they parse machine-written
+// data, including older on-disk results predating newer fields.
 // ---------------------------------------------------------------------------
 
 const BaseScenario = z.object({
@@ -20,23 +29,25 @@ export const DeterministicScenarioSchema = BaseScenario.extend({
   type: z.literal('deterministic'),
   match: z.enum(['contains', 'exact', 'regex']),
   expected: z.string().min(1),
-});
+}).strict();
 
 export const SemanticScenarioSchema = BaseScenario.extend({
   type: z.literal('semantic'),
   expectedSimilarTo: z.string().min(1),
   minSimilarity: z.number().min(0).max(1).default(0.75),
-});
+}).strict();
 
 // Shared by llm-judge and tool-sequence scenarios — declared here (ahead of
 // both) so either can reference it. Each entry becomes its own
 // AIMessage(tool_call) + ToolMessage(result) pair via runner.ts's
 // buildSeededMessages(), simulating a turn that already "happened".
-export const PriorToolTurnSchema = z.object({
-  tool: z.string().min(1),
-  args: z.record(z.string(), z.unknown()).default({}),
-  result: z.record(z.string(), z.unknown()),
-});
+export const PriorToolTurnSchema = z
+  .object({
+    tool: z.string().min(1),
+    args: z.record(z.string(), z.unknown()).default({}),
+    result: z.record(z.string(), z.unknown()),
+  })
+  .strict();
 
 export const LlmJudgeScenarioSchema = BaseScenario.extend({
   type: z.literal('llm-judge'),
@@ -48,16 +59,18 @@ export const LlmJudgeScenarioSchema = BaseScenario.extend({
   // simulated tool results, not just a cold-start reply. Omitted for
   // llm-judge scenarios that don't need seeded history.
   priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
-});
+}).strict();
 
-const FieldCheckSchema = z.object({
-  // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
-  path: z.string().min(1),
-  match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
-  // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
-  // Omitted for 'exists'.
-  value: z.unknown().optional(),
-});
+const FieldCheckSchema = z
+  .object({
+    // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
+    path: z.string().min(1),
+    match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
+    // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
+    // Omitted for 'exists'.
+    value: z.unknown().optional(),
+  })
+  .strict();
 
 export const StructuredScenarioSchema = BaseScenario.extend({
   type: z.literal('structured'),
@@ -66,7 +79,7 @@ export const StructuredScenarioSchema = BaseScenario.extend({
   fieldChecks: z.array(FieldCheckSchema).min(1),
   // Fraction of fieldChecks that must pass for the scenario to pass.
   minScore: z.number().min(0).max(1).default(1),
-});
+}).strict();
 
 export const ToolCallScenarioSchema = BaseScenario.extend({
   type: z.literal('tool-call'),
@@ -77,7 +90,7 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   // Fraction of argChecks that must pass for the scenario to pass (irrelevant
   // if argChecks is omitted — the tool-name match alone determines pass/fail).
   minScore: z.number().min(0).max(1).default(1),
-});
+}).strict();
 
 export const ToolSequenceScenarioSchema = BaseScenario.extend({
   type: z.literal('tool-sequence'),
@@ -87,21 +100,30 @@ export const ToolSequenceScenarioSchema = BaseScenario.extend({
   // object) so this generalizes to N chained prior tool calls, matching how
   // a real ReAct loop can chain arbitrarily many tool calls.
   priorTurns: z.array(PriorToolTurnSchema).min(1),
+  // Expected tool name. A '!' prefix inverts the assertion — '!rlm_query'
+  // passes only when rlm_query is NOT among the turn's tool calls (see
+  // executors/tool-sequence.ts). Negation is tool-sequence-only (tool-call
+  // scenarios have no seeded history that would make abstaining correct),
+  // and argChecks are ignored for negated scenarios.
   tool: z.string().min(1),
   argChecks: z.array(FieldCheckSchema).optional(),
   minScore: z.number().min(0).max(1).default(1),
-});
+}).strict();
 
-const ChoiceOption = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  pass: z.boolean(),
-});
+const ChoiceOption = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    pass: z.boolean(),
+  })
+  .strict();
 
-const ScaleOption = z.object({
-  value: z.number(),
-  label: z.string().min(1),
-});
+const ScaleOption = z
+  .object({
+    value: z.number(),
+    label: z.string().min(1),
+  })
+  .strict();
 
 export const ScoringSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('choice'), options: z.array(ChoiceOption).min(2) }),
@@ -117,7 +139,7 @@ export const HumanScenarioSchema = BaseScenario.extend({
   rubric: z.string().min(1),
   scoring: ScoringSchema,
   status: z.enum(['pending', 'approved', 'rejected']).default('pending'),
-});
+}).strict();
 
 export const ScenarioSchema = z.discriminatedUnion('type', [
   DeterministicScenarioSchema,

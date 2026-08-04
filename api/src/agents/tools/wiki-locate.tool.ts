@@ -37,7 +37,11 @@ export const wikiLocateTool = tool(
     const result = registry.resolve(context);
 
     if ('path' in result) {
-      return `Best match: "${result.id}" (domain: ${result.domain}, score ${result.score}). Use wiki_orient({ wikiId: "${result.id}" }) to see what's inside.`;
+      // Phrased as an option, not a command ("Use wiki_orient..."): models
+      // treated the imperative as an instruction that overrode the direct-write
+      // path after a fetch (web-fetch eval, wfetch-003), inserting a wasted
+      // orient round-trip when the next step was already decided.
+      return `Best match: "${result.id}" (domain: ${result.domain}, score ${result.score}). wiki_orient({ wikiId: "${result.id}" }) shows its structure if you need it.`;
     }
     if ('ambiguous' in result) {
       const ids = result.candidates.map((c) => c.id).join(', ');

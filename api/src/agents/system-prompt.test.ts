@@ -33,30 +33,35 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
       expect(result).to.include('</web_fetch>');
+      expect(result).to.include('<rlm>');
+      expect(result).to.include('</rlm>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(5);
-      expect(closes).to.equal(5);
+      expect(opens).to.equal(6);
+      expect(closes).to.equal(6);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, rlm, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
+      const rlmTagIndex = result.indexOf('<rlm>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
+      expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
-      expect(webFetchTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(webFetchTagIndex).to.be.lessThan(rlmTagIndex);
+      expect(rlmTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
@@ -147,6 +152,26 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('scopes the single-match skip to concrete queries — overview questions take wiki_orient', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'The single-match skip also assumes you have something concrete to search for.',
+      );
+      expect(result).to.include(
+        'Skipping to wiki_search to\n"see what pages exist" answers a different question than the one the user asked.',
+      );
+    });
+
+    it('extends the direct-write rule to plain add-a-fact requests — create directly, no duplicate-check search', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'call wiki_create_page directly, picking\na sensible title yourself',
+      );
+      expect(result).to.include(
+        "Don't run a wiki_search first just to check whether a page already\nexists",
+      );
+    });
+
     it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
@@ -180,6 +205,57 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'is the confirmation round-trip ask_user_routing tells you not to make',
       );
+    });
+
+    it('rules out wiki_orient as a placement step before a fetched-content write', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include("Placement isn't a reason to orient first either");
+      expect(result).to.include(
+        'orienting "to find the right spot" for a\npage you\'re about to create adds a round-trip for nothing',
+      );
+      expect(result).to.include(
+        'the very next call is wiki_create_page — not a\nwiki_orient pass to "see the domain\'s structure" first',
+      );
+      expect(result).to.include(
+        "not an error or a\ncorrection, so it doesn't override this direct-write path",
+      );
+    });
+
+    // Rewritten after the RLM section's third tightening (ADR-001): the
+    // truncate: false re-read workflow no longer exists — a truncated wiki
+    // page is now a structure problem, and rlm_query is prohibited on wiki
+    // pages outright. The prior assertions quoted the removed workflow and
+    // went stale unnoticed; fixed as part of auto-eval 2026-08-04 round 1.
+    it('prohibits rlm_query on wiki pages — truncation is a structure problem, not retrieval', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('Do not use rlm_query for wiki pages.');
+      expect(result).to.include('it is a structure problem, not a retrieval one.');
+    });
+
+    it('rules out wiki_search as a within-page search substitute', () => {
+      expect(buildSystemPrompt()).to.include(
+        "it matches pages across every domain and cannot search\nwithin one page's text",
+      );
+    });
+
+    it('names the spotted-answer temptation — no answering from your own scan of a large corpus', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('Spotting what looks like the answer partway');
+      expect(result).to.include(
+        'a targeted extraction over the full corpus is more reliable than answering\nfrom one visible stretch you happened to notice',
+      );
+    });
+
+    it('keys the web_fetch rlm trigger on length itself, since web_fetch never truncates', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('web_fetch never truncates');
+      expect(result).to.include('so length is the signal');
+    });
+
+    it('anchors the rlm rule with a small-page contrast — no rlm_query on a short, complete page', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('is yours to answer from directly');
+      expect(result).to.include('adds a round-trip for nothing');
     });
 
     it('treats an explicit "check X"/"fix X" request as already-made — no confirmation round-trip', () => {

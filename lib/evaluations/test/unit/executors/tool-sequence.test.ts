@@ -97,6 +97,39 @@ describe('runToolSequence', () => {
     });
   });
 
+  describe('negated tool ("!name")', () => {
+    it('scores 1 with toolCalled null when the forbidden tool was not called', () => {
+      const result = runToolSequence(makeScenario('!rlm_query'), [
+        { name: 'wiki_read_page', args: { wikiId: 'engineering' } },
+      ]);
+      assert.equal(result.toolCalled, null);
+      assert.equal(result.score, 1);
+    });
+
+    it('scores 1 when no tools were called at all', () => {
+      const result = runToolSequence(makeScenario('!rlm_query'), []);
+      assert.equal(result.toolCalled, null);
+      assert.equal(result.score, 1);
+    });
+
+    it('scores 0 and reports the offending call when the forbidden tool was called', () => {
+      const result = runToolSequence(makeScenario('!rlm_query'), [
+        { name: 'rlm_query', args: { question: 'q', corpus: 'c' } },
+      ]);
+      assert.equal(result.toolCalled, 'rlm_query');
+      assert.equal(result.score, 0);
+      assert.deepEqual(result.matchedArgs, { question: 'q', corpus: 'c' });
+    });
+
+    it('ignores argChecks on a negated scenario', () => {
+      const result = runToolSequence(
+        makeScenario('!rlm_query', [{ path: 'question', match: 'exists' }]),
+        [{ name: 'rlm_query', args: {} }],
+      );
+      assert.deepEqual(result.fieldResults, []);
+    });
+  });
+
   describe('matcher parity with tool-call/structured', () => {
     it('equals: passes when the arg equals the seeded value relayed exactly', () => {
       const result = runToolSequence(

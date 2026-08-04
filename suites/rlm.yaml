@@ -1,0 +1,325 @@
+suite:
+  id: rlm
+  name: RLM Query Tool
+  purpose: >
+    Verifies the agent reserves rlm_query for large external text the platform
+    does not own (web_fetch results, user-provided documents) — never wiki pages.
+    Covers: the large-external-doc case (accurate answer, with rlm_query or a
+    direct read both acceptable per ADR-001 — seeded corpora are always visible
+    in context, so requiring delegation is untestable here), the negative wiki
+    case (truncated wiki page → answer from visible text, not rlm_query), the
+    accurate-answer case (seeded rlm_query result used correctly), and the small-
+    content cases (wiki and external) where direct reading is correct. Scenarios
+    use priorTurns to seed tool results so no live model calls or network requests
+    are made during eval runs.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: rlm-001-wiki-truncation-no-rlm
+    name: Agent answers from truncated wiki excerpt without calling rlm_query
+    purpose: >
+      When wiki_read_page returns a truncation notice, the agent must NOT call
+      rlm_query. A truncated wiki page signals a wiki hygiene issue (the page
+      is too long and should be split) — it is not an invitation to use the
+      corpus search tool. The answer to the question is visible in the truncated
+      excerpt; the agent should answer from it directly. Calling rlm_query on
+      wiki content is the anti-pattern this guards against.
+    type: tool-sequence
+    input: >
+      What authentication method does the API use?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'API authentication method' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference including authentication, rate limits, and error codes. (score: 0.91)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
+        result:
+          text: |
+            # API Reference
+
+            Type: reference
+            Tags: api, engineering, reference
+
+            ## Overview
+
+            This page is the comprehensive reference for the platform's public HTTP API.
+
+            ## Authentication
+
+            All requests require a Bearer token in the Authorization header. Tokens are
+            issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens
+            before expiry using the /auth/refresh endpoint. Machine callers should prefer
+            API keys which do not expire but carry an explicit scope list.
+
+            ## Endpoints
+
+            ### POST /api/v1/resources
+
+            Creates a new resource. Request body must be valid JSON matching the Resource
+            schema. Returns 201 on success with the created resource in the response body.
+
+            [TRUNCATED: showing 6,000 of 28,450 characters]
+            This wiki page is too long to display fully. The entry should be split into focused sub-pages.
+            Answer from the visible portion above. If the information is not visible here, let the user
+            know this wiki page needs to be restructured.
+    tool: '!rlm_query'
+
+  # Restructured per ADR-001 (docs/ADR.md) after four prior rounds plus round 1
+  # of eval-logs/auto-eval-20260803214501.yaml all ceiling-flagged the original
+  # tool-sequence form (tool: rlm_query): with the corpus seeded into visible
+  # context, every model (ornith, glm, local) answered the question directly —
+  # and correctly — instead of delegating to rlm_query. ADR-001 calls that
+  # dynamic architectural, not a calibration issue ("as long as the corpus fits
+  # anywhere in context, the model will use it directly... from the model's
+  # perspective this is optimal behavior") and directs that the scenario be
+  # restructured rather than the prompt tightened further. This llm-judge form
+  # keeps the large-external-doc case covered as an answer-accuracy check and
+  # accepts both paths — direct read or rlm_query. Don't convert this back to
+  # a required-rlm_query assertion without revisiting ADR-001.
+  - id: rlm-002-web-fetch-large-doc-accurate-answer
+    name: Agent answers a targeted question about a large web_fetch result accurately
+    purpose: >
+      When the user asks a specific factual question about a large fetched
+      document, the agent must produce the correct fact (PostgreSQL 16, buried
+      mid-document). Per ADR-001, direct reading of the in-context document and
+      delegation to rlm_query are both acceptable paths — seeded corpora are
+      always visible in context, so requiring delegation contradicts optimal
+      model behavior. The judge checks answer accuracy only.
+    type: llm-judge
+    input: >
+      Based on what you fetched, what PostgreSQL version is required by the
+      deployment guide?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://docs.example.com/deployment/requirements' }
+        result:
+          text: &deployment-requirements-doc |
+            ## Content
+
+            # Deployment Requirements
+
+            This document describes the infrastructure requirements for a production deployment of the platform. It covers supported operating systems, hardware sizing, runtime dependencies, network and TLS configuration, storage layout, backup procedures, and monitoring integration. Read it end to end before provisioning; several requirements interact (for example, the storage layout constrains the backup tooling).
+
+            ## System Requirements
+
+            ### Operating System
+
+            The platform is supported on Ubuntu 22.04 LTS and Ubuntu 24.04 LTS. Other Linux distributions may work but are not officially tested, and support requests reproduced only on untested distributions will be redirected to a supported one. Kernel 5.15 or newer is required for the io_uring-based file watcher; on older kernels the watcher falls back to polling, which increases CPU usage noticeably on large installations.
+
+            ### CPU and Memory
+
+            Minimum: 4 vCPU, 8 GB RAM. Recommended: 8 vCPU, 16 GB RAM for production workloads with more than 100 concurrent users. The ingest workers are memory-bound: budget roughly 512 MB per concurrent import job beyond the base recommendation. CPU pressure shows up first in search indexing latency, which is the metric to watch when deciding whether to scale up.
+
+            ### Node.js Runtime
+
+            Node.js 20 LTS (iron) or Node.js 22 LTS (jod) are supported. Node.js 18 has reached end-of-life and is not supported. The platform pins its own npm dependency tree; do not install global packages into the runtime image, as they can shadow bundled versions.
+
+            ## Network Configuration
+
+            ### Ports
+
+            The application listens on 3000 (HTTP) and 3001 (metrics) by default; both are configurable. Only the reverse proxy should be reachable from outside the host network — the application ports themselves must not be exposed publicly, as the app relies on the proxy for TLS termination and request-size limits.
+
+            ### Reverse Proxy
+
+            nginx 1.24+ and Caddy 2.7+ are the tested reverse proxies. Enable HTTP/2, set client_max_body_size (or the Caddy equivalent) to at least 50 MB to accommodate archive imports, and forward the standard X-Forwarded-For and X-Forwarded-Proto headers — the application refuses to start in production mode if it detects a proxy that strips them.
+
+            ### TLS
+
+            TLS 1.2 is the floor; TLS 1.3 is strongly recommended. Certificates must cover both the apex domain and the wildcard subdomain if tenant subdomains are enabled. Automated renewal (certbot or Caddy's built-in ACME) is required for production support — expired-certificate outages caused by manual renewal processes are outside the support SLA.
+
+            ### Firewall Rules
+
+            Allow inbound 443 to the proxy, and nothing else from the public internet. Between application hosts, allow 3000-3001 (app and metrics), 5432 (database), and 6379 (cache). Egress must permit HTTPS to the license endpoint at license.example.com; air-gapped deployments should request an offline license bundle instead.
+
+            ## Data Stores
+
+            ### Database
+
+            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The platform uses features introduced in PostgreSQL 16 including logical replication improvements and new JSON functions. Provision the database with a dedicated role owning a single schema; the migration runner needs CREATE and ALTER on that schema but must not have superuser. Connection pooling through PgBouncer in transaction mode is supported and recommended above 200 concurrent users, with a pool of 2x vCPU count as the starting point.
+
+            ### Cache
+
+            Redis 7.2 or later, or Valkey 8, is required for session storage and the job queue. Persistence (AOF or RDB) is optional — all cached state is reconstructible — but enabling AOF shortens recovery time after a cache restart because sessions survive.
+
+            ### Object Storage
+
+            Attachments and export archives are written to S3-compatible object storage. AWS S3, Cloudflare R2, and MinIO 2024+ are tested. The bucket must enforce server-side encryption; the application refuses to write to a bucket that reports encryption disabled.
+
+            ### Storage Layout
+
+            The application host needs 20 GB for the application and logs, plus scratch space equal to the largest expected import archive times the number of concurrent import workers. Database storage grows at roughly 1 GB per 10,000 resources including index overhead; SSDs are required — the query planner assumptions and the default random_page_cost are tuned for solid-state latency.
+
+            ## Backups
+
+            ### Database Backups
+
+            Use pg_dump for logical backups on installations under 50 GB, and switch to pgBackRest with WAL archiving beyond that. Nightly backups with 30-day retention are the supported baseline. Backups must be restored to a scratch database and smoke-tested at least monthly — an unrestorable backup is treated as no backup in support escalations.
+
+            ### Object Storage Backups
+
+            Enable bucket versioning and a 30-day lifecycle rule on noncurrent versions. Cross-region replication is recommended for single-region providers; R2 and S3 multi-region setups can skip it.
+
+            ## Monitoring and Operations
+
+            ### Metrics
+
+            The metrics port serves Prometheus-format metrics at /metrics. The dashboards shipped in the ops/ directory assume Prometheus 2.50+ and Grafana 10+. The four golden signals for this platform are request latency p95, job queue depth, database connection saturation, and search indexing lag; alert thresholds for each are annotated in the shipped dashboard JSON.
+
+            ### Logging
+
+            Structured JSON logs are written to stdout and rotated by the host's journald or container runtime. Set LOG_LEVEL=info in production; debug level logs request bodies and is not safe for production traffic. Ship logs to your aggregator with the host and deployment labels the dashboards expect — the shipped Loki config shows the label set.
+
+            ### Health Checks
+
+            Liveness is GET /healthz (process up), readiness is GET /readyz (database, cache, and object storage reachable). Load balancers must use readiness, not liveness, for rotation decisions — a host that is alive but cannot reach the database will otherwise serve errors.
+
+            ### Upgrades
+
+            Upgrades are rolling: migrate the database first (migrations are backward-compatible for one minor version), then replace application hosts one at a time. Always read the version-specific upgrade notes; steps flagged BREAKING cannot be skipped or batched across multiple versions. Downgrades are supported only to the previous minor version and only before the next migration runs.
+
+            ## Metadata
+            title: "Deployment Requirements"
+            description: "Infrastructure requirements for a production deployment of the platform."
+
+            ## Document Outline
+            H1: Deployment Requirements
+            H2: System Requirements
+            H2: Network Configuration
+            H2: Data Stores
+            H2: Backups
+            H2: Monitoring and Operations
+    rubric: >
+      The response must state that PostgreSQL 16 is required (or equivalent
+      phrasing such as "PostgreSQL 16 or later"). Score at least 8/10 if the
+      specific version number is clearly stated, regardless of whether the
+      agent read the fetched document directly or used rlm_query to extract
+      the answer. Score no higher than 3/10 if the agent gives a different
+      version, says it cannot determine the answer, or gives no version at all.
+    minScore: 8
+
+  # Round 1 of eval-logs/auto-eval-20260803214501.yaml: glm read the previous
+  # "(full 6,772-character document — omitted for eval brevity)" placeholder
+  # as a truncated document and refused to answer ("I can't confirm..."),
+  # scoring 2/10. The placeholder meta-text was the bug, not the model — same
+  # trusted-what-it-saw dynamic as the earlier short-corpus-claiming-31k fix.
+  # Seeded turns must be internally consistent, so the web_fetch result and
+  # the rlm_query corpus now alias the same full document rlm-002 seeds.
+  - id: rlm-003-answer-from-rlm-result
+    name: Agent uses the seeded rlm_query result to answer accurately
+    purpose: >
+      Seeds a completed rlm_query call whose result contains a specific fact
+      (PostgreSQL 16 required). The agent must reference that fact in its reply
+      rather than hallucinating a different value or ignoring the tool result.
+      The prior context is web_fetch (not wiki) — confirming rlm_query's correct
+      domain. Guards against the agent fabricating information when a precise RLM
+      answer is already in context.
+    type: llm-judge
+    input: >
+      Based on what you fetched, what database version is required?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://docs.example.com/deployment/requirements' }
+        result:
+          text: *deployment-requirements-doc
+      - tool: rlm_query
+        args:
+          question: What database version is required?
+          corpus: *deployment-requirements-doc
+        result:
+          text: |
+            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The platform
+            uses features introduced in PostgreSQL 16 including logical replication improvements
+            and new JSON functions.
+
+            ---
+            RLM: 2 iteration(s) · final_answer · 1621ms
+            Tools: peek×1, grep×1, final_answer×1
+    rubric: >
+      The response must state that PostgreSQL 16 is required (or equivalent phrasing
+      such as "PostgreSQL 16 or later"). Score at least 8/10 if the specific version
+      number is clearly stated. Score no higher than 3/10 if the agent gives a different
+      version, says it doesn't know, or ignores the seeded rlm_query result entirely.
+    minScore: 8
+
+  - id: rlm-004-small-wiki-page-no-rlm
+    name: Agent answers a small wiki page directly without calling rlm_query
+    purpose: >
+      Confirms the agent does not over-use RLM when a wiki page is small enough
+      to read directly. A small page that fits within the read threshold should be
+      answered from the wiki_read_page result — calling rlm_query in this case wastes
+      iterations and adds latency without benefit.
+    type: tool-sequence
+    input: >
+      What does the quick-start guide say about installing the CLI?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'quick-start CLI install' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [Quick Start Guide](engineering:guides/quick-start.md) — Five-minute guide to get up and running. (score: 0.96)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: guides/quick-start.md }
+        result:
+          text: |
+            # Quick Start Guide
+
+            Type: guide
+            Tags: engineering, onboarding
+
+            ## Prerequisites
+
+            - Node.js 20 or later
+            - npm 9 or later
+
+            ## Installation
+
+            Install the CLI globally using npm:
+
+            ```bash
+            npm install -g @example/cli
+            ```
+
+            Verify the installation:
+
+            ```bash
+            example --version
+            ```
+
+            ## First Run
+
+            Run `example init` in your project directory to create a configuration file.
+            Follow the prompts to connect to your workspace.
+    tool: '!rlm_query'
+
+  - id: rlm-005-small-fetch-no-rlm
+    name: Agent answers a small web_fetch result directly without calling rlm_query
+    purpose: >
+      Mirrors rlm-004 for external text: when a fetched page is short and the
+      answer is immediately available, the agent should answer directly rather than
+      delegating to rlm_query. Length of external text is the trigger for rlm_query,
+      not the mere fact that web_fetch was called. A small JSON response with an
+      obvious answer is yours to read inline.
+    type: tool-sequence
+    input: >
+      Based on what you fetched, what is the default timeout configured?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://api.example.com/config/defaults.json' }
+        result:
+          text: |
+            ## Content
+            {
+              "requestTimeout": 30000,
+              "retryLimit": 3,
+              "cacheEnabled": true,
+              "logLevel": "info"
+            }
+
+            ## Metadata
+            title: "Default Configuration"
+    tool: '!rlm_query'

@@ -449,7 +449,11 @@ export async function executeScenario(
         responseMetadata,
         reasoningContent,
       };
-      const passed = details.toolCalled === s.tool && details.score >= s.minScore;
+      // For a negated tool ('!name'), toolCalled is null exactly when the
+      // forbidden tool was correctly NOT called — see runToolSequence.
+      const passed = s.tool.startsWith('!')
+        ? details.toolCalled === null
+        : details.toolCalled === s.tool && details.score >= s.minScore;
       return {
         ...baseResult,
         passed,
