@@ -70,6 +70,16 @@ export function ThreadView() {
     ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === pendingHitlId.value)
     : null;
 
+  // Resolve the active provider/model for display: thread selection → provider default → first available
+  const resolvedProvider =
+    activeThreadModel.value?.provider ??
+    providers.value.find((p) => p.defaultModel)?.name ??
+    providers.value[0]?.name;
+  const resolvedModel =
+    activeThreadModel.value?.model ??
+    providers.value.find((p) => p.name === resolvedProvider)?.defaultModel ??
+    providers.value[0]?.models[0]?.id;
+
   // Pending HITL is shown pinned below the scroll area, not in the message list
   const scrollMessages = reorderMessagesForDisplay(
     allMessages.filter((m) => !(m.kind === 'hitl_prompt' && m.status === 'pending')),
@@ -110,8 +120,8 @@ export function ThreadView() {
           isGenerating={isStreaming.value}
           disabled={!!pendingHitlId.value}
           providers={providers.value}
-          activeProvider={activeThreadModel.value?.provider}
-          activeModel={activeThreadModel.value?.model}
+          activeProvider={resolvedProvider}
+          activeModel={resolvedModel}
           onModelSelect={setThreadModel}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
