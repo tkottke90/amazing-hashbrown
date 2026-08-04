@@ -64,8 +64,8 @@ Response is extended to include per-model pricing. The handler merges the live m
       "type": "openai",
       "defaultModel": "gpt-4o",
       "models": [
-        { "id": "gpt-4o", "inputPricePerM": 2.50, "outputPricePerM": 10.00 },
-        { "id": "gpt-4o-mini", "inputPricePerM": 0.15, "outputPricePerM": 0.60 },
+        { "id": "gpt-4o", "inputPricePerM": 2.5, "outputPricePerM": 10.0 },
+        { "id": "gpt-4o-mini", "inputPricePerM": 0.15, "outputPricePerM": 0.6 },
         { "id": "gpt-3.5-turbo" }
       ]
     }
@@ -187,17 +187,17 @@ function ModelChip() {
 
 ## 7. Files Changed
 
-| File | Change |
-|---|---|
-| `api/src/config/env.ts` | Add `ModelPricingSchema`, extend `ProviderSchema` |
-| `api/src/routes/v1/providers.route.ts` | Merge live models with config pricing in response |
-| `api/src/services/thread-store.ts` | DB migrations; extend read/write for `provider`/`model` columns |
-| `api/src/routes/v1/chat.route.ts` | Provider/model resolution order; update thread on body params |
-| `api/src/agents/stream-handler.ts` | Write resolved `provider`/`model` to `thread_messages` |
-| `ui/src/hooks/use-providers.ts` | New — cached provider/model list with 60s TTL |
-| `ui/src/hooks/use-thread.ts` | Extend `ThreadSummary` type; add `setThreadModel`; extend `sendMessage` |
-| `ui/src/components/chat-input.tsx` | Extend dropdown; add `ModelChip`; call `fetchProviders` on mount |
-| `ui/src/components/ui/dropdown-menu.tsx` | No change — sub-menu primitives already present |
+| File                                     | Change                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `api/src/config/env.ts`                  | Add `ModelPricingSchema`, extend `ProviderSchema`                       |
+| `api/src/routes/v1/providers.route.ts`   | Merge live models with config pricing in response                       |
+| `api/src/services/thread-store.ts`       | DB migrations; extend read/write for `provider`/`model` columns         |
+| `api/src/routes/v1/chat.route.ts`        | Provider/model resolution order; update thread on body params           |
+| `api/src/agents/stream-handler.ts`       | Write resolved `provider`/`model` to `thread_messages`                  |
+| `ui/src/hooks/use-providers.ts`          | New — cached provider/model list with 60s TTL                           |
+| `ui/src/hooks/use-thread.ts`             | Extend `ThreadSummary` type; add `setThreadModel`; extend `sendMessage` |
+| `ui/src/components/chat-input.tsx`       | Extend dropdown; add `ModelChip`; call `fetchProviders` on mount        |
+| `ui/src/components/ui/dropdown-menu.tsx` | No change — sub-menu primitives already present                         |
 
 ---
 

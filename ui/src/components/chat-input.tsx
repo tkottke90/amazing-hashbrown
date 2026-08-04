@@ -170,11 +170,12 @@ export function ChatInput({
                               onSelect={() => onModelSelect?.(p.name, m.id)}
                             >
                               {m.id}
-                              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
-                                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
-                                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
-                                </DropdownMenuLabel>
-                              )}
+                              {m.inputPricePerM !== undefined &&
+                                m.outputPricePerM !== undefined && (
+                                  <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                                    ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                                  </DropdownMenuLabel>
+                                )}
                             </DropdownMenuCheckboxItem>
                           ))}
                         </DropdownMenuSubContent>
