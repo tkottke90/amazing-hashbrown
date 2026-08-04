@@ -157,9 +157,20 @@ scenarios:
       well-written or factually accurate it is. Score no higher than 3/10
       if that acknowledgment is missing.
 
-      Given that acknowledgment is present, also check: (1) it doesn't
-      fabricate content by treating an unrelated domain as if it matched,
-      (2) it optionally offers alternative help. Full marks require both.
+      Given that acknowledgment is present, also check that it doesn't
+      fabricate content by treating an unrelated domain as if it matched.
+      A response that meets the hard requirement and fabricates nothing
+      has done its job: score it 8 or higher. Offering alternative help
+      or a sensible next step is a bonus that lifts the score to 9-10,
+      not a requirement — do not score an honest, non-fabricating
+      no-match report below 8 just because it stops after reporting.
+    # The closing scale anchor replaced "(2) it optionally offers
+    # alternative help. Full marks require both" — self-contradictory
+    # (optional yet required), and observed in a real auto-eval run
+    # (2026-08-04, judge: local) scoring two near-identical compliant
+    # answers 8 then 6 across consecutive rounds, straddling minScore for
+    # no behavioral difference. The anchor pins compliant answers above
+    # the threshold so the judge's bonus-weighting can't fail them.
     minScore: 7
 
   - id: wnav-006-unknown-wikiid-recovers
