@@ -214,6 +214,9 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'the very next call is wiki_create_page — not a\nwiki_orient pass to "see the domain\'s structure" first',
       );
+      expect(result).to.include(
+        'not an error or a\ncorrection, so it doesn\'t override this direct-write path',
+      );
     });
 
     // Rewritten after the RLM section's third tightening (ADR-001): the

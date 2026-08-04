@@ -472,6 +472,18 @@ whatever step you would otherwise skip.`;
 //    not wiki_orient). Deliberately not the eval scenario's own domain.
 //    If local still detours on wfetch-003 next run, that's the plateau
 //    signature — ceiling-flag it rather than iterating further.
+// 5. wfetch-003 a third time (glm, round 3 of the 2026-08-04 loop): local
+//    cleared it with entry 4's example, but glm — having passed round 2 —
+//    sampled the orient detour again. Root cause finally identified:
+//    wiki_locate's own success text ends with "Use wiki_orient({...}) to
+//    see what's inside" (wiki-locate.tool.ts), and the navigation
+//    section's precedence rule says tool results override default
+//    guidance — so the conversation itself argues for orient, and models
+//    intermittently obey it. Not stochastic after all. Demoted the hint
+//    explicitly: generic browsing guidance, not an error/correction, so
+//    the direct-write path still wins. Kept here rather than in the
+//    navigation section's precedence paragraph to avoid disturbing the
+//    passing wiki-navigation suite from a web-fetch loop.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -490,7 +502,9 @@ Placement isn't a reason to orient first either — wiki_create_page derives the
 itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
 page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
 wiki_locate result naming "cooking" as its domain, the very next call is wiki_create_page — not a
-wiki_orient pass to "see the domain's structure" first.`;
+wiki_orient pass to "see the domain's structure" first. wiki_locate's result will itself suggest
+wiki_orient "to see what's inside" — that is its generic browsing hint, not an error or a
+correction, so it doesn't override this direct-write path the way a real error result would.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1
