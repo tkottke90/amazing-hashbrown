@@ -2,10 +2,12 @@ suite:
   id: rlm
   name: RLM Query Tool
   purpose: >
-    Verifies the agent invokes rlm_query only for large external text the platform
-    does not own (web_fetch results, user-provided documents) — not for wiki pages.
-    Covers: the positive case (large fetched document → rlm_query), the negative
-    wiki case (truncated wiki page → answer from visible text, not rlm_query), the
+    Verifies the agent reserves rlm_query for large external text the platform
+    does not own (web_fetch results, user-provided documents) — never wiki pages.
+    Covers: the large-external-doc case (accurate answer, with rlm_query or a
+    direct read both acceptable per ADR-001 — seeded corpora are always visible
+    in context, so requiring delegation is untestable here), the negative wiki
+    case (truncated wiki page → answer from visible text, not rlm_query), the
     accurate-answer case (seeded rlm_query result used correctly), and the small-
     content cases (wiki and external) where direct reading is correct. Scenarios
     use priorTurns to seed tool results so no live model calls or network requests
@@ -65,15 +67,28 @@ scenarios:
             know this wiki page needs to be restructured.
     tool: '!rlm_query'
 
-  - id: rlm-002-web-fetch-large-doc-calls-rlm
-    name: Agent calls rlm_query for a large web_fetch result with a targeted question
+  # Restructured per ADR-001 (docs/ADR.md) after four prior rounds plus round 1
+  # of eval-logs/auto-eval-20260803214501.yaml all ceiling-flagged the original
+  # tool-sequence form (tool: rlm_query): with the corpus seeded into visible
+  # context, every model (ornith, glm, local) answered the question directly —
+  # and correctly — instead of delegating to rlm_query. ADR-001 calls that
+  # dynamic architectural, not a calibration issue ("as long as the corpus fits
+  # anywhere in context, the model will use it directly... from the model's
+  # perspective this is optimal behavior") and directs that the scenario be
+  # restructured rather than the prompt tightened further. This llm-judge form
+  # keeps the large-external-doc case covered as an answer-accuracy check and
+  # accepts both paths — direct read or rlm_query. Don't convert this back to
+  # a required-rlm_query assertion without revisiting ADR-001.
+  - id: rlm-002-web-fetch-large-doc-accurate-answer
+    name: Agent answers a targeted question about a large web_fetch result accurately
     purpose: >
-      When the user asks a specific factual question about a large fetched document,
-      the agent must call rlm_query with the fetched text as corpus rather than
-      scanning it inline. This is the core correct use case for rlm_query: external,
-      unstructured text the platform does not own. The answer (PostgreSQL 16) is buried
-      mid-document; passing the full corpus to rlm_query is the reliable path.
-    type: tool-sequence
+      When the user asks a specific factual question about a large fetched
+      document, the agent must produce the correct fact (PostgreSQL 16, buried
+      mid-document). Per ADR-001, direct reading of the in-context document and
+      delegation to rlm_query are both acceptable paths — seeded corpora are
+      always visible in context, so requiring delegation contradicts optimal
+      model behavior. The judge checks answer accuracy only.
+    type: llm-judge
     input: >
       Based on what you fetched, what PostgreSQL version is required by the
       deployment guide?
@@ -81,7 +96,7 @@ scenarios:
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
-          text: |
+          text: &deployment-requirements-doc |
             ## Content
 
             # Deployment Requirements
@@ -177,16 +192,22 @@ scenarios:
             H2: Data Stores
             H2: Backups
             H2: Monitoring and Operations
-    tool: rlm_query
-    argChecks:
-      - path: corpus
-        match: exists
-      - path: corpus
-        match: contains
-        value: PostgreSQL
-      - path: question
-        match: exists
+    rubric: >
+      The response must state that PostgreSQL 16 is required (or equivalent
+      phrasing such as "PostgreSQL 16 or later"). Score at least 8/10 if the
+      specific version number is clearly stated, regardless of whether the
+      agent read the fetched document directly or used rlm_query to extract
+      the answer. Score no higher than 3/10 if the agent gives a different
+      version, says it cannot determine the answer, or gives no version at all.
+    minScore: 8
 
+  # Round 1 of eval-logs/auto-eval-20260803214501.yaml: glm read the previous
+  # "(full 6,772-character document — omitted for eval brevity)" placeholder
+  # as a truncated document and refused to answer ("I can't confirm..."),
+  # scoring 2/10. The placeholder meta-text was the bug, not the model — same
+  # trusted-what-it-saw dynamic as the earlier short-corpus-claiming-31k fix.
+  # Seeded turns must be internally consistent, so the web_fetch result and
+  # the rlm_query corpus now alias the same full document rlm-002 seeds.
   - id: rlm-003-answer-from-rlm-result
     name: Agent uses the seeded rlm_query result to answer accurately
     purpose: >
@@ -203,23 +224,11 @@ scenarios:
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
-          text: |
-            ## Content
-
-            # Deployment Requirements
-
-            (full 6,772-character deployment requirements document — omitted for eval
-            brevity; the PostgreSQL 16 requirement appears in the Data Stores section)
-
-            ## Metadata
-            title: "Deployment Requirements"
+          text: *deployment-requirements-doc
       - tool: rlm_query
         args:
           question: What database version is required?
-          corpus: |
-            # Deployment Requirements
-
-            (full 6,772-character deployment requirements document — omitted for eval brevity)
+          corpus: *deployment-requirements-doc
         result:
           text: |
             PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The platform
