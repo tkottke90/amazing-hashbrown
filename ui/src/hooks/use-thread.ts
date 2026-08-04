@@ -77,9 +77,17 @@ export interface ThreadSummary {
   type: 'chat' | 'wiki';
   afterAgentState: AfterAgentState;
   links: { self: string; afterAgentStatus: string };
+  provider: string | null;
+  model: string | null;
 }
 
 export const threads = signal<ThreadSummary[]>([]);
+
+export const activeThreadModel = signal<{ provider: string; model: string } | null>(null);
+
+export function setThreadModel(provider: string, model: string): void {
+  activeThreadModel.value = { provider, model };
+}
 
 export async function refreshThreadList(): Promise<void> {
   try {
@@ -171,9 +179,14 @@ export async function switchThread(id: string): Promise<void> {
   if (isStreaming.value) stopGeneration();
   activeThreadId.value = id;
   persistActiveThreadId(id);
+  const threadMeta = threads.value.find((t) => t.id === id);
   batch(() => {
     messages.value = [];
     pendingHitlId.value = null;
+    activeThreadModel.value =
+      threadMeta?.provider && threadMeta?.model
+        ? { provider: threadMeta.provider, model: threadMeta.model }
+        : null;
   });
   await hydrateThread(id);
 }
@@ -186,6 +199,7 @@ export function newThread(): string {
   batch(() => {
     messages.value = [];
     pendingHitlId.value = null;
+    activeThreadModel.value = null;
   });
   return id;
 }
@@ -410,9 +424,15 @@ export async function sendMessage(content: string): Promise<void> {
   });
 
   try {
+    const modelSelection = activeThreadModel.value;
     await consumeSsePost(
       `/api/v1/chat/${activeThreadId.value}`,
-      { content },
+      {
+        content,
+        ...(modelSelection
+          ? { provider: modelSelection.provider, model: modelSelection.model }
+          : {}),
+      },
       handleEvent,
       _abortController.signal,
     );

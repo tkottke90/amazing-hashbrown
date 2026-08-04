@@ -40,6 +40,11 @@ export const wikiMessages = signal<ThreadMessage[]>([]);
 export const wikiIsStreaming = signal(false);
 export const wikiPendingHitlId = signal<string | null>(null);
 export const wikiOrientedTo = signal<string | null>(null);
+export const activeWikiModel = signal<{ provider: string; model: string } | null>(null);
+
+export function setWikiModel(provider: string, model: string): void {
+  activeWikiModel.value = { provider, model };
+}
 
 let _currentAssistantId: string | null = null;
 let _abortController: AbortController | null = null;
@@ -222,10 +227,16 @@ export async function sendWikiMessage(content: string): Promise<void> {
     wikiIsStreaming.value = true;
   });
 
+  const modelSelection = activeWikiModel.value;
   try {
     await consumeSsePost(
       `/api/v1/wiki/chat/${wikiThreadId.value}`,
-      { content },
+      {
+        content,
+        ...(modelSelection
+          ? { provider: modelSelection.provider, model: modelSelection.model }
+          : {}),
+      },
       handleWikiEvent,
       _abortController.signal,
     );
@@ -299,5 +310,6 @@ export function newWikiThread(): void {
     wikiMessages.value = [];
     wikiPendingHitlId.value = null;
     wikiOrientedTo.value = null;
+    activeWikiModel.value = null;
   });
 }

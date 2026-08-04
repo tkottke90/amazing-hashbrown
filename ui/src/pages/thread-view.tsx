@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
@@ -11,12 +12,15 @@ import {
   pendingHitlId,
   activeThreadId,
   activeThreadAfterAgentState,
+  activeThreadModel,
   sendMessage,
   submitHitlAnswer,
   stopGeneration,
   retryTurn,
   forkThread,
+  setThreadModel,
 } from '@/hooks/use-thread';
+import { providers, fetchProviders } from '@/hooks/use-providers';
 import type { ThreadMessage } from '@/types/thread-message';
 
 // Tool calls execute before the assistant produces its final text response, but
@@ -50,6 +54,10 @@ export function ThreadView() {
   const { route } = useLocation();
   const inputValue = useSignal('');
 
+  useEffect(() => {
+    void fetchProviders();
+  }, []);
+
   function handleSend() {
     const content = inputValue.value.trim();
     if (!content) return;
@@ -61,6 +69,16 @@ export function ThreadView() {
   const pendingHitlMsg = pendingHitlId.value
     ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === pendingHitlId.value)
     : null;
+
+  // Resolve the active provider/model for display: thread selection → provider default → first available
+  const resolvedProvider =
+    activeThreadModel.value?.provider ??
+    providers.value.find((p) => p.defaultModel)?.name ??
+    providers.value[0]?.name;
+  const resolvedModel =
+    activeThreadModel.value?.model ??
+    providers.value.find((p) => p.name === resolvedProvider)?.defaultModel ??
+    providers.value[0]?.models[0]?.id;
 
   // Pending HITL is shown pinned below the scroll area, not in the message list
   const scrollMessages = reorderMessagesForDisplay(
@@ -101,6 +119,10 @@ export function ThreadView() {
           onStop={stopGeneration}
           isGenerating={isStreaming.value}
           disabled={!!pendingHitlId.value}
+          providers={providers.value}
+          activeProvider={resolvedProvider}
+          activeModel={resolvedModel}
+          onModelSelect={setThreadModel}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>

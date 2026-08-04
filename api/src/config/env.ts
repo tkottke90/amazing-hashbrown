@@ -4,12 +4,21 @@ import { z } from 'zod';
 
 loadDotenv();
 
+const ModelPricingSchema = z.object({
+  id: z.string(),
+  inputPricePerM: z.number().optional(),
+  outputPricePerM: z.number().optional(),
+});
+
+export type ModelPricingConfig = z.infer<typeof ModelPricingSchema>;
+
 const ProviderSchema = z.object({
   name: z.string(),
   type: z.enum(['ollama', 'openai', 'anthropic']),
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   defaultModel: z.string().optional(),
+  models: z.array(ModelPricingSchema).optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
