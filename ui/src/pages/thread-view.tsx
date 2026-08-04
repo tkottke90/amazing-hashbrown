@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
@@ -11,12 +12,15 @@ import {
   pendingHitlId,
   activeThreadId,
   activeThreadAfterAgentState,
+  activeThreadModel,
   sendMessage,
   submitHitlAnswer,
   stopGeneration,
   retryTurn,
   forkThread,
+  setThreadModel,
 } from '@/hooks/use-thread';
+import { providers, fetchProviders } from '@/hooks/use-providers';
 import type { ThreadMessage } from '@/types/thread-message';
 
 // Tool calls execute before the assistant produces its final text response, but
@@ -49,6 +53,10 @@ function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
 export function ThreadView() {
   const { route } = useLocation();
   const inputValue = useSignal('');
+
+  useEffect(() => {
+    void fetchProviders();
+  }, []);
 
   function handleSend() {
     const content = inputValue.value.trim();
@@ -101,6 +109,10 @@ export function ThreadView() {
           onStop={stopGeneration}
           isGenerating={isStreaming.value}
           disabled={!!pendingHitlId.value}
+          providers={providers.value}
+          activeProvider={activeThreadModel.value?.provider}
+          activeModel={activeThreadModel.value?.model}
+          onModelSelect={setThreadModel}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>

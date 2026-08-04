@@ -301,13 +301,21 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const { agent, systemPrompt } = await getChatAgent(provider, model);
+  const threadStore = getThreadStore();
+  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
-  const threadStore = getThreadStore();
   const turnSentAt = new Date().toISOString();
 
-  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
   const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);
@@ -316,8 +324,8 @@ export async function streamChatToSse(
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: effectiveProvider ?? env.defaultProvider,
+    model: effectiveModel ?? '',
     source: 'chat',
     systemPrompt,
   });
@@ -327,7 +335,14 @@ export async function streamChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    effectiveProvider,
+    effectiveModel,
+  );
 
   setActiveSseWriter(threadId, (event) => {
     writeSseEvent(res, event);
@@ -340,13 +355,12 @@ export async function streamChatToSse(
         version: 'v2',
         callbacks: [obsHandler],
         context: {
-          provider: provider ?? env.defaultProvider,
-          // Left as `model` (not `model ?? ''`) so an unset request model stays
-          // undefined here — AfterAgent reads this straight into
+          provider: effectiveProvider ?? env.defaultProvider,
+          // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
+          // model stays undefined — AfterAgent reads this straight into
           // createProvider(provider, model), where `'' ?? config.defaultModel`
-          // would resolve to '' (an empty string isn't nullish) instead of
-          // falling through to the provider's configured defaultModel.
-          model,
+          // would resolve to '' (not nullish) instead of the provider default.
+          model: effectiveModel,
           afterAgentEnabled: afterAgent,
         },
       },
@@ -395,10 +409,18 @@ export async function resumeChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const { agent, systemPrompt } = await getChatAgent(provider, model);
+  const threadStore = getThreadStore();
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
-  const threadStore = getThreadStore();
   const turnSentAt = new Date().toISOString();
 
   resolveHitlPrompt(threadStore, threadId, promptId, answer);
@@ -409,8 +431,8 @@ export async function resumeChatToSse(
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: effectiveProvider ?? env.defaultProvider,
+    model: effectiveModel ?? '',
     source: 'chat',
     systemPrompt,
   });
@@ -420,7 +442,14 @@ export async function resumeChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    effectiveProvider,
+    effectiveModel,
+  );
 
   setActiveSseWriter(threadId, (event) => {
     writeSseEvent(res, event);
@@ -431,9 +460,9 @@ export async function resumeChatToSse(
       version: 'v2',
       callbacks: [obsHandler],
       context: {
-        provider: provider ?? env.defaultProvider,
-        // See streamChatToSse's comment — must stay `model`, not `model ?? ''`.
-        model,
+        provider: effectiveProvider ?? env.defaultProvider,
+        // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+        model: effectiveModel,
         afterAgentEnabled: afterAgent,
       },
     });
@@ -486,9 +515,17 @@ export async function retryChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const { agent, systemPrompt } = await getChatAgent(provider, model);
-  const config = { configurable: { thread_id: threadId } };
   const threadStore = getThreadStore();
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const config = { configurable: { thread_id: threadId } };
 
   const failedId = threadStore.resolveRetryTarget(threadId);
   if (!failedId) {
@@ -497,7 +534,15 @@ export async function retryChatToSse(
 
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
-  const assistantSeq = recordRetryAttempt(threadStore, threadId, msgId, failedId, turnSentAt);
+  const assistantSeq = recordRetryAttempt(
+    threadStore,
+    threadId,
+    msgId,
+    failedId,
+    turnSentAt,
+    effectiveProvider,
+    effectiveModel,
+  );
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);
 
@@ -505,8 +550,8 @@ export async function retryChatToSse(
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: effectiveProvider ?? env.defaultProvider,
+    model: effectiveModel ?? '',
     source: 'chat',
     systemPrompt,
   });
@@ -525,9 +570,9 @@ export async function retryChatToSse(
       version: 'v2',
       callbacks: [obsHandler],
       context: {
-        provider: provider ?? env.defaultProvider,
-        // See streamChatToSse's comment — must stay `model`, not `model ?? ''`.
-        model,
+        provider: effectiveProvider ?? env.defaultProvider,
+        // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+        model: effectiveModel,
         afterAgentEnabled: afterAgent,
       },
     });

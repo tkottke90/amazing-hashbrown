@@ -41,6 +41,8 @@ export function recordAssistantStart(
   threadId: string,
   id: string,
   sentAt: string,
+  provider?: string | null,
+  model?: string | null,
 ): number | null {
   return safe(threadId, 'recordAssistantStart', () => {
     return store.insertMessage(threadId, {
@@ -48,6 +50,8 @@ export function recordAssistantStart(
       kind: 'assistant',
       status: 'streaming',
       payload: { content: '', sentAt },
+      provider: provider ?? null,
+      model: model ?? null,
     }).seq;
   });
 }
@@ -95,6 +99,8 @@ export function recordRetryAttempt(
   newId: string,
   failedId: string,
   sentAt: string,
+  provider?: string | null,
+  model?: string | null,
 ): number | null {
   return safe(threadId, 'recordRetryAttempt', () => {
     return store.insertMessage(threadId, {
@@ -103,6 +109,8 @@ export function recordRetryAttempt(
       status: 'streaming',
       retryOf: failedId,
       payload: { content: '', sentAt },
+      provider: provider ?? null,
+      model: model ?? null,
     }).seq;
   });
 }

@@ -7,10 +7,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { TextEllipsis } from '@/components/text-ellipsis';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { ProviderInfo } from '@/hooks/use-providers';
 
 export interface ChatInputProps {
   /**
@@ -31,6 +38,10 @@ export interface ChatInputProps {
   actions?: ComponentChildren;
   onAddFile?: () => void;
   className?: string;
+  providers?: ProviderInfo[];
+  activeProvider?: string | null;
+  activeModel?: string | null;
+  onModelSelect?: (provider: string, model: string) => void;
 }
 
 export interface ChatInputChipProps extends JSX.HTMLAttributes<HTMLSpanElement> {
@@ -75,6 +86,10 @@ export function ChatInput({
   actions,
   onAddFile,
   className,
+  providers,
+  activeProvider,
+  activeModel,
+  onModelSelect,
 }: ChatInputProps) {
   const canSend = !disabled && !isGenerating && value.trim().length > 0;
 
@@ -134,8 +149,51 @@ export function ChatInput({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onSelect={onAddFile}>Add file</DropdownMenuItem>
+            {providers && providers.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {providers.map((p) => (
+                      <DropdownMenuSub key={p.name}>
+                        <DropdownMenuSubTrigger
+                          className={p.name === activeProvider ? 'font-semibold' : undefined}
+                        >
+                          {p.name}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {p.models.map((m) => (
+                            <DropdownMenuCheckboxItem
+                              key={m.id}
+                              checked={m.id === activeModel && p.name === activeProvider}
+                              onSelect={() => onModelSelect?.(p.name, m.id)}
+                            >
+                              {m.id}
+                              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
+                                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                                </DropdownMenuLabel>
+                              )}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {activeModel && (
+          <span
+            data-slot="model-chip"
+            className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+          >
+            {activeModel}
+          </span>
+        )}
         {actions}
       </div>
 

@@ -15,6 +15,8 @@ export interface ThreadSummary {
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
   type: ThreadType;
+  provider: string | null;
+  model: string | null;
 }
 
 export interface ThreadMessageRecord {
@@ -26,6 +28,8 @@ export interface ThreadMessageRecord {
   retryOf: string | null;
   checkpointId: string | null;
   payload: unknown;
+  provider: string | null;
+  model: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +45,8 @@ export interface NewThreadMessageInput {
   retryOf?: string | null;
   checkpointId?: string | null;
   payload: unknown;
+  provider?: string | null;
+  model?: string | null;
 }
 
 export interface UpdateThreadMessageInput {
@@ -57,6 +63,8 @@ interface RawThreadRow {
   forked_from_thread_id: string | null;
   forked_from_seq: number | null;
   type: ThreadType;
+  provider: string | null;
+  model: string | null;
 }
 
 interface RawMessageRow {
@@ -68,6 +76,8 @@ interface RawMessageRow {
   retry_of: string | null;
   checkpoint_id: string | null;
   payload: string;
+  provider: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +95,8 @@ function mapThreadRow(row: RawThreadRow): ThreadSummary {
     forkedFromThreadId: row.forked_from_thread_id,
     forkedFromSeq: row.forked_from_seq,
     type: row.type,
+    provider: row.provider,
+    model: row.model,
   };
 }
 
@@ -98,6 +110,8 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
     retryOf: row.retry_of,
     checkpointId: row.checkpoint_id,
     payload: JSON.parse(row.payload) as unknown,
+    provider: row.provider,
+    model: row.model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -110,7 +124,7 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // Version numbers must be unique across ALL stores sharing this database.
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
 // 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
-// 9=(free), 10-12=threads (type column).
+// 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -172,6 +186,22 @@ const MIGRATIONS: DbMigration[] = [
       DROP TABLE threads;
       ALTER TABLE threads_new RENAME TO threads;
     `,
+  },
+  {
+    version: 13,
+    sql: `ALTER TABLE threads ADD COLUMN provider TEXT`,
+  },
+  {
+    version: 14,
+    sql: `ALTER TABLE threads ADD COLUMN model TEXT`,
+  },
+  {
+    version: 15,
+    sql: `ALTER TABLE thread_messages ADD COLUMN provider TEXT`,
+  },
+  {
+    version: 16,
+    sql: `ALTER TABLE thread_messages ADD COLUMN model TEXT`,
   },
 ];
 
@@ -286,8 +316,8 @@ export class ThreadStore extends BaseStore {
       this.db
         .prepare(
           `INSERT INTO thread_messages
-             (id, thread_id, seq, kind, status, retry_of, checkpoint_id, payload, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, thread_id, seq, kind, status, retry_of, checkpoint_id, payload, provider, model, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -298,6 +328,8 @@ export class ThreadStore extends BaseStore {
           message.retryOf ?? null,
           message.checkpointId ?? null,
           JSON.stringify(message.payload),
+          message.provider ?? null,
+          message.model ?? null,
           now,
           now,
         );
@@ -313,6 +345,8 @@ export class ThreadStore extends BaseStore {
       retryOf: message.retryOf ?? null,
       checkpointId: message.checkpointId ?? null,
       payload: message.payload,
+      provider: message.provider ?? null,
+      model: message.model ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -446,8 +480,8 @@ export class ThreadStore extends BaseStore {
 
     const insert = this.db.prepare(
       `INSERT INTO thread_messages
-         (id, thread_id, seq, kind, status, retry_of, checkpoint_id, payload, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, thread_id, seq, kind, status, retry_of, checkpoint_id, payload, provider, model, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insertAll = this.db.transaction((rowsToCopy: RawMessageRow[]) => {
       for (const r of rowsToCopy) {
@@ -460,12 +494,20 @@ export class ThreadStore extends BaseStore {
           r.retry_of,
           r.checkpoint_id,
           r.payload,
+          r.provider,
+          r.model,
           r.created_at,
           r.updated_at,
         );
       }
     });
     insertAll(rows);
+  }
+
+  updateThreadModel(threadId: string, provider: string | null, model: string | null): void {
+    this.db
+      .prepare(`UPDATE threads SET provider = ?, model = ?, updated_at = ? WHERE id = ?`)
+      .run(provider, model, new Date().toISOString(), threadId);
   }
 }
 
