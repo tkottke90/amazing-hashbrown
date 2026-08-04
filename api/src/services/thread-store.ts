@@ -222,8 +222,7 @@ export class ThreadStore extends BaseStore {
 
   getThreadMeta(id: string): ThreadSummary | null {
     const row = this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(id) as
-      | RawThreadRow
-      | undefined;
+      RawThreadRow | undefined;
     return row ? mapThreadRow(row) : null;
   }
 
