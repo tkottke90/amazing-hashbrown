@@ -43,6 +43,11 @@ export interface LintContext {
 
 const LOG_ROTATION_LIMIT = 500;
 const PAGE_SIZE_LIMIT = 200;
+// Pages past this character count trigger the read-threshold truncation in
+// wiki_read_page. A wiki entry that long is a structure problem, not a
+// retrieval one — the warn nudges authors to split before the truncation
+// becomes the first symptom anyone notices.
+const READ_THRESHOLD_CHARS = 8000;
 const STALE_DAYS = 90;
 
 function pagePaths(ctx: LintContext): string[] {
@@ -115,14 +120,26 @@ export function checkFrontmatter(ctx: LintContext): LintFinding[] {
 }
 
 export function checkPageSize(ctx: LintContext): LintFinding[] {
-  return ctx.pages
-    .filter((p) => p.lineCount > PAGE_SIZE_LIMIT)
-    .map((p) => ({
-      check: 'page_size' as const,
-      severity: 'info' as const,
-      page: p.relPath,
-      message: `Page is ${p.lineCount} lines (> ${PAGE_SIZE_LIMIT}); consider splitting.`,
-    }));
+  const findings: LintFinding[] = [];
+  for (const p of ctx.pages) {
+    if (p.lineCount > PAGE_SIZE_LIMIT) {
+      findings.push({
+        check: 'page_size' as const,
+        severity: 'info' as const,
+        page: p.relPath,
+        message: `Page is ${p.lineCount} lines (> ${PAGE_SIZE_LIMIT}); consider splitting.`,
+      });
+    }
+    if (p.content.length > READ_THRESHOLD_CHARS) {
+      findings.push({
+        check: 'page_size' as const,
+        severity: 'warn' as const,
+        page: p.relPath,
+        message: `Page is ${p.content.length.toLocaleString()} characters (> ${READ_THRESHOLD_CHARS.toLocaleString()}); it will be truncated when read by the agent. Split into focused sub-pages.`,
+      });
+    }
+  }
+  return findings;
 }
 
 export function checkTagAudit(ctx: LintContext): LintFinding[] {

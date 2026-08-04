@@ -15,8 +15,8 @@ const WikiReadPageSchema = z.object({
     .boolean()
     .default(true)
     .describe(
-      'When true (default), large pages are truncated with guidance to use rlm_query. ' +
-        'Set to false to retrieve the full text — pass the result as the corpus to rlm_query.',
+      'When true (default), large pages are truncated at the read threshold. ' +
+        'Set to false to retrieve the full text.',
     ),
 });
 
@@ -47,9 +47,9 @@ export const wikiReadPageTool = tool(
         return (
           truncated +
           `\n\n[TRUNCATED: showing ${threshold.toLocaleString()} of ${full.length.toLocaleString()} characters]\n` +
-          `This page exceeds the read limit. To search for specific information:\n` +
-          `1. Re-call wiki_read_page with truncate: false to get the complete text.\n` +
-          `2. Pass that text as the corpus argument to rlm_query with your specific question.`
+          `This wiki page is too long to display fully. The entry should be split into focused sub-pages.\n` +
+          `Answer from the visible portion above. If the information is not visible here, let the user\n` +
+          `know this wiki page needs to be restructured.`
         );
       }
 

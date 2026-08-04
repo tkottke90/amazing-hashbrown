@@ -423,29 +423,38 @@ already said "save it," is the confirmation round-trip ask_user_routing tells yo
 // length itself the trigger ("past a few thousand characters"), and the
 // closing contrast to match ("nowhere near the length that would have
 // tripped" the wiki's read limit).
-const RLM_SECTION = `rlm_query answers a targeted question over a large body of text: you pass the full text as its
-corpus argument along with your question, and it searches the corpus iteratively — more reliably
-than you can by reading one long dump inline.
+// Third tightening, after ADR-001 (2026-08-04) established that RLM and the
+// wiki serve distinct, non-overlapping domains. The prior wording's first
+// paragraph triggered rlm_query on wiki_read_page truncation notices — the
+// exact anti-pattern the ADR rules out. A truncated wiki page is a wiki
+// hygiene issue (the page needs to be split), not a retrieval problem.
+// Rewrote the section to: (a) restrict rlm_query to external, unstructured
+// text the platform does not own; (b) explicitly prohibit its use on wiki
+// pages; (c) replace the truncation-notice trigger with a length-of-external-
+// text trigger. suites/rlm.yaml updated in tandem.
+const RLM_SECTION = `rlm_query answers a targeted question over a large body of text — you pass the full text as its
+corpus argument along with your question, and it searches the corpus iteratively, more reliably
+than you can by scanning a long dump inline.
 
-A wiki_read_page truncation notice is the trigger for this workflow, and it names both steps:
-re-call wiki_read_page with truncate: false to get the complete text, then pass that complete text
-as rlm_query's corpus with your specific question. Follow both steps as given. wiki_search is not a
-substitute for either step — it matches pages across every domain and cannot search within one
-page's text. And the second step still applies once the full text is in front of you: hand it to
-rlm_query rather than scanning the dump yourself. Spotting what looks like the answer partway
-through a large document is exactly the temptation to resist — a targeted extraction over the whole
-corpus is how you avoid answering from one visible stretch of a document you haven't really read.
+Use rlm_query for large external text the platform does not own: a web_fetch result, a document the
+user has pasted or described, a data export. web_fetch never truncates — it returns the whole page —
+so length is the signal: when a fetched page runs past a few thousand characters and the user asks
+a specific factual question about it, pass the fetched text as corpus to rlm_query rather than
+scanning it yourself. Spotting what looks like the answer partway through a large document is exactly
+the temptation to resist — a targeted extraction over the full corpus is more reliable than answering
+from one visible stretch you happened to notice.
 
-The same applies to large content from outside the wiki. web_fetch never truncates — it returns the
-whole document — so length itself is the signal there: when a fetched document runs past a few
-thousand characters and the user asks a specific factual question about it, call rlm_query with the
-fetched text as corpus rather than answering from your own scan.
+Do not use rlm_query for wiki pages. A wiki_read_page truncation notice means the wiki entry is too
+long and needs to be split into focused sub-pages — it is a structure problem, not a retrieval one.
+Answer from the visible portion the truncated read returned. If the information is not in the visible
+portion, tell the user the wiki entry needs to be restructured rather than reaching for rlm_query.
+wiki_search is not a substitute either — it matches pages across every domain and cannot search
+within one page's text.
 
-The contrast: a page that came back small and complete — no truncation notice, and nowhere near the
-length that would have tripped one — is yours to answer from directly. Calling rlm_query on a short
-page you already have in full adds a round-trip for nothing. A truncation notice, or a document long
-enough that reading it inline means skimming, is what flips you into the rlm_query workflow, not the
-mere fact that you read something.`;
+The contrast: a page or document that came back small and complete is yours to answer from directly.
+Calling rlm_query on content you already have in full adds a round-trip for nothing. Length of
+external text is what flips you into the rlm_query workflow, not the mere fact that you read
+something.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching

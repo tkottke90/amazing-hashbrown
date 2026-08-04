@@ -2,30 +2,32 @@ suite:
   id: rlm
   name: RLM Query Tool
   purpose: >
-    Verifies the agent correctly invokes the rlm_query tool when a wiki page or
-    other large corpus exceeds the read threshold. Covers the full two-step
-    sequence (wiki_read_page with truncate: false → rlm_query), the non-wiki
-    corpus path (web_fetch → rlm_query), and the negative case where a small
-    page should be answered directly without RLM. Scenarios use priorTurns to
-    seed tool results so no live model calls or wiki reads are made during eval
-    runs.
+    Verifies the agent invokes rlm_query only for large external text the platform
+    does not own (web_fetch results, user-provided documents) — not for wiki pages.
+    Covers: the positive case (large fetched document → rlm_query), the negative
+    wiki case (truncated wiki page → answer from visible text, not rlm_query), the
+    accurate-answer case (seeded rlm_query result used correctly), and the small-
+    content cases (wiki and external) where direct reading is correct. Scenarios
+    use priorTurns to seed tool results so no live model calls or network requests
+    are made during eval runs.
   passingThreshold: 0.85
 
 scenarios:
-  - id: rlm-001-truncation-triggers-sequence
-    name: Truncation notice causes agent to call wiki_read_page then rlm_query
+  - id: rlm-001-wiki-truncation-no-rlm
+    name: Agent answers from truncated wiki excerpt without calling rlm_query
     purpose: >
-      When wiki_read_page returns a truncation notice, the agent must re-call
-      it with truncate: false to retrieve the full corpus, then call rlm_query
-      to answer the targeted question. This is the primary RLM workflow — any
-      deviation (answering from the truncated excerpt, skipping the full read,
-      calling rlm_query without a full corpus) is a failure.
+      When wiki_read_page returns a truncation notice, the agent must NOT call
+      rlm_query. A truncated wiki page signals a wiki hygiene issue (the page
+      is too long and should be split) — it is not an invitation to use the
+      corpus search tool. The answer to the question is visible in the truncated
+      excerpt; the agent should answer from it directly. Calling rlm_query on
+      wiki content is the anti-pattern this guards against.
     type: tool-sequence
     input: >
-      What is the rate limit policy described in the API reference page?
+      What authentication method does the API use?
     priorTurns:
       - tool: wiki_search
-        args: { query: 'API reference rate limit' }
+        args: { query: 'API authentication method' }
         result:
           text: |
             Found 1 result(s):
@@ -39,11 +41,16 @@ scenarios:
             Type: reference
             Tags: api, engineering, reference
 
+            ## Overview
+
+            This page is the comprehensive reference for the platform's public HTTP API.
+
             ## Authentication
 
             All requests require a Bearer token in the Authorization header. Tokens are
-            issued via the `/auth/token` endpoint and expire after 24 hours. Rotate tokens
-            before expiry using the `/auth/refresh` endpoint.
+            issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens
+            before expiry using the /auth/refresh endpoint. Machine callers should prefer
+            API keys which do not expire but carry an explicit scope list.
 
             ## Endpoints
 
@@ -53,605 +60,24 @@ scenarios:
             schema. Returns 201 on success with the created resource in the response body.
 
             [TRUNCATED: showing 6,000 of 28,450 characters]
-            This page exceeds the read limit. To search for specific information:
-            1. Re-call wiki_read_page with truncate: false to get the complete text.
-            2. Pass that text as the corpus argument to rlm_query with your specific question.
-    # Originally authored as `tools: [wiki_read_page, rlm_query]`, a shape the
-    # suite schema has never supported — tool-sequence scores exactly one
-    # response turn against a single expected `tool`. A one-turn scenario can
-    # only assert the NEXT step of the workflow: re-calling wiki_read_page
-    # with truncate: false on the same page. The rlm_query half of the
-    # sequence is covered by rlm-002, which seeds the full read and asserts
-    # the rlm_query call. Don't "restore" the two-tool list — it fails suite
-    # validation before any scenario runs.
-    tool: wiki_read_page
-    argChecks:
-      - path: truncate
-        match: equals
-        value: false
-      - path: wikiId
-        match: equals
-        value: engineering
-      - path: path
-        match: equals
-        value: docs/api-reference.md
-
-  - id: rlm-002-rlm-receives-full-corpus
-    name: rlm_query receives the full corpus text as its argument
-    purpose: >
-      Guards against the agent passing an empty, truncated, or partial corpus to
-      rlm_query. After reading the full page, the corpus argument must contain
-      substantial text (not just the truncated excerpt). This scenario confirms
-      the argument values — not just that the tool was called.
-    # Was `type: tool-call`, which has no priorTurns field — the schema
-    # silently stripped the seeded turns (pre-strict()), so every model
-    # cold-started, saw no history, and correctly called wiki_locate per the
-    # memory section. tool-sequence is the type that seeds priorTurns; the
-    # tool + argChecks scoring is identical.
-    type: tool-sequence
-    input: >
-      What error codes does the API return for authentication failures?
-    priorTurns:
-      - tool: wiki_search
-        args: { query: 'API error codes authentication' }
-        result:
-          text: |
-            Found 1 result(s):
-            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference. (score: 0.88)
-      # Round-3 finding: both seeded reads here were ~1.4k chars while the
-      # truncation notice claimed 31,200 — every model trusted what it saw
-      # over the claim, judged the "full" document short and complete, and
-      # answered directly (rationally, per the rlm section's own small-page
-      # contrast). The seeded world must be internally consistent: the
-      # truncated read below is the real first 6,000 characters of the full
-      # document, the notice's numbers are its real length, and the answer
-      # (the error-code table) sits past the 6,000-char cut so only the full
-      # read contains it.
-      - tool: wiki_read_page
-        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
-        result:
-          text: |
-            # API Reference
-
-            Type: reference
-            Tags: api, engineering, reference
-
-            ## Overview
-
-            This page is the comprehensive reference for the platform's public HTTP API. All endpoints are served under https://api.example.com and speak JSON exclusively: requests carry Content-Type: application/json and responses return the same. Timestamps are RFC 3339 strings in UTC. Identifiers are opaque strings — do not parse structure out of them, as their format changes without notice.
-
-            The API is versioned in the URL path. The current stable version is v1; breaking changes ship in a new path prefix with at least twelve months of overlap. Deprecations are announced in the changelog section at the bottom of this page and via the Sunset response header on affected endpoints.
-
-            ## Authentication
-
-            All requests require a Bearer token in the Authorization header. Tokens are issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens before expiry using the /auth/refresh endpoint. Machine callers should prefer API keys (see the api-keys endpoints below), which do not expire but carry an explicit scope list. The specific failure responses for missing, expired, revoked, and malformed credentials are catalogued in the Error Codes section of this page.
-
-            ## Endpoints
-
-            ### Resource endpoints (resources)
-
-            Core content objects. Each resource belongs to exactly one project and carries a JSON payload validated against the Resource schema.
-
-            #### POST /api/v1/resources
-
-            Creates a new resource. Request body must be valid JSON matching the Resource schema. Returns 201 on success with the created resource in the response body. Requires the resources:write scope.
-
-            #### GET /api/v1/resources
-
-            Lists resources. Supports cursor pagination via the cursor and limit query parameters (limit defaults to 50, maximum 200). Filter by project with the projectId query parameter.
-
-            #### GET /api/v1/resources/:id
-
-            Fetches a single resource by id. Returns 200 with the resource, or 404 with error code RESOURCE_NOT_FOUND if no resource with that id exists.
-
-            #### PATCH /api/v1/resources/:id
-
-            Partially updates a resource. Only the fields present in the request body are modified. Concurrent updates are resolved last-writer-wins; pass the If-Match header with the resource's current etag to enable optimistic locking instead.
-
-            #### DELETE /api/v1/resources/:id
-
-            Soft-deletes a resource. Deleted resources remain retrievable with includeDeleted=true for 30 days, after which they are purged permanently.
-
-            ### User endpoints (users)
-
-            Accounts that can authenticate against the API. User records are read-mostly; most mutation happens through the invitation and profile flows.
-
-            #### GET /api/v1/users
-
-            Lists users in the calling token's organization. Supports the same cursor pagination as the resources list. Filter by role with the role query parameter (admin, member, or viewer).
-
-            #### GET /api/v1/users/:id
-
-            Fetches a single user. The email field is only present when the caller holds the users:read-pii scope; otherwise it is redacted.
-
-            #### PATCH /api/v1/users/:id
-
-            Updates a user's display name, role, or locale. Role changes require the caller to be an organization admin. Demoting the last remaining admin returns 422 with error code LAST_ADMIN.
-
-            #### POST /api/v1/users/invitations
-
-            Invites a new user by email. Sends an invitation message with a signed acceptance link that expires after 7 days. Re-inviting an address with a pending invitation resends the message and resets the expiry.
-
-            ### Team endpoints (teams)
-
-            Named groups of users used for access control. A user may belong to any number of teams.
-
-            #### POST /api/v1/teams
-
-            Creates a team. Team names must be unique within the organization; a conflict returns 409 with error code TEAM_NAME_TAKEN.
-
-            #### GET /api/v1/teams/:id/members
-
-            Lists a team's members with their per-team roles. Membership records include the joinedAt timestamp.
-
-            #### PUT /api/v1/teams/:id/members/:userId
-
-            Adds a user to a team, or updates their per-team role if they are already a member. Returns 200 with the membership record in both cases.
-
-            #### DELETE /api/v1/teams/:id/members/:userId
-
-            Removes a user from a team. Removing a user who is not a member is a no-op that still returns 204, so callers do not need a read-before-delete round trip.
-
-            ### Project endpoints (projects)
-
-            Top-level containers for resources. Deleting a project cascades to its resources after a 7-day grace period.
-
-            #### POST /api/v1/projects
-
-            Creates a project. The optional template field accepts the id of an existing project to copy settings and webhooks from.
-
-            #### GET /api/v1/projects/:id/activity
-
-            Returns the project's activity feed, newest first. Activity entries are retained for 90 days. This endpoint is served from a read replica and may lag writes by up to five seconds.
-
-            #### POST /api/v1/projects/:id/archive
-
-            Archives a project. Archived projects reject writes with 409 ARCHIVED but remain readable. Archiving is reversible via the unarchive endpoint.
-
-            ### Webhook endpoints (webhooks)
-
-            Outbound HTTP callbacks fired on entity changes. Deliveries are signed with an HMAC-SHA256 signature in the X-Signature header.
-
-            #### POST /api/v1/webhooks
-
-            Registers a webhook. The events array selects which event types fire the hook; the special value * subscribes to everything. The endpoint URL must be HTTPS.
-
-            #### GET /api/v1/webhooks/:id/deliveries
-
-            Lists recent delivery attempts with response status and latency. Failed deliveries are retried with exponential backoff up to 8 attempts over roughly 24 hours.
-
-            #### POST /api/v1/webhooks/:id/ping
-
-            Sends a synthetic ping event to the webhook endpoint and returns the delivery result inline. Useful for verifying the receiver's signature validation without mutating data.
-
-            ### ApiKey endpoints (api-keys)
-
-            Long-lived credentials for machine callers, distinct from user bearer tokens. Keys carry an explicit scope list.
-
-            #### POST /api/v1/api-keys
-
-            Creates an API key. The full secret is returned exactly once, in this response; only a pre
-
-            [TRUNCATED: showing 6,000 of 10,945 characters]
-            This page exceeds the read limit. To search for specific information:
-            1. Re-call wiki_read_page with truncate: false to get the complete text.
-            2. Pass that text as the corpus argument to rlm_query with your specific question.
-      - tool: wiki_read_page
-        args: { wikiId: engineering, path: docs/api-reference.md, truncate: false }
-        result:
-          text: |
-            # API Reference
-
-            Type: reference
-            Tags: api, engineering, reference
-
-            ## Overview
-
-            This page is the comprehensive reference for the platform's public HTTP API. All endpoints are served under https://api.example.com and speak JSON exclusively: requests carry Content-Type: application/json and responses return the same. Timestamps are RFC 3339 strings in UTC. Identifiers are opaque strings — do not parse structure out of them, as their format changes without notice.
-
-            The API is versioned in the URL path. The current stable version is v1; breaking changes ship in a new path prefix with at least twelve months of overlap. Deprecations are announced in the changelog section at the bottom of this page and via the Sunset response header on affected endpoints.
-
-            ## Authentication
-
-            All requests require a Bearer token in the Authorization header. Tokens are issued via the /auth/token endpoint and expire after 24 hours. Rotate tokens before expiry using the /auth/refresh endpoint. Machine callers should prefer API keys (see the api-keys endpoints below), which do not expire but carry an explicit scope list. The specific failure responses for missing, expired, revoked, and malformed credentials are catalogued in the Error Codes section of this page.
-
-            ## Endpoints
-
-            ### Resource endpoints (resources)
-
-            Core content objects. Each resource belongs to exactly one project and carries a JSON payload validated against the Resource schema.
-
-            #### POST /api/v1/resources
-
-            Creates a new resource. Request body must be valid JSON matching the Resource schema. Returns 201 on success with the created resource in the response body. Requires the resources:write scope.
-
-            #### GET /api/v1/resources
-
-            Lists resources. Supports cursor pagination via the cursor and limit query parameters (limit defaults to 50, maximum 200). Filter by project with the projectId query parameter.
-
-            #### GET /api/v1/resources/:id
-
-            Fetches a single resource by id. Returns 200 with the resource, or 404 with error code RESOURCE_NOT_FOUND if no resource with that id exists.
-
-            #### PATCH /api/v1/resources/:id
-
-            Partially updates a resource. Only the fields present in the request body are modified. Concurrent updates are resolved last-writer-wins; pass the If-Match header with the resource's current etag to enable optimistic locking instead.
-
-            #### DELETE /api/v1/resources/:id
-
-            Soft-deletes a resource. Deleted resources remain retrievable with includeDeleted=true for 30 days, after which they are purged permanently.
-
-            ### User endpoints (users)
-
-            Accounts that can authenticate against the API. User records are read-mostly; most mutation happens through the invitation and profile flows.
-
-            #### GET /api/v1/users
-
-            Lists users in the calling token's organization. Supports the same cursor pagination as the resources list. Filter by role with the role query parameter (admin, member, or viewer).
-
-            #### GET /api/v1/users/:id
-
-            Fetches a single user. The email field is only present when the caller holds the users:read-pii scope; otherwise it is redacted.
-
-            #### PATCH /api/v1/users/:id
-
-            Updates a user's display name, role, or locale. Role changes require the caller to be an organization admin. Demoting the last remaining admin returns 422 with error code LAST_ADMIN.
-
-            #### POST /api/v1/users/invitations
-
-            Invites a new user by email. Sends an invitation message with a signed acceptance link that expires after 7 days. Re-inviting an address with a pending invitation resends the message and resets the expiry.
-
-            ### Team endpoints (teams)
-
-            Named groups of users used for access control. A user may belong to any number of teams.
-
-            #### POST /api/v1/teams
-
-            Creates a team. Team names must be unique within the organization; a conflict returns 409 with error code TEAM_NAME_TAKEN.
-
-            #### GET /api/v1/teams/:id/members
-
-            Lists a team's members with their per-team roles. Membership records include the joinedAt timestamp.
-
-            #### PUT /api/v1/teams/:id/members/:userId
-
-            Adds a user to a team, or updates their per-team role if they are already a member. Returns 200 with the membership record in both cases.
-
-            #### DELETE /api/v1/teams/:id/members/:userId
-
-            Removes a user from a team. Removing a user who is not a member is a no-op that still returns 204, so callers do not need a read-before-delete round trip.
-
-            ### Project endpoints (projects)
-
-            Top-level containers for resources. Deleting a project cascades to its resources after a 7-day grace period.
-
-            #### POST /api/v1/projects
-
-            Creates a project. The optional template field accepts the id of an existing project to copy settings and webhooks from.
-
-            #### GET /api/v1/projects/:id/activity
-
-            Returns the project's activity feed, newest first. Activity entries are retained for 90 days. This endpoint is served from a read replica and may lag writes by up to five seconds.
-
-            #### POST /api/v1/projects/:id/archive
-
-            Archives a project. Archived projects reject writes with 409 ARCHIVED but remain readable. Archiving is reversible via the unarchive endpoint.
-
-            ### Webhook endpoints (webhooks)
-
-            Outbound HTTP callbacks fired on entity changes. Deliveries are signed with an HMAC-SHA256 signature in the X-Signature header.
-
-            #### POST /api/v1/webhooks
-
-            Registers a webhook. The events array selects which event types fire the hook; the special value * subscribes to everything. The endpoint URL must be HTTPS.
-
-            #### GET /api/v1/webhooks/:id/deliveries
-
-            Lists recent delivery attempts with response status and latency. Failed deliveries are retried with exponential backoff up to 8 attempts over roughly 24 hours.
-
-            #### POST /api/v1/webhooks/:id/ping
-
-            Sends a synthetic ping event to the webhook endpoint and returns the delivery result inline. Useful for verifying the receiver's signature validation without mutating data.
-
-            ### ApiKey endpoints (api-keys)
-
-            Long-lived credentials for machine callers, distinct from user bearer tokens. Keys carry an explicit scope list.
-
-            #### POST /api/v1/api-keys
-
-            Creates an API key. The full secret is returned exactly once, in this response; only a prefix is retrievable afterwards. Store it securely on receipt.
-
-            #### DELETE /api/v1/api-keys/:id
-
-            Revokes an API key immediately. In-flight requests authenticated with the key complete; new requests fail with 403 TOKEN_REVOKED.
-
-            ### Export endpoints (exports)
-
-            Asynchronous bulk data exports. Exports are prepared in the background and downloaded as compressed archives.
-
-            #### POST /api/v1/exports
-
-            Starts an export job. The format field accepts jsonl or csv. Returns 202 with a job record; poll the job or subscribe to the export.completed webhook event.
-
-            #### GET /api/v1/exports/:id/download
-
-            Downloads a finished export as a gzip archive. Download URLs are pre-signed and expire after 15 minutes; re-request this endpoint for a fresh URL.
-
-            ### Notification endpoints (notifications)
-
-            In-app notification records for users. Notifications are created by the system and are read-only to API callers apart from acknowledgement.
-
-            #### GET /api/v1/notifications
-
-            Lists the calling user's notifications, unread first. The unreadOnly query parameter restricts the list to unacknowledged entries.
-
-            #### POST /api/v1/notifications/ack
-
-            Acknowledges notifications in bulk. The body's ids array may hold up to 500 ids per call; larger batches return 422 VALIDATION_ERROR.
-
-            ### AuditLog endpoints (audit-logs)
-
-            Immutable records of privileged actions. Audit log entries cannot be modified or deleted through the API by any caller.
-
-            #### GET /api/v1/audit-logs
-
-            Lists audit log entries, newest first, filterable by actor, action, and time range via query parameters. Requires the audit:read scope, which is only grantable to admin-role API keys.
-
-            #### GET /api/v1/audit-logs/:id
-
-            Fetches a single audit entry including the full before/after diff of the affected record. Diffs for records larger than 64 KB are truncated with a truncated: true marker.
-
-            #### POST /api/v1/audit-logs/export
-
-            Starts an asynchronous audit export scoped by the same filters as the list endpoint. Produces a signed, tamper-evident JSONL archive whose manifest includes a SHA-256 digest per file.
-
-            ### Search endpoints (search)
-
-            Full-text and structured search across resources, projects, and users the caller can read.
-
-            #### POST /api/v1/search
-
-            Runs a search query. The q field holds the query string; the types array restricts which entity types are searched. Results are ranked by relevance and permission-filtered before ranking, so counts are stable across callers with different access.
-
-            #### GET /api/v1/search/suggest
-
-            Returns typeahead suggestions for a query prefix. Suggestions are cached for 60 seconds and may briefly lag renames.
-
-            ## Rate Limits
-
-            The API enforces a limit of 500 requests per minute per token. Exceeding this limit returns HTTP 429 with a Retry-After header indicating how many seconds to wait before retrying. Sustained abuse triggers a 24-hour cooldown with error code RATE_LIMIT_COOLDOWN. Export downloads and webhook ping calls are exempt from the per-token limit but subject to a separate concurrency cap of 4.
-
-            ## Error Codes
-
-            Authentication failures are reported with the first four codes: a missing or unparseable Authorization header returns HTTP 401 with no code; an expired bearer token returns HTTP 401 with error code TOKEN_EXPIRED; a revoked token or API key returns HTTP 403 with error code TOKEN_REVOKED; and a token that is not a valid JWT returns HTTP 400 with error code INVALID_TOKEN_FORMAT.
-
-            | Code                  | HTTP Status | Description                          |
-            |-----------------------|-------------|--------------------------------------|
-            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
-            | TOKEN_REVOKED         | 403         | The bearer token has been revoked.   |
-            | INVALID_TOKEN_FORMAT  | 400         | The token is not a valid JWT.        |
-            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
-            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
-            | RESOURCE_NOT_FOUND    | 404         | The requested resource does not exist.|
-            | VALIDATION_ERROR      | 422         | Request body failed schema validation.|
-            | TEAM_NAME_TAKEN       | 409         | Team name already in use.            |
-            | LAST_ADMIN            | 422         | Cannot demote the last admin.        |
-            | ARCHIVED              | 409         | Project is archived and read-only.   |
-
-            ## Pagination
-
-            List endpoints use opaque cursor pagination. Pass the cursor value from a response's nextCursor field to fetch the following page; a null nextCursor means the listing is exhausted. Cursors are valid for one hour. Do not persist them across sessions.
-
-            ## Changelog
-
-            2026-06-14: Added the notifications acknowledgement endpoint and the unreadOnly filter.
-            2026-04-02: Export download URLs are now pre-signed and expire after 15 minutes (previously 60).
-            2026-02-19: The webhooks ping endpoint returns the delivery result inline instead of 202.
-            2025-12-01: Initial v1 release.
-    tool: rlm_query
-    argChecks:
-      - path: corpus
-        match: exists
-      - path: corpus
-        match: contains
-        value: TOKEN_EXPIRED
-      - path: question
-        match: exists
-
-  - id: rlm-003-answer-from-rlm-result
-    name: Agent uses the seeded rlm_query result to answer accurately
-    purpose: >
-      Seeds a completed rlm_query call with a realistic answer containing a
-      specific invented fact (rate limit of 500 req/min). The agent must
-      reference that fact in its reply rather than hallucinating a different
-      value or ignoring the tool result. Guards against the agent fabricating
-      information when a precise RLM answer is already in context.
-    type: llm-judge
-    input: >
-      What is the API rate limit?
-    priorTurns:
-      - tool: wiki_search
-        args: { query: 'API rate limit' }
-        result:
-          text: |
-            Found 1 result(s):
-            - [API Reference](engineering:docs/api-reference.md) — Comprehensive API reference. (score: 0.94)
-      - tool: wiki_read_page
-        args: { wikiId: engineering, path: docs/api-reference.md, truncate: true }
-        result:
-          text: |
-            # API Reference
-
-            Type: reference
-            Tags: api, engineering
-
-            [TRUNCATED: showing 6,000 of 28,450 characters]
-            This page exceeds the read limit. To search for specific information:
-            1. Re-call wiki_read_page with truncate: false to get the complete text.
-            2. Pass that text as the corpus argument to rlm_query with your specific question.
-      # Round-1 finding: the full-read result here used to be the literal
-      # placeholder "(full 28,450-character document omitted for eval
-      # brevity)", and ornith reasonably concluded the document content was
-      # never accessible — so it refused to trust the rlm_query answer and
-      # failed the rubric. The seeded turns must look like a real transcript;
-      # reuse rlm-002's realistic full document instead of a placeholder.
-      - tool: wiki_read_page
-        args: { wikiId: engineering, path: docs/api-reference.md, truncate: false }
-        result:
-          text: |
-            # API Reference
-
-            Type: reference
-            Tags: api, engineering
-
-            ## Authentication
-
-            Bearer tokens required. All requests must include an Authorization: Bearer <token>
-            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
-            with error code TOKEN_EXPIRED.
-
-            ## Rate Limits
-
-            The API enforces a limit of 500 requests per minute per token. Exceeding this
-            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
-            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
-            code RATE_LIMIT_COOLDOWN.
-
-            ## Error Codes
-
-            | Code                  | HTTP Status | Description                          |
-            |-----------------------|-------------|--------------------------------------|
-            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
-            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
-            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
-      - tool: rlm_query
-        args:
-          question: What is the API rate limit?
-          corpus: |
-            # API Reference
-
-            Type: reference
-            Tags: api, engineering
-
-            ## Authentication
-
-            Bearer tokens required. All requests must include an Authorization: Bearer <token>
-            header. Missing or invalid tokens return HTTP 401. Expired tokens return HTTP 401
-            with error code TOKEN_EXPIRED.
-
-            ## Rate Limits
-
-            The API enforces a limit of 500 requests per minute per token. Exceeding this
-            limit returns HTTP 429 with a Retry-After header indicating how many seconds to
-            wait before retrying. Sustained abuse triggers a 24-hour cooldown with error
-            code RATE_LIMIT_COOLDOWN.
-
-            ## Error Codes
-
-            | Code                  | HTTP Status | Description                          |
-            |-----------------------|-------------|--------------------------------------|
-            | TOKEN_EXPIRED         | 401         | The bearer token has expired.        |
-            | RATE_LIMIT_EXCEEDED   | 429         | Rate limit hit; see Retry-After.     |
-            | RATE_LIMIT_COOLDOWN   | 429         | Sustained abuse cooldown active.     |
-        result:
-          text: |
-            The API enforces a rate limit of 500 requests per minute per token. Exceeding
-            this limit returns HTTP 429 with a Retry-After header. Sustained abuse triggers
-            a 24-hour cooldown with error code RATE_LIMIT_COOLDOWN.
-
-            ---
-            RLM: 2 iteration(s) · final_answer · 1843ms
-            Tools: peek×1, grep×1, final_answer×1
-    rubric: >
-      The response must state that the rate limit is 500 requests per minute (or
-      equivalent phrasing such as "500 req/min" or "500 per minute"). Score at
-      least 8/10 if the specific number is clearly stated. Score no higher than
-      3/10 if the agent gives a different number, says it doesn't know, or
-      ignores the seeded rlm_query result entirely.
-    minScore: 8
-
-  - id: rlm-004-small-page-no-rlm
-    name: Agent answers a small page directly without calling rlm_query
-    purpose: >
-      Confirms the agent does not over-use RLM when a wiki page is small enough
-      to read directly. A small page that fits within the truncation threshold
-      should be answered from the wiki_read_page result — calling rlm_query in
-      this case wastes iterations and adds latency without benefit.
-    type: tool-sequence
-    input: >
-      What does the quick-start guide say about installing the CLI?
-    priorTurns:
-      - tool: wiki_search
-        args: { query: 'quick-start CLI install' }
-        result:
-          text: |
-            Found 1 result(s):
-            - [Quick Start Guide](engineering:guides/quick-start.md) — Five-minute guide to get up and running. (score: 0.96)
-      - tool: wiki_read_page
-        args: { wikiId: engineering, path: guides/quick-start.md }
-        result:
-          text: |
-            # Quick Start Guide
-
-            Type: guide
-            Tags: engineering, onboarding
-
-            ## Prerequisites
-
-            - Node.js 20 or later
-            - npm 9 or later
-
-            ## Installation
-
-            Install the CLI globally using npm:
-
-            ```bash
-            npm install -g @example/cli
-            ```
-
-            Verify the installation:
-
-            ```bash
-            example --version
-            ```
-
-            ## First Run
-
-            Run `example init` in your project directory to create a configuration file.
-            Follow the prompts to connect to your workspace.
-    # Originally authored as `tools: ['!rlm_query']` — a list shape the suite
-    # schema has never supported. The negation intent is now expressible
-    # directly: a '!'-prefixed `tool` passes only when that tool is NOT
-    # called this turn (support added to ToolSequenceScenarioSchema and
-    # executors/tool-sequence.ts for exactly this scenario). Answering in
-    # plain text or reading further is fine; invoking rlm_query on a page
-    # that was never truncated is the one failure this guards against.
+            This wiki page is too long to display fully. The entry should be split into focused sub-pages.
+            Answer from the visible portion above. If the information is not visible here, let the user
+            know this wiki page needs to be restructured.
     tool: '!rlm_query'
 
-  - id: rlm-005-non-wiki-corpus
-    name: Agent passes a large web_fetch result as the corpus to rlm_query
+  - id: rlm-002-web-fetch-large-doc-calls-rlm
+    name: Agent calls rlm_query for a large web_fetch result with a targeted question
     purpose: >
-      Confirms that rlm_query is wiki-agnostic — the agent can and should use it
-      with any large text source, not only wiki pages. Seeds a large web_fetch
-      result and asks a targeted factual question. The agent must call rlm_query
-      with corpus drawn from the fetched content, not attempt to answer from
-      its training data or the truncated preview.
-    # Was `type: tool-call` — same silent priorTurns-stripping bug as rlm-002
-    # (see the comment there). All three models correctly reported "nothing
-    # was fetched in this conversation" because the seeded web_fetch turn
-    # never reached them.
+      When the user asks a specific factual question about a large fetched document,
+      the agent must call rlm_query with the fetched text as corpus rather than
+      scanning it inline. This is the core correct use case for rlm_query: external,
+      unstructured text the platform does not own. The answer (PostgreSQL 16) is buried
+      mid-document; passing the full corpus to rlm_query is the reliable path.
     type: tool-sequence
     input: >
       Based on what you fetched, what PostgreSQL version is required by the
       deployment guide?
     priorTurns:
-      # Round-3 finding: the seeded fetch was ~1.1k chars with a meta note
-      # claiming 22,000 more characters were "omitted here for eval brevity"
-      # — the same unrealistic-world problem as rlm-002 (and web_fetch never
-      # truncates in production, so a "continues beyond the result" marker
-      # can never occur). Replaced with a genuinely long (~6.8k chars),
-      # complete document with the PostgreSQL requirement buried mid-way,
-      # matching web_fetch's real output format (Content/Metadata/Outline).
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
@@ -760,3 +186,131 @@ scenarios:
         value: PostgreSQL
       - path: question
         match: exists
+
+  - id: rlm-003-answer-from-rlm-result
+    name: Agent uses the seeded rlm_query result to answer accurately
+    purpose: >
+      Seeds a completed rlm_query call whose result contains a specific fact
+      (PostgreSQL 16 required). The agent must reference that fact in its reply
+      rather than hallucinating a different value or ignoring the tool result.
+      The prior context is web_fetch (not wiki) — confirming rlm_query's correct
+      domain. Guards against the agent fabricating information when a precise RLM
+      answer is already in context.
+    type: llm-judge
+    input: >
+      Based on what you fetched, what database version is required?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://docs.example.com/deployment/requirements' }
+        result:
+          text: |
+            ## Content
+
+            # Deployment Requirements
+
+            (full 6,772-character deployment requirements document — omitted for eval
+            brevity; the PostgreSQL 16 requirement appears in the Data Stores section)
+
+            ## Metadata
+            title: "Deployment Requirements"
+      - tool: rlm_query
+        args:
+          question: What database version is required?
+          corpus: |
+            # Deployment Requirements
+
+            (full 6,772-character deployment requirements document — omitted for eval brevity)
+        result:
+          text: |
+            PostgreSQL 16 or later is required. PostgreSQL 15 is not supported. The platform
+            uses features introduced in PostgreSQL 16 including logical replication improvements
+            and new JSON functions.
+
+            ---
+            RLM: 2 iteration(s) · final_answer · 1621ms
+            Tools: peek×1, grep×1, final_answer×1
+    rubric: >
+      The response must state that PostgreSQL 16 is required (or equivalent phrasing
+      such as "PostgreSQL 16 or later"). Score at least 8/10 if the specific version
+      number is clearly stated. Score no higher than 3/10 if the agent gives a different
+      version, says it doesn't know, or ignores the seeded rlm_query result entirely.
+    minScore: 8
+
+  - id: rlm-004-small-wiki-page-no-rlm
+    name: Agent answers a small wiki page directly without calling rlm_query
+    purpose: >
+      Confirms the agent does not over-use RLM when a wiki page is small enough
+      to read directly. A small page that fits within the read threshold should be
+      answered from the wiki_read_page result — calling rlm_query in this case wastes
+      iterations and adds latency without benefit.
+    type: tool-sequence
+    input: >
+      What does the quick-start guide say about installing the CLI?
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'quick-start CLI install' }
+        result:
+          text: |
+            Found 1 result(s):
+            - [Quick Start Guide](engineering:guides/quick-start.md) — Five-minute guide to get up and running. (score: 0.96)
+      - tool: wiki_read_page
+        args: { wikiId: engineering, path: guides/quick-start.md }
+        result:
+          text: |
+            # Quick Start Guide
+
+            Type: guide
+            Tags: engineering, onboarding
+
+            ## Prerequisites
+
+            - Node.js 20 or later
+            - npm 9 or later
+
+            ## Installation
+
+            Install the CLI globally using npm:
+
+            ```bash
+            npm install -g @example/cli
+            ```
+
+            Verify the installation:
+
+            ```bash
+            example --version
+            ```
+
+            ## First Run
+
+            Run `example init` in your project directory to create a configuration file.
+            Follow the prompts to connect to your workspace.
+    tool: '!rlm_query'
+
+  - id: rlm-005-small-fetch-no-rlm
+    name: Agent answers a small web_fetch result directly without calling rlm_query
+    purpose: >
+      Mirrors rlm-004 for external text: when a fetched page is short and the
+      answer is immediately available, the agent should answer directly rather than
+      delegating to rlm_query. Length of external text is the trigger for rlm_query,
+      not the mere fact that web_fetch was called. A small JSON response with an
+      obvious answer is yours to read inline.
+    type: tool-sequence
+    input: >
+      Based on what you fetched, what is the default timeout configured?
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://api.example.com/config/defaults.json' }
+        result:
+          text: |
+            ## Content
+            {
+              "requestTimeout": 30000,
+              "retryLimit": 3,
+              "cacheEnabled": true,
+              "logLevel": "info"
+            }
+
+            ## Metadata
+            title: "Default Configuration"
+    tool: '!rlm_query'
