@@ -49,10 +49,10 @@ The eval results surfaced a deeper insight about what RLM is for.
 
 **The tripartite landscape:**
 
-| Text category | Correct retrieval strategy |
-|---|---|
-| Wiki pages (structured, distilled) | Wiki tools: `wiki_search`, `wiki_read_page`, cross-link graph |
-| Small-to-medium external text (fits in context) | Direct context: read it whole, answer directly |
+| Text category                                   | Correct retrieval strategy                                     |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| Wiki pages (structured, distilled)              | Wiki tools: `wiki_search`, `wiki_read_page`, cross-link graph  |
+| Small-to-medium external text (fits in context) | Direct context: read it whole, answer directly                 |
 | Large unstructured external text (does not fit) | **RLM**: `web_fetch` results, uploaded documents, data exports |
 
 RLM occupies the third cell — text the system does not control, has not distilled, and cannot restructure. The agent has no wiki to query for that content; the only option is corpus search.

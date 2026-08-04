@@ -41,11 +41,13 @@ export const SemanticScenarioSchema = BaseScenario.extend({
 // both) so either can reference it. Each entry becomes its own
 // AIMessage(tool_call) + ToolMessage(result) pair via runner.ts's
 // buildSeededMessages(), simulating a turn that already "happened".
-export const PriorToolTurnSchema = z.object({
-  tool: z.string().min(1),
-  args: z.record(z.string(), z.unknown()).default({}),
-  result: z.record(z.string(), z.unknown()),
-}).strict();
+export const PriorToolTurnSchema = z
+  .object({
+    tool: z.string().min(1),
+    args: z.record(z.string(), z.unknown()).default({}),
+    result: z.record(z.string(), z.unknown()),
+  })
+  .strict();
 
 export const LlmJudgeScenarioSchema = BaseScenario.extend({
   type: z.literal('llm-judge'),
@@ -59,14 +61,16 @@ export const LlmJudgeScenarioSchema = BaseScenario.extend({
   priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
 }).strict();
 
-const FieldCheckSchema = z.object({
-  // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
-  path: z.string().min(1),
-  match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
-  // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
-  // Omitted for 'exists'.
-  value: z.unknown().optional(),
-}).strict();
+const FieldCheckSchema = z
+  .object({
+    // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
+    path: z.string().min(1),
+    match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
+    // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
+    // Omitted for 'exists'.
+    value: z.unknown().optional(),
+  })
+  .strict();
 
 export const StructuredScenarioSchema = BaseScenario.extend({
   type: z.literal('structured'),
@@ -106,16 +110,20 @@ export const ToolSequenceScenarioSchema = BaseScenario.extend({
   minScore: z.number().min(0).max(1).default(1),
 }).strict();
 
-const ChoiceOption = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  pass: z.boolean(),
-}).strict();
+const ChoiceOption = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    pass: z.boolean(),
+  })
+  .strict();
 
-const ScaleOption = z.object({
-  value: z.number(),
-  label: z.string().min(1),
-}).strict();
+const ScaleOption = z
+  .object({
+    value: z.number(),
+    label: z.string().min(1),
+  })
+  .strict();
 
 export const ScoringSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('choice'), options: z.array(ChoiceOption).min(2) }),

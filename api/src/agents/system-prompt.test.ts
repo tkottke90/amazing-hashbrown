@@ -164,7 +164,9 @@ describe('agents/system-prompt', () => {
 
     it('extends the direct-write rule to plain add-a-fact requests — create directly, no duplicate-check search', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('call wiki_create_page directly, picking\na sensible title yourself');
+      expect(result).to.include(
+        'call wiki_create_page directly, picking\na sensible title yourself',
+      );
       expect(result).to.include(
         "Don't run a wiki_search first just to check whether a page already\nexists",
       );
@@ -215,7 +217,7 @@ describe('agents/system-prompt', () => {
         'the very next call is wiki_create_page — not a\nwiki_orient pass to "see the domain\'s structure" first',
       );
       expect(result).to.include(
-        'not an error or a\ncorrection, so it doesn\'t override this direct-write path',
+        "not an error or a\ncorrection, so it doesn't override this direct-write path",
       );
     });
 
