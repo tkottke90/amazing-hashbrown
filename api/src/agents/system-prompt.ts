@@ -453,6 +453,15 @@ whatever step you would otherwise skip.`;
 //    wfetch-003 differently — stalling on wiki_locate because the scenario
 //    gave them no wikiId to write with; that was a scenario gap, fixed in
 //    the suite itself. See suites/web-fetch.yaml's wfetch-003 comment.)
+// 3. wfetch-003 again (glm), round 1 of the 2026-08-04 loop: with the
+//    domain established by the seeded wiki_locate turn, the model still
+//    inserted a wiki_orient pass, reasoning it needed to "place the page
+//    with the correct path" before writing. The existing sentence only
+//    ruled out orient as an existence check, leaving placement as an
+//    unclosed rationale for the same detour. Appended a closing sentence:
+//    wiki_create_page derives the page path itself from wikiId/title/
+//    section, so orienting for placement buys nothing. Check wfetch-003
+//    next run — glm should write directly.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -466,7 +475,10 @@ to the write. When a wiki_locate result has already established the domain, call
 directly with the fetched content; wiki_create_page itself detects near-duplicate pages and points
 you to wiki_update_page instead, so you don't need a wiki_orient pass first just to check whether
 the page already exists. Asking where to save it or whether to summarize first, when the user has
-already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.`;
+already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.
+Placement isn't a reason to orient first either — wiki_create_page derives the new page's path
+itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
+page you're about to create adds a round-trip for nothing.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1

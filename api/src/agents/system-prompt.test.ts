@@ -205,6 +205,14 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('rules out wiki_orient as a placement step before a fetched-content write', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include("Placement isn't a reason to orient first either");
+      expect(result).to.include(
+        'orienting "to find the right spot" for a\npage you\'re about to create adds a round-trip for nothing',
+      );
+    });
+
     // Rewritten after the RLM section's third tightening (ADR-001): the
     // truncate: false re-read workflow no longer exists — a truncated wiki
     // page is now a structure problem, and rlm_query is prohibited on wiki
