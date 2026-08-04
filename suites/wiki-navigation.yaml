@@ -299,12 +299,19 @@ scenarios:
       most directly implies "this was already documented somewhere,"
       making it the strongest case that skipping the wiki would be a real
       regression.
+      A real eval run (auto-eval 2026-08-04, local/qwen3.5:4b) had the
+      model call wiki_locate here with no context arg — right tool, failed
+      only the argCheck. Same situation wnav-001 and wnav-006 already
+      document: wiki_locate's own schema says `context` is optional ("Omit
+      to browse all registered domains"), so requiring it is stricter than
+      the tool's own contract. This scenario's purpose is the tool choice
+      (check the wiki before answering from general knowledge), not arg
+      quality — dropped the context argCheck, asserting only the tool.
+      wnav-010/010b keep theirs: they haven't failed this way, and the
+      precedent is to loosen on evidence, not symmetry.
     type: tool-call
     input: 'What was the process for generating a new NPM token for Verdaccio?'
     tool: wiki_locate
-    argChecks:
-      - path: context
-        match: exists
 
   - id: wnav-011-locate-orient-update-existing-page
     name: Agent updates an existing on-topic page found via locate+orient

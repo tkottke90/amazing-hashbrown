@@ -152,6 +152,24 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('scopes the single-match skip to concrete queries — overview questions take wiki_orient', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'The single-match skip also assumes you have something concrete to search for.',
+      );
+      expect(result).to.include(
+        'Skipping to wiki_search to\n"see what pages exist" answers a different question than the one the user asked.',
+      );
+    });
+
+    it('extends the direct-write rule to plain add-a-fact requests — create directly, no duplicate-check search', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('call wiki_create_page directly, picking\na sensible title yourself');
+      expect(result).to.include(
+        "Don't run a wiki_search first just to check whether a page already\nexists",
+      );
+    });
+
     it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
@@ -187,30 +205,35 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('states the full truncation workflow — truncate: false re-read, then rlm_query over the complete text', () => {
+    // Rewritten after the RLM section's third tightening (ADR-001): the
+    // truncate: false re-read workflow no longer exists — a truncated wiki
+    // page is now a structure problem, and rlm_query is prohibited on wiki
+    // pages outright. The prior assertions quoted the removed workflow and
+    // went stale unnoticed; fixed as part of auto-eval 2026-08-04 round 1.
+    it('prohibits rlm_query on wiki pages — truncation is a structure problem, not retrieval', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include(
-        're-call wiki_read_page with truncate: false to get the complete text',
-      );
-      expect(result).to.include('as rlm_query\'s corpus with your specific question');
+      expect(result).to.include('Do not use rlm_query for wiki pages.');
+      expect(result).to.include('it is a structure problem, not a retrieval one.');
     });
 
     it('rules out wiki_search as a within-page search substitute', () => {
       expect(buildSystemPrompt()).to.include(
-        'it matches pages across every domain and cannot search within one',
+        "it matches pages across every domain and cannot search\nwithin one page's text",
       );
     });
 
     it('names the spotted-answer temptation — no answering from your own scan of a large corpus', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('Spotting what looks like the answer partway');
-      expect(result).to.include('call rlm_query with the\nfetched text as corpus rather than answering from your own scan');
+      expect(result).to.include(
+        'a targeted extraction over the full corpus is more reliable than answering\nfrom one visible stretch you happened to notice',
+      );
     });
 
     it('keys the web_fetch rlm trigger on length itself, since web_fetch never truncates', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('web_fetch never truncates');
-      expect(result).to.include('length itself is the signal there');
+      expect(result).to.include('so length is the signal');
     });
 
     it('anchors the rlm rule with a small-page contrast — no rlm_query on a short, complete page', () => {

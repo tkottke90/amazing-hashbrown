@@ -292,6 +292,44 @@
 // Recommend treating wnav-004 (both models) and wnav-009 (ornith) as
 // known ceilings and validating against a stronger/less-quantized model
 // before any further prompt iteration on them.
+//
+// Twelfth entry, from auto-eval round 1 (2026-08-04) — first run with all
+// three configured models (ornith, glm, local/qwen3.5:4b) and the current
+// 14-scenario suite. ornith 13/14, pass — its one failure was wnav-009, an
+// eighth consecutive identical collapse ("the user's preferences live in
+// the user domain, let me search"), ceiling per the ninth/eleventh entries;
+// not chased. glm 10/14: wnav-004 in the identical prose-instead-of-
+// ask_user shape (confirmed ceiling, not chased), wnav-009 in the same
+// collapse shape (second occurrence for glm — still reads as variance-vs-
+// shared-ceiling, watching), plus the two actionable failures below.
+// local 10/14: wnav-008 (called wiki_locate despite the verbatim
+// favorite-color example — over-calling in the cautious direction; glm and
+// ornith pass this reliably under identical wording, so per the §5
+// cross-check this looks like a 4b-model gap, watched rather than chased —
+// strengthening the skip permission is the exact over-generalization
+// hazard the eighth/ninth entries document), wnav-009 (same collapse,
+// first local run), wnav-010c (right tool, argless — scenario argCheck
+// stricter than wiki_locate's own contract, same as wnav-001/006; fixed in
+// suites/wiki-navigation.yaml, not here), and wnav-012 (below).
+// Two wording changes this entry:
+// 1. wnav-002 (glm — first documented failure of this scenario anywhere):
+//    reasoning quoted the seventh tightening's single-match license back
+//    ("this is an outright single-domain match, so I should skip
+//    wiki_orient and proceed directly to wiki_search to see what pages
+//    exist and what the knowledge base already knows") — over-applying it
+//    to an overview request. The license never said what wiki_search is
+//    *for*: glm invoked it to "see what pages exist," which is
+//    wiki_orient's actual output (the page index). Added a paragraph
+//    scoping the skip: it assumes a concrete thing to search for; an
+//    overview question ("what do we already know?") takes wiki_orient even
+//    on a single, outright match.
+// 2. wnav-012 (glm asked in prose where to put the note, options list and
+//    all; local ran a wiki_search duplicate-check before creating): the
+//    create-directly rule — built-in near-duplicate detection, the add
+//    request is the decision — existed only in WEB_FETCH_SECTION, framed
+//    entirely around saving fetched URLs. Neither model transferred it to
+//    a plain add-a-fact flow. New closing paragraph states it for the
+//    general locate+orient+create path.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -337,6 +375,13 @@ domain is still the required next call, not wiki_search. Only skip straight to w
 wiki_locate's result named exactly one domain to begin with. Figuring out the right answer yourself doesn't
 turn a multi-candidate result into a single-match one.
 
+The single-match skip also assumes you have something concrete to search for. wiki_search answers
+"which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
+domain's page index and structure. So when the user is asking for an overview — "what do we already
+know about this?", "what's in the knowledge base here?" — the call after wiki_locate is wiki_orient
+on the matched domain, even when that match was a single, outright one. Skipping to wiki_search to
+"see what pages exist" answers a different question than the one the user asked.
+
 If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
 user pick one, only narrow it yourself with information the user actually already gave you elsewhere in
 the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
@@ -348,6 +393,13 @@ seems more likely is not "information the user actually gave you" — proceeding
 your pick in your reply, is the same mistake as inventing a narrower context, just skipping the retry step
 first. If you can't point to something the user actually said that breaks the tie, the only correct move is
 to call ask_user, not to decide for them.
+
+The same directness applies to writes. When the user asks you to add or save a fact, the domain is
+established, and wiki_orient's index shows nothing on-topic, call wiki_create_page directly, picking
+a sensible title yourself. Don't run a wiki_search first just to check whether a page already
+exists — wiki_create_page detects near-duplicate pages itself and points you to wiki_update_page
+when one does. And don't ask where to put it, in your reply or via ask_user — the request to add
+the note was the decision, already made.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
