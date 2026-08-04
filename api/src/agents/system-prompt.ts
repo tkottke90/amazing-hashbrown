@@ -484,6 +484,16 @@ whatever step you would otherwise skip.`;
 //    the direct-write path still wins. Kept here rather than in the
 //    navigation section's precedence paragraph to avoid disturbing the
 //    passing wiki-navigation suite from a web-fetch loop.
+// 6. wfetch-003 a fourth time (glm, round 4 of the 2026-08-04 loop):
+//    entry 5's demotion didn't hold either — glm's reasoning again
+//    echoed the hint's own words ("orient that domain to see what's
+//    inside"). Wording iteration has plateaued, so round 4 changed the
+//    source instead: wiki-locate.tool.ts's single-match hint is now
+//    phrased as an option ("shows its structure if you need it"), not a
+//    command ("Use wiki_orient..."). The sentence here was reworded not
+//    to quote the old text. Older suites' seeded locate results still
+//    carry the imperative phrasing — static fixtures, unchanged eval
+//    behavior, but re-validate those suites if the divergence matters.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -502,8 +512,8 @@ Placement isn't a reason to orient first either — wiki_create_page derives the
 itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
 page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
 wiki_locate result naming "cooking" as its domain, the very next call is wiki_create_page — not a
-wiki_orient pass to "see the domain's structure" first. wiki_locate's result will itself suggest
-wiki_orient "to see what's inside" — that is its generic browsing hint, not an error or a
+wiki_orient pass to "see the domain's structure" first. wiki_locate's result may itself point at
+wiki_orient as a possible next step — that is a generic browsing pointer, not an error or a
 correction, so it doesn't override this direct-write path the way a real error result would.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first

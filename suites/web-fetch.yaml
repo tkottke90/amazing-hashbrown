@@ -95,7 +95,7 @@ scenarios:
         args: { context: 'vector databases and RAG concepts' }
         result:
           {
-            text: 'Best match: "engineering" (domain: engineering, score 17). Use wiki_orient({ wikiId: "engineering" }) to see what''s inside.',
+            text: 'Best match: "engineering" (domain: engineering, score 17). wiki_orient({ wikiId: "engineering" }) shows its structure if you need it.',
           }
     tool: wiki_create_page
     argChecks:
