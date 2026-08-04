@@ -58,7 +58,7 @@ scenarios:
         args: { context: 'home network topology' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 14). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 14). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
@@ -195,7 +195,7 @@ scenarios:
         args: { context: 'favorite programming language' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 16). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 16). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }

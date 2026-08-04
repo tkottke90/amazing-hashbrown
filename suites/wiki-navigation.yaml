@@ -41,7 +41,7 @@ scenarios:
         args: { context: 'personal preferences' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
     tool: wiki_orient
     argChecks:
@@ -62,7 +62,7 @@ scenarios:
         args: { context: 'morning routine preferences' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
@@ -359,7 +359,7 @@ scenarios:
         args: { context: 'work schedule' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 18). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
@@ -397,7 +397,7 @@ scenarios:
         args: { context: 'hobbies' }
         result:
           {
-            text: 'Best match: "user" (domain: user, score 12). Use wiki_orient({ wikiId: "user" }) to see what''s inside.',
+            text: 'Best match: "user" (domain: user, score 12). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
           }
       - tool: wiki_orient
         args: { wikiId: 'user' }
