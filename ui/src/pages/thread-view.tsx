@@ -120,8 +120,8 @@ export function ThreadView() {
           isGenerating={isStreaming.value}
           disabled={!!pendingHitlId.value}
           providers={providers.value}
-          activeProvider={resolvedProvider}
-          activeModel={resolvedModel}
+          activeProvider={activeThreadModel.value?.provider}
+          activeModel={activeThreadModel.value?.model}
           onModelSelect={setThreadModel}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
