@@ -330,6 +330,31 @@
 //    entirely around saving fetched URLs. Neither model transferred it to
 //    a plain add-a-fact flow. New closing paragraph states it for the
 //    general locate+orient+create path.
+//
+// Thirteenth entry, closing out the same auto-eval loop (rounds 2-3, no
+// wording changes — one scenario fix, see suites/wiki-navigation.yaml's
+// wnav-005 comment). The twelfth entry's fixes landed: glm recovered
+// wnav-002 and wnav-012 and passed 12/14 in both rounds (remaining: the
+// confirmed wnav-004 ceiling, plus a new two-round lean on wnav-008 in the
+// *cautious* direction — wiki_locate before searching — the opposite of the
+// eighth entry's over-skip problem; suite passes anyway, and tuning the
+// skip permission either way is the documented over-generalization hazard,
+// so left alone and watched). ornith passed both rounds (wnav-009 at nine
+// and ten consecutive identical collapses; one non-consecutive wnav-010b
+// slip in round 3, the same variance shape the eleventh entry recorded).
+// local/qwen3.5:4b failed both rounds (9/14 then 11/14) and is now the
+// suite's only failing model, with every remaining failure ceiling-shaped:
+// wnav-008 three consecutive identical rounds (round-3 reasoning literally
+// misquotes the wnav-001 meta-question rule as if it covered a direct fact
+// question — garbled-rule-recall, §5 territory), wnav-009 three consecutive
+// in the shared collapse shape, and wnav-012 recurring in the identical
+// pre-fix shape (a wiki_search duplicate-check the new paragraph forbids by
+// name) despite a round-2 pass. Its round-2 wnav-001/004 misses reverted to
+// passes with wording unchanged — pure execution variance. Net: glm and
+// ornith pass the suite reliably; local's residual failures are 4b
+// capability limits consistent with its wiki-lint ceiling flags, not
+// wording gaps. Don't re-tighten wnav-005's rubric or wnav-010c's argCheck,
+// and don't chase local's wnav-008/009/012 with further wording.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
