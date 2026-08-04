@@ -211,6 +211,9 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'orienting "to find the right spot" for a\npage you\'re about to create adds a round-trip for nothing',
       );
+      expect(result).to.include(
+        'the very next call is wiki_create_page — not a\nwiki_orient pass to "see the domain\'s structure" first',
+      );
     });
 
     // Rewritten after the RLM section's third tightening (ADR-001): the

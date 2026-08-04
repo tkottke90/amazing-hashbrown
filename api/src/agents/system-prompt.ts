@@ -462,6 +462,16 @@ whatever step you would otherwise skip.`;
 //    wiki_create_page derives the page path itself from wikiId/title/
 //    section, so orienting for placement buys nothing. Check wfetch-003
 //    next run — glm should write directly.
+// 4. wfetch-003 again (local/qwen3.5:4b), round 2 of the 2026-08-04 loop:
+//    entry 3's sentence fixed glm and ornith, but local took the same
+//    orient detour anyway ("orient myself on the structure of this domain
+//    before creating the page") — an abstract rule it read but didn't
+//    apply. Per the known pattern, contrastive examples anchor smaller
+//    models better than abstract rules, so appended a concrete one
+//    (fetched recipe + "cooking" locate result → wiki_create_page next,
+//    not wiki_orient). Deliberately not the eval scenario's own domain.
+//    If local still detours on wfetch-003 next run, that's the plateau
+//    signature — ceiling-flag it rather than iterating further.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -478,7 +488,9 @@ the page already exists. Asking where to save it or whether to summarize first, 
 already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.
 Placement isn't a reason to orient first either — wiki_create_page derives the new page's path
 itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
-page you're about to create adds a round-trip for nothing.`;
+page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
+wiki_locate result naming "cooking" as its domain, the very next call is wiki_create_page — not a
+wiki_orient pass to "see the domain's structure" first.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1
