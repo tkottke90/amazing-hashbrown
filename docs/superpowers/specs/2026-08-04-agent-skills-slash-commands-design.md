@@ -186,6 +186,10 @@ The existing `<div data-slot="chat-input-slash-menu" className="hidden" />` stub
 
 ## TODO_LIST.md changes
 
+**#2 Shell Command Execution** gains a coordination note:
+
+> **Shell Command Execution** — depends on: #1; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call. **Note:** must coordinate with `SkillsManager` script execution — skills can carry JS and Python scripts (`runScript`, `runPythonScript`) that may invoke shell commands; the shell execution policy, approval flow, and audit trail established here should apply uniformly to both agent-initiated shell calls and skill-script-initiated shell calls.
+
 **#11 Skills Integration** description is updated to:
 
 > **Skills Integration** — depends on: #10 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
