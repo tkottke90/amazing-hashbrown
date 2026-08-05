@@ -44,6 +44,18 @@ export class SkillsManager {
     return Array.from(this.cache.values());
   }
 
+  search(keyword?: string): SkillSummary[] {
+    const all = Array.from(this.cache.values()).filter((s) => s.enabled);
+    if (!keyword) return all;
+    const q = keyword.toLowerCase();
+    return all.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q) ||
+        s.slashCommand.toLowerCase().includes(q),
+    );
+  }
+
   async lookup(name: string): Promise<string> {
     this.assertExists(name);
     const raw = await readFile(join(this.skillsRoot, name, SKILL_FILE), 'utf8');

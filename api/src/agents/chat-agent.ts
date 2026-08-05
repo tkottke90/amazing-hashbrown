@@ -1,4 +1,5 @@
 import { tool } from '@langchain/core/tools';
+import { HumanMessage } from '@langchain/core/messages';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
@@ -6,6 +7,7 @@ import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { getAgentInstructions } from '../config/agent-instructions.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
+import { skillsManager } from '../services/skills-manager.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
@@ -20,6 +22,7 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
+import { searchSkillsTool } from './tools/search-skills.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
@@ -71,6 +74,39 @@ const afterAgentMiddleware = createMiddleware({
       });
     }
     return undefined;
+  },
+});
+
+// Expands a slash command in the latest human message immediately before each
+// LLM call. Historical messages with slash commands are passed through as-is.
+// The checkpoint always stores the original "/command args" — only the messages
+// array handed to the LLM is modified (never persisted).
+const skillExpansionMiddleware = createMiddleware({
+  name: 'SkillExpansionMiddleware',
+  beforeAgent: async (state: { messages: { getType: () => string; content: unknown; id?: string }[] }) => {
+    const messages = [...state.messages];
+    const lastHumanIdx = messages.findLastIndex((m) => m.getType() === 'human');
+    if (lastHumanIdx === -1) return undefined;
+    const content = messages[lastHumanIdx].content;
+    if (typeof content !== 'string' || !content.startsWith('/')) return undefined;
+
+    const spaceIdx = content.indexOf(' ');
+    const commandName = spaceIdx === -1 ? content.slice(1) : content.slice(1, spaceIdx);
+    const args = spaceIdx === -1 ? '' : content.slice(spaceIdx + 1);
+
+    let expanded: string;
+    try {
+      const body = await skillsManager.lookup(commandName);
+      expanded = args ? `${body}\n\n${args}` : body;
+    } catch {
+      expanded = `[Skill "/${commandName}" not found — use the search_skills tool to see what's available]${args ? '\n\n' + args : ''}`;
+    }
+
+    messages[lastHumanIdx] = new HumanMessage({
+      content: expanded,
+      id: messages[lastHumanIdx].id,
+    });
+    return { messages };
   },
 });
 
@@ -128,11 +164,12 @@ async function buildChatAgent(provider?: string, model?: string) {
       wikiRegisterDomainTool,
       webFetchTool,
       rlmQueryTool,
+      searchSkillsTool,
       ...mcpTools,
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [afterAgentMiddleware],
+    middleware: [skillExpansionMiddleware, afterAgentMiddleware],
   });
 
   return { agent, systemPrompt };

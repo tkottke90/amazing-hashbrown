@@ -75,6 +75,7 @@ const AppConfigSchema = z.object({
   wikiRoot: z.string().default('./wiki'),
   mcpConfigDir: z.string().default('./mcp'),
   artifactRoot: z.string().default('./artifacts'),
+  skillsRoot: z.string().default('./skills'),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
@@ -112,6 +113,9 @@ export const env = {
   },
   get artifactRoot() {
     return configManager.getConfigDir(configManager.get('artifactRoot') as string);
+  },
+  get skillsRoot() {
+    return configManager.getConfigDir(configManager.get('skillsRoot') as string);
   },
   get providers(): ProviderConfig[] {
     try {

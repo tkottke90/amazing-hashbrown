@@ -31,7 +31,7 @@
 Items are ordered first by priority/necessity, then by dependency.
 
 1. [Agent Skills (Slash Commands)](#agent-skills-slash-commands) — skills per the [AgentSkills specification](https://agentskills.io/specification), invocable by user and agent via slash commands; no dependencies
-2. [Shell Command Execution](#shell-command-execution) — depends on: #1; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call
+2. [Shell Command Execution](#shell-command-execution) — depends on: #1; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call. **Note:** must coordinate with `SkillsManager` script execution — skills can carry JS and Python scripts (`runScript`, `runPythonScript`) that may invoke shell commands; the shell execution policy, approval flow, and audit trail established here should apply uniformly to both agent-initiated shell calls and skill-script-initiated shell calls.
 
 ---
 **MVP line** — items above this point deliver a harness that can be driven by chat, learn via the wiki, and interact via shell and web fetch; items below are autonomous operation infrastructure.
@@ -44,7 +44,7 @@ Items are ordered first by priority/necessity, then by dependency.
 8. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
 9. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
 10. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-11. [Skills Integration](#skills-integration) — depends on: #10; `skills-manager` library is complete; needs API + UI
+11. [Skills Integration](#skills-integration) — depends on: #10 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
 12. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #10
 13. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #8
 14. [Notification Delivery](#notification-delivery) — depends on: #6; external channels deferred; interim: `action_required` flag on threads/tasks
@@ -454,17 +454,17 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ### Skills Integration
 
-**Goal:** Expose the `skills-manager` library through the API and surface available skills in the UI.
+**Goal:** Surface the `skills-manager` library in a Settings UI so users can browse, enable/disable, inspect, and install skills without editing the filesystem directly.
 
 **Ideas / Requirements:**
 
-- Add a `GET /api/v1/skills` route listing enabled skills (name, description, trigger phrases)
-- Add a `POST /api/v1/skills/:name/run` route to execute a skill script with arguments
-- Register each enabled skill as a LangGraph tool via the tools manager so the agent can invoke skills autonomously
-- In the UI, surface skills in the "Add to message" menu or as slash-command suggestions (the `ChatInput` already has a stub `data-slot="chat-input-slash-menu"` div)
-- Settings page: list all skills with enabled/disabled toggle and description
+- Settings page section: list all installed skills (name, slash command, description, enabled toggle)
+- Skill detail view: render the `SKILL.md` body so users can inspect what a skill does before invoking it
+- Enable/disable toggle: writes `metadata.enabled` via `SkillsManager.edit()`; takes effect immediately
+- Install by directory: point the UI at a local directory path; `SkillsManager.create()` scaffolds and adds it
+- The `GET /api/v1/skills`, `search_skills` tool, and slash-menu autocomplete are already delivered by Agent Skills
 
-**Dependencies:** Settings Page UI
+**Dependencies:** Settings Page UI (#10)
 
 ---
 

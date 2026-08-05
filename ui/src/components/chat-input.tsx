@@ -1,10 +1,13 @@
 import type { ComponentChildren, JSX } from 'preact';
+import { useRef } from 'preact/hooks';
+import { useSignal } from '@preact/signals';
 import { Plus, Send, Square, X } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { TextEllipsis } from '@/components/text-ellipsis';
+import { fetchSkills, type SkillInfo } from '@/services/skills-api';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -93,7 +96,73 @@ export function ChatInput({
 }: ChatInputProps) {
   const canSend = !disabled && !isGenerating && value.trim().length > 0;
 
+  const menuOpen = useSignal(false);
+  const menuItems = useSignal<SkillInfo[]>([]);
+  const menuIndex = useSignal(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function selectSkill(skill: SkillInfo) {
+    onValueChange(`${skill.slashCommand} `);
+    menuOpen.value = false;
+    menuIndex.value = 0;
+  }
+
+  function handleValueChange(newValue: string) {
+    onValueChange(newValue);
+
+    if (isGenerating || !newValue.startsWith('/')) {
+      menuOpen.value = false;
+      return;
+    }
+
+    const spaceIdx = newValue.indexOf(' ');
+    if (spaceIdx !== -1) {
+      // Command word complete — user is typing args; close menu
+      menuOpen.value = false;
+      return;
+    }
+
+    const query = newValue.slice(1);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchSkills(query)
+        .then((results) => {
+          menuItems.value = results;
+          menuOpen.value = results.length > 0;
+          menuIndex.value = 0;
+        })
+        .catch(() => {
+          menuOpen.value = false;
+        });
+    }, 150);
+  }
+
   function handleKeyDown(event: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>) {
+    if (menuOpen.value) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        menuIndex.value = Math.min(menuIndex.value + 1, menuItems.value.length - 1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        menuIndex.value = Math.max(menuIndex.value - 1, 0);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        menuOpen.value = false;
+        return;
+      }
+      if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+        event.preventDefault();
+        const skill = menuItems.value[menuIndex.value];
+        if (skill) selectSkill(skill);
+        return;
+      }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       if (canSend) onSend();
@@ -122,11 +191,35 @@ export function ChatInput({
       ) : null}
 
       <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="relative min-w-0">
-        {/* Stub for a future inline slash-command menu anchored to the caret. */}
-        <div data-slot="chat-input-slash-menu" className="hidden" />
+        {menuOpen.value && menuItems.value.length > 0 && (
+          <div
+            data-slot="chat-input-slash-menu"
+            className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+          >
+            {menuItems.value.map((skill, i) => (
+              <div
+                key={skill.name}
+                className={cn(
+                  'cursor-pointer px-3 py-2',
+                  i === menuIndex.value && 'bg-accent',
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectSkill(skill);
+                }}
+                onMouseEnter={() => {
+                  menuIndex.value = i;
+                }}
+              >
+                <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
+                <div className="line-clamp-1 text-xs text-muted-foreground">{skill.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
         <Textarea
           value={value}
-          onInput={(event) => onValueChange((event.target as HTMLTextAreaElement).value)}
+          onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
