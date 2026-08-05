@@ -117,16 +117,18 @@ The message is stored in the checkpoint as-is (`/skill-name args`). LangGraph's 
 The AgentSkills specification (agentskills.io) defines two activation mechanisms:
 
 **Model-driven activation** (the spec's primary mechanism):
+
 > "Most implementations rely on the model's own judgment as the activation mechanism, rather than implementing harness-side trigger matching or keyword detection. The model reads the catalog [...], decides a skill is relevant to the current task, and loads it."
 
-In this path the model calls an `activate_skill` tool or reads the file directly. The skill content arrives as a tool result and is naturally stored in conversation history. The spec explicitly advises: *"Flag skill tool outputs as protected so the pruning algorithm skips them."*
+In this path the model calls an `activate_skill` tool or reads the file directly. The skill content arrives as a tool result and is naturally stored in conversation history. The spec explicitly advises: _"Flag skill tool outputs as protected so the pruning algorithm skips them."_
 
 **Harness-side slash command activation:**
+
 > "The most common pattern is a slash command or mention syntax (`/skill-name` or `$skill-name`) that the harness intercepts. The specific syntax is up to you — the key idea is that the harness handles the lookup and injection, so the model receives skill content without needing to take an activation action itself."
 
 **The specification is entirely silent on whether the harness-side path should expand before or after checkpointing.** It does not prescribe what the conversation history contains — the original slash command or the expanded body. This is left as an implementation detail. The only history guidance in the spec (protect skill content from pruning) applies exclusively to the model-driven tool-call path, not the harness-side path.
 
-The spec describes both activation mechanisms as equivalent: *"Both approaches work in practice."*
+The spec describes both activation mechanisms as equivalent: _"Both approaches work in practice."_
 
 ---
 
@@ -134,15 +136,15 @@ The spec describes both activation mechanisms as equivalent: *"Both approaches w
 
 The two options have meaningfully different properties:
 
-| Dimension | Option A (chat time) | Option B (LLM call time) |
-|---|---|---|
-| Checkpoint stores | Full skill body + args | `/command args` (original) |
-| Thread history UI | Skill body visible (noisy) | `/summarize my notes` (clean) |
-| Fork / retry | Re-sends old (possibly stale) skill body | Re-expands against current skill |
-| Skill updated mid-thread | Prior messages embed old body | All invocations use current skill |
-| Multi-turn behaviour | Skill body in context once | Only injected when the invoking message is the latest human message |
-| Skill-not-found error | Caught before agent starts — easy to surface | Caught inside modifier — requires careful SSE error routing |
-| Implementation complexity | Low | Medium |
+| Dimension                 | Option A (chat time)                         | Option B (LLM call time)                                            |
+| ------------------------- | -------------------------------------------- | ------------------------------------------------------------------- |
+| Checkpoint stores         | Full skill body + args                       | `/command args` (original)                                          |
+| Thread history UI         | Skill body visible (noisy)                   | `/summarize my notes` (clean)                                       |
+| Fork / retry              | Re-sends old (possibly stale) skill body     | Re-expands against current skill                                    |
+| Skill updated mid-thread  | Prior messages embed old body                | All invocations use current skill                                   |
+| Multi-turn behaviour      | Skill body in context once                   | Only injected when the invoking message is the latest human message |
+| Skill-not-found error     | Caught before agent starts — easy to surface | Caught inside modifier — requires careful SSE error routing         |
+| Implementation complexity | Low                                          | Medium                                                              |
 
 The spec's history guidance points toward skill content living in the record (aligned with Option A), but that guidance was written for the model-driven tool-call path where the content arrives as a tool result with full provenance. The harness-side injection path is structurally different: there is no tool invocation to hang the content on, so storing the full body in the checkpoint adds bulk with no structural benefit.
 

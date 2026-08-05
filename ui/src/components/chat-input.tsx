@@ -199,10 +199,7 @@ export function ChatInput({
             {menuItems.value.map((skill, i) => (
               <div
                 key={skill.name}
-                className={cn(
-                  'cursor-pointer px-3 py-2',
-                  i === menuIndex.value && 'bg-accent',
-                )}
+                className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   selectSkill(skill);
@@ -212,7 +209,9 @@ export function ChatInput({
                 }}
               >
                 <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
-                <div className="line-clamp-1 text-xs text-muted-foreground">{skill.description}</div>
+                <div className="line-clamp-1 text-xs text-muted-foreground">
+                  {skill.description}
+                </div>
               </div>
             ))}
           </div>

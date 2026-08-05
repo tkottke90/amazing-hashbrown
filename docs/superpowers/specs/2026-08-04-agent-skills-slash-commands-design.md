@@ -106,7 +106,7 @@ Add `skillsRoot` to `AppConfigSchema` in `api/src/config/env.ts`:
 
 ```yaml
 # config.yaml
-skillsRoot: ./skills   # default; resolved relative to config dir → config/skills
+skillsRoot: ./skills # default; resolved relative to config dir → config/skills
 ```
 
 Document in `config.yaml.example` alongside `wikiRoot` and `artifactRoot`. The `config/skills/` directory is gitignored (all user customisations live in `config/`). App startup creates the directory if it does not exist.
@@ -168,12 +168,14 @@ The existing `<div data-slot="chat-input-slash-menu" className="hidden" />` stub
 **Fetching:** `GET /api/v1/skills?q={query}` called on each keystroke, debounced ~150ms. Results replace the current list.
 
 **Dismissal:** Menu closes when:
+
 - A skill is selected (Enter, Tab, or click)
 - `Escape` is pressed
 - A space is typed (command name is complete, user is typing args)
 - Value no longer starts with `/`
 
 **Keyboard navigation:**
+
 - `↑` / `↓` — move highlight through results
 - `Enter` or `Tab` with a highlighted item — select instead of sending the message
 - `Escape` — close menu, focus stays in textarea
@@ -200,13 +202,13 @@ The existing `<div data-slot="chat-input-slash-menu" className="hidden" />` stub
 
 ## Error handling
 
-| Scenario | Behaviour |
-|---|---|
-| Skill not found | Modifier replaces message with inline error notice; turn continues; model can call `search_skills` to suggest alternatives |
-| `SkillsManager` not booted | `lookup()` throws; modifier catches and returns the not-found error notice |
-| `skillsRoot` directory missing | Created on startup; `boot()` succeeds with empty catalog |
-| `GET /api/v1/skills` with bad `q` | `search()` treats any string as valid; returns empty array for no matches |
-| UI fetch fails | Slash menu closes silently; user can still type the slash command manually |
+| Scenario                          | Behaviour                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Skill not found                   | Modifier replaces message with inline error notice; turn continues; model can call `search_skills` to suggest alternatives |
+| `SkillsManager` not booted        | `lookup()` throws; modifier catches and returns the not-found error notice                                                 |
+| `skillsRoot` directory missing    | Created on startup; `boot()` succeeds with empty catalog                                                                   |
+| `GET /api/v1/skills` with bad `q` | `search()` treats any string as valid; returns empty array for no matches                                                  |
+| UI fetch fails                    | Slash menu closes silently; user can still type the slash command manually                                                 |
 
 ---
 

@@ -34,6 +34,7 @@ Items are ordered first by priority/necessity, then by dependency.
 2. [Shell Command Execution](#shell-command-execution) — depends on: #1; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call. **Note:** must coordinate with `SkillsManager` script execution — skills can carry JS and Python scripts (`runScript`, `runPythonScript`) that may invoke shell commands; the shell execution policy, approval flow, and audit trail established here should apply uniformly to both agent-initiated shell calls and skill-script-initiated shell calls.
 
 ---
+
 **MVP line** — items above this point deliver a harness that can be driven by chat, learn via the wiki, and interact via shell and web fetch; items below are autonomous operation infrastructure.
 
 3. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
