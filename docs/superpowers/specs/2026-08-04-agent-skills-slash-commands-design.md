@@ -25,7 +25,7 @@ Skills are **not** registered as LangGraph tools. They are instruction payloads 
 
 The feature aligns with the AgentSkills specification (agentskills.io), an open standard released by Anthropic in December 2025 and now governed by the Agentic AI Foundation. A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name`, `description` required) and a Markdown instruction body. The format is already used in this repo (`.claude/skills/`, `.agents/skills/`).
 
-The `@tkottke90/skills-manager` library is a complete implementation of the AgentSkills format: it scans a root directory, builds an in-memory index, and exposes CRUD, search, and script execution. No library changes are required for the core pipeline — this spec adds one method (`search`) and wires the library into the app.
+The `@tkottke90/skills-manager` library is a complete implementation of the AgentSkills format: it scans a root directory, builds an in-memory index, and exposes CRUD, search, and script execution. One library change is required: a `search()` method is added to `SkillsManager` in `lib/skills-manager`. The rest of this spec is wiring the library into the app.
 
 ### Injection timing — ADR-002
 
@@ -106,7 +106,7 @@ Add `skillsRoot` to `AppConfigSchema` in `api/src/config/env.ts`:
 
 ```yaml
 # config.yaml
-skillsRoot: ./config/skills   # default; path to the AgentSkills skill directory
+skillsRoot: ./skills   # default; resolved relative to config dir → config/skills
 ```
 
 Document in `config.yaml.example` alongside `wikiRoot` and `artifactRoot`. The `config/skills/` directory is gitignored (all user customisations live in `config/`). App startup creates the directory if it does not exist.
@@ -121,9 +121,9 @@ export const skillsManager = new SkillsManager(env.skillsRoot);
 
 `skillsManager.boot()` is called during app startup after directory creation. The singleton is imported by the `messageModifier`, the `search_skills` tool, and the REST route.
 
-### 4. `messageModifier` in `buildChatAgent()`
+### 4. Pre-LLM message transform in `buildChatAgent()`
 
-Added to the `createReactAgent` call in `api/src/agents/chat-agent.ts`. The modifier closes over `skillsManager`.
+Added to the `createAgent` call in `api/src/agents/chat-agent.ts`. The transform closes over `skillsManager`. The exact hook name (`beforeAgent`, `messageModifier`, or equivalent) must be verified against the `langchain` v1.5.2 API during implementation; if no such hook exists on `createAgent`/`createMiddleware`, the fallback is a thin model-wrapper that intercepts `invoke`/`stream` calls before they reach the underlying LLM. The behaviour contract is the same regardless of mechanism.
 
 **Algorithm — runs before every LLM call:**
 
@@ -211,6 +211,6 @@ The existing `<div data-slot="chat-input-slash-menu" className="hidden" />` stub
 - `lib/skills-manager/` — `SkillsManager` library (`search()` method to be added)
 - `api/src/services/tools-manager.ts` — singleton pattern to follow
 - `api/src/agents/chat-agent.ts` — `createReactAgent` call site for `messageModifier`
-- `ui/src/components/chat-input.tsx` — slash-menu stub at line 125
+- `ui/src/components/chat-input.tsx` — slash-menu stub at line 126
 - `docs/ADR.md` ADR-002 — injection timing decision and options comparison
 - AgentSkills specification: https://agentskills.io/specification

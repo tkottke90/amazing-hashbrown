@@ -154,7 +154,7 @@ A key concern with the naive form of Option B — injecting the skill body on ev
 
 **Option B is adopted, with a latest-message-only constraint.**
 
-The `messageModifier` in `createReactAgent` inspects the messages array before each LLM call and expands a slash command **only if it appears in the most recent human message.** Historical messages in the thread that contain slash commands are passed through as literal text — they are not re-expanded. This ensures:
+A pre-LLM message transform hook in `createAgent` inspects the messages array before each LLM call and expands a slash command **only if it appears in the most recent human message.** Historical messages in the thread that contain slash commands are passed through as literal text — they are not re-expanded. This ensures:
 
 1. The checkpoint stores the user's original intent (`/command args`), keeping conversation history readable and compact.
 2. The model receives the expanded skill body exactly once, attached to the message that invoked it, with no ambiguity about which instructions govern the current request.
@@ -167,10 +167,10 @@ The latest-message-only constraint is the core invariant: if the skill command i
 
 ### Consequences
 
-- The `messageModifier` closes over the `SkillsManager` singleton, which must be booted before the agent is built. Skill-not-found errors surface as a modified message with an inline error notice rather than a pre-flight SSE error; error handling in the modifier must be robust.
+- The pre-LLM transform closes over the `SkillsManager` singleton, which must be booted before the agent is built. Skill-not-found errors surface as a modified message with an inline error notice rather than a pre-flight SSE error; error handling must be robust.
 - Historical thread messages containing slash commands display as literal `/command args` text in the UI — this is intentional and preserves the original user intent.
 - If a skill is deleted after it has been invoked in a thread, future re-expansion of that same turn (on retry or fork) will produce a skill-not-found error. This is acceptable; the correct user action is to re-send with a valid command.
-- The `SKILLS_SECTION` in `buildSystemPrompt()` (listing available skills and their slash commands) gives the model awareness of the skill surface — this is the primary discovery mechanism, independent of the expansion pipeline.
+- Agent-side skill discovery is via a `search_skills` LangGraph tool (optional keyword filter, returns enabled skill summaries). Skills are not enumerated in the system prompt — this avoids per-turn context cost for local models with limited context windows. The `search_skills` tool is called on demand when the model judges it useful.
 
 ---
 
@@ -179,5 +179,5 @@ The latest-message-only constraint is the core invariant: if the skill command i
 - AgentSkills specification: https://agentskills.io/specification
 - AgentSkills client implementation guide: https://agentskills.io/client-implementation/adding-skills-support
 - `lib/skills-manager/` — the `SkillsManager` library this feature builds on
-- `api/src/agents/chat-agent.ts` — `createReactAgent` call site where `messageModifier` will be added
+- `api/src/agents/chat-agent.ts` — `createAgent` call site where the pre-LLM message transform will be added
 - `api/src/agents/stream-handler.ts` — `streamChatToSse` (the Option A injection point, not used)
