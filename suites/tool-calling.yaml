@@ -23,6 +23,33 @@ scenarios:
       - path: mimeType
         match: exists
 
+  - id: tools-003-search-skills-no-keyword
+    name: Agent calls search_skills when asked what skills are available
+    purpose: >
+      Confirms the agent invokes search_skills — with no keyword argument —
+      when the user asks what skills or slash commands are available, rather
+      than claiming it has no information or making something up. The tool is
+      the only authoritative source; the agent must reach for it.
+    type: tool-call
+    input: >
+      What skills or slash commands do you have available?
+    tool: search_skills
+
+  - id: tools-004-search-skills-keyword
+    name: Agent calls search_skills with a relevant keyword when asked about topic-specific skills
+    purpose: >
+      Confirms the agent passes a keyword to search_skills when the user asks
+      about skills for a specific topic (e.g. "summarizing"), rather than
+      calling with no argument and returning everything. Tests that the agent
+      uses the optional keyword to narrow results before reporting back.
+    type: tool-call
+    input: >
+      Do you have any skills for summarizing content?
+    tool: search_skills
+    argChecks:
+      - path: keyword
+        match: exists
+
   - id: tools-002-comfyui-then-upload
     name: Agent uploads a previously-generated image via upload_image
     purpose: >
