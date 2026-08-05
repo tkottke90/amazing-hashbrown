@@ -150,7 +150,7 @@ export function finalizeToolCall(
 
 export interface HitlPromptFields {
   question: string;
-  promptKind: 'yes_no' | 'multiple_choice' | 'free_text';
+  promptKind: 'yes_no' | 'multiple_choice' | 'free_text' | 'shell_approval';
   choices?: string[];
   allowFreeText?: boolean;
   approveLabel?: string;

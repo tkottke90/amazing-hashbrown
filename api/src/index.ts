@@ -2,16 +2,18 @@ import { createApp } from './app.js';
 import { loadAgentInstructions } from './config/agent-instructions.js';
 import { bootToolsManager } from './services/tools-manager.js';
 import { bootObservability } from './services/observability.js';
+import { bootShellAudit, getShellAuditWriter } from './services/shell-audit.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
 import { bootThreadStore } from './services/thread-store.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { bootArtifactStore } from './artifacts/artifact-store.js';
-import { bootSkillsManager } from './services/skills-manager.js';
+import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
 import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { ShellExecutor, ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
 
 const app = createApp();
 
@@ -23,6 +25,8 @@ await bootToolsManager();
 app.logger.info('Tools manager booted');
 bootObservability(db);
 app.logger.info('Observability booted');
+bootShellAudit(db);
+app.logger.info('Shell audit booted');
 bootUsage(db);
 seedProviderCosts();
 app.logger.info('Usage tracking booted');
@@ -34,6 +38,12 @@ await bootArtifactStore();
 app.logger.info('Artifact store booted');
 await bootSkillsManager();
 app.logger.info('Skills manager booted');
+const shellConfig = env.tools?.shell ?? ShellExecutorConfigSchema.parse({});
+const trustedExecutor = new ShellExecutor(shellConfig, {
+  trustAll: true,
+  auditWriter: getShellAuditWriter(),
+});
+skillsManager.setExecutor(trustedExecutor);
 initChatAgent(db);
 initWikiAgent(db);
 await bootKnowledgeBase();

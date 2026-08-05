@@ -176,3 +176,40 @@ rlm:
 #   openai/gpt-4.1-mini:
 #     inputPer1kTokens: 0.0004
 #     outputPer1kTokens: 0.0012
+
+
+# ---------------------------------------------------------------------------
+# Shell Execution Tool
+#
+# Optional. Configures the shell_exec agent tool and the trusted executor
+# used by SkillsManager for skill scripts.
+#
+# workingDirectory: the working directory for all spawned commands.
+#                   Defaults to /app.
+#
+# allowlist:  glob-style patterns for commands that run without user approval.
+#             * matches any characters (including spaces).
+#             Example: "git *" allows any git sub-command.
+#             Patterns are anchored (^ and $) — "git" does NOT match "git status".
+#
+# denylist:   glob-style patterns that are always blocked, even if they also
+#             match the allowlist. Checked first — denylist always wins.
+#
+# env:        explicit environment variables injected into every spawned shell.
+#             The process environment is NOT inherited (security constraint).
+#             PATH defaults to /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin.
+#             Add any additional variables you want the agent shell to see, e.g. GH_TOKEN.
+# ---------------------------------------------------------------------------
+# tools:
+#   shell:
+#     workingDirectory: /app
+#     allowlist:
+#       - "ls *"
+#       - "git status"
+#       - "git log *"
+#     denylist:
+#       - "rm *"
+#       - "sudo *"
+#     env:
+#       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#       # GH_TOKEN: ${GH_TOKEN}

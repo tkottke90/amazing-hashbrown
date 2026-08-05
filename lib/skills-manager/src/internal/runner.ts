@@ -2,7 +2,14 @@ import { readFile, access } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import vm from 'node:vm';
+import type { ShellExecutor } from '@tkottke90/shell-executor';
 import type { ScriptResult } from '../types.js';
+
+let _executor: ShellExecutor | null = null;
+
+export function setRunnerExecutor(executor: ShellExecutor): void {
+  _executor = executor;
+}
 
 export async function runJsScript(
   scriptPath: string,
@@ -34,12 +41,34 @@ async function resolveInterpreter(skillPath: string): Promise<InterpreterMode> {
   return uvAvailable ? 'uv' : 'python3';
 }
 
+export function buildCommand(
+  mode: InterpreterMode,
+  skillPath: string,
+  scriptPath: string,
+  args: string[],
+): string {
+  const quotedArgs = args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' ');
+  if (mode === 'venv') {
+    const python = join(skillPath, '.venv', 'bin', 'python');
+    return `"${python}" "${scriptPath}"${quotedArgs ? ' ' + quotedArgs : ''}`;
+  } else if (mode === 'uv') {
+    return `uv run "${scriptPath}"${quotedArgs ? ' ' + quotedArgs : ''}`;
+  } else {
+    return `python3 "${scriptPath}"${quotedArgs ? ' ' + quotedArgs : ''}`;
+  }
+}
+
 export async function runPythonScript(
   skillPath: string,
   scriptPath: string,
   args: string[] = [],
 ): Promise<ScriptResult> {
   const mode = await resolveInterpreter(skillPath);
+
+  if (_executor) {
+    const command = buildCommand(mode, skillPath, scriptPath, args);
+    return _executor.execute(command);
+  }
 
   let cmd: string;
   let cmdArgs: string[];

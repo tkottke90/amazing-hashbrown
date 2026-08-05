@@ -35,33 +35,38 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</web_fetch>');
       expect(result).to.include('<rlm>');
       expect(result).to.include('</rlm>');
+      expect(result).to.include('<shell_execution>');
+      expect(result).to.include('</shell_execution>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(6);
-      expect(closes).to.equal(6);
+      expect(opens).to.equal(7);
+      expect(closes).to.equal(7);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, rlm, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, rlm, shell execution, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
       const rlmTagIndex = result.indexOf('<rlm>');
+      const shellTagIndex = result.indexOf('<shell_execution>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
+      expect(shellTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(rlmTagIndex);
-      expect(rlmTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
+      expect(shellTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
@@ -256,6 +261,35 @@ describe('agents/system-prompt', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('is yours to answer from directly');
       expect(result).to.include('adds a round-trip for nothing');
+    });
+
+    it('names shell_exec as real local-system access, overriding the wiki-only framing', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('your real, working access to the local machine');
+      expect(result).to.include(
+        'The wiki-as-memory\nrules above are about knowledge of the user; they do not make you wiki-only.',
+      );
+    });
+
+    it('anchors the no-refusal rule with the se-005 contrastive example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"I want to know the contents of /tmp/notes.txt" means run a\nread-only command like cat /tmp/notes.txt',
+      );
+      expect(result).to.include('not a refusal, and not a\nwiki lookup');
+    });
+
+    it('requires the reason field and prefers smallest-footprint commands', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('Always fill in the reason field');
+      expect(result).to.include(
+        'read with cat/head/tail rather than anything that modifies, moves, or\ndeletes',
+      );
+    });
+
+    it('requires honest reporting of denied or blocked shell commands', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('never present a blocked command as\nhaving succeeded');
     });
 
     it('treats an explicit "check X"/"fix X" request as already-made — no confirmation round-trip', () => {

@@ -10,6 +10,7 @@ import { createProvider } from '../services/provider-factory.js';
 import { skillsManager } from '../services/skills-manager.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
+import { shellExecTool } from './tools/shell-exec.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
 import { wikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
 import { wikiCreatePageTool } from './tools/wiki-create-page.tool.js';
@@ -153,6 +154,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     // MCP tools are converted from RegisteredTool.
     tools: [
       askUserTool,
+      shellExecTool,
       uploadImageTool,
       wikiSearchTool,
       wikiReadPageTool,

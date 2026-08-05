@@ -7,6 +7,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ObservabilityStore, CostStore } from '@tkottke90/observability';
 import { EvaluationsStore } from '@tkottke90/evaluations';
 import { ThreadStore } from './services/thread-store.js';
+import { ShellAuditStore } from './services/shell-audit.js';
 
 // Every BaseStore subclass below shares ONE physical db connection in
 // production (see index.ts) and therefore one schema_migrations table
@@ -37,6 +38,7 @@ describe('shared-database migrations (cross-store)', () => {
     new CostStore(db);
     new EvaluationsStore(db);
     new ThreadStore(db);
+    new ShellAuditStore(db);
 
     const tables = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -53,6 +55,7 @@ describe('shared-database migrations (cross-store)', () => {
       'judge_calibrations',
       'threads',
       'thread_messages',
+      'shell_audit_log',
     ];
     for (const table of expectedTables) {
       expect(tables, `expected table "${table}" in: ${JSON.stringify(tables)}`).to.include(table);
@@ -83,6 +86,11 @@ describe('shared-database migrations (cross-store)', () => {
       db.prepare('PRAGMA table_info(eval_runs)').all() as Array<{ name: string }>
     ).map((c) => c.name);
     expect(evalRunColumns).to.include('system_prompt');
+
+    const shellAuditColumns = (
+      db.prepare('PRAGMA table_info(shell_audit_log)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(shellAuditColumns).to.include('trust_all');
 
     db.close();
   });

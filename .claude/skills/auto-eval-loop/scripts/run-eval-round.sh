@@ -34,7 +34,10 @@ LOG_DIR="eval-logs/run-logs"
 mkdir -p "$LOG_DIR"
 COMBINED_LOG="$LOG_DIR/round-${ROUND_ID}-${MODEL}.log"
 
-CMD=(npm run eval -- --suite "$SUITE" --model "$MODEL" --judge-model "$JUDGE")
+# --ci skips `human`-type scenarios (they're excluded from scoring) instead
+# of launching the interactive scoring TUI, which would crash on the
+# non-TTY stdin this script runs under.
+CMD=(npm run eval -- --suite "$SUITE" --model "$MODEL" --judge-model "$JUDGE" --ci)
 
 if [ "$DEBUG_FLAG" = "--debug" ]; then
   set +e

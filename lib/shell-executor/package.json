@@ -1,5 +1,5 @@
 {
-  "name": "@tkottke90/skills-manager",
+  "name": "@tkottke90/shell-executor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,11 +16,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch"
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "mocha"
   },
   "dependencies": {
-    "@tkottke90/shell-executor": "*",
-    "gray-matter": "4.0.3"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/chai": "4.3.0",

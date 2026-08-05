@@ -223,41 +223,66 @@ export async function finalizeTurn(
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
   if (interrupt) {
-    const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
-      interrupt.value as {
-        question: string;
-        kind: 'yes_no' | 'multiple_choice' | 'free_text';
-        choices?: string[];
-        allowFreeText?: boolean;
-        approveLabel?: string;
-        approveType?: 'primary' | 'secondary' | 'destructive';
-        rejectLabel?: string;
-      };
+    const interruptValue = interrupt.value as Record<string, unknown>;
     const promptId = randomUUID();
-    const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
-      question,
-      promptKind: kind,
-      choices,
-      allowFreeText,
-      approveLabel,
-      approveType,
-      rejectLabel,
-    });
-    writeSseEvent(res, {
-      type: 'hitl_prompt',
-      messageId: msgId,
-      promptId,
-      question,
-      kind,
-      choices,
-      allowFreeText,
-      approveLabel,
-      approveType,
-      rejectLabel,
-      ...(promptSeq !== null ? { seq: promptSeq } : {}),
-      ...(assistantSeq !== null ? { assistantSeq } : {}),
-      ...(userSeq !== null ? { userSeq } : {}),
-    });
+
+    if (interruptValue.kind === 'shell_approval') {
+      const { command, reason } = interruptValue as { command: string; reason?: string };
+      const question = reason
+        ? `Allow command: \`${command}\`\n\nReason: ${reason}`
+        : `Allow command: \`${command}\``;
+      const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'shell_approval',
+      });
+      writeSseEvent(res, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'shell_approval',
+        command,
+        reason,
+        ...(promptSeq !== null ? { seq: promptSeq } : {}),
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    } else {
+      const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
+        interruptValue as {
+          question: string;
+          kind: 'yes_no' | 'multiple_choice' | 'free_text';
+          choices?: string[];
+          allowFreeText?: boolean;
+          approveLabel?: string;
+          approveType?: 'primary' | 'secondary' | 'destructive';
+          rejectLabel?: string;
+        };
+      const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+      });
+      writeSseEvent(res, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+        ...(promptSeq !== null ? { seq: promptSeq } : {}),
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    }
   } else {
     writeSseEvent(res, {
       type: 'stream_done',
