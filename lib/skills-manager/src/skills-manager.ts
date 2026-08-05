@@ -2,7 +2,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { serialize, validateFrontmatter, parse, DESCRIPTION_MAX } from './internal/frontmatter.js';
 import { scanSkillsRoot, readFrontmatter, readFullSkill } from './internal/loader.js';
-import { runJsScript, runPythonScript as execPythonScript, setRunnerExecutor } from './internal/runner.js';
+import {
+  runJsScript,
+  runPythonScript as execPythonScript,
+  setRunnerExecutor,
+} from './internal/runner.js';
 import type { ShellExecutor } from '@tkottke90/shell-executor';
 import type {
   Skill,

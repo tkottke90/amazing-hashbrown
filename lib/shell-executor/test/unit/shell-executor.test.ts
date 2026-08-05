@@ -22,12 +22,14 @@ describe('ShellExecutor', () => {
       const entries: AuditEntry[] = [];
       const executor = new ShellExecutor(defaultConfig, {
         trustAll: true,
-        auditWriter: async (e) => { entries.push(e); },
+        auditWriter: async (e) => {
+          entries.push(e);
+        },
       });
       await executor.execute('echo audit');
       expect(entries.length).to.be.greaterThan(0);
       expect(entries[0].source).to.equal('trust');
-      expect(entries[0].trustAll).to.be.true;
+      expect(entries[0].trustAll).to.equal(true);
     });
   });
 
@@ -52,7 +54,9 @@ describe('ShellExecutor', () => {
         env: { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' },
       });
       const executor = new ShellExecutor(config, {
-        auditWriter: async (e) => { entries.push(e); },
+        auditWriter: async (e) => {
+          entries.push(e);
+        },
       });
       await executor.execute('rm -rf /tmp/test');
       expect(entries[0].outcome).to.equal('denied');
@@ -87,7 +91,9 @@ describe('ShellExecutor', () => {
       const entries: AuditEntry[] = [];
       const executor = new ShellExecutor(defaultConfig, {
         sessionAllowlist: ['echo *'],
-        auditWriter: async (e) => { entries.push(e); },
+        auditWriter: async (e) => {
+          entries.push(e);
+        },
       });
       await executor.execute('echo session');
       expect(entries[0].source).to.equal('session-memory');
@@ -124,7 +130,9 @@ describe('ShellExecutor', () => {
     it('swallows errors from failing audit writer', async () => {
       const executor = new ShellExecutor(defaultConfig, {
         trustAll: true,
-        auditWriter: async () => { throw new Error('audit db down'); },
+        auditWriter: async () => {
+          throw new Error('audit db down');
+        },
       });
       const result = await executor.execute('echo resilient');
       expect(result.stdout.trim()).to.equal('resilient');

@@ -32,6 +32,7 @@ lib/shell-executor/
 ```
 
 **Public exports:**
+
 - `ShellExecutor` class
 - `ShellExecutorConfigSchema` — Zod schema imported by consumers to compose into their own config validation
 - `ShellExecutorConfig` — inferred type
@@ -62,20 +63,20 @@ tools:
   shell:
     workingDirectory: /app
     allowlist:
-      - "git status"
-      - "git log *"
-      - "git diff *"
-      - "npm test"
-      - "npm run *"
-      - "ls *"
+      - 'git status'
+      - 'git log *'
+      - 'git diff *'
+      - 'npm test'
+      - 'npm run *'
+      - 'ls *'
     denylist:
-      - "rm -rf *"
-      - "sudo *"
-      - "git push *"
-      - "git reset --hard *"
+      - 'rm -rf *'
+      - 'sudo *'
+      - 'git push *'
+      - 'git reset --hard *'
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      GH_PAT: ${GH_PAT}   # explicitly map container env vars as needed
+      GH_PAT: ${GH_PAT} # explicitly map container env vars as needed
 ```
 
 **Security:** spawned processes receive only what is declared in `env` — no inheritance from `process.env`. Application secrets (API keys, database credentials) are invisible to the shell unless the user explicitly maps them. `PATH` is the sole exception, provided as a schema default so commands resolve out of the box without requiring manual configuration.
@@ -85,9 +86,11 @@ The api's top-level config schema composes the shell schema:
 ```typescript
 const ConfigSchema = z.object({
   // ...existing fields
-  tools: z.object({
-    shell: ShellExecutorConfigSchema,
-  }).optional(),
+  tools: z
+    .object({
+      shell: ShellExecutorConfigSchema,
+    })
+    .optional(),
 });
 ```
 
@@ -104,10 +107,10 @@ export class ShellExecutor {
       sessionAllowlist?: string[];
       onApprovalRequired?: ApprovalCallback;
       auditWriter?: AuditWriter;
-    }
-  )
+    },
+  );
 
-  execute(command: string, reason?: string): Promise<ShellCommandResult>
+  execute(command: string, reason?: string): Promise<ShellCommandResult>;
 }
 ```
 
@@ -155,8 +158,8 @@ export type ShellCommandResult = {
 // lib/shell-executor/src/policy.ts
 export function evaluatePolicy(
   command: string,
-  config: Pick<ShellExecutorConfig, 'allowlist' | 'denylist'>
-): 'allowed' | 'denied' | 'requires-approval'
+  config: Pick<ShellExecutorConfig, 'allowlist' | 'denylist'>,
+): 'allowed' | 'denied' | 'requires-approval';
 ```
 
 Pure function with no side effects — straightforward to unit test exhaustively.
@@ -166,6 +169,7 @@ Pure function with no side effects — straightforward to unit test exhaustively
 **Precedence:** denylist is checked first and always wins. This allows a broad allowlist pattern (`"git *"`) to be narrowed by a specific deny override (`"git push *"`) without conflict.
 
 **Three outcomes:**
+
 - `'allowed'` — matched the allowlist; executes immediately
 - `'denied'` — matched the denylist; rejected without involving the user
 - `'requires-approval'` — neither list matched; routed to `onApprovalRequired`
@@ -177,12 +181,12 @@ Pure function with no side effects — straightforward to unit test exhaustively
 ```typescript
 // lib/shell-executor/src/audit.ts
 export type AuditEntry = {
-  timestamp: string;          // ISO-8601
-  command: string;            // exactly as requested
+  timestamp: string; // ISO-8601
+  command: string; // exactly as requested
   outcome: 'allowed' | 'denied' | 'approved' | 'rejected' | 'error';
   source: 'trust' | 'policy' | 'session-memory' | 'user';
-  exitCode?: number;          // present if the process ran
-  threadId?: string;          // present for agent-initiated calls
+  exitCode?: number; // present if the process ran
+  threadId?: string; // present for agent-initiated calls
   trustAll: boolean;
 };
 
@@ -198,12 +202,14 @@ Every execution attempt writes an audit entry regardless of outcome. The `lib/ob
 `api/src/agents/tools/shell-exec.tool.ts` wires `ShellExecutor` to LangGraph.
 
 **Schema:**
+
 ```typescript
 const ShellExecSchema = z.object({
   command: z.string().describe('The shell command to run'),
-  reason: z.string().optional().describe(
-    'Why this command is needed — shown to the user if approval is required'
-  ),
+  reason: z
+    .string()
+    .optional()
+    .describe('Why this command is needed — shown to the user if approval is required'),
 });
 ```
 
@@ -228,6 +234,7 @@ Because LangGraph re-runs the tool node from the beginning on resume, `execute()
 **Session memory:** approved patterns are stored in thread metadata keyed by `threadId`. On the second execution (post-resume), the tool reads the updated session patterns before constructing the executor, so an `'approved_remember'` answer is reflected immediately within the same turn.
 
 **Tool result:** a plain string the agent reads back:
+
 ```
 exit 0
 <stdout>

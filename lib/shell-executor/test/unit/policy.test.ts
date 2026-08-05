@@ -12,17 +12,21 @@ describe('evaluatePolicy', () => {
   });
 
   it('returns denied for an exact denylist match', () => {
-    expect(evaluatePolicy('rm -rf /', { allowlist: [], denylist: ['rm -rf /'] })).to.equal('denied');
+    expect(evaluatePolicy('rm -rf /', { allowlist: [], denylist: ['rm -rf /'] })).to.equal(
+      'denied',
+    );
   });
 
   it('returns allowed for a glob allowlist match (prefix pattern)', () => {
-    expect(evaluatePolicy('git status', { allowlist: ['git *'], denylist: [] })).to.equal('allowed');
+    expect(evaluatePolicy('git status', { allowlist: ['git *'], denylist: [] })).to.equal(
+      'allowed',
+    );
   });
 
   it('denylist wins over allowlist when both match', () => {
-    expect(
-      evaluatePolicy('git push', { allowlist: ['git *'], denylist: ['git push'] }),
-    ).to.equal('denied');
+    expect(evaluatePolicy('git push', { allowlist: ['git *'], denylist: ['git push'] })).to.equal(
+      'denied',
+    );
   });
 
   it('exact match does not match a longer command (anchoring)', () => {
@@ -39,7 +43,10 @@ describe('evaluatePolicy', () => {
 
   it('returns requires-approval when command does not match any pattern', () => {
     expect(
-      evaluatePolicy('curl https://example.com', { allowlist: ['ls', 'git *'], denylist: ['rm *'] }),
+      evaluatePolicy('curl https://example.com', {
+        allowlist: ['ls', 'git *'],
+        denylist: ['rm *'],
+      }),
     ).to.equal('requires-approval');
   });
 

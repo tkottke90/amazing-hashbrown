@@ -4,7 +4,4 @@ export type ShellCommandResult = {
   exitCode: number;
 };
 
-export type ApprovalCallback = (
-  command: string,
-  reason?: string,
-) => Promise<'approved' | 'denied'>;
+export type ApprovalCallback = (command: string, reason?: string) => Promise<'approved' | 'denied'>;

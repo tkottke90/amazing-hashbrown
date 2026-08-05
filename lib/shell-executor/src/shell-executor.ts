@@ -17,10 +17,7 @@ const ERROR_RESULT = (message: string): ShellCommandResult => ({
   exitCode: 1,
 });
 
-function spawnCommand(
-  command: string,
-  config: ShellExecutorConfig,
-): Promise<ShellCommandResult> {
+function spawnCommand(command: string, config: ShellExecutorConfig): Promise<ShellCommandResult> {
   return new Promise((resolve) => {
     const proc = spawn(command, {
       shell: true,
