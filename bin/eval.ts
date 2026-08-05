@@ -15,6 +15,7 @@ import {
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
 import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
+import { shellExecTool } from '../api/src/agents/tools/shell-exec.tool.js';
 import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
 import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
 import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
@@ -38,6 +39,10 @@ import { fakeGenerateImageTool } from './eval-fixtures.js';
 // eval-fixtures.ts) — never part of the production agent's tool set.
 const evalTools = [
   askUserTool,
+  // Safe to bind here even though it can run real commands: tool-call and
+  // tool-sequence scenarios only inspect response.tool_calls — the runner
+  // never executes the bound tools (see invokeToolCallModel in runner.ts).
+  shellExecTool,
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,

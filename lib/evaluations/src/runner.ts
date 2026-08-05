@@ -309,10 +309,10 @@ export async function executeScenario(
   try {
     if (scenario.type === 'deterministic') {
       const s = scenario as DeterministicScenario;
-      const { content, latencyMs } = await invokeModel(
-        config.model,
-        withSystemPrompt(s.input, config.systemPrompt),
-      );
+      const input = s.priorTurns
+        ? withSystemPrompt(buildSeededMessages(s.input, s.priorTurns), config.systemPrompt)
+        : withSystemPrompt(s.input, config.systemPrompt);
+      const { content, latencyMs } = await invokeModel(config.model, input);
       const details = runDeterministic(s, content);
       return {
         ...baseResult,

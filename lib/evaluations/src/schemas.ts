@@ -25,22 +25,11 @@ const BaseScenario = z.object({
   skip: z.boolean().optional(),
 });
 
-export const DeterministicScenarioSchema = BaseScenario.extend({
-  type: z.literal('deterministic'),
-  match: z.enum(['contains', 'exact', 'regex']),
-  expected: z.string().min(1),
-}).strict();
-
-export const SemanticScenarioSchema = BaseScenario.extend({
-  type: z.literal('semantic'),
-  expectedSimilarTo: z.string().min(1),
-  minSimilarity: z.number().min(0).max(1).default(0.75),
-}).strict();
-
-// Shared by llm-judge and tool-sequence scenarios — declared here (ahead of
-// both) so either can reference it. Each entry becomes its own
-// AIMessage(tool_call) + ToolMessage(result) pair via runner.ts's
-// buildSeededMessages(), simulating a turn that already "happened".
+// Shared by deterministic, llm-judge, and tool-sequence scenarios — declared
+// here (ahead of all three) so any of them can reference it. Each entry
+// becomes its own AIMessage(tool_call) + ToolMessage(result) pair via
+// runner.ts's buildSeededMessages(), simulating a turn that already
+// "happened".
 export const PriorToolTurnSchema = z
   .object({
     tool: z.string().min(1),
@@ -48,6 +37,23 @@ export const PriorToolTurnSchema = z
     result: z.record(z.string(), z.unknown()),
   })
   .strict();
+
+export const DeterministicScenarioSchema = BaseScenario.extend({
+  type: z.literal('deterministic'),
+  match: z.enum(['contains', 'exact', 'regex']),
+  expected: z.string().min(1),
+  // Optional — same seeding path as llm-judge/tool-sequence, so a
+  // deterministic string match can assert on a final answer synthesized
+  // AFTER simulated tool results (e.g. "did the reply repeat the seeded
+  // stdout verbatim?"), not just a cold-start reply.
+  priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
+}).strict();
+
+export const SemanticScenarioSchema = BaseScenario.extend({
+  type: z.literal('semantic'),
+  expectedSimilarTo: z.string().min(1),
+  minSimilarity: z.number().min(0).max(1).default(0.75),
+}).strict();
 
 export const LlmJudgeScenarioSchema = BaseScenario.extend({
   type: z.literal('llm-judge'),
