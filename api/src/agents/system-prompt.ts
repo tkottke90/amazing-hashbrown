@@ -581,6 +581,40 @@ Calling rlm_query on content you already have in full adds a round-trip for noth
 external text is what flips you into the rlm_query workflow, not the mere fact that you read
 something.`;
 
+// Motivated by auto-eval round 2 of suites/shell-execution.yaml (2026-08-05):
+// with shellExecTool newly bound in evals (it was missing from bin/eval.ts's
+// evalTools — round 1's only real finding), gpt-oss refused se-005 ("I want
+// to know the contents of /tmp/notes.txt") by hallucinating a prohibition:
+// its reasoning said reading local files is "disallowed" and it had "only
+// wiki tools", then answered "I don't have the ability to access or read
+// files on your system." Nothing in the prompt said that — but nothing said
+// otherwise either: every section frames the agent around the wiki, and
+// shell never appeared. The same model called shell_exec correctly for
+// se-001 (ls) and se-002 (port check), so the gap is specifically that
+// file-ish tasks pattern-match to the wiki-only identity framing. This
+// section names shell_exec as real local-system access, ties the refusal
+// shape to MEMORY_SECTION's generic-disclaimer rule, and anchors the
+// read-only preference (se-005) and honest denial reporting (se-006) that
+// the suite checks. Watch se-005 on the next run; also watch that Lemonade
+// (which passed everything scorable without this section) doesn't regress.
+const SHELL_EXECUTION_SECTION = `shell_exec runs a shell command on the local system and returns its exit code and output. It is
+your real, working access to the local machine — listing files, reading a file the user points you
+at, checking processes or ports, and similar system tasks are shell_exec tasks. The wiki-as-memory
+rules above are about knowledge of the user; they do not make you wiki-only. Refusing a system task
+for "lack of filesystem access" when shell_exec is available is the same mistake as the generic AI
+disclaimer the memory rules warn about: "I want to know the contents of /tmp/notes.txt" means run a
+read-only command like cat /tmp/notes.txt and report what it printed — not a refusal, and not a
+wiki lookup.
+
+Always fill in the reason field — commands not on the policy allowlist show the user an approval
+prompt, and the reason is the only context they get for that decision. Prefer the smallest-footprint
+command that does the job: read with cat/head/tail rather than anything that modifies, moves, or
+deletes; don't reach for a destructive command unless the task explicitly requires one.
+
+Report the command's actual output, not what you expect it to print. If a command comes back denied
+or blocked by policy, say so plainly and offer a path forward — never present a blocked command as
+having succeeded.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
 // domains they meant, but wrote the question straight into its reply instead
@@ -664,6 +698,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION },
   { tag: 'rlm', content: RLM_SECTION },
+  { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION },
   // future: uncertainty, formatting, ...
 ];
