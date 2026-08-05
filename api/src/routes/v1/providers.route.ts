@@ -16,7 +16,11 @@ providersRouter.get('/', async (_req, res) => {
         models: liveIds.map((id) => {
           const pricing = pricingMap.get(id);
           return pricing
-            ? { id, inputPricePerM: pricing.inputPricePerM, outputPricePerM: pricing.outputPricePerM }
+            ? {
+                id,
+                inputPricePerM: pricing.inputPricePerM,
+                outputPricePerM: pricing.outputPricePerM,
+              }
             : { id };
         }),
       };

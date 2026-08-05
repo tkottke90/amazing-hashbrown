@@ -170,139 +170,137 @@ export function ChatInput({
   }
 
   return (
-    <div
-      data-slot="chat-input"
-      className={cn(
-        'grid w-full grid-cols-3 gap-2 overflow-hidden rounded-[4px] border border-border p-2',
-        className,
-      )}
-      style={{
-        gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
-      }}
-    >
-      {header ? (
+    <div data-slot="chat-input" className={cn('relative w-full', className)}>
+      {menuOpen.value && menuItems.value.length > 0 && (
         <div
-          data-slot="chat-input-header"
-          style={{ gridArea: 'header' }}
-          className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
+          data-slot="chat-input-slash-menu"
+          className="absolute bottom-full left-0 z-50 mb-1 w-fit overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
-          {header}
+          {menuItems.value.map((skill, i) => (
+            <div
+              key={skill.name}
+              className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectSkill(skill);
+              }}
+              onMouseEnter={() => {
+                menuIndex.value = i;
+              }}
+            >
+              <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
+              <div className="text-xs text-muted-foreground max-w-[70ch]">{skill.description}</div>
+            </div>
+          ))}
         </div>
-      ) : null}
+      )}
 
-      <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="relative min-w-0">
-        {menuOpen.value && menuItems.value.length > 0 && (
+      <div
+        className="grid w-full grid-cols-3 gap-2 overflow-hidden rounded-[4px] border border-border p-2"
+        style={{
+          gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
+        }}
+      >
+        {header ? (
           <div
-            data-slot="chat-input-slash-menu"
-            className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            data-slot="chat-input-header"
+            style={{ gridArea: 'header' }}
+            className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
           >
-            {menuItems.value.map((skill, i) => (
-              <div
-                key={skill.name}
-                className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  selectSkill(skill);
-                }}
-                onMouseEnter={() => {
-                  menuIndex.value = i;
-                }}
-              >
-                <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
-                <div className="line-clamp-1 text-xs text-muted-foreground">
-                  {skill.description}
-                </div>
-              </div>
-            ))}
+            {header}
           </div>
-        )}
-        <Textarea
-          value={value}
-          onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={2}
-          className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-        />
-      </div>
+        ) : null}
 
-      <div
-        data-slot="chat-input-actions"
-        style={{ gridArea: 'actions' }}
-        className="flex min-w-0 items-center gap-1 overflow-x-auto"
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Add to message"
-            className={buttonVariants({ variant: 'outline', size: 'icon-sm' })}
-          >
-            <Plus />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={onAddFile}>Add file</DropdownMenuItem>
-            {providers && providers.length > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    {providers.map((p) => (
-                      <DropdownMenuSub key={p.name}>
-                        <DropdownMenuSubTrigger
-                          className={p.name === activeProvider ? 'font-semibold' : undefined}
-                        >
-                          {p.name}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          {p.models.map((m) => (
-                            <DropdownMenuCheckboxItem
-                              key={m.id}
-                              checked={m.id === activeModel && p.name === activeProvider}
-                              onSelect={() => onModelSelect?.(p.name, m.id)}
-                            >
-                              {m.id}
-                              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
-                                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
-                                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
-                                </DropdownMenuLabel>
-                              )}
-                            </DropdownMenuCheckboxItem>
-                          ))}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {activeModel && (
-          <span
-            data-slot="model-chip"
-            className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-          >
-            {activeModel}
-          </span>
-        )}
-        {actions}
-      </div>
+        <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="min-w-0">
+          <Textarea
+            value={value}
+            onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={2}
+            className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
+        </div>
 
-      <div
-        data-slot="chat-input-send"
-        style={{ gridArea: 'send' }}
-        className="flex items-center justify-end"
-      >
-        <Button
-          type="button"
-          size="icon"
-          aria-label={isGenerating ? 'Stop generating' : 'Send message'}
-          disabled={isGenerating ? false : !canSend}
-          onClick={isGenerating ? onStop : onSend}
+        <div
+          data-slot="chat-input-actions"
+          style={{ gridArea: 'actions' }}
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
         >
-          {isGenerating ? <Square /> : <Send />}
-        </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Add to message"
+              className={buttonVariants({ variant: 'outline', size: 'icon-sm' })}
+            >
+              <Plus />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={onAddFile}>Add file</DropdownMenuItem>
+              {providers && providers.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {providers.map((p) => (
+                        <DropdownMenuSub key={p.name}>
+                          <DropdownMenuSubTrigger
+                            className={p.name === activeProvider ? 'font-semibold' : undefined}
+                          >
+                            {p.name}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            {p.models.map((m) => (
+                              <DropdownMenuCheckboxItem
+                                key={m.id}
+                                checked={m.id === activeModel && p.name === activeProvider}
+                                onSelect={() => onModelSelect?.(p.name, m.id)}
+                              >
+                                {m.id}
+                                {m.inputPricePerM !== undefined &&
+                                  m.outputPricePerM !== undefined && (
+                                    <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                                      ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                                    </DropdownMenuLabel>
+                                  )}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {activeModel && (
+            <span
+              data-slot="model-chip"
+              className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              {activeModel}
+            </span>
+          )}
+          {actions}
+        </div>
+
+        <div
+          data-slot="chat-input-send"
+          style={{ gridArea: 'send' }}
+          className="flex items-center justify-end"
+        >
+          <Button
+            type="button"
+            size="icon"
+            aria-label={isGenerating ? 'Stop generating' : 'Send message'}
+            disabled={isGenerating ? false : !canSend}
+            onClick={isGenerating ? onStop : onSend}
+          >
+            {isGenerating ? <Square /> : <Send />}
+          </Button>
+        </div>
       </div>
     </div>
   );
