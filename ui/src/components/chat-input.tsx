@@ -189,7 +189,7 @@ export function ChatInput({
               }}
             >
               <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
-              <div className="line-clamp-1 text-xs text-muted-foreground">{skill.description}</div>
+              <div className="text-xs text-muted-foreground max-w-[70ch]">{skill.description}</div>
             </div>
           ))}
         </div>
