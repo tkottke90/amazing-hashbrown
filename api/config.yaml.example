@@ -27,6 +27,11 @@ mcpConfigDir: ./config
 # file, processed web/preview variants, and a meta.json.
 artifactRoot: ./config/artifacts
 
+# Directory that holds AgentSkills-format skill directories (each containing
+# a SKILL.md with frontmatter + instruction body). Created automatically on
+# first boot if it does not exist. Relative to the config directory.
+skillsRoot: ./skills
+
 # ---------------------------------------------------------------------------
 # LLM Providers
 #

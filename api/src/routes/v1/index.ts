@@ -8,6 +8,7 @@ import { tracesRouter } from './traces.route.js';
 import { usageRouter } from './usage.route.js';
 import { threadsRouter } from './threads.route.js';
 import { wikiRouter } from './wiki.route.js';
+import { skillsRouter } from './skills.route.js';
 
 export const v1Router = Router();
 
@@ -20,3 +21,4 @@ v1Router.use('/traces', tracesRouter);
 v1Router.use('/usage', usageRouter);
 v1Router.use('/threads', threadsRouter);
 v1Router.use('/wiki', wikiRouter);
+v1Router.use('/skills', skillsRouter);
