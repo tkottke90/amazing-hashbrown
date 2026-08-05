@@ -45,6 +45,9 @@ const HitlPromptSchema = z.object({
   approveLabel: z.string().optional(),
   approveType: z.enum(['primary', 'secondary', 'destructive']).optional(),
   rejectLabel: z.string().optional(),
+  // Present when kind === 'shell_approval'
+  command: z.string().optional(),
+  reason: z.string().optional(),
   // The hitl_prompt row's own seq — not currently a fork target, but
   // populated for correctness/consistency with the DB truth.
   seq: z.number().optional(),

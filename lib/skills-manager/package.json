@@ -19,6 +19,7 @@
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
+    "@tkottke90/shell-executor": "*",
     "gray-matter": "4.0.3"
   },
   "devDependencies": {

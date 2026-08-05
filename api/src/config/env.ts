@@ -1,6 +1,8 @@
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+import { ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
+import type { ShellExecutorConfig } from '@tkottke90/shell-executor';
 
 loadDotenv();
 
@@ -69,6 +71,10 @@ const WebFetchConfigSchema = z.object({
   respectRobotsTxt: z.boolean().default(true),
 });
 
+const ToolsConfigSchema = z.object({
+  shell: ShellExecutorConfigSchema.optional(),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -86,6 +92,7 @@ const AppConfigSchema = z.object({
   webFetch: WebFetchConfigSchema.optional(),
   rlm: RLMConfigSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
+  tools: ToolsConfigSchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -207,6 +214,16 @@ export const env = {
       ) as Record<string, CostEntry>;
     } catch {
       return {};
+    }
+  },
+  get tools(): { shell?: ShellExecutorConfig } | undefined {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('tools', ToolsConfigSchema) as {
+        shell?: ShellExecutorConfig;
+      };
+    } catch {
+      return undefined;
     }
   },
 };
