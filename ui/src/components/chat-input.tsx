@@ -213,93 +213,94 @@ export function ChatInput({
 
         <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="min-w-0">
           <Textarea
-          value={value}
-          onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={2}
-          className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-        />
-      </div>
+            value={value}
+            onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={2}
+            className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
+        </div>
 
-      <div
-        data-slot="chat-input-actions"
-        style={{ gridArea: 'actions' }}
-        className="flex min-w-0 items-center gap-1 overflow-x-auto"
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Add to message"
-            className={buttonVariants({ variant: 'outline', size: 'icon-sm' })}
-          >
-            <Plus />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={onAddFile}>Add file</DropdownMenuItem>
-            {providers && providers.length > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    {providers.map((p) => (
-                      <DropdownMenuSub key={p.name}>
-                        <DropdownMenuSubTrigger
-                          className={p.name === activeProvider ? 'font-semibold' : undefined}
-                        >
-                          {p.name}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          {p.models.map((m) => (
-                            <DropdownMenuCheckboxItem
-                              key={m.id}
-                              checked={m.id === activeModel && p.name === activeProvider}
-                              onSelect={() => onModelSelect?.(p.name, m.id)}
-                            >
-                              {m.id}
-                              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
-                                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
-                                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
-                                </DropdownMenuLabel>
-                              )}
-                            </DropdownMenuCheckboxItem>
-                          ))}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {activeModel && (
-          <span
-            data-slot="model-chip"
-            className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-          >
-            {activeModel}
-          </span>
-        )}
-        {actions}
-      </div>
-
-      <div
-        data-slot="chat-input-send"
-        style={{ gridArea: 'send' }}
-        className="flex items-center justify-end"
-      >
-        <Button
-          type="button"
-          size="icon"
-          aria-label={isGenerating ? 'Stop generating' : 'Send message'}
-          disabled={isGenerating ? false : !canSend}
-          onClick={isGenerating ? onStop : onSend}
+        <div
+          data-slot="chat-input-actions"
+          style={{ gridArea: 'actions' }}
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
         >
-          {isGenerating ? <Square /> : <Send />}
-        </Button>
-      </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Add to message"
+              className={buttonVariants({ variant: 'outline', size: 'icon-sm' })}
+            >
+              <Plus />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={onAddFile}>Add file</DropdownMenuItem>
+              {providers && providers.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {providers.map((p) => (
+                        <DropdownMenuSub key={p.name}>
+                          <DropdownMenuSubTrigger
+                            className={p.name === activeProvider ? 'font-semibold' : undefined}
+                          >
+                            {p.name}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            {p.models.map((m) => (
+                              <DropdownMenuCheckboxItem
+                                key={m.id}
+                                checked={m.id === activeModel && p.name === activeProvider}
+                                onSelect={() => onModelSelect?.(p.name, m.id)}
+                              >
+                                {m.id}
+                                {m.inputPricePerM !== undefined &&
+                                  m.outputPricePerM !== undefined && (
+                                    <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                                      ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                                    </DropdownMenuLabel>
+                                  )}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {activeModel && (
+            <span
+              data-slot="model-chip"
+              className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              {activeModel}
+            </span>
+          )}
+          {actions}
+        </div>
+
+        <div
+          data-slot="chat-input-send"
+          style={{ gridArea: 'send' }}
+          className="flex items-center justify-end"
+        >
+          <Button
+            type="button"
+            size="icon"
+            aria-label={isGenerating ? 'Stop generating' : 'Send message'}
+            disabled={isGenerating ? false : !canSend}
+            onClick={isGenerating ? onStop : onSend}
+          >
+            {isGenerating ? <Square /> : <Send />}
+          </Button>
+        </div>
       </div>
     </div>
   );
