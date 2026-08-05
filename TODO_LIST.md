@@ -37,18 +37,19 @@ Items are ordered first by priority/necessity, then by dependency.
 
 **MVP line** — items above this point deliver a harness that can be driven by chat, learn via the wiki, and interact via shell and web fetch; items below are autonomous operation infrastructure.
 
-3. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-4. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #3 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), [Web/URL Ingestion Tool](#weburl-ingestion-tool), and [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) now complete — no longer blocking)
-5. [Trigger System](#trigger-system) — depends on: #3; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-6. [Escalation System](#escalation-system) — depends on: #3; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-7. [Dashboard System](#dashboard-system) — depends on: #3, #6; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-8. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-9. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-10. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-11. [Skills Integration](#skills-integration) — depends on: #10 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
-12. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #10
-13. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #8
-14. [Notification Delivery](#notification-delivery) — depends on: #6; external channels deferred; interim: `action_required` flag on threads/tasks
+3. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — follow-up to #2; no dependencies; when the server restarts while a HITL prompt is pending, the LangGraph checkpoint preserves graph state but the frontend loses the SSE connection and does not re-render the pending prompt on reconnect — affects all HITL flows (`ask_user`, shell approval)
+4. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+5. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #4 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), [Web/URL Ingestion Tool](#weburl-ingestion-tool), and [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) now complete — no longer blocking)
+6. [Trigger System](#trigger-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+7. [Escalation System](#escalation-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+8. [Dashboard System](#dashboard-system) — depends on: #4, #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+9. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+10. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+11. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+12. [Skills Integration](#skills-integration) — depends on: #11 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
+13. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #11
+14. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #9
+15. [Notification Delivery](#notification-delivery) — depends on: #7; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 
@@ -437,6 +438,23 @@ Items are ordered first by priority/necessity, then by dependency.
 
 ---
 
+### HITL Recovery on Reconnect
+
+**Goal:** Ensure that any pending HITL prompt (shell command approval, `ask_user` question, or any future `interrupt()`-based pause) is re-surfaced to the user after a server restart or SSE reconnect, so in-flight approvals are never silently lost.
+
+**Context:** Identified during Shell Command Execution design. When the server restarts while a LangGraph graph is suspended at an `interrupt()` call, the checkpoint (SQLite via `SqliteSaver`) preserves the full graph state including the pending interrupt payload. The backend can resume correctly the moment a resume command arrives. The gap is on the frontend: the SSE connection drops on restart, and on reconnect the UI re-renders the thread's message history from the checkpoint but does not currently detect or re-display an outstanding HITL prompt. The user sees the conversation up to the last complete message, with no indication that the agent is waiting for their input.
+
+**Ideas / Requirements:**
+
+- On thread load (initial render and reconnect), the frontend should query the thread's checkpoint state to check whether the graph is currently suspended at an `interrupt()` — a new `GET /api/v1/threads/:id/status` endpoint (or an additional field on the existing thread detail endpoint) can expose this: `{ pending: true, hitlPrompt: { ... } }` when suspended
+- If a pending HITL prompt is detected, the UI re-renders it exactly as it would have on the original SSE event — the same `hitl_prompt` payload is available from the checkpoint
+- This covers all `interrupt()`-based HITL flows uniformly: `ask_user`, shell command approval, and any future approval step — no per-tool handling needed
+- The resume path is unchanged: user responds, frontend sends `Command({ resume: answer })`, graph continues from the checkpoint
+
+**Dependencies:** none (builds on existing SQLite checkpoint infrastructure)
+
+---
+
 ### Shell Command Execution
 
 **Goal:** Give the agent a shell environment for running commands — the first follow-up skill after [Agent Skills (Slash Commands)](#agent-skills-slash-commands) lands. Commands run in a controlled environment, gated by a policy and an approval flow, with results captured as tool calls.
@@ -448,6 +466,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - **Approval system:** commands outside the allowed set are routed to the user for approval before execution, probably reusing parts of the existing `ask_user` HITL flow (structured prompt, blocking wait, SSE round-trip) rather than building a second approval mechanism
 - **Result capture:** the execution result (stdout, stderr, exit code) is captured and returned as a tool call, so it renders in the thread like any other tool invocation and lands in the observability trace store
 - Approval decisions should be auditable — log what was requested, what was approved/denied, and what actually ran
+- **Known follow-up:** if the server restarts while a shell approval is pending, the checkpoint preserves graph state but the frontend will not re-render the approval prompt on reconnect — tracked separately as [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) (#3), which covers all HITL flows uniformly
 
 **Dependencies:** Agent Skills (Slash Commands)
 
