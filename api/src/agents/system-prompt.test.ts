@@ -265,9 +265,7 @@ describe('agents/system-prompt', () => {
 
     it('names shell_exec as real local-system access, overriding the wiki-only framing', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include(
-        'your real, working access to the local machine',
-      );
+      expect(result).to.include('your real, working access to the local machine');
       expect(result).to.include(
         'The wiki-as-memory\nrules above are about knowledge of the user; they do not make you wiki-only.',
       );
@@ -291,9 +289,7 @@ describe('agents/system-prompt', () => {
 
     it('requires honest reporting of denied or blocked shell commands', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include(
-        'never present a blocked command as\nhaving succeeded',
-      );
+      expect(result).to.include('never present a blocked command as\nhaving succeeded');
     });
 
     it('treats an explicit "check X"/"fix X" request as already-made — no confirmation round-trip', () => {
