@@ -174,7 +174,7 @@ export function ChatInput({
       {menuOpen.value && menuItems.value.length > 0 && (
         <div
           data-slot="chat-input-slash-menu"
-          className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+          className="absolute bottom-full left-0 z-50 mb-1 w-fit overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
           {menuItems.value.map((skill, i) => (
             <div
