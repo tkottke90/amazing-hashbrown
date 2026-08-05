@@ -170,53 +170,49 @@ export function ChatInput({
   }
 
   return (
-    <div
-      data-slot="chat-input"
-      className={cn(
-        'grid w-full grid-cols-3 gap-2 overflow-hidden rounded-[4px] border border-border p-2',
-        className,
-      )}
-      style={{
-        gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
-      }}
-    >
-      {header ? (
+    <div data-slot="chat-input" className={cn('relative w-full', className)}>
+      {menuOpen.value && menuItems.value.length > 0 && (
         <div
-          data-slot="chat-input-header"
-          style={{ gridArea: 'header' }}
-          className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
+          data-slot="chat-input-slash-menu"
+          className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
-          {header}
+          {menuItems.value.map((skill, i) => (
+            <div
+              key={skill.name}
+              className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectSkill(skill);
+              }}
+              onMouseEnter={() => {
+                menuIndex.value = i;
+              }}
+            >
+              <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
+              <div className="line-clamp-1 text-xs text-muted-foreground">{skill.description}</div>
+            </div>
+          ))}
         </div>
-      ) : null}
+      )}
 
-      <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="relative min-w-0">
-        {menuOpen.value && menuItems.value.length > 0 && (
+      <div
+        className="grid w-full grid-cols-3 gap-2 overflow-hidden rounded-[4px] border border-border p-2"
+        style={{
+          gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
+        }}
+      >
+        {header ? (
           <div
-            data-slot="chat-input-slash-menu"
-            className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            data-slot="chat-input-header"
+            style={{ gridArea: 'header' }}
+            className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
           >
-            {menuItems.value.map((skill, i) => (
-              <div
-                key={skill.name}
-                className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  selectSkill(skill);
-                }}
-                onMouseEnter={() => {
-                  menuIndex.value = i;
-                }}
-              >
-                <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
-                <div className="line-clamp-1 text-xs text-muted-foreground">
-                  {skill.description}
-                </div>
-              </div>
-            ))}
+            {header}
           </div>
-        )}
-        <Textarea
+        ) : null}
+
+        <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="min-w-0">
+          <Textarea
           value={value}
           onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
           onKeyDown={handleKeyDown}
@@ -303,6 +299,7 @@ export function ChatInput({
         >
           {isGenerating ? <Square /> : <Send />}
         </Button>
+      </div>
       </div>
     </div>
   );
