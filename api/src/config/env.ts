@@ -6,7 +6,7 @@ import type { ShellExecutorConfig } from '@tkottke90/shell-executor';
 
 loadDotenv();
 
-const ModelPricingSchema = z.object({
+export const ModelPricingSchema = z.object({
   id: z.string(),
   inputPricePerM: z.number().optional(),
   outputPricePerM: z.number().optional(),
@@ -14,7 +14,7 @@ const ModelPricingSchema = z.object({
 
 export type ModelPricingConfig = z.infer<typeof ModelPricingSchema>;
 
-const ProviderSchema = z.object({
+export const ProviderSchema = z.object({
   name: z.string(),
   type: z.enum(['ollama', 'openai', 'anthropic']),
   baseUrl: z.string().optional(),
@@ -25,31 +25,31 @@ const ProviderSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
-const DatabaseSchema = z.object({
+export const DatabaseSchema = z.object({
   path: z.string().default('app.db'),
 });
 
-const ObservabilitySchema = z.object({
+export const ObservabilitySchema = z.object({
   enabled: z.boolean().default(true),
   spanOutputPreviewChars: z.number().default(500),
 });
 
-const CostEntrySchema = z.object({
+export const CostEntrySchema = z.object({
   inputPer1kTokens: z.number().default(0),
   outputPer1kTokens: z.number().default(0),
 });
 
 export type CostEntry = z.infer<typeof CostEntrySchema>;
 
-const AfterAgentSchema = z.object({
+export const AfterAgentSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-const ChatSchema = z.object({
+export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
 });
 
-const EmbeddingsSchema = z.object({
+export const EmbeddingsSchema = z.object({
   enabled: z.boolean().default(true),
   type: z.enum(['ollama', 'openai']).default('ollama'),
   model: z.string().default('nomic-embed-text'),
@@ -57,7 +57,7 @@ const EmbeddingsSchema = z.object({
   apiKey: z.string().optional(),
 });
 
-const RLMConfigSchema = z.object({
+export const RLMConfigSchema = z.object({
   maxIterations: z.number().default(10),
   truncateThreshold: z.number().default(6000),
   provider: z.string().optional(),
@@ -66,12 +66,12 @@ const RLMConfigSchema = z.object({
 
 export type RLMConfig = z.infer<typeof RLMConfigSchema>;
 
-const WebFetchConfigSchema = z.object({
+export const WebFetchConfigSchema = z.object({
   timeoutMs: z.number().default(10000),
   respectRobotsTxt: z.boolean().default(true),
 });
 
-const ToolsConfigSchema = z.object({
+export const ToolsConfigSchema = z.object({
   shell: ShellExecutorConfigSchema.optional(),
 });
 

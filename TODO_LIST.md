@@ -26,6 +26,7 @@
 22. [Agent Skills (Slash Commands)](#agent-skills-slash-commands) — skills per the [AgentSkills specification](https://agentskills.io/specification), invocable by user and agent via slash commands; `SkillsManager` library complete and wired into chat agent
 23. [Shell Command Execution](#shell-command-execution) — `lib/shell-executor` package with policy engine (allowlist/denylist/requires-approval), HITL approval flow via `interrupt()`, per-thread session memory for `approved_remember`, audit trail; `shell_exec` tool wired into the ReAct agent; eval suite added
 24. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — `recordHitlPrompt` and `resolveHitlPrompt` removed from `safe()` wrapper so DB write failures surface instead of silently losing interrupt state; `command` and `reason` persisted in `shell_approval` payload so hydration renders Approve/Deny buttons identically to the live SSE flow; `finalizeTurn` and `resumeChatToSse` emit `stream_error` on write failure; e2e test added for reconnect rendering
+25. [Settings Page UI](#settings-page-ui) — full `/settings?section=<slug>` page with 9 sections (General, Storage, Model providers, Embeddings, Agent behavior, Tools, Cost rates, MCP Servers, Skills); `GET /api/v1/settings/:slug` + `PATCH /api/v1/settings/:slug` endpoints writing back to `config.yaml` via `yaml` package; Save/Discard bar with loading spinner; toast notifications; API-key masking; per-field Zod validation with inline errors; Provider and Rate modals; all sections unit-tested (Jest + @testing-library/preact); Playwright E2E suites 12 (navigation) and 13 (sections)
 
 ---
 
@@ -42,9 +43,8 @@ Items are ordered first by priority/necessity, then by dependency.
 5. [Dashboard System](#dashboard-system) — depends on: #1, #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 6. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
 7. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-8. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-9. [Skills Integration](#skills-integration) — depends on: #8 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
-10. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #8
+8. [Skills Integration](#skills-integration) — depends on: [Settings Page UI](#settings-page-ui) (now complete — no longer blocked); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
+9. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: [Settings Page UI](#settings-page-ui) (now complete — no longer blocked)
 11. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #6
 12. [Notification Delivery](#notification-delivery) — depends on: #4; external channels deferred; interim: `action_required` flag on threads/tasks
 
