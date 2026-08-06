@@ -219,6 +219,20 @@ describe('agents/thread-message-writer', () => {
       });
     });
 
+    it('recordHitlPrompt stores command and reason for shell_approval', () => {
+      recordHitlPrompt(store, 't1', 'p2', {
+        question: 'Allow command: `ls -la`\n\nReason: list files',
+        promptKind: 'shell_approval',
+        command: 'ls -la',
+        reason: 'list files',
+      });
+      const msg = store.getMessage('t1', 'p2')!;
+      expect(msg.status).to.equal('pending');
+      const payload = msg.payload as Record<string, unknown>;
+      expect(payload.command).to.equal('ls -la');
+      expect(payload.reason).to.equal('list files');
+    });
+
     it('resolveHitlPrompt preserves the original fields and adds the answer', () => {
       resolveHitlPrompt(store, 't1', 'p1', 'yes');
       const msg = store.getMessage('t1', 'p1')!;
@@ -235,6 +249,27 @@ describe('agents/thread-message-writer', () => {
 
     it('resolveHitlPrompt is a no-op (does not throw) for an unknown promptId', () => {
       expect(() => resolveHitlPrompt(store, 't1', 'no-such-prompt', 'yes')).to.not.throw();
+    });
+  });
+
+  describe('hitl_prompt strict write behaviour', () => {
+    it('recordHitlPrompt throws when the DB write fails', () => {
+      const { store: s, dir: d } = makeStore();
+      s.upsertThreadOnFirstMessage('t1', 'Hello');
+      s.close();
+      expect(() =>
+        recordHitlPrompt(s, 't1', 'px', { question: 'Q?', promptKind: 'yes_no' }),
+      ).to.throw();
+      rmSync(d, { recursive: true });
+    });
+
+    it('resolveHitlPrompt throws when the DB update fails', () => {
+      const { store: s, dir: d } = makeStore();
+      s.upsertThreadOnFirstMessage('t1', 'Hello');
+      recordHitlPrompt(s, 't1', 'py', { question: 'Q?', promptKind: 'yes_no' });
+      s.close();
+      expect(() => resolveHitlPrompt(s, 't1', 'py', 'yes')).to.throw();
+      rmSync(d, { recursive: true });
     });
   });
 

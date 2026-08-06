@@ -23,6 +23,9 @@
 19. [LLM Wiki UI & Direct Authoring Tools](#llm-wiki-ui--direct-authoring-tools) — `/wiki` route with D3 force-graph view (node radius by edge count, domain fill color, dashed border for contested pages, hover card) and document view (domain selector, page list grouped by type, Edit/Preview toggle, wikilink resolution); dedicated wiki ingestion agent (`wiki-ingestion-agent.ts`) with its own system prompt and persistent thread, separate from the general chat agent; `IngestionChat` UI panel with `NewDomainModal` and `NewPageForm` that compose structured messages to the ingestion agent; archive upload dialog (`.tar.gz`/`.zip`) for importing llm-wiki-formatted domains with lint gating and rollback; all four read endpoints (`/api/v1/wiki/domains`, `/graph`, `/pages`, `/pages/*`); `wiki_domain_created` SSE event; one remaining gap not yet implemented: file upload affordance in the ingestion chat input (URL ingestion via `web_fetch` has since landed with the Web/URL Ingestion Tool)
 20. [Web/URL Ingestion Tool](#weburl-ingestion-tool) — `web_fetch` tool (`api/src/agents/tools/web-fetch.tool.ts`) over a non-LLM `fetchUrl()` service (`api/src/services/web-fetch.ts`): reader-mode extraction for HTML via linkedom + Readability (article body, title/description, up to 50 outbound links, H1–H3 heading outline), pretty-printed JSON for JSON endpoints; per-origin `robots.txt` preflight with a process-lifetime cache, configurable via a new `webFetch` config block (`respectRobotsTxt`, `timeoutMs`); wired into the chat agent, the wiki ingestion agent (closing that item's URL-ingestion gap), and the eval harness; no separate `wiki_ingest` wrapper — the agent composes `web_fetch` with the existing wiki write tools; new `WEB_FETCH_SECTION` system-prompt guidance (fetch → route → write ordering); new `web-fetch` eval suite (5 scenarios), converged 5/5 on ornith, glm, and qwen3.5:4b
 21. [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) — `rlm_query` tool added to the ReAct agent; accepts a natural-language question and a page path and passes the page content through the RLM engine for long-context retrieval; `StatusSignal` callbacks streamed to the SSE layer for per-iteration UI progress; `RLM_MAX_ITERATIONS` env var (default 10) caps iteration depth
+22. [Agent Skills (Slash Commands)](#agent-skills-slash-commands) — skills per the [AgentSkills specification](https://agentskills.io/specification), invocable by user and agent via slash commands; `SkillsManager` library complete and wired into chat agent
+23. [Shell Command Execution](#shell-command-execution) — `lib/shell-executor` package with policy engine (allowlist/denylist/requires-approval), HITL approval flow via `interrupt()`, per-thread session memory for `approved_remember`, audit trail; `shell_exec` tool wired into the ReAct agent; eval suite added
+24. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — `recordHitlPrompt` and `resolveHitlPrompt` removed from `safe()` wrapper so DB write failures surface instead of silently losing interrupt state; `command` and `reason` persisted in `shell_approval` payload so hydration renders Approve/Deny buttons identically to the live SSE flow; `finalizeTurn` and `resumeChatToSse` emit `stream_error` on write failure; e2e test added for reconnect rendering
 
 ---
 
@@ -30,26 +33,20 @@
 
 Items are ordered first by priority/necessity, then by dependency.
 
-1. [Agent Skills (Slash Commands)](#agent-skills-slash-commands) — skills per the [AgentSkills specification](https://agentskills.io/specification), invocable by user and agent via slash commands; no dependencies
-2. [Shell Command Execution](#shell-command-execution) — depends on: #1; follow-up skill: shell environment, command policy, approval flow (reusing `ask_user` patterns), result captured as a tool call. **Note:** must coordinate with `SkillsManager` script execution — skills can carry JS and Python scripts (`runScript`, `runPythonScript`) that may invoke shell commands; the shell execution policy, approval flow, and audit trail established here should apply uniformly to both agent-initiated shell calls and skill-script-initiated shell calls.
+**MVP line** — items 22–24 above complete a harness that can be driven by chat, learn via the wiki, and interact via shell and web fetch; items below are autonomous operation infrastructure.
 
----
-
-**MVP line** — items above this point deliver a harness that can be driven by chat, learn via the wiki, and interact via shell and web fetch; items below are autonomous operation infrastructure.
-
-3. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — follow-up to #2; no dependencies; when the server restarts while a HITL prompt is pending, the LangGraph checkpoint preserves graph state but the frontend loses the SSE connection and does not re-render the pending prompt on reconnect — affects all HITL flows (`ask_user`, shell approval)
-4. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-5. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #4 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), [Web/URL Ingestion Tool](#weburl-ingestion-tool), and [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) now complete — no longer blocking)
-6. [Trigger System](#trigger-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-7. [Escalation System](#escalation-system) — depends on: #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-8. [Dashboard System](#dashboard-system) — depends on: #4, #7; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
-9. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
-10. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
-11. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
-12. [Skills Integration](#skills-integration) — depends on: #11 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
-13. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #11
-14. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #9
-15. [Notification Delivery](#notification-delivery) — depends on: #7; external channels deferred; interim: `action_required` flag on threads/tasks
+1. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+2. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), [Web/URL Ingestion Tool](#weburl-ingestion-tool), and [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) now complete — no longer blocking)
+3. [Trigger System](#trigger-system) — depends on: #1; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+4. [Escalation System](#escalation-system) — depends on: #1; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+5. [Dashboard System](#dashboard-system) — depends on: #1, #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+6. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
+7. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
+8. [Settings Page UI](#settings-page-ui) — sidebar nav link is currently a `#` stub
+9. [Skills Integration](#skills-integration) — depends on: #8 (Settings Page UI); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
+10. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: #8
+11. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #6
+12. [Notification Delivery](#notification-delivery) — depends on: #4; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 

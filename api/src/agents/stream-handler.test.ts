@@ -5,7 +5,7 @@ import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ThreadStore } from '../services/thread-store.js';
-import { pipeEvents } from './stream-handler.js';
+import { pipeEvents, finalizeTurn } from './stream-handler.js';
 
 // A minimal fake Response — writeSseEvent() only ever calls res.write().
 // Captures each raw SSE line so tests can assert on exactly what would have
@@ -32,7 +32,47 @@ function makeStore(): { store: ThreadStore; dir: string } {
   return { store, dir };
 }
 
+function stubAgent(interruptValue: Record<string, unknown> | null) {
+  return {
+    graph: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getState: async () => ({
+        tasks: interruptValue ? [{ interrupts: [{ value: interruptValue }] }] : [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
 describe('agents/stream-handler', () => {
+  describe('finalizeTurn', () => {
+    it('emits stream_error and does not emit hitl_prompt when recordHitlPrompt throws', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      store.close(); // closed DB — recordHitlPrompt will throw, finalizeAssistant swallows via safe()
+      const { res, events } = fakeRes();
+      const agent = stubAgent({ kind: 'shell_approval', command: 'ls -la', reason: 'list' });
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't1',
+        'msg1',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const emitted = events();
+      expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
+      expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+  });
+
   describe('pipeEvents', () => {
     let store: ThreadStore;
     let dir: string;
