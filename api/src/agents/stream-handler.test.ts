@@ -53,7 +53,19 @@ describe('agents/stream-handler', () => {
       store.close(); // closed DB — recordHitlPrompt will throw, finalizeAssistant swallows via safe()
       const { res, events } = fakeRes();
       const agent = stubAgent({ kind: 'shell_approval', command: 'ls -la', reason: 'list' });
-      await finalizeTurn(res, store, agent, 't1', 'msg1', Date.now(), '', '', new Date().toISOString(), null, null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't1',
+        'msg1',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
       const emitted = events();
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);

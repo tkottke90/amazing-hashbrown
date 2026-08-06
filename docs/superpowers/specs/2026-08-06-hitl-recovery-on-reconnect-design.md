@@ -53,8 +53,8 @@ export interface HitlPromptFields {
   approveLabel?: string;
   approveType?: 'primary' | 'secondary' | 'destructive';
   rejectLabel?: string;
-  command?: string;   // shell_approval only
-  reason?: string;    // shell_approval only
+  command?: string; // shell_approval only
+  reason?: string; // shell_approval only
 }
 ```
 
@@ -82,6 +82,7 @@ try {
 **`ui/src/types/thread-message.ts`** — the `hitl_prompt` message shape gains `command?: string` and `reason?: string`.
 
 **`ui/src/components/hitl-prompt-message.tsx`** — add an explicit `shell_approval` branch before the existing `free_text` else-fallthrough. The branch renders:
+
 - A `<code>` block displaying the `command`
 - The `reason` as plain text
 - Three buttons: Approve (`'approved'`), Approve & remember (`'approved_remember'`), Deny (`'denied'`)
@@ -95,6 +96,7 @@ No changes to `hydrateThread()` or the SSE client are required. The existing det
 ## Data flow after this change
 
 **Live turn (no change to happy path):**
+
 1. Agent hits `interrupt({ kind: 'shell_approval', command, reason })`
 2. `finalizeTurn()` reads interrupt from checkpoint
 3. `recordHitlPrompt()` writes to DB — **throws on failure**
@@ -102,16 +104,19 @@ No changes to `hydrateThread()` or the SSE client are required. The existing det
 5. Frontend renders Approve/Deny buttons
 
 **Reload / server restart:**
+
 1. `hydrateThread()` fetches `GET /threads/:id`
 2. Last message: `{ kind: 'hitl_prompt', status: 'pending', promptKind: 'shell_approval', command, reason, question }`
 3. `pendingHitlId` set; `HitlPromptMessage` renders Approve/Deny buttons — **identical to live flow**
 
 **Write failure during turn:**
+
 1. `recordHitlPrompt()` throws
 2. `finalizeTurn()` catch: `failAssistant()` marks assistant row as error, emits `stream_error`
 3. User sees turn error with retry button — no ghost pending HITL state
 
 **HITL answer submission failure:**
+
 1. `resolveHitlPrompt()` throws
 2. `resumeChatToSse()` catch: emits `stream_error`
 3. HITL row stays `pending`; user can resubmit their answer
@@ -139,13 +144,13 @@ New spec `hitl-shell-approval.spec.ts` tagged `@smoke @user-workflow` (no `@llm`
 
 ## Files changed
 
-| File | Change |
-|---|---|
-| `api/src/agents/thread-message-writer.ts` | Remove `safe()` from `recordHitlPrompt` and `resolveHitlPrompt`; add `command?`/`reason?` to `HitlPromptFields` |
-| `api/src/agents/stream-handler.ts` | Wrap `recordHitlPrompt()` in try/catch in `finalizeTurn()`; pass `command`/`reason` for shell approval; wrap `resolveHitlPrompt()` in try/catch in `resumeChatToSse()` |
-| `lib/llm-common-types/src/chat/hitl.ts` | Add `command?` and `reason?` to shared HITL type if absent |
-| `ui/src/types/thread-message.ts` | Add `command?` and `reason?` to `hitl_prompt` message shape |
-| `ui/src/components/hitl-prompt-message.tsx` | Add `shell_approval` rendering branch with Approve/Deny buttons |
-| `api/test/agents/thread-message-writer.test.ts` | Update/add unit tests per above |
-| `api/test/agents/stream-handler.test.ts` | Add unit tests per above |
-| `e2e/tests/hitl-shell-approval.spec.ts` | New e2e spec per above |
+| File                                            | Change                                                                                                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/src/agents/thread-message-writer.ts`       | Remove `safe()` from `recordHitlPrompt` and `resolveHitlPrompt`; add `command?`/`reason?` to `HitlPromptFields`                                                        |
+| `api/src/agents/stream-handler.ts`              | Wrap `recordHitlPrompt()` in try/catch in `finalizeTurn()`; pass `command`/`reason` for shell approval; wrap `resolveHitlPrompt()` in try/catch in `resumeChatToSse()` |
+| `lib/llm-common-types/src/chat/hitl.ts`         | Add `command?` and `reason?` to shared HITL type if absent                                                                                                             |
+| `ui/src/types/thread-message.ts`                | Add `command?` and `reason?` to `hitl_prompt` message shape                                                                                                            |
+| `ui/src/components/hitl-prompt-message.tsx`     | Add `shell_approval` rendering branch with Approve/Deny buttons                                                                                                        |
+| `api/test/agents/thread-message-writer.test.ts` | Update/add unit tests per above                                                                                                                                        |
+| `api/test/agents/stream-handler.test.ts`        | Add unit tests per above                                                                                                                                               |
+| `e2e/tests/hitl-shell-approval.spec.ts`         | New e2e spec per above                                                                                                                                                 |

@@ -14,7 +14,8 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: 'Load a thread whose last message is a pending shell_approval HITL prompt',
-      expectedOutcome: 'Approve, Approve & remember, and Deny buttons are visible; text input is not',
+      expectedOutcome:
+        'Approve, Approve & remember, and Deny buttons are visible; text input is not',
       test: () => {},
     },
     {
@@ -107,13 +108,15 @@ test.describe(
       await mockApis(page);
       await page.goto('/');
 
-      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'Shell Approval Test' });
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Shell Approval Test' });
       await pauseBeforeAction(page, testInfo);
       await row.click();
 
       await expect(page.locator('[data-slot="textarea"]')).toBeDisabled({ timeout: 10_000 });
 
-      await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Approve & remember' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Deny' })).toBeVisible();
       await expect(page.locator('input[placeholder="Type your answer…"]')).not.toBeVisible();
@@ -125,13 +128,15 @@ test.describe(
       await mockApis(page);
       await page.goto('/');
 
-      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'Shell Approval Test' });
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Shell Approval Test' });
       await row.click();
 
       await expect(page.locator('[data-slot="textarea"]')).toBeDisabled({ timeout: 10_000 });
 
       await pauseBeforeAction(page, testInfo);
-      await page.getByRole('button', { name: 'Approve' }).click();
+      await page.getByRole('button', { name: 'Approve', exact: true }).click();
 
       await expect(page.locator('[data-slot="textarea"]')).toBeEnabled({ timeout: 10_000 });
     });

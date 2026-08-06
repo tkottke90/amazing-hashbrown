@@ -73,9 +73,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
               <code>{message.command}</code>
             </pre>
           )}
-          {message.reason && (
-            <p className="text-sm text-muted-foreground">{message.reason}</p>
-          )}
+          {message.reason && <p className="text-sm text-muted-foreground">{message.reason}</p>}
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => submit('denied')}>
               Deny
