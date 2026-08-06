@@ -30,7 +30,10 @@ interface SettingsNavProps {
 
 export function SettingsNav({ activeSlug, onNavigate }: SettingsNavProps) {
   return (
-    <nav class="flex w-48 shrink-0 flex-col gap-0.5 border-r border-border p-3" aria-label="Settings navigation">
+    <nav
+      class="flex w-48 shrink-0 flex-col gap-0.5 border-r border-border p-3"
+      aria-label="Settings navigation"
+    >
       {NAV_ITEMS.map(({ label, slug }) => {
         const isActive = slug === activeSlug;
         return (

@@ -1,12 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { ProviderModal, type ProviderConfig } from './provider-modal';
-import { cn } from '@/lib/utils';
 
 interface ModelProvidersSettings {
   providers: ProviderConfig[];
@@ -106,10 +111,7 @@ export function ModelProvidersPanel() {
           </CardHeader>
           <CardContent class="space-y-1.5">
             <Label htmlFor="model-providers-default">Default provider</Label>
-            <Select
-              value={defaultProvider}
-              onValueChange={(v) => setField('defaultProvider', v)}
-            >
+            <Select value={defaultProvider} onValueChange={(v) => setField('defaultProvider', v)}>
               <SelectTrigger id="model-providers-default">
                 <SelectValue placeholder="Select a provider" />
               </SelectTrigger>

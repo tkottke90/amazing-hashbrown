@@ -45,8 +45,8 @@ Items are ordered first by priority/necessity, then by dependency.
 7. [File Attachment in Chat Input](#file-attachment-in-chat-input) — depends on: [Persistent Artifact Store](#persistent-artifact-store) (now complete — no longer blocked); UI wiring already stubbed
 8. [Skills Integration](#skills-integration) — depends on: [Settings Page UI](#settings-page-ui) (now complete — no longer blocked); `skills-manager` library is complete and wired as of Agent Skills; needs a Settings UI for managing skills: browse installed skills, enable/disable, view `SKILL.md` content, and install new skills by name or from a directory.
 9. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: [Settings Page UI](#settings-page-ui) (now complete — no longer blocked)
-11. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #6
-12. [Notification Delivery](#notification-delivery) — depends on: #4; external channels deferred; interim: `action_required` flag on threads/tasks
+10. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #6
+11. [Notification Delivery](#notification-delivery) — depends on: #4; external channels deferred; interim: `action_required` flag on threads/tasks
 
 ---
 

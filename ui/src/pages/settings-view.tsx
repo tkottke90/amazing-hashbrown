@@ -16,16 +16,26 @@ function resolveSection(raw: string | undefined): SettingsSlug {
 
 function ActivePanel({ section }: { section: SettingsSlug }) {
   switch (section) {
-    case 'general': return <GeneralPanel />;
-    case 'storage': return <StoragePanel />;
-    case 'model-providers': return <ModelProvidersPanel />;
-    case 'embeddings': return <EmbeddingsPanel />;
-    case 'agent-behavior': return <AgentBehaviorPanel />;
-    case 'tools': return <ToolsPanel />;
-    case 'cost-rates': return <CostRatesPanel />;
-    case 'mcp-servers': return <PlaceholderPanel title="MCP Servers" />;
-    case 'skills': return <PlaceholderPanel title="Skills" />;
-    default: return <GeneralPanel />;
+    case 'general':
+      return <GeneralPanel />;
+    case 'storage':
+      return <StoragePanel />;
+    case 'model-providers':
+      return <ModelProvidersPanel />;
+    case 'embeddings':
+      return <EmbeddingsPanel />;
+    case 'agent-behavior':
+      return <AgentBehaviorPanel />;
+    case 'tools':
+      return <ToolsPanel />;
+    case 'cost-rates':
+      return <CostRatesPanel />;
+    case 'mcp-servers':
+      return <PlaceholderPanel title="MCP Servers" />;
+    case 'skills':
+      return <PlaceholderPanel title="Skills" />;
+    default:
+      return <GeneralPanel />;
   }
 }
 

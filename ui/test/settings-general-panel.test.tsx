@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { render, screen, waitFor } from '@testing-library/preact';
 
 jest.mock('@/services/settings-api', () => {
   class SettingsValidationError extends Error {

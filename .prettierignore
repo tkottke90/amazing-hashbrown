@@ -4,3 +4,8 @@ coverage
 node_modules
 package-lock.json
 .agents/
+# Generated design-system sync artefacts — not hand-authored source
+.ds-sync/
+.design-sync/
+ds-bundle/
+ds-bundle-css/

@@ -20,7 +20,10 @@ export async function patchSettingsSection<T>(slug: string, body: unknown): Prom
   });
 
   if (res.status === 400) {
-    const payload = (await res.json()) as { fieldErrors?: Record<string, string[]>; error?: string };
+    const payload = (await res.json()) as {
+      fieldErrors?: Record<string, string[]>;
+      error?: string;
+    };
     throw new SettingsValidationError(payload.fieldErrors ?? payload.error ?? 'Validation failed');
   }
 

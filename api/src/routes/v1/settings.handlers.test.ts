@@ -39,7 +39,10 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
   };
 }
 
-function makeConfig(configDir: string, overrides: Partial<ConfigManagerAccessor> = {}): ConfigManagerAccessor {
+function makeConfig(
+  configDir: string,
+  overrides: Partial<ConfigManagerAccessor> = {},
+): ConfigManagerAccessor {
   return {
     get: (key: string, defaultValue?: unknown) => {
       const raw = readYaml(configDir);
@@ -88,9 +91,15 @@ describe('routes/v1/settings.handlers', () => {
     it('calls config.reload, loadAgentInstructions, invalidateChatAgent, and seedProviderCosts, in that order [orchestration]', async () => {
       await reloadSettingsHandler(
         { reload: () => calls.push('config.reload') },
-        async () => { calls.push('loadAgentInstructions'); },
-        () => { calls.push('invalidateChatAgent'); },
-        () => { calls.push('seedProviderCosts'); },
+        async () => {
+          calls.push('loadAgentInstructions');
+        },
+        () => {
+          calls.push('invalidateChatAgent');
+        },
+        () => {
+          calls.push('seedProviderCosts');
+        },
       );
 
       expect(calls).to.deep.equal([
@@ -104,10 +113,20 @@ describe('routes/v1/settings.handlers', () => {
     it('calls each dependency exactly once [orchestration]', async () => {
       const counts = { reload: 0, load: 0, invalidate: 0, seed: 0 };
       await reloadSettingsHandler(
-        { reload: () => { counts.reload++; } },
-        async () => { counts.load++; },
-        () => { counts.invalidate++; },
-        () => { counts.seed++; },
+        {
+          reload: () => {
+            counts.reload++;
+          },
+        },
+        async () => {
+          counts.load++;
+        },
+        () => {
+          counts.invalidate++;
+        },
+        () => {
+          counts.seed++;
+        },
       );
       expect(counts).to.deep.equal({ reload: 1, load: 1, invalidate: 1, seed: 1 });
     });
@@ -162,9 +181,7 @@ describe('routes/v1/settings.handlers', () => {
 
     it('masks apiKey to "****" in model-providers GET when set [unit]', () => {
       const envWithKey = makeEnv({
-        providers: [
-          { name: 'openai', type: 'openai', apiKey: 'sk-real-key' },
-        ],
+        providers: [{ name: 'openai', type: 'openai', apiKey: 'sk-real-key' }],
       });
       const result = getSettingsSectionHandler('model-providers', envWithKey, makeConfig(tmpDir));
       expect(result.ok).to.equal(true);
@@ -212,7 +229,10 @@ describe('routes/v1/settings.handlers', () => {
       expect(result.ok).to.equal(true);
       if (result.ok) {
         const data = result.data as { costs: Record<string, unknown> };
-        expect(data.costs['gpt-4']).to.deep.equal({ inputPer1kTokens: 0.03, outputPer1kTokens: 0.06 });
+        expect(data.costs['gpt-4']).to.deep.equal({
+          inputPer1kTokens: 0.03,
+          outputPer1kTokens: 0.06,
+        });
       }
     });
   });
@@ -234,17 +254,28 @@ describe('routes/v1/settings.handlers', () => {
 
     function makeSideEffects() {
       return {
-        loadAgentInstructions: async () => { calls.push('loadAgentInstructions'); },
-        invalidateChatAgent: () => { calls.push('invalidateChatAgent'); },
-        seedProviderCosts: () => { calls.push('seedProviderCosts'); },
+        loadAgentInstructions: async () => {
+          calls.push('loadAgentInstructions');
+        },
+        invalidateChatAgent: () => {
+          calls.push('invalidateChatAgent');
+        },
+        seedProviderCosts: () => {
+          calls.push('seedProviderCosts');
+        },
       };
     }
 
     it('returns 404 for unknown slug [unit]', async () => {
       const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
-        'unknown', {}, makeConfig(tmpDir), makeEnv(),
-        loadAgentInstructions, invalidateChatAgent, seedProviderCosts,
+        'unknown',
+        {},
+        makeConfig(tmpDir),
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -253,8 +284,13 @@ describe('routes/v1/settings.handlers', () => {
     it('returns 404 for mcp-servers PATCH [unit]', async () => {
       const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
-        'mcp-servers', {}, makeConfig(tmpDir), makeEnv(),
-        loadAgentInstructions, invalidateChatAgent, seedProviderCosts,
+        'mcp-servers',
+        {},
+        makeConfig(tmpDir),
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -263,8 +299,13 @@ describe('routes/v1/settings.handlers', () => {
     it('returns 404 for skills PATCH [unit]', async () => {
       const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
-        'skills', {}, makeConfig(tmpDir), makeEnv(),
-        loadAgentInstructions, invalidateChatAgent, seedProviderCosts,
+        'skills',
+        {},
+        makeConfig(tmpDir),
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -307,7 +348,11 @@ describe('routes/v1/settings.handlers', () => {
       const written = readYaml(tmpDir);
       expect(written.logLevel).to.equal('debug');
       expect(reloaded).to.deep.equal(['reload']);
-      expect(calls).to.deep.equal(['loadAgentInstructions', 'invalidateChatAgent', 'seedProviderCosts']);
+      expect(calls).to.deep.equal([
+        'loadAgentInstructions',
+        'invalidateChatAgent',
+        'seedProviderCosts',
+      ]);
     });
 
     it('PATCH general returns the new GET response (includes updated logLevel) [unit]', async () => {

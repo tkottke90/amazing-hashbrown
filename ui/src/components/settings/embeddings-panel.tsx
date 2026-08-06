@@ -1,7 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
@@ -40,7 +46,9 @@ export function EmbeddingsPanel() {
             <div class="flex items-center justify-between">
               <div>
                 <Label htmlFor="embeddings-enabled">Enable embeddings</Label>
-                <p class="text-xs text-muted-foreground">Enable vector embedding generation for knowledge retrieval.</p>
+                <p class="text-xs text-muted-foreground">
+                  Enable vector embedding generation for knowledge retrieval.
+                </p>
               </div>
               <Switch
                 id="embeddings-enabled"

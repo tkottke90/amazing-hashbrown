@@ -14,10 +14,30 @@ interface StorageSettings {
 }
 
 const FIELDS: { id: string; label: string; key: string; description: string }[] = [
-  { id: 'storage-wikiRoot', label: 'Wiki root', key: 'wikiRoot', description: 'Directory for wiki knowledge base files.' },
-  { id: 'storage-mcpConfigDir', label: 'MCP config directory', key: 'mcpConfigDir', description: 'Directory for MCP server configuration files.' },
-  { id: 'storage-artifactRoot', label: 'Artifact root', key: 'artifactRoot', description: 'Directory where uploaded artifacts are stored.' },
-  { id: 'storage-skillsRoot', label: 'Skills root', key: 'skillsRoot', description: 'Directory for skill definition files.' },
+  {
+    id: 'storage-wikiRoot',
+    label: 'Wiki root',
+    key: 'wikiRoot',
+    description: 'Directory for wiki knowledge base files.',
+  },
+  {
+    id: 'storage-mcpConfigDir',
+    label: 'MCP config directory',
+    key: 'mcpConfigDir',
+    description: 'Directory for MCP server configuration files.',
+  },
+  {
+    id: 'storage-artifactRoot',
+    label: 'Artifact root',
+    key: 'artifactRoot',
+    description: 'Directory where uploaded artifacts are stored.',
+  },
+  {
+    id: 'storage-skillsRoot',
+    label: 'Skills root',
+    key: 'skillsRoot',
+    description: 'Directory for skill definition files.',
+  },
 ];
 
 export function StoragePanel() {
@@ -45,7 +65,7 @@ export function StoragePanel() {
                 <Label htmlFor={id}>{label}</Label>
                 <Input
                   id={id}
-                  value={(form.value as Record<string, unknown>)[key] as string ?? ''}
+                  value={((form.value as Record<string, unknown>)[key] as string) ?? ''}
                   onInput={(e) => setField(key, (e.target as HTMLInputElement).value)}
                 />
                 <p class="text-xs text-muted-foreground">{description}</p>

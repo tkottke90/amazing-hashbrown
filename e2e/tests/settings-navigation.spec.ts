@@ -7,8 +7,7 @@ const suite: TestSuite = {
   name: 'Settings navigation',
   description:
     'Verifies the Settings page routing, ?section= query param, nav item active states, and default section fallback against a mocked settings API',
-  purpose:
-    'Ensure settings navigation wires up correctly without a live backend or config file',
+  purpose: 'Ensure settings navigation wires up correctly without a live backend or config file',
   tags: ['@smoke', '@user-workflow'],
   steps: [
     {
@@ -62,7 +61,12 @@ const STUBS: StubMap = {
     database: { path: 'app.db' },
   },
   'model-providers': { providers: [], defaultProvider: '' },
-  embeddings: { enabled: true, type: 'ollama', model: 'nomic-embed-text', baseUrl: 'http://localhost:11434/v1' },
+  embeddings: {
+    enabled: true,
+    type: 'ollama',
+    model: 'nomic-embed-text',
+    baseUrl: 'http://localhost:11434/v1',
+  },
   'agent-behavior': {
     afterAgent: { enabled: true },
     chat: { showErrorMessages: false },
@@ -96,14 +100,14 @@ async function mockSettingsApi(page: Page, stubs: StubMap = STUBS) {
 test.describe('Settings navigation', { annotation: suiteAnnotations(suite) }, () => {
   test('Settings icon navigates to /settings and general panel renders @smoke', async ({
     page,
-    browserName,
+    browserName: _browserName,
   }, testInfo) => {
     await mockSettingsApi(page);
     await page.goto('/');
     await pauseBeforeAction(page, testInfo);
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page).toHaveURL(/\/settings/);
-    await expect(page.getByText('General')).toBeVisible();
+    await expect(page.getByLabel('Log level')).toBeVisible();
   });
 
   test('Missing ?section param defaults to general @smoke', async ({ page }, testInfo) => {
@@ -132,21 +136,24 @@ test.describe('Settings navigation', { annotation: suiteAnnotations(suite) }, ()
     await page.goto('/settings?section=bogus');
     await pauseBeforeAction(page, testInfo);
     await expect(page.getByLabel('Log level')).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'General' }).first(),
-    ).toHaveAttribute('data-active', 'true');
+    await expect(page.getByRole('button', { name: 'General' }).first()).toHaveAttribute(
+      'data-active',
+      'true',
+    );
   });
 
   test('Active nav item has data-active="true" @smoke', async ({ page }) => {
     await mockSettingsApi(page);
     await page.goto('/settings?section=embeddings');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
-    await expect(
-      page.getByRole('button', { name: 'Embeddings' }),
-    ).toHaveAttribute('data-active', 'true');
-    await expect(
-      page.getByRole('button', { name: 'General' }),
-    ).toHaveAttribute('data-active', 'false');
+    await expect(page.getByRole('button', { name: 'Embeddings' })).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+    await expect(page.getByRole('button', { name: 'General' })).toHaveAttribute(
+      'data-active',
+      'false',
+    );
   });
 
   test.describe('Mobile viewport @smoke', () => {

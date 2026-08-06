@@ -1,6 +1,10 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal, useComputed } from '@preact/signals';
-import { fetchSettingsSection, patchSettingsSection, SettingsValidationError } from '@/services/settings-api';
+import {
+  fetchSettingsSection,
+  patchSettingsSection,
+  SettingsValidationError,
+} from '@/services/settings-api';
 import { showToast } from '@/lib/toast';
 
 function setNestedPath(obj: Record<string, unknown>, dotPath: string, value: unknown): void {
@@ -23,9 +27,7 @@ export function useSettingsSection<T extends object>(slug: string) {
   const fetchError = useSignal<string | null>(null);
   const fieldErrors = useSignal<Record<string, string[]>>({});
 
-  const isDirty = useComputed(
-    () => JSON.stringify(data.value) !== JSON.stringify(form.value),
-  );
+  const isDirty = useComputed(() => JSON.stringify(data.value) !== JSON.stringify(form.value));
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +36,7 @@ export function useSettingsSection<T extends object>(slug: string) {
       .then((result) => {
         if (cancelled) return;
         data.value = result;
-        form.value = structuredClone(result);
+        form.value = JSON.parse(JSON.stringify(result));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -47,7 +49,7 @@ export function useSettingsSection<T extends object>(slug: string) {
 
   function setField(dotPath: string, value: unknown) {
     if (!form.value) return;
-    const clone = structuredClone(form.value) as Record<string, unknown>;
+    const clone = JSON.parse(JSON.stringify(form.value)) as Record<string, unknown>;
     setNestedPath(clone, dotPath, value);
     form.value = clone as T;
     fieldErrors.value = {};
@@ -59,7 +61,7 @@ export function useSettingsSection<T extends object>(slug: string) {
     try {
       const result = await patchSettingsSection<T>(slug, form.value);
       data.value = result;
-      form.value = structuredClone(result);
+      form.value = JSON.parse(JSON.stringify(result));
       fieldErrors.value = {};
       showToast('success', 'Settings saved');
     } catch (err) {
@@ -79,7 +81,7 @@ export function useSettingsSection<T extends object>(slug: string) {
   }
 
   function discard() {
-    form.value = structuredClone(data.value);
+    form.value = JSON.parse(JSON.stringify(data.value));
     fieldErrors.value = {};
   }
 

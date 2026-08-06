@@ -3,9 +3,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 jest.mock('@/services/settings-api', () => {
   class SettingsValidationError extends Error {
     fieldErrors: Record<string, string[]> | string;
-    constructor(fe: Record<string, string[]> | string) { super('Validation failed'); this.name = 'SettingsValidationError'; this.fieldErrors = fe; }
+    constructor(fe: Record<string, string[]> | string) {
+      super('Validation failed');
+      this.name = 'SettingsValidationError';
+      this.fieldErrors = fe;
+    }
   }
-  return { SettingsValidationError, fetchSettingsSection: jest.fn(), patchSettingsSection: jest.fn() };
+  return {
+    SettingsValidationError,
+    fetchSettingsSection: jest.fn(),
+    patchSettingsSection: jest.fn(),
+  };
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 

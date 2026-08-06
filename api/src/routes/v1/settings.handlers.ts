@@ -109,11 +109,7 @@ function mergeConfigYaml(configDir: string, updates: Record<string, unknown>): v
 // ---- Slug definitions ---------------------------------------------------------
 
 type GetFn = (env: EnvAccessor, config: ConfigManagerAccessor) => unknown;
-type WriteFn = (
-  validated: unknown,
-  configDir: string,
-  env: EnvAccessor,
-) => void;
+type WriteFn = (validated: unknown, configDir: string, env: EnvAccessor) => void;
 
 type SlugDef = {
   get: GetFn;
@@ -230,7 +226,8 @@ const SLUG_MAP: Record<string, SlugDef> = {
         observability?: Partial<z.infer<typeof ObservabilitySchema>>;
       };
       const updates: Record<string, unknown> = {};
-      if (data.afterAgent !== undefined) updates.afterAgent = { ...env.afterAgent, ...data.afterAgent };
+      if (data.afterAgent !== undefined)
+        updates.afterAgent = { ...env.afterAgent, ...data.afterAgent };
       if (data.chat !== undefined) updates.chat = { ...env.chat, ...data.chat };
       if (data.observability !== undefined)
         updates.observability = { ...env.observability, ...data.observability };

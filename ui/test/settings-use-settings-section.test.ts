@@ -125,7 +125,10 @@ describe('useSettingsSection', () => {
   it('isSaving is true while save is in progress', async () => {
     let resolvePatch!: (v: TestData) => void;
     mockPatch.mockImplementation(
-      () => new Promise<TestData>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<TestData>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { result } = renderHook(() => useSettingsSection<TestData>('general'));

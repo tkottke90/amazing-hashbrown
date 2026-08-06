@@ -37,27 +37,27 @@ A single `/settings` route renders `SettingsView`. The active section is driven 
 
 ### New Files
 
-| File | Purpose |
-|---|---|
+| File                                         | Purpose                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
 | `api/src/controllers/settings.controller.ts` | GET and PATCH handlers; slug → sub-schema mapping; 404 for unknown slugs |
 
 ### Modified Files
 
-| File | Change |
-|---|---|
+| File                                  | Change                                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `api/src/routes/v1/settings.route.ts` | Add `GET /:slug` and `PATCH /:slug` wired to the controller; keep existing `POST /reload` |
 
 ### Valid Slugs
 
-| Slug | Config keys written | In-memory reload |
-|---|---|---|
-| `general` | `logLevel` | Logger level |
-| `storage` | `wikiRoot`, `mcpConfigDir`, `artifactRoot`, `skillsRoot`, `database.path` | Path references |
-| `model-providers` | `providers`, `defaultProvider` | Provider registry, chat agent |
-| `embeddings` | `embeddings` | Embedding client |
-| `agent-behavior` | `afterAgent`, `chat`, `observability` | Middleware flags |
-| `tools` | `webFetch`, `rlm`, `tools` | Tool configurations |
-| `cost-rates` | `costs` | Usage/cost seeding |
+| Slug              | Config keys written                                                       | In-memory reload              |
+| ----------------- | ------------------------------------------------------------------------- | ----------------------------- |
+| `general`         | `logLevel`                                                                | Logger level                  |
+| `storage`         | `wikiRoot`, `mcpConfigDir`, `artifactRoot`, `skillsRoot`, `database.path` | Path references               |
+| `model-providers` | `providers`, `defaultProvider`                                            | Provider registry, chat agent |
+| `embeddings`      | `embeddings`                                                              | Embedding client              |
+| `agent-behavior`  | `afterAgent`, `chat`, `observability`                                     | Middleware flags              |
+| `tools`           | `webFetch`, `rlm`, `tools`                                                | Tool configurations           |
+| `cost-rates`      | `costs`                                                                   | Usage/cost seeding            |
 
 `mcp-servers` and `skills` return 404 on PATCH. Their GET responses may return an empty object as a placeholder.
 
@@ -76,6 +76,7 @@ Provider `apiKey` values are masked in GET responses — the raw string is repla
 ### Routing Change
 
 `app.tsx`:
+
 - The `<Router>` gets a `<SettingsRoot path="/settings" />` route
 - The `href="#"` stub on the Settings nav icon becomes `href="/settings"`
 
@@ -102,14 +103,14 @@ ui/src/components/settings/
 
 ```ts
 function useSettingsSection<T>(slug: string): {
-  data: T | null;       // last saved values from GET response
-  form: T | null;       // dirty copy the user is editing
+  data: T | null; // last saved values from GET response
+  form: T | null; // dirty copy the user is editing
   isDirty: boolean;
   isSaving: boolean;
   setField: (path: string, value: unknown) => void;
   save: () => Promise<void>;
   discard: () => void;
-}
+};
 ```
 
 - Calls `GET /api/v1/settings/:slug` on mount
@@ -122,17 +123,17 @@ function useSettingsSection<T>(slug: string): {
 
 ### Nav Sections (in order)
 
-| Label | Slug |
-|---|---|
-| General | `general` |
-| Storage | `storage` |
+| Label           | Slug              |
+| --------------- | ----------------- |
+| General         | `general`         |
+| Storage         | `storage`         |
 | Model providers | `model-providers` |
-| Embeddings | `embeddings` |
-| Agent behavior | `agent-behavior` |
-| Tools | `tools` |
-| Cost rates | `cost-rates` |
-| MCP Servers | `mcp-servers` |
-| Skills | `skills` |
+| Embeddings      | `embeddings`      |
+| Agent behavior  | `agent-behavior`  |
+| Tools           | `tools`           |
+| Cost rates      | `cost-rates`      |
+| MCP Servers     | `mcp-servers`     |
+| Skills          | `skills`          |
 
 ---
 
@@ -143,13 +144,16 @@ function useSettingsSection<T>(slug: string): {
 Field names, types, defaults, and validation rules are determined by the Zod schemas in `api/src/config/env.ts`. The descriptions below are illustrative; the schema is authoritative.
 
 **General** (`AppConfigSchema`: `port`, `logLevel`)
+
 - Port — read-only display field; not editable via the UI. Changing the port requires an environment-level change and server restart.
 - Log level — select; options derived from the `logLevel` field (string; common values: `debug`, `info`, `warn`, `error`)
 
 **Storage** (`wikiRoot`, `mcpConfigDir`, `artifactRoot`, `skillsRoot`, `database.path`)
+
 - Five text inputs for directory and file paths; descriptions sourced from designs.
 
 **Model providers** (`providers[]`, `defaultProvider`)
+
 - Provider list: each row shows name, type badge, default model, host, Default badge if it matches `defaultProvider`, and an Edit button
 - Add provider button opens `provider-modal` in add mode
 - Default provider select populated from current provider names
@@ -157,25 +161,30 @@ Field names, types, defaults, and validation rules are determined by the Zod sch
 - Modal saves update local form state only; config is not written until the panel "Save changes" is clicked
 
 **Embeddings** (`EmbeddingsSchema`)
+
 - Enable embeddings toggle
 - Type, model, baseUrl fields shown conditionally when enabled; field types follow `EmbeddingsSchema`
 
 **Agent behavior** (`AfterAgentSchema`, `ChatSchema`, `ObservabilitySchema`)
+
 - Three card subsections: Background processing, Conversation history, Observability
 - Span output preview field shown conditionally when tracing is enabled
 
 **Tools** (`WebFetchConfigSchema`, `RLMConfigSchema`, `ToolsConfigSchema`)
+
 - Three card subsections: Web fetch, Retrieval loop model, Shell execution
 - Shell allowlist and denylist rendered as textareas (one glob per line); serialised to/from `string[]`
 - RLM provider select populated from current provider names plus a "Default provider" option
 
 **Cost rates** (`costs: Record<string, CostEntrySchema>`)
+
 - Rate list: each row shows model key and input/output prices; rows are editable and deletable
 - Empty state shown when `costs` is `{}`; includes an "Add rate" prompt
 - `rate-modal` fields: model key (string), input per 1k tokens (number), output per 1k tokens (number)
 - Note: `CostEntrySchema` uses `inputPer1kTokens` / `outputPer1kTokens`; `ModelPricingSchema` inside providers uses `inputPricePerM` / `outputPricePerM` — these are distinct
 
 **MCP Servers / Skills**
+
 - `PlaceholderPanel` renders a centred empty state with section title and "Coming soon" note
 
 ---
@@ -185,17 +194,18 @@ Field names, types, defaults, and validation rules are determined by the Zod sch
 ### Save/Discard Bar
 
 Every panel renders an identical footer bar:
+
 - **Save changes** — primary button; shows a loading spinner and is disabled while `isSaving` is true; hidden when `!isDirty`
 - **Discard** — ghost button; resets form to last-fetched values; hidden when `!isDirty`
 
 ### Error Handling
 
-| Scenario | Behaviour |
-|---|---|
-| 400 from PATCH | Field-level error messages displayed inline beneath the relevant input |
-| 500 from PATCH | Error toast |
-| GET failure on mount | Error state rendered in place of the form |
-| Save success | Success toast |
+| Scenario             | Behaviour                                                              |
+| -------------------- | ---------------------------------------------------------------------- |
+| 400 from PATCH       | Field-level error messages displayed inline beneath the relevant input |
+| 500 from PATCH       | Error toast                                                            |
+| GET failure on mount | Error state rendered in place of the form                              |
+| Save success         | Success toast                                                          |
 
 ### Modals
 

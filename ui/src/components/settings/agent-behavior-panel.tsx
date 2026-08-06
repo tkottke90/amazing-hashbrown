@@ -37,7 +37,9 @@ export function AgentBehaviorPanel() {
             <div class="flex items-center justify-between">
               <div>
                 <Label htmlFor="afterAgent-enabled">Enable after-agent pipeline</Label>
-                <p class="text-xs text-muted-foreground">Run background enrichment after each agent response.</p>
+                <p class="text-xs text-muted-foreground">
+                  Run background enrichment after each agent response.
+                </p>
               </div>
               <Switch
                 id="afterAgent-enabled"
@@ -57,7 +59,9 @@ export function AgentBehaviorPanel() {
             <div class="flex items-center justify-between">
               <div>
                 <Label htmlFor="chat-showErrorMessages">Show error messages</Label>
-                <p class="text-xs text-muted-foreground">Display raw error messages in the chat interface.</p>
+                <p class="text-xs text-muted-foreground">
+                  Display raw error messages in the chat interface.
+                </p>
               </div>
               <Switch
                 id="chat-showErrorMessages"
@@ -77,7 +81,9 @@ export function AgentBehaviorPanel() {
             <div class="flex items-center justify-between">
               <div>
                 <Label htmlFor="observability-enabled">Enable tracing</Label>
-                <p class="text-xs text-muted-foreground">Collect OpenTelemetry spans for agent runs.</p>
+                <p class="text-xs text-muted-foreground">
+                  Collect OpenTelemetry spans for agent runs.
+                </p>
               </div>
               <Switch
                 id="observability-enabled"
@@ -88,7 +94,9 @@ export function AgentBehaviorPanel() {
 
             {observabilityEnabled && (
               <div class="space-y-1.5">
-                <Label htmlFor="observability-spanOutputPreviewChars">Span output preview characters</Label>
+                <Label htmlFor="observability-spanOutputPreviewChars">
+                  Span output preview characters
+                </Label>
                 <Input
                   id="observability-spanOutputPreviewChars"
                   type="number"

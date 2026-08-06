@@ -1,7 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -49,10 +55,7 @@ export function GeneralPanel() {
 
             <div class="space-y-1.5">
               <Label htmlFor="general-logLevel">Log level</Label>
-              <Select
-                value={form.value.logLevel}
-                onValueChange={(v) => setField('logLevel', v)}
-              >
+              <Select value={form.value.logLevel} onValueChange={(v) => setField('logLevel', v)}>
                 <SelectTrigger id="general-logLevel">
                   <SelectValue />
                 </SelectTrigger>

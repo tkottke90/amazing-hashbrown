@@ -38,7 +38,8 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: 'Load Model providers section',
-      expectedOutcome: 'Provider rows render with type badge and Default badge on the default provider',
+      expectedOutcome:
+        'Provider rows render with type badge and Default badge on the default provider',
       test: () => {},
     },
     {
@@ -229,9 +230,9 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=model-providers');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('ollama')).toBeVisible();
-    await expect(page.getByText('openai')).toBeVisible();
-    await expect(page.getByText('Default')).toBeVisible();
+    await expect(page.getByText('ollama', { exact: true })).toBeVisible();
+    await expect(page.getByText('openai', { exact: true })).toBeVisible();
+    await expect(page.getByText('Default', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add provider' })).toBeVisible();
   });
 
@@ -242,7 +243,12 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
   }, testInfo) => {
     await mockSettingsApi(page, {
       ...STUBS,
-      embeddings: { enabled: false, type: 'ollama', model: 'nomic-embed-text', baseUrl: 'http://localhost:11434/v1' },
+      embeddings: {
+        enabled: false,
+        type: 'ollama',
+        model: 'nomic-embed-text',
+        baseUrl: 'http://localhost:11434/v1',
+      },
     });
     await page.goto('/settings?section=embeddings');
     await pauseBeforeAction(page, testInfo);
@@ -255,7 +261,12 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
   }, testInfo) => {
     await mockSettingsApi(page, {
       ...STUBS,
-      embeddings: { enabled: false, type: 'ollama', model: 'nomic-embed-text', baseUrl: 'http://localhost:11434/v1' },
+      embeddings: {
+        enabled: false,
+        type: 'ollama',
+        model: 'nomic-embed-text',
+        baseUrl: 'http://localhost:11434/v1',
+      },
     });
     await page.goto('/settings?section=embeddings');
     await page.waitForSelector('[role="switch"]');
@@ -303,9 +314,7 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await expect(page.getByText('Web fetch')).toBeVisible();
     await expect(page.getByText('Retrieval loop model')).toBeVisible();
     await expect(page.getByText('Shell execution')).toBeVisible();
-    await expect(
-      page.getByLabel('Allowlist (one glob per line)'),
-    ).toHaveValue('**/*.txt');
+    await expect(page.getByLabel('Allowlist (one glob per line)')).toHaveValue('**/*.txt');
   });
 
   // ---- Cost rates --------------------------------------------------------
@@ -333,7 +342,7 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=mcp-servers');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('MCP Servers')).toBeVisible();
+    await expect(page.locator('p', { hasText: 'MCP Servers' })).toBeVisible();
     await expect(page.getByText('Management UI coming soon.')).toBeVisible();
   });
 
@@ -341,7 +350,7 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('Skills')).toBeVisible();
+    await expect(page.locator('p', { hasText: 'Skills' })).toBeVisible();
     await expect(page.getByText('Management UI coming soon.')).toBeVisible();
   });
 
