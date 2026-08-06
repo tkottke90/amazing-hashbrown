@@ -1,0 +1,9 @@
+{
+  "namespace": "Hashbrown",
+  "source": "amazing-hashbrown-ui@0.1.0",
+  "shape": "package",
+  "provider": null,
+  "componentCount": 46,
+  "skippedStoryIds": [],
+  "runtimeFontPrefixes": []
+}

@@ -1,0 +1,9 @@
+{
+  "pkg": "amazing-hashbrown-ui",
+  "globalName": "hashbrown",
+  "shape": "package",
+  "srcDir": "src/components/ui",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/styles.css",
+  "buildCmd": "npx @tailwindcss/cli -i ./ui/src/style.css -o ./ui/dist/styles.css && cp node_modules/@fontsource-variable/geist/files/*.woff2 ./ui/dist/files/"
+}
