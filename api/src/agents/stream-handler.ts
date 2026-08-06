@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
+import { logger, serializeError } from '../config/logger.js';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
 import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
@@ -226,62 +227,73 @@ export async function finalizeTurn(
     const interruptValue = interrupt.value as Record<string, unknown>;
     const promptId = randomUUID();
 
-    if (interruptValue.kind === 'shell_approval') {
-      const { command, reason } = interruptValue as { command: string; reason?: string };
-      const question = reason
-        ? `Allow command: \`${command}\`\n\nReason: ${reason}`
-        : `Allow command: \`${command}\``;
-      const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
-        question,
-        promptKind: 'shell_approval',
+    try {
+      if (interruptValue.kind === 'shell_approval') {
+        const { command, reason } = interruptValue as { command: string; reason?: string };
+        const question = reason
+          ? `Allow command: \`${command}\`\n\nReason: ${reason}`
+          : `Allow command: \`${command}\``;
+        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+          question,
+          promptKind: 'shell_approval',
+          command,
+          reason,
+        });
+        writeSseEvent(res, {
+          type: 'hitl_prompt',
+          messageId: msgId,
+          promptId,
+          question,
+          kind: 'shell_approval',
+          command,
+          reason,
+          seq,
+          ...(assistantSeq !== null ? { assistantSeq } : {}),
+          ...(userSeq !== null ? { userSeq } : {}),
+        });
+      } else {
+        const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
+          interruptValue as {
+            question: string;
+            kind: 'yes_no' | 'multiple_choice' | 'free_text';
+            choices?: string[];
+            allowFreeText?: boolean;
+            approveLabel?: string;
+            approveType?: 'primary' | 'secondary' | 'destructive';
+            rejectLabel?: string;
+          };
+        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+          question,
+          promptKind: kind,
+          choices,
+          allowFreeText,
+          approveLabel,
+          approveType,
+          rejectLabel,
+        });
+        writeSseEvent(res, {
+          type: 'hitl_prompt',
+          messageId: msgId,
+          promptId,
+          question,
+          kind,
+          choices,
+          allowFreeText,
+          approveLabel,
+          approveType,
+          rejectLabel,
+          seq,
+          ...(assistantSeq !== null ? { assistantSeq } : {}),
+          ...(userSeq !== null ? { userSeq } : {}),
+        });
+      }
+    } catch (err) {
+      logger.error('finalizeTurn: failed to persist HITL prompt', {
+        threadId,
+        err: serializeError(err),
       });
-      writeSseEvent(res, {
-        type: 'hitl_prompt',
-        messageId: msgId,
-        promptId,
-        question,
-        kind: 'shell_approval',
-        command,
-        reason,
-        ...(promptSeq !== null ? { seq: promptSeq } : {}),
-        ...(assistantSeq !== null ? { assistantSeq } : {}),
-        ...(userSeq !== null ? { userSeq } : {}),
-      });
-    } else {
-      const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
-        interruptValue as {
-          question: string;
-          kind: 'yes_no' | 'multiple_choice' | 'free_text';
-          choices?: string[];
-          allowFreeText?: boolean;
-          approveLabel?: string;
-          approveType?: 'primary' | 'secondary' | 'destructive';
-          rejectLabel?: string;
-        };
-      const promptSeq = recordHitlPrompt(threadStore, threadId, promptId, {
-        question,
-        promptKind: kind,
-        choices,
-        allowFreeText,
-        approveLabel,
-        approveType,
-        rejectLabel,
-      });
-      writeSseEvent(res, {
-        type: 'hitl_prompt',
-        messageId: msgId,
-        promptId,
-        question,
-        kind,
-        choices,
-        allowFreeText,
-        approveLabel,
-        approveType,
-        rejectLabel,
-        ...(promptSeq !== null ? { seq: promptSeq } : {}),
-        ...(assistantSeq !== null ? { assistantSeq } : {}),
-        ...(userSeq !== null ? { userSeq } : {}),
-      });
+      failAssistant(threadStore, threadId, msgId, content, turnSentAt);
+      writeSseEvent(res, { type: 'stream_error', message: 'Failed to save approval prompt' });
     }
   } else {
     writeSseEvent(res, {
@@ -448,7 +460,17 @@ export async function resumeChatToSse(
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
 
-  resolveHitlPrompt(threadStore, threadId, promptId, answer);
+  try {
+    resolveHitlPrompt(threadStore, threadId, promptId, answer);
+  } catch (err) {
+    logger.error('resumeChatToSse: failed to resolve HITL prompt', {
+      threadId,
+      promptId,
+      err: serializeError(err),
+    });
+    writeSseEvent(res, { type: 'stream_error', message: 'Failed to record HITL answer' });
+    return;
+  }
 
   drainAndRecordWikiUpdates(res, threadStore, threadId);
 

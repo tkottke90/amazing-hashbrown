@@ -66,7 +66,29 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
       </div>
 
       {/* Controls */}
-      {message.promptKind === 'yes_no' ? (
+      {message.promptKind === 'shell_approval' ? (
+        <div className="flex flex-col gap-3 px-4 py-3">
+          {message.command && (
+            <pre className="rounded bg-muted px-3 py-2 text-sm font-mono overflow-x-auto">
+              <code>{message.command}</code>
+            </pre>
+          )}
+          {message.reason && (
+            <p className="text-sm text-muted-foreground">{message.reason}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => submit('denied')}>
+              Deny
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => submit('approved_remember')}>
+              Approve &amp; remember
+            </Button>
+            <Button size="sm" onClick={() => submit('approved')}>
+              Approve
+            </Button>
+          </div>
+        </div>
+      ) : message.promptKind === 'yes_no' ? (
         <div className="flex justify-end gap-2 px-4 py-3">
           <Button size="sm" variant="outline" onClick={() => submit(message.rejectLabel ?? 'No')}>
             {message.rejectLabel ?? 'No'}

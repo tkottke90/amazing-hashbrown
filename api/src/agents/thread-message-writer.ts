@@ -156,6 +156,8 @@ export interface HitlPromptFields {
   approveLabel?: string;
   approveType?: 'primary' | 'secondary' | 'destructive';
   rejectLabel?: string;
+  command?: string;
+  reason?: string;
 }
 
 export function recordHitlPrompt(
@@ -163,15 +165,13 @@ export function recordHitlPrompt(
   threadId: string,
   promptId: string,
   fields: HitlPromptFields,
-): number | null {
-  return safe(threadId, 'recordHitlPrompt', () => {
-    return store.insertMessage(threadId, {
-      id: promptId,
-      kind: 'hitl_prompt',
-      status: 'pending',
-      payload: { promptId, ...fields },
-    }).seq;
-  });
+): number {
+  return store.insertMessage(threadId, {
+    id: promptId,
+    kind: 'hitl_prompt',
+    status: 'pending',
+    payload: { promptId, ...fields },
+  }).seq;
 }
 
 // Fetches the existing row so the original question/choices/etc. survive the
@@ -182,23 +182,21 @@ export function resolveHitlPrompt(
   promptId: string,
   answer: string,
 ): void {
-  safe(threadId, 'resolveHitlPrompt', () => {
-    const existing = store.getMessage(threadId, promptId);
-    if (!existing) {
-      logger.warn('thread-message-writer: resolveHitlPrompt found no matching row', {
-        threadId,
-        promptId,
-      });
-      return;
-    }
-    const payload =
-      existing.payload && typeof existing.payload === 'object'
-        ? (existing.payload as Record<string, unknown>)
-        : {};
-    store.updateMessage(threadId, promptId, {
-      status: 'answered',
-      payload: { ...payload, answer },
+  const existing = store.getMessage(threadId, promptId);
+  if (!existing) {
+    logger.warn('thread-message-writer: resolveHitlPrompt found no matching row', {
+      threadId,
+      promptId,
     });
+    return;
+  }
+  const payload =
+    existing.payload && typeof existing.payload === 'object'
+      ? (existing.payload as Record<string, unknown>)
+      : {};
+  store.updateMessage(threadId, promptId, {
+    status: 'answered',
+    payload: { ...payload, answer },
   });
 }
 

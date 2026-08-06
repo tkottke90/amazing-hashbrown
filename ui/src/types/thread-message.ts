@@ -47,6 +47,8 @@ export type ThreadMessage =
       approveLabel?: string;
       approveType?: 'primary' | 'secondary' | 'destructive';
       rejectLabel?: string;
+      command?: string;
+      reason?: string;
       status: HitlStatus;
       answer?: string;
       seq?: number;
