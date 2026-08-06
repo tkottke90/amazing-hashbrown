@@ -23,7 +23,7 @@ Skills are **not** registered as LangGraph tools. They are instruction payloads 
 
 ### The AgentSkills standard
 
-The feature aligns with the AgentSkills specification (agentskills.io), an open standard released by Anthropic in December 2025 and now governed by the Agentic AI Foundation. A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name`, `description` required) and a Markdown instruction body. The format is already used in this repo (`.claude/skills/`, `.agents/skills/`).
+The feature aligns with the AgentSkills specification (agentskills.io), an open standard released by Anthropic in December 2025 and now governed by the Agentic AI Foundation. A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name`, `description` required) and a Markdown instruction body. The format is already used in this repo (`.agents/skills/`).
 
 The `@tkottke90/skills-manager` library is a complete implementation of the AgentSkills format: it scans a root directory, builds an in-memory index, and exposes CRUD, search, and script execution. One library change is required: a `search()` method is added to `SkillsManager` in `lib/skills-manager`. The rest of this spec is wiring the library into the app.
 

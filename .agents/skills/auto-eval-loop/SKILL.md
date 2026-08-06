@@ -188,7 +188,7 @@ these hit local model servers that likely can't handle concurrent load).
 Use the bundled helper rather than hand-parsing terminal output:
 
 ```bash
-.claude/skills/auto-eval-loop/scripts/run-eval-round.sh <suite> <model> <judge> <round-id> [--debug]
+.agents/skills/auto-eval-loop/scripts/run-eval-round.sh <suite> <model> <judge> <round-id> [--debug]
 ```
 
 It prints `result_yaml=`, `report_html=`, `exit_code=`, `console_log=`, and
