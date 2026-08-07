@@ -16,6 +16,7 @@ npm run build
 
 docker build \
   -t amazing-hashbrown \
+  --platform linux/amd64 \
   --secret id=npm_token,env=NPM_TOKEN \
   --build-arg COMMIT_SHA="$COMMIT_SHA" \
   --build-arg APP_VERSION="$APP_VERSION" \
