@@ -25,6 +25,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+ARG COMMIT_SHA=unknown
+ARG APP_VERSION=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
+ENV APP_VERSION=$APP_VERSION
+
 RUN groupadd --gid 1001 appuser \
     && useradd --uid 1001 --gid 1001 --create-home appuser
 
