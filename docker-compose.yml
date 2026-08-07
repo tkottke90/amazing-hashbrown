@@ -18,6 +18,12 @@ services:
       # Bind mount (not a named volume) so persistent state — config.yaml,
       # the SQLite store, wiki content, mcp.json, artifacts, skills — lives
       # in ./data next to this file instead of in Docker's volume storage.
+      #
+      # The container runs as appuser (uid/gid 1001, see Dockerfile). If
+      # ./data doesn't exist yet, Docker auto-creates it owned by root on
+      # first `up`, and the app fails with EACCES writing config.yaml. On
+      # a fresh host, before first `up`, run:
+      #   mkdir -p ./data && sudo chown -R 1001:1001 ./data
       - ./data:/app/config
 
 # First boot writes a default config.yaml into ./data with no LLM providers
