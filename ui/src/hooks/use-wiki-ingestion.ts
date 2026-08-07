@@ -2,6 +2,7 @@ import { signal, batch } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
+import { randomUUID } from '../lib/utils';
 import {
   activeDomainId,
   refreshDomains,
@@ -17,9 +18,9 @@ const WIKI_THREAD_KEY = 'ah-wiki-thread-id';
 
 function readStoredWikiThreadId(): string {
   try {
-    return localStorage.getItem(WIKI_THREAD_KEY) ?? crypto.randomUUID();
+    return localStorage.getItem(WIKI_THREAD_KEY) ?? randomUUID();
   } catch {
-    return crypto.randomUUID();
+    return randomUUID();
   }
 }
 
@@ -146,7 +147,7 @@ function handleWikiEvent(evt: ChatSSEEvent): void {
         ...wikiMessages.value,
         {
           kind: 'wiki_update',
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           pageTitle: evt.pageTitle,
           pageKind: evt.pageKind,
           wikiName: evt.wikiName,
@@ -207,8 +208,8 @@ function handleWikiEvent(evt: ChatSSEEvent): void {
 // ---- Public actions ----
 
 export async function sendWikiMessage(content: string): Promise<void> {
-  const assistantId = crypto.randomUUID();
-  const userId = crypto.randomUUID();
+  const assistantId = randomUUID();
+  const userId = randomUUID();
   _currentAssistantId = assistantId;
   _abortController = new AbortController();
 
@@ -255,7 +256,7 @@ export async function submitWikiHitlAnswer(promptId: string, answer: string): Pr
   );
   wikiPendingHitlId.value = null;
 
-  const assistantId = crypto.randomUUID();
+  const assistantId = randomUUID();
   _currentAssistantId = assistantId;
   _abortController = new AbortController();
 
@@ -303,7 +304,7 @@ export function stopWikiGeneration(): void {
 
 export function newWikiThread(): void {
   if (wikiIsStreaming.value) stopWikiGeneration();
-  const id = crypto.randomUUID();
+  const id = randomUUID();
   wikiThreadId.value = id;
   persistWikiThreadId(id);
   batch(() => {

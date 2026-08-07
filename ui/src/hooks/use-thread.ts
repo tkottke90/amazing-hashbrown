@@ -2,6 +2,7 @@ import { signal, batch, computed } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
+import { randomUUID } from '../lib/utils';
 
 // ---- localStorage-backed signals ----
 // use-theme.tsx is the only other localStorage consumer in this app, and it
@@ -15,9 +16,9 @@ const SHOW_ERRORS_KEY = 'ah-show-error-messages';
 
 function readStoredThreadId(): string {
   try {
-    return localStorage.getItem(ACTIVE_THREAD_KEY) ?? crypto.randomUUID();
+    return localStorage.getItem(ACTIVE_THREAD_KEY) ?? randomUUID();
   } catch {
-    return crypto.randomUUID();
+    return randomUUID();
   }
 }
 
@@ -193,7 +194,7 @@ export async function switchThread(id: string): Promise<void> {
 
 export function newThread(): string {
   if (isStreaming.value) stopGeneration();
-  const id = crypto.randomUUID();
+  const id = randomUUID();
   activeThreadId.value = id;
   persistActiveThreadId(id);
   batch(() => {
@@ -341,7 +342,7 @@ function handleEvent(evt: ChatSSEEvent): void {
         ...messages.value,
         {
           kind: 'wiki_update',
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           pageTitle: evt.pageTitle,
           pageKind: evt.pageKind,
           wikiName: evt.wikiName,
@@ -408,8 +409,8 @@ function applyTurnSeq(assistantSeq: number | undefined, userSeq: number | undefi
 // ---- Public actions ----
 
 export async function sendMessage(content: string): Promise<void> {
-  const userId = crypto.randomUUID();
-  const assistantId = crypto.randomUUID();
+  const userId = randomUUID();
+  const assistantId = randomUUID();
   _currentUserId = userId;
   _currentAssistantId = assistantId;
   _abortController = new AbortController();
@@ -451,7 +452,7 @@ export async function submitHitlAnswer(promptId: string, answer: string): Promis
   );
   pendingHitlId.value = null;
 
-  const assistantId = crypto.randomUUID();
+  const assistantId = randomUUID();
   _currentAssistantId = assistantId;
   _currentUserId = null;
   _abortController = new AbortController();
