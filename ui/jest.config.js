@@ -15,6 +15,8 @@ export default {
     '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
     '^preact-iso$': '<rootDir>/test/__mocks__/preact-iso.tsx',
     '^@/pages/wiki-view$': '<rootDir>/test/__mocks__/wiki-view.tsx',
+    '^@/pages/settings-view$': '<rootDir>/test/__mocks__/settings-view.tsx',
+    '^@tkottke90/preact-dialog$': '<rootDir>/test/__mocks__/preact-dialog.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-dom/test-utils$': 'preact/test-utils',
     '^react-dom$': 'preact/compat',
