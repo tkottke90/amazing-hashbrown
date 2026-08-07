@@ -45,14 +45,17 @@ export default defineConfig({
     {
       // Everything NOT tagged @user-workflow (e.g. @functional health checks) —
       // default asset capture (screenshot only on failure, no video) is enough.
+      // Settings specs are excluded here; they run in chromium-settings instead.
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       grepInvert: /@user-workflow/,
+      testIgnore: ['**/settings-*.spec.ts'],
     },
     {
       // @user-workflow specs simulate a real user completing a task, so a
       // screenshot and a video are captured for every run (pass or fail) —
       // reviewers can see the actual flow, not just debug a failure.
+      // Settings specs are excluded here; they run in chromium-settings instead.
       name: 'chromium-user-workflow',
       use: {
         ...devices['Desktop Chrome'],
@@ -60,6 +63,19 @@ export default defineConfig({
         video: 'on',
       },
       grep: /@user-workflow/,
+      testIgnore: ['**/settings-*.spec.ts'],
+    },
+    {
+      // All settings specs — both @smoke and @user-workflow — are run here with
+      // screenshots and video on every run (pass or fail) so reviewers can see
+      // the complete settings UI flow without waiting for a failure to capture.
+      name: 'chromium-settings',
+      use: {
+        ...devices['Desktop Chrome'],
+        screenshot: 'on',
+        video: 'on',
+      },
+      testMatch: ['**/settings-*.spec.ts'],
     },
   ],
 });
