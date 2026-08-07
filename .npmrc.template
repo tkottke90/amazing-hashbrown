@@ -1,0 +1,3 @@
+registry=https://npm.artifacts.tdkottke.com/
+//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}
+save-exact=true
