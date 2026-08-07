@@ -1,0 +1,29 @@
+services:
+  amazing-hashbrown:
+    image: docker.artifacts.tdkottke.com/amazing-hashbrown:v1.0.0
+    restart: unless-stopped
+    environment:
+      # api/src/app.ts binds to config key "host", which defaults to
+      # "localhost" (loopback-only) — that makes the app unreachable from
+      # outside the container no matter how ports are published. This env
+      # var (config-manager checks process.env before config.yaml) is the
+      # supported override; 0.0.0.0 makes it accept connections on the
+      # container's external interface, which the port mapping above then
+      # exposes on the host/network.
+      - host=0.0.0.0
+    ports:
+      # host:container — exposes the app on the network at <host>:3000
+      - "3000:3000"
+    volumes:
+      # Bind mount (not a named volume) so persistent state — config.yaml,
+      # the SQLite store, wiki content, mcp.json, artifacts, skills — lives
+      # in ./data next to this file instead of in Docker's volume storage.
+      - ./data:/app/config
+
+# First boot writes a default config.yaml into ./data with no LLM providers
+# configured (the app logs a warning and chat won't work until you add one).
+# Edit ./data/config.yaml after the first `docker compose up` and add a
+# providers[] entry + defaultProvider — see api/config.yaml.example in the
+# repo for the schema. Secrets should be referenced as ${SOME_ENV_VAR} in
+# config.yaml and supplied to this container via `environment:` or an
+# `env_file:` entry added to the service above.

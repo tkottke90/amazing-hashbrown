@@ -148,6 +148,7 @@ vite.config.ts.timestamp-*
 # (application source, must stay tracked), which it silently did before.
 /config/
 /api/config/
+/data/
 
 # Playwright E2E artifacts
 e2e/playwright-report/

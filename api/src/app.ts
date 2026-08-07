@@ -23,7 +23,7 @@ export function createApp() {
 
   app.start = () => {
     const port = app.config.getNumber('port', 3000) as number;
-    const host = app.config.get('host', 'localhost') as string;
+    const host = app.config.get('host', '0.0.0.0') as string;
 
     app.listen(port, host, () => {
       logger.info(`API listening on port ${host}:${port}`);
