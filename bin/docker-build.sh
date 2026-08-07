@@ -14,9 +14,23 @@ fi
 
 npm run build
 
+# linux/amd64: the release/deploy target — production runs on Linux x86_64
+# servers. Tag stays "amazing-hashbrown:latest" — this is what the release
+# skill's docker-tag-version/publish phases expect.
 docker build \
   -t amazing-hashbrown \
   --platform linux/amd64 \
+  --secret id=npm_token,env=NPM_TOKEN \
+  --build-arg COMMIT_SHA="$COMMIT_SHA" \
+  --build-arg APP_VERSION="$APP_VERSION" \
+  .
+
+# linux/arm64: native on Apple Silicon, so local testing (docker run/compose)
+# runs without QEMU emulation. Separate tag — never pushed by the release
+# pipeline, just for local use.
+docker build \
+  -t amazing-hashbrown:arm64 \
+  --platform linux/arm64 \
   --secret id=npm_token,env=NPM_TOKEN \
   --build-arg COMMIT_SHA="$COMMIT_SHA" \
   --build-arg APP_VERSION="$APP_VERSION" \

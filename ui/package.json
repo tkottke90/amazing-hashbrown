@@ -13,7 +13,7 @@
     "@tkottke90/llm-common-types": "*",
     "@tkottke90/preact-dialog": "*",
     "@fontsource-variable/geist": "5.2.9",
-    "@preact/signals": "2.9.2",
+    "@preact/signals": "2.10.1",
     "@tailwindcss/vite": "^4.3.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
