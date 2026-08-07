@@ -9,6 +9,16 @@ cd "$(dirname "$0")/../../../.."
 
 REGISTRY_HOST="docker.artifacts.tdkottke.com"
 
+npm_token_secret_arg() {
+  local token
+  token=$(sed -n 's#.*//npm\.artifacts\.tdkottke\.com/:_authToken=##p' ~/.npmrc | head -1)
+  if [ -z "$token" ]; then
+    echo "FAIL: no npm.artifacts.tdkottke.com auth token found in ~/.npmrc — run 'npm login --registry=https://npm.artifacts.tdkottke.com/'" >&2
+    exit 1
+  fi
+  export NPM_TOKEN="$token"
+}
+
 run() {
   if [ "${DRY_RUN:-false}" = "true" ]; then
     echo "[dry-run] would run: $*"
@@ -59,8 +69,9 @@ pkg-info)
 
 build-guard)
   image="${1:?usage: build-guard <local-image-tag>}"
+  npm_token_secret_arg
   run npm run build
-  run docker build -t "$image" .
+  run docker build -t "$image" --secret id=npm_token,env=NPM_TOKEN .
   echo "OK: build guard passed (npm build + docker build both succeeded)"
   ;;
 
@@ -100,7 +111,9 @@ docker-build-release)
   image="${1:?usage: docker-build-release <local-image-tag> <version>}"
   version="${2:?usage: docker-build-release <local-image-tag> <version>}"
   commit_sha=$(git rev-parse HEAD)
+  npm_token_secret_arg
   run docker build -t "$image" \
+    --secret id=npm_token,env=NPM_TOKEN \
     --build-arg COMMIT_SHA="$commit_sha" \
     --build-arg APP_VERSION="$version" \
     .
