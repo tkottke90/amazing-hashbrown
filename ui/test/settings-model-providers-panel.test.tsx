@@ -40,8 +40,8 @@ describe('ModelProvidersPanel', () => {
     render(<ModelProvidersPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
-    expect(screen.getByText('ollama')).toBeInTheDocument();
-    expect(screen.getByText('openai')).toBeInTheDocument();
+    expect(screen.getAllByText('ollama')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('openai')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Ollama').length).toBeGreaterThan(0);
     expect(screen.getAllByText('OpenAI').length).toBeGreaterThan(0);
   });

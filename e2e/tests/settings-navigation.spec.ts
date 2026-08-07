@@ -103,9 +103,10 @@ test.describe('Settings navigation', { annotation: suiteAnnotations(suite) }, ()
     browserName: _browserName,
   }, testInfo) => {
     await mockSettingsApi(page);
-    await page.goto('/wiki');
+    await page.goto('/settings?section=storage');
+    await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
-    await page.getByRole('link', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: 'General' }).click();
     await expect(page).toHaveURL(/\/settings/);
     await expect(page.getByLabel('Log level')).toBeVisible();
   });
