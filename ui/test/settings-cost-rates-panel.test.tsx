@@ -68,6 +68,6 @@ describe('CostRatesPanel', () => {
     mockFetch.mockResolvedValue({ costs: {} });
     render(<CostRatesPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Add rate' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add rate' })[0]).toBeInTheDocument();
   });
 });

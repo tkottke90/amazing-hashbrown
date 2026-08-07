@@ -77,9 +77,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
 
     const llmOutput: Record<string, unknown> = output.llmOutput ?? {};
     const usage = (llmOutput['usage_metadata'] ?? llmOutput['tokenUsage']) as
-      | Record<string, number>
-      | null
-      | undefined;
+      Record<string, number> | null | undefined;
 
     const firstGen = output.generations[0]?.[0];
     const text = (firstGen as { text?: string } | undefined)?.text ?? '';

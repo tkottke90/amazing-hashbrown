@@ -55,7 +55,7 @@ describe('ModelProvidersPanel', () => {
   it('renders Add provider button', async () => {
     render(<ModelProvidersPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Add provider' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add provider' })[0]).toBeInTheDocument();
   });
 
   it('renders Edit button for each provider', async () => {

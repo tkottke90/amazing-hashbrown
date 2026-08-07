@@ -52,8 +52,7 @@ export async function forkThreadCheckpoints(
   for (const tuple of chain) {
     const checkpointNs = (tuple.config.configurable?.['checkpoint_ns'] as string | undefined) ?? '';
     const parentCheckpointId = tuple.parentConfig?.configurable?.['checkpoint_id'] as
-      | string
-      | undefined;
+      string | undefined;
 
     const metadata: CheckpointMetadata = tuple.metadata
       ? { ...tuple.metadata, source: 'fork' }

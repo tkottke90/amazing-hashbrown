@@ -382,8 +382,7 @@ export function formatTrace(trace: RLMTrace): string {
   for (const [iteration, group] of iterationGroups) {
     const modelResp = group.find((e) => e.kind === 'model_responded');
     const toolDisp = group.find((e) => e.kind === 'tool_dispatched') as
-      | ToolDispatchedEvent
-      | undefined;
+      ToolDispatchedEvent | undefined;
     const toolComp = toolDisp ? completedByCorrelation.get(toolDisp.correlationId) : undefined;
     const loopDet = group.find((e) => e.kind === 'loop_detection');
 

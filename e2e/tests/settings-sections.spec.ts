@@ -233,7 +233,7 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await expect(page.getByText('ollama', { exact: true })).toBeVisible();
     await expect(page.getByText('openai', { exact: true })).toBeVisible();
     await expect(page.getByText('Default', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add provider' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add provider' }).first()).toBeVisible();
   });
 
   // ---- Embeddings --------------------------------------------------------

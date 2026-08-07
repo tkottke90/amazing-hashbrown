@@ -103,7 +103,7 @@ test.describe('Settings navigation', { annotation: suiteAnnotations(suite) }, ()
     browserName: _browserName,
   }, testInfo) => {
     await mockSettingsApi(page);
-    await page.goto('/');
+    await page.goto('/wiki');
     await pauseBeforeAction(page, testInfo);
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page).toHaveURL(/\/settings/);
