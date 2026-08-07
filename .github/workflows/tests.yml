@@ -16,7 +16,11 @@ jobs:
           cache: npm
 
       - name: Setup npmrc
-        run: echo "//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+        run: |
+          touch ~/.npmrc
+          echo "registry=https://npm.artifacts.tdkottke.com/" >> ~/.npmrc
+          echo "save-exact=true" >> ~/.npmrc
+          echo "//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
