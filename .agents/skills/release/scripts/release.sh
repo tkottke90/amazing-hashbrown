@@ -8,16 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../../../.."
 
 REGISTRY_HOST="docker.artifacts.tdkottke.com"
-
-npm_token_secret_arg() {
-  local token
-  token=$(sed -n 's#.*//npm\.artifacts\.tdkottke\.com/:_authToken=##p' ~/.npmrc | head -1)
-  if [ -z "$token" ]; then
-    echo "FAIL: no npm.artifacts.tdkottke.com auth token found in ~/.npmrc — run 'npm login --registry=https://npm.artifacts.tdkottke.com/'" >&2
-    exit 1
-  fi
-  export NPM_TOKEN="$token"
-}
+APP_IMAGE="amazing-hashbrown:latest"
 
 run() {
   if [ "${DRY_RUN:-false}" = "true" ]; then
@@ -68,11 +59,8 @@ pkg-info)
   ;;
 
 build-guard)
-  image="${1:?usage: build-guard <local-image-tag>}"
-  npm_token_secret_arg
-  run npm run build
-  run docker build -t "$image" --secret id=npm_token,env=NPM_TOKEN .
-  echo "OK: build guard passed (npm build + docker build both succeeded)"
+  run npm run build:app
+  echo "OK: build guard passed (npm run build:app succeeded, image: $APP_IMAGE)"
   ;;
 
 bump-version)
@@ -108,15 +96,11 @@ bump-version)
   ;;
 
 docker-build-release)
-  image="${1:?usage: docker-build-release <local-image-tag> <version>}"
-  version="${2:?usage: docker-build-release <local-image-tag> <version>}"
-  commit_sha=$(git rev-parse HEAD)
-  npm_token_secret_arg
-  run docker build -t "$image" \
-    --secret id=npm_token,env=NPM_TOKEN \
-    --build-arg COMMIT_SHA="$commit_sha" \
-    --build-arg APP_VERSION="$version" \
-    .
+  # npm run build:app reads COMMIT_SHA/APP_VERSION straight from the current
+  # git HEAD and package.json, so this must run after bump-version has
+  # committed the version bump — it picks up the real release version.
+  run npm run build:app
+  echo "OK: docker-build-release passed (image: $APP_IMAGE)"
   ;;
 
 docker-tag-version)

@@ -17,9 +17,10 @@ description: >
   tag.
 compatibility: >
   Requires git, npm, a running Docker daemon logged into
-  docker.artifacts.tdkottke.com, and an authenticated GitHub CLI (`gh`).
-  Project-specific: hardcodes this repo's Dockerfile, registry host, and
-  build scripts.
+  docker.artifacts.tdkottke.com, an authenticated GitHub CLI (`gh`), and a
+  valid npm.artifacts.tdkottke.com token in `~/.npmrc` (checked by
+  `npm run build:app`, this repo's `bin/docker-build.sh`). Project-specific:
+  hardcodes this repo's Dockerfile, registry host, and build scripts.
 ---
 
 # Release
@@ -56,14 +57,18 @@ missing login yourself.
 ## 1. Build guard
 
 ```
-scripts/release.sh build-guard <pkg-name>:local
+scripts/release.sh build-guard
 ```
 
-Runs `npm run build` then `docker build -t <pkg-name>:local .`. If either
-fails, **stop immediately** — do not bump the version. Report the failure
-output as-is; these are real build errors that need fixing outside this
-skill's scope, not something to patch over. This is the guard the whole
-pipeline is built around, so don't skip it even if the user is in a hurry.
+Runs `npm run build:app` — this repo's `bin/docker-build.sh`, which builds
+the app, authenticates to the private npm registry using the token in your
+local `~/.npmrc`, and builds the Docker image as `amazing-hashbrown:latest`.
+That script owns the npm-auth mechanics; this phase doesn't duplicate them.
+If it fails, **stop immediately** — do not bump the version. Report the
+failure output as-is; these are real build errors that need fixing outside
+this skill's scope, not something to patch over. This is the guard the
+whole pipeline is built around, so don't skip it even if the user is in a
+hurry.
 
 ## 2. Bump the version
 
@@ -118,17 +123,19 @@ Write the result to `/tmp/<pkg-name>-<version>-changelog.md`.
 ## 4. Rebuild Docker with the release version baked in
 
 ```
-scripts/release.sh docker-build-release <pkg-name>:local <version>
+scripts/release.sh docker-build-release
 ```
 
-Re-runs the Docker build, this time passing `COMMIT_SHA` (from the new
-version-bump commit) and `APP_VERSION` as build-args, which the Dockerfile
-bakes in as env vars. Docker's layer cache makes this fast after step 1.
+Re-runs `npm run build:app`. Because this runs *after* step 2 has committed
+the version bump, `bin/docker-build.sh` reads `COMMIT_SHA` and
+`APP_VERSION` straight from the now-updated git HEAD and `package.json` —
+no arguments needed, and it can't accidentally bake in a stale version.
+Docker's layer cache makes this fast after step 1.
 
 ## 5. Tag the release image
 
 ```
-scripts/release.sh docker-tag-version <pkg-name>:local docker.artifacts.tdkottke.com/<pkg-name>:v<version>
+scripts/release.sh docker-tag-version amazing-hashbrown:latest docker.artifacts.tdkottke.com/<pkg-name>:v<version>
 ```
 
 ## 6. Save it as a release artifact
@@ -185,7 +192,11 @@ the plan before committing to it. In dry-run:
   just local build artifacts), so running them for real is what actually
   tests the pipeline.
 - `bump-version --dry-run` computes the hypothetical version without
-  touching git or `package.json`.
+  touching git or `package.json`. Because of that, if you also run step 4
+  (`docker-build-release`) in a dry run, it still calls `npm run build:app`
+  for real and still bakes in a real `APP_VERSION` — just the *current*
+  (unbumped) one, since `package.json` was never touched. Treat that
+  version number as a known cosmetic inaccuracy of dry-run mode, not a bug.
 - `publish --dry-run` only prints the commands it would run.
 
 A full dry run therefore still catches real build breakage, real Docker
