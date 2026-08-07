@@ -23,6 +23,7 @@
     "dev:ui": "npm run dev --workspace ui",
     "build:libs": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/observability && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager && npm run build --workspace lib/evaluations && npm run build --workspace lib/thread-reports && npm run build --workspace lib/preact-dialog && npm run build --workspace lib/shell-executor && npm run build --workspace lib/skills-manager",
     "build": "npm run build:libs && npm run build --workspace api && npm run build --workspace ui",
+    "build:app": "npm run build && docker build -t amazing-hashbrown .",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:local --workspace e2e",
     "test:e2e:ci": "npm run test:ci --workspace e2e",
