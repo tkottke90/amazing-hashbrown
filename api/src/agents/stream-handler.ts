@@ -293,7 +293,7 @@ export async function finalizeTurn(
         err: serializeError(err),
       });
       failAssistant(threadStore, threadId, msgId, content, turnSentAt);
-      writeSseEvent(res, { type: 'stream_error', message: 'Failed to save approval prompt' });
+      writeSseEvent(res, { type: 'stream_error', error: 'Failed to save approval prompt' });
     }
   } else {
     writeSseEvent(res, {
@@ -468,7 +468,7 @@ export async function resumeChatToSse(
       promptId,
       err: serializeError(err),
     });
-    writeSseEvent(res, { type: 'stream_error', message: 'Failed to record HITL answer' });
+    writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
     return;
   }
 

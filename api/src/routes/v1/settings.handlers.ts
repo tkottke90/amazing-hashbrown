@@ -50,7 +50,7 @@ function serverError(error: string): HandlerFailure {
 export interface ConfigManagerAccessor {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get(key: string, defaultValue?: any): unknown;
-  getNumber(key: string, defaultValue: number): number | null;
+  getNumber(key: string, defaultValue: number): number | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSection(key: string, schema: any): unknown;
   getConfigDir(path?: string): string;

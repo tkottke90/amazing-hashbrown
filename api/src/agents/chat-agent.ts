@@ -84,13 +84,19 @@ const afterAgentMiddleware = createMiddleware({
 // array handed to the LLM is modified (never persisted).
 const skillExpansionMiddleware = createMiddleware({
   name: 'SkillExpansionMiddleware',
-  beforeAgent: async (state: {
-    messages: { getType: () => string; content: unknown; id?: string }[];
-  }) => {
+  beforeAgent: async (state) => {
     const messages = [...state.messages];
-    const lastHumanIdx = messages.findLastIndex((m) => m.getType() === 'human');
+    let lastHumanIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.getType() === 'human') {
+        lastHumanIdx = i;
+        break;
+      }
+    }
     if (lastHumanIdx === -1) return undefined;
-    const content = messages[lastHumanIdx].content;
+    const lastHuman = messages[lastHumanIdx];
+    if (!lastHuman) return undefined;
+    const content = lastHuman.content;
     if (typeof content !== 'string' || !content.startsWith('/')) return undefined;
 
     const spaceIdx = content.indexOf(' ');
@@ -107,7 +113,7 @@ const skillExpansionMiddleware = createMiddleware({
 
     messages[lastHumanIdx] = new HumanMessage({
       content: expanded,
-      id: messages[lastHumanIdx].id,
+      id: lastHuman.id,
     });
     return { messages };
   },

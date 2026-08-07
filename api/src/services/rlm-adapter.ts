@@ -48,6 +48,9 @@ export class LangChainInferenceAdapter implements InferenceAdapter {
     }
 
     if (options?.tools && options.tools.length > 0) {
+      if (!this.model.bindTools) {
+        throw new Error(`Model ${this.model.constructor.name} does not support tool binding`);
+      }
       const bound = this.model.bindTools(
         options.tools.map((t) => ({
           name: t.name,
