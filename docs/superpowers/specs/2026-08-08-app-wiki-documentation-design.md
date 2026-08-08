@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-08  
 **Status:** Draft  
-**Related:** [`docs/App-Docs/`](../../App-Docs/), [`lib/llm-wiki/`](../../../lib/llm-wiki/), [`TODO_LIST.md`](../../../TODO_LIST.md)
+**Related:** [`docs/app-wiki/`](../../app-wiki/), [`lib/assets/`](../../../lib/assets/), [`lib/llm-wiki/`](../../../lib/llm-wiki/), [`TODO_LIST.md`](../../../TODO_LIST.md)
 
 ## Purpose
 
@@ -32,13 +32,13 @@ The design separates content authorship from wiki mechanics:
 1. Code/feature changes
         │
         ▼
-2. Developer authors/updates markdown files in docs/App-Docs/
+2. Developer authors/updates markdown files in docs/app-wiki/
    (editorial gate — humans control quality before any generation runs)
         │
         ▼
-3. Generation script reads docs/App-Docs/ + other source materials,
-   synthesises wiki pages via LLM, commits to docs/app-wiki/
-   (run as part of the release process)
+3. Generation script reads docs/app-wiki/, synthesises wiki pages via LLM,
+   writes output to lib/assets/app-wiki/
+   (run as part of the release process; output is committed and bundled into the Docker image)
 ```
 
 This keeps the developer in the loop for content quality while automating the mechanical transformation into wiki format.
@@ -52,9 +52,9 @@ This keeps the developer in the loop for content quality while automating the me
 - New `'readOnly'` status on `WikiEntry` in `lib/llm-wiki`
 - Registry and write-service enforcement of read-only status
 - Retire `self` from `DEFAULT_DOMAINS` in `api/src/services/wiki.ts`
-- `lib/assets/` directory for static files bundled with the application (e.g. SCHEMA.md)
-- `docs/app-wiki/` as the on-disk location for the generated wiki (committed to repo)
-- `bin/wiki-generate.ts` — generation script that produces the wiki from source docs
+- `docs/app-wiki/` — developer-authored source markdown (the editorial gate before generation)
+- `lib/assets/app-wiki/` — generated wiki artifact bundled into the Docker image; `SCHEMA.md` pre-committed here as a static file
+- `bin/wiki-generate.ts` — generation script that reads `docs/app-wiki/` and writes to `lib/assets/app-wiki/`
 - `app-docs` domain boot entry with `status: 'readOnly'`
 
 **Out of scope:**
@@ -69,15 +69,14 @@ This keeps the developer in the loop for content quality while automating the me
 ## Architecture
 
 ```
-docs/App-Docs/*.md          docs/superpowers/specs/*.md
-lib/assets/app-wiki-schema.md    (other curated sources)
+docs/app-wiki/*.md          (developer-authored source docs — editorial gate)
         │
         ▼  bin/wiki-generate.ts  (run manually at release)
         │  uses: inference-adapter, @tkottke90/llm-wiki
         │
         ▼
-docs/app-wiki/              ← committed to repo, ships with the app
-  SCHEMA.md
+lib/assets/app-wiki/        ← committed to repo, bundled into Docker image
+  SCHEMA.md                 ← pre-committed static file (not LLM-generated)
   index.md
   log.md
   _embeddings.json
@@ -86,8 +85,10 @@ docs/app-wiki/              ← committed to repo, ships with the app
   queries/
   raw/articles/
         │
+        ▼  Docker build — copies lib/assets/app-wiki/ into image
+        │
         ▼  bootKnowledgeBase() at startup
-        │  registers docs/app-wiki/ as domain 'app-docs', status: readOnly
+        │  registers lib/assets/app-wiki/ as domain 'app-docs', status: readOnly
         │
         ▼
 WikiRegistry (runtime)
@@ -181,7 +182,7 @@ const DEFAULT_DOMAINS: CreateWikiInput[] = [
     domain: 'application configuration, features, providers, wiki, and how-to guides',
     tags: ['documentation', 'application'],
     status: 'readOnly',
-    path: path.resolve(process.cwd(), './docs/app-wiki'),
+    path: path.resolve(process.cwd(), './lib/assets/app-wiki'),
     routingNotes: [
       'how to configure the application -> app-docs',
       'how to use a feature -> app-docs',
@@ -191,20 +192,34 @@ const DEFAULT_DOMAINS: CreateWikiInput[] = [
 ];
 ```
 
-`bootKnowledgeBase()` registers `app-docs` via `registry.register()` (not `registry.create()`) when the directory already exists on disk. When the directory does not exist (e.g. a fresh install before `wiki-generate` has been run), the boot step logs a warning and skips registration rather than failing — the agent simply has no `app-docs` domain until the generation script is run.
+`bootKnowledgeBase()` registers `app-docs` via `registry.register()` (not `registry.create()`) pointing to `lib/assets/app-wiki/`. In a Docker deployment this path resolves to the bundled copy inside the image. When the directory does not exist (e.g. a dev environment where `wiki:generate` has not been run yet), the boot step logs a warning and skips registration rather than failing — the agent simply has no `app-docs` domain in that case.
 
 Existing installs with a `self` wiki on disk are unaffected — `self` is removed from `DEFAULT_DOMAINS` but the data stays wherever it was scaffolded.
 
-### 4. `lib/assets/` — static assets directory
+### 4. `docs/app-wiki/` — developer-authored source docs
 
-New workspace at `lib/assets/`. Contains static files that the application reads at runtime or at generation time. For this feature, the initial content is:
+Plain markdown files written and maintained by the developer. These are the editorial gate: the generation script only processes what exists here, so content quality is controlled before any LLM transformation runs.
+
+Initial source documents mirror the existing `docs/App-Docs/` content (configuration, providers, evaluations) plus user-facing feature guides. Files here are **not** wiki-format pages — they are free-form markdown that the generation script reads as raw source material.
+
+### 5. `lib/assets/` — generated wiki and static assets
+
+`lib/assets/` is a plain directory (no `package.json`) tracked in git and bundled into the Docker image. For this feature its content is:
 
 ```
 lib/assets/
-  app-wiki-schema.md    ← SCHEMA.md template for the app-docs wiki
+  app-wiki/
+    SCHEMA.md           ← pre-committed static file; defines the wiki's taxonomy
+    index.md            ← generated
+    log.md              ← generated
+    _embeddings.json    ← generated
+    concepts/           ← generated
+    entities/           ← generated
+    queries/            ← generated
+    raw/articles/       ← generated (provenance copies of source docs)
 ```
 
-`app-wiki-schema.md` defines the taxonomy for user-facing documentation:
+`SCHEMA.md` is a static file committed directly — it is not LLM-generated. It defines the taxonomy for user-facing documentation:
 
 **Tags:** `configuration`, `provider`, `wiki`, `mcp`, `skills`, `evaluations`, `shell`, `ui`, `setup`, `how-to`, `reference`
 
@@ -215,31 +230,26 @@ lib/assets/
 
 **Out of scope for this wiki:** API internals, source code details, developer-facing architecture. All content must be understandable without reading source code.
 
-The `lib/assets/` directory is not a full npm workspace (no `package.json`) — it is a plain directory tracked in git and referenced by path from scripts that need it.
-
-### 5. `docs/app-wiki/` — committed wiki artifact
-
-The generated wiki lives at `docs/app-wiki/` in the repo root. It is committed and shipped with the application. The `.gitignore` must explicitly include `docs/app-wiki/` (since `docs/` may be broadly ignored in some configurations) or the wiki directory must be force-added.
-
-The directory is created and populated by the generation script; it is never written to at runtime.
+The generated files (`index.md`, `log.md`, page directories, `_embeddings.json`) are committed after each generation run so the Docker image always ships a ready-to-use wiki with no generation step required at container startup.
 
 ### 6. `bin/wiki-generate.ts` — generation script
 
 A standalone script invoked manually as part of the release process. It is not integrated into the dev watch loop.
 
-**Inputs:** source markdown files from `docs/App-Docs/`, selected sections of `README.md`, and `docs/superpowers/specs/` entries that describe user-facing features.
+**Inputs:** source markdown files from `docs/app-wiki/`.
+
+**Output:** `lib/assets/app-wiki/` — the generated wiki bundled into the Docker image.
 
 **Algorithm:**
 
-1. Load (or scaffold) the `app-docs` wiki at `docs/app-wiki/` using `LlmWiki.create()` / `LlmWiki.load()`.
-2. Copy `lib/assets/app-wiki-schema.md` to `docs/app-wiki/SCHEMA.md` if not present (or overwrite on each run — schema is authoritative from assets).
-3. For each source document:
+1. Load (or scaffold) the `app-docs` wiki at `lib/assets/app-wiki/` using `LlmWiki.create()` / `LlmWiki.load()`. `SCHEMA.md` is already present as a static committed file; the script does not overwrite it.
+2. For each source document in `docs/app-wiki/`:
    a. Call `wiki.ingestPrep({ content })` — detect whether the source has changed since the last run (SHA drift).
    b. Skip if SHA is unchanged (incremental — only re-generates pages for changed sources).
    c. Call `wiki.saveRawSource()` to write the immutable provenance copy.
    d. Call the LLM (via `inference-adapter`) with the source content and a generation prompt, producing one or more `PageInput` objects.
    e. Call `wiki.commitPage()` for each generated page, with `sources[]` pointing to the raw source path.
-4. Run `wiki.lint()` and print findings. Fail with a non-zero exit if any `error`-severity lint findings exist.
+3. Run `wiki.lint()` and print findings. Fail with a non-zero exit if any `error`-severity lint findings exist.
 
 **Incremental behaviour:** Because `saveRawSource()` hashes source content and `ingestPrep()` detects drift, unchanged sources are skipped. Only documents that changed since the last generation run produce new LLM calls. A full regeneration can be forced with a `--force` flag.
 
@@ -257,7 +267,7 @@ A standalone script invoked manually as part of the release process. It is not i
 |---|---|
 | Agent calls `wiki_create_page` on `app-docs` | Returns `'read_only'` result; tool reports wiki is read-only |
 | Agent calls `wiki_update_page` on `app-docs` | Same as above |
-| `docs/app-wiki/` does not exist at boot | Boot logs a warning, skips `app-docs` registration; agent has no `app-docs` domain until generation is run |
+| `lib/assets/app-wiki/` does not exist at boot | Boot logs a warning, skips `app-docs` registration; agent has no `app-docs` domain until `wiki:generate` is run |
 | `wiki:generate` fails mid-run | Partial wiki on disk; re-run is safe (incremental by default) |
 | Generation LLM call fails for one source | Script logs the error, continues with remaining sources, exits non-zero |
 | `self` wiki still on disk | Registry continues to show it as-is; user controls its status |
@@ -272,7 +282,6 @@ A standalone script invoked manually as part of the release process. It is not i
 - `api/src/services/wiki.ts` — `DEFAULT_DOMAINS`, `bootKnowledgeBase()`
 - `api/src/agents/tools/wiki-create-page.tool.ts` — write tool to update
 - `api/src/agents/tools/wiki-update-page.tool.ts` — write tool to update
-- `docs/App-Docs/` — primary source material for generation
-- `lib/assets/` — new static assets directory (this feature)
-- `docs/app-wiki/` — generated wiki output (this feature)
+- `docs/app-wiki/` — developer-authored source docs (this feature)
+- `lib/assets/app-wiki/` — generated wiki artifact bundled into Docker image (this feature)
 - `bin/wiki-generate.ts` — generation script (this feature)
