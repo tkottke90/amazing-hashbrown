@@ -20,7 +20,7 @@ Increase this if the agent is frequently timing out on slow or large pages. Decr
 
 ```yaml
 webFetch:
-  timeoutMs: 30000   # wait up to 30 seconds
+  timeoutMs: 30000 # wait up to 30 seconds
 ```
 
 **`respectRobotsTxt`** (default: `true`)

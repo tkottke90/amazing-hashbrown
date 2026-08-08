@@ -12,7 +12,7 @@ Check `config.yaml`:
 
 ```yaml
 afterAgent:
-  enabled: false   # <-- this is the problem
+  enabled: false # <-- this is the problem
 ```
 
 Set `enabled: true` and restart the server. If the key is missing entirely, AfterAgent defaults to enabled — the issue is elsewhere.

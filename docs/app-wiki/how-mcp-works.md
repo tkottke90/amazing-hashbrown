@@ -1,6 +1,6 @@
 ## How MCP Works
 
-MCP (Model Context Protocol) lets the agent use tools provided by external servers — without any code changes to amazing-hashbrown itself. It is a standardized protocol that separates tool *capability* from tool *implementation*, so new tools can be added by plugging in a server rather than modifying the application.
+MCP (Model Context Protocol) lets the agent use tools provided by external servers — without any code changes to amazing-hashbrown itself. It is a standardized protocol that separates tool _capability_ from tool _implementation_, so new tools can be added by plugging in a server rather than modifying the application.
 
 ### Startup and Discovery
 

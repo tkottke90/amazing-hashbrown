@@ -31,12 +31,12 @@ enabled: true
 ---
 ```
 
-| Field | Required | Default | Description |
-|---|---|---|---|
-| `name` | yes | — | Display name shown in the slash-command menu and search results |
-| `description` | yes | — | One-line summary used in autocomplete filtering and `search_skills` |
-| `slashCommand` | no | folder name | The `/command` trigger for this skill |
-| `enabled` | no | `true` | Set to `false` to hide the skill without deleting it |
+| Field          | Required | Default     | Description                                                         |
+| -------------- | -------- | ----------- | ------------------------------------------------------------------- |
+| `name`         | yes      | —           | Display name shown in the slash-command menu and search results     |
+| `description`  | yes      | —           | One-line summary used in autocomplete filtering and `search_skills` |
+| `slashCommand` | no       | folder name | The `/command` trigger for this skill                               |
+| `enabled`      | no       | `true`      | Set to `false` to hide the skill without deleting it                |
 
 ### SKILL.md Body
 
@@ -49,6 +49,7 @@ description: Does something specific
 ---
 
 When this skill is active, you should:
+
 - Read the file at the path the user provides
 - Summarize its contents in bullet points
 - Ask for clarification if the file type is not recognized

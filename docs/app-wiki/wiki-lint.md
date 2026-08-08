@@ -38,11 +38,11 @@ Ask the agent: "Run wiki lint on the homelab domain." The agent calls `wiki_lint
 
 ### Severity Levels
 
-| Severity | Meaning |
-|----------|---------|
-| error | Something is broken and will cause incorrect behavior |
-| warn | Something is degraded or potentially incorrect |
-| info | A suggestion for improvement |
+| Severity | Meaning                                               |
+| -------- | ----------------------------------------------------- |
+| error    | Something is broken and will cause incorrect behavior |
+| warn     | Something is degraded or potentially incorrect        |
+| info     | A suggestion for improvement                          |
 
 ### Related Pages
 

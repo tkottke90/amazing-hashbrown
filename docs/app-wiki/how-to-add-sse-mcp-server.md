@@ -14,6 +14,7 @@ This guide walks through connecting amazing-hashbrown to a remote MCP server usi
 2. Open `mcp.json` (located at `./config/mcp.json` for local installs, `./data/mcp.json` in Docker).
 
 3. Add the server entry:
+
    ```json
    {
      "mcpServers": {
@@ -32,14 +33,17 @@ This guide walks through connecting amazing-hashbrown to a remote MCP server usi
 - **Use the correct host.** Use the server's local network IP or hostname, not `localhost`, unless the server is on the same machine as amazing-hashbrown.
 
 - **Docker host access.** If amazing-hashbrown is running in Docker and the SSE server is on the host machine, use `host.docker.internal` instead of `localhost`:
+
   ```json
   "url": "http://host.docker.internal:3001/sse"
   ```
 
 - **Authentication.** If the server requires a token or API key, check the server's documentation. Many servers accept credentials as a query parameter in the URL:
+
   ```json
   "url": "http://192.168.1.50:3001/sse?token=abc123"
   ```
+
   Some server implementations also support a `headers` config field for passing `Authorization` headers.
 
 - **Startup order matters.** The SSE server must be running before amazing-hashbrown attempts to connect. If you restart the MCP server while the app is running, use the **Reload MCP Config** option (if available) rather than restarting the whole app.

@@ -10,12 +10,12 @@ Add patterns to `tools.shell.allowlist` in `config.yaml`, or go to **Settings �
 tools:
   shell:
     allowlist:
-      - "git status"
-      - "git log *"
-      - "git diff *"
-      - "npm run *"
-      - "ls *"
-      - "cat *"
+      - 'git status'
+      - 'git log *'
+      - 'git diff *'
+      - 'npm run *'
+      - 'ls *'
+      - 'cat *'
 ```
 
 ## Pattern Syntax
@@ -28,12 +28,12 @@ Patterns use standard **glob syntax** and are matched against the full command s
 
 Examples:
 
-| Pattern | Matches | Does not match |
-|---|---|---|
-| `git status` | `git status` | `git status --short` |
-| `git *` | `git status`, `git log --oneline` | `git push --force` |
-| `npm run *` | `npm run build`, `npm run test` | `npm install` |
-| `cat *` | `cat README.md`, `cat src/index.ts` | — |
+| Pattern      | Matches                             | Does not match       |
+| ------------ | ----------------------------------- | -------------------- |
+| `git status` | `git status`                        | `git status --short` |
+| `git *`      | `git status`, `git log --oneline`   | `git push --force`   |
+| `npm run *`  | `npm run build`, `npm run test`     | `npm install`        |
+| `cat *`      | `cat README.md`, `cat src/index.ts` | —                    |
 
 ## Practical Tips
 

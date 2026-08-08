@@ -48,14 +48,14 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 
 The bind mount (`./data:/app/config`) holds everything that persists across container restarts:
 
-| Path | Contents |
-|---|---|
-| `config.yaml` | All application configuration |
-| `app.db` | SQLite database (chat threads, traces, usage) |
-| `wiki/` | Wiki pages organized by domain |
-| `mcp.json` | MCP tool server definitions |
-| `artifacts/` | Files produced by agent artifact tools |
-| `skills/` | Custom skill files and slash commands |
+| Path          | Contents                                      |
+| ------------- | --------------------------------------------- |
+| `config.yaml` | All application configuration                 |
+| `app.db`      | SQLite database (chat threads, traces, usage) |
+| `wiki/`       | Wiki pages organized by domain                |
+| `mcp.json`    | MCP tool server definitions                   |
+| `artifacts/`  | Files produced by agent artifact tools        |
+| `skills/`     | Custom skill files and slash commands         |
 
 ### Included Runtimes
 

@@ -32,12 +32,12 @@ The server name (e.g. `"filesystem"`) is an arbitrary label used for display and
 
 ### Common stdio Servers
 
-| Package | What it provides |
-|---|---|
-| `@modelcontextprotocol/server-filesystem` | Read and write files on disk |
-| `@modelcontextprotocol/server-github` | GitHub API (issues, PRs, code search) |
-| `@modelcontextprotocol/server-postgres` | Run SQL queries against a PostgreSQL database |
-| `@modelcontextprotocol/server-brave-search` | Web search via the Brave Search API |
+| Package                                     | What it provides                              |
+| ------------------------------------------- | --------------------------------------------- |
+| `@modelcontextprotocol/server-filesystem`   | Read and write files on disk                  |
+| `@modelcontextprotocol/server-github`       | GitHub API (issues, PRs, code search)         |
+| `@modelcontextprotocol/server-postgres`     | Run SQL queries against a PostgreSQL database |
+| `@modelcontextprotocol/server-brave-search` | Web search via the Brave Search API           |
 
 Most of these servers are installed and run via `npx` so no manual installation is required. The `-y` flag skips the `npx` install confirmation prompt.
 

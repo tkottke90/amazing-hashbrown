@@ -7,6 +7,7 @@ MCP servers are configured in `mcp.json`, which lives in the MCP config director
 1. Open `mcp.json` (create it if it doesn't exist).
 
 2. Add your server under the `mcpServers` key:
+
    ```json
    {
      "mcpServers": {

@@ -18,25 +18,25 @@ This keeps secrets out of the config file itself while still supporting file-bas
 
 ### Top-Level Sections
 
-| Section | Purpose |
-|---|---|
-| `providers` | LLM backends (Ollama, OpenAI, Anthropic). See [[How to Add a Provider]] |
-| `embeddings` | Embedding model used for wiki search and retrieval |
-| `database` | SQLite database path and settings |
-| `observability` | Tracing and span recording. See [[Observability Configuration]] |
-| `afterAgent` | Background knowledge extraction pipeline. See [[AfterAgent Configuration]] |
-| `chat` | Chat behavior defaults |
-| `rlm` | Retrieval Loop Model settings. See [[Retrieval Loop Model (RLM) Configuration]] |
-| `webFetch` | Controls the `web_fetch` tool. See [[Web Fetch Configuration]] |
-| `tools.shell` | Shell tool settings (approval flow, allowed commands) |
-| `mcpConfigDir` | Path to the MCP tool server configuration |
-| `wikiRoot` | Root directory where wiki pages are stored |
-| `artifactRoot` | Directory for agent-generated artifact files |
-| `skillsRoot` | Directory for skill files and slash commands |
-| `defaultProvider` | Name of the provider used for new chat threads |
-| `port` | HTTP port the app listens on (default: 3000) |
-| `logLevel` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
-| `costs` | Per-model token pricing. See [[Cost Rates Configuration]] |
+| Section           | Purpose                                                                         |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `providers`       | LLM backends (Ollama, OpenAI, Anthropic). See [[How to Add a Provider]]         |
+| `embeddings`      | Embedding model used for wiki search and retrieval                              |
+| `database`        | SQLite database path and settings                                               |
+| `observability`   | Tracing and span recording. See [[Observability Configuration]]                 |
+| `afterAgent`      | Background knowledge extraction pipeline. See [[AfterAgent Configuration]]      |
+| `chat`            | Chat behavior defaults                                                          |
+| `rlm`             | Retrieval Loop Model settings. See [[Retrieval Loop Model (RLM) Configuration]] |
+| `webFetch`        | Controls the `web_fetch` tool. See [[Web Fetch Configuration]]                  |
+| `tools.shell`     | Shell tool settings (approval flow, allowed commands)                           |
+| `mcpConfigDir`    | Path to the MCP tool server configuration                                       |
+| `wikiRoot`        | Root directory where wiki pages are stored                                      |
+| `artifactRoot`    | Directory for agent-generated artifact files                                    |
+| `skillsRoot`      | Directory for skill files and slash commands                                    |
+| `defaultProvider` | Name of the provider used for new chat threads                                  |
+| `port`            | HTTP port the app listens on (default: 3000)                                    |
+| `logLevel`        | Logging verbosity (`debug`, `info`, `warn`, `error`)                            |
+| `costs`           | Per-model token pricing. See [[Cost Rates Configuration]]                       |
 
 ### Editing the Config
 

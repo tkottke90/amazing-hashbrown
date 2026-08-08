@@ -16,6 +16,7 @@ If you don't see a thought process block, your current model either doesn't supp
 While the model is still generating its reasoning, the block shows **"Thinking…"** with an animated indicator. The final response area remains empty during this phase.
 
 Once the model transitions from reasoning to its final answer:
+
 1. The thought process block collapses automatically
 2. The final response begins streaming in below it
 

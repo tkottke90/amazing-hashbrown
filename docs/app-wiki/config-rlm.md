@@ -37,11 +37,11 @@ The model to use for RLM inference. Defaults to the provider's `defaultModel` if
 A common configuration is to use a fast, cheap model for RLM — since retrieval loops run many small inference steps — and reserve a smarter, more capable model for the main chat agent:
 
 ```yaml
-defaultProvider: anthropic  # used for main chat
+defaultProvider: anthropic # used for main chat
 
 rlm:
-  provider: local            # Ollama for RLM
-  model: qwen2.5:7b          # fast local model
+  provider: local # Ollama for RLM
+  model: qwen2.5:7b # fast local model
   maxIterations: 10
 ```
 

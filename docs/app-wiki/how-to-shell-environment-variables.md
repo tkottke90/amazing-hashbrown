@@ -10,9 +10,9 @@ Add entries to `tools.shell.env` in `config.yaml`:
 tools:
   shell:
     env:
-      GH_TOKEN: "${GITHUB_PAT}"
-      AWS_PROFILE: "default"
-      PATH: "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin"
+      GH_TOKEN: '${GITHUB_PAT}'
+      AWS_PROFILE: 'default'
+      PATH: '/usr/local/bin:/usr/bin:/bin:/usr/local/sbin'
 ```
 
 ## The `${VAR_NAME}` Syntax

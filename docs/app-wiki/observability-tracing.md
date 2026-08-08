@@ -12,13 +12,13 @@ Traces are organized as a **tree**:
 
 ## What Each Span Stores
 
-| Field | Description |
-|---|---|
-| Start / end timestamps | When the span began and completed |
-| Input | The input passed to the model or tool |
-| Output preview | A truncated preview of the output (length configurable) |
-| Token counts | Prompt tokens, completion tokens, and total |
-| Errors | Any exception or failure message |
+| Field                  | Description                                             |
+| ---------------------- | ------------------------------------------------------- |
+| Start / end timestamps | When the span began and completed                       |
+| Input                  | The input passed to the model or tool                   |
+| Output preview         | A truncated preview of the output (length configurable) |
+| Token counts           | Prompt tokens, completion tokens, and total             |
+| Errors                 | Any exception or failure message                        |
 
 ## Configuring Output Preview Length
 
@@ -26,7 +26,7 @@ The `observability.spanOutputPreviewChars` setting controls how much output is s
 
 ```yaml
 observability:
-  spanOutputPreviewChars: 500   # default — compact preview
+  spanOutputPreviewChars: 500 # default — compact preview
 ```
 
 - Set to `-1` to store **full output** — useful for deep debugging but grows the database quickly

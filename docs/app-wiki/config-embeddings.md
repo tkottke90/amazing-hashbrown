@@ -15,13 +15,13 @@ embeddings:
 
 ## Keys
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `enabled` | `true` | Master switch. Set to `false` to disable semantic search globally and fall back to BM25, regardless of other settings. |
-| `type` | — | Embedding backend: `ollama`, `openai`, or `anthropic`. Required if `enabled` is `true`. |
-| `model` | provider default | Embedding model name. Each provider has its own default (e.g. `nomic-embed-text` for Ollama, `text-embedding-3-small` for OpenAI, `voyage-3` for Anthropic). |
-| `baseUrl` | — | Required for `ollama`; omit for `openai` and `anthropic`. Include the `/v1` suffix for Ollama. |
-| `apiKey` | — | Required for `openai` and `anthropic`; omit for `ollama`. |
+| Key       | Default          | Description                                                                                                                                                  |
+| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enabled` | `true`           | Master switch. Set to `false` to disable semantic search globally and fall back to BM25, regardless of other settings.                                       |
+| `type`    | —                | Embedding backend: `ollama`, `openai`, or `anthropic`. Required if `enabled` is `true`.                                                                      |
+| `model`   | provider default | Embedding model name. Each provider has its own default (e.g. `nomic-embed-text` for Ollama, `text-embedding-3-small` for OpenAI, `voyage-3` for Anthropic). |
+| `baseUrl` | —                | Required for `ollama`; omit for `openai` and `anthropic`. Include the `/v1` suffix for Ollama.                                                               |
+| `apiKey`  | —                | Required for `openai` and `anthropic`; omit for `ollama`.                                                                                                    |
 
 ## Fallback behaviour
 

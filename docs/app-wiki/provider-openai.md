@@ -39,7 +39,7 @@ providers:
     apiKey: sk-...
     costs:
       gpt-4o:
-        input: 2.50      # USD per million tokens
+        input: 2.50 # USD per million tokens
         output: 10.00
       gpt-4.1-mini:
         input: 0.15
@@ -55,7 +55,7 @@ providers:
   - name: local-inference
     type: openai
     baseUrl: http://localhost:8080/v1
-    apiKey: ignored        # some servers require a placeholder
+    apiKey: ignored # some servers require a placeholder
     defaultModel: my-model
 ```
 

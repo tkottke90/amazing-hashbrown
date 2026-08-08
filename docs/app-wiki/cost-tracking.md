@@ -29,12 +29,12 @@ GET /api/v1/usage
 
 The endpoint accepts query parameters to filter the results:
 
-| Parameter | Description |
-|---|---|
-| `from` | Start date (ISO 8601, e.g. `2026-01-01`) |
-| `to` | End date (ISO 8601) |
-| `provider` | Filter by provider name |
-| `model` | Filter by model ID |
+| Parameter  | Description                              |
+| ---------- | ---------------------------------------- |
+| `from`     | Start date (ISO 8601, e.g. `2026-01-01`) |
+| `to`       | End date (ISO 8601)                      |
+| `provider` | Filter by provider name                  |
+| `model`    | Filter by model ID                       |
 
 The response includes aggregated totals and a per-model breakdown.
 

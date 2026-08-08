@@ -12,7 +12,7 @@ Check `config.yaml` for:
 
 ```yaml
 embeddings:
-  enabled: false   # <-- this is the problem
+  enabled: false # <-- this is the problem
 ```
 
 Set `enabled: true`, save the file, and restart the server. No other changes are needed if you already have a provider configured.

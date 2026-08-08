@@ -44,7 +44,7 @@ providers:
     apiKey: sk-ant-...
     costs:
       claude-sonnet-4-6:
-        input: 3.00       # USD per million tokens
+        input: 3.00 # USD per million tokens
         output: 15.00
       claude-haiku-4-5-20251001:
         input: 0.80

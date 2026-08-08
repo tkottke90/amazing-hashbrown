@@ -24,10 +24,10 @@ An array of glob patterns that are auto-approved without prompting you. Commands
 tools:
   shell:
     allowlist:
-      - "git status"
-      - "git log *"
-      - "npm run *"
-      - "ls *"
+      - 'git status'
+      - 'git log *'
+      - 'npm run *'
+      - 'ls *'
 ```
 
 See [[How to Configure the Shell Allowlist]] for patterns and tips.
@@ -40,9 +40,9 @@ An array of glob patterns that are always rejected. The agent is told the comman
 tools:
   shell:
     denylist:
-      - "rm -rf *"
-      - "sudo *"
-      - "shutdown *"
+      - 'rm -rf *'
+      - 'sudo *'
+      - 'shutdown *'
 ```
 
 ### `env`
@@ -53,9 +53,9 @@ A map of environment variable names to values injected into every shell session.
 tools:
   shell:
     env:
-      GH_TOKEN: "${GITHUB_PAT}"
-      AWS_PROFILE: "default"
-      PATH: "/usr/local/bin:/usr/bin:/bin"
+      GH_TOKEN: '${GITHUB_PAT}'
+      AWS_PROFILE: 'default'
+      PATH: '/usr/local/bin:/usr/bin:/bin'
 ```
 
 Always include a `PATH` entry — without it, commands like `git` and `python3` may not be found. See [[How to Give the Shell Tool Access to Environment Variables]] for more detail.

@@ -25,11 +25,11 @@ observability:
 
 This controls how many characters of each LLM response or tool result are stored per span (trace entry). The three practical values are:
 
-| Value | Behavior |
-|---|---|
-| `500` (default) | Stores a preview of each output — good balance of detail and storage |
-| `-1` | Stores the full content of every LLM call and tool result — useful for deep debugging |
-| `0` | Stores token counts and latency only, no content — smallest possible footprint |
+| Value           | Behavior                                                                              |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `500` (default) | Stores a preview of each output — good balance of detail and storage                  |
+| `-1`            | Stores the full content of every LLM call and tool result — useful for deep debugging |
+| `0`             | Stores token counts and latency only, no content — smallest possible footprint        |
 
 If you are debugging unexpected agent behavior or want to replay exactly what the model produced, set this to `-1` temporarily. Switch back to `500` or `0` for normal operation.
 

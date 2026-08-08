@@ -23,11 +23,11 @@ See [[How to Add a Provider]] for how providers and their default models are con
 
 ### Per-Thread vs. Global Changes
 
-| Action | Scope |
-|---|---|
-| Click model selector in chat | This thread only, from the next message onward |
-| Settings → General → Default Provider | All new threads (existing threads unchanged) |
-| Edit `defaultProvider` in config.yaml | All new threads (existing threads unchanged) |
+| Action                                | Scope                                          |
+| ------------------------------------- | ---------------------------------------------- |
+| Click model selector in chat          | This thread only, from the next message onward |
+| Settings → General → Default Provider | All new threads (existing threads unchanged)   |
+| Edit `defaultProvider` in config.yaml | All new threads (existing threads unchanged)   |
 
 ### RLM and Background Processes
 
