@@ -13,7 +13,7 @@ services:
       - host=0.0.0.0
     ports:
       # host:container — exposes the app on the network at <host>:3000
-      - "3000:3000"
+      - '3000:3000'
     volumes:
       # Bind mount (not a named volume) so persistent state — config.yaml,
       # the SQLite store, wiki content, mcp.json, artifacts, skills — lives

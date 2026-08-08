@@ -44,7 +44,9 @@ if (sourceFiles.length === 0) {
 // ── Set up inference ──────────────────────────────────────────────────────────
 
 if (values.provider !== 'ollama') {
-  console.error(`Error: provider "${values.provider}" is not yet supported. Use --provider ollama.`);
+  console.error(
+    `Error: provider "${values.provider}" is not yet supported. Use --provider ollama.`,
+  );
   process.exit(2);
 }
 

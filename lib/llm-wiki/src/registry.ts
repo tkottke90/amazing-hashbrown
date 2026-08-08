@@ -178,9 +178,7 @@ export class WikiRegistry {
       throw new Error(`Wiki id already registered: ${id}`);
     }
     const storedPath = opts?.path ?? id;
-    const wikiDir = path.isAbsolute(storedPath)
-      ? storedPath
-      : path.join(this.wikiRoot, storedPath);
+    const wikiDir = path.isAbsolute(storedPath) ? storedPath : path.join(this.wikiRoot, storedPath);
     try {
       await fs.access(path.join(wikiDir, SCHEMA_FILE));
     } catch {

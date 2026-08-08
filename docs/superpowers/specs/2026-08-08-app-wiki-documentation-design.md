@@ -129,10 +129,10 @@ Update `list(includeArchived?)` so `'readOnly'` wikis appear in the default (non
 
 ```ts
 // before
-this.data.wikis.filter((w) => w.status === 'active')
+this.data.wikis.filter((w) => w.status === 'active');
 
 // after
-this.data.wikis.filter((w) => w.status === 'active' || w.status === 'readOnly')
+this.data.wikis.filter((w) => w.status === 'active' || w.status === 'readOnly');
 ```
 
 `list(true)` already returns all entries; no change needed there.
@@ -224,6 +224,7 @@ lib/assets/
 **Tags:** `configuration`, `provider`, `wiki`, `mcp`, `skills`, `evaluations`, `shell`, `ui`, `setup`, `how-to`, `reference`
 
 **Page types used:**
+
 - `concept` — how a feature works (e.g. "How the Wiki Works", "AfterAgent Pipeline")
 - `entity` — a specific configurable thing (e.g. "Ollama Provider", "MCP Server")
 - `query` — captured how-to Q&A (e.g. "How do I configure MCP?", "How do I add a provider?")
@@ -263,14 +264,14 @@ A standalone script invoked manually as part of the release process. It is not i
 
 ## Error Handling
 
-| Scenario | Behaviour |
-|---|---|
-| Agent calls `wiki_create_page` on `app-docs` | Returns `'read_only'` result; tool reports wiki is read-only |
-| Agent calls `wiki_update_page` on `app-docs` | Same as above |
+| Scenario                                      | Behaviour                                                                                                       |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Agent calls `wiki_create_page` on `app-docs`  | Returns `'read_only'` result; tool reports wiki is read-only                                                    |
+| Agent calls `wiki_update_page` on `app-docs`  | Same as above                                                                                                   |
 | `lib/assets/app-wiki/` does not exist at boot | Boot logs a warning, skips `app-docs` registration; agent has no `app-docs` domain until `wiki:generate` is run |
-| `wiki:generate` fails mid-run | Partial wiki on disk; re-run is safe (incremental by default) |
-| Generation LLM call fails for one source | Script logs the error, continues with remaining sources, exits non-zero |
-| `self` wiki still on disk | Registry continues to show it as-is; user controls its status |
+| `wiki:generate` fails mid-run                 | Partial wiki on disk; re-run is safe (incremental by default)                                                   |
+| Generation LLM call fails for one source      | Script logs the error, continues with remaining sources, exits non-zero                                         |
+| `self` wiki still on disk                     | Registry continues to show it as-is; user controls its status                                                   |
 
 ---
 
