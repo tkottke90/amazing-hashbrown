@@ -137,6 +137,36 @@ describe('WikiRegistry', () => {
     expect(reloaded.routingNotes()).to.deep.equal(['cardio -> fitness']);
   });
 
+  it('registers a wiki with readOnly status and includes it in the default listing', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    // Scaffold the directory via create(), then re-register as readOnly.
+    await registry.create({ id: 'docs', domain: 'documentation' });
+    await registry.remove('docs');
+    await registry.register('docs', { status: 'readOnly' });
+
+    const listed = registry.list();
+    expect(listed.map((w) => w.id)).to.include('docs');
+    expect(listed.find((w) => w.id === 'docs')?.status).to.equal('readOnly');
+    // readOnly wikis must NOT appear in an active-only filter
+    expect(listed.filter((w) => w.status === 'active').map((w) => w.id)).to.not.include('docs');
+    // But archived wikis remain hidden in the default listing
+    const archivedShown = registry.list(true).length;
+    expect(archivedShown).to.be.greaterThanOrEqual(listed.length);
+  });
+
+  it('persists readOnly status through registry.json round-trip', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({ id: 'docs', domain: 'documentation' });
+    await registry.remove('docs');
+    await registry.register('docs', { status: 'readOnly' });
+
+    const reloaded = await createWikiRegistry({ wikiRoot: root });
+    const entry = reloaded.list().find((w) => w.id === 'docs');
+    expect(entry?.status).to.equal('readOnly');
+  });
+
   it('lints through the registry and can flag registry_sync drift', async () => {
     const root = await tmpRoot();
     const registry = await createWikiRegistry({ wikiRoot: root });

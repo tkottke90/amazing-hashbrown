@@ -19,6 +19,9 @@ export const wikiRebaselineSourceTool = tool(
     } catch {
       return 'Wiki knowledge base is not available.';
     }
+    if (registry.list(true).find((w) => w.id === wikiId)?.status === 'readOnly') {
+      return `Wiki "${wikiId}" is read-only and cannot be written to directly.`;
+    }
     let wiki;
     try {
       wiki = await registry.load(wikiId);

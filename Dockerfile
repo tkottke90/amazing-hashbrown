@@ -98,6 +98,7 @@ COPY --chown=appuser:appuser lib/thread-reports/dist ./lib/thread-reports/dist
 COPY --chown=appuser:appuser lib/thread-reports/templates ./lib/thread-reports/templates
 COPY --chown=appuser:appuser lib/tools-manager/package.json ./lib/tools-manager/package.json
 COPY --chown=appuser:appuser lib/tools-manager/dist ./lib/tools-manager/dist
+COPY --chown=appuser:appuser lib/assets/ ./lib/assets/
 
 USER appuser
 EXPOSE 3000
