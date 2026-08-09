@@ -17,6 +17,7 @@ const { values } = parseArgs({
     model: { type: 'string', default: 'llama3.1' },
     'base-url': { type: 'string', default: 'http://localhost:11434' },
     'api-key': { type: 'string' },
+    'max-tokens': { type: 'string' },
   },
   strict: false,
 });
@@ -115,32 +116,40 @@ for (const filename of sourceFiles) {
     sha256: prep.sha256,
   });
 
-  const response = await adapter.invoke(
-    [
-      {
-        role: 'user',
-        content: [
-          'You are converting developer documentation into a user-facing wiki.',
-          'Read the following documentation and produce structured wiki pages.',
-          'Each page should explain a concept, feature, or how-to in plain language.',
-          'Do not include API internals or developer architecture.',
-          'Use [[wikilink]] syntax to cross-reference related pages.',
-          '',
-          '--- SOURCE DOCUMENT ---',
-          content,
-          '--- END ---',
-          '',
-          'Return a JSON object with a "pages" array. Each page needs:',
-          '- type: "concept" | "entity" | "query"',
-          '- title: string',
-          '- tags: string[] (from: configuration, provider, wiki, mcp, skills, evaluations, shell, ui, setup, how-to, reference)',
-          '- body: markdown string (no frontmatter)',
-          '- summary: optional one-line summary',
-        ].join('\n'),
-      },
-    ],
-    { schema: PageSchema },
-  );
+  const maxTokens = values['max-tokens'] ? parseInt(values['max-tokens'] as string, 10) : undefined;
+
+  let response: Awaited<ReturnType<typeof adapter.invoke>>;
+  try {
+    response = await adapter.invoke(
+      [
+        {
+          role: 'user',
+          content: [
+            'You are converting developer documentation into a user-facing wiki.',
+            'Read the following documentation and produce structured wiki pages.',
+            'Each page should explain a concept, feature, or how-to in plain language.',
+            'Do not include API internals or developer architecture.',
+            'Use [[wikilink]] syntax to cross-reference related pages.',
+            '',
+            '--- SOURCE DOCUMENT ---',
+            content,
+            '--- END ---',
+            '',
+            'Return a JSON object with a "pages" array. Each page needs:',
+            '- type: "concept" | "entity" | "query"',
+            '- title: string',
+            '- tags: string[] (from: configuration, provider, wiki, mcp, skills, evaluations, shell, ui, setup, how-to, reference)',
+            '- body: markdown string (no frontmatter)',
+            '- summary: optional one-line summary',
+          ].join('\n'),
+        },
+      ],
+      { schema: PageSchema, maxTokens },
+    );
+  } catch (err) {
+    console.warn(`  warn  ${filename}: LLM call failed (${(err as Error).message}), skipping`);
+    continue;
+  }
 
   let parsed: z.infer<typeof PageSchema>;
   try {
