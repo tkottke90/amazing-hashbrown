@@ -5,8 +5,9 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { LlmWiki } from '../lib/llm-wiki/src/index.js';
-import type { PageInput, PageType } from '../lib/llm-wiki/src/index.js';
+import type { PageType } from '../lib/llm-wiki/src/index.js';
 import { OllamaInferenceAdapter } from '../lib/inference-adapter/src/adapters/ollama.js';
+import { OpenAiInferenceAdapter } from '../lib/inference-adapter/src/adapters/openai.js';
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
@@ -15,6 +16,7 @@ const { values } = parseArgs({
     provider: { type: 'string', default: 'ollama' },
     model: { type: 'string', default: 'llama3.1' },
     'base-url': { type: 'string', default: 'http://localhost:11434' },
+    'api-key': { type: 'string' },
   },
   strict: false,
 });
@@ -43,17 +45,24 @@ if (sourceFiles.length === 0) {
 
 // ── Set up inference ──────────────────────────────────────────────────────────
 
-if (values.provider !== 'ollama') {
+let adapter: OllamaInferenceAdapter | OpenAiInferenceAdapter;
+if (values.provider === 'ollama') {
+  adapter = new OllamaInferenceAdapter({
+    model: values.model as string,
+    baseUrl: values['base-url'] as string,
+  });
+} else if (values.provider === 'openai') {
+  adapter = new OpenAiInferenceAdapter({
+    model: values.model as string,
+    baseUrl: values['base-url'] as string,
+    apiKey: values['api-key'] as string | undefined,
+  });
+} else {
   console.error(
-    `Error: provider "${values.provider}" is not yet supported. Use --provider ollama.`,
+    `Error: provider "${values.provider}" is not supported. Use --provider ollama or --provider openai.`,
   );
   process.exit(2);
 }
-
-const adapter = new OllamaInferenceAdapter({
-  model: values.model as string,
-  baseUrl: values['base-url'] as string,
-});
 
 // ── Load or create the output wiki ───────────────────────────────────────────
 
