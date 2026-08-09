@@ -21,6 +21,11 @@ export function createApp() {
   app.use('/api', apiRouter);
   app.use(express.static(publicDir));
 
+  // Serve index.html for all other routes (for SPA support)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(publicDir, 'index.html'));
+  });
+
   app.start = () => {
     const port = app.config.getNumber('port', 3000) as number;
     const host = app.config.get('host', '0.0.0.0') as string;
