@@ -32,6 +32,11 @@ function toOpenAiMessages(
   return result;
 }
 
+function extractJson(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  return fenced ? fenced[1].trim() : raw.trim();
+}
+
 function toOpenAiTool(def: ToolDefinition): OpenAI.Chat.Completions.ChatCompletionTool {
   return {
     type: 'function',
@@ -68,7 +73,7 @@ export class OpenAiInferenceAdapter implements InferenceAdapter {
         max_tokens: options?.maxTokens,
       });
       const content = response.choices[0]?.message?.content ?? '';
-      const structured = options.schema.parse(JSON.parse(content)) as unknown;
+      const structured = options.schema.parse(JSON.parse(extractJson(content))) as unknown;
       return {
         message: { role: 'assistant', content },
         structured,
