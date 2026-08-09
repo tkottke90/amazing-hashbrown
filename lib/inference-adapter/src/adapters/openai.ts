@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
 import type { Message } from '../types/message.js';
 import type {
   ExtendedCompleteOptions,
@@ -38,7 +38,7 @@ function toOpenAiTool(def: ToolDefinition): OpenAI.Chat.Completions.ChatCompleti
     function: {
       name: def.name,
       description: def.description,
-      parameters: def.parameters as Record<string, unknown>,
+      parameters: z.toJSONSchema(def.parameters) as Record<string, unknown>,
     },
   };
 }
@@ -59,21 +59,19 @@ export class OpenAiInferenceAdapter implements InferenceAdapter {
     const openAiMessages = toOpenAiMessages(messages);
 
     if (options?.schema) {
-      const completion = await this.client.beta.chat.completions.parse({
+      const response = await this.client.chat.completions.create({
         model: this.model,
         messages: openAiMessages,
-        response_format: zodResponseFormat(options.schema, 'output'),
+        response_format: { type: 'json_object' },
         temperature: options?.temperature,
         top_p: options?.topP,
         max_tokens: options?.maxTokens,
       });
-      const parsed = completion.choices[0].message.parsed;
+      const content = response.choices[0]?.message?.content ?? '';
+      const structured = options.schema.parse(JSON.parse(content)) as unknown;
       return {
-        message: {
-          role: 'assistant',
-          content: JSON.stringify(parsed),
-        },
-        structured: parsed,
+        message: { role: 'assistant', content },
+        structured,
       };
     }
 
@@ -86,14 +84,18 @@ export class OpenAiInferenceAdapter implements InferenceAdapter {
         top_p: options?.topP,
         max_tokens: options?.maxTokens,
       });
-      const choice = response.choices[0].message;
-      const toolCalls = (choice.tool_calls ?? []).map((tc) => ({
+      const choice = response.choices[0]?.message;
+      const rawCalls = (choice?.tool_calls ?? []) as Array<{
+        id: string;
+        function: { name: string; arguments: string };
+      }>;
+      const toolCalls = rawCalls.map((tc) => ({
         id: tc.id,
         name: tc.function.name,
         arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
       }));
       return {
-        message: { role: 'assistant', content: choice.content ?? '' },
+        message: { role: 'assistant', content: choice?.content ?? '' },
         toolCalls,
       };
     }
@@ -108,7 +110,7 @@ export class OpenAiInferenceAdapter implements InferenceAdapter {
     return {
       message: {
         role: 'assistant',
-        content: response.choices[0].message.content ?? '',
+        content: response.choices[0]?.message?.content ?? '',
       },
     };
   }
