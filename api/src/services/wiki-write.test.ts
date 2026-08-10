@@ -228,4 +228,38 @@ describe('services/wiki-write', () => {
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
   });
+
+  describe('readOnly wiki', () => {
+    let roDir: string;
+    let roRegistry: WikiRegistry;
+
+    before(async () => {
+      roDir = mkdtempSync(join(tmpdir(), 'wiki-ro-'));
+      roRegistry = await createWikiRegistry({ wikiRoot: join(roDir, 'wikiroot') });
+      // Scaffold the directory via create(), then re-register as readOnly.
+      await roRegistry.create({ id: 'ro-wiki', domain: 'testing' });
+      await roRegistry.remove('ro-wiki');
+      await roRegistry.register('ro-wiki', { status: 'readOnly' });
+    });
+
+    after(() => {
+      rmSync(roDir, { recursive: true, force: true });
+    });
+
+    it('createWikiPage returns read_only for a readOnly wiki', async () => {
+      const result = await createWikiPage(
+        { wikiId: 'ro-wiki', title: 'Test', content: 'content', section: 'entity' },
+        roRegistry,
+      );
+      expect(result).to.deep.equal({ status: 'read_only' });
+    });
+
+    it('updateWikiPage returns read_only for a readOnly wiki', async () => {
+      const result = await updateWikiPage(
+        { wikiId: 'ro-wiki', path: 'entities/test.md', content: 'content' },
+        roRegistry,
+      );
+      expect(result).to.deep.equal({ status: 'read_only' });
+    });
+  });
 });

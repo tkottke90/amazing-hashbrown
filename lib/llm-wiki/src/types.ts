@@ -119,7 +119,7 @@ export interface WikiEntry {
   path: string;
   domain: string;
   tags: string[];
-  status: 'active' | 'archived';
+  status: 'active' | 'archived' | 'readOnly';
 }
 
 /** Shape of `<wikiRoot>/registry.json`. */

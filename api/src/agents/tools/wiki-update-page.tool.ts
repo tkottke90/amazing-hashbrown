@@ -107,6 +107,8 @@ export const wikiUpdatePageTool = tool(
         return 'Wiki knowledge base is not available.';
       case 'unknown_wiki':
         return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
+      case 'read_only':
+        return `Wiki "${wikiId}" is read-only and cannot be written to directly.`;
     }
   },
   {

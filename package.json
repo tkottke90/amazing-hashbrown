@@ -35,6 +35,7 @@
     "eval:calibrate": "tsx bin/eval-calibrate.ts",
     "eval:compare": "tsx bin/eval-compare.ts",
     "thread-report": "tsx bin/thread-report.ts",
+    "wiki:generate": "tsx bin/wiki-generate.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

@@ -32,7 +32,7 @@ const WikiEntrySchema = z.object({
   path: z.string().min(1),
   domain: z.string().default(''),
   tags: z.array(z.string()).default([]),
-  status: z.enum(['active', 'archived']).default('active'),
+  status: z.enum(['active', 'archived', 'readOnly']).default('active'),
 });
 
 const RegistrySchema = z.object({
@@ -105,11 +105,11 @@ export class WikiRegistry {
     return { noMatch: true, available: (result.available ?? []).map((e) => e.id) };
   }
 
-  /** All registered wikis (active only by default). */
+  /** All registered wikis (active and readOnly by default; pass true to include archived). */
   list(includeArchived = false): WikiEntry[] {
     return includeArchived
       ? [...this.data.wikis]
-      : this.data.wikis.filter((w) => w.status === 'active');
+      : this.data.wikis.filter((w) => w.status === 'active' || w.status === 'readOnly');
   }
 
   /** The current routing notes. */
@@ -160,15 +160,25 @@ export class WikiRegistry {
   /**
    * Register an already-existing on-disk wiki directory in registry.json.
    * Reads the domain from the directory's SCHEMA.md automatically.
+   * Pass `path` to register a wiki whose directory is outside the wikiRoot
+   * (absolute path stored verbatim; relative path resolved from wikiRoot).
    */
   async register(
     id: string,
-    opts?: { domain?: string; tags?: string[]; routingNotes?: string[] },
+    opts?: {
+      domain?: string;
+      tags?: string[];
+      routingNotes?: string[];
+      status?: WikiEntry['status'];
+      /** Override the on-disk path. Absolute paths are stored verbatim; relative paths resolve from wikiRoot. Defaults to id (relative to wikiRoot). */
+      path?: string;
+    },
   ): Promise<void> {
     if (this.data.wikis.some((w) => w.id === id)) {
       throw new Error(`Wiki id already registered: ${id}`);
     }
-    const wikiDir = path.join(this.wikiRoot, id);
+    const storedPath = opts?.path ?? id;
+    const wikiDir = path.isAbsolute(storedPath) ? storedPath : path.join(this.wikiRoot, storedPath);
     try {
       await fs.access(path.join(wikiDir, SCHEMA_FILE));
     } catch {
@@ -183,7 +193,13 @@ export class WikiRegistry {
       /* fall back to empty string */
     }
     const domain = opts?.domain ?? parsedDomain;
-    this.data.wikis.push({ id, path: id, domain, tags: opts?.tags ?? [], status: 'active' });
+    this.data.wikis.push({
+      id,
+      path: storedPath,
+      domain,
+      tags: opts?.tags ?? [],
+      status: opts?.status ?? 'active',
+    });
     if (opts?.routingNotes?.length) this.data.routingNotes.push(...opts.routingNotes);
     await this.persist();
   }

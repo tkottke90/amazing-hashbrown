@@ -13,7 +13,8 @@ export type CreateWikiPageResult =
   | { status: 'dry_run'; title: string; wikiId: string; section: PageType }
   | { status: 'duplicate'; existingPath: string }
   | { status: 'wiki_unavailable' }
-  | { status: 'unknown_wiki'; wikiId: string };
+  | { status: 'unknown_wiki'; wikiId: string }
+  | { status: 'read_only' };
 
 export interface CreateWikiPageParams {
   wikiId: string;
@@ -62,6 +63,10 @@ export async function createWikiPage(
     }
   }
 
+  if (reg.list(true).find((w) => w.id === wikiId)?.status === 'readOnly') {
+    return { status: 'read_only' };
+  }
+
   let wiki;
   try {
     wiki = await reg.load(wikiId);
@@ -100,7 +105,8 @@ export type UpdateWikiPageResult =
   | { status: 'not_found' }
   | { status: 'invalid_path' }
   | { status: 'wiki_unavailable' }
-  | { status: 'unknown_wiki'; wikiId: string };
+  | { status: 'unknown_wiki'; wikiId: string }
+  | { status: 'read_only' };
 
 export interface UpdateWikiPageParams {
   wikiId: string;
@@ -146,6 +152,10 @@ export async function updateWikiPage(
     } catch {
       return { status: 'wiki_unavailable' };
     }
+  }
+
+  if (reg.list(true).find((w) => w.id === wikiId)?.status === 'readOnly') {
+    return { status: 'read_only' };
   }
 
   let wiki;
