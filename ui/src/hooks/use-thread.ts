@@ -3,6 +3,7 @@ import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
+import { useLocation } from 'preact-iso';
 
 // ---- localStorage-backed signals ----
 // use-theme.tsx is the only other localStorage consumer in this app, and it
@@ -531,4 +532,16 @@ export function stopGeneration(): void {
     _currentAssistantId = null;
   }
   isStreaming.value = false;
+}
+
+export function useThread() {
+  const { route } = useLocation();
+
+  return {
+    createNewThread: () => {
+      const id = newThread();
+
+      route(`/chat/${id}`);
+    }
+  }
 }

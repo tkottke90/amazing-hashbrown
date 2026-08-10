@@ -1,20 +1,21 @@
-import { useEffect, useRef } from 'preact/hooks';
-import { useLocation } from 'preact-iso';
-import { Monitor } from 'lucide-preact';
-import { GraphView } from '@/components/wiki/graph-view';
+import { Layout } from '@/components/layout';
 import { DocumentView } from '@/components/wiki/document-view';
-import { IngestionChat } from '@/components/wiki/ingestion-chat';
 import { DomainFilter } from '@/components/wiki/domain-filter';
+import { GraphView } from '@/components/wiki/graph-view';
+import { IngestionChat } from '@/components/wiki/ingestion-chat';
 import {
+  activeDomainId,
+  activePagePath,
+  graphRefreshing,
+  loadPage,
   refreshDomains,
   refreshGraph,
   refreshPages,
-  graphRefreshing,
-  loadPage,
-  activeDomainId,
-  activePagePath,
 } from '@/hooks/use-wiki';
 import { hydrateWikiThread, wikiThreadId } from '@/hooks/use-wiki-ingestion';
+import { Monitor } from 'lucide-preact';
+import { useLocation } from 'preact-iso';
+import { useEffect, useRef } from 'preact/hooks';
 
 // path prop is consumed by preact-iso's Router for route matching
 export function WikiView(_props: { path?: string }) {
@@ -65,69 +66,73 @@ export function WikiView(_props: { path?: string }) {
   }
 
   return (
-    <div class="flex h-full flex-col">
-      {/* Mobile fallback */}
-      <div class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center md:hidden">
-        <Monitor class="size-10 text-muted-foreground" />
-        <p class="text-sm text-muted-foreground">
-          The Wiki view requires a larger screen. Please open on a desktop or tablet.
-        </p>
-      </div>
-
-      {/* Desktop two-column layout */}
-      <div class="hidden h-full md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
-        {/* Canvas column */}
-        <div class="flex min-h-0 flex-col overflow-hidden">
-          {/* Canvas header */}
-          <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-            <div class="flex items-center gap-1 rounded border border-border text-xs">
-              <button
-                type="button"
-                onClick={handleGraphViewClick}
-                class={`px-2.5 py-1 transition-colors ${
-                  canvasView === 'graph'
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Graph
-              </button>
-              <button
-                type="button"
-                onClick={handleDocumentViewClick}
-                class={`px-2.5 py-1 transition-colors ${
-                  canvasView === 'document'
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Document
-              </button>
-            </div>
-
-            {canvasView === 'graph' && (
-              <div class="flex min-w-0 items-center gap-2">
-                <DomainFilter />
-                {graphRefreshing.value && (
-                  <div class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Canvas body */}
-          <div class="min-h-0 flex-1">
-            {canvasView === 'graph' ? (
-              <GraphView onOpenInEditor={handleOpenInEditor} />
-            ) : (
-              <DocumentView chatInputRef={chatInputRef} />
-            )}
-          </div>
+    <Layout
+    
+      >
+      <div class="flex h-full flex-col">
+        {/* Mobile fallback */}
+        <div class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center md:hidden">
+          <Monitor class="size-10 text-muted-foreground" />
+          <p class="text-sm text-muted-foreground">
+            The Wiki view requires a larger screen. Please open on a desktop or tablet.
+          </p>
         </div>
 
-        {/* Chat column */}
-        <IngestionChat chatInputRef={chatInputRef} />
+        {/* Desktop two-column layout */}
+        <div class="hidden h-full md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
+          {/* Canvas column */}
+          <div class="flex min-h-0 flex-col overflow-hidden">
+            {/* Canvas header */}
+            <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
+              <div class="flex items-center gap-1 rounded border border-border text-xs">
+                <button
+                  type="button"
+                  onClick={handleGraphViewClick}
+                  class={`px-2.5 py-1 transition-colors ${
+                    canvasView === 'graph'
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Graph
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDocumentViewClick}
+                  class={`px-2.5 py-1 transition-colors ${
+                    canvasView === 'document'
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Document
+                </button>
+              </div>
+
+              {canvasView === 'graph' && (
+                <div class="flex min-w-0 items-center gap-2">
+                  <DomainFilter />
+                  {graphRefreshing.value && (
+                    <div class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Canvas body */}
+            <div class="min-h-0 flex-1">
+              {canvasView === 'graph' ? (
+                <GraphView onOpenInEditor={handleOpenInEditor} />
+              ) : (
+                <DocumentView chatInputRef={chatInputRef} />
+              )}
+            </div>
+          </div>
+
+          {/* Chat column */}
+          <IngestionChat chatInputRef={chatInputRef} />
+        </div>
       </div>
-    </div>
+    </Layout>
   );
 }

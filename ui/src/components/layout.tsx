@@ -1,11 +1,22 @@
-import type { ComponentChildren } from 'preact';
 import { Menu, Plus } from 'lucide-preact';
+import type { ComponentChildren } from 'preact';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { ThemeToggle } from './theme-toggle';
+import { ThreadSidebar } from './thread-sidebar';
+import { useThread } from '@/hooks/use-thread';
+
+function AppNavEnd() {
+  return (
+    <div className="flex items-center gap-1">
+      <ThemeToggle />
+    </div>
+  );
+}
 
 export interface LayoutProps {
-  aside: ComponentChildren;
+  aside?: ComponentChildren;
   children: ComponentChildren;
   navStart?: ComponentChildren;
   navEnd?: ComponentChildren;
@@ -21,13 +32,15 @@ export function Layout({
   onAddClick,
   addLabel = 'Add',
 }: LayoutProps) {
+  const { createNewThread } = useThread();
+
   return (
     <div className="flex size-full flex-col overflow-hidden lg:flex-row">
       <aside
         aria-label="Sidebar navigation"
         className="hidden w-64 shrink-0 overflow-y-auto border-r border-border bg-sidebar text-sidebar-foreground lg:block"
       >
-        {aside}
+        {aside ?? <ThreadSidebar />}
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden lg:z-10 lg:rounded-l-2xl lg:shadow-[-8px_0_24px_-6px_rgb(0_0_0_/_0.15)]">
@@ -52,20 +65,20 @@ export function Layout({
           <Button
             size="icon"
             aria-label={addLabel}
-            onClick={onAddClick}
+            onClick={onAddClick ?? createNewThread}
             className="absolute left-1/2 -top-5 size-12 -translate-x-1/2 rounded-full shadow-lg"
           >
             <Plus />
           </Button>
 
-          <div className="flex flex-1 items-center justify-end gap-1">{navEnd}</div>
+          <div className="flex flex-1 items-center justify-end gap-1">{navEnd ?? <AppNavEnd /> }</div>
         </nav>
 
         <SheetContent side="bottom" className="data-[side=bottom]:h-[90vh] lg:hidden">
           <SheetHeader>
             <SheetTitle>Menu</SheetTitle>
           </SheetHeader>
-          <div className="overflow-y-auto px-4 pb-4">{aside}</div>
+          <div className="overflow-y-auto px-4 pb-4">{aside ?? <ThreadSidebar />}</div>
         </SheetContent>
       </Sheet>
     </div>
