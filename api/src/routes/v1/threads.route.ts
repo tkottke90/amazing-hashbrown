@@ -11,6 +11,7 @@ import {
   forkThreadHandler,
   generateTitleHandler,
   getAfterAgentStatusHandler,
+  generateThreadReportHandler,
 } from './threads.handlers.js';
 
 export const threadsRouter = Router();
@@ -38,6 +39,17 @@ threadsRouter.get('/:id/after-agent-status', (req: Request, res: Response) => {
     return;
   }
   res.json(result.data);
+});
+
+threadsRouter.get('/:id/report', async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = await generateThreadReportHandler(getThreadStore(), id);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(result.data.html);
 });
 
 threadsRouter.patch('/:id', (req: Request, res: Response) => {

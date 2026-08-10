@@ -9,6 +9,7 @@ import type {
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
 import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
 import { getObservabilityStore } from '../../services/observability.js';
+import { buildThreadReport, renderThreadReportHtml } from '@tkottke90/thread-reports';
 import { getAfterAgentState, type AfterAgentState } from '../../agents/after-agent.js';
 import { env } from '../../config/env.js';
 
@@ -261,4 +262,17 @@ export async function generateTitleHandler(
   const updated = store.renameThread(threadId, title);
   if (!updated) return notFound(`Thread "${threadId}" not found`);
   return ok(updated);
+}
+
+export async function generateThreadReportHandler(
+  store: ThreadStore,
+  threadId: string,
+): Promise<HandlerResult<{ html: string }>> {
+  const data = buildThreadReport(threadId, {
+    threadStore: store,
+    observabilityStore: getObservabilityStore(),
+  });
+  if (!data) return notFound(`Thread "${threadId}" not found`);
+  const html = await renderThreadReportHtml(data);
+  return ok({ html });
 }

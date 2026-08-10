@@ -10,6 +10,7 @@ import {
   Loader2,
   BookOpen,
   Cog,
+  FileDown,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -185,6 +186,12 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
             <DropdownMenuItem onSelect={handleCopyThreadId}>
               <Copy className="size-4" />
               Copy thread ID
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => window.open(`/api/v1/threads/${thread.id}/report`, '_blank')}
+            >
+              <FileDown className="size-4" />
+              Generate thread report
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
