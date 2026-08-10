@@ -120,6 +120,49 @@ export async function listModelsOrThrow(provider: ProviderConfig): Promise<strin
   return fetchModelIds(provider);
 }
 
+/**
+ * Same as listModelsOrThrow, filtered down to models actually capable of
+ * generating embeddings — used by the Embeddings settings panel, which
+ * shouldn't offer chat/completion models as a default embedding model.
+ *
+ * Ollama's /api/show response includes an authoritative `capabilities`
+ * array (confirmed against a real instance: 'embedding' for
+ * nomic-embed-text, ['completion', 'tools', 'thinking'] for a chat model
+ * like qwen3) — one show() call per listed model, run in parallel. A
+ * single model's show() failing excludes just that model rather than
+ * failing the whole list.
+ *
+ * OpenAI-compatible servers (including custom ones like Lemonade) have no
+ * equivalent capability-discovery endpoint — /v1/models returns only id/
+ * object/created/owned_by — so this falls back to a name heuristic
+ * ("embed" appears in the id), which covers real OpenAI's embedding
+ * models and every embedding model observed from Lemonade's catalog.
+ */
+export async function listEmbeddingModels(provider: ProviderConfig): Promise<string[]> {
+  const allModels = await fetchModelIds(provider);
+
+  if (provider.type === 'ollama') {
+    const client = new Ollama({ host: provider.baseUrl });
+    const isEmbedding = await Promise.all(
+      allModels.map(async (name) => {
+        try {
+          const info = await client.show({ model: name });
+          return info.capabilities?.includes('embedding') ?? false;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return allModels.filter((_, i) => isEmbedding[i]);
+  }
+
+  if (provider.type === 'openai') {
+    return allModels.filter((id) => id.toLowerCase().includes('embed'));
+  }
+
+  return allModels;
+}
+
 export function createProvider(name?: string, model?: string): BaseChatModel {
   const providers = env.providers;
   if (providers.length === 0) {

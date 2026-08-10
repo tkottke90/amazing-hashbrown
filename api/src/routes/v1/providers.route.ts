@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { env, type ProviderConfig } from '../../config/env.js';
-import { listModels, listModelsOrThrow } from '../../services/provider-factory.js';
+import {
+  listModels,
+  listModelsOrThrow,
+  listEmbeddingModels,
+} from '../../services/provider-factory.js';
 import { unmaskApiKey } from './settings.handlers.js';
 
 export const providersRouter = Router();
@@ -35,7 +39,16 @@ interface ListModelsBody {
   type?: string;
   baseUrl?: string;
   apiKey?: string;
+  // Resolves a masked ('****') apiKey against a saved provider by name
+  // (the provider modal's use case) — mutually exclusive with `source`.
   name?: string;
+  // Resolves a masked apiKey against the embeddings section's own stored
+  // key instead — the embeddings settings panel isn't a saved provider,
+  // so it has no `name` to look up in env.providers.
+  source?: 'embeddings';
+  // When set, filters the result to embedding-capable models instead of
+  // returning every model the provider has (see listEmbeddingModels).
+  capability?: 'embedding';
 }
 
 // The ollama/openai/@anthropic-ai SDKs each throw a differently-shaped
@@ -109,7 +122,7 @@ function describeModelListError(err: unknown): string {
 // of swallowed into an empty list, since the modal needs to tell the user
 // why loading failed.
 providersRouter.post('/models', async (req, res) => {
-  const { type, baseUrl, apiKey, name } = req.body as ListModelsBody;
+  const { type, baseUrl, apiKey, name, source, capability } = req.body as ListModelsBody;
 
   if (type !== 'ollama' && type !== 'openai' && type !== 'anthropic') {
     res.status(400).json({ ok: false, error: 'Unknown provider type.' });
@@ -121,16 +134,25 @@ providersRouter.post('/models', async (req, res) => {
     return;
   }
 
-  // apiKey arrives masked ('****') when the modal was seeded from a saved
-  // provider's GET response and the user hasn't retyped it — resolve back
-  // to the real stored key by name, same as the settings PATCH handler.
-  const stored = name ? env.providers.find((p) => p.name === name) : undefined;
+  // apiKey arrives masked ('****') when the caller was seeded from a saved
+  // config's GET response and the user hasn't retyped it — resolve back
+  // to the real stored key, same as the settings PATCH handler. `name`
+  // (a saved provider) and `source: 'embeddings'` (the embeddings
+  // section's own key) are the two places a stored key can come from.
+  const stored = name
+    ? env.providers.find((p) => p.name === name)
+    : source === 'embeddings'
+      ? { apiKey: env.embeddings.apiKey }
+      : undefined;
   const resolvedApiKey = unmaskApiKey(apiKey, stored?.apiKey);
 
   const provider: ProviderConfig = { name: name ?? '', type, baseUrl, apiKey: resolvedApiKey };
 
   try {
-    const models = await listModelsOrThrow(provider);
+    const models =
+      capability === 'embedding'
+        ? await listEmbeddingModels(provider)
+        : await listModelsOrThrow(provider);
     res.json({ ok: true, data: { models } });
   } catch (err) {
     res.status(502).json({ ok: false, error: describeModelListError(err) });

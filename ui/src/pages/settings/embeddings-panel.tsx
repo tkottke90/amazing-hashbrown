@@ -1,3 +1,6 @@
+import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
+import { Loader2, RefreshCw } from 'lucide-preact';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,10 +12,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { FormLayout } from '@/components/form-layout';
+import { listProviderModels } from '@/services/providers-api';
 
 interface EmbeddingsSettings {
   enabled: boolean;
@@ -25,6 +30,46 @@ interface EmbeddingsSettings {
 export function EmbeddingsPanel() {
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<EmbeddingsSettings>('embeddings');
+
+  const models = useSignal<string[]>([]);
+  const modelsLoading = useSignal(false);
+  const modelsError = useSignal<string | null>(null);
+  const hasAutoLoaded = useSignal(false);
+
+  async function loadModels() {
+    if (!form.value) return;
+    if (!form.value.baseUrl.trim()) {
+      modelsError.value = 'Base URL is required to list models.';
+      return;
+    }
+    modelsLoading.value = true;
+    modelsError.value = null;
+    try {
+      models.value = await listProviderModels({
+        type: form.value.type,
+        baseUrl: form.value.baseUrl.trim(),
+        apiKey: form.value.apiKey || undefined,
+        source: 'embeddings',
+        capability: 'embedding',
+      });
+    } catch (err) {
+      modelsError.value = err instanceof Error ? err.message : 'Failed to load models.';
+    } finally {
+      modelsLoading.value = false;
+    }
+  }
+
+  // Auto-loads once the section's settings arrive from the GET fetch (form
+  // starts null), provided a base URL is already set — not on every field
+  // edit afterward, hence the hasAutoLoaded guard: form.value is a new
+  // object on every setField() call, so this effect (keyed off form.value)
+  // re-runs on every keystroke, but only actually fetches the first time.
+  useEffect(() => {
+    if (hasAutoLoaded.value) return;
+    if (!form.value?.baseUrl?.trim()) return;
+    hasAutoLoaded.value = true;
+    void loadModels();
+  }, [form.value]);
 
   if (fetchError.value) {
     return <div class="p-6 text-sm text-destructive">{fetchError.value}</div>;
@@ -63,7 +108,17 @@ export function EmbeddingsPanel() {
                 <>
                   <div class="space-y-1.5">
                     <Label htmlFor="embeddings-type">Type</Label>
-                    <Select value={form.value.type} onValueChange={(v) => setField('type', v)}>
+                    <Select
+                      value={form.value.type}
+                      onValueChange={(v) => {
+                        setField('type', v);
+                        // Stale model names from the previous type don't
+                        // apply here — clear them out rather than leave
+                        // them selectable until the next refresh.
+                        models.value = [];
+                        modelsError.value = null;
+                      }}
+                    >
                       <SelectTrigger id="embeddings-type">
                         <SelectValue />
                       </SelectTrigger>
@@ -73,16 +128,6 @@ export function EmbeddingsPanel() {
                       </SelectContent>
                     </Select>
                     <FieldError errors={fieldErrors.value['type']} />
-                  </div>
-
-                  <div class="space-y-1.5">
-                    <Label htmlFor="embeddings-model">Model</Label>
-                    <Input
-                      id="embeddings-model"
-                      value={form.value.model}
-                      onInput={(e) => setField('model', (e.target as HTMLInputElement).value)}
-                    />
-                    <FieldError errors={fieldErrors.value['model']} />
                   </div>
 
                   <div class="space-y-1.5">
@@ -105,6 +150,48 @@ export function EmbeddingsPanel() {
                       placeholder="Leave blank to keep unchanged"
                     />
                     <FieldError errors={fieldErrors.value['apiKey']} />
+                  </div>
+
+                  <div class="space-y-1.5">
+                    <Label htmlFor="embeddings-model">Model</Label>
+                    <div class="flex gap-2">
+                      <Select value={form.value.model} onValueChange={(v) => setField('model', v)}>
+                        <SelectTrigger id="embeddings-model" class="flex-1">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Preserve an existing value the fetched list doesn't
+                              (yet, or no longer) contain — e.g. before the first
+                              load completes, or if the model was removed from
+                              the provider — so the field never silently blanks
+                              out an already-saved value. */}
+                          {form.value.model && !models.value.includes(form.value.model) && (
+                            <SelectItem value={form.value.model}>{form.value.model}</SelectItem>
+                          )}
+                          {models.value.map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => void loadModels()}
+                        disabled={modelsLoading.value}
+                        title="Refresh model list"
+                      >
+                        {modelsLoading.value ? (
+                          <Loader2 class="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw class="size-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <p class="empty:hidden text-xs text-destructive">{modelsError.value}</p>
+                    <FieldError errors={fieldErrors.value['model']} />
                   </div>
                 </>
               )}
