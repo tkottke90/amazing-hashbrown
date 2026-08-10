@@ -6,8 +6,23 @@ import { Select as SelectPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
-// Which element SelectContent should portal into — see the comment on
-// SelectContent below for why this can't just be computed inline there.
+// Which element SelectContent should portal into. Two things ruled out a
+// simpler approach first:
+//  - Portaling to document.body (the Portal default) renders behind a
+//    native <dialog> shown via showModal() (see lib/preact-dialog): the
+//    dialog's own top-layer promotion always paints above regular
+//    body-level content, so a Select opened inside a Dialog would be
+//    invisible.
+//  - A separate top-layer container (e.g. the Popover API) doesn't fix
+//    that: a modal dialog's ::backdrop covers the entire viewport and
+//    intercepts pointer events for anything that isn't the dialog's own
+//    descendant, regardless of top-layer stacking order. Confirmed by
+//    testing — a popover shown after the dialog still had every click
+//    swallowed by the dialog's backdrop.
+// So this portals into the open <dialog> itself, which now has no CSS
+// transform on it (see Dialog.tsx) — a transform there would create a new
+// containing block for this content's `position: fixed` positioning,
+// putting it nowhere near its trigger even though it'd be clickable.
 const SelectPortalContext = React.createContext<HTMLElement | undefined>(undefined);
 
 function Select({
@@ -86,13 +101,8 @@ function SelectContent({
   align = 'center',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
-  // Portal into the currently-open native <dialog>, if any, instead of the
-  // Portal default of document.body. A <dialog> shown via showModal() (see
-  // lib/preact-dialog's Dialog) renders in the browser's top layer, which
-  // always sits above regular DOM content — including a body-portalled
-  // dropdown — so a Select opened inside a Dialog would otherwise render
-  // its options invisibly behind the modal. Assumes at most one modal
-  // dialog is open at a time, which holds for every Dialog usage here.
+  // See the comment above Select (the Root wrapper) for why this portals
+  // into the currently-open <dialog> rather than document.body.
   const portalContainer = React.useContext(SelectPortalContext);
 
   return (

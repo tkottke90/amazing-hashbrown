@@ -210,14 +210,22 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
 
     // Stubbed with zero existing providers, so only one "Add provider" dialog
     // exists on the page — no need to scope past the trigger/submit text
-    // collision the way the Cost rates test below has to.
+    // collision the way the Cost rates test below has to. Field lookups are
+    // still scoped to the dialog itself, though: the sidebar always renders
+    // every real thread from the shared dev backend, and getByLabel matches
+    // substrings by default — a thread renamed by a different, concurrently
+    // running spec (thread-persistence.spec.ts uses "Renamed by e2e ...")
+    // has an "Options for Renamed by e2e ..." button whose accessible name
+    // contains "Name" (inside "reNAMEd"), which would otherwise collide
+    // with page.getByLabel('Name').
     await page.getByRole('button', { name: 'Add provider' }).first().click();
-    await page.getByLabel('Name').fill('openai-test');
-    await page.getByLabel('Type').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('openai-test');
+    await dialog.getByLabel('Type').click();
     await page.getByRole('option', { name: 'openai' }).click();
-    await page.getByLabel('Base URL').fill('https://api.openai.com/v1');
-    await page.getByLabel('Default model').fill('gpt-4o');
-    await page.getByRole('dialog').getByRole('button', { name: 'Add provider' }).click();
+    await dialog.getByLabel('Base URL').fill('https://api.openai.com/v1');
+    await dialog.getByLabel('Default model').fill('gpt-4o');
+    await dialog.getByRole('button', { name: 'Add provider' }).click();
 
     await save(page);
 
