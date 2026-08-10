@@ -73,9 +73,15 @@ export function ModelProvidersPanel() {
             ) : (
               <ul class="divide-y divide-border">
                 {providers.map((p, i) => (
-                  <li key={p.name} class="flex items-center justify-between gap-3 py-3">
+                  <li
+                    key={p.name}
+                    data-slot="provider-row"
+                    class="flex items-center justify-between gap-3 py-3"
+                  >
                     <div class="flex min-w-0 items-center gap-2">
-                      <span class="font-medium text-sm">{p.name}</span>
+                      <span data-slot="provider-row-name" class="font-medium text-sm">
+                        {p.name}
+                      </span>
                       <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
                         {TYPE_LABELS[p.type] ?? p.type}
                       </span>
