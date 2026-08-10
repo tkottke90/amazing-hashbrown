@@ -157,6 +157,19 @@ async function mockSettingsApi(
   return captured;
 }
 
+/**
+ * Mocks POST /api/v1/providers/models — the live model-list endpoint behind
+ * the provider modal's "Default model" and the embeddings panel's "Model"
+ * Select (both replaced free-text inputs with a dropdown populated from a
+ * real provider call). Tests need a deterministic option list rather than
+ * depending on network access to a real Ollama/OpenAI/etc. server.
+ */
+async function mockProviderModelsApi(page: Page, models: string[]): Promise<void> {
+  await page.route('**/api/v1/providers/models', async (route) => {
+    await route.fulfill({ json: { ok: true, data: { models } } });
+  });
+}
+
 const SAVED_TOAST = { role: 'alert' as const, hasText: 'Settings saved' };
 
 async function save(page: Page) {
@@ -208,6 +221,10 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
+    // Default model is a Select populated by a real call to the provider —
+    // give it something deterministic to list instead of hitting a real
+    // OpenAI endpoint.
+    await mockProviderModelsApi(page, ['gpt-4o', 'gpt-4o-mini']);
     await page.goto('/settings?section=model-providers');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
@@ -228,7 +245,12 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     await dialog.getByLabel('Type').click();
     await page.getByRole('option', { name: 'openai' }).click();
     await dialog.getByLabel('Base URL').fill('https://api.openai.com/v1');
-    await dialog.getByLabel('Default model').fill('gpt-4o');
+    // Add-mode starts with an empty Base URL, so the Select's auto-load (on
+    // dialog open) bailed out with a "Base URL is required" error before we
+    // filled it in above — refresh explicitly now that there's a URL to use.
+    await dialog.getByRole('button', { name: 'Refresh model list' }).click();
+    await dialog.getByLabel('Default model').click();
+    await page.getByRole('option', { name: 'gpt-4o', exact: true }).click();
     await dialog.getByRole('button', { name: 'Add provider' }).click();
 
     await save(page);
@@ -251,11 +273,18 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
+    // Model is a Select populated by a real call to the provider — give it
+    // something deterministic to list instead of hitting a real server.
+    // The stub's baseUrl is non-empty, so the panel auto-loads this on
+    // mount; Playwright's actionability retry on the option click below
+    // waits it out rather than racing it explicitly.
+    await mockProviderModelsApi(page, ['mxbai-embed-large', 'nomic-embed-text']);
     await page.goto('/settings?section=embeddings');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByLabel('Model').fill('mxbai-embed-large');
+    await page.getByLabel('Model').click();
+    await page.getByRole('option', { name: 'mxbai-embed-large', exact: true }).click();
     await save(page);
 
     const expected: EmbeddingsSettings = {
