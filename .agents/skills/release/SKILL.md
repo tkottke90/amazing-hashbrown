@@ -49,9 +49,10 @@ extra prompt). Also ask whether this is a real run or a dry run if it isn't
 obvious from context (see "Dry-run mode" below).
 
 Run `scripts/release.sh preflight` next. It checks the working tree is
-clean, `gh` is authenticated, the Docker daemon is up, and you're logged
-into the registry — and prints the current branch. If it fails, stop and
-report exactly what's wrong; don't try to work around a dirty tree or a
+clean, `gh` is authenticated, the Docker daemon is up, you're logged into
+the registry, and the current branch is `main` — releases must be cut from
+main, not a feature branch. If it fails, stop and report exactly what's
+wrong; don't try to work around a dirty tree, a wrong branch, or a
 missing login yourself.
 
 ## 1. Build guard

@@ -44,6 +44,10 @@ preflight)
   fi
   branch=$(git rev-parse --abbrev-ref HEAD)
   echo "BRANCH=$branch"
+  if [ "$branch" != "main" ]; then
+    echo "FAIL: releases must be cut from main (current branch: $branch)" >&2
+    fail=1
+  fi
   if [ "$fail" = "1" ]; then
     exit 1
   fi
