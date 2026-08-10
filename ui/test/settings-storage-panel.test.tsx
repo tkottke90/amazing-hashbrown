@@ -17,7 +17,7 @@ jest.mock('@/services/settings-api', () => {
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
-import { StoragePanel } from '@/components/settings/storage-panel';
+import { StoragePanel } from '@/pages/settings/storage-panel';
 import * as api from '@/services/settings-api';
 
 const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;

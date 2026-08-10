@@ -17,7 +17,7 @@ import {
   newWikiThread,
   activeWikiModel,
   setWikiModel,
-} from '@/hooks/use-wiki-ingestion';
+} from '@/pages/wiki/use-wiki-ingestion';
 import { providers, fetchProviders } from '@/hooks/use-providers';
 import { OrientationBadge } from './orientation-badge';
 import { NewDomainModal } from './new-domain-form';

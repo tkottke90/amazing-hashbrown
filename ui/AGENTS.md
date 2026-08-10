@@ -11,13 +11,23 @@ pre-commit checks.
 
 ```
 src/
-  components/   See src/components/AGENTS.md for component conventions
-                (e.g. the Dialog / trigger-as-prop pattern)
+  pages/        One folder per route, e.g. pages/wiki/. The root component
+                lives in that folder's index.tsx (imported in app.tsx as
+                @/pages/<name>). Components and hooks used by only that page
+                live alongside index.tsx in the same folder.
+    chat/
+    wiki/
+    settings/
+  components/   Components used by 2+ pages. See src/components/AGENTS.md
+                for component conventions (e.g. the Dialog / trigger-as-prop
+                pattern)
     ui/         shadcn/ui components (generated, see below)
+  hooks/        Global hooks — state/context needed across pages or at the
+                app root (e.g. active thread, theme, providers). A hook
+                consumed only within one page's folder belongs in that
+                page's folder instead (see pages/wiki/use-wiki.ts).
   lib/
     utils.ts    cn() helper (clsx + tailwind-merge)
-  pages/        Top-level views
-  hooks/        Preact hooks
   services/     API client code (fetches against /api/v1/*)
   app.tsx       Root component
   index.tsx     Entry point — mounts <App /> and imports style.css
@@ -25,6 +35,16 @@ src/
 test/           Jest + @testing-library/preact tests
 public/         Static assets copied as-is into the Vite build output
 ```
+
+### Where does this file go?
+
+- New page → new folder under `pages/` with `index.tsx` as the route
+  component.
+- Component used by only one page → that page's folder.
+- Component used by 2+ pages → `src/components/`.
+- Hook/state used by only one page → that page's folder.
+- Hook/state used across pages, or needed at the app root (`app.tsx`) →
+  `src/hooks/`.
 
 ## shadcn/ui + Radix on Preact
 

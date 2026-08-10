@@ -8,7 +8,7 @@ import {
   type WikiGraph,
   type WikiPageSummary,
   type WikiPageContent,
-} from '../services/wiki-api';
+} from '@/services/wiki-api';
 
 // ---- Module-level signals ----
 

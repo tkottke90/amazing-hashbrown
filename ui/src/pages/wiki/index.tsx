@@ -1,8 +1,8 @@
 import { Layout } from '@/components/layout';
-import { DocumentView } from '@/components/wiki/document-view';
-import { DomainFilter } from '@/components/wiki/domain-filter';
-import { GraphView } from '@/components/wiki/graph-view';
-import { IngestionChat } from '@/components/wiki/ingestion-chat';
+import { DocumentView } from '@/pages/wiki/document-view';
+import { DomainFilter } from '@/pages/wiki/domain-filter';
+import { GraphView } from '@/pages/wiki/graph-view';
+import { IngestionChat } from '@/pages/wiki/ingestion-chat';
 import {
   activeDomainId,
   activePagePath,
@@ -11,8 +11,8 @@ import {
   refreshDomains,
   refreshGraph,
   refreshPages,
-} from '@/hooks/use-wiki';
-import { hydrateWikiThread, wikiThreadId } from '@/hooks/use-wiki-ingestion';
+} from '@/pages/wiki/use-wiki';
+import { hydrateWikiThread, wikiThreadId } from '@/pages/wiki/use-wiki-ingestion';
 import { Monitor } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 import { useEffect, useRef } from 'preact/hooks';

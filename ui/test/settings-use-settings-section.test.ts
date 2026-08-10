@@ -21,7 +21,7 @@ jest.mock('@/lib/toast', () => ({
   showToast: jest.fn(),
 }));
 
-import { useSettingsSection } from '@/components/settings/use-settings-section';
+import { useSettingsSection } from '@/pages/settings/use-settings-section';
 import * as api from '@/services/settings-api';
 import { showToast } from '@/lib/toast';
 

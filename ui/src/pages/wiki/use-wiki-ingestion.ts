@@ -1,8 +1,8 @@
 import { signal, batch } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
-import type { ThreadMessage } from '../types/thread-message';
-import { consumeSsePost } from '../lib/sse';
-import { randomUUID } from '../lib/utils';
+import type { ThreadMessage } from '@/types/thread-message';
+import { consumeSsePost } from '@/lib/sse';
+import { randomUUID } from '@/lib/utils';
 import {
   activeDomainId,
   refreshDomains,

@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'preact/hooks';
 import { useSignal, effect } from '@preact/signals';
 import { Upload, CheckCircle, XCircle, Loader2, Circle } from 'lucide-preact';
 import { Dialog, useDialog } from '@tkottke90/preact-dialog';
-import { domains, refreshDomains } from '@/hooks/use-wiki';
+import { domains, refreshDomains } from '@/pages/wiki/use-wiki';
 import { fetchUploadCapabilities, startWikiUpload, fetchUploadStatus } from '@/services/wiki-api';
 import type { UploadJobState, UploadCapabilities } from '@/types/wiki-upload';
-import { CodeBlock } from '../markdown';
+import { CodeBlock } from '@/components/markdown';
 
 // ---------------------------------------------------------------------------
 // Step definitions

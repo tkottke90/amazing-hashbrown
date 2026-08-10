@@ -6,7 +6,7 @@ import * as d3Zoom from 'd3-zoom';
 import * as d3Drag from 'd3-drag';
 import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { D3ZoomEvent } from 'd3-zoom';
-import { graphData, enabledDomainIds, domains, loadPage } from '@/hooks/use-wiki';
+import { graphData, enabledDomainIds, domains, loadPage } from '@/pages/wiki/use-wiki';
 import type { GraphNode, GraphEdge } from '@/services/wiki-api';
 import { getDomainColor } from './domain-filter';
 

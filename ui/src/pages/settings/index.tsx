@@ -1,13 +1,13 @@
 import { Layout } from '@/components/layout';
-import { AgentBehaviorPanel } from '@/components/settings/agent-behavior-panel';
-import { CostRatesPanel } from '@/components/settings/cost-rates-panel';
-import { EmbeddingsPanel } from '@/components/settings/embeddings-panel';
-import { GeneralPanel } from '@/components/settings/general-panel';
-import { ModelProvidersPanel } from '@/components/settings/model-providers-panel';
-import { PlaceholderPanel } from '@/components/settings/placeholder-panel';
-import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/components/settings/settings-nav';
-import { StoragePanel } from '@/components/settings/storage-panel';
-import { ToolsPanel } from '@/components/settings/tools-panel';
+import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
+import { CostRatesPanel } from '@/pages/settings/cost-rates-panel';
+import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
+import { GeneralPanel } from '@/pages/settings/general-panel';
+import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
+import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
+import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
+import { StoragePanel } from '@/pages/settings/storage-panel';
+import { ToolsPanel } from '@/pages/settings/tools-panel';
 import { useLocation } from 'preact-iso';
 
 function resolveSection(raw: string | undefined): SettingsSlug {

@@ -1,4 +1,4 @@
-import { domains, enabledDomainIds, toggleDomain } from '@/hooks/use-wiki';
+import { domains, enabledDomainIds, toggleDomain } from '@/pages/wiki/use-wiki';
 
 // Fixed 6-color palette cycling by index
 const DOMAIN_COLORS = [
