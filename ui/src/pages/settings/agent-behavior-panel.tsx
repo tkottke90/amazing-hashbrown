@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
+import { FormLayout } from '@/components/form-layout';
 
 interface AgentBehaviorSettings {
   afterAgent: { enabled: boolean };
@@ -34,20 +35,22 @@ export function AgentBehaviorPanel() {
             <CardTitle>Background processing</CardTitle>
           </CardHeader>
           <CardContent>
-            <div class="flex items-center justify-between">
-              <div>
-                <Label htmlFor="afterAgent-enabled">Enable after-agent pipeline</Label>
-                <p class="text-xs text-muted-foreground">
-                  Run background enrichment after each agent response.
-                </p>
+            <FormLayout>
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="afterAgent-enabled">Enable after-agent pipeline</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Run background enrichment after each agent response.
+                  </p>
+                </div>
+                <Switch
+                  id="afterAgent-enabled"
+                  checked={form.value.afterAgent?.enabled ?? true}
+                  onCheckedChange={(v) => setField('afterAgent.enabled', v)}
+                />
               </div>
-              <Switch
-                id="afterAgent-enabled"
-                checked={form.value.afterAgent?.enabled ?? true}
-                onCheckedChange={(v) => setField('afterAgent.enabled', v)}
-              />
-            </div>
-            <FieldError errors={fieldErrors.value['afterAgent']} />
+              <FieldError errors={fieldErrors.value['afterAgent']} />
+            </FormLayout>
           </CardContent>
         </Card>
 
@@ -56,20 +59,22 @@ export function AgentBehaviorPanel() {
             <CardTitle>Conversation history</CardTitle>
           </CardHeader>
           <CardContent>
-            <div class="flex items-center justify-between">
-              <div>
-                <Label htmlFor="chat-showErrorMessages">Show error messages</Label>
-                <p class="text-xs text-muted-foreground">
-                  Display raw error messages in the chat interface.
-                </p>
+            <FormLayout>
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="chat-showErrorMessages">Show error messages</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Display raw error messages in the chat interface.
+                  </p>
+                </div>
+                <Switch
+                  id="chat-showErrorMessages"
+                  checked={form.value.chat?.showErrorMessages ?? false}
+                  onCheckedChange={(v) => setField('chat.showErrorMessages', v)}
+                />
               </div>
-              <Switch
-                id="chat-showErrorMessages"
-                checked={form.value.chat?.showErrorMessages ?? false}
-                onCheckedChange={(v) => setField('chat.showErrorMessages', v)}
-              />
-            </div>
-            <FieldError errors={fieldErrors.value['chat']} />
+              <FieldError errors={fieldErrors.value['chat']} />
+            </FormLayout>
           </CardContent>
         </Card>
 
@@ -78,39 +83,41 @@ export function AgentBehaviorPanel() {
             <CardTitle>Observability</CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div>
-                <Label htmlFor="observability-enabled">Enable tracing</Label>
-                <p class="text-xs text-muted-foreground">
-                  Collect OpenTelemetry spans for agent runs.
-                </p>
-              </div>
-              <Switch
-                id="observability-enabled"
-                checked={observabilityEnabled}
-                onCheckedChange={(v) => setField('observability.enabled', v)}
-              />
-            </div>
-
-            {observabilityEnabled && (
-              <div class="space-y-1.5">
-                <Label htmlFor="observability-spanOutputPreviewChars">
-                  Span output preview characters
-                </Label>
-                <Input
-                  id="observability-spanOutputPreviewChars"
-                  type="number"
-                  value={String(form.value.observability?.spanOutputPreviewChars ?? 500)}
-                  onInput={(e) =>
-                    setField(
-                      'observability.spanOutputPreviewChars',
-                      Number((e.target as HTMLInputElement).value),
-                    )
-                  }
+            <FormLayout>
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="observability-enabled">Enable tracing</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Collect OpenTelemetry spans for agent runs.
+                  </p>
+                </div>
+                <Switch
+                  id="observability-enabled"
+                  checked={observabilityEnabled}
+                  onCheckedChange={(v) => setField('observability.enabled', v)}
                 />
-                <FieldError errors={fieldErrors.value['observability']} />
               </div>
-            )}
+
+              {observabilityEnabled && (
+                <div class="space-y-1.5">
+                  <Label htmlFor="observability-spanOutputPreviewChars">
+                    Span output preview characters
+                  </Label>
+                  <Input
+                    id="observability-spanOutputPreviewChars"
+                    type="number"
+                    value={String(form.value.observability?.spanOutputPreviewChars ?? 500)}
+                    onInput={(e) =>
+                      setField(
+                        'observability.spanOutputPreviewChars',
+                        Number((e.target as HTMLInputElement).value),
+                      )
+                    }
+                  />
+                  <FieldError errors={fieldErrors.value['observability']} />
+                </div>
+              )}
+            </FormLayout>
           </CardContent>
         </Card>
       </div>

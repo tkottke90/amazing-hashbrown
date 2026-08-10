@@ -12,6 +12,7 @@ import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { ProviderModal, type ProviderConfig } from './provider-modal';
+import { FormLayout } from '@/components/form-layout';
 
 interface ModelProvidersSettings {
   providers: ProviderConfig[];
@@ -110,20 +111,24 @@ export function ModelProvidersPanel() {
             <CardTitle>Default provider</CardTitle>
           </CardHeader>
           <CardContent class="space-y-1.5">
-            <Label htmlFor="model-providers-default">Default provider</Label>
-            <Select value={defaultProvider} onValueChange={(v) => setField('defaultProvider', v)}>
-              <SelectTrigger id="model-providers-default">
-                <SelectValue placeholder="Select a provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {providers.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldError errors={fieldErrors.value['defaultProvider']} />
+            <FormLayout>
+              <div class="space-y-1.5">
+                <Label htmlFor="model-providers-default">Default provider</Label>
+                <Select value={defaultProvider} onValueChange={(v) => setField('defaultProvider', v)}>
+                  <SelectTrigger id="model-providers-default">
+                    <SelectValue placeholder="Select a provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError errors={fieldErrors.value['defaultProvider']} />
+              </div>
+            </FormLayout>
           </CardContent>
         </Card>
       </div>

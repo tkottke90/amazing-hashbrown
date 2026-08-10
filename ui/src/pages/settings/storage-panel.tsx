@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
+import { FormLayout } from '@/components/form-layout';
 
 interface StorageSettings {
   wikiRoot: string;
@@ -60,29 +61,31 @@ export function StoragePanel() {
             <CardTitle>Storage paths</CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
-            {FIELDS.map(({ id, label, key, description }) => (
-              <div key={key} class="space-y-1.5">
-                <Label htmlFor={id}>{label}</Label>
-                <Input
-                  id={id}
-                  value={((form.value as unknown as Record<string, unknown>)[key] as string) ?? ''}
-                  onInput={(e) => setField(key, (e.target as HTMLInputElement).value)}
-                />
-                <p class="text-xs text-muted-foreground">{description}</p>
-                <FieldError errors={fieldErrors.value[key]} />
-              </div>
-            ))}
+            <FormLayout>
+              {FIELDS.map(({ id, label, key, description }) => (
+                <div key={key} class="space-y-1.5">
+                  <Label htmlFor={id}>{label}</Label>
+                  <Input
+                    id={id}
+                    value={((form.value as unknown as Record<string, unknown>)[key] as string) ?? ''}
+                    onInput={(e) => setField(key, (e.target as HTMLInputElement).value)}
+                  />
+                  <p class="text-xs text-muted-foreground">{description}</p>
+                  <FieldError errors={fieldErrors.value[key]} />
+                </div>
+              ))}
 
-            <div class="space-y-1.5">
-              <Label htmlFor="storage-database-path">Database path</Label>
-              <Input
-                id="storage-database-path"
-                value={form.value.database?.path ?? ''}
-                onInput={(e) => setField('database.path', (e.target as HTMLInputElement).value)}
-              />
-              <p class="text-xs text-muted-foreground">Path to the SQLite database file.</p>
-              <FieldError errors={fieldErrors.value['database']} />
-            </div>
+              <div class="space-y-1.5">
+                <Label htmlFor="storage-database-path">Database path</Label>
+                <Input
+                  id="storage-database-path"
+                  value={form.value.database?.path ?? ''}
+                  onInput={(e) => setField('database.path', (e.target as HTMLInputElement).value)}
+                  />
+                <p class="text-xs text-muted-foreground">Path to the SQLite database file.</p>
+                <FieldError errors={fieldErrors.value['database']} />
+              </div>
+            </FormLayout>
           </CardContent>
         </Card>
       </div>

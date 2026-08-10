@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
+import { FormLayout } from '@/components/form-layout';
 
 interface EmbeddingsSettings {
   enabled: boolean;
@@ -43,69 +44,71 @@ export function EmbeddingsPanel() {
             <CardTitle>Embeddings</CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div>
-                <Label htmlFor="embeddings-enabled">Enable embeddings</Label>
-                <p class="text-xs text-muted-foreground">
-                  Enable vector embedding generation for knowledge retrieval.
-                </p>
+            <FormLayout>
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="embeddings-enabled">Enable embeddings</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Enable vector embedding generation for knowledge retrieval.
+                  </p>
+                </div>
+                <Switch
+                  id="embeddings-enabled"
+                  checked={enabled}
+                  onCheckedChange={(v) => setField('enabled', v)}
+                />
               </div>
-              <Switch
-                id="embeddings-enabled"
-                checked={enabled}
-                onCheckedChange={(v) => setField('enabled', v)}
-              />
-            </div>
 
-            {enabled && (
-              <>
-                <div class="space-y-1.5">
-                  <Label htmlFor="embeddings-type">Type</Label>
-                  <Select value={form.value.type} onValueChange={(v) => setField('type', v)}>
-                    <SelectTrigger id="embeddings-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ollama">ollama</SelectItem>
-                      <SelectItem value="openai">openai</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldError errors={fieldErrors.value['type']} />
-                </div>
+              {enabled && (
+                <>
+                  <div class="space-y-1.5">
+                    <Label htmlFor="embeddings-type">Type</Label>
+                    <Select value={form.value.type} onValueChange={(v) => setField('type', v)}>
+                      <SelectTrigger id="embeddings-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ollama">ollama</SelectItem>
+                        <SelectItem value="openai">openai</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FieldError errors={fieldErrors.value['type']} />
+                  </div>
 
-                <div class="space-y-1.5">
-                  <Label htmlFor="embeddings-model">Model</Label>
-                  <Input
-                    id="embeddings-model"
-                    value={form.value.model}
-                    onInput={(e) => setField('model', (e.target as HTMLInputElement).value)}
-                  />
-                  <FieldError errors={fieldErrors.value['model']} />
-                </div>
+                  <div class="space-y-1.5">
+                    <Label htmlFor="embeddings-model">Model</Label>
+                    <Input
+                      id="embeddings-model"
+                      value={form.value.model}
+                      onInput={(e) => setField('model', (e.target as HTMLInputElement).value)}
+                    />
+                    <FieldError errors={fieldErrors.value['model']} />
+                  </div>
 
-                <div class="space-y-1.5">
-                  <Label htmlFor="embeddings-baseUrl">Base URL</Label>
-                  <Input
-                    id="embeddings-baseUrl"
-                    value={form.value.baseUrl}
-                    onInput={(e) => setField('baseUrl', (e.target as HTMLInputElement).value)}
-                  />
-                  <FieldError errors={fieldErrors.value['baseUrl']} />
-                </div>
+                  <div class="space-y-1.5">
+                    <Label htmlFor="embeddings-baseUrl">Base URL</Label>
+                    <Input
+                      id="embeddings-baseUrl"
+                      value={form.value.baseUrl}
+                      onInput={(e) => setField('baseUrl', (e.target as HTMLInputElement).value)}
+                    />
+                    <FieldError errors={fieldErrors.value['baseUrl']} />
+                  </div>
 
-                <div class="space-y-1.5">
-                  <Label htmlFor="embeddings-apiKey">API key</Label>
-                  <Input
-                    id="embeddings-apiKey"
-                    type="password"
-                    value={form.value.apiKey ?? ''}
-                    onInput={(e) => setField('apiKey', (e.target as HTMLInputElement).value)}
-                    placeholder="Leave blank to keep unchanged"
-                  />
-                  <FieldError errors={fieldErrors.value['apiKey']} />
-                </div>
-              </>
-            )}
+                  <div class="space-y-1.5">
+                    <Label htmlFor="embeddings-apiKey">API key</Label>
+                    <Input
+                      id="embeddings-apiKey"
+                      type="password"
+                      value={form.value.apiKey ?? ''}
+                      onInput={(e) => setField('apiKey', (e.target as HTMLInputElement).value)}
+                      placeholder="Leave blank to keep unchanged"
+                    />
+                    <FieldError errors={fieldErrors.value['apiKey']} />
+                  </div>
+                </>
+              )}
+            </FormLayout>
           </CardContent>
         </Card>
       </div>
