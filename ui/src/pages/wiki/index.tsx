@@ -66,9 +66,7 @@ export function WikiView(_props: { path?: string }) {
   }
 
   return (
-    <Layout
-    
-      >
+    <Layout>
       <div class="flex h-full flex-col">
         {/* Mobile fallback */}
         <div class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center md:hidden">

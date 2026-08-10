@@ -542,6 +542,6 @@ export function useThread() {
       const id = newThread();
 
       route(`/chat/${id}`);
-    }
-  }
+    },
+  };
 }

@@ -135,9 +135,7 @@ export function ChatRoot({ id }: { path?: string; id?: string }) {
   }, [id]);
 
   return (
-    <Layout
-      addLabel="New conversation"
-    >
+    <Layout addLabel="New conversation">
       <ThreadView />
     </Layout>
   );

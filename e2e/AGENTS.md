@@ -37,12 +37,12 @@ filter on either axis independently.
 
 ### Test-type tags (from root AGENTS.md)
 
-| Tag              | When to use                                                         |
-| ---------------- | ------------------------------------------------------------------- |
-| `@smoke`         | Fast check of core functionality; runs frequently and against production.  DOES NOT MAKE ANY CHANGES|
-| `@user-workflow` | Simulates a user completing a task in the UI                        |
-| `@functional`    | Non-user-facing flow: health checks, webhooks, system integrations  |
-| `@comprehensive` | Full feature verification run to completion; used after deployments |
+| Tag              | When to use                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `@smoke`         | Fast check of core functionality; runs frequently and against production. DOES NOT MAKE ANY CHANGES |
+| `@user-workflow` | Simulates a user completing a task in the UI                                                        |
+| `@functional`    | Non-user-facing flow: health checks, webhooks, system integrations                                  |
+| `@comprehensive` | Full feature verification run to completion; used after deployments                                 |
 
 Every test describe block must carry exactly one type tag.
 

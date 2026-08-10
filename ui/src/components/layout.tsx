@@ -71,7 +71,9 @@ export function Layout({
             <Plus />
           </Button>
 
-          <div className="flex flex-1 items-center justify-end gap-1">{navEnd ?? <AppNavEnd /> }</div>
+          <div className="flex flex-1 items-center justify-end gap-1">
+            {navEnd ?? <AppNavEnd />}
+          </div>
         </nav>
 
         <SheetContent side="bottom" className="data-[side=bottom]:h-[90vh] lg:hidden">

@@ -120,7 +120,10 @@ export function ModelProvidersPanel() {
             <FormLayout>
               <div class="space-y-1.5">
                 <Label htmlFor="model-providers-default">Default provider</Label>
-                <Select value={defaultProvider} onValueChange={(v) => setField('defaultProvider', v)}>
+                <Select
+                  value={defaultProvider}
+                  onValueChange={(v) => setField('defaultProvider', v)}
+                >
                   <SelectTrigger id="model-providers-default">
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>

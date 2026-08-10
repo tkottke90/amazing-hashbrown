@@ -42,7 +42,8 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Add a provider via the modal and Save',
-      expectedOutcome: 'PATCH body providers array includes the new provider with the fields entered',
+      expectedOutcome:
+        'PATCH body providers array includes the new provider with the fields entered',
       test: () => {},
     },
     {
@@ -61,7 +62,8 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Edit RLM max iterations in Tools and Save',
-      expectedOutcome: 'PATCH body equals the full Tools section with only rlm.maxIterations changed',
+      expectedOutcome:
+        'PATCH body equals the full Tools section with only rlm.maxIterations changed',
       test: () => {},
     },
     {
@@ -159,7 +161,9 @@ const SAVED_TOAST = { role: 'alert' as const, hasText: 'Settings saved' };
 
 async function save(page: Page) {
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByRole(SAVED_TOAST.role).filter({ hasText: SAVED_TOAST.hasText })).toBeVisible();
+  await expect(
+    page.getByRole(SAVED_TOAST.role).filter({ hasText: SAVED_TOAST.hasText }),
+  ).toBeVisible();
 }
 
 test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }, () => {

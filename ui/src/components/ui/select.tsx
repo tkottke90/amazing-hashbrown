@@ -25,13 +25,8 @@ import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 // putting it nowhere near its trigger even though it'd be clickable.
 const SelectPortalContext = React.createContext<HTMLElement | undefined>(undefined);
 
-function Select({
-  onOpenChange,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>(
-    undefined,
-  );
+function Select({ onOpenChange, ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>(undefined);
 
   return (
     <SelectPortalContext.Provider value={portalContainer}>

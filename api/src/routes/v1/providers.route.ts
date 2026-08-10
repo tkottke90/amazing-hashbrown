@@ -79,7 +79,9 @@ function describeModelListError(err: unknown): string {
 
     const nested = 'error' in err ? (err as { error?: unknown }).error : undefined;
     const nestedMessage =
-      nested && typeof nested === 'object' && typeof (nested as { message?: unknown }).message === 'string'
+      nested &&
+      typeof nested === 'object' &&
+      typeof (nested as { message?: unknown }).message === 'string'
         ? (nested as { message: string }).message
         : undefined;
 

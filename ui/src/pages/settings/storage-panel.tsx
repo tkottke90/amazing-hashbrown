@@ -67,7 +67,9 @@ export function StoragePanel() {
                   <Label htmlFor={id}>{label}</Label>
                   <Input
                     id={id}
-                    value={((form.value as unknown as Record<string, unknown>)[key] as string) ?? ''}
+                    value={
+                      ((form.value as unknown as Record<string, unknown>)[key] as string) ?? ''
+                    }
                     onInput={(e) => setField(key, (e.target as HTMLInputElement).value)}
                   />
                   <p class="text-xs text-muted-foreground">{description}</p>
@@ -81,7 +83,7 @@ export function StoragePanel() {
                   id="storage-database-path"
                   value={form.value.database?.path ?? ''}
                   onInput={(e) => setField('database.path', (e.target as HTMLInputElement).value)}
-                  />
+                />
                 <p class="text-xs text-muted-foreground">Path to the SQLite database file.</p>
                 <FieldError errors={fieldErrors.value['database']} />
               </div>
