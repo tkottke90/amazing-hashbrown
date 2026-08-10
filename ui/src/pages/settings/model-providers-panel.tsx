@@ -12,6 +12,7 @@ import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { ProviderModal, type ProviderConfig } from './provider-modal';
+import { FormLayout } from '@/components/form-layout';
 
 interface ModelProvidersSettings {
   providers: ProviderConfig[];
@@ -72,9 +73,15 @@ export function ModelProvidersPanel() {
             ) : (
               <ul class="divide-y divide-border">
                 {providers.map((p, i) => (
-                  <li key={p.name} class="flex items-center justify-between gap-3 py-3">
+                  <li
+                    key={p.name}
+                    data-slot="provider-row"
+                    class="flex items-center justify-between gap-3 py-3"
+                  >
                     <div class="flex min-w-0 items-center gap-2">
-                      <span class="font-medium text-sm">{p.name}</span>
+                      <span data-slot="provider-row-name" class="font-medium text-sm">
+                        {p.name}
+                      </span>
                       <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
                         {TYPE_LABELS[p.type] ?? p.type}
                       </span>
@@ -110,20 +117,27 @@ export function ModelProvidersPanel() {
             <CardTitle>Default provider</CardTitle>
           </CardHeader>
           <CardContent class="space-y-1.5">
-            <Label htmlFor="model-providers-default">Default provider</Label>
-            <Select value={defaultProvider} onValueChange={(v) => setField('defaultProvider', v)}>
-              <SelectTrigger id="model-providers-default">
-                <SelectValue placeholder="Select a provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {providers.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldError errors={fieldErrors.value['defaultProvider']} />
+            <FormLayout>
+              <div class="space-y-1.5">
+                <Label htmlFor="model-providers-default">Default provider</Label>
+                <Select
+                  value={defaultProvider}
+                  onValueChange={(v) => setField('defaultProvider', v)}
+                >
+                  <SelectTrigger id="model-providers-default">
+                    <SelectValue placeholder="Select a provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError errors={fieldErrors.value['defaultProvider']} />
+              </div>
+            </FormLayout>
           </CardContent>
         </Card>
       </div>

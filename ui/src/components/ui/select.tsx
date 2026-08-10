@@ -6,8 +6,47 @@ import { Select as SelectPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
-function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+// Which element SelectContent should portal into. Two things ruled out a
+// simpler approach first:
+//  - Portaling to document.body (the Portal default) renders behind a
+//    native <dialog> shown via showModal() (see lib/preact-dialog): the
+//    dialog's own top-layer promotion always paints above regular
+//    body-level content, so a Select opened inside a Dialog would be
+//    invisible.
+//  - A separate top-layer container (e.g. the Popover API) doesn't fix
+//    that: a modal dialog's ::backdrop covers the entire viewport and
+//    intercepts pointer events for anything that isn't the dialog's own
+//    descendant, regardless of top-layer stacking order. Confirmed by
+//    testing — a popover shown after the dialog still had every click
+//    swallowed by the dialog's backdrop.
+// So this portals into the open <dialog> itself, which now has no CSS
+// transform on it (see Dialog.tsx) — a transform there would create a new
+// containing block for this content's `position: fixed` positioning,
+// putting it nowhere near its trigger even though it'd be clickable.
+const SelectPortalContext = React.createContext<HTMLElement | undefined>(undefined);
+
+function Select({ onOpenChange, ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>(undefined);
+
+  return (
+    <SelectPortalContext.Provider value={portalContainer}>
+      <SelectPrimitive.Root
+        data-slot="select"
+        onOpenChange={(open) => {
+          // Recomputed on every open, not once at mount: Radix mounts
+          // Select.Content as soon as this tree first renders (well before
+          // any dialog is open) and only toggles its visibility afterward,
+          // so a value computed inline in SelectContent's render body would
+          // freeze at whatever was true before anything ever opened.
+          if (open) {
+            setPortalContainer(document.querySelector<HTMLElement>('dialog[open]') ?? undefined);
+          }
+          onOpenChange?.(open);
+        }}
+        {...props}
+      />
+    </SelectPortalContext.Provider>
+  );
 }
 
 function SelectGroup({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Group>) {
@@ -57,8 +96,12 @@ function SelectContent({
   align = 'center',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  // See the comment above Select (the Root wrapper) for why this portals
+  // into the currently-open <dialog> rather than document.body.
+  const portalContainer = React.useContext(SelectPortalContext);
+
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={portalContainer}>
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === 'item-aligned'}

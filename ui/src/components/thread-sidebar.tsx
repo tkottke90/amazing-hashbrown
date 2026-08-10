@@ -9,6 +9,7 @@ import {
   Trash2,
   Loader2,
   BookOpen,
+  Cog,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -245,6 +246,19 @@ export function ThreadSidebar() {
       >
         <BookOpen className="size-4 shrink-0" />
         Wiki
+      </a>
+      <a
+        href="/settings"
+        aria-label="Settings"
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url === '/settings'
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <Cog className="size-4 shrink-0" />
+        Settings
       </a>
 
       <label className="flex items-center justify-between gap-2 border-t border-border px-2 pt-3 text-xs text-muted-foreground">

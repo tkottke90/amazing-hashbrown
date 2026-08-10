@@ -1,13 +1,14 @@
+import { Layout } from '@/components/layout';
+import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
+import { CostRatesPanel } from '@/pages/settings/cost-rates-panel';
+import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
+import { GeneralPanel } from '@/pages/settings/general-panel';
+import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
+import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
+import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
+import { StoragePanel } from '@/pages/settings/storage-panel';
+import { ToolsPanel } from '@/pages/settings/tools-panel';
 import { useLocation } from 'preact-iso';
-import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/components/settings/settings-nav';
-import { GeneralPanel } from '@/components/settings/general-panel';
-import { StoragePanel } from '@/components/settings/storage-panel';
-import { ModelProvidersPanel } from '@/components/settings/model-providers-panel';
-import { EmbeddingsPanel } from '@/components/settings/embeddings-panel';
-import { AgentBehaviorPanel } from '@/components/settings/agent-behavior-panel';
-import { ToolsPanel } from '@/components/settings/tools-panel';
-import { CostRatesPanel } from '@/components/settings/cost-rates-panel';
-import { PlaceholderPanel } from '@/components/settings/placeholder-panel';
 
 function resolveSection(raw: string | undefined): SettingsSlug {
   if (raw && VALID_SLUGS.has(raw)) return raw as SettingsSlug;
@@ -49,11 +50,13 @@ export function SettingsView(_props: { path?: string }) {
   }
 
   return (
-    <div class="flex h-full">
-      <SettingsNav activeSlug={section} onNavigate={handleNavigate} />
-      <div class="min-h-0 flex-1 overflow-y-auto">
-        <ActivePanel section={section} />
+    <Layout>
+      <div class="flex h-full">
+        <SettingsNav activeSlug={section} onNavigate={handleNavigate} />
+        <div class="min-h-0 flex-1 overflow-y-auto">
+          <ActivePanel section={section} />
+        </div>
       </div>
-    </div>
+    </Layout>
   );
 }

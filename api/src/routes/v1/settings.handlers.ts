@@ -75,14 +75,14 @@ export interface EnvAccessor {
 
 // ---- API key masking ----------------------------------------------------------
 
-const MASK = '****';
+export const MASK = '****';
 
-function maskApiKey(key: string | undefined): string | undefined {
+export function maskApiKey(key: string | undefined): string | undefined {
   if (key === undefined || key === '') return undefined;
   return MASK;
 }
 
-function unmaskApiKey(
+export function unmaskApiKey(
   incoming: string | undefined,
   stored: string | undefined,
 ): string | undefined {
@@ -105,6 +105,44 @@ function mergeConfigYaml(configDir: string, updates: Record<string, unknown>): v
   const merged = { ...current, ...updates };
   fs.writeFileSync(configPath, yaml.stringify(merged), 'utf8');
 }
+
+// ---- Section shapes -------------------------------------------------------------
+// Canonical GET response / full-object PATCH body per settings slug — mirrors each
+// SLUG_MAP entry's `get()` return shape below. External consumers (e.g. e2e tests
+// asserting on the outgoing PATCH request body) should import these `import type`
+// rather than redeclaring the shape by hand, so a schema change here surfaces as a
+// compile error at the call site instead of a silently-stale test.
+
+export type GeneralSettings = { port: number; logLevel: string };
+
+export type StorageSettings = {
+  wikiRoot: string;
+  mcpConfigDir: string;
+  artifactRoot: string;
+  skillsRoot: string;
+  database: { path: string };
+};
+
+export type ModelProvidersSettings = {
+  providers: ProviderConfig[];
+  defaultProvider: string;
+};
+
+export type EmbeddingsSettings = z.infer<typeof EmbeddingsSchema>;
+
+export type AgentBehaviorSettings = {
+  afterAgent: z.infer<typeof AfterAgentSchema>;
+  chat: z.infer<typeof ChatSchema>;
+  observability: z.infer<typeof ObservabilitySchema>;
+};
+
+export type ToolsSettings = {
+  webFetch: z.infer<typeof WebFetchConfigSchema>;
+  rlm: RLMConfig;
+  tools?: z.infer<typeof ToolsConfigSchema>;
+};
+
+export type CostRatesSettings = { costs: Record<string, CostEntry> };
 
 // ---- Slug definitions ---------------------------------------------------------
 

@@ -11,9 +11,9 @@ import {
   activePage,
   loadPage,
   refreshPages,
-} from '@/hooks/use-wiki';
+} from '@/pages/wiki/use-wiki';
 import { fetchPage } from '@/services/wiki-api';
-import { sendWikiMessage } from '@/hooks/use-wiki-ingestion';
+import { sendWikiMessage } from '@/pages/wiki/use-wiki-ingestion';
 import { PAGE_TYPE_ICON, PAGE_TYPE_LABELS } from './page-type-icons';
 
 const METADATA_FILES = [

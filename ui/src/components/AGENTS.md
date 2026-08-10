@@ -3,6 +3,11 @@
 Component-level conventions for the Preact frontend. See `ui/AGENTS.md` for
 project-wide layout, styling, and command reference.
 
+This folder holds components reused across 2+ pages. Page-specific
+components follow the same conventions below but live under
+`src/pages/<name>/` instead — see `ui/AGENTS.md`'s "Where does this file
+go?" section.
+
 ## Dialogs
 
 Dialogs use the `Dialog` component from `@tkottke90/preact-dialog` (the

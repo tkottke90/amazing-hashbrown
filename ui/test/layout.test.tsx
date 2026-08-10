@@ -1,13 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/preact';
 
 import { Layout } from '@/components/layout';
+import { ThemeProvider } from '@/hooks/use-theme';
 
 describe('Layout', () => {
   it('renders the aside and main content', () => {
     render(
-      <Layout aside={<div>Sidebar content</div>}>
-        <div>Page content</div>
-      </Layout>,
+      <ThemeProvider>
+        <Layout aside={<div>Sidebar content</div>}>
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
     );
 
     expect(screen.getAllByText('Sidebar content').length).toBeGreaterThan(0);
@@ -16,13 +19,15 @@ describe('Layout', () => {
 
   it('renders navStart/navEnd icons in the bottom app bar', () => {
     render(
-      <Layout
-        aside={<div>Sidebar content</div>}
-        navStart={<button>Search</button>}
-        navEnd={<button>Profile</button>}
-      >
-        <div>Page content</div>
-      </Layout>,
+      <ThemeProvider>
+        <Layout
+          aside={<div>Sidebar content</div>}
+          navStart={<button>Search</button>}
+          navEnd={<button>Profile</button>}
+        >
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
     );
 
     expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
@@ -32,9 +37,11 @@ describe('Layout', () => {
   it('calls onAddClick when the floating add button is pressed', () => {
     const onAddClick = jest.fn();
     render(
-      <Layout aside={<div>Sidebar content</div>} onAddClick={onAddClick}>
-        <div>Page content</div>
-      </Layout>,
+      <ThemeProvider>
+        <Layout aside={<div>Sidebar content</div>} onAddClick={onAddClick}>
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
@@ -43,9 +50,11 @@ describe('Layout', () => {
 
   it('opens the sheet to reveal the aside content when the hamburger menu is clicked', () => {
     render(
-      <Layout aside={<div>Sidebar content</div>}>
-        <div>Page content</div>
-      </Layout>,
+      <ThemeProvider>
+        <Layout aside={<div>Sidebar content</div>}>
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
     );
 
     expect(screen.getAllByText('Sidebar content')).toHaveLength(1);

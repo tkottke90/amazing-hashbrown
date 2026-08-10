@@ -17,7 +17,7 @@ jest.mock('@/services/settings-api', () => {
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
-import { AgentBehaviorPanel } from '@/components/settings/agent-behavior-panel';
+import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
 import * as api from '@/services/settings-api';
 
 const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;

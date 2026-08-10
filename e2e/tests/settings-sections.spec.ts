@@ -230,8 +230,14 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=model-providers');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('ollama', { exact: true })).toBeVisible();
-    await expect(page.getByText('openai', { exact: true })).toBeVisible();
+    // Scoped to the row-name hook (not a page-wide text match): each closed
+    // Edit-provider dialog stays mounted with its own "Type" select — a
+    // visible span plus a hidden native <select>'s <option> — so an
+    // unscoped getByText('ollama') resolves to several elements once
+    // there's more than one provider in the stub.
+    const providerNames = page.locator('[data-slot="provider-row-name"]');
+    await expect(providerNames.filter({ hasText: 'ollama' })).toBeVisible();
+    await expect(providerNames.filter({ hasText: 'openai' })).toBeVisible();
     await expect(page.getByText('Default', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add provider' }).first()).toBeVisible();
   });

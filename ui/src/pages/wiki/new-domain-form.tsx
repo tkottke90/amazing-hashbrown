@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { Plus } from 'lucide-preact';
-import { sendWikiMessage } from '@/hooks/use-wiki-ingestion';
+import { sendWikiMessage } from '@/pages/wiki/use-wiki-ingestion';
 import { Dialog, useDialog } from '@tkottke90/preact-dialog';
 
 export function NewDomainModal() {

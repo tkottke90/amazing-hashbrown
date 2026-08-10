@@ -17,7 +17,7 @@ jest.mock('@/services/settings-api', () => {
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
-import { CostRatesPanel } from '@/components/settings/cost-rates-panel';
+import { CostRatesPanel } from '@/pages/settings/cost-rates-panel';
 import * as api from '@/services/settings-api';
 
 const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;

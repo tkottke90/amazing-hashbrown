@@ -11,6 +11,7 @@ import {
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
+import { FormLayout } from '@/components/form-layout';
 
 interface GeneralSettings {
   port: number;
@@ -39,36 +40,38 @@ export function GeneralPanel() {
             <CardTitle>General</CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="space-y-1.5">
-              <Label htmlFor="general-port">Port</Label>
-              <Input
-                id="general-port"
-                value={String(form.value.port)}
-                readOnly
-                aria-readonly="true"
-                class="cursor-not-allowed opacity-60"
-              />
-              <p class="text-xs text-muted-foreground">
-                Changing the port requires an environment-level change and server restart.
-              </p>
-            </div>
+            <FormLayout>
+              <div class="space-y-1.5">
+                <Label htmlFor="general-port">Port</Label>
+                <Input
+                  id="general-port"
+                  value={String(form.value.port)}
+                  readOnly
+                  aria-readonly="true"
+                  class="cursor-not-allowed opacity-60"
+                />
+                <p class="text-xs text-muted-foreground">
+                  Changing the port requires an environment-level change and server restart.
+                </p>
+              </div>
 
-            <div class="space-y-1.5">
-              <Label htmlFor="general-logLevel">Log level</Label>
-              <Select value={form.value.logLevel} onValueChange={(v) => setField('logLevel', v)}>
-                <SelectTrigger id="general-logLevel">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LOG_LEVELS.map((lvl) => (
-                    <SelectItem key={lvl} value={lvl}>
-                      {lvl}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldError errors={fieldErrors.value['logLevel']} />
-            </div>
+              <div class="space-y-1.5">
+                <Label htmlFor="general-logLevel">Log level</Label>
+                <Select value={form.value.logLevel} onValueChange={(v) => setField('logLevel', v)}>
+                  <SelectTrigger id="general-logLevel">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOG_LEVELS.map((lvl) => (
+                      <SelectItem key={lvl} value={lvl}>
+                        {lvl}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError errors={fieldErrors.value['logLevel']} />
+              </div>
+            </FormLayout>
           </CardContent>
         </Card>
       </div>

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/preact';
-import { SettingsNav } from '@/components/settings/settings-nav';
+import { SettingsNav } from '@/pages/settings/settings-nav';
 
 const NAV_LABELS = [
   'General',

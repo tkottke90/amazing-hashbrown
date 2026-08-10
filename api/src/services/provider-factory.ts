@@ -77,28 +77,90 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
   }
 }
 
+async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {
+  switch (provider.type) {
+    case 'ollama': {
+      const client = new Ollama({ host: provider.baseUrl });
+      const response = await client.list();
+      return response.models.map((m) => m.name);
+    }
+    case 'openai': {
+      const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
+      const response = await client.models.list();
+      return response.data.map((m) => m.id);
+    }
+    case 'anthropic': {
+      const client = new Anthropic({ apiKey: provider.apiKey });
+      const response = await client.models.list();
+      return response.data.map((m) => m.id);
+    }
+  }
+}
+
+/**
+ * Best-effort — swallows any failure (network error, bad key, provider
+ * down) into an empty list. Used where the caller has no way to surface a
+ * specific error to the user (e.g. the chat model picker's background
+ * refresh via GET /api/v1/providers).
+ */
 export async function listModels(provider: ProviderConfig): Promise<string[]> {
   try {
-    switch (provider.type) {
-      case 'ollama': {
-        const client = new Ollama({ host: provider.baseUrl });
-        const response = await client.list();
-        return response.models.map((m) => m.name);
-      }
-      case 'openai': {
-        const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
-        const response = await client.models.list();
-        return response.data.map((m) => m.id);
-      }
-      case 'anthropic': {
-        const client = new Anthropic({ apiKey: provider.apiKey });
-        const response = await client.models.list();
-        return response.data.map((m) => m.id);
-      }
-    }
+    return await fetchModelIds(provider);
   } catch {
     return [];
   }
+}
+
+/**
+ * Same underlying fetch as listModels, but lets the caller see and report
+ * the real failure — used by POST /api/v1/providers/models, where the
+ * caller (the provider modal) needs to show the user why listing failed.
+ */
+export async function listModelsOrThrow(provider: ProviderConfig): Promise<string[]> {
+  return fetchModelIds(provider);
+}
+
+/**
+ * Same as listModelsOrThrow, filtered down to models actually capable of
+ * generating embeddings — used by the Embeddings settings panel, which
+ * shouldn't offer chat/completion models as a default embedding model.
+ *
+ * Ollama's /api/show response includes an authoritative `capabilities`
+ * array (confirmed against a real instance: 'embedding' for
+ * nomic-embed-text, ['completion', 'tools', 'thinking'] for a chat model
+ * like qwen3) — one show() call per listed model, run in parallel. A
+ * single model's show() failing excludes just that model rather than
+ * failing the whole list.
+ *
+ * OpenAI-compatible servers (including custom ones like Lemonade) have no
+ * equivalent capability-discovery endpoint — /v1/models returns only id/
+ * object/created/owned_by — so this falls back to a name heuristic
+ * ("embed" appears in the id), which covers real OpenAI's embedding
+ * models and every embedding model observed from Lemonade's catalog.
+ */
+export async function listEmbeddingModels(provider: ProviderConfig): Promise<string[]> {
+  const allModels = await fetchModelIds(provider);
+
+  if (provider.type === 'ollama') {
+    const client = new Ollama({ host: provider.baseUrl });
+    const isEmbedding = await Promise.all(
+      allModels.map(async (name) => {
+        try {
+          const info = await client.show({ model: name });
+          return info.capabilities?.includes('embedding') ?? false;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return allModels.filter((_, i) => isEmbedding[i]);
+  }
+
+  if (provider.type === 'openai') {
+    return allModels.filter((id) => id.toLowerCase().includes('embed'));
+  }
+
+  return allModels;
 }
 
 export function createProvider(name?: string, model?: string): BaseChatModel {

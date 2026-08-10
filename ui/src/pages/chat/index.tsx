@@ -1,27 +1,32 @@
-import { useSignal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
-import { useLocation } from 'preact-iso';
+import { AfterAgentIndicator } from '@/components/after-agent-indicator';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
-import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
-import { AfterAgentIndicator } from '@/components/after-agent-indicator';
+import { Layout } from '@/components/layout';
+import { ThreadMessageItem } from '@/components/thread-message';
+import { fetchProviders, providers } from '@/hooks/use-providers';
 import {
-  messages,
-  isStreaming,
-  pendingHitlId,
-  activeThreadId,
   activeThreadAfterAgentState,
+  activeThreadId,
   activeThreadModel,
-  sendMessage,
-  submitHitlAnswer,
-  stopGeneration,
-  retryTurn,
   forkThread,
+  isStreaming,
+  messages,
+  newThread,
+  pendingHitlId,
+  refreshThreadList,
+  retryTurn,
+  sendMessage,
   setThreadModel,
+  stopGeneration,
+  submitHitlAnswer,
+  switchThread,
+  useThread,
 } from '@/hooks/use-thread';
-import { providers, fetchProviders } from '@/hooks/use-providers';
 import type { ThreadMessage } from '@/types/thread-message';
+import { useSignal } from '@preact/signals';
+import { useLocation } from 'preact-iso';
+import { useEffect } from 'preact/hooks';
 
 // Tool calls execute before the assistant produces its final text response, but
 // the flat messages array stores them after the assistant item (because the
@@ -70,16 +75,6 @@ export function ThreadView() {
     ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === pendingHitlId.value)
     : null;
 
-  // Resolve the active provider/model for display: thread selection → provider default → first available
-  const resolvedProvider =
-    activeThreadModel.value?.provider ??
-    providers.value.find((p) => p.defaultModel)?.name ??
-    providers.value[0]?.name;
-  const resolvedModel =
-    activeThreadModel.value?.model ??
-    providers.value.find((p) => p.name === resolvedProvider)?.defaultModel ??
-    providers.value[0]?.models[0]?.id;
-
   // Pending HITL is shown pinned below the scroll area, not in the message list
   const scrollMessages = reorderMessagesForDisplay(
     allMessages.filter((m) => !(m.kind === 'hitl_prompt' && m.status === 'pending')),
@@ -127,5 +122,21 @@ export function ThreadView() {
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>
     </div>
+  );
+}
+
+export function ChatRoot({ id }: { path?: string; id?: string }) {
+  useEffect(() => {
+    refreshThreadList();
+  }, []);
+
+  useEffect(() => {
+    if (id) void switchThread(id);
+  }, [id]);
+
+  return (
+    <Layout addLabel="New conversation">
+      <ThreadView />
+    </Layout>
   );
 }

@@ -41,22 +41,25 @@ const buttonVariants = cva(
   },
 );
 
-function Button({
-  className,
-  variant = 'default',
-  size = 'default',
-  asChild = false,
-  ...props
-}: React.ComponentProps<'button'> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean;
-  }) {
+// Wrapped in forwardRef (rather than a plain function component) because
+// preact/compat drops the ref on plain function components, so consumers
+// that clone this element to attach a ref (e.g. Dialog's trigger-as-prop
+// pattern, see components/AGENTS.md) never reach the underlying <button>.
+// See https://github.com/preactjs/preact/issues/3297.
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<'button'> &
+    VariantProps<typeof buttonVariants> & {
+      asChild?: boolean;
+    }
+>(({ className, variant = 'default', size = 'default', asChild = false, ...props }, ref) => {
   const Comp = (asChild ? Slot.Root : 'button') as React.ElementType<
     React.ComponentProps<'button'>
   >;
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -64,6 +67,7 @@ function Button({
       {...props}
     />
   );
-}
+});
+Button.displayName = 'Button';
 
 export { Button, buttonVariants };

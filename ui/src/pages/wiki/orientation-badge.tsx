@@ -1,5 +1,5 @@
 import { BookOpen } from 'lucide-preact';
-import { wikiOrientedTo } from '@/hooks/use-wiki-ingestion';
+import { wikiOrientedTo } from '@/pages/wiki/use-wiki-ingestion';
 
 export function OrientationBadge() {
   const domain = wikiOrientedTo.value;
