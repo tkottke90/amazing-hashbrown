@@ -77,28 +77,47 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
   }
 }
 
+async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {
+  switch (provider.type) {
+    case 'ollama': {
+      const client = new Ollama({ host: provider.baseUrl });
+      const response = await client.list();
+      return response.models.map((m) => m.name);
+    }
+    case 'openai': {
+      const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
+      const response = await client.models.list();
+      return response.data.map((m) => m.id);
+    }
+    case 'anthropic': {
+      const client = new Anthropic({ apiKey: provider.apiKey });
+      const response = await client.models.list();
+      return response.data.map((m) => m.id);
+    }
+  }
+}
+
+/**
+ * Best-effort — swallows any failure (network error, bad key, provider
+ * down) into an empty list. Used where the caller has no way to surface a
+ * specific error to the user (e.g. the chat model picker's background
+ * refresh via GET /api/v1/providers).
+ */
 export async function listModels(provider: ProviderConfig): Promise<string[]> {
   try {
-    switch (provider.type) {
-      case 'ollama': {
-        const client = new Ollama({ host: provider.baseUrl });
-        const response = await client.list();
-        return response.models.map((m) => m.name);
-      }
-      case 'openai': {
-        const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
-        const response = await client.models.list();
-        return response.data.map((m) => m.id);
-      }
-      case 'anthropic': {
-        const client = new Anthropic({ apiKey: provider.apiKey });
-        const response = await client.models.list();
-        return response.data.map((m) => m.id);
-      }
-    }
+    return await fetchModelIds(provider);
   } catch {
     return [];
   }
+}
+
+/**
+ * Same underlying fetch as listModels, but lets the caller see and report
+ * the real failure — used by POST /api/v1/providers/models, where the
+ * caller (the provider modal) needs to show the user why listing failed.
+ */
+export async function listModelsOrThrow(provider: ProviderConfig): Promise<string[]> {
+  return fetchModelIds(provider);
 }
 
 export function createProvider(name?: string, model?: string): BaseChatModel {

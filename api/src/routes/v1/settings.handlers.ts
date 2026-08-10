@@ -75,14 +75,14 @@ export interface EnvAccessor {
 
 // ---- API key masking ----------------------------------------------------------
 
-const MASK = '****';
+export const MASK = '****';
 
-function maskApiKey(key: string | undefined): string | undefined {
+export function maskApiKey(key: string | undefined): string | undefined {
   if (key === undefined || key === '') return undefined;
   return MASK;
 }
 
-function unmaskApiKey(
+export function unmaskApiKey(
   incoming: string | undefined,
   stored: string | undefined,
 ): string | undefined {
