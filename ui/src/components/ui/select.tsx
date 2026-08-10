@@ -6,8 +6,37 @@ import { Select as SelectPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
-function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+// Which element SelectContent should portal into — see the comment on
+// SelectContent below for why this can't just be computed inline there.
+const SelectPortalContext = React.createContext<HTMLElement | undefined>(undefined);
+
+function Select({
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>(
+    undefined,
+  );
+
+  return (
+    <SelectPortalContext.Provider value={portalContainer}>
+      <SelectPrimitive.Root
+        data-slot="select"
+        onOpenChange={(open) => {
+          // Recomputed on every open, not once at mount: Radix mounts
+          // Select.Content as soon as this tree first renders (well before
+          // any dialog is open) and only toggles its visibility afterward,
+          // so a value computed inline in SelectContent's render body would
+          // freeze at whatever was true before anything ever opened.
+          if (open) {
+            setPortalContainer(document.querySelector<HTMLElement>('dialog[open]') ?? undefined);
+          }
+          onOpenChange?.(open);
+        }}
+        {...props}
+      />
+    </SelectPortalContext.Provider>
+  );
 }
 
 function SelectGroup({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Group>) {
@@ -57,8 +86,17 @@ function SelectContent({
   align = 'center',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  // Portal into the currently-open native <dialog>, if any, instead of the
+  // Portal default of document.body. A <dialog> shown via showModal() (see
+  // lib/preact-dialog's Dialog) renders in the browser's top layer, which
+  // always sits above regular DOM content — including a body-portalled
+  // dropdown — so a Select opened inside a Dialog would otherwise render
+  // its options invisibly behind the modal. Assumes at most one modal
+  // dialog is open at a time, which holds for every Dialog usage here.
+  const portalContainer = React.useContext(SelectPortalContext);
+
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={portalContainer}>
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === 'item-aligned'}
