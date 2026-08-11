@@ -11,7 +11,7 @@ export interface WikiWriteResult {
 export type CreateWikiPageResult =
   | { status: 'written'; result: WikiWriteResult }
   | { status: 'dry_run'; title: string; wikiId: string; section: PageType }
-  | { status: 'duplicate'; existingPath: string }
+  | { status: 'duplicate'; existingPath: string; existingTitle: string }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string };
 
@@ -69,9 +69,17 @@ export async function createWikiPage(
     return { status: 'unknown_wiki', wikiId };
   }
 
-  const prep = await wiki.ingestPrep({ content, keywords: tags });
+  const prep = await wiki.ingestPrep({ content, title, keywords: tags });
   if (prep.existingPages[0]) {
-    return { status: 'duplicate', existingPath: prep.existingPages[0] };
+    const blockingPath = prep.existingPages[0];
+    let existingTitle = blockingPath.split('/').pop()?.replace(/\.md$/, '') ?? blockingPath;
+    try {
+      const blockingPage = await wiki.readPage(blockingPath);
+      existingTitle = String(blockingPage.frontmatter.title ?? existingTitle);
+    } catch {
+      // leave existingTitle as the filename stem
+    }
+    return { status: 'duplicate', existingPath: blockingPath, existingTitle };
   }
 
   if (dryRun) {

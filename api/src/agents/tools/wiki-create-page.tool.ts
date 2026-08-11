@@ -60,7 +60,11 @@ export const wikiCreatePageTool = tool(
       case 'dry_run':
         return `[dry run] Would create a new "${result.section}" page titled "${result.title}" in wiki "${result.wikiId}".`;
       case 'duplicate':
-        return `A similar page already exists at ${result.existingPath}. Read it with wiki_read_page and call wiki_update_page instead.`;
+        return (
+          `A similar page already exists: "${result.existingTitle}" at ${result.existingPath}. ` +
+          `If this page covers the same topic, read it with wiki_read_page and merge your content using wiki_update_page. ` +
+          `If it covers a different topic, stop and tell the user about the conflict — do not retry wiki_create_page with a different title.`
+        );
       case 'wiki_unavailable':
         return 'Wiki knowledge base is not available.';
       case 'unknown_wiki':

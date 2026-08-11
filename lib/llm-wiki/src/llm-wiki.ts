@@ -63,6 +63,10 @@ const noopLogger: Logger = {
 
 const RECENT_LOG_COUNT = 30;
 const MIN_OUTBOUND_LINKS = 2;
+// RRF score floor for treating a page as a duplicate during wiki_create_page.
+// At k=60 the max RRF score is ≈0.033 (rank-1 in both semantic and keyword);
+// 0.020 requires meaningful similarity in at least one ranking axis.
+const MIN_DUPLICATE_SCORE = 0.02;
 
 export interface CreateOptions {
   path: string;
@@ -88,6 +92,10 @@ export interface SaveRawOptions {
 
 export interface IngestPrepInput {
   content: string;
+  /** Proposed page title — used by duplicate detection to compare against
+   *  existing page titles. When omitted, the first `# Heading` in `content`
+   *  is used as the fallback. */
+  title?: string;
   url?: string;
   filename?: string;
   keywords?: string[];
@@ -166,6 +174,48 @@ export class LlmWiki {
     for (const rel of paths) {
       const content = (await readFileOr(this.abs(rel), '')).toLowerCase();
       if (needles.some((n) => content.includes(n))) matches.push(rel);
+    }
+    return matches;
+  }
+
+  /** Duplicate-check for a proposed new page. When an embeddingProvider is
+   *  available, uses hybrid semantic+keyword search with a score threshold so
+   *  that only genuinely similar pages are flagged. Without embeddings, falls
+   *  back to title-only comparison to avoid the false-positives that full-body
+   *  keyword scanning produces. */
+  private async findSimilarPages(proposedTitle: string, keywords: string[]): Promise<string[]> {
+    if (this.embeddingProvider) {
+      const query = [proposedTitle, ...keywords].filter(Boolean).join(' ');
+      if (!query) return [];
+      try {
+        const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
+        return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
+      } catch (err) {
+        this.logger.warn('findSimilarPages: semantic search failed, falling back to title search', {
+          err,
+        });
+      }
+    }
+    return this.searchByTitle(proposedTitle);
+  }
+
+  /** Non-embedding duplicate check: compare `proposedTitle` word-by-word
+   *  against the frontmatter title (or filename stem) of each existing page.
+   *  Requires ≥60% of significant words (length > 3) to overlap. */
+  private async searchByTitle(proposedTitle: string): Promise<string[]> {
+    const words = proposedTitle
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 3);
+    if (words.length === 0) return [];
+    const paths = await this.listContentPaths();
+    const matches: string[] = [];
+    for (const rel of paths) {
+      const raw = await readFileOr(this.abs(rel), '');
+      const { data } = fm.parse(raw);
+      const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
+      const hits = words.filter((w) => existingTitle.includes(w)).length;
+      if (hits >= Math.ceil(words.length * 0.6)) matches.push(rel);
     }
     return matches;
   }
@@ -402,13 +452,16 @@ export class LlmWiki {
         .slice(0, 6);
     }
 
+    const proposedTitle =
+      input.title?.trim() || (input.content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? '');
+
     return {
       sha256,
       isNew: existingRaw === null,
       drift,
       existingRaw,
       storedSha256,
-      existingPages: keywords.length ? await this.search(keywords) : [],
+      existingPages: await this.findSimilarPages(proposedTitle, keywords),
       suggestedRawPath: suggestRawPath({ url, filename: input.filename, today }),
     };
   }
