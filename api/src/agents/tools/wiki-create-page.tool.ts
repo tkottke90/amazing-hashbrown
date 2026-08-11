@@ -1,4 +1,5 @@
 import { tool } from '@langchain/core/tools';
+import matter from 'gray-matter';
 import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
@@ -27,23 +28,31 @@ const WikiCreatePageSchema = z.object({
     .boolean()
     .optional()
     .describe('If true, report what would be created without writing anything.'),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      'Skip duplicate detection and force creation. Only use after reading the blocking page ' +
+        'with wiki_read_page and confirming it covers a genuinely different topic.',
+    ),
 });
 
 export const wikiCreatePageTool = tool(
   async (
-    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun },
+    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun, force },
     config,
   ) => {
     const result = await createWikiPage({
       wikiId,
       title,
-      content,
+      content: matter(content).content,
       section,
       tags,
       confidence,
       contested,
       contradictions,
       dryRun,
+      force,
     });
 
     switch (result.status) {
@@ -60,7 +69,13 @@ export const wikiCreatePageTool = tool(
       case 'dry_run':
         return `[dry run] Would create a new "${result.section}" page titled "${result.title}" in wiki "${result.wikiId}".`;
       case 'duplicate':
-        return `A similar page already exists at ${result.existingPath}. Read it with wiki_read_page and call wiki_update_page instead.`;
+        return (
+          `A similar page already exists: "${result.existingTitle}" at ${result.existingPath}. ` +
+          `Read it with wiki_read_page, then take one of these two actions:\n` +
+          `(1) Same topic — call wiki_update_page with mode:"append" and pass only the new sections as content. Do NOT rewrite the entire page.\n` +
+          `(2) Genuinely different document (different format, version, or use case) — retry wiki_create_page with force:true and include an additional distinguishing term in the title.\n` +
+          `Do NOT retry wiki_create_page without force:true, and do not vary the title to work around this check.`
+        );
       case 'wiki_unavailable':
         return 'Wiki knowledge base is not available.';
       case 'unknown_wiki':

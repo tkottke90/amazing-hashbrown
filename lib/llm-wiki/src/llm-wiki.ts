@@ -63,6 +63,15 @@ const noopLogger: Logger = {
 
 const RECENT_LOG_COUNT = 30;
 const MIN_OUTBOUND_LINKS = 2;
+// RRF score floor for treating a page as a duplicate during wiki_create_page.
+// At k=60 the max RRF score is ≈0.033 (rank-1 in both semantic and keyword);
+// 0.020 requires meaningful similarity in at least one ranking axis.
+const MIN_DUPLICATE_SCORE = 0.02;
+// Minimum content pages before semantic duplicate detection is meaningful.
+// With fewer pages, every query scores near the RRF maximum (a rank-1-of-2
+// document scores the same as a genuine duplicate), making the threshold
+// useless. Below this count, title-only comparison is used instead.
+const MIN_PAGES_FOR_SEMANTIC = 10;
 
 export interface CreateOptions {
   path: string;
@@ -88,6 +97,10 @@ export interface SaveRawOptions {
 
 export interface IngestPrepInput {
   content: string;
+  /** Proposed page title — used by duplicate detection to compare against
+   *  existing page titles. When omitted, the first `# Heading` in `content`
+   *  is used as the fallback. */
+  title?: string;
   url?: string;
   filename?: string;
   keywords?: string[];
@@ -166,6 +179,68 @@ export class LlmWiki {
     for (const rel of paths) {
       const content = (await readFileOr(this.abs(rel), '')).toLowerCase();
       if (needles.some((n) => content.includes(n))) matches.push(rel);
+    }
+    return matches;
+  }
+
+  /** Duplicate-check for a proposed new page. When an embeddingProvider is
+   *  available, uses hybrid semantic+keyword search with a score threshold so
+   *  that only genuinely similar pages are flagged. Without embeddings, falls
+   *  back to title-only comparison to avoid the false-positives that full-body
+   *  keyword scanning produces. */
+  private async findSimilarPages(proposedTitle: string, keywords: string[]): Promise<string[]> {
+    if (this.embeddingProvider) {
+      // Use title only — including tags inflates the query with generic terms
+      // (e.g. "character", "workflow") that cause false-positive matches against
+      // topically unrelated pages that share only vocabulary, not subject matter.
+      const query = proposedTitle.trim();
+      if (!query) return [];
+      try {
+        const allPaths = await this.listContentPaths();
+        // Skip semantic search for small wikis: with fewer than MIN_PAGES_FOR_SEMANTIC
+        // pages, every result ranks near the top of a tiny list and scores above the
+        // threshold regardless of actual relevance. Fall through to title search.
+        if (allPaths.length >= MIN_PAGES_FOR_SEMANTIC) {
+          const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
+          return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
+        }
+      } catch (err) {
+        const reason = describeEmbeddingError(err);
+        this.logger.warn(
+          `findSimilarPages: semantic search failed (${reason}), falling back to title search`,
+          { err },
+        );
+      }
+    }
+    return this.searchByTitle(proposedTitle);
+  }
+
+  /** Non-embedding duplicate check: compare `proposedTitle` word-by-word
+   *  against the frontmatter title (or filename stem) of each existing page.
+   *  Requires ≥60% of significant words (length > 2) to overlap.
+   *
+   *  The filter keeps 3-char tokens (e.g. "wan", "SD", "CFG") which are often
+   *  the distinguishing part of a short title. Without them, "Wan Video" strips
+   *  to just ["video"] and incorrectly matches "Video Game Assets". The old
+   *  ≤2-word special case (threshold=1) is removed for the same reason: a
+   *  2-word title with 60% = ceil(1.2) = 2 required matches is fine and
+   *  avoids matching a page that shares only one word. */
+  private async searchByTitle(proposedTitle: string): Promise<string[]> {
+    const words = proposedTitle
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2);
+    if (words.length === 0) return [];
+    const paths = await this.listContentPaths();
+    const matches: string[] = [];
+    for (const rel of paths) {
+      const raw = await readFileOr(this.abs(rel), '');
+      const { data } = fm.parse(raw);
+      const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
+      const existingWords = new Set(existingTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 0));
+      const hits = words.filter((w) => existingWords.has(w)).length;
+      const threshold = Math.ceil(words.length * 0.6);
+      if (hits >= threshold) matches.push(rel);
     }
     return matches;
   }
@@ -402,13 +477,16 @@ export class LlmWiki {
         .slice(0, 6);
     }
 
+    const proposedTitle =
+      input.title?.trim() || (input.content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? '');
+
     return {
       sha256,
       isNew: existingRaw === null,
       drift,
       existingRaw,
       storedSha256,
-      existingPages: keywords.length ? await this.search(keywords) : [],
+      existingPages: await this.findSimilarPages(proposedTitle, keywords),
       suggestedRawPath: suggestRawPath({ url, filename: input.filename, today }),
     };
   }
@@ -500,7 +578,17 @@ export class LlmWiki {
     });
 
     if (this.embeddingProvider) {
-      await this.updatePageEmbedding(rel, page.body, this.embeddingProvider);
+      try {
+        await this.updatePageEmbedding(rel, page.body, this.embeddingProvider);
+      } catch (err) {
+        // Embedding is best-effort. A provider failure (e.g. Ollama 404 when the
+        // model isn't loaded) must not abort a successful page write.
+        const reason = describeEmbeddingError(err);
+        this.logger.warn(
+          `commitPage: embedding update failed (${reason}) — page written, embeddings skipped`,
+          { rel, err },
+        );
+      }
     }
 
     return { path: rel, created, warnings: this.pageWarnings(page, paths) };
@@ -793,6 +881,33 @@ async function readFileOrNull(target: string): Promise<string | null> {
 
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
+}
+
+/** Produce a human-readable reason string from an embedding provider error.
+ * The OpenAI SDK (used by both OllamaEmbeddingProvider and
+ * OpenAIEmbeddingProvider) surfaces HTTP failures as objects with a numeric
+ * `status` field; network-level failures surface as Node.js ErrnoExceptions
+ * with a `code` field. */
+function describeEmbeddingError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    if (typeof e['status'] === 'number') {
+      if (e['status'] === 404) {
+        return 'embedding model not found — check that the model is loaded in Ollama (status 404)';
+      }
+      if (e['status'] === 503 || e['status'] === 502) {
+        return `embedding service unavailable (status ${e['status']})`;
+      }
+      return `HTTP ${e['status']} from embedding provider`;
+    }
+    if (typeof e['code'] === 'string') {
+      if (e['code'] === 'ECONNREFUSED') return 'embedding service not reachable (ECONNREFUSED)';
+      if (e['code'] === 'ENOTFOUND') return 'embedding service host not found (ENOTFOUND)';
+      return `network error: ${e['code']}`;
+    }
+    if (typeof e['message'] === 'string') return e['message'];
+  }
+  return String(err);
 }
 
 function asStringArray(value: unknown): string[] {

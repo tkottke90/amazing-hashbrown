@@ -25,6 +25,7 @@
     "@tkottke90/rlm": "*",
     "@tkottke90/logger": "2.4.0",
     "@tkottke90/observability": "*",
+    "@tkottke90/thread-reports": "*",
     "@tkottke90/shell-executor": "*",
     "@tkottke90/skills-manager": "*",
     "@tkottke90/tools-manager": "*",

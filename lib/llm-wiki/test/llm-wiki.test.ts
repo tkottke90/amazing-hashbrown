@@ -136,7 +136,7 @@ describe('LlmWiki ingest flow', () => {
     expect(changed.drift).to.equal(true);
   });
 
-  it('finds existing pages by keyword', async () => {
+  it('finds existing pages by title match', async () => {
     const wiki = await newWiki();
     await wiki.commitPage({
       type: 'entity',
@@ -145,7 +145,11 @@ describe('LlmWiki ingest flow', () => {
       sources: [],
       body: 'Runs unbound. [[host]] [[proxy]]',
     });
-    const prep = await wiki.ingestPrep({ content: 'about unbound', keywords: ['unbound'] });
+    const prep = await wiki.ingestPrep({
+      content: 'about dns',
+      title: 'DNS Server',
+      keywords: ['dns'],
+    });
     expect(prep.existingPages).to.include('entities/dns-server.md');
   });
 });

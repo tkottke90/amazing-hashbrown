@@ -11,7 +11,7 @@ export interface WikiWriteResult {
 export type CreateWikiPageResult =
   | { status: 'written'; result: WikiWriteResult }
   | { status: 'dry_run'; title: string; wikiId: string; section: PageType }
-  | { status: 'duplicate'; existingPath: string }
+  | { status: 'duplicate'; existingPath: string; existingTitle: string }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string };
 
@@ -27,6 +27,9 @@ export interface CreateWikiPageParams {
   contested?: boolean;
   contradictions?: string[];
   dryRun?: boolean;
+  // Skip duplicate detection — only use after reading the blocking page and
+  // confirming these are genuinely different documents.
+  force?: boolean;
 }
 
 // Test-only escape hatch on both functions below: an already-constructed
@@ -51,6 +54,7 @@ export async function createWikiPage(
     contested,
     contradictions,
     dryRun,
+    force,
   } = params;
 
   let reg = registry;
@@ -69,9 +73,17 @@ export async function createWikiPage(
     return { status: 'unknown_wiki', wikiId };
   }
 
-  const prep = await wiki.ingestPrep({ content, keywords: tags });
-  if (prep.existingPages[0]) {
-    return { status: 'duplicate', existingPath: prep.existingPages[0] };
+  const prep = await wiki.ingestPrep({ content, title, keywords: tags });
+  if (!force && prep.existingPages[0]) {
+    const blockingPath = prep.existingPages[0];
+    let existingTitle = blockingPath.split('/').pop()?.replace(/\.md$/, '') ?? blockingPath;
+    try {
+      const blockingPage = await wiki.readPage(blockingPath);
+      existingTitle = String(blockingPage.frontmatter.title ?? existingTitle);
+    } catch {
+      // leave existingTitle as the filename stem
+    }
+    return { status: 'duplicate', existingPath: blockingPath, existingTitle };
   }
 
   if (dryRun) {
@@ -106,6 +118,10 @@ export interface UpdateWikiPageParams {
   wikiId: string;
   path: string;
   content: string;
+  // 'replace' (default): content replaces the entire page body.
+  // 'append': content is appended after the existing body. Pass only the new
+  // sections — no need to read and repeat the existing page.
+  mode?: 'replace' | 'append';
   tags?: string[]; // omitted -> reuse existing page's tags
   sources?: string[]; // omitted -> reuse existing page's sources
   summary?: string;
@@ -130,6 +146,7 @@ export async function updateWikiPage(
     wikiId,
     path: relPath,
     content,
+    mode = 'replace',
     tags,
     sources,
     summary,
@@ -177,6 +194,10 @@ export async function updateWikiPage(
     throw err; // unexpected I/O error — not a modeled result variant
   }
 
+  // In append mode, combine bodies here so the rest of the function (carry-
+  // forward, dryRun, deletedSections, commitPage) all see the merged body.
+  const effectiveContent = mode === 'append' ? `${existing.content}\n\n${content}` : content;
+
   // Carry forward tags/sources when omitted. commitPage() unions `sources`
   // internally regardless of what's passed, so this is redundant-but-
   // harmless for sources — but tags is a straight overwrite in
@@ -201,20 +222,20 @@ export async function updateWikiPage(
       status: 'dry_run',
       path: relPath,
       existingBody: existing.content,
-      proposedBody: content,
+      proposedBody: effectiveContent,
     };
   }
 
   const existingSections = new Set(extractH2Sections(existing.content));
-  const newSections = new Set(extractH2Sections(content));
+  const newSections = new Set(extractH2Sections(effectiveContent));
   const deletedSections = [...existingSections].filter((s) => !newSections.has(s));
 
   const result = await wiki.commitPage({
     type: existing.frontmatter.type,
-    title: existing.frontmatter.title,
+    title: existing.title,
     tags: effectiveTags,
     sources: effectiveSources,
-    body: content,
+    body: effectiveContent,
     summary,
     confidence: effectiveConfidence,
     contested: effectiveContested,

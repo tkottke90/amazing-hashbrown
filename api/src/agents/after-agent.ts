@@ -363,7 +363,11 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     }
 
     const wiki = await registry.load(domainEntry.id);
-    const prep = await wiki.ingestPrep({ content: extract.body, keywords: extract.tags });
+    const prep = await wiki.ingestPrep({
+      content: extract.body,
+      title: extract.title,
+      keywords: extract.tags,
+    });
 
     // Provenance: always save a raw snapshot of the turn, tagged with threadId,
     // so every AfterAgent-written page traces back to the conversation it came from.

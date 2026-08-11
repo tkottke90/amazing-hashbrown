@@ -12,6 +12,39 @@ export interface ListProviderModelsRequest {
   capability?: 'embedding';
 }
 
+export interface TestEmbeddingsRequest {
+  type: 'ollama' | 'openai';
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+}
+
+export interface TestEmbeddingsResult {
+  dims: number;
+  durationMs: number;
+}
+
+export async function testEmbeddings(req: TestEmbeddingsRequest): Promise<TestEmbeddingsResult> {
+  const res = await fetch('/api/v1/providers/embeddings/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+
+  const payload = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    dims?: number;
+    durationMs?: number;
+    error?: string;
+  };
+
+  if (!res.ok || !payload.ok || payload.dims == null) {
+    throw new Error(payload.error ?? `Test failed: ${res.status}`);
+  }
+
+  return { dims: payload.dims, durationMs: payload.durationMs ?? 0 };
+}
+
 export async function listProviderModels(req: ListProviderModelsRequest): Promise<string[]> {
   const res = await fetch('/api/v1/providers/models', {
     method: 'POST',

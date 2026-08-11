@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { Loader2, RefreshCw } from 'lucide-preact';
+import { CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-preact';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +17,13 @@ import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { FormLayout } from '@/components/form-layout';
-import { listProviderModels } from '@/services/providers-api';
+import { listProviderModels, testEmbeddings } from '@/services/providers-api';
+
+type TestState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; dims: number; durationMs: number }
+  | { status: 'error'; error: string };
 
 interface EmbeddingsSettings {
   enabled: boolean;
@@ -35,6 +41,7 @@ export function EmbeddingsPanel() {
   const modelsLoading = useSignal(false);
   const modelsError = useSignal<string | null>(null);
   const hasAutoLoaded = useSignal(false);
+  const testState = useSignal<TestState>({ status: 'idle' });
 
   async function loadModels() {
     if (!form.value) return;
@@ -59,6 +66,25 @@ export function EmbeddingsPanel() {
     }
   }
 
+  async function runTest() {
+    if (!form.value?.model || !form.value.baseUrl) return;
+    testState.value = { status: 'loading' };
+    try {
+      const result = await testEmbeddings({
+        type: form.value.type,
+        baseUrl: form.value.baseUrl.trim(),
+        apiKey: form.value.apiKey || undefined,
+        model: form.value.model,
+      });
+      testState.value = { status: 'success', dims: result.dims, durationMs: result.durationMs };
+    } catch (err) {
+      testState.value = {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Test failed.',
+      };
+    }
+  }
+
   // Auto-loads once the section's settings arrive from the GET fetch (form
   // starts null), provided a base URL is already set — not on every field
   // edit afterward, hence the hasAutoLoaded guard: form.value is a new
@@ -69,6 +95,13 @@ export function EmbeddingsPanel() {
     if (!form.value?.baseUrl?.trim()) return;
     hasAutoLoaded.value = true;
     void loadModels();
+  }, [form.value]);
+
+  // Clear a stale test result whenever any form field changes.
+  useEffect(() => {
+    if (testState.value.status !== 'idle') {
+      testState.value = { status: 'idle' };
+    }
   }, [form.value]);
 
   if (fetchError.value) {
@@ -192,6 +225,38 @@ export function EmbeddingsPanel() {
                     </div>
                     <p class="empty:hidden text-xs text-destructive">{modelsError.value}</p>
                     <FieldError errors={fieldErrors.value['model']} />
+                  </div>
+
+                  <div class="flex items-center gap-3 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void runTest()}
+                      disabled={!form.value.model || testState.value.status === 'loading'}
+                    >
+                      {testState.value.status === 'loading' ? (
+                        <>
+                          <Loader2 class="mr-2 size-4 animate-spin" />
+                          Testing…
+                        </>
+                      ) : (
+                        'Test connection'
+                      )}
+                    </Button>
+
+                    {testState.value.status === 'success' && (
+                      <span class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+                        <CheckCircle2 class="size-4 shrink-0" />
+                        {testState.value.dims}-dim · {testState.value.durationMs}ms
+                      </span>
+                    )}
+
+                    {testState.value.status === 'error' && (
+                      <span class="flex items-center gap-1.5 text-sm text-destructive">
+                        <XCircle class="size-4 shrink-0" />
+                        {testState.value.error}
+                      </span>
+                    )}
                   </div>
                 </>
               )}
