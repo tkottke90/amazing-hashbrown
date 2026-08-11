@@ -6,6 +6,7 @@ import {
   listEmbeddingModels,
 } from '../../services/provider-factory.js';
 import { unmaskApiKey } from './settings.handlers.js';
+import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
 
 export const providersRouter = Router();
 
@@ -156,6 +157,54 @@ providersRouter.post('/models', async (req, res) => {
         ? await listEmbeddingModels(provider)
         : await listModelsOrThrow(provider);
     res.json({ ok: true, data: { models } });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: describeModelListError(err) });
+  }
+});
+
+interface TestEmbeddingsBody {
+  type?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+}
+
+// Embeds a short test string using the configured (or supplied) embedding
+// provider and returns the vector dimensionality and round-trip latency.
+// This exercises the full embedding code path — not just reachability — so
+// a 404 "model not loaded" from Ollama surfaces here too.
+providersRouter.post('/embeddings/test', async (req, res) => {
+  const { type, baseUrl, apiKey, model } = req.body as TestEmbeddingsBody;
+
+  const resolvedApiKey = unmaskApiKey(apiKey, env.embeddings.apiKey);
+  const resolvedModel = (model ?? '').trim() || env.embeddings.model;
+  const resolvedBaseUrl = (baseUrl ?? '').trim() || env.embeddings.baseUrl;
+
+  if (!resolvedModel) {
+    res.status(400).json({ ok: false, error: 'No model selected.' });
+    return;
+  }
+
+  try {
+    const embeddingProvider =
+      type === 'openai'
+        ? new OpenAIEmbeddingProvider({
+            apiKey: resolvedApiKey,
+            baseURL: resolvedBaseUrl,
+            model: resolvedModel,
+          })
+        : new OllamaEmbeddingProvider({ baseUrl: resolvedBaseUrl, model: resolvedModel });
+
+    const start = Date.now();
+    const [vector] = await embeddingProvider.embed(['embedding test']);
+    const durationMs = Date.now() - start;
+
+    if (!vector || vector.length === 0) {
+      res.status(502).json({ ok: false, error: 'Provider returned an empty embedding vector.' });
+      return;
+    }
+
+    res.json({ ok: true, dims: vector.length, durationMs });
   } catch (err) {
     res.status(502).json({ ok: false, error: describeModelListError(err) });
   }
