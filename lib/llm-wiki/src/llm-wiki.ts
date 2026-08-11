@@ -205,9 +205,11 @@ export class LlmWiki {
           return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
         }
       } catch (err) {
-        this.logger.warn('findSimilarPages: semantic search failed, falling back to title search', {
-          err,
-        });
+        const reason = describeEmbeddingError(err);
+        this.logger.warn(
+          `findSimilarPages: semantic search failed (${reason}), falling back to title search`,
+          { err },
+        );
       }
     }
     return this.searchByTitle(proposedTitle);
@@ -573,10 +575,11 @@ export class LlmWiki {
       } catch (err) {
         // Embedding is best-effort. A provider failure (e.g. Ollama 404 when the
         // model isn't loaded) must not abort a successful page write.
-        this.logger.warn('commitPage: embedding update failed — page written, embeddings skipped', {
-          rel,
-          err,
-        });
+        const reason = describeEmbeddingError(err);
+        this.logger.warn(
+          `commitPage: embedding update failed (${reason}) — page written, embeddings skipped`,
+          { rel, err },
+        );
       }
     }
 
@@ -870,6 +873,33 @@ async function readFileOrNull(target: string): Promise<string | null> {
 
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
+}
+
+/** Produce a human-readable reason string from an embedding provider error.
+ * The OpenAI SDK (used by both OllamaEmbeddingProvider and
+ * OpenAIEmbeddingProvider) surfaces HTTP failures as objects with a numeric
+ * `status` field; network-level failures surface as Node.js ErrnoExceptions
+ * with a `code` field. */
+function describeEmbeddingError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    if (typeof e['status'] === 'number') {
+      if (e['status'] === 404) {
+        return 'embedding model not found — check that the model is loaded in Ollama (status 404)';
+      }
+      if (e['status'] === 503 || e['status'] === 502) {
+        return `embedding service unavailable (status ${e['status']})`;
+      }
+      return `HTTP ${e['status']} from embedding provider`;
+    }
+    if (typeof e['code'] === 'string') {
+      if (e['code'] === 'ECONNREFUSED') return 'embedding service not reachable (ECONNREFUSED)';
+      if (e['code'] === 'ENOTFOUND') return 'embedding service host not found (ENOTFOUND)';
+      return `network error: ${e['code']}`;
+    }
+    if (typeof e['message'] === 'string') return e['message'];
+  }
+  return String(err);
 }
 
 function asStringArray(value: unknown): string[] {
