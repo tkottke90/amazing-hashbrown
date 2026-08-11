@@ -568,7 +568,16 @@ export class LlmWiki {
     });
 
     if (this.embeddingProvider) {
-      await this.updatePageEmbedding(rel, page.body, this.embeddingProvider);
+      try {
+        await this.updatePageEmbedding(rel, page.body, this.embeddingProvider);
+      } catch (err) {
+        // Embedding is best-effort. A provider failure (e.g. Ollama 404 when the
+        // model isn't loaded) must not abort a successful page write.
+        this.logger.warn('commitPage: embedding update failed — page written, embeddings skipped', {
+          rel,
+          err,
+        });
+      }
     }
 
     return { path: rel, created, warnings: this.pageWarnings(page, paths) };
