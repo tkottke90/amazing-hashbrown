@@ -400,6 +400,8 @@ export async function streamChatToSse(
           model: effectiveModel,
           afterAgentEnabled: afterAgent,
         },
+        // TODO: Make this a configurable option for the application.  This value is temporary
+        recursionLimit: 100
       },
     );
 
