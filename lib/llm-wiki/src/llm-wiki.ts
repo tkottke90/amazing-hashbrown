@@ -185,7 +185,10 @@ export class LlmWiki {
    *  keyword scanning produces. */
   private async findSimilarPages(proposedTitle: string, keywords: string[]): Promise<string[]> {
     if (this.embeddingProvider) {
-      const query = [proposedTitle, ...keywords].filter(Boolean).join(' ');
+      // Use title only — including tags inflates the query with generic terms
+      // (e.g. "character", "workflow") that cause false-positive matches against
+      // topically unrelated pages that share only vocabulary, not subject matter.
+      const query = proposedTitle.trim();
       if (!query) return [];
       try {
         const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
