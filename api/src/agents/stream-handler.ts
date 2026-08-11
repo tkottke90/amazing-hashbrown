@@ -401,7 +401,7 @@ export async function streamChatToSse(
           afterAgentEnabled: afterAgent,
         },
         // TODO: Make this a configurable option for the application.  This value is temporary
-        recursionLimit: 100
+        recursionLimit: 100,
       },
     );
 
