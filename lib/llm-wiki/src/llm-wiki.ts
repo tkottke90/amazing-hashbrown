@@ -67,6 +67,11 @@ const MIN_OUTBOUND_LINKS = 2;
 // At k=60 the max RRF score is ≈0.033 (rank-1 in both semantic and keyword);
 // 0.020 requires meaningful similarity in at least one ranking axis.
 const MIN_DUPLICATE_SCORE = 0.02;
+// Minimum content pages before semantic duplicate detection is meaningful.
+// With fewer pages, every query scores near the RRF maximum (a rank-1-of-2
+// document scores the same as a genuine duplicate), making the threshold
+// useless. Below this count, title-only comparison is used instead.
+const MIN_PAGES_FOR_SEMANTIC = 10;
 
 export interface CreateOptions {
   path: string;
@@ -191,8 +196,14 @@ export class LlmWiki {
       const query = proposedTitle.trim();
       if (!query) return [];
       try {
-        const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
-        return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
+        const allPaths = await this.listContentPaths();
+        // Skip semantic search for small wikis: with fewer than MIN_PAGES_FOR_SEMANTIC
+        // pages, every result ranks near the top of a tiny list and scores above the
+        // threshold regardless of actual relevance. Fall through to title search.
+        if (allPaths.length >= MIN_PAGES_FOR_SEMANTIC) {
+          const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
+          return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
+        }
       } catch (err) {
         this.logger.warn('findSimilarPages: semantic search failed, falling back to title search', {
           err,

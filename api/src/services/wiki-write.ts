@@ -219,7 +219,7 @@ export async function updateWikiPage(
 
   const result = await wiki.commitPage({
     type: existing.frontmatter.type,
-    title: existing.frontmatter.title,
+    title: existing.title,
     tags: effectiveTags,
     sources: effectiveSources,
     body: content,
