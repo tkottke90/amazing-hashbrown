@@ -45,8 +45,20 @@ export const AfterAgentSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+export const ContextWindowSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxTokens: z.number().default(32000),
+});
+
+export const ConversationSearchSchema = z.object({
+  enabled: z.boolean().default(true),
+  threshold: z.number().default(20),
+});
+
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
+  contextWindow: ContextWindowSchema.optional(),
+  conversationSearch: ConversationSearchSchema.optional(),
 });
 
 export const EmbeddingsSchema = z.object({

@@ -118,9 +118,36 @@ afterAgent:
 # retry shows. A failed turn nobody has retried yet is always shown
 # regardless of this setting. Override per-request via
 # GET /api/v1/threads/:id?showErrors=true.
+#
+# contextWindow: sliding context window that prevents unbounded token growth.
+#   enabled:   set to false to disable trimming entirely (not recommended for
+#              local models with hard context limits). Default: true.
+#   maxTokens: approximate token ceiling passed to the LLM per turn. Tokens
+#              are estimated at 4 characters each — accurate enough for budget
+#              keeping without the overhead of a model-based counter. Older
+#              messages are dropped (oldest first) while preserving the system
+#              prompt and ensuring the kept sequence always starts on a human
+#              turn (never mid-tool-call). Default: 32000.
+#
+#              Safe values by model family (leave headroom for output):
+#                GLM-4-Flash / small Ollama models: 16000–24000
+#                Llama 3 8B/13B:                    24000–32000
+#                GPT-4.1-mini / Claude Haiku:       64000–96000
+#
+# conversationSearch: RAG-over-history tool (search_conversation) that lets
+#   the agent recall information that has scrolled out of the active window.
+#   enabled:   set to false to never register the tool. Default: true.
+#   threshold: minimum number of thread messages before the tool is useful
+#              (below this the full history fits in context). Default: 20.
 # ---------------------------------------------------------------------------
 chat:
   showErrorMessages: false
+  contextWindow:
+    enabled: true
+    maxTokens: 32000
+  conversationSearch:
+    enabled: true
+    threshold: 20
 
 # ---------------------------------------------------------------------------
 # Web Fetch
