@@ -217,12 +217,19 @@ export class LlmWiki {
 
   /** Non-embedding duplicate check: compare `proposedTitle` word-by-word
    *  against the frontmatter title (or filename stem) of each existing page.
-   *  Requires ≥60% of significant words (length > 3) to overlap. */
+   *  Requires ≥60% of significant words (length > 2) to overlap.
+   *
+   *  The filter keeps 3-char tokens (e.g. "wan", "SD", "CFG") which are often
+   *  the distinguishing part of a short title. Without them, "Wan Video" strips
+   *  to just ["video"] and incorrectly matches "Video Game Assets". The old
+   *  ≤2-word special case (threshold=1) is removed for the same reason: a
+   *  2-word title with 60% = ceil(1.2) = 2 required matches is fine and
+   *  avoids matching a page that shares only one word. */
   private async searchByTitle(proposedTitle: string): Promise<string[]> {
     const words = proposedTitle
       .toLowerCase()
       .split(/[^a-z0-9]+/)
-      .filter((w) => w.length > 3);
+      .filter((w) => w.length > 2);
     if (words.length === 0) return [];
     const paths = await this.listContentPaths();
     const matches: string[] = [];
@@ -231,7 +238,7 @@ export class LlmWiki {
       const { data } = fm.parse(raw);
       const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
       const hits = words.filter((w) => existingTitle.includes(w)).length;
-      const threshold = words.length <= 2 ? 1 : Math.ceil(words.length * 0.6);
+      const threshold = Math.ceil(words.length * 0.6);
       if (hits >= threshold) matches.push(rel);
     }
     return matches;
