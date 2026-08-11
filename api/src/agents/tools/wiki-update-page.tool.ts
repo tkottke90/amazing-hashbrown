@@ -1,4 +1,5 @@
 import { tool } from '@langchain/core/tools';
+import matter from 'gray-matter';
 import { z } from 'zod';
 import { updateWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
@@ -72,7 +73,7 @@ export const wikiUpdatePageTool = tool(
     const result = await updateWikiPage({
       wikiId,
       path,
-      content,
+      content: matter(content).content,
       tags,
       confidence,
       contested,

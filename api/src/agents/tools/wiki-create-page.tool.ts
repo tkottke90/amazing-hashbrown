@@ -1,4 +1,5 @@
 import { tool } from '@langchain/core/tools';
+import matter from 'gray-matter';
 import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
@@ -37,7 +38,7 @@ export const wikiCreatePageTool = tool(
     const result = await createWikiPage({
       wikiId,
       title,
-      content,
+      content: matter(content).content,
       section,
       tags,
       confidence,
