@@ -46,7 +46,7 @@ describe('services/wiki-write', () => {
       await createWikiPage(
         {
           wikiId: 'test-wiki',
-          title: 'Proxy Notes',
+          title: 'Proxy Service Notes',
           content: 'The proxy service handles traffic routing. See [[dns]] and [[gateway]].',
           section: 'entity',
           tags: ['proxy'],
@@ -54,11 +54,13 @@ describe('services/wiki-write', () => {
         registry,
       );
 
+      // "Proxy Service Details" shares 2 of 3 significant words with "Proxy Service Notes"
+      // (proxy, service), meeting the ≥60% threshold (ceil(1.8) = 2) — a clear duplicate.
       const second = await createWikiPage(
         {
           wikiId: 'test-wiki',
-          title: 'Proxy Details',
-          content: 'More about the proxy configuration.',
+          title: 'Proxy Service Details',
+          content: 'More about the proxy service configuration.',
           section: 'entity',
           tags: ['proxy'],
         },
@@ -67,7 +69,7 @@ describe('services/wiki-write', () => {
 
       expect(second.status).to.equal('duplicate');
       if (second.status !== 'duplicate') return;
-      expect(second.existingPath).to.equal('entities/proxy-notes.md');
+      expect(second.existingPath).to.equal('entities/proxy-service-notes.md');
     });
 
     it('dry-run does not write and reports title/wikiId/section, not a path', async () => {
