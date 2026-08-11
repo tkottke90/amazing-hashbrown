@@ -13,17 +13,14 @@ const suite: TestSuite = {
   steps: [
     {
       tags: ['@user-workflow'],
-      action:
-        'Open the kebab menu on a thread row and click Generate thread report',
-      expectedOutcome:
-        'A new tab opens and displays the mocked HTML report content',
+      action: 'Open the kebab menu on a thread row and click Generate thread report',
+      expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Click the Generate thread report icon button in the wiki chat header',
-      expectedOutcome:
-        'A new tab opens and displays the mocked HTML report content',
+      expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
       test: () => {},
     },
   ],
@@ -142,7 +139,9 @@ test.describe(
       await expect(reportPage.locator('h1')).toHaveText('Thread Report');
     });
 
-    test('wiki chat: generate report button opens HTML in a new tab', async ({ page }, testInfo) => {
+    test('wiki chat: generate report button opens HTML in a new tab', async ({
+      page,
+    }, testInfo) => {
       await page.addInitScript((id: string) => {
         localStorage.setItem('ah-wiki-thread-id', id);
       }, WIKI_THREAD_ID);
