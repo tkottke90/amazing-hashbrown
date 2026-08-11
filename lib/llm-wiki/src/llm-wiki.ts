@@ -215,7 +215,8 @@ export class LlmWiki {
       const { data } = fm.parse(raw);
       const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
       const hits = words.filter((w) => existingTitle.includes(w)).length;
-      if (hits >= Math.ceil(words.length * 0.6)) matches.push(rel);
+      const threshold = words.length <= 2 ? 1 : Math.ceil(words.length * 0.6);
+      if (hits >= threshold) matches.push(rel);
     }
     return matches;
   }
