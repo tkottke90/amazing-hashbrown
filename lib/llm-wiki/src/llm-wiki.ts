@@ -237,7 +237,8 @@ export class LlmWiki {
       const raw = await readFileOr(this.abs(rel), '');
       const { data } = fm.parse(raw);
       const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
-      const hits = words.filter((w) => existingTitle.includes(w)).length;
+      const existingWords = new Set(existingTitle.split(/[^a-z0-9]+/).filter((w) => w.length > 0));
+      const hits = words.filter((w) => existingWords.has(w)).length;
       const threshold = Math.ceil(words.length * 0.6);
       if (hits >= threshold) matches.push(rel);
     }

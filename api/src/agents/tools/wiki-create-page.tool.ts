@@ -28,11 +28,18 @@ const WikiCreatePageSchema = z.object({
     .boolean()
     .optional()
     .describe('If true, report what would be created without writing anything.'),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      'Skip duplicate detection and force creation. Only use after reading the blocking page ' +
+        'with wiki_read_page and confirming it covers a genuinely different topic.',
+    ),
 });
 
 export const wikiCreatePageTool = tool(
   async (
-    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun },
+    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun, force },
     config,
   ) => {
     const result = await createWikiPage({
@@ -45,6 +52,7 @@ export const wikiCreatePageTool = tool(
       contested,
       contradictions,
       dryRun,
+      force,
     });
 
     switch (result.status) {
@@ -63,8 +71,10 @@ export const wikiCreatePageTool = tool(
       case 'duplicate':
         return (
           `A similar page already exists: "${result.existingTitle}" at ${result.existingPath}. ` +
-          `If this page covers the same topic, read it with wiki_read_page and merge your content using wiki_update_page. ` +
-          `If it covers a different topic, stop and tell the user about the conflict — do not retry wiki_create_page with a different title.`
+          `Read it with wiki_read_page, then take one of these two actions:\n` +
+          `(1) Same topic — call wiki_update_page with mode:"append" and pass only the new sections as content. Do NOT rewrite the entire page.\n` +
+          `(2) Genuinely different document (different format, version, or use case) — retry wiki_create_page with force:true and include an additional distinguishing term in the title.\n` +
+          `Do NOT retry wiki_create_page without force:true, and do not vary the title to work around this check.`
         );
       case 'wiki_unavailable':
         return 'Wiki knowledge base is not available.';

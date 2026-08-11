@@ -9,7 +9,20 @@ const WikiUpdatePageSchema = z.object({
   path: z
     .string()
     .describe('Existing page path relative to the wiki root, from wiki_search or wiki_read_page.'),
-  content: z.string().describe('Full replacement page body as markdown (no frontmatter).'),
+  content: z
+    .string()
+    .describe(
+      'Page body as markdown (no frontmatter). With mode "replace" (default): the full replacement body. ' +
+        'With mode "append": only the new content to add — it is appended after the existing body.',
+    ),
+  mode: z
+    .enum(['replace', 'append'])
+    .optional()
+    .describe(
+      '"replace" (default): content replaces the entire page body. ' +
+        '"append": content is added after the existing body — use this when merging new sections ' +
+        'from a separate article rather than rewriting the whole page.',
+    ),
   tags: z
     .array(z.string())
     .optional()
@@ -67,13 +80,14 @@ function lineDiff(before: string, after: string): string {
 
 export const wikiUpdatePageTool = tool(
   async (
-    { wikiId, path, content, tags, confidence, contested, contradictions, summary, dryRun },
+    { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
     config,
   ) => {
     const result = await updateWikiPage({
       wikiId,
       path,
       content: matter(content).content,
+      mode,
       tags,
       confidence,
       contested,
@@ -115,6 +129,7 @@ export const wikiUpdatePageTool = tool(
     description:
       "Update an existing wiki page's content. Requires the page's existing path (from " +
       'wiki_search or wiki_read_page) — use wiki_create_page for a page that does not exist yet. ' +
+      'Use mode:"append" to add new sections after the existing body without rewriting the whole page. ' +
       'Use dryRun to preview the change as a diff without writing.',
     schema: WikiUpdatePageSchema,
   },
