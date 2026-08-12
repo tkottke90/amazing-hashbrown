@@ -1,6 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { fetchUrl } from '../../services/web-fetch.js';
+import { storeToolContent } from '../../services/tool-content-store.js';
+import { toolStub, type StubSection } from './tool-stub.js';
+
+const STUB_THRESHOLD_CHARS = 10_000;
 
 const WebFetchInputSchema = z.object({
   url: z
@@ -9,7 +14,7 @@ const WebFetchInputSchema = z.object({
 });
 
 export const webFetchTool = tool(
-  async ({ url }) => {
+  async ({ url }, config) => {
     const result = await fetchUrl(url);
 
     if (result.status === 'robots_blocked') {
@@ -45,7 +50,53 @@ export const webFetchTool = tool(
       parts.push(`## Document Outline\n${outlineLines}`);
     }
 
-    return parts.join('\n\n');
+    const fullContent = parts.join('\n\n');
+    const threadId = config?.configurable?.thread_id as string | undefined;
+
+    if (fullContent.length > STUB_THRESHOLD_CHARS && threadId) {
+      const toolKey = `kv_${randomBytes(4).toString('hex')}`;
+      storeToolContent(threadId, toolKey, fullContent);
+
+      const summary =
+        result.metadata.description ?? result.text.slice(0, 300).replace(/\s+/g, ' ').trim();
+
+      const keyConcepts = result.outline
+        .filter((h) => h.level <= 2)
+        .slice(0, 5)
+        .map((h) => h.text)
+        .join(', ');
+
+      const pageTitle = result.metadata.title ?? '<title>';
+      const wikiInstruction = [
+        `wiki_create_page({`,
+        `  title:   "${pageTitle}",`,
+        `  section: <entity|concept|comparison|query|summary>,`,
+        `  corpus: {`,
+        `    threadId: "${threadId}",`,
+        `    toolKey:  "${toolKey}"`,
+        `  }`,
+        `})`,
+      ].join('\n');
+
+      const sections: StubSection[] = [{ name: 'summary', content: summary }];
+      if (keyConcepts) {
+        sections.push({ name: 'key concepts', content: keyConcepts });
+      }
+      sections.push({ name: 'to ingest into wiki:', content: wikiInstruction });
+
+      return toolStub(
+        {
+          tool: 'web_fetch',
+          chars: result.text.length,
+          key: toolKey,
+          threadId,
+          type: result.contentType,
+        },
+        sections,
+      );
+    }
+
+    return fullContent;
   },
   {
     name: 'web_fetch',

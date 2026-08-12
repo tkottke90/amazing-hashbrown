@@ -3,6 +3,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
+import { getToolContent } from '../../services/tool-content-store.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -51,13 +52,25 @@ export const wikiCreatePageTool = tool(
     { wikiId, title, corpus, section, tags, confidence, contested, contradictions, dryRun, force },
     config,
   ) => {
-    if (!('raw' in corpus)) {
-      return `[KV reference accepted — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. Full content fetch not yet implemented; re-call with corpus.raw once the KV store is available.]`;
+    let body: string;
+    if ('raw' in corpus) {
+      body = matter(corpus.raw).content;
+    } else {
+      const stored = getToolContent(corpus.threadId, corpus.toolKey);
+      if (!stored) {
+        return (
+          `[KV content not found — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. ` +
+          `The content may have expired or belong to a different process. ` +
+          `Re-fetch with web_fetch and call wiki_create_page again with corpus.raw.]`
+        );
+      }
+      body = matter(stored).content;
     }
+
     const result = await createWikiPage({
       wikiId,
       title,
-      content: matter(corpus.raw).content,
+      content: body,
       section,
       tags,
       confidence,
