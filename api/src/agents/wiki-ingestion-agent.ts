@@ -15,7 +15,7 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
-import { getCheckpointer } from './chat-agent.js';
+import { contextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
 
 export type WikiIngestionAgent = Awaited<ReturnType<typeof buildWikiIngestionAgent>>['agent'];
@@ -52,6 +52,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
+    middleware: [contextWindowMiddleware],
   });
 
   return { agent, systemPrompt };

@@ -96,7 +96,7 @@ function estimateTokens(messages: BaseMessage[]): number {
 // trimMessages from @langchain/core with strategy:'last' (keep most-recent)
 // and startOn:'human' (never start mid-tool-call-result pair) to preserve
 // tool-call/tool-result pairing required by LangGraph.
-const contextWindowMiddleware = createMiddleware({
+export const contextWindowMiddleware = createMiddleware({
   name: 'ContextWindowMiddleware',
   beforeAgent: async (state) => {
     const cfg = env.chat?.contextWindow;
