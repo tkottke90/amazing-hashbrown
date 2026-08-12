@@ -399,7 +399,10 @@ export async function executeScenario(
       const excluded = new Set(scenario.excludeTools ?? []);
       const scenarioTools = excluded.size
         ? config.tools.filter((t) => {
-            const name = typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
+            const name =
+              typeof t === 'object' && t !== null && 'name' in t
+                ? (t as { name: string }).name
+                : '';
             return !excluded.has(name);
           })
         : config.tools;
@@ -440,7 +443,10 @@ export async function executeScenario(
       const excluded = new Set(scenario.excludeTools ?? []);
       const scenarioTools = excluded.size
         ? config.tools.filter((t) => {
-            const name = typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
+            const name =
+              typeof t === 'object' && t !== null && 'name' in t
+                ? (t as { name: string }).name
+                : '';
             return !excluded.has(name);
           })
         : config.tools;

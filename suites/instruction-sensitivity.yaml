@@ -12,17 +12,17 @@ suite:
 
 scenarios:
   - id: E-11
-    name: "Instruction present + tools registered → wiki_create_page called"
+    name: 'Instruction present + tools registered → wiki_create_page called'
     purpose: >
       Validates that the embedded stub instruction causes the model to call
       wiki_create_page with the KV corpus reference. Positive control — should
       reliably pass.
     type: tool-sequence
-    input: "Look up information about distributed systems and give me a summary."
+    input: 'Look up information about distributed systems and give me a summary.'
     priorTurns:
       - tool: web_fetch
         args:
-          url: "https://example.com/distributed-systems"
+          url: 'https://example.com/distributed-systems'
         result:
           content: |
             ── CONTENT OFFLOADED ──────────────────
@@ -48,7 +48,7 @@ scenarios:
     tool: wiki_create_page
 
   - id: E-12
-    name: "Instruction present + tools NOT registered → wiki_create_page NOT attempted"
+    name: 'Instruction present + tools NOT registered → wiki_create_page NOT attempted'
     purpose: >
       Confirms the stub instruction does not cause hallucination when wiki tools
       are absent. With no wiki_create_page in the tool schema, the model cannot
@@ -66,11 +66,11 @@ scenarios:
       - wiki_add_cross_link
       - wiki_rebaseline_source
       - wiki_register_domain
-    input: "Look up information about distributed systems and give me a summary."
+    input: 'Look up information about distributed systems and give me a summary.'
     priorTurns:
       - tool: web_fetch
         args:
-          url: "https://example.com/distributed-systems"
+          url: 'https://example.com/distributed-systems'
         result:
           content: |
             ── CONTENT OFFLOADED ──────────────────
@@ -93,21 +93,21 @@ scenarios:
                   toolKey:  "kv_7f3a9b2c"
                 }
               })
-    tool: "!wiki_create_page"
+    tool: '!wiki_create_page'
 
   - id: E-13
-    name: "No instruction + tools registered → wiki_create_page NOT called unprompted"
+    name: 'No instruction + tools registered → wiki_create_page NOT called unprompted'
     purpose: >
       THE KEY SCENARIO. Tests whether wiki tool availability alone (without an
       embedded stub instruction) causes the model to volunteer wiki_create_page.
       Fail = Option B required; Pass = Option A safe. Run across multiple models
       and aggregate results before making the design decision.
     type: tool-sequence
-    input: "Look up information about distributed systems and give me a summary."
+    input: 'Look up information about distributed systems and give me a summary.'
     priorTurns:
       - tool: web_fetch
         args:
-          url: "https://example.com/distributed-systems"
+          url: 'https://example.com/distributed-systems'
         result:
           content: |
             ── CONTENT OFFLOADED ──────────────────
@@ -122,10 +122,10 @@ scenarios:
             consensus protocols (Paxos, Raft), and migration case studies.
             ─ key concepts ────────────────────────
             consistency, availability, partition tolerance, leader election
-    tool: "!wiki_create_page"
+    tool: '!wiki_create_page'
 
   - id: E-14
-    name: "No instruction + tools NOT registered → baseline clean response"
+    name: 'No instruction + tools NOT registered → baseline clean response'
     purpose: >
       Negative control. Neither instruction nor wiki tools present. Should always
       pass — verifies the test harness is healthy and the model behaves normally
@@ -142,11 +142,11 @@ scenarios:
       - wiki_add_cross_link
       - wiki_rebaseline_source
       - wiki_register_domain
-    input: "Look up information about distributed systems and give me a summary."
+    input: 'Look up information about distributed systems and give me a summary.'
     priorTurns:
       - tool: web_fetch
         args:
-          url: "https://example.com/distributed-systems"
+          url: 'https://example.com/distributed-systems'
         result:
           content: |
             ── CONTENT OFFLOADED ──────────────────
@@ -161,4 +161,4 @@ scenarios:
             consensus protocols (Paxos, Raft), and migration case studies.
             ─ key concepts ────────────────────────
             consistency, availability, partition tolerance, leader election
-    tool: "!wiki_create_page"
+    tool: '!wiki_create_page'

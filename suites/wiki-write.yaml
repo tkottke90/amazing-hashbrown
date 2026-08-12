@@ -150,7 +150,10 @@ scenarios:
           {
             wikiId: 'user',
             title: 'Home Network Setup',
-            corpus: { raw: 'The home network uses a mesh router system with three access points covering the house.' },
+            corpus:
+              {
+                raw: 'The home network uses a mesh router system with three access points covering the house.',
+              },
             section: 'entity',
           }
         result:

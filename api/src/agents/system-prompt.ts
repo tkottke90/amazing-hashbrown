@@ -526,7 +526,7 @@ includes a "to ingest into wiki:" block like this:
 
   to ingest into wiki:
     wiki_create_page({
-      title:  <title>,
+      title:  <page title>,
       corpus: {
         threadId: "f50450ee-...",
         toolKey:  "kv_7f3a9b2c"
