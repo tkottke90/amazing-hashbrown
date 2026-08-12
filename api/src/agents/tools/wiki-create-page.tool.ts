@@ -9,7 +9,16 @@ const WikiCreatePageSchema = z.object({
     .string()
     .describe('Wiki domain ID to create the page in, from wiki_locate or wiki_search.'),
   title: z.string().describe('Page title.'),
-  content: z.string().describe('Page body as markdown (no frontmatter).'),
+  corpus: z
+    .union([
+      z.object({ raw: z.string() }).describe('Inline markdown body (no frontmatter).'),
+      z
+        .object({ threadId: z.string(), toolKey: z.string() })
+        .describe(
+          'KV reference from a compact stub — copy threadId and toolKey verbatim from the stub.',
+        ),
+    ])
+    .describe('Page content, either inline or as a KV reference from a compact stub.'),
   section: z
     .enum(['entity', 'concept', 'comparison', 'query', 'summary'])
     .describe(
@@ -39,13 +48,16 @@ const WikiCreatePageSchema = z.object({
 
 export const wikiCreatePageTool = tool(
   async (
-    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun, force },
+    { wikiId, title, corpus, section, tags, confidence, contested, contradictions, dryRun, force },
     config,
   ) => {
+    if (!('raw' in corpus)) {
+      return `[KV reference accepted — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. Full content fetch not yet implemented; re-call with corpus.raw once the KV store is available.]`;
+    }
     const result = await createWikiPage({
       wikiId,
       title,
-      content: matter(content).content,
+      content: matter(corpus.raw).content,
       section,
       tags,
       confidence,

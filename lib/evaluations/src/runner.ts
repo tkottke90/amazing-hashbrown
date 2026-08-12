@@ -396,6 +396,13 @@ export async function executeScenario(
       if (!config.tools || config.tools.length === 0) {
         throw new Error('tools are required for tool-call scenarios');
       }
+      const excluded = new Set(scenario.excludeTools ?? []);
+      const scenarioTools = excluded.size
+        ? config.tools.filter((t) => {
+            const name = typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
+            return !excluded.has(name);
+          })
+        : config.tools;
       const {
         toolCalls,
         invalidToolCalls,
@@ -406,7 +413,7 @@ export async function executeScenario(
       } = await invokeToolCallModel(
         config.model,
         withSystemPrompt(s.input, config.systemPrompt),
-        config.tools,
+        scenarioTools,
       );
       const details = {
         ...runToolCall(s, toolCalls),
@@ -430,6 +437,13 @@ export async function executeScenario(
       if (!config.tools || config.tools.length === 0) {
         throw new Error('tools are required for tool-sequence scenarios');
       }
+      const excluded = new Set(scenario.excludeTools ?? []);
+      const scenarioTools = excluded.size
+        ? config.tools.filter((t) => {
+            const name = typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
+            return !excluded.has(name);
+          })
+        : config.tools;
       const seeded = buildSeededMessages(s.input, s.priorTurns);
       const {
         toolCalls,
@@ -441,7 +455,7 @@ export async function executeScenario(
       } = await invokeToolCallModel(
         config.model,
         withSystemPrompt(seeded, config.systemPrompt),
-        config.tools,
+        scenarioTools,
       );
       const details = {
         ...runToolSequence(s, toolCalls),
