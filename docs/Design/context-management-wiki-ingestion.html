@@ -598,18 +598,17 @@ body {
 
     <div class="node node--decide">
       <div class="node-badge">Model Decides</div>
-      <div class="node-body">Summary describes 3 independently-standing sections. A multi-page structure will be more navigable — I'll pass <code>layout: "multi"</code> to make it explicit.</div>
+      <div class="node-body">Summary describes 3 independently-standing sections. Pass the KV reference — the tool will detect the section structure and create multiple pages automatically.</div>
     </div>
     <div class="conn"></div>
 
     <div class="node node--action">
       <div class="node-badge">Model Acts</div>
-      <div class="node-body">Passes KV reference with layout hint
+      <div class="node-body">Passes KV reference — tool auto-detects multi-file layout
 <div class="codeview"><span class="wk">wiki_create_page</span>({
   <span class="k">title</span>:    <span class="v">"Dist. Systems Guide"</span>,
   <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-  <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>,
-  <span class="k">layout</span>:   <span class="v">"multi"</span>
+  <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
 })</div>
       </div>
     </div>
@@ -724,13 +723,9 @@ body {
       <span class="k">threadId</span>: <span class="v">z.string()</span>,
       <span class="k">toolKey</span>:  <span class="v">z.string()</span>
     })
-  ]),
-  <span class="k">layout</span>: <span class="v">z.enum</span>([<span class="v">'single'</span>, <span class="v">'multi'</span>])
-    .<span class="v">optional()</span>
-    <span class="d">// omit to auto-detect from document</span>
-    <span class="d">// structure (H1/H2 section count)</span>
+  ])
 })</div>
-        <div class="iface-note">When <code>threadId + toolKey</code> is supplied the tool fetches, splits, and processes content internally. <code>layout</code> can be set explicitly by the model (informed by the stub summary) or omitted to let the tool auto-detect based on H1/H2 section count. The model only receives the compact result — full body never enters the context window.</div>
+        <div class="iface-note">When <code>threadId + toolKey</code> is supplied the tool fetches, splits, and processes content internally. Single vs multi-page layout is determined automatically from the document's H1/H2 section count — the model never needs to decide. The model only receives the compact result — full body never enters the context window.</div>
       </div>
     </div>
 
