@@ -374,6 +374,90 @@ body {
 .iface-card .codeview { margin-top: 0; font-size: 10px; line-height: 1.7; }
 .iface-note { font-size: 11.5px; color: var(--text-muted); margin-top: 9px; line-height: 1.4; }
 
+/* ── Evaluations ── */
+.eval-intro {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 820px;
+  margin: 0 auto 28px;
+  text-align: center;
+  line-height: 1.55;
+}
+.eval-group { margin-bottom: 28px; }
+.eval-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+  padding-left: 2px;
+}
+.eval-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 800px) { .eval-grid { grid-template-columns: 1fr; } }
+
+.eval-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.eval-card-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+.eval-id {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.eval-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.eval-field {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+.eval-field:last-child { border-bottom: none; }
+.eval-field-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding-top: 1px;
+}
+.eval-pass-label { color: var(--outcome); }
+.eval-fail-label { color: var(--checkpoint-heavy); }
+.eval-field-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.eval-field-body code {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 10.5px;
+  background: rgba(0,0,0,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 /* ── Stub instruction block ── */
 .stub-section {
   background: var(--card);
@@ -730,6 +814,230 @@ body {
     </div>
 
   </div>
+</div>
+
+
+<div class="divider"></div>
+
+<!-- ═══════════════ EVALUATIONS ═══════════════ -->
+<div class="section">
+  <div class="section-title">Evaluation Scenarios</div>
+  <p class="eval-intro">Scenarios for verifying that the LLM behaves as the design intends. Each entry states the stimulus the model receives, the response that confirms correct operation, and the failure mode to watch for.</p>
+
+  <!-- ── Path Selection ── -->
+  <div class="eval-group">
+    <div class="eval-group-label">Path Selection</div>
+    <div class="eval-grid">
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-1</span>
+          <span class="eval-name">Small document → inline corpus path</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Tool response returned inline (≤2,000 chars). No stub, no KV key present in context.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page</code> with <code>corpus: { raw: "…" }</code> containing the inline content.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model fabricates a KV reference, refuses to act, or asks the user for information it already has.</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-2</span>
+          <span class="eval-name">Large document → KV reference used verbatim</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Stub with <code>key: kv_7f3a9b2c</code> and <code>threadId: f50450ee-…</code>. Content is explicitly offloaded.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page({ threadId: "f50450ee-…", toolKey: "kv_7f3a9b2c" })</code> with exact verbatim values copied from the stub.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model truncates the key, substitutes a different value, or passes <code>raw</code> content that only exists in the stub summary (not the full body).</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-3</span>
+          <span class="eval-name">No KV fabrication on inline content</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Small document returned inline — no KV key has ever appeared in this conversation.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model uses <code>corpus: { raw: "…" }</code>. No <code>threadId</code> or <code>toolKey</code> fields appear in the call.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model constructs or guesses a KV key from context clues (thread ID visible elsewhere, prior tool names, etc.).</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-4</span>
+          <span class="eval-name">Near-boundary content handled transparently</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Content hovers near the 2,000-char threshold. Model may receive it inline or as a stub depending on the interceptor's decision.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model uses whatever form it received — <code>raw</code> if inline, KV reference if a stub was returned — without requesting clarification from the user.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model stalls, asks the user to decide, or applies inconsistent logic based on perceived size rather than the actual representation it received.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Stub Comprehension ── -->
+  <div class="eval-group">
+    <div class="eval-group-label">Stub Comprehension</div>
+    <div class="eval-grid">
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-5</span>
+          <span class="eval-name">Title derived from stub summary, not hallucinated</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Stub summary describes content about "distributed systems design with a focus on consensus algorithms and the CAP theorem."</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model chooses a specific, content-grounded title like "Distributed Systems — CAP Theorem &amp; Consensus" rather than a generic placeholder.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Title is generic ("Article", "Content", "Web Page"), doesn't match the subject, or the model asks the user to provide a title for content it can summarise itself.</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-6</span>
+          <span class="eval-name">Multi-section content → single tool call</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Stub summary explicitly mentions "3 independently-standing sections covering CAP theorem, Paxos/Raft, and migration case studies."</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model makes one <code>wiki_create_page</code> call with the KV reference. It does not attempt to split manually or call the tool three times.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page</code> multiple times (once per perceived section), or asks the user whether a single or multi-page structure is preferred.</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-7</span>
+          <span class="eval-name">RLM query used when task relevance is unclear</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Stub received for a large document. The user's task is "add authentication documentation to the wiki." The stub summary is ambiguous about whether this content covers authentication.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model calls <code>rlm_query("Does this document cover authentication flows?", { threadId, toolKey })</code> before committing to wiki ingestion.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model blindly ingests all content regardless of relevance, or gives up and reports it cannot determine relevance without reading the full document.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Tool Sequencing ── -->
+  <div class="eval-group">
+    <div class="eval-group-label">Tool Sequencing</div>
+    <div class="eval-grid">
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-8</span>
+          <span class="eval-name">Fetch before ingest — correct ordering</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">User asks: "Find the SQLite documentation online and add it to the wiki." No prior tool calls have been made.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model calls <code>web_fetch</code> first, receives the stub, then calls <code>wiki_create_page</code> with the KV reference from the stub.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page</code> before fetching (with fabricated or empty content), or fetches successfully but then passes only the stub summary text as <code>raw</code> content.</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-9</span>
+          <span class="eval-name">Compact result acknowledged without re-fetch</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">Wiki tool returns <code>{ status: created, pageId: wiki_b8e1, path: /wiki/distributed-systems }</code>.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model confirms success and references the page path in its reply. It does not immediately re-fetch the wiki page to verify the content.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model calls <code>wiki_read_page</code> immediately after creation to "check" its work, or asks the user to confirm the page was written correctly.</div>
+        </div>
+      </div>
+
+      <div class="eval-card">
+        <div class="eval-card-hd">
+          <span class="eval-id">E-10</span>
+          <span class="eval-name">Update vs create — correct tool selection</span>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label">Stimulus</div>
+          <div class="eval-field-body">A wiki page for <code>/wiki/distributed-systems</code> already exists. Model receives a stub for new content that should be merged into it.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-pass-label">Expected</div>
+          <div class="eval-field-body">Model calls <code>wiki_update_page</code> with the KV reference. It does not create a duplicate page.</div>
+        </div>
+        <div class="eval-field">
+          <div class="eval-field-label eval-fail-label">Failure</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page</code> (creating a duplicate), or calls <code>wiki_update_page</code> with the stub summary text as <code>raw</code> content rather than the KV reference.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 </body>
