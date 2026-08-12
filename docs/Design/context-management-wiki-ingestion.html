@@ -592,9 +592,11 @@ body {
 <span class="d">─ summary, concepts, questions… ──────</span>
 <span class="d">to ingest into wiki:</span>
   <span class="wk">wiki_create_page</span>({
-    <span class="k">title</span>:    <span class="v">&lt;title&gt;</span>,
-    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-    <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
+    <span class="k">title</span>:  <span class="v">&lt;title&gt;</span>,
+    <span class="k">corpus</span>: {
+      <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+      <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
+    }
   })</div>
       </div>
     </div>
@@ -610,9 +612,11 @@ body {
       <div class="node-badge">Model Acts</div>
       <div class="node-body">Passes KV reference — full content stays in store
 <div class="codeview"><span class="wk">wiki_create_page</span>({
-  <span class="k">title</span>:    <span class="v">"Distributed Systems"</span>,
-  <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-  <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
+  <span class="k">title</span>:  <span class="v">"Distributed Systems"</span>,
+  <span class="k">corpus</span>: {
+    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+    <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
+  }
 })</div>
       </div>
     </div>
@@ -694,9 +698,11 @@ body {
 <span class="d">─ questions, concepts… ────────────────</span>
 <span class="d">to ingest into wiki:</span>
   <span class="wk">wiki_create_page</span>({
-    <span class="k">title</span>:    <span class="v">&lt;title&gt;</span>,
-    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-    <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
+    <span class="k">title</span>:  <span class="v">&lt;title&gt;</span>,
+    <span class="k">corpus</span>: {
+      <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+      <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
+    }
   })</div>
       </div>
     </div>
@@ -712,9 +718,11 @@ body {
       <div class="node-badge">Model Acts</div>
       <div class="node-body">Passes KV reference — tool auto-detects multi-file layout
 <div class="codeview"><span class="wk">wiki_create_page</span>({
-  <span class="k">title</span>:    <span class="v">"Dist. Systems Guide"</span>,
-  <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-  <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
+  <span class="k">title</span>:  <span class="v">"Dist. Systems Guide"</span>,
+  <span class="k">corpus</span>: {
+    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+    <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
+  }
 })</div>
       </div>
     </div>
@@ -881,7 +889,7 @@ body {
         </div>
         <div class="eval-field">
           <div class="eval-field-label eval-pass-label">Expected</div>
-          <div class="eval-field-body">Model calls <code>wiki_create_page({ threadId: "f50450ee-…", toolKey: "kv_7f3a9b2c" })</code> with exact verbatim values copied from the stub.</div>
+          <div class="eval-field-body">Model calls <code>wiki_create_page({ title: "…", corpus: { threadId: "f50450ee-…", toolKey: "kv_7f3a9b2c" } })</code> with exact verbatim values copied from the stub.</div>
         </div>
         <div class="eval-field">
           <div class="eval-field-label eval-fail-label">Failure</div>
