@@ -107,10 +107,7 @@ interface EmbeddingCache {
 
 const _embeddingCache = new Map<string, EmbeddingCache>();
 
-async function getCorpusEmbeddings(
-  threadId: string,
-  texts: string[],
-): Promise<number[][] | null> {
+async function getCorpusEmbeddings(threadId: string, texts: string[]): Promise<number[][] | null> {
   const provider = getEmbeddingProvider();
   if (!provider) return null;
 

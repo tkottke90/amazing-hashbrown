@@ -79,9 +79,7 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
           {message.cost?.tokensPerSecond != null && (
             <span>{message.cost.tokensPerSecond.toFixed(1)} tok/s</span>
           )}
-          {message.cost?.dollars != null && (
-            <span>${message.cost.dollars.toFixed(4)}</span>
-          )}
+          {message.cost?.dollars != null && <span>${message.cost.dollars.toFixed(4)}</span>}
         </span>
       )}
     </div>

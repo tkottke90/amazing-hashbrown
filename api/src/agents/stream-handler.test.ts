@@ -45,12 +45,14 @@ function stubAgent(interruptValue: Record<string, unknown> | null) {
   } as any;
 }
 
-function stubObsHandler(overrides: {
-  totalInputTokens?: number;
-  totalOutputTokens?: number;
-  turnDurationMs?: number;
-  lastContextWindowInputTokens?: number;
-} = {}) {
+function stubObsHandler(
+  overrides: {
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+    turnDurationMs?: number;
+    lastContextWindowInputTokens?: number;
+  } = {},
+) {
   return {
     totalInputTokens: overrides.totalInputTokens ?? 0,
     totalOutputTokens: overrides.totalOutputTokens ?? 0,
@@ -103,7 +105,12 @@ describe('agents/stream-handler', () => {
         new Date().toISOString(),
         null,
         null,
-        stubObsHandler({ totalInputTokens: 10, totalOutputTokens: 20, turnDurationMs: 2000, lastContextWindowInputTokens: 10 }),
+        stubObsHandler({
+          totalInputTokens: 10,
+          totalOutputTokens: 20,
+          turnDurationMs: 2000,
+          lastContextWindowInputTokens: 10,
+        }),
       );
       const emitted = events();
       const usageIdx = emitted.findIndex((e) => e.type === 'usage_stats');
@@ -131,7 +138,11 @@ describe('agents/stream-handler', () => {
         new Date().toISOString(),
         null,
         null,
-        stubObsHandler({ totalOutputTokens: 20, turnDurationMs: 2000, lastContextWindowInputTokens: 5 }),
+        stubObsHandler({
+          totalOutputTokens: 20,
+          turnDurationMs: 2000,
+          lastContextWindowInputTokens: 5,
+        }),
       );
       const usage = events().find((e) => e.type === 'usage_stats');
       expect(usage?.tokensPerSecond).to.equal(10); // 20 tokens / 2s = 10 tok/s
