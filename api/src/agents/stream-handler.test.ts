@@ -45,6 +45,20 @@ function stubAgent(interruptValue: Record<string, unknown> | null) {
   } as any;
 }
 
+function stubObsHandler(overrides: {
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  turnDurationMs?: number;
+  lastContextWindowInputTokens?: number;
+} = {}) {
+  return {
+    totalInputTokens: overrides.totalInputTokens ?? 0,
+    totalOutputTokens: overrides.totalOutputTokens ?? 0,
+    turnDurationMs: overrides.turnDurationMs ?? 0,
+    lastContextWindowInputTokens: overrides.lastContextWindowInputTokens ?? 0,
+  };
+}
+
 describe('agents/stream-handler', () => {
   describe('finalizeTurn', () => {
     it('emits stream_error and does not emit hitl_prompt when recordHitlPrompt throws', async () => {
@@ -69,6 +83,130 @@ describe('agents/stream-handler', () => {
       const emitted = events();
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('emits usage_stats before stream_done when obsHandler is provided', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t2', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't2',
+        'msg2',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        stubObsHandler({ totalInputTokens: 10, totalOutputTokens: 20, turnDurationMs: 2000, lastContextWindowInputTokens: 10 }),
+      );
+      const emitted = events();
+      const usageIdx = emitted.findIndex((e) => e.type === 'usage_stats');
+      const doneIdx = emitted.findIndex((e) => e.type === 'stream_done');
+      expect(usageIdx).to.be.at.least(0);
+      expect(doneIdx).to.be.at.least(0);
+      expect(usageIdx).to.be.lessThan(doneIdx);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('computes tokensPerSecond from turnDurationMs and outputTokens', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t3', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't3',
+        'msg3',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        stubObsHandler({ totalOutputTokens: 20, turnDurationMs: 2000, lastContextWindowInputTokens: 5 }),
+      );
+      const usage = events().find((e) => e.type === 'usage_stats');
+      expect(usage?.tokensPerSecond).to.equal(10); // 20 tokens / 2s = 10 tok/s
+      rmSync(dir, { recursive: true });
+    });
+
+    it('omits tokensPerSecond when turnDurationMs is 0', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t4', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't4',
+        'msg4',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        stubObsHandler({ totalOutputTokens: 20, turnDurationMs: 0 }),
+      );
+      const usage = events().find((e) => e.type === 'usage_stats');
+      expect(usage).to.not.equal(undefined);
+      expect(Object.prototype.hasOwnProperty.call(usage, 'tokensPerSecond')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('omits contextWindowTokens when lastContextWindowInputTokens is 0', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t5', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't5',
+        'msg5',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        stubObsHandler({ lastContextWindowInputTokens: 0 }),
+      );
+      const usage = events().find((e) => e.type === 'usage_stats');
+      expect(usage).to.not.equal(undefined);
+      expect(Object.prototype.hasOwnProperty.call(usage, 'contextWindowTokens')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('does not emit usage_stats when no obsHandler is provided', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t6', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't6',
+        'msg6',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      expect(events().some((e) => e.type === 'usage_stats')).to.equal(false);
       rmSync(dir, { recursive: true });
     });
   });

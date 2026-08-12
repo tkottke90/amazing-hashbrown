@@ -111,6 +111,18 @@ const WikiDomainCreatedSchema = z.object({
   wikiId: z.string(),
 });
 
+const UsageStatsSchema = z.object({
+  type: z.literal('usage_stats'),
+  messageId: z.string(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  tokensPerSecond: z.number().optional(),
+  contextWindowTokens: z.number().optional(),
+  contextWindowLimit: z.number().nullable().optional(),
+  contextUtilizationPct: z.number().optional(),
+  estimatedCostUsd: z.number().optional(),
+});
+
 export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   TextDeltaSchema,
   ThoughtDeltaSchema,
@@ -124,6 +136,7 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   WikiUpdatedSchema,
   WikiOrientedSchema,
   WikiDomainCreatedSchema,
+  UsageStatsSchema,
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;

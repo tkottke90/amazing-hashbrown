@@ -121,5 +121,79 @@ describe('agents/observability-handler', () => {
         'after-agent:classify',
       ]);
     });
+
+    it('turnDurationMs is 0 before any LLM calls', () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+      expect(handler.turnDurationMs).to.equal(0);
+    });
+
+    it('turnDurationMs is non-negative after an LLM call', async () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMEnd(llmResult, 'run-1');
+
+      expect(handler.turnDurationMs).to.be.at.least(0);
+    });
+
+    it('turnDurationMs accumulates across multiple LLM calls', async () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMEnd(llmResult, 'run-1');
+      const after1 = handler.turnDurationMs;
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-2');
+      await handler.handleLLMEnd(llmResult, 'run-2');
+      const after2 = handler.turnDurationMs;
+
+      expect(after2).to.be.at.least(after1);
+    });
+
+    it('lastContextWindowInputTokens is 0 before any LLM calls', () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+      expect(handler.lastContextWindowInputTokens).to.equal(0);
+    });
+
+    it('lastContextWindowInputTokens reflects the input tokens of the last LLM call', async () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      const resultWithUsage: LLMResult = {
+        generations: [[{ text: '', message: { tool_calls: [] } } as never]],
+        llmOutput: { usage_metadata: { input_tokens: 42, output_tokens: 10 } },
+      };
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMEnd(resultWithUsage, 'run-1');
+
+      expect(handler.lastContextWindowInputTokens).to.equal(42);
+    });
+
+    it('lastContextWindowInputTokens is overwritten by each successive LLM call', async () => {
+      const { store } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      const result1: LLMResult = {
+        generations: [[{ text: '', message: { tool_calls: [] } } as never]],
+        llmOutput: { usage_metadata: { input_tokens: 100, output_tokens: 5 } },
+      };
+      const result2: LLMResult = {
+        generations: [[{ text: '', message: { tool_calls: [] } } as never]],
+        llmOutput: { usage_metadata: { input_tokens: 200, output_tokens: 8 } },
+      };
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMEnd(result1, 'run-1');
+      expect(handler.lastContextWindowInputTokens).to.equal(100);
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-2');
+      await handler.handleLLMEnd(result2, 'run-2');
+      expect(handler.lastContextWindowInputTokens).to.equal(200);
+    });
   });
 });

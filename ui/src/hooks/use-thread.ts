@@ -357,6 +357,20 @@ function handleEvent(evt: ChatSSEEvent): void {
       // Handled by the wiki ingestion chat; no-op in the main thread context.
       break;
 
+    case 'usage_stats':
+      messages.value = messages.value.map((m) =>
+        m.kind === 'assistant' && m.id === _currentAssistantId
+          ? {
+              ...m,
+              cost: {
+                tokensPerSecond: evt.tokensPerSecond,
+                dollars: evt.estimatedCostUsd,
+              },
+            }
+          : m,
+      );
+      break;
+
     case 'stream_done':
       messages.value = messages.value.map((m) =>
         m.kind === 'assistant' && m.id === _currentAssistantId

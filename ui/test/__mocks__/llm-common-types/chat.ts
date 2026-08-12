@@ -35,6 +35,17 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('stream_done'), durationMs: z.number() }),
   z.object({ type: z.literal('stream_error'), error: z.string() }),
+  z.object({
+    type: z.literal('usage_stats'),
+    messageId: z.string(),
+    inputTokens: z.number(),
+    outputTokens: z.number(),
+    tokensPerSecond: z.number().optional(),
+    contextWindowTokens: z.number().optional(),
+    contextWindowLimit: z.number().nullable().optional(),
+    contextUtilizationPct: z.number().optional(),
+    estimatedCostUsd: z.number().optional(),
+  }),
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;
