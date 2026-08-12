@@ -193,13 +193,13 @@ body {
 /* ── Paths ── */
 .paths {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  max-width: 1020px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  max-width: 1380px;
   margin: 0 auto 36px;
   align-items: start;
 }
-@media (max-width: 700px) { .paths { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .paths { grid-template-columns: 1fr; } }
 
 .path {
   background: var(--surface);
@@ -325,7 +325,7 @@ body {
 }
 
 /* ── Section wrapper ── */
-.section { max-width: 1020px; margin: 0 auto 36px; }
+.section { max-width: 1380px; margin: 0 auto 36px; }
 .section-title {
   text-align: center;
   font-size: 10px;
@@ -335,11 +335,11 @@ body {
   color: var(--text-faint);
   margin-bottom: 14px;
 }
-.divider { max-width: 1020px; margin: 0 auto 36px; height: 1px; background: var(--border-subtle); }
+.divider { max-width: 1380px; margin: 0 auto 36px; height: 1px; background: var(--border-subtle); }
 
 /* ── Checkpoint ── */
-.cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 700px) { .cp-grid { grid-template-columns: 1fr; } }
+.cp-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .cp-grid { grid-template-columns: 1fr; } }
 
 .cp-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
 .cp-card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 9px; }
@@ -399,7 +399,7 @@ body {
 <div class="hd">
   <div class="hd-eyebrow">Context Management · Wiki Ingestion</div>
   <h1 class="hd-title">Ingesting into the Wiki</h1>
-  <p class="hd-sub">What the LLM sees and does — wiki tools accept a KV reference so the full document never passes through the context window</p>
+  <p class="hd-sub">What the LLM sees and does across three scenarios — inline for small documents, single-page or multi-file KV ingestion for large ones</p>
 </div>
 
 <div class="legend">
@@ -460,11 +460,11 @@ body {
     </div>
   </div>
 
-  <!-- ── Right: large document ── -->
+  <!-- ── Centre: large document, single page ── -->
   <div class="path">
     <div class="path-hd">
-      <span class="path-label">Large Document — Offloaded</span>
-      <span class="path-sub">&gt; 2,000 chars · KV reference ingestion</span>
+      <span class="path-label">Large Document — Single Page</span>
+      <span class="path-sub">&gt; 2,000 chars · one coherent topic</span>
     </div>
 
     <div class="node node--action">
@@ -475,27 +475,18 @@ body {
 
     <div class="node node--receive">
       <div class="node-badge">Model Receives</div>
-      <div class="node-body">Compact stub — stub includes wiki tool instructions alongside <code>rlm_query</code>
-<div class="codeview"><span class="d">── CONTENT OFFLOADED ────────────────────</span>
+      <div class="node-body">Compact stub with wiki ingestion instruction
+<div class="codeview"><span class="d">── CONTENT OFFLOADED ──────────────────</span>
 <span class="k">tool</span>:     <span class="v">web_fetch</span>
-<span class="k">source</span>:   <span class="v">https://example.com/article</span>
 <span class="k">chars</span>:    <span class="v">18,432</span>
 <span class="k">key</span>:      <span class="v">kv_7f3a9b2c</span>
 <span class="k">threadId</span>: <span class="v">f50450ee-582d-49b3-9bb2</span>
 <span class="k">type</span>:     <span class="v">technical reference</span>
 <span class="k">rlm</span>:      <span class="v">yes</span>
-<span class="d">─ summary, concepts, questions… ────────</span>
-<span class="d">to ask questions:</span>
-  <span class="rl">rlm_query</span>(<span class="v">&lt;question&gt;</span>, {<span class="k">threadId</span>, <span class="k">toolKey</span>})
-
+<span class="d">─ summary, concepts, questions… ──────</span>
 <span class="d">to ingest into wiki:</span>
   <span class="wk">wiki_create_page</span>({
     <span class="k">title</span>:    <span class="v">&lt;title&gt;</span>,
-    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
-    <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
-  })
-  <span class="wk">wiki_update_page</span>({
-    <span class="k">pageId</span>:   <span class="v">&lt;id&gt;</span>,
     <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
     <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
   })</div>
@@ -505,54 +496,52 @@ body {
 
     <div class="node node--decide">
       <div class="node-badge">Model Decides</div>
-      <div class="node-body">The user asked to save this article to the wiki. I'll call <code>wiki_create_page</code> with the KV reference — no need to load the full content.</div>
+      <div class="node-body">Single article on one topic — one wiki page is the right shape.</div>
     </div>
     <div class="conn"></div>
 
     <div class="node node--action">
       <div class="node-badge">Model Acts</div>
-      <div class="node-body">Calls wiki tool with KV reference — full content stays in the store
+      <div class="node-body">Passes KV reference — full content stays in store
 <div class="codeview"><span class="wk">wiki_create_page</span>({
   <span class="k">title</span>:    <span class="v">"Distributed Systems"</span>,
-  <span class="k">threadId</span>: <span class="v">"f50450ee-582d-49b3-9bb2"</span>,
+  <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
   <span class="k">toolKey</span>:  <span class="v">"kv_7f3a9b2c"</span>
 })</div>
       </div>
     </div>
     <div class="conn"></div>
 
-    <!-- Tool-internal box -->
     <div class="tool-internal">
       <div class="tool-internal-label">Inside the tool &nbsp;·&nbsp; invisible to model</div>
       <div class="tool-steps">
-
         <div class="tool-step">
           <div class="tool-step-num">1</div>
-          <div class="tool-step-body"><strong>Fetch from KV store</strong><br>Retrieves full 18,432-char body using <code>threadId + toolKey</code></div>
+          <div class="tool-step-body"><strong>Fetch from KV store</strong><br>Retrieves full 18,432-char body via <code>threadId + toolKey</code></div>
         </div>
-
         <div class="tool-step">
           <div class="tool-step-num">2</div>
-          <div class="tool-step-body"><strong>Text split</strong><br>Divides into manageable chunks (~2,000 chars each) using recursive character splitting, preserving paragraph and section boundaries</div>
+          <div class="tool-step-body"><strong>Structure analysis</strong><br>Scans for H1/H2 headings — finds sub-sections within one topic. No section boundary warrants a separate page.</div>
         </div>
-
         <div class="tool-step">
           <div class="tool-step-num">3</div>
-          <div class="tool-step-body"><strong>Sub-agent processes chunks</strong><br>Each chunk is formatted and transformed for wiki storage — headings normalised, links resolved, frontmatter extracted</div>
+          <div class="tool-step-body"><strong>Text split → 8 chunks</strong><br>Recursive character split (~2,300 chars each), preserving paragraph boundaries</div>
         </div>
-
         <div class="tool-step">
           <div class="tool-step-num">4</div>
-          <div class="tool-step-body"><strong>Write to wiki</strong><br>For a single-page document: one page created. For very large documents: multiple pages created with auto-generated index</div>
+          <div class="tool-step-body"><strong>Sub-agent formats chunks</strong><br>Headings normalised, links resolved, wiki frontmatter added</div>
         </div>
-
+        <div class="tool-step">
+          <div class="tool-step-num">5</div>
+          <div class="tool-step-body"><strong>Write → 1 page</strong><br>All chunks assembled into <code>/wiki/distributed-systems</code></div>
+        </div>
       </div>
     </div>
     <div class="conn"></div>
 
     <div class="node node--receive">
       <div class="node-badge">Model Receives</div>
-      <div class="node-body">Compact result — full body never entered context
+      <div class="node-body">Compact result — 18K never entered context
 <div class="codeview"><span class="k">status</span>:        <span class="v">created</span>
 <span class="k">chunks</span>:        <span class="v">8 processed</span>
 <span class="k">pages created</span>: <span class="v">1</span>
@@ -564,7 +553,114 @@ body {
 
     <div class="node node--outcome">
       <div class="node-badge">Turn Complete</div>
-      <div class="node-body">Page created. Only the stub (~800 chars) and the compact result committed to checkpoint.</div>
+      <div class="node-body">One page created. Stub + compact result in checkpoint (~920 chars total).</div>
+    </div>
+  </div>
+
+  <!-- ── Right: large document, multi-file ── -->
+  <div class="path">
+    <div class="path-hd">
+      <span class="path-label">Large Document — Multi-File</span>
+      <span class="path-sub">&gt; 2,000 chars · multiple major sections</span>
+    </div>
+
+    <div class="node node--action">
+      <div class="node-badge">Model Acts</div>
+      <div class="node-body">Calls <code>web_fetch("https://example.com/full-guide")</code></div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="node node--receive">
+      <div class="node-badge">Model Receives</div>
+      <div class="node-body">Compact stub — summary mentions distinct major sections
+<div class="codeview"><span class="d">── CONTENT OFFLOADED ──────────────────</span>
+<span class="k">tool</span>:     <span class="v">web_fetch</span>
+<span class="k">chars</span>:    <span class="v">62,840</span>
+<span class="k">key</span>:      <span class="v">kv_4c9d1a7e</span>
+<span class="k">threadId</span>: <span class="v">f50450ee-582d-49b3-9bb2</span>
+<span class="k">type</span>:     <span class="v">technical reference</span>
+<span class="k">rlm</span>:      <span class="v">yes</span>
+<span class="d">─ summary ─────────────────────────────</span>
+  Comprehensive guide across 3 major topics:
+  CAP theorem fundamentals, consensus protocols
+  (Paxos, Raft), and migration case studies.
+  Each section stands independently.
+<span class="d">─ questions, concepts… ────────────────</span>
+<span class="d">to ingest into wiki:</span>
+  <span class="wk">wiki_create_page</span>({
+    <span class="k">title</span>:    <span class="v">&lt;title&gt;</span>,
+    <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+    <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>
+  })</div>
+      </div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="node node--decide">
+      <div class="node-badge">Model Decides</div>
+      <div class="node-body">Summary describes 3 independently-standing sections. A multi-page structure will be more navigable — I'll pass <code>layout: "multi"</code> to make it explicit.</div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="node node--action">
+      <div class="node-badge">Model Acts</div>
+      <div class="node-body">Passes KV reference with layout hint
+<div class="codeview"><span class="wk">wiki_create_page</span>({
+  <span class="k">title</span>:    <span class="v">"Dist. Systems Guide"</span>,
+  <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+  <span class="k">toolKey</span>:  <span class="v">"kv_4c9d1a7e"</span>,
+  <span class="k">layout</span>:   <span class="v">"multi"</span>
+})</div>
+      </div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="tool-internal">
+      <div class="tool-internal-label">Inside the tool &nbsp;·&nbsp; invisible to model</div>
+      <div class="tool-steps">
+        <div class="tool-step">
+          <div class="tool-step-num">1</div>
+          <div class="tool-step-body"><strong>Fetch from KV store</strong><br>Retrieves full 62,840-char body via <code>threadId + toolKey</code></div>
+        </div>
+        <div class="tool-step">
+          <div class="tool-step-num">2</div>
+          <div class="tool-step-body"><strong>Structure analysis</strong><br>Scans H1/H2 headings — 3 distinct top-level sections identified. Each section treated as an independent page boundary.</div>
+        </div>
+        <div class="tool-step">
+          <div class="tool-step-num">3</div>
+          <div class="tool-step-body"><strong>Text split per section → 24 chunks</strong><br>Each section split independently (~2,100 chars each), preserving intra-section paragraph flow</div>
+        </div>
+        <div class="tool-step">
+          <div class="tool-step-num">4</div>
+          <div class="tool-step-body"><strong>Sub-agent formats each section</strong><br>Processes sections in parallel — headings, links, cross-section references resolved</div>
+        </div>
+        <div class="tool-step">
+          <div class="tool-step-num">5</div>
+          <div class="tool-step-body"><strong>Write → 3 content pages + index</strong><br>Index page auto-generated with section summaries and links. All 4 pages written atomically.</div>
+        </div>
+      </div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="node node--receive">
+      <div class="node-badge">Model Receives</div>
+      <div class="node-body">Compact result — 62K never entered context
+<div class="codeview"><span class="k">status</span>:        <span class="v">created</span>
+<span class="k">sections</span>:      <span class="v">3 detected</span>
+<span class="k">chunks</span>:        <span class="v">24 processed</span>
+<span class="k">pages created</span>: <span class="v">4</span>
+<span class="k">index</span>:         <span class="v">/wiki/dist-systems/</span>
+<span class="k">pages</span>:
+  <span class="v">/wiki/dist-systems/cap-theorem</span>
+  <span class="v">/wiki/dist-systems/consensus</span>
+  <span class="v">/wiki/dist-systems/case-studies</span></div>
+      </div>
+    </div>
+    <div class="conn"></div>
+
+    <div class="node node--outcome">
+      <div class="node-badge">Turn Complete</div>
+      <div class="node-body">Four pages created (3 content + index). Stub + compact result in checkpoint (~1,100 chars total).</div>
     </div>
   </div>
 
@@ -575,14 +671,19 @@ body {
   <div class="section-title">Checkpoint footprint after turn</div>
   <div class="cp-grid">
     <div class="cp-card cp-card--heavy">
-      <div class="cp-card-label">Inline path</div>
+      <div class="cp-card-label">Inline path (small doc)</div>
       <div class="cp-bar-track"><div class="cp-bar"></div></div>
-      <div class="cp-stat">~18,432 chars (full content passed to wiki tool) + tool result · accumulates across turns</div>
+      <div class="cp-stat">~1,240 chars (full content in context) + result · manageable for small docs, untenable for large ones</div>
     </div>
     <div class="cp-card cp-card--light">
-      <div class="cp-card-label">KV reference path</div>
-      <div class="cp-bar-track"><div class="cp-bar"></div></div>
-      <div class="cp-stat">~800 chars stub + ~120 chars result · full content processed inside the tool, never in checkpoint</div>
+      <div class="cp-card-label">KV path — single page</div>
+      <div class="cp-bar-track"><div class="cp-bar" style="width:7%"></div></div>
+      <div class="cp-stat">~800 chars stub + ~160 chars result · 18,432-char body processed inside tool, never in checkpoint</div>
+    </div>
+    <div class="cp-card cp-card--light">
+      <div class="cp-card-label">KV path — multi-file</div>
+      <div class="cp-bar-track"><div class="cp-bar" style="width:5%"></div></div>
+      <div class="cp-stat">~800 chars stub + ~280 chars result (4 paths listed) · 62,840-char body processed inside tool, never in checkpoint</div>
     </div>
   </div>
 </div>
@@ -617,17 +718,19 @@ body {
   <span class="k">title</span>:    <span class="v">z.string()</span>,
   <span class="k">corpus</span>:   <span class="v">z.union</span>([
     <span class="d">// inline (small documents)</span>
-    <span class="v">z.object</span>({
-      <span class="k">raw</span>: <span class="v">z.string()</span>
-    }),
+    <span class="v">z.object</span>({ <span class="k">raw</span>: <span class="v">z.string()</span> }),
     <span class="d">// KV reference (large documents)</span>
     <span class="v">z.object</span>({
       <span class="k">threadId</span>: <span class="v">z.string()</span>,
       <span class="k">toolKey</span>:  <span class="v">z.string()</span>
     })
-  ])
+  ]),
+  <span class="k">layout</span>: <span class="v">z.enum</span>([<span class="v">'single'</span>, <span class="v">'multi'</span>])
+    .<span class="v">optional()</span>
+    <span class="d">// omit to auto-detect from document</span>
+    <span class="d">// structure (H1/H2 section count)</span>
 })</div>
-        <div class="iface-note">When <code>threadId + toolKey</code> is supplied the tool fetches, splits, and processes content internally. The model only receives the compact result — full body never enters the context window.</div>
+        <div class="iface-note">When <code>threadId + toolKey</code> is supplied the tool fetches, splits, and processes content internally. <code>layout</code> can be set explicitly by the model (informed by the stub summary) or omitted to let the tool auto-detect based on H1/H2 section count. The model only receives the compact result — full body never enters the context window.</div>
       </div>
     </div>
 
