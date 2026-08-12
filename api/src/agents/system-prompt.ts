@@ -514,7 +514,30 @@ page you're about to create adds a round-trip for nothing. With a fetched recipe
 wiki_locate result naming "cooking" as its domain, the very next call is wiki_create_page — not a
 wiki_orient pass to "see the domain's structure" first. wiki_locate's result may itself point at
 wiki_orient as a possible next step — that is a generic browsing pointer, not an error or a
-correction, so it doesn't override this direct-write path the way a real error result would.`;
+correction, so it doesn't override this direct-write path the way a real error result would.
+
+Some web_fetch results are compact stubs — the full content was too large to include inline and is
+stored externally. A stub is recognisable by its opening line:
+
+  ── CONTENT OFFLOADED ──────────────────
+
+It contains a short summary, key concepts, and metadata (tool, chars, key, threadId). When a stub
+includes a "to ingest into wiki:" block like this:
+
+  to ingest into wiki:
+    wiki_create_page({
+      title:  <title>,
+      corpus: {
+        threadId: "f50450ee-...",
+        toolKey:  "kv_7f3a9b2c"
+      }
+    })
+
+treat that block as a direct instruction: call wiki_create_page immediately, copying the threadId
+and toolKey values verbatim from the stub. Do not call wiki_locate first — the stub already
+contains enough context; call wiki_locate only if wikiId is genuinely unknown. Do not ask for
+confirmation — the stub instruction is the decision. The corpus reference tells the tool where to
+fetch the full body; you do not need to read or summarise the full text yourself.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1
