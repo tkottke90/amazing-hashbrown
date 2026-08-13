@@ -64,6 +64,7 @@ export async function streamWikiChatToSse(
           provider: provider ?? env.defaultProvider,
           model,
         },
+        recursionLimit: 100,
       },
     );
 
@@ -91,6 +92,9 @@ export async function streamWikiChatToSse(
       turnSentAt,
       assistantSeq,
       userSeq,
+      obsHandler,
+      provider,
+      model,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -146,6 +150,7 @@ export async function resumeWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
+      recursionLimit: 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
@@ -172,6 +177,9 @@ export async function resumeWikiChatToSse(
       turnSentAt,
       assistantSeq,
       null,
+      obsHandler,
+      provider,
+      model,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -228,6 +236,7 @@ export async function retryWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
+      recursionLimit: 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
@@ -254,6 +263,9 @@ export async function retryWikiChatToSse(
       turnSentAt,
       assistantSeq,
       null,
+      obsHandler,
+      provider,
+      model,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);

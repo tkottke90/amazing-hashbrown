@@ -29,6 +29,8 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
 
   totalInputTokens = 0;
   totalOutputTokens = 0;
+  turnDurationMs = 0;
+  lastContextWindowInputTokens = 0;
 
   constructor(
     private readonly traceId: string,
@@ -89,6 +91,8 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
 
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
+    this.turnDurationMs += new Date(endedAt).getTime() - new Date(span.startedAt!).getTime();
+    this.lastContextWindowInputTokens = inputTokens;
 
     const toolCalls =
       (firstGen as { message?: { tool_calls?: unknown[] } } | undefined)?.message?.tool_calls ?? [];

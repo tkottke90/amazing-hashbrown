@@ -24,6 +24,7 @@ export type ThreadMessage =
       thoughtContent?: string;
       sentAt: Date;
       durationMs?: number;
+      cost?: { tokensPerSecond?: number; dollars?: number };
       seq?: number;
     }
   | {

@@ -206,6 +206,14 @@ export async function finalizeTurn(
   turnSentAt: string,
   assistantSeq: number | null,
   userSeq: number | null,
+  obsHandler?: {
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    turnDurationMs: number;
+    lastContextWindowInputTokens: number;
+  },
+  effectiveProvider?: string,
+  effectiveModel?: string,
 ): Promise<void> {
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.graph.getState(config);
@@ -220,6 +228,43 @@ export async function finalizeTurn(
     turnSentAt,
     checkpointId,
   );
+
+  if (obsHandler) {
+    const inputTokens = obsHandler.totalInputTokens;
+    const outputTokens = obsHandler.totalOutputTokens;
+    const durationMs = obsHandler.turnDurationMs;
+    const tps =
+      durationMs > 0 ? Math.round((outputTokens / (durationMs / 1000)) * 100) / 100 : undefined;
+    const contextWindowLimit = env.chat.contextWindow?.maxTokens ?? 32000;
+    const cwTokens =
+      obsHandler.lastContextWindowInputTokens > 0
+        ? obsHandler.lastContextWindowInputTokens
+        : undefined;
+    const cwPct =
+      cwTokens !== undefined
+        ? Math.round((cwTokens / contextWindowLimit) * 10000) / 100
+        : undefined;
+
+    const providerKey =
+      effectiveProvider && effectiveModel ? `${effectiveProvider}/${effectiveModel}` : null;
+    const rates = providerKey ? env.costs[providerKey] : undefined;
+    const estimatedCostUsd = rates
+      ? (inputTokens / 1000) * rates.inputPer1kTokens +
+        (outputTokens / 1000) * rates.outputPer1kTokens
+      : undefined;
+
+    writeSseEvent(res, {
+      type: 'usage_stats',
+      messageId: msgId,
+      inputTokens,
+      outputTokens,
+      ...(tps !== undefined ? { tokensPerSecond: tps } : {}),
+      ...(cwTokens !== undefined ? { contextWindowTokens: cwTokens } : {}),
+      contextWindowLimit,
+      ...(cwPct !== undefined ? { contextUtilizationPct: cwPct } : {}),
+      ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
+    });
+  }
 
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
@@ -429,6 +474,9 @@ export async function streamChatToSse(
       turnSentAt,
       assistantSeq,
       userSeq,
+      obsHandler,
+      effectiveProvider,
+      effectiveModel,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -540,6 +588,9 @@ export async function resumeChatToSse(
       turnSentAt,
       assistantSeq,
       null,
+      obsHandler,
+      effectiveProvider,
+      effectiveModel,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -650,6 +701,9 @@ export async function retryChatToSse(
       turnSentAt,
       assistantSeq,
       null,
+      obsHandler,
+      effectiveProvider,
+      effectiveModel,
     );
   } catch (err) {
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);

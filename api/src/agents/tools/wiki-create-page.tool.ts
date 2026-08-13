@@ -3,13 +3,23 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
+import { getToolContent } from '../../services/tool-content-store.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
     .string()
     .describe('Wiki domain ID to create the page in, from wiki_locate or wiki_search.'),
   title: z.string().describe('Page title.'),
-  content: z.string().describe('Page body as markdown (no frontmatter).'),
+  corpus: z
+    .union([
+      z.object({ raw: z.string() }).describe('Inline markdown body (no frontmatter).'),
+      z
+        .object({ threadId: z.string(), toolKey: z.string() })
+        .describe(
+          'KV reference from a compact stub — copy threadId and toolKey verbatim from the stub.',
+        ),
+    ])
+    .describe('Page content, either inline or as a KV reference from a compact stub.'),
   section: z
     .enum(['entity', 'concept', 'comparison', 'query', 'summary'])
     .describe(
@@ -39,13 +49,28 @@ const WikiCreatePageSchema = z.object({
 
 export const wikiCreatePageTool = tool(
   async (
-    { wikiId, title, content, section, tags, confidence, contested, contradictions, dryRun, force },
+    { wikiId, title, corpus, section, tags, confidence, contested, contradictions, dryRun, force },
     config,
   ) => {
+    let body: string;
+    if ('raw' in corpus) {
+      body = matter(corpus.raw).content;
+    } else {
+      const stored = getToolContent(corpus.threadId, corpus.toolKey);
+      if (!stored) {
+        return (
+          `[KV content not found — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. ` +
+          `The content may have expired or belong to a different process. ` +
+          `Re-fetch with web_fetch and call wiki_create_page again with corpus.raw.]`
+        );
+      }
+      body = matter(stored).content;
+    }
+
     const result = await createWikiPage({
       wikiId,
       title,
-      content: matter(content).content,
+      content: body,
       section,
       tags,
       confidence,

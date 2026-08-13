@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Context View</title>
+    <style>
+      :root {
+        --bg: #edf0fa;
+        --surface: #f6f8ff;
+        --card: #ffffff;
+        --border: #cdd5ed;
+        --border-subtle: #e2e7f5;
+        --text: #18203c;
+        --text-muted: #5a6a96;
+        --text-faint: #9aabcc;
+
+        --action: #b85f14;
+        --action-bg: #fff5eb;
+        --action-border: #f0a060;
+        --perception: #147f9a;
+        --perception-bg: #e8f6fa;
+        --perception-border: #5cbcd4;
+        --decision: #6038b8;
+        --decision-bg: #f0ecfc;
+        --decision-border: #a080e0;
+        --outcome: #187050;
+        --outcome-bg: #e8f7f0;
+        --outcome-border: #50c090;
+        --warning: #8b4a00;
+        --warning-bg: #fff4e0;
+        --warning-border: #e0a040;
+
+        --code-bg: #e8ecf8;
+        --code-border: #ced6ee;
+        --stub-key: #6038b8;
+        --stub-val: #147f9a;
+        --stub-dim: #8a9abb;
+        --stub-rlm: #b85f14;
+        --stub-section: #187050;
+
+        --connector: #c0ccdf;
+        --checkpoint-heavy: #b83030;
+        --checkpoint-light: #187050;
+
+        --badge-auto: #147f9a;
+        --badge-auto-bg: #e0f4f8;
+        --badge-gen: #6038b8;
+        --badge-gen-bg: #ede8fc;
+
+        --rlm-mode-1: #147f9a;
+        --rlm-mode-2: #6038b8;
+        --rlm-mode-3: #187050;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #0c0f1a;
+          --surface: #10141f;
+          --card: #161c2d;
+          --border: #272f4d;
+          --border-subtle: #1b2038;
+          --text: #c5d2f0;
+          --text-muted: #6272a0;
+          --text-faint: #38466a;
+
+          --action: #e88840;
+          --action-bg: #1a1008;
+          --action-border: #7a4018;
+          --perception: #38c0d8;
+          --perception-bg: #071318;
+          --perception-border: #1a5868;
+          --decision: #a87af8;
+          --decision-bg: #120e22;
+          --decision-border: #4a307a;
+          --outcome: #44cc88;
+          --outcome-bg: #07150e;
+          --outcome-border: #1a5e38;
+          --warning: #e0a040;
+          --warning-bg: #18110a;
+          --warning-border: #7a5010;
+
+          --code-bg: #080c18;
+          --code-border: #1e2540;
+          --stub-key: #a87af8;
+          --stub-val: #38c0d8;
+          --stub-dim: #3d4f70;
+          --stub-rlm: #e88840;
+          --stub-section: #44cc88;
+
+          --connector: #252f50;
+          --checkpoint-heavy: #d04040;
+          --checkpoint-light: #44cc88;
+
+          --badge-auto: #38c0d8;
+          --badge-auto-bg: #071318;
+          --badge-gen: #a87af8;
+          --badge-gen-bg: #120e22;
+
+          --rlm-mode-1: #38c0d8;
+          --rlm-mode-2: #a87af8;
+          --rlm-mode-3: #44cc88;
+        }
+      }
+
+      :root[data-theme='dark'] {
+        --bg: #0c0f1a;
+        --surface: #10141f;
+        --card: #161c2d;
+        --border: #272f4d;
+        --border-subtle: #1b2038;
+        --text: #c5d2f0;
+        --text-muted: #6272a0;
+        --text-faint: #38466a;
+
+        --action: #e88840;
+        --action-bg: #1a1008;
+        --action-border: #7a4018;
+        --perception: #38c0d8;
+        --perception-bg: #071318;
+        --perception-border: #1a5868;
+        --decision: #a87af8;
+        --decision-bg: #120e22;
+        --decision-border: #4a307a;
+        --outcome: #44cc88;
+        --outcome-bg: #07150e;
+        --outcome-border: #1a5e38;
+        --warning: #e0a040;
+        --warning-bg: #18110a;
+        --warning-border: #7a5010;
+
+        --code-bg: #080c18;
+        --code-border: #1e2540;
+        --stub-key: #a87af8;
+        --stub-val: #38c0d8;
+        --stub-dim: #3d4f70;
+        --stub-rlm: #e88840;
+        --stub-section: #44cc88;
+
+        --connector: #252f50;
+        --checkpoint-heavy: #d04040;
+        --checkpoint-light: #44cc88;
+
+        --badge-auto: #38c0d8;
+        --badge-auto-bg: #071318;
+        --badge-gen: #a87af8;
+        --badge-gen-bg: #120e22;
+
+        --rlm-mode-1: #38c0d8;
+        --rlm-mode-2: #a87af8;
+        --rlm-mode-3: #44cc88;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        padding: 44px 24px 64px;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      .hd {
+        text-align: center;
+        margin-bottom: 36px;
+      }
+      .hd-eyebrow {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 10px;
+      }
+      .hd-title {
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text);
+        text-wrap: balance;
+        margin-bottom: 10px;
+        letter-spacing: -0.02em;
+      }
+      .hd-sub {
+        font-size: 14px;
+        color: var(--text-muted);
+        max-width: 540px;
+        margin: 0 auto;
+        text-wrap: balance;
+      }
+
+      /* ── Legend ── */
+      .legend {
+        display: flex;
+        justify-content: center;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-bottom: 36px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+      .legend-pip {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .pip-action {
+        background: var(--action);
+      }
+      .pip-receive {
+        background: var(--perception);
+      }
+      .pip-decide {
+        background: var(--decision);
+      }
+      .pip-outcome {
+        background: var(--outcome);
+      }
+      .pip-warn {
+        background: var(--warning);
+      }
+
+      /* ── Paths grid ── */
+      .paths {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        max-width: 1020px;
+        margin: 0 auto 36px;
+        align-items: start;
+      }
+      @media (max-width: 700px) {
+        .paths {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ── Path ── */
+      .path {
+        background: var(--surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: 14px;
+        padding: 22px 18px;
+        display: flex;
+        flex-direction: column;
+      }
+      .path-hd {
+        text-align: center;
+        padding-bottom: 16px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .path-label {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 3px;
+      }
+      .path-sub {
+        font-size: 11px;
+        color: var(--text-faint);
+        font-family: 'SF Mono', 'Consolas', monospace;
+        letter-spacing: 0.04em;
+      }
+
+      /* ── Nodes ── */
+      .node {
+        border-radius: 9px;
+        border-width: 1px;
+        border-style: solid;
+        padding: 10px 12px;
+      }
+      .node-badge {
+        font-size: 9.5px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .node-body {
+        font-size: 12.5px;
+        color: var(--text);
+        line-height: 1.45;
+      }
+      .node-body code {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10.5px;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+      .node--action {
+        background: var(--action-bg);
+        border-color: var(--action-border);
+      }
+      .node--action .node-badge {
+        color: var(--action);
+      }
+      .node--receive {
+        background: var(--perception-bg);
+        border-color: var(--perception-border);
+      }
+      .node--receive .node-badge {
+        color: var(--perception);
+      }
+      .node--decide {
+        background: var(--decision-bg);
+        border-color: var(--decision-border);
+      }
+      .node--decide .node-badge {
+        color: var(--decision);
+      }
+      .node--outcome {
+        background: var(--outcome-bg);
+        border-color: var(--outcome-border);
+      }
+      .node--outcome .node-badge {
+        color: var(--outcome);
+      }
+
+      /* ── Connector ── */
+      .conn {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        height: 22px;
+        position: relative;
+      }
+      .conn::before {
+        content: '';
+        display: block;
+        width: 2px;
+        height: 100%;
+        background: var(--connector);
+      }
+      .conn::after {
+        content: '';
+        position: absolute;
+        bottom: -1px;
+        left: calc(50% - 5px);
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 7px solid var(--connector);
+      }
+
+      /* ── Code / stub view ── */
+      .codeview {
+        margin-top: 9px;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 7px;
+        padding: 10px 12px;
+        font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+        font-size: 10.5px;
+        line-height: 1.65;
+        white-space: pre;
+        overflow-x: auto;
+        color: var(--text);
+      }
+      .k {
+        color: var(--stub-key);
+        font-weight: 600;
+      }
+      .v {
+        color: var(--stub-val);
+      }
+      .d {
+        color: var(--stub-dim);
+      }
+      .rl {
+        color: var(--stub-rlm);
+        font-weight: 600;
+      }
+      .sc {
+        color: var(--stub-section);
+        font-weight: 600;
+      }
+
+      /* ── Fork ── */
+      .fork-row {
+        display: flex;
+        gap: 10px;
+      }
+      .fork-branch {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .fork-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        text-align: center;
+        padding: 4px 0;
+      }
+
+      /* ── Gotcha ── */
+      .gotcha {
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+        background: var(--warning-bg);
+        border: 1px solid var(--warning-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-top: 10px;
+      }
+      .gotcha-icon {
+        font-size: 13px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .gotcha-text {
+        font-size: 11.5px;
+        color: var(--warning);
+        line-height: 1.4;
+      }
+
+      /* ── Shared section wrapper ── */
+      .section {
+        max-width: 1020px;
+        margin: 0 auto 36px;
+      }
+      .section-title {
+        text-align: center;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 14px;
+      }
+      .divider {
+        max-width: 1020px;
+        margin: 0 auto 36px;
+        height: 1px;
+        background: var(--border-subtle);
+      }
+
+      /* ── Checkpoint ── */
+      .cp-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 700px) {
+        .cp-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .cp-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .cp-card-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 9px;
+      }
+      .cp-bar-track {
+        height: 7px;
+        background: var(--border-subtle);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 7px;
+      }
+      .cp-bar {
+        height: 100%;
+        border-radius: 4px;
+      }
+      .cp-stat {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+      .cp-card--heavy .cp-card-label {
+        color: var(--checkpoint-heavy);
+      }
+      .cp-card--heavy .cp-bar {
+        background: var(--checkpoint-heavy);
+        width: 88%;
+      }
+      .cp-card--light .cp-card-label {
+        color: var(--checkpoint-light);
+      }
+      .cp-card--light .cp-bar {
+        background: var(--checkpoint-light);
+        width: 8%;
+      }
+
+      /* ── Stub Format Reference ── */
+      .stub-ref-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: start;
+      }
+      @media (max-width: 700px) {
+        .stub-ref-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .stub-ref-example {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .stub-ref-example-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 10px;
+      }
+      .stub-ref-example .codeview {
+        margin-top: 0;
+        font-size: 10px;
+        line-height: 1.7;
+      }
+
+      .stub-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .stub-field {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 10px 13px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 12px;
+        align-items: start;
+      }
+      .stub-field-top {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .stub-field-name {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--stub-key);
+      }
+      .stub-field-badge {
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 3px;
+      }
+      .badge-auto {
+        background: var(--badge-auto-bg);
+        color: var(--badge-auto);
+      }
+      .badge-gen {
+        background: var(--badge-gen-bg);
+        color: var(--badge-gen);
+      }
+      .stub-field-desc {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.45;
+      }
+
+      /* ── RLM Modes ── */
+      .rlm-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 700px) {
+        .rlm-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .rlm-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .rlm-card-hd {
+        padding: 11px 14px 10px;
+        border-bottom: 1px solid var(--border-subtle);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .rlm-mode-num {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: white;
+      }
+      .rlm-card-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .rlm-card-body {
+        padding: 10px 14px;
+      }
+      .rlm-card-desc {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-bottom: 9px;
+        line-height: 1.4;
+      }
+      .rlm-card .codeview {
+        margin-top: 0;
+        font-size: 10px;
+      }
+
+      .rlm-card--1 .rlm-mode-num {
+        background: var(--rlm-mode-1);
+      }
+      .rlm-card--2 .rlm-mode-num {
+        background: var(--rlm-mode-2);
+      }
+      .rlm-card--3 .rlm-mode-num {
+        background: var(--rlm-mode-3);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ═══════════════ HEADER ═══════════════ -->
+    <div class="hd">
+      <div class="hd-eyebrow">Context Management · LLM Perspective</div>
+      <h1 class="hd-title">The Model's Experience</h1>
+      <p class="hd-sub">
+        What the LLM perceives and decides — middleware operates silently behind the tool response
+        boundary, full content never enters the context window
+      </p>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-pip pip-action"></div>
+        Model acts
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-receive"></div>
+        Model receives
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-decide"></div>
+        Model decides
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-outcome"></div>
+        Turn complete
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-warn"></div>
+        Limitation
+      </div>
+    </div>
+
+    <!-- ═══════════════ FLOW PATHS ═══════════════ -->
+    <div class="paths">
+      <!-- Left: small response -->
+      <div class="path">
+        <div class="path-hd">
+          <span class="path-label">Small Response</span>
+          <span class="path-sub">≤ 2,000 chars · no offloading</span>
+        </div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">Calls <code>web_fetch("https://example.com/short")</code></div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Full response body returned inline
+            <div class="codeview">
+              <span class="d">HTTP 200 — 1,240 chars </span>The article covers three async patterns:
+              1. Promise chaining vs. async/await 2. Cancellation with AbortController 3. Error
+              propagation strategies... <span class="d">[full content follows]</span>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--outcome">
+          <div class="node-badge">Turn Complete</div>
+          <div class="node-body">
+            Responds using inline content. Full body committed to checkpoint.
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: large response, offloaded -->
+      <div class="path">
+        <div class="path-hd">
+          <span class="path-label">Large Response — Offloaded</span>
+          <span class="path-sub">&gt; 2,000 chars · compact stub + RLM</span>
+        </div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">Calls <code>web_fetch("https://example.com/article")</code></div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact stub — full body stored in K/V store by middleware
+            <div class="codeview">
+              <span class="d">── CONTENT OFFLOADED ──────────────────────</span>
+              <span class="k">tool</span>: <span class="v">web_fetch</span>
+              <span class="k">source</span>: <span class="v">https://example.com/article</span>
+              <span class="k">chars</span>: <span class="v">18,432</span>
+              <span class="k">key</span>: <span class="v">kv_7f3a9b2c</span>
+              <span class="k">threadId</span>: <span class="v">f50450ee-582d-49b3-9bb2</span>
+              <span class="k">type</span>: <span class="v">technical reference</span>
+              <span class="k">rlm</span>: <span class="v">yes</span>
+              <span class="d">───────────────────────────────────────────</span>
+              <span class="sc">summary</span>: This technical reference examines distributed systems
+              design with a focus on data consistency tradeoffs. It explains the CAP theorem in
+              depth, contrasting CP systems (HBase, Zookeeper) with AP systems (Cassandra, CouchDB).
+              The author argues eventual consistency is appropriate for most user-facing workloads
+              and walks through three real-world migration case studies at scale.
+              <span class="d">───────────────────────────────────────────</span>
+              <span class="sc">key concepts</span>: - CAP theorem (Consistency, Availability,
+              Partition Tolerance) - Eventual consistency vs. strong consistency - Paxos and Raft
+              consensus protocols - Two-phase commit (2PC) - Conflict-free Replicated Data Types
+              (CRDTs)
+              <span class="d">───────────────────────────────────────────</span>
+              <span class="sc">entities</span>: - Leslie Lamport (Paxos author) - Eric Brewer (CAP
+              theorem) - Apache Cassandra, HBase, CouchDB, Zookeeper - Amazon DynamoDB
+              <span class="d">───────────────────────────────────────────</span>
+              <span class="sc">questions answered</span>: - What tradeoffs does the CAP theorem
+              describe? - When should a system choose AP over CP consistency? - How do Paxos and
+              Raft differ in leader election? - What are CRDTs and when do they avoid coordination?
+              - How did the case study companies migrate to eventual consistency without downtime?
+              <span class="d">───────────────────────────────────────────</span>
+              <span class="d">to ask questions about this content:</span>
+              <span class="rl">rlm_query</span>(<span class="v">&lt;question&gt;</span>, {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-582d-49b3-9bb2"</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--decide">
+          <div class="node-badge">Model Decides</div>
+          <div class="node-body">What do I need from this content?</div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="fork-row">
+          <div class="fork-branch">
+            <div class="fork-label">↙ Summary enough</div>
+            <div class="node node--outcome">
+              <div class="node-badge">Turn Complete</div>
+              <div class="node-body">Proceeds with summary context. Stub only in checkpoint.</div>
+            </div>
+          </div>
+          <div class="fork-branch">
+            <div class="fork-label">Discrete question ↘</div>
+            <div class="node node--action">
+              <div class="node-badge">Model Acts</div>
+              <div class="node-body">
+                Calls <code>rlm_query</code> — content fetched server-side, never touches context
+                window
+                <div class="codeview">
+                  <span class="rl">rlm_query</span>(<span class="v"
+                    >"How do Paxos and Raft differ in leader election?"</span
+                  >, { <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+                  <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> })
+                </div>
+              </div>
+            </div>
+            <div class="conn"></div>
+            <div class="node node--receive">
+              <div class="node-badge">Model Receives</div>
+              <div class="node-body">
+                Compact RLM answer — 18K never entered context
+                <div class="codeview">
+                  <span class="d"
+                    >Raft uses a randomized election timeout; the first node to time out becomes
+                    candidate. Paxos separates the leader election phase (Phase 1) from the value
+                    proposal phase (Phase 2), making it more complex to implement but more flexible
+                    under partial failure...</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="conn"></div>
+            <div class="node node--outcome">
+              <div class="node-badge">Turn Complete</div>
+              <div class="node-body">
+                Responds with targeted answer. Stub + RLM answer in checkpoint.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gotcha">
+          <div class="gotcha-icon">⚠</div>
+          <div class="gotcha-text">
+            <strong>Limitation — full ingestion:</strong> When the task requires consuming the
+            entire body (e.g. writing the article content to the wiki), RLM's Q&amp;A interface
+            doesn't fit. The content must pass through context. This is the primary unresolved case.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ CHECKPOINT ═══════════════ -->
+    <div class="section">
+      <div class="section-title">Checkpoint footprint after turn</div>
+      <div class="cp-grid">
+        <div class="cp-card cp-card--heavy">
+          <div class="cp-card-label">Inline path</div>
+          <div class="cp-bar-track"><div class="cp-bar"></div></div>
+          <div class="cp-stat">~18,432 chars · grows with every large fetch across turns</div>
+        </div>
+        <div class="cp-card cp-card--light">
+          <div class="cp-card-label">Offloaded path (RLM)</div>
+          <div class="cp-bar-track"><div class="cp-bar"></div></div>
+          <div class="cp-stat">
+            ~800 chars stub + ~400 chars RLM answer · full content never stored in checkpoint
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ═══════════════ STUB FORMAT REFERENCE ═══════════════ -->
+    <div class="section">
+      <div class="section-title">Compact Stub Format Reference</div>
+      <div class="stub-ref-grid">
+        <!-- Field-by-field reference -->
+        <div class="stub-fields">
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">tool / source / chars</span>
+              <span class="stub-field-badge badge-auto">Auto</span>
+            </div>
+            <div class="stub-field-desc">
+              YAML-style frontmatter populated by the interceptor from the tool call metadata.
+              <code>tool</code> is the tool name, <code>source</code> is the URL or resource
+              identifier, <code>chars</code> is the character count of the original response before
+              offloading.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">key / threadId</span>
+              <span class="stub-field-badge badge-auto">Auto</span>
+            </div>
+            <div class="stub-field-desc">
+              <code>key</code> is the K/V store lookup address (UUID-derived, prefixed
+              <code>kv_</code>) written at intercept time. <code>threadId</code> is the current
+              thread identifier — together they form the fully-qualified address for
+              <code>rlm_query</code> mode 3.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">type / rlm</span>
+              <span class="stub-field-badge badge-gen">Generated</span>
+            </div>
+            <div class="stub-field-desc">
+              <code>type</code> classifies the content's format and genre:
+              <em>technical reference</em>, <em>tutorial</em>, <em>news article</em>,
+              <em>API response</em>, <em>data export</em>, <em>code file</em>, etc.
+              <code>rlm</code> is a yes/no flag — <strong>no</strong> when the content is non-prose
+              (JSON, CSV, diff, raw data) where RLM chunking and embedding will not produce
+              meaningful answers. Both live in the frontmatter so the model reads them before
+              processing any generated content sections.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">summary</span>
+              <span class="stub-field-badge badge-gen">Generated</span>
+            </div>
+            <div class="stub-field-desc">
+              3–5 sentence abstract produced by a fast model (Haiku-class) at intercept time. Must
+              convey the document's scope, key conclusions, and anything structurally notable.
+              Written as an abstract, not a blurb — generic phrases like "explores the topic of…"
+              are disqualifying. This is the model's primary signal for deciding whether to query at
+              all.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">key concepts</span>
+              <span class="stub-field-badge badge-gen">Generated</span>
+            </div>
+            <div class="stub-field-desc">
+              Named, specific concepts the document covers: algorithms, frameworks, standards,
+              technical terms. Generic category nouns (e.g. "systems", "design") are disqualifying —
+              each entry must be specific enough that a question could be formulated against it.
+              Typically 4–7 items.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">entities</span>
+              <span class="stub-field-badge badge-gen">Generated</span>
+            </div>
+            <div class="stub-field-desc">
+              Strict named entities only: people, organizations, products, standards bodies, RFC
+              numbers. Generic nouns do not qualify. Omitted entirely if the document has no
+              meaningful named entities — an empty list is worse than no field.
+            </div>
+          </div>
+
+          <div class="stub-field">
+            <div class="stub-field-top">
+              <span class="stub-field-name">questions answered</span>
+              <span class="stub-field-badge badge-gen">Generated</span>
+            </div>
+            <div class="stub-field-desc">
+              3–5 specific, answerable questions the document actually addresses — generated by the
+              metadata model, not templated. This is the most important field: it lets the model
+              identify whether its task overlaps with the document's Q&amp;A surface and formulate a
+              precise <code>rlm_query</code> call without having read the content. Vague questions
+              ("what does this cover?") are disqualifying.
+            </div>
+          </div>
+        </div>
+
+        <!-- Full stub example -->
+        <div class="stub-ref-example">
+          <div class="stub-ref-example-label">Complete stub example</div>
+          <div class="codeview">
+            <span class="d">── CONTENT OFFLOADED ──────────────────────</span>
+            <span class="k">tool</span>: <span class="v">web_fetch</span>
+            <span class="k">source</span>: <span class="v">https://example.com/article</span>
+            <span class="k">chars</span>: <span class="v">18,432</span> <span class="k">key</span>:
+            <span class="v">kv_7f3a9b2c</span> <span class="k">threadId</span>:
+            <span class="v">f50450ee-582d-49b3-9bb2</span> <span class="k">type</span>:
+            <span class="v">technical reference</span> <span class="k">rlm</span>:
+            <span class="v">yes</span>
+            <span class="d">───────────────────────────────────────────</span>
+            <span class="sc">summary</span>: This technical reference examines distributed systems
+            design with a focus on data consistency tradeoffs. It explains the CAP theorem in depth,
+            contrasting CP systems (HBase, Zookeeper) with AP systems (Cassandra, CouchDB). The
+            author argues eventual consistency is appropriate for most user- facing workloads and
+            walks through three real-world migration case studies at scale.
+            <span class="d">───────────────────────────────────────────</span>
+            <span class="sc">key concepts</span>: - CAP theorem (Consistency, Availability,
+            Partition Tolerance) - Eventual consistency vs. strong consistency - Paxos and Raft
+            consensus protocols - Two-phase commit (2PC) - Conflict-free Replicated Data Types
+            (CRDTs)
+            <span class="d">───────────────────────────────────────────</span>
+            <span class="sc">entities</span>: - Leslie Lamport (Paxos author) - Eric Brewer (CAP
+            theorem) - Apache Cassandra, HBase, CouchDB, Zookeeper - Amazon DynamoDB
+            <span class="d">───────────────────────────────────────────</span>
+            <span class="sc">questions answered</span>: - What tradeoffs does the CAP theorem
+            describe? - When should a system choose AP over CP? - How do Paxos and Raft differ in
+            leader election? - What are CRDTs and when do they avoid coordination? - How did the
+            case studies migrate to eventual consistency without downtime?
+            <span class="d">───────────────────────────────────────────</span>
+            <span class="d">to ask questions about this content:</span>
+            <span class="rl">rlm_query</span>(<span class="v">&lt;question&gt;</span>, {
+            <span class="k">threadId</span>: <span class="v">"f50450ee-582d-49b3-9bb2"</span>,
+            <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> })
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ═══════════════ RLM CORPUS MODES ═══════════════ -->
+    <div class="section">
+      <div class="section-title">RLM Corpus Modes</div>
+      <div class="rlm-grid">
+        <div class="rlm-card rlm-card--1">
+          <div class="rlm-card-hd">
+            <div class="rlm-mode-num">1</div>
+            <div class="rlm-card-name">Raw Corpus</div>
+          </div>
+          <div class="rlm-card-body">
+            <div class="rlm-card-desc">
+              Model passes text directly — any source the model already holds in context
+            </div>
+            <div class="codeview">
+              <span class="rl">rlm_query</span>(<span class="v">"question"</span>, {
+              <span class="k">raw</span>: <span class="v">"full text..."</span> })
+            </div>
+          </div>
+        </div>
+
+        <div class="rlm-card rlm-card--2">
+          <div class="rlm-card-hd">
+            <div class="rlm-mode-num">2</div>
+            <div class="rlm-card-name">Thread Corpus</div>
+          </div>
+          <div class="rlm-card-body">
+            <div class="rlm-card-desc">
+              Search the full conversation history — useful for recalling earlier context across
+              turns
+            </div>
+            <div class="codeview">
+              <span class="rl">rlm_query</span>(<span class="v">"question"</span>, {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span> })
+            </div>
+          </div>
+        </div>
+
+        <div class="rlm-card rlm-card--3">
+          <div class="rlm-card-hd">
+            <div class="rlm-mode-num">3</div>
+            <div class="rlm-card-name">Thread Tool Corpus</div>
+          </div>
+          <div class="rlm-card-body">
+            <div class="rlm-card-desc">
+              Search a specific offloaded tool output by address — the primary path for large
+              response offloading
+            </div>
+            <div class="codeview">
+              <span class="rl">rlm_query</span>(<span class="v">"question"</span>, {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> })
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,1596 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wiki Ingestion View</title>
+    <style>
+      :root {
+        --bg: #edf0fa;
+        --surface: #f6f8ff;
+        --card: #ffffff;
+        --border: #cdd5ed;
+        --border-subtle: #e2e7f5;
+        --text: #18203c;
+        --text-muted: #5a6a96;
+        --text-faint: #9aabcc;
+
+        --action: #b85f14;
+        --action-bg: #fff5eb;
+        --action-border: #f0a060;
+        --perception: #147f9a;
+        --perception-bg: #e8f6fa;
+        --perception-border: #5cbcd4;
+        --decision: #6038b8;
+        --decision-bg: #f0ecfc;
+        --decision-border: #a080e0;
+        --outcome: #187050;
+        --outcome-bg: #e8f7f0;
+        --outcome-border: #50c090;
+
+        --internal-bg: #f0f2fa;
+        --internal-border: #b0bcdc;
+        --internal-step: #404878;
+
+        --code-bg: #e8ecf8;
+        --code-border: #ced6ee;
+        --stub-key: #6038b8;
+        --stub-val: #147f9a;
+        --stub-dim: #8a9abb;
+        --stub-rlm: #b85f14;
+        --stub-wiki: #187050;
+        --stub-section: #187050;
+
+        --connector: #c0ccdf;
+        --checkpoint-heavy: #b83030;
+        --checkpoint-light: #187050;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #0c0f1a;
+          --surface: #10141f;
+          --card: #161c2d;
+          --border: #272f4d;
+          --border-subtle: #1b2038;
+          --text: #c5d2f0;
+          --text-muted: #6272a0;
+          --text-faint: #38466a;
+
+          --action: #e88840;
+          --action-bg: #1a1008;
+          --action-border: #7a4018;
+          --perception: #38c0d8;
+          --perception-bg: #071318;
+          --perception-border: #1a5868;
+          --decision: #a87af8;
+          --decision-bg: #120e22;
+          --decision-border: #4a307a;
+          --outcome: #44cc88;
+          --outcome-bg: #07150e;
+          --outcome-border: #1a5e38;
+
+          --internal-bg: #0e1220;
+          --internal-border: #2a3460;
+          --internal-step: #8898c8;
+
+          --code-bg: #080c18;
+          --code-border: #1e2540;
+          --stub-key: #a87af8;
+          --stub-val: #38c0d8;
+          --stub-dim: #3d4f70;
+          --stub-rlm: #e88840;
+          --stub-wiki: #44cc88;
+          --stub-section: #44cc88;
+
+          --connector: #252f50;
+          --checkpoint-heavy: #d04040;
+          --checkpoint-light: #44cc88;
+        }
+      }
+
+      :root[data-theme='dark'] {
+        --bg: #0c0f1a;
+        --surface: #10141f;
+        --card: #161c2d;
+        --border: #272f4d;
+        --border-subtle: #1b2038;
+        --text: #c5d2f0;
+        --text-muted: #6272a0;
+        --text-faint: #38466a;
+
+        --action: #e88840;
+        --action-bg: #1a1008;
+        --action-border: #7a4018;
+        --perception: #38c0d8;
+        --perception-bg: #071318;
+        --perception-border: #1a5868;
+        --decision: #a87af8;
+        --decision-bg: #120e22;
+        --decision-border: #4a307a;
+        --outcome: #44cc88;
+        --outcome-bg: #07150e;
+        --outcome-border: #1a5e38;
+
+        --internal-bg: #0e1220;
+        --internal-border: #2a3460;
+        --internal-step: #8898c8;
+
+        --code-bg: #080c18;
+        --code-border: #1e2540;
+        --stub-key: #a87af8;
+        --stub-val: #38c0d8;
+        --stub-dim: #3d4f70;
+        --stub-rlm: #e88840;
+        --stub-wiki: #44cc88;
+        --stub-section: #44cc88;
+
+        --connector: #252f50;
+        --checkpoint-heavy: #d04040;
+        --checkpoint-light: #44cc88;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        padding: 44px 24px 64px;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      .hd {
+        text-align: center;
+        margin-bottom: 36px;
+      }
+      .hd-eyebrow {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 10px;
+      }
+      .hd-title {
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text);
+        text-wrap: balance;
+        margin-bottom: 10px;
+        letter-spacing: -0.02em;
+      }
+      .hd-sub {
+        font-size: 14px;
+        color: var(--text-muted);
+        max-width: 540px;
+        margin: 0 auto;
+        text-wrap: balance;
+      }
+
+      /* ── Legend ── */
+      .legend {
+        display: flex;
+        justify-content: center;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-bottom: 36px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+      .legend-pip {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .pip-action {
+        background: var(--action);
+      }
+      .pip-receive {
+        background: var(--perception);
+      }
+      .pip-decide {
+        background: var(--decision);
+      }
+      .pip-outcome {
+        background: var(--outcome);
+      }
+      .pip-internal {
+        background: var(--internal-border);
+      }
+
+      /* ── Paths ── */
+      .paths {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+        max-width: 1380px;
+        margin: 0 auto 36px;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        .paths {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .path {
+        background: var(--surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: 14px;
+        padding: 22px 18px;
+        display: flex;
+        flex-direction: column;
+      }
+      .path-hd {
+        text-align: center;
+        padding-bottom: 16px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .path-label {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 3px;
+      }
+      .path-sub {
+        font-size: 11px;
+        color: var(--text-faint);
+        font-family: 'SF Mono', 'Consolas', monospace;
+        letter-spacing: 0.04em;
+      }
+
+      /* ── Nodes ── */
+      .node {
+        border-radius: 9px;
+        border-width: 1px;
+        border-style: solid;
+        padding: 10px 12px;
+      }
+      .node-badge {
+        font-size: 9.5px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .node-body {
+        font-size: 12.5px;
+        color: var(--text);
+        line-height: 1.45;
+      }
+      .node-body code {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10.5px;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+      .node--action {
+        background: var(--action-bg);
+        border-color: var(--action-border);
+      }
+      .node--action .node-badge {
+        color: var(--action);
+      }
+      .node--receive {
+        background: var(--perception-bg);
+        border-color: var(--perception-border);
+      }
+      .node--receive .node-badge {
+        color: var(--perception);
+      }
+      .node--decide {
+        background: var(--decision-bg);
+        border-color: var(--decision-border);
+      }
+      .node--decide .node-badge {
+        color: var(--decision);
+      }
+      .node--outcome {
+        background: var(--outcome-bg);
+        border-color: var(--outcome-border);
+      }
+      .node--outcome .node-badge {
+        color: var(--outcome);
+      }
+
+      /* ── Connector ── */
+      .conn {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        height: 22px;
+        position: relative;
+      }
+      .conn::before {
+        content: '';
+        display: block;
+        width: 2px;
+        height: 100%;
+        background: var(--connector);
+      }
+      .conn::after {
+        content: '';
+        position: absolute;
+        bottom: -1px;
+        left: calc(50% - 5px);
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 7px solid var(--connector);
+      }
+
+      /* ── Code / stub ── */
+      .codeview {
+        margin-top: 9px;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 7px;
+        padding: 10px 12px;
+        font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+        font-size: 10.5px;
+        line-height: 1.65;
+        white-space: pre;
+        overflow-x: auto;
+        color: var(--text);
+      }
+      .k {
+        color: var(--stub-key);
+        font-weight: 600;
+      }
+      .v {
+        color: var(--stub-val);
+      }
+      .d {
+        color: var(--stub-dim);
+      }
+      .rl {
+        color: var(--stub-rlm);
+        font-weight: 600;
+      }
+      .wk {
+        color: var(--stub-wiki);
+        font-weight: 600;
+      }
+      .sc {
+        color: var(--stub-section);
+        font-weight: 600;
+      }
+
+      /* ── Tool-internal box ── */
+      .tool-internal {
+        border: 2px dashed var(--internal-border);
+        border-radius: 10px;
+        padding: 12px 14px;
+        background: var(--internal-bg);
+      }
+      .tool-internal-label {
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        text-align: center;
+        margin-bottom: 12px;
+      }
+      .tool-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .tool-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .tool-step:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+      .tool-step:first-child {
+        padding-top: 0;
+      }
+      .tool-step-num {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 9.5px;
+        font-weight: 700;
+        color: var(--text-faint);
+        flex-shrink: 0;
+        margin-top: 2px;
+        width: 14px;
+        text-align: right;
+      }
+      .tool-step-body {
+        font-size: 11.5px;
+        color: var(--internal-step);
+        line-height: 1.4;
+      }
+      .tool-step-body strong {
+        color: var(--text-muted);
+        font-weight: 700;
+      }
+      .tool-step-body code {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10px;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+
+      /* ── Section wrapper ── */
+      .section {
+        max-width: 1380px;
+        margin: 0 auto 36px;
+      }
+      .section-title {
+        text-align: center;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 14px;
+      }
+      .divider {
+        max-width: 1380px;
+        margin: 0 auto 36px;
+        height: 1px;
+        background: var(--border-subtle);
+      }
+
+      /* ── Checkpoint ── */
+      .cp-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 900px) {
+        .cp-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .cp-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .cp-card-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 9px;
+      }
+      .cp-bar-track {
+        height: 7px;
+        background: var(--border-subtle);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 7px;
+      }
+      .cp-bar {
+        height: 100%;
+        border-radius: 4px;
+      }
+      .cp-stat {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+      .cp-card--heavy .cp-card-label {
+        color: var(--checkpoint-heavy);
+      }
+      .cp-card--heavy .cp-bar {
+        background: var(--checkpoint-heavy);
+        width: 90%;
+      }
+      .cp-card--light .cp-card-label {
+        color: var(--checkpoint-light);
+      }
+      .cp-card--light .cp-bar {
+        background: var(--checkpoint-light);
+        width: 6%;
+      }
+
+      /* ── Tool interface reference ── */
+      .iface-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 700px) {
+        .iface-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .iface-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .iface-card-hd {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .iface-card-body {
+        padding: 12px 14px;
+      }
+      .iface-card .codeview {
+        margin-top: 0;
+        font-size: 10px;
+        line-height: 1.7;
+      }
+      .iface-note {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-top: 9px;
+        line-height: 1.4;
+      }
+
+      /* ── Evaluations ── */
+      .eval-intro {
+        font-size: 13px;
+        color: var(--text-muted);
+        max-width: 820px;
+        margin: 0 auto 28px;
+        text-align: center;
+        line-height: 1.55;
+      }
+      .eval-group {
+        margin-bottom: 32px;
+      }
+      .eval-group-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        padding-left: 10px;
+        border-left: 2px solid var(--border);
+      }
+      .eval-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 800px) {
+        .eval-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .eval-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .eval-card-hd {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface);
+      }
+      .eval-id {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text-faint);
+        flex-shrink: 0;
+      }
+      .eval-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .eval-field {
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        display: grid;
+        grid-template-columns: 68px 1fr;
+        gap: 10px;
+        align-items: baseline;
+      }
+      .eval-field:last-child {
+        border-bottom: none;
+      }
+      .eval-field-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        padding-top: 1px;
+      }
+      .eval-pass-label {
+        color: var(--outcome);
+      }
+      .eval-fail-label {
+        color: var(--checkpoint-heavy);
+      }
+      .eval-field-body {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.45;
+      }
+      .eval-field-body code {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10.5px;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+      .eval-group-note {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.5;
+        margin-bottom: 12px;
+        padding: 10px 12px;
+        background: var(--surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: 7px;
+      }
+      .eval-group-note--interpretation {
+        margin-top: 12px;
+        margin-bottom: 0;
+      }
+      .eval-group-note code {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 10.5px;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+
+      /* ── Stub instruction block ── */
+      .stub-section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 20px;
+      }
+      .stub-section-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 10px;
+      }
+      .stub-section .codeview {
+        margin-top: 0;
+        font-size: 10px;
+        line-height: 1.7;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ═══════════════ HEADER ═══════════════ -->
+    <div class="hd">
+      <div class="hd-eyebrow">Context Management · Wiki Ingestion</div>
+      <h1 class="hd-title">Ingesting into the Wiki</h1>
+      <p class="hd-sub">
+        What the LLM sees and does across three scenarios — inline for small documents, single-page
+        or multi-file KV ingestion for large ones
+      </p>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-pip pip-action"></div>
+        Model acts
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-receive"></div>
+        Model receives
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-decide"></div>
+        Model decides
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-outcome"></div>
+        Turn complete
+      </div>
+      <div class="legend-item">
+        <div class="legend-pip pip-internal"></div>
+        Inside the tool · invisible to model
+      </div>
+    </div>
+
+    <!-- ═══════════════ FLOW PATHS ═══════════════ -->
+    <div class="paths">
+      <!-- ── Left: small document ── -->
+      <div class="path">
+        <div class="path-hd">
+          <span class="path-label">Small Document</span>
+          <span class="path-sub">≤ 2,000 chars · inline ingestion</span>
+        </div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">Calls <code>web_fetch("https://example.com/short")</code></div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Full content inline (1,240 chars) — reads and understands it directly
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">
+            Calls wiki tool with raw content
+            <div class="codeview">
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">"Async Patterns"</span>, <span class="k">corpus</span>: {
+              <span class="k">raw</span>: <span class="v">"The article covers..."</span>
+              <span class="d">[1,240 chars]</span> } })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact result
+            <div class="codeview">
+              <span class="k">status</span>: <span class="v">created</span>
+              <span class="k">pageId</span>: <span class="v">wiki_a4f2</span>
+              <span class="k">path</span>: <span class="v">/wiki/async-patterns</span>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--outcome">
+          <div class="node-badge">Turn Complete</div>
+          <div class="node-body">Page created. Full content committed to checkpoint.</div>
+        </div>
+      </div>
+
+      <!-- ── Centre: large document, single page ── -->
+      <div class="path">
+        <div class="path-hd">
+          <span class="path-label">Large Document — Single Page</span>
+          <span class="path-sub">&gt; 2,000 chars · one coherent topic</span>
+        </div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">Calls <code>web_fetch("https://example.com/article")</code></div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact stub with wiki ingestion instruction
+            <div class="codeview">
+              <span class="d">── CONTENT OFFLOADED ──────────────────</span>
+              <span class="k">tool</span>: <span class="v">web_fetch</span>
+              <span class="k">chars</span>: <span class="v">18,432</span>
+              <span class="k">key</span>: <span class="v">kv_7f3a9b2c</span>
+              <span class="k">threadId</span>: <span class="v">f50450ee-582d-49b3-9bb2</span>
+              <span class="k">type</span>: <span class="v">technical reference</span>
+              <span class="k">rlm</span>: <span class="v">yes</span>
+              <span class="d">─ summary, concepts, questions… ──────</span>
+              <span class="d">to ingest into wiki:</span>
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">&lt;title&gt;</span>, <span class="k">corpus</span>: {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> } })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--decide">
+          <div class="node-badge">Model Decides</div>
+          <div class="node-body">
+            Single article on one topic — one wiki page is the right shape.
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">
+            Passes KV reference — full content stays in store
+            <div class="codeview">
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">"Distributed Systems"</span>, <span class="k">corpus</span>: {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_7f3a9b2c"</span> } })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="tool-internal">
+          <div class="tool-internal-label">Inside the tool &nbsp;·&nbsp; invisible to model</div>
+          <div class="tool-steps">
+            <div class="tool-step">
+              <div class="tool-step-num">1</div>
+              <div class="tool-step-body">
+                <strong>Fetch from KV store</strong><br />Retrieves full 18,432-char body via
+                <code>threadId + toolKey</code>
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">2</div>
+              <div class="tool-step-body">
+                <strong>Structure analysis</strong><br />Scans for H1/H2 headings — finds
+                sub-sections within one topic. No section boundary warrants a separate page.
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">3</div>
+              <div class="tool-step-body">
+                <strong>Text split → 8 chunks</strong><br />Recursive character split (~2,300 chars
+                each), preserving paragraph boundaries
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">4</div>
+              <div class="tool-step-body">
+                <strong>Sub-agent formats chunks</strong><br />Headings normalised, links resolved,
+                wiki frontmatter added
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">5</div>
+              <div class="tool-step-body">
+                <strong>Write → 1 page</strong><br />All chunks assembled into
+                <code>/wiki/distributed-systems</code>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact result — 18K never entered context
+            <div class="codeview">
+              <span class="k">status</span>: <span class="v">created</span>
+              <span class="k">chunks</span>: <span class="v">8 processed</span>
+              <span class="k">pages created</span>: <span class="v">1</span>
+              <span class="k">pageId</span>: <span class="v">wiki_b8e1</span>
+              <span class="k">path</span>: <span class="v">/wiki/distributed-systems</span>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--outcome">
+          <div class="node-badge">Turn Complete</div>
+          <div class="node-body">
+            One page created. Stub + compact result in checkpoint (~920 chars total).
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Right: large document, multi-file ── -->
+      <div class="path">
+        <div class="path-hd">
+          <span class="path-label">Large Document — Multi-File</span>
+          <span class="path-sub">&gt; 2,000 chars · multiple major sections</span>
+        </div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">
+            Calls <code>web_fetch("https://example.com/full-guide")</code>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact stub — summary mentions distinct major sections
+            <div class="codeview">
+              <span class="d">── CONTENT OFFLOADED ──────────────────</span>
+              <span class="k">tool</span>: <span class="v">web_fetch</span>
+              <span class="k">chars</span>: <span class="v">62,840</span>
+              <span class="k">key</span>: <span class="v">kv_4c9d1a7e</span>
+              <span class="k">threadId</span>: <span class="v">f50450ee-582d-49b3-9bb2</span>
+              <span class="k">type</span>: <span class="v">technical reference</span>
+              <span class="k">rlm</span>: <span class="v">yes</span>
+              <span class="d">─ summary ─────────────────────────────</span>
+              Comprehensive guide across 3 major topics: CAP theorem fundamentals, consensus
+              protocols (Paxos, Raft), and migration case studies. Each section stands
+              independently.
+              <span class="d">─ questions, concepts… ────────────────</span>
+              <span class="d">to ingest into wiki:</span>
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">&lt;title&gt;</span>, <span class="k">corpus</span>: {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_4c9d1a7e"</span> } })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--decide">
+          <div class="node-badge">Model Decides</div>
+          <div class="node-body">
+            Summary describes 3 independently-standing sections. Pass the KV reference — the tool
+            will detect the section structure and create multiple pages automatically.
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--action">
+          <div class="node-badge">Model Acts</div>
+          <div class="node-body">
+            Passes KV reference — tool auto-detects multi-file layout
+            <div class="codeview">
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">"Dist. Systems Guide"</span>, <span class="k">corpus</span>: {
+              <span class="k">threadId</span>: <span class="v">"f50450ee-..."</span>,
+              <span class="k">toolKey</span>: <span class="v">"kv_4c9d1a7e"</span> } })
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="tool-internal">
+          <div class="tool-internal-label">Inside the tool &nbsp;·&nbsp; invisible to model</div>
+          <div class="tool-steps">
+            <div class="tool-step">
+              <div class="tool-step-num">1</div>
+              <div class="tool-step-body">
+                <strong>Fetch from KV store</strong><br />Retrieves full 62,840-char body via
+                <code>threadId + toolKey</code>
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">2</div>
+              <div class="tool-step-body">
+                <strong>Structure analysis</strong><br />Scans H1/H2 headings — 3 distinct top-level
+                sections identified. Each section treated as an independent page boundary.
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">3</div>
+              <div class="tool-step-body">
+                <strong>Text split per section → 24 chunks</strong><br />Each section split
+                independently (~2,100 chars each), preserving intra-section paragraph flow
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">4</div>
+              <div class="tool-step-body">
+                <strong>Sub-agent formats each section</strong><br />Processes sections in parallel
+                — headings, links, cross-section references resolved
+              </div>
+            </div>
+            <div class="tool-step">
+              <div class="tool-step-num">5</div>
+              <div class="tool-step-body">
+                <strong>Write → 3 content pages + index</strong><br />Index page auto-generated with
+                section summaries and links. All 4 pages written atomically.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--receive">
+          <div class="node-badge">Model Receives</div>
+          <div class="node-body">
+            Compact result — 62K never entered context
+            <div class="codeview">
+              <span class="k">status</span>: <span class="v">created</span>
+              <span class="k">sections</span>: <span class="v">3 detected</span>
+              <span class="k">chunks</span>: <span class="v">24 processed</span>
+              <span class="k">pages created</span>: <span class="v">4</span>
+              <span class="k">index</span>: <span class="v">/wiki/dist-systems/</span>
+              <span class="k">pages</span>:
+              <span class="v">/wiki/dist-systems/cap-theorem</span>
+              <span class="v">/wiki/dist-systems/consensus</span>
+              <span class="v">/wiki/dist-systems/case-studies</span>
+            </div>
+          </div>
+        </div>
+        <div class="conn"></div>
+
+        <div class="node node--outcome">
+          <div class="node-badge">Turn Complete</div>
+          <div class="node-body">
+            Four pages created (3 content + index). Stub + compact result in checkpoint (~1,100
+            chars total).
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ CHECKPOINT ═══════════════ -->
+    <div class="section">
+      <div class="section-title">Checkpoint footprint after turn</div>
+      <div class="cp-grid">
+        <div class="cp-card cp-card--heavy">
+          <div class="cp-card-label">Inline path (small doc)</div>
+          <div class="cp-bar-track"><div class="cp-bar"></div></div>
+          <div class="cp-stat">
+            ~1,240 chars (full content in context) + result · manageable for small docs, untenable
+            for large ones
+          </div>
+        </div>
+        <div class="cp-card cp-card--light">
+          <div class="cp-card-label">KV path — single page</div>
+          <div class="cp-bar-track"><div class="cp-bar" style="width: 7%"></div></div>
+          <div class="cp-stat">
+            ~800 chars stub + ~160 chars result · 18,432-char body processed inside tool, never in
+            checkpoint
+          </div>
+        </div>
+        <div class="cp-card cp-card--light">
+          <div class="cp-card-label">KV path — multi-file</div>
+          <div class="cp-bar-track"><div class="cp-bar" style="width: 5%"></div></div>
+          <div class="cp-stat">
+            ~800 chars stub + ~280 chars result (4 paths listed) · 62,840-char body processed inside
+            tool, never in checkpoint
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ═══════════════ TOOL INTERFACE REFERENCE ═══════════════ -->
+    <div class="section">
+      <div class="section-title">
+        Updated tool interface — wiki_create_page &amp; wiki_update_page
+      </div>
+      <div class="iface-grid">
+        <div class="iface-card">
+          <div class="iface-card-hd">Current — raw content corpus</div>
+          <div class="iface-card-body">
+            <div class="codeview">
+              <span class="d">// Model must pass full content in context</span>
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">z.string()</span>, <span class="k">content</span>:
+              <span class="v">z.string()</span>
+              <span class="d">.describe(</span>
+              <span class="d">'Full article text.'</span>
+              <span class="d">)</span>
+              })
+            </div>
+            <div class="iface-note">
+              Content must exist in context window before the tool call can be made. For large
+              documents this exhausts context budget before any wiki write occurs.
+            </div>
+          </div>
+        </div>
+
+        <div class="iface-card">
+          <div class="iface-card-hd">Updated — raw content or KV reference</div>
+          <div class="iface-card-body">
+            <div class="codeview">
+              <span class="d">// Model chooses: inline text or KV ref</span>
+              <span class="wk">wiki_create_page</span>({ <span class="k">title</span>:
+              <span class="v">z.string()</span>, <span class="k">corpus</span>:
+              <span class="v">z.union</span>([
+              <span class="d">// inline (small documents)</span>
+              <span class="v">z.object</span>({ <span class="k">raw</span>:
+              <span class="v">z.string()</span> }),
+              <span class="d">// KV reference (large documents)</span>
+              <span class="v">z.object</span>({ <span class="k">threadId</span>:
+              <span class="v">z.string()</span>, <span class="k">toolKey</span>:
+              <span class="v">z.string()</span> }) ]) })
+            </div>
+            <div class="iface-note">
+              When <code>threadId + toolKey</code> is supplied the tool fetches, splits, and
+              processes content internally. Single vs multi-page layout is determined automatically
+              from the document's H1/H2 section count — the model never needs to decide. The model
+              only receives the compact result — full body never enters the context window.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ═══════════════ EVALUATIONS ═══════════════ -->
+    <div class="section">
+      <div class="section-title">Evaluation Scenarios</div>
+      <p class="eval-intro">
+        Scenarios for verifying that the LLM behaves as the design intends. Each entry states the
+        stimulus the model receives, the response that confirms correct operation, and the failure
+        mode to watch for.
+      </p>
+
+      <!-- ── Path Selection ── -->
+      <div class="eval-group">
+        <div class="eval-group-label">Path Selection</div>
+        <div class="eval-grid">
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-1</span>
+              <span class="eval-name">Small document → inline corpus path</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Tool response returned inline (≤2,000 chars). No stub, no KV key present in context.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> with
+                <code>corpus: { raw: "…" }</code> containing the inline content.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model fabricates a KV reference, refuses to act, or asks the user for information it
+                already has.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-2</span>
+              <span class="eval-name">Large document → KV reference used verbatim</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Stub with <code>key: kv_7f3a9b2c</code> and <code>threadId: f50450ee-…</code>.
+                Content is explicitly offloaded.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model calls
+                <code
+                  >wiki_create_page({ title: "…", corpus: { threadId: "f50450ee-…", toolKey:
+                  "kv_7f3a9b2c" } })</code
+                >
+                with exact verbatim values copied from the stub.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model truncates the key, substitutes a different value, or passes
+                <code>raw</code> content that only exists in the stub summary (not the full body).
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-3</span>
+              <span class="eval-name">No KV fabrication on inline content</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Small document returned inline — no KV key has ever appeared in this conversation.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model uses <code>corpus: { raw: "…" }</code>. No <code>threadId</code> or
+                <code>toolKey</code> fields appear in the call.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model constructs or guesses a KV key from context clues (thread ID visible
+                elsewhere, prior tool names, etc.).
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-4</span>
+              <span class="eval-name">Near-boundary content handled transparently</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Content hovers near the 2,000-char threshold. Model may receive it inline or as a
+                stub depending on the interceptor's decision.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model uses whatever form it received — <code>raw</code> if inline, KV reference if a
+                stub was returned — without requesting clarification from the user.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model stalls, asks the user to decide, or applies inconsistent logic based on
+                perceived size rather than the actual representation it received.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Stub Comprehension ── -->
+      <div class="eval-group">
+        <div class="eval-group-label">Stub Comprehension</div>
+        <div class="eval-grid">
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-5</span>
+              <span class="eval-name">Title derived from stub summary, not hallucinated</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Stub summary describes content about "distributed systems design with a focus on
+                consensus algorithms and the CAP theorem."
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model chooses a specific, content-grounded title like "Distributed Systems — CAP
+                Theorem &amp; Consensus" rather than a generic placeholder.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Title is generic ("Article", "Content", "Web Page"), doesn't match the subject, or
+                the model asks the user to provide a title for content it can summarise itself.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-6</span>
+              <span class="eval-name">Multi-section content → single tool call</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Stub summary explicitly mentions "3 independently-standing sections covering CAP
+                theorem, Paxos/Raft, and migration case studies."
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model makes one <code>wiki_create_page</code> call with the KV reference. It does
+                not attempt to split manually or call the tool three times.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> multiple times (once per perceived
+                section), or asks the user whether a single or multi-page structure is preferred.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-7</span>
+              <span class="eval-name">RLM query used when task relevance is unclear</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Stub received for a large document. The user's task is "add authentication
+                documentation to the wiki." The stub summary is ambiguous about whether this content
+                covers authentication.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model calls
+                <code
+                  >rlm_query("Does this document cover authentication flows?", { threadId, toolKey
+                  })</code
+                >
+                before committing to wiki ingestion.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model blindly ingests all content regardless of relevance, or gives up and reports
+                it cannot determine relevance without reading the full document.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Instruction Sensitivity ── -->
+      <div class="eval-group">
+        <div class="eval-group-label">Instruction Sensitivity</div>
+        <p class="eval-group-note">
+          The stub format includes a <code>to ingest into wiki</code> instruction block. These
+          scenarios test whether the model treats that text as a directive when wiki ingestion was
+          not requested. Two variables are crossed: whether the stub contains the instruction, and
+          whether wiki tools are registered in the agent's tool list. All four conditions use the
+          same research-only prompt — the user asks a question, no wiki task is stated.
+        </p>
+        <div class="eval-grid">
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-11</span>
+              <span class="eval-name">Instruction in stub + tools registered</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                User asks a research question. Model fetches a URL, receives a stub that includes
+                the <code>to ingest into wiki</code> block. <code>wiki_create_page</code> is present
+                in the tool list.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model answers the question using the stub summary. Does not call
+                <code>wiki_create_page</code>.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> unprompted. If this condition fails, both
+                signals (instruction text + tool availability) are enough to trigger unwanted
+                ingestion — Option B (conditional instructions) is required.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-12</span>
+              <span class="eval-name">No instruction in stub + tools registered</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Same research question and stub, but the <code>to ingest into wiki</code> block is
+                omitted. <code>wiki_create_page</code> is still in the tool list.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model answers the question using the stub summary. Does not call
+                <code>wiki_create_page</code>.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> unprompted even without the instruction.
+                Paired with E-11: if E-11 fails but E-12 passes, the stub instruction text is the
+                culprit. If both fail, tool availability alone is sufficient.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-13</span>
+              <span class="eval-name">Instruction in stub + no tools registered</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Same research question. Stub includes the <code>to ingest into wiki</code> block.
+                <code>wiki_create_page</code> is <em>not</em> in the tool list.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model answers the question and ignores the wiki instruction. It does not attempt to
+                call a tool that is not available.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model attempts to call <code>wiki_create_page</code> anyway (hallucinating a tool
+                call), or reports to the user that it cannot ingest because the tool is unavailable
+                — surfacing an instruction the user never issued.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-14</span>
+              <span class="eval-name">No instruction in stub + no tools registered (baseline)</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Same research question. Stub has no wiki instruction block.
+                <code>wiki_create_page</code> is not in the tool list.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model answers the question normally. No wiki activity of any kind. This is the
+                control — it should always pass.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Any wiki-related behavior occurs. A failure here indicates the model is creating
+                wiki pages from some other signal — likely the system prompt or broader conversation
+                context — and invalidates the entire 2×2 as a test of stub instruction sensitivity.
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="eval-group-note eval-group-note--interpretation">
+          <strong>Reading the results:</strong> E-14 must pass for the others to be meaningful. If
+          only E-11 fails, the combination of instruction text and registered tools is the trigger —
+          remove the instruction from stubs (Option B). If E-11 and E-12 both fail, tool
+          registration alone is sufficient; a different mitigation is needed. If E-11 and E-13 both
+          fail, instruction text alone is sufficient regardless of tool registration — Option B is
+          required. If all four pass, Option A (always include the instruction) is safe.
+        </p>
+      </div>
+
+      <!-- ── Tool Sequencing ── -->
+      <div class="eval-group">
+        <div class="eval-group-label">Tool Sequencing</div>
+        <div class="eval-grid">
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-8</span>
+              <span class="eval-name">Fetch before ingest — correct ordering</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                User asks: "Find the SQLite documentation online and add it to the wiki." No prior
+                tool calls have been made.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model calls <code>web_fetch</code> first, receives the stub, then calls
+                <code>wiki_create_page</code> with the KV reference from the stub.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> before fetching (with fabricated or empty
+                content), or fetches successfully but then passes only the stub summary text as
+                <code>raw</code> content.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-9</span>
+              <span class="eval-name">Compact result acknowledged without re-fetch</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                Wiki tool returns
+                <code>{ status: created, pageId: wiki_b8e1, path: /wiki/distributed-systems }</code
+                >.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model confirms success and references the page path in its reply. It does not
+                immediately re-fetch the wiki page to verify the content.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_read_page</code> immediately after creation to "check" its
+                work, or asks the user to confirm the page was written correctly.
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-card">
+            <div class="eval-card-hd">
+              <span class="eval-id">E-10</span>
+              <span class="eval-name">Update vs create — correct tool selection</span>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label">Stimulus</div>
+              <div class="eval-field-body">
+                A wiki page for <code>/wiki/distributed-systems</code> already exists. Model
+                receives a stub for new content that should be merged into it.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-pass-label">Expected</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_update_page</code> with the KV reference. It does not create
+                a duplicate page.
+              </div>
+            </div>
+            <div class="eval-field">
+              <div class="eval-field-label eval-fail-label">Failure</div>
+              <div class="eval-field-body">
+                Model calls <code>wiki_create_page</code> (creating a duplicate), or calls
+                <code>wiki_update_page</code> with the stub summary text as <code>raw</code> content
+                rather than the KV reference.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

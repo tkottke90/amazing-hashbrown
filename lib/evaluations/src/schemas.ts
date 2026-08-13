@@ -23,6 +23,11 @@ const BaseScenario = z.object({
   // in runner.ts) but still listed in results, marked "skipped" in the
   // terminal and HTML report. For scenarios paused pending unrelated work.
   skip: z.boolean().optional(),
+  // Tool names to remove from config.tools before invoking the model for
+  // this scenario. Used to simulate sessions where specific tools are not
+  // registered (e.g. E-12/E-14 instruction-sensitivity scenarios that test
+  // model behaviour when wiki tools are absent).
+  excludeTools: z.array(z.string()).optional(),
 });
 
 // Shared by deterministic, llm-judge, and tool-sequence scenarios — declared

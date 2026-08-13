@@ -1,10 +1,12 @@
 import { tool } from '@langchain/core/tools';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, trimMessages } from '@langchain/core/messages';
+import type { BaseMessage } from '@langchain/core/messages';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { getAgentInstructions } from '../config/agent-instructions.js';
+import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { skillsManager } from '../services/skills-manager.js';
@@ -24,6 +26,7 @@ import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { searchSkillsTool } from './tools/search-skills.tool.js';
+import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
@@ -75,6 +78,50 @@ const afterAgentMiddleware = createMiddleware({
       });
     }
     return undefined;
+  },
+});
+
+// Rough token estimator: 4 characters ≈ 1 token. Used by the context window
+// middleware to avoid a model round-trip for counting. Accurate enough for the
+// purpose of keeping context below a configurable ceiling.
+function estimateTokens(messages: BaseMessage[]): number {
+  return messages.reduce((sum, m) => {
+    const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    return sum + Math.ceil(text.length / 4);
+  }, 0);
+}
+
+// Trims old messages from the LangGraph state before each agent turn so the
+// model never receives more tokens than the configured ceiling. Uses
+// trimMessages from @langchain/core with strategy:'last' (keep most-recent)
+// and startOn:'human' (never start mid-tool-call-result pair) to preserve
+// tool-call/tool-result pairing required by LangGraph.
+export const contextWindowMiddleware = createMiddleware({
+  name: 'ContextWindowMiddleware',
+  beforeAgent: async (state) => {
+    const cfg = env.chat?.contextWindow;
+    // Enabled by default; only skip if explicitly set to false.
+    if (cfg?.enabled === false) return undefined;
+
+    const trimmer = trimMessages({
+      maxTokens: cfg?.maxTokens ?? 32000,
+      strategy: 'last',
+      tokenCounter: estimateTokens,
+      includeSystem: true,
+      allowPartial: false,
+      startOn: 'human',
+    });
+
+    const trimmed = await trimmer.invoke(state.messages as BaseMessage[]);
+    if (trimmed.length === state.messages.length) return undefined;
+
+    logger.debug('contextWindow: trimmed message history', {
+      before: state.messages.length,
+      after: trimmed.length,
+      maxTokens: cfg?.maxTokens ?? 32000,
+    });
+
+    return { messages: trimmed };
   },
 });
 
@@ -175,11 +222,12 @@ async function buildChatAgent(provider?: string, model?: string) {
       webFetchTool,
       rlmQueryTool,
       searchSkillsTool,
+      searchConversationTool,
       ...mcpTools,
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [skillExpansionMiddleware, afterAgentMiddleware],
+    middleware: [skillExpansionMiddleware, contextWindowMiddleware, afterAgentMiddleware],
   });
 
   return { agent, systemPrompt };
