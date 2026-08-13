@@ -2,17 +2,15 @@ import { interrupt } from '@langchain/langgraph';
 import { isAIMessage } from '@langchain/core/messages';
 import { createMiddleware } from 'langchain';
 
-export function createRecursionGuardMiddleware(
-  recursionLimit: number,
-  warnThreshold: number,
-) {
+export function createRecursionGuardMiddleware(recursionLimit: number, warnThreshold: number) {
   const threshold = Math.floor(recursionLimit * warnThreshold);
 
   return createMiddleware({
     name: 'RecursionGuardMiddleware',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     beforeAgent: async (state: any) => {
-      const completedSteps: number = (state.messages as unknown[]).filter(isAIMessage).length;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const completedSteps: number = (state.messages as any[]).filter(isAIMessage).length;
 
       // Skip before any work is done. Fire at multiples of threshold so the agent
       // gets a fresh interval between consecutive resumes (e.g., at 75, 150, …).

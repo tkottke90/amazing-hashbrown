@@ -146,9 +146,10 @@ describe('agents/recursion-guard (integration)', () => {
     // The resumed graph should NOT immediately fail with GraphRecursionError.
     // If the budget did NOT reset, the first agent_node execution would exceed
     // the prior step count and fail before doing any work.
-    expect(resumeError?.name ?? null, 'resumed graph should not throw GraphRecursionError').to.not.equal(
-      'GraphRecursionError',
-    );
+    expect(
+      resumeError?.name ?? null,
+      'resumed graph should not throw GraphRecursionError',
+    ).to.not.equal('GraphRecursionError');
     expect(resumeEventCount, 'resumed graph should stream additional events').to.be.greaterThan(0);
 
     // Verify the agent made at least one additional LLM call by checking state.
@@ -157,6 +158,9 @@ describe('agents/recursion-guard (integration)', () => {
       (m: BaseMessage) => m.getType() === 'ai',
     );
     // Before resume: 2 AIMessages. After: at least 3 (at least 1 more LLM call).
-    expect(aiMessages.length, 'agent should have made additional LLM calls after resume').to.be.greaterThan(2);
+    expect(
+      aiMessages.length,
+      'agent should have made additional LLM calls after resume',
+    ).to.be.greaterThan(2);
   });
 });

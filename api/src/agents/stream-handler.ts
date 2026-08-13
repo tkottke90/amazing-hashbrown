@@ -511,7 +511,7 @@ export async function streamChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
       writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
@@ -634,7 +634,7 @@ export async function resumeChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
       writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
@@ -756,7 +756,7 @@ export async function retryChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
       writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }

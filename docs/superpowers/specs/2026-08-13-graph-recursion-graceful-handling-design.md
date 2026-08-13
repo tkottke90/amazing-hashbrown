@@ -54,7 +54,7 @@ The recursion limit is currently hardcoded at `100` in four places with a `// TO
 
 ```yaml
 agent:
-  recursionLimit: 100          # max steps per invocation
+  recursionLimit: 100 # max steps per invocation
   recursionWarnThreshold: 0.75 # fraction of limit at which to interrupt
 ```
 
@@ -74,10 +74,7 @@ A new `beforeAgent` middleware added to both the chat and wiki ingestion agents.
 ```typescript
 // api/src/agents/recursion-guard.middleware.ts
 
-export function createRecursionGuardMiddleware(
-  recursionLimit: number,
-  warnThreshold: number,
-) {
+export function createRecursionGuardMiddleware(recursionLimit: number, warnThreshold: number) {
   return createMiddleware({
     name: 'RecursionGuardMiddleware',
     beforeAgent: async (state) => {
@@ -150,10 +147,10 @@ The answer from the HITL prompt flows back through the existing resume path via 
 agent.streamEvents(new Command({ resume: answer }), {
   ...config,
   version: 'v2',
-  recursionLimit: env.agent?.recursionLimit ?? 100,  // add this
+  recursionLimit: env.agent?.recursionLimit ?? 100, // add this
   callbacks: [obsHandler],
   // ...
-})
+});
 ```
 
 This applies to `resumeChatToSse` in `stream-handler.ts` and `resumeWikiChatToSse` in `wiki-stream-handler.ts`.
@@ -218,14 +215,19 @@ No change. The middleware fires before each LLM call, checks the step count, fin
 ```typescript
 export interface HitlPromptFields {
   question: string;
-  promptKind: 'yes_no' | 'multiple_choice' | 'free_text' | 'shell_approval' | 'recursion_limit_warning';
+  promptKind:
+    | 'yes_no'
+    | 'multiple_choice'
+    | 'free_text'
+    | 'shell_approval'
+    | 'recursion_limit_warning';
   choices?: string[];
   allowFreeText?: boolean;
   approveLabel?: string;
   approveType?: 'primary' | 'secondary' | 'destructive';
   rejectLabel?: string;
-  command?: string;   // shell_approval only
-  reason?: string;    // shell_approval only
+  command?: string; // shell_approval only
+  reason?: string; // shell_approval only
   stepsUsed?: number; // recursion_limit_warning only
   recursionLimit?: number; // recursion_limit_warning only
 }
@@ -238,12 +240,14 @@ export interface HitlPromptFields {
 ### Unit tests (`api/src/agents/`)
 
 **`recursion-guard.middleware.test.ts`:**
+
 - Does not call `interrupt()` when step count is below threshold
 - Calls `interrupt()` with correct payload when step count equals threshold
 - Calls `interrupt()` when step count exceeds threshold
 - Returns `undefined` (no state mutation) when below threshold
 
 **`stream-handler.test.ts` additions:**
+
 - `GraphRecursionError` catch emits `assistant_message` and `stream_end`, does not re-throw
 - Other errors still re-throw (existing behavior preserved)
 - Resume calls include `recursionLimit` in the config
@@ -265,17 +269,17 @@ New spec `recursion-guard.spec.ts` tagged `@smoke @user-workflow` (mocked API, n
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `api/src/config/env.ts` / `AppConfigSchema` | Add `agent.recursionLimit` and `agent.recursionWarnThreshold` config fields |
-| `api/src/agents/recursion-guard.middleware.ts` | New file — `createRecursionGuardMiddleware()` |
-| `api/src/agents/chat-agent.ts` | Register `recursionGuardMiddleware`; replace hardcoded `100` in `streamChatToSse` |
-| `api/src/agents/wiki-ingestion-agent.ts` | Register `recursionGuardMiddleware` |
-| `api/src/agents/stream-handler.ts` | Replace hardcoded `recursionLimit: 100`; add `recursionLimit` to resume call; add `GraphRecursionError` catch branch |
-| `api/src/agents/wiki-stream-handler.ts` | Same as `stream-handler.ts` — three hardcoded values + three resume calls |
-| `api/src/agents/thread-message-writer.ts` | Add `stepsUsed?` and `recursionLimit?` to `HitlPromptFields`; add `'recursion_limit_warning'` to `promptKind` union |
-| `lib/llm-common-types/src/chat/hitl.ts` | Same `HitlPromptFields` additions on the shared type |
-| `ui/src/components/hitl-prompt-message.tsx` | Surface `stepsUsed`/`recursionLimit` metadata as subheading for `recursion_limit_warning` kind |
-| `api/src/agents/recursion-guard.middleware.test.ts` | New unit tests |
-| `api/src/agents/stream-handler.test.ts` | New tests for error catch branch and resume `recursionLimit` |
-| `e2e/tests/recursion-guard.spec.ts` | New e2e spec |
+| File                                                | Change                                                                                                               |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `api/src/config/env.ts` / `AppConfigSchema`         | Add `agent.recursionLimit` and `agent.recursionWarnThreshold` config fields                                          |
+| `api/src/agents/recursion-guard.middleware.ts`      | New file — `createRecursionGuardMiddleware()`                                                                        |
+| `api/src/agents/chat-agent.ts`                      | Register `recursionGuardMiddleware`; replace hardcoded `100` in `streamChatToSse`                                    |
+| `api/src/agents/wiki-ingestion-agent.ts`            | Register `recursionGuardMiddleware`                                                                                  |
+| `api/src/agents/stream-handler.ts`                  | Replace hardcoded `recursionLimit: 100`; add `recursionLimit` to resume call; add `GraphRecursionError` catch branch |
+| `api/src/agents/wiki-stream-handler.ts`             | Same as `stream-handler.ts` — three hardcoded values + three resume calls                                            |
+| `api/src/agents/thread-message-writer.ts`           | Add `stepsUsed?` and `recursionLimit?` to `HitlPromptFields`; add `'recursion_limit_warning'` to `promptKind` union  |
+| `lib/llm-common-types/src/chat/hitl.ts`             | Same `HitlPromptFields` additions on the shared type                                                                 |
+| `ui/src/components/hitl-prompt-message.tsx`         | Surface `stepsUsed`/`recursionLimit` metadata as subheading for `recursion_limit_warning` kind                       |
+| `api/src/agents/recursion-guard.middleware.test.ts` | New unit tests                                                                                                       |
+| `api/src/agents/stream-handler.test.ts`             | New tests for error catch branch and resume `recursionLimit`                                                         |
+| `e2e/tests/recursion-guard.spec.ts`                 | New e2e spec                                                                                                         |
