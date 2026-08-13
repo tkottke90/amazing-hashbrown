@@ -11,6 +11,7 @@ import { ObservabilityCallbackHandler } from './observability-handler.js';
 import {
   recordUserMessage,
   recordAssistantStart,
+  finalizeAssistant,
   failAssistant,
   resolveHitlPrompt,
   recordRetryAttempt,
@@ -64,7 +65,7 @@ export async function streamWikiChatToSse(
           provider: provider ?? env.defaultProvider,
           model,
         },
-        recursionLimit: 100,
+        recursionLimit: env.agent?.recursionLimit ?? 100,
       },
     );
 
@@ -97,6 +98,14 @@ export async function streamWikiChatToSse(
       model,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {
@@ -150,7 +159,7 @@ export async function resumeWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
-      recursionLimit: 100,
+      recursionLimit: env.agent?.recursionLimit ?? 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
@@ -182,6 +191,14 @@ export async function resumeWikiChatToSse(
       model,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {
@@ -236,7 +253,7 @@ export async function retryWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
-      recursionLimit: 100,
+      recursionLimit: env.agent?.recursionLimit ?? 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
@@ -268,6 +285,14 @@ export async function retryWikiChatToSse(
       model,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'assistant_message', content: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {

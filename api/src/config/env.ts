@@ -78,6 +78,13 @@ export const RLMConfigSchema = z.object({
 
 export type RLMConfig = z.infer<typeof RLMConfigSchema>;
 
+export const AgentSchema = z.object({
+  recursionLimit: z.number().int().positive().default(100),
+  recursionWarnThreshold: z.number().min(0.1).max(0.99).default(0.75),
+});
+
+export type AgentConfig = z.infer<typeof AgentSchema>;
+
 export const WebFetchConfigSchema = z.object({
   timeoutMs: z.number().default(10000),
   respectRobotsTxt: z.boolean().default(true),
@@ -103,6 +110,7 @@ const AppConfigSchema = z.object({
   embeddings: EmbeddingsSchema.optional(),
   webFetch: WebFetchConfigSchema.optional(),
   rlm: RLMConfigSchema.optional(),
+  agent: AgentSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema.optional(),
 });
@@ -215,6 +223,14 @@ export const env = {
       return (configManager as any).getSection('rlm', RLMConfigSchema) as RLMConfig;
     } catch {
       return RLMConfigSchema.parse({});
+    }
+  },
+  get agent(): AgentConfig {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('agent', AgentSchema) as AgentConfig;
+    } catch {
+      return AgentSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

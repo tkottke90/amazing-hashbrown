@@ -30,6 +30,7 @@ import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
+import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
 // connection every other store uses. SqliteSaver accepts the connection
@@ -227,7 +228,15 @@ async function buildChatAgent(provider?: string, model?: string) {
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [skillExpansionMiddleware, contextWindowMiddleware, afterAgentMiddleware],
+    middleware: [
+      createRecursionGuardMiddleware(
+        env.agent?.recursionLimit ?? 100,
+        env.agent?.recursionWarnThreshold ?? 0.75,
+      ),
+      skillExpansionMiddleware,
+      contextWindowMiddleware,
+      afterAgentMiddleware,
+    ],
   });
 
   return { agent, systemPrompt };
