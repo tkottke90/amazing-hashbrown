@@ -216,11 +216,7 @@ No change. The middleware fires before each LLM call, checks the step count, fin
 export interface HitlPromptFields {
   question: string;
   promptKind:
-    | 'yes_no'
-    | 'multiple_choice'
-    | 'free_text'
-    | 'shell_approval'
-    | 'recursion_limit_warning';
+    'yes_no' | 'multiple_choice' | 'free_text' | 'shell_approval' | 'recursion_limit_warning';
   choices?: string[];
   allowFreeText?: boolean;
   approveLabel?: string;
