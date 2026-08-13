@@ -13,23 +13,22 @@ function makeState(aiCount: number): { messages: any[] } {
   };
 }
 
-// Calls beforeAgent on the middleware object returned by createRecursionGuardMiddleware.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function callBeforeAgent(guard: any, state: { messages: any[] }): Promise<unknown> {
-  return guard.beforeAgent(state);
+async function callBeforeModel(guard: any, state: { messages: any[] }): Promise<unknown> {
+  return guard.beforeModel(state);
 }
 
 describe('agents/recursion-guard.middleware', () => {
   describe('createRecursionGuardMiddleware', () => {
     it('returns undefined when no LLM calls have been made yet (completedSteps = 0)', async () => {
       const guard = createRecursionGuardMiddleware(10, 0.5); // threshold = 5
-      const result = await callBeforeAgent(guard, makeState(0));
+      const result = await callBeforeModel(guard, makeState(0));
       expect(result).to.equal(undefined);
     });
 
     it('returns undefined when completedSteps is below the threshold', async () => {
       const guard = createRecursionGuardMiddleware(10, 0.5); // threshold = 5
-      const result = await callBeforeAgent(guard, makeState(4));
+      const result = await callBeforeModel(guard, makeState(4));
       expect(result).to.equal(undefined);
     });
 
@@ -37,7 +36,7 @@ describe('agents/recursion-guard.middleware', () => {
       const guard = createRecursionGuardMiddleware(10, 0.5); // threshold = 5
       let threw = false;
       try {
-        await callBeforeAgent(guard, makeState(5));
+        await callBeforeModel(guard, makeState(5));
       } catch {
         threw = true;
       }
@@ -46,7 +45,7 @@ describe('agents/recursion-guard.middleware', () => {
 
     it('does not fire at completedSteps one below the threshold', async () => {
       const guard = createRecursionGuardMiddleware(100, 0.75); // threshold = 75
-      const result = await callBeforeAgent(guard, makeState(74));
+      const result = await callBeforeModel(guard, makeState(74));
       expect(result).to.equal(undefined);
     });
 
@@ -54,7 +53,7 @@ describe('agents/recursion-guard.middleware', () => {
       const guard = createRecursionGuardMiddleware(100, 0.75); // threshold = 75
       let threw = false;
       try {
-        await callBeforeAgent(guard, makeState(75));
+        await callBeforeModel(guard, makeState(75));
       } catch {
         threw = true;
       }
@@ -65,7 +64,7 @@ describe('agents/recursion-guard.middleware', () => {
       // The modulo design fires at 75, 150, 225 — not at 76, 77, etc.
       // This gives the agent a fresh interval after each resume.
       const guard = createRecursionGuardMiddleware(100, 0.75); // threshold = 75
-      const result = await callBeforeAgent(guard, makeState(76));
+      const result = await callBeforeModel(guard, makeState(76));
       expect(result).to.equal(undefined);
     });
 
@@ -73,7 +72,7 @@ describe('agents/recursion-guard.middleware', () => {
       const guard = createRecursionGuardMiddleware(100, 0.75); // threshold = 75
       let threw = false;
       try {
-        await callBeforeAgent(guard, makeState(150));
+        await callBeforeModel(guard, makeState(150));
       } catch {
         threw = true;
       }

@@ -7,8 +7,11 @@ export function createRecursionGuardMiddleware(recursionLimit: number, warnThres
 
   return createMiddleware({
     name: 'RecursionGuardMiddleware',
+    // beforeModel fires before every LLM call — it is included in loopEntryNode,
+    // which is where the ReAct loop re-enters after each tool execution.
+    // beforeAgent only runs once (at graph START), so it cannot intercept recursion.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    beforeAgent: async (state: any) => {
+    beforeModel: async (state: any) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const completedSteps: number = (state.messages as any[]).filter(isAIMessage).length;
 

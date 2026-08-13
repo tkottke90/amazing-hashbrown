@@ -6,6 +6,10 @@
  * This is the KEY correctness assertion for the recursion guard feature.
  * Failure here means the budget does NOT reset on resume, and the guard
  * provides no practical benefit over the hard error catch.
+ *
+ * The guard uses beforeModel (not beforeAgent). beforeModel is included in
+ * loopEntryNode — the node the ReAct loop re-enters after each tool execution.
+ * beforeAgent only fires once at graph START and cannot intercept the loop.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -55,8 +59,8 @@ const noOpTool = tool(async () => 'ok', {
 describe('agents/recursion-guard (integration)', () => {
   // recursionLimit=20, warnThreshold=0.1 → threshold = floor(20*0.1) = 2
   // Guard fires when completedSteps (AIMessages) is a non-zero multiple of 2.
-  // With the LoopingModel (1 tool call per LLM call = 2 steps per cycle),
-  // the guard fires at LLM call 3 (steps 4-5), well under limit=20.
+  // With the LoopingModel (1 tool call per LLM call = 1 AIMessage per cycle),
+  // the guard fires before LLM call 3 (2 AIMessages in state), well under limit=20.
   const RECURSION_LIMIT = 20;
   const WARN_THRESHOLD = 0.1; // threshold = 2
 
@@ -86,15 +90,8 @@ describe('agents/recursion-guard (integration)', () => {
     rmSync(dir, { recursive: true });
   });
 
-  // Skipped: interrupt() from beforeAgent middleware is not reliably propagated
-  // as a graph-level interrupt by the middleware runner in test environments —
-  // NodeInterrupt appears to be caught internally, causing the graph to reach
-  // GraphRecursionError instead of pausing. The fallback catch in the stream
-  // handlers ensures a good user experience regardless. Revisit if the private
-  // langchain package exposes a supported mechanism for middleware-level interrupts.
-  it.skip('guard fires interrupt before GraphRecursionError on the first invocation', async () => {
+  it('guard fires interrupt before GraphRecursionError on the first invocation', async () => {
     // Drive the graph until it pauses (interrupt) or fails (error).
-    // We use streamEvents and collect all events.
     let caughtError: Error | null = null;
     let streamedCount = 0;
     try {
@@ -130,8 +127,8 @@ describe('agents/recursion-guard (integration)', () => {
     expect(interruptValue?.choices).to.be.an('array');
   });
 
-  it.skip('resuming with Continue working gives a fresh budget — agent makes additional progress without GraphRecursionError', async () => {
-    // The graph was paused at step ~5. Resume with full recursionLimit=20.
+  it('resuming with Continue working gives a fresh budget — agent makes additional progress without GraphRecursionError', async () => {
+    // The graph was paused at step ~2. Resume with full recursionLimit=20.
     // The resumed invocation should make at least 1 more LLM call (proving fresh budget).
     let resumeError: Error | null = null;
     let resumeEventCount = 0;
@@ -150,7 +147,7 @@ describe('agents/recursion-guard (integration)', () => {
     }
 
     // The resumed graph should NOT immediately fail with GraphRecursionError.
-    // If the budget did NOT reset, the first agent_node execution would exceed
+    // If the budget did NOT reset, the first beforeModel execution would exceed
     // the prior step count and fail before doing any work.
     expect(
       resumeError?.name ?? null,
