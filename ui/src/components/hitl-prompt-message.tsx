@@ -69,7 +69,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
       {message.promptKind === 'shell_approval' ? (
         <div className="flex flex-col gap-3 px-4 py-3">
           {message.command && (
-            <pre className="rounded bg-muted px-3 py-2 text-sm font-mono overflow-x-auto">
+            <pre className="rounded bg-muted px-3 py-2 text-sm font-mono overflow-hidden whitespace-pre-line">
               <code>{message.command}</code>
             </pre>
           )}
