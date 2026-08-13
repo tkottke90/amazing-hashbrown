@@ -64,6 +64,7 @@ export async function streamWikiChatToSse(
           provider: provider ?? env.defaultProvider,
           model,
         },
+        recursionLimit: 100,
       },
     );
 
@@ -149,6 +150,7 @@ export async function resumeWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
+      recursionLimit: 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
@@ -234,6 +236,7 @@ export async function retryWikiChatToSse(
         provider: provider ?? env.defaultProvider,
         model,
       },
+      recursionLimit: 100,
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
