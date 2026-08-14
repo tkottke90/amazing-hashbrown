@@ -296,6 +296,35 @@ export async function finalizeTurn(
           ...(assistantSeq !== null ? { assistantSeq } : {}),
           ...(userSeq !== null ? { userSeq } : {}),
         });
+      } else if (interruptValue.kind === 'recursion_limit_warning') {
+        const { question, choices, stepsUsed, recursionLimit } = interruptValue as {
+          question: string;
+          choices: string[];
+          stepsUsed: number;
+          recursionLimit: number;
+        };
+        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+          question,
+          promptKind: 'multiple_choice',
+          choices,
+          allowFreeText: true,
+          stepsUsed,
+          recursionLimit,
+        });
+        writeSseEvent(res, {
+          type: 'hitl_prompt',
+          messageId: msgId,
+          promptId,
+          question,
+          kind: 'multiple_choice',
+          choices,
+          allowFreeText: true,
+          stepsUsed,
+          recursionLimit,
+          seq,
+          ...(assistantSeq !== null ? { assistantSeq } : {}),
+          ...(userSeq !== null ? { userSeq } : {}),
+        });
       } else {
         const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
           interruptValue as {
@@ -445,8 +474,7 @@ export async function streamChatToSse(
           model: effectiveModel,
           afterAgentEnabled: afterAgent,
         },
-        // TODO: Make this a configurable option for the application.  This value is temporary
-        recursionLimit: 100,
+        recursionLimit: env.agent?.recursionLimit ?? 100,
       },
     );
 
@@ -479,6 +507,14 @@ export async function streamChatToSse(
       effectiveModel,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {
@@ -555,6 +591,7 @@ export async function resumeChatToSse(
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
       ...config,
       version: 'v2',
+      recursionLimit: env.agent?.recursionLimit ?? 100,
       callbacks: [obsHandler],
       context: {
         provider: effectiveProvider ?? env.defaultProvider,
@@ -593,6 +630,14 @@ export async function resumeChatToSse(
       effectiveModel,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {
@@ -668,6 +713,7 @@ export async function retryChatToSse(
     const eventStream = agent.streamEvents(null, {
       ...config,
       version: 'v2',
+      recursionLimit: env.agent?.recursionLimit ?? 100,
       callbacks: [obsHandler],
       context: {
         provider: effectiveProvider ?? env.defaultProvider,
@@ -706,6 +752,14 @@ export async function retryChatToSse(
       effectiveModel,
     );
   } catch (err) {
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
+    }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
     throw err;
   } finally {

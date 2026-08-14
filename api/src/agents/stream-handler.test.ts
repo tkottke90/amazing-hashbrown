@@ -220,6 +220,78 @@ describe('agents/stream-handler', () => {
       expect(events().some((e) => e.type === 'usage_stats')).to.equal(false);
       rmSync(dir, { recursive: true });
     });
+
+    it('emits hitl_prompt with multiple_choice kind for recursion_limit_warning interrupt', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t7', 'Hello');
+      const { res, events } = fakeRes();
+      const agent = stubAgent({
+        kind: 'recursion_limit_warning',
+        question: "I've been working for 75 LLM calls and want to check in.",
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        stepsUsed: 75,
+        recursionLimit: 100,
+      });
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't7',
+        'msg7',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const emitted = events();
+      const prompt = emitted.find((e) => e.type === 'hitl_prompt');
+      expect(prompt, 'hitl_prompt event should be emitted').to.not.equal(undefined);
+      expect(prompt?.kind).to.equal('multiple_choice');
+      expect(prompt?.stepsUsed).to.equal(75);
+      expect(prompt?.recursionLimit).to.equal(100);
+      expect(prompt?.allowFreeText).to.equal(true);
+      expect(prompt?.choices).to.be.an('array').with.length(2);
+      expect(emitted.some((e) => e.type === 'stream_done')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('persists the recursion_limit_warning prompt to thread_messages with multiple_choice promptKind', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t8', 'Hello');
+      const { res } = fakeRes();
+      const agent = stubAgent({
+        kind: 'recursion_limit_warning',
+        question: "I've been working for 50 LLM calls.",
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        stepsUsed: 50,
+        recursionLimit: 100,
+      });
+      await finalizeTurn(
+        res,
+        store,
+        agent,
+        't8',
+        'msg8',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const messages = store.getThreadMessages('t8', { showErrors: true });
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect(hitlRow, 'hitl_prompt row should be written to thread_messages').to.not.equal(
+        undefined,
+      );
+      expect((hitlRow?.payload as Record<string, unknown>)?.promptKind).to.equal('multiple_choice');
+      expect((hitlRow?.payload as Record<string, unknown>)?.stepsUsed).to.equal(50);
+      rmSync(dir, { recursive: true });
+    });
   });
 
   describe('pipeEvents', () => {

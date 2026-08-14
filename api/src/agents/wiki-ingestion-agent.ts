@@ -17,6 +17,8 @@ import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { contextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
+import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
+import { env } from '../config/env.js';
 
 export type WikiIngestionAgent = Awaited<ReturnType<typeof buildWikiIngestionAgent>>['agent'];
 
@@ -52,7 +54,13 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
     ],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [contextWindowMiddleware],
+    middleware: [
+      createRecursionGuardMiddleware(
+        env.agent?.recursionLimit ?? 100,
+        env.agent?.recursionWarnThreshold ?? 0.75,
+      ),
+      contextWindowMiddleware,
+    ],
   });
 
   return { agent, systemPrompt };

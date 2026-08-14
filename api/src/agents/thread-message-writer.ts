@@ -158,6 +158,8 @@ export interface HitlPromptFields {
   rejectLabel?: string;
   command?: string;
   reason?: string;
+  stepsUsed?: number;
+  recursionLimit?: number;
 }
 
 export function recordHitlPrompt(

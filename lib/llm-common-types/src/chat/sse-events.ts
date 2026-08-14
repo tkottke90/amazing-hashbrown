@@ -56,6 +56,10 @@ const HitlPromptSchema = z.object({
   // before still needs its seq conveyed either way.
   assistantSeq: z.number().optional(),
   userSeq: z.number().optional(),
+  // Present when kind === 'multiple_choice' and the prompt was triggered by
+  // the recursion guard (recursion_limit_warning interrupt).
+  stepsUsed: z.number().optional(),
+  recursionLimit: z.number().optional(),
 });
 
 const IframeContentSchema = z.object({
