@@ -61,7 +61,7 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
             <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Inputs
             </p>
-            <pre className="overflow-x-auto rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-wrap break-all">
+            <pre className="overflow-hidden rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-line break-all">
               {JSON.stringify(message.inputs, null, 2)}
             </pre>
           </div>
@@ -71,7 +71,7 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
               <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Output
               </p>
-              <pre className="overflow-x-auto rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-wrap break-all">
+              <pre className="overflow-hidden rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-line break-all">
                 {typeof message.outputs === 'string'
                   ? message.outputs
                   : JSON.stringify(message.outputs, null, 2)}

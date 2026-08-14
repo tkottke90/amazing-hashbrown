@@ -50,6 +50,8 @@ export type ThreadMessage =
       rejectLabel?: string;
       command?: string;
       reason?: string;
+      stepsUsed?: number;
+      recursionLimit?: number;
       status: HitlStatus;
       answer?: string;
       seq?: number;

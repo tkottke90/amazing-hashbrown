@@ -206,6 +206,22 @@ rlm:
 
 
 # ---------------------------------------------------------------------------
+# Agent
+#
+# Controls agent execution behaviour across the chat and wiki ingestion agents.
+#
+# recursionLimit: maximum LangGraph steps per invocation (default 100).
+#                 LangGraph counts every node execution, including tool calls.
+# recursionWarnThreshold: fraction of the limit at which the guard fires an
+#                 interrupt() before the graph is killed. At 0.75 the guard
+#                 interrupts at ~75 steps out of 100, leaving a safety margin.
+#                 Must be between 0.10 and 0.99.
+# ---------------------------------------------------------------------------
+# agent:
+#   recursionLimit: 100
+#   recursionWarnThreshold: 0.75
+
+# ---------------------------------------------------------------------------
 # Shell Execution Tool
 #
 # Optional. Configures the shell_exec agent tool and the trusted executor

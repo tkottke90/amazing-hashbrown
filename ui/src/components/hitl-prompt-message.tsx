@@ -69,7 +69,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
       {message.promptKind === 'shell_approval' ? (
         <div className="flex flex-col gap-3 px-4 py-3">
           {message.command && (
-            <pre className="rounded bg-muted px-3 py-2 text-sm font-mono overflow-x-auto">
+            <pre className="rounded bg-muted px-3 py-2 text-sm font-mono overflow-hidden whitespace-pre-line">
               <code>{message.command}</code>
             </pre>
           )}
@@ -101,6 +101,11 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
         </div>
       ) : message.promptKind === 'multiple_choice' ? (
         <div className="border-t border-border">
+          {message.stepsUsed !== undefined && (
+            <p className="text-xs text-muted-foreground px-4 pt-2 pb-0">
+              {message.stepsUsed} LLM calls completed (limit: {message.recursionLimit})
+            </p>
+          )}
           {message.choices?.map((raw) => {
             const { label, description } = parseChoice(raw);
             return (
