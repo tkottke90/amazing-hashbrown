@@ -8,6 +8,7 @@ import { ObservabilityStore, CostStore } from '@tkottke90/observability';
 import { EvaluationsStore } from '@tkottke90/evaluations';
 import { ThreadStore } from './services/thread-store.js';
 import { ShellAuditStore } from './services/shell-audit.js';
+import { WorkspaceStore } from './services/workspace-store.js';
 
 // Every BaseStore subclass below shares ONE physical db connection in
 // production (see index.ts) and therefore one schema_migrations table
@@ -39,6 +40,7 @@ describe('shared-database migrations (cross-store)', () => {
     new EvaluationsStore(db);
     new ThreadStore(db);
     new ShellAuditStore(db);
+    new WorkspaceStore(db);
 
     const tables = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -56,6 +58,10 @@ describe('shared-database migrations (cross-store)', () => {
       'threads',
       'thread_messages',
       'shell_audit_log',
+      'workspaces',
+      'projects',
+      'tasks',
+      'task_queue',
     ];
     for (const table of expectedTables) {
       expect(tables, `expected table "${table}" in: ${JSON.stringify(tables)}`).to.include(table);

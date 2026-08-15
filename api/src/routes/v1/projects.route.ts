@@ -1,0 +1,44 @@
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { getWorkspaceStore } from '../../services/workspace-store.js';
+import {
+  listProjectsHandler,
+  getProjectHandler,
+  createProjectHandler,
+  patchProjectHandler,
+  closeProjectHandler,
+} from './projects.handlers.js';
+
+export const projectsRouter = Router();
+
+projectsRouter.get('/', (_req: Request, res: Response) => {
+  res.json(listProjectsHandler(getWorkspaceStore()).data);
+});
+
+projectsRouter.post('/', (req: Request, res: Response) => {
+  const result = createProjectHandler(getWorkspaceStore(), req.body as Record<string, unknown>);
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  res.status(201).json(result.data);
+});
+
+projectsRouter.get('/:id', (req: Request, res: Response) => {
+  const result = getProjectHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  res.json(result.data);
+});
+
+projectsRouter.patch('/:id', (req: Request, res: Response) => {
+  const result = patchProjectHandler(
+    getWorkspaceStore(),
+    req.params['id'] as string,
+    req.body as Record<string, unknown>,
+  );
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  res.json(result.data);
+});
+
+projectsRouter.post('/:id/close', (req: Request, res: Response) => {
+  const result = closeProjectHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  res.json(result.data);
+});
