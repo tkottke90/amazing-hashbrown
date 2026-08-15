@@ -407,6 +407,7 @@ figcaption{font-size:0.775rem;color:var(--text-2);margin-top:0.5rem;font-style:i
         <tr><td>trigger_config</td><td>json / null</td><td>Schedule expression, target datetime, webhook ID, iteration count, max_iterations, stop_after date</td></tr>
         <tr><td>tracker_type</td><td>varchar / null</td><td>External adapter name: <code>todoist</code> | <code>github</code> | …</td></tr>
         <tr><td>tracker_id</td><td>varchar / null</td><td>ID of the corresponding record in the external system</td></tr>
+        <tr><td>plan</td><td>json / null</td><td>Ordered steps toward the outcome; <code>Record&lt;string, boolean&gt;</code> in code — key is the step description, value is completion state. Editable by both user and agent.</td></tr>
         <tr><td>createdAt</td><td>timestamp</td><td></td></tr>
         <tr><td>updatedAt</td><td>timestamp</td><td></td></tr>
       </tbody>
