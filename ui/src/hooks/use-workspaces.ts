@@ -23,6 +23,8 @@ export async function refreshWorkspaces(): Promise<void> {
     const [ws, ps] = await Promise.all([fetchWorkspaces(), fetchProjects()]);
     workspaces.value = ws;
     projects.value = ps;
+  } catch {
+    // best-effort — stays stale until next successful refresh
   } finally {
     workspacesLoading.value = false;
   }

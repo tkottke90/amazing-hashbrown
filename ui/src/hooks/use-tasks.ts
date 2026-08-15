@@ -18,6 +18,8 @@ export async function refreshTasks(filters: TaskFilters = {}): Promise<void> {
   tasksLoading.value = true;
   try {
     tasks.value = await fetchTasks(filters);
+  } catch {
+    // best-effort — stays stale until next successful refresh
   } finally {
     tasksLoading.value = false;
   }
