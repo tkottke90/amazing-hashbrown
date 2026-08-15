@@ -236,7 +236,7 @@ function QueueWidget() {
         </span>
       </div>
       <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
-        {running?.task.title ?? (queueState.value.queue[0] && '—')}
+        {running?.task.title ?? queueState.value.queue[0]?.task?.title ?? '—'}
       </div>
       <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
         {isPaused ? `Paused — ${pending} pending` : `running · ${pending} pending`}
