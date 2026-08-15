@@ -12,7 +12,11 @@ interface WorkspaceSettingsDrawerProps {
   onSaved?: () => void;
 }
 
-export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: WorkspaceSettingsDrawerProps) {
+export function WorkspaceSettingsDrawer({
+  workspace,
+  onClose,
+  onSaved,
+}: WorkspaceSettingsDrawerProps) {
   const name = useSignal(workspace.name);
   const description = useSignal(workspace.description ?? '');
   const goal = useSignal(workspace.goal ?? '');
@@ -46,11 +50,7 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
 
   return (
     <>
-      <div
-        class="fixed inset-0 z-40 bg-black/20"
-        onClick={onClose}
-        aria-label="Close settings"
-      />
+      <div class="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-label="Close settings" />
       <div
         class="fixed top-0 right-0 bottom-0 z-50 w-[400px] border-l border-border bg-background shadow-[-12px_0_32px_-8px_rgba(0,0,0,0.25)] flex flex-col"
         role="dialog"
@@ -76,7 +76,9 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
               <Input
                 autoFocus
                 value={name.value}
-                onInput={(e) => { name.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  name.value = (e.target as HTMLInputElement).value;
+                }}
                 required
               />
             </div>
@@ -86,7 +88,9 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
               <textarea
                 placeholder="Describe this workspace"
                 value={description.value}
-                onInput={(e) => { description.value = (e.target as HTMLTextAreaElement).value; }}
+                onInput={(e) => {
+                  description.value = (e.target as HTMLTextAreaElement).value;
+                }}
                 class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
@@ -96,7 +100,9 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
               <textarea
                 placeholder="What should be accomplished in this workspace?"
                 value={goal.value}
-                onInput={(e) => { goal.value = (e.target as HTMLTextAreaElement).value; }}
+                onInput={(e) => {
+                  goal.value = (e.target as HTMLTextAreaElement).value;
+                }}
                 class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
@@ -106,7 +112,9 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
               <Input
                 placeholder="https://github.com/org/repo"
                 value={remoteUrl.value}
-                onInput={(e) => { remoteUrl.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  remoteUrl.value = (e.target as HTMLInputElement).value;
+                }}
               />
             </div>
 
@@ -138,13 +146,13 @@ export function WorkspaceSettingsDrawer({ workspace, onClose, onSaved }: Workspa
               </div>
             </div>
 
-            {error.value && (
-              <p class="text-sm text-destructive">{error.value}</p>
-            )}
+            {error.value && <p class="text-sm text-destructive">{error.value}</p>}
           </div>
 
           <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={saving.value}>
               {saving.value ? 'Saving…' : 'Save changes'}
             </Button>

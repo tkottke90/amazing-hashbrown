@@ -65,11 +65,16 @@ test.describe(
       // Task card should appear in the Pending column
       const pendingColumn = page.locator('[data-column="pending"]');
       await expect(pendingColumn).toBeVisible();
-      const card = pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'My kanban task' });
+      const card = pendingColumn
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'My kanban task' });
       await expect(card).toBeVisible();
     });
 
-    test('task moves to Running column when status changes', async ({ page, request }, testInfo) => {
+    test('task moves to Running column when status changes', async ({
+      page,
+      request,
+    }, testInfo) => {
       await page.goto('/workspaces');
 
       // Create workspace and task via API
@@ -91,7 +96,9 @@ test.describe(
 
       // Verify task is in Pending column
       const pendingColumn = page.locator('[data-column="pending"]');
-      await expect(pendingColumn.locator('[data-task-id]').filter({ hasText: 'Moveable task' })).toBeVisible();
+      await expect(
+        pendingColumn.locator('[data-task-id]').filter({ hasText: 'Moveable task' }),
+      ).toBeVisible();
 
       // Change status to running via API
       const patchRes = await request.patch(`/api/v1/tasks/${task.id}`, {
@@ -108,10 +115,14 @@ test.describe(
       // Task should now be in Running column
       const runningColumn = page.locator('[data-column="running"]');
       await expect(runningColumn).toBeVisible();
-      await expect(runningColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' })).toBeVisible();
+      await expect(
+        runningColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
+      ).toBeVisible();
 
       // And not in Pending column
-      await expect(pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' })).not.toBeVisible();
+      await expect(
+        pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
+      ).not.toBeVisible();
     });
   },
 );

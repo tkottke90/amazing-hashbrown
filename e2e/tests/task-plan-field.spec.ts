@@ -42,7 +42,10 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('plan steps are created and persisted with checked state', async ({ page, request }, testInfo) => {
+    test('plan steps are created and persisted with checked state', async ({
+      page,
+      request,
+    }, testInfo) => {
       // Create workspace via API
       const wsRes = await request.post('/api/v1/workspaces', {
         data: { name: 'plan-field-ws', location: '/tmp/plan-field-ws' },
@@ -78,7 +81,9 @@ test.describe(
 
       // Task card should appear in Pending column
       const pendingColumn = page.locator('[data-column="pending"]');
-      const taskCard = pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Plan test task' });
+      const taskCard = pendingColumn
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'Plan test task' });
       await expect(taskCard).toBeVisible();
 
       // Open the task drawer by clicking the card
@@ -119,7 +124,9 @@ test.describe(
       const reopenedSteps = reopenedPlan.locator('[data-testid="plan-step"]');
       await expect(reopenedSteps).toHaveCount(2);
       await expect(reopenedSteps.nth(0)).toHaveAttribute('data-done', 'true');
-      await expect(reopenedSteps.nth(0).locator('[data-testid="plan-step-checkbox"]')).toBeChecked();
+      await expect(
+        reopenedSteps.nth(0).locator('[data-testid="plan-step-checkbox"]'),
+      ).toBeChecked();
       await expect(reopenedSteps.nth(1)).toHaveAttribute('data-done', 'false');
     });
   },

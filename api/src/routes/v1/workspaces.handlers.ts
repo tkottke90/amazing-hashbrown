@@ -1,4 +1,8 @@
-import type { WorkspaceStore, NewWorkspaceInput, PatchWorkspaceInput } from '../../services/workspace-store.js';
+import type {
+  WorkspaceStore,
+  NewWorkspaceInput,
+  PatchWorkspaceInput,
+} from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -17,7 +21,10 @@ export function listWorkspacesHandler(store: WorkspaceStore) {
   return ok(store.listWorkspaces());
 }
 
-export function getWorkspaceHandler(store: WorkspaceStore, id: string): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
+export function getWorkspaceHandler(
+  store: WorkspaceStore,
+  id: string,
+): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
   const ws = store.getWorkspace(id);
   if (!ws) return notFound(`Workspace ${id} not found`);
   return ok(ws);
@@ -28,7 +35,8 @@ export function createWorkspaceHandler(
   body: Partial<NewWorkspaceInput>,
 ): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
-  if (!body.location || typeof body.location !== 'string') return badRequest('location is required');
+  if (!body.location || typeof body.location !== 'string')
+    return badRequest('location is required');
   const ws = store.createWorkspace(body as NewWorkspaceInput);
   return ok(ws);
 }

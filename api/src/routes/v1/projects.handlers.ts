@@ -1,4 +1,8 @@
-import type { WorkspaceStore, NewProjectInput, PatchProjectInput } from '../../services/workspace-store.js';
+import type {
+  WorkspaceStore,
+  NewProjectInput,
+  PatchProjectInput,
+} from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -28,12 +32,22 @@ export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
 export function createProjectHandler(
   store: WorkspaceStore,
   body: Partial<NewProjectInput>,
-): HandlerResult<{ workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>; project: NonNullable<ReturnType<WorkspaceStore['getProject']>> }> {
+): HandlerResult<{
+  workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+  project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
+}> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
-  if (!body.location || typeof body.location !== 'string') return badRequest('location is required');
-  if (!body.winCondition || typeof body.winCondition !== 'string') return badRequest('winCondition is required');
+  if (!body.location || typeof body.location !== 'string')
+    return badRequest('location is required');
+  if (!body.winCondition || typeof body.winCondition !== 'string')
+    return badRequest('winCondition is required');
   const result = store.createProject(body as NewProjectInput);
-  return ok(result as { workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>; project: NonNullable<ReturnType<WorkspaceStore['getProject']>> });
+  return ok(
+    result as {
+      workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+      project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
+    },
+  );
 }
 
 export function patchProjectHandler(

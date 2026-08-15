@@ -15,12 +15,7 @@ import {
   closeProject,
   getProjectForWorkspace,
 } from '@/hooks/use-workspaces';
-import {
-  tasks,
-  refreshTasks,
-  patchTask,
-  groupTasksByStatus,
-} from '@/hooks/use-tasks';
+import { tasks, refreshTasks, patchTask, groupTasksByStatus } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
 import type { Task, TaskStatus } from '@/services/tasks-api';
 import type { Workspace } from '@/services/workspaces-api';
@@ -37,9 +32,20 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-const COLUMN_ORDER: TaskStatus[] = ['pending', 'running', 'waiting_on_user', 'blocked', 'done', 'failed'];
+const COLUMN_ORDER: TaskStatus[] = [
+  'pending',
+  'running',
+  'waiting_on_user',
+  'blocked',
+  'done',
+  'failed',
+];
 
-function KanbanColumn({ status, taskList, onOpenTask }: {
+function KanbanColumn({
+  status,
+  taskList,
+  onOpenTask,
+}: {
   status: TaskStatus;
   taskList: Task[];
   onOpenTask: (t: Task) => void;
@@ -50,23 +56,23 @@ function KanbanColumn({ status, taskList, onOpenTask }: {
   const isFailed = status === 'failed';
   const label = status === 'failed' ? 'Failed / Cancelled' : STATUS_LABELS[status];
 
-  const columnTasks = status === 'failed'
-    ? [...taskList]
-    : taskList;
+  const columnTasks = status === 'failed' ? [...taskList] : taskList;
 
   return (
-    <div
-      data-column={status}
-      class="bg-muted rounded-xl p-2.5 flex flex-col gap-2 min-h-[200px]"
-    >
+    <div data-column={status} class="bg-muted rounded-xl p-2.5 flex flex-col gap-2 min-h-[200px]">
       <div class="flex items-center justify-between px-1">
-        <span class={cn(
-          'text-xs font-semibold uppercase tracking-wider',
-          isRunning ? 'text-primary' :
-          isBlocked || isFailed ? 'text-destructive' :
-          isDone ? 'text-green-600' :
-          'text-muted-foreground',
-        )}>
+        <span
+          class={cn(
+            'text-xs font-semibold uppercase tracking-wider',
+            isRunning
+              ? 'text-primary'
+              : isBlocked || isFailed
+                ? 'text-destructive'
+                : isDone
+                  ? 'text-green-600'
+                  : 'text-muted-foreground',
+          )}
+        >
           {label}
         </span>
         <span class="rounded-full bg-background border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -99,10 +105,14 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
     >
       <p class="font-medium truncate">{task.title}</p>
       {task.assignedTo && (
-        <span class={cn(
-          'inline-flex items-center mt-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-          task.assignedTo === 'agent' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-        )}>
+        <span
+          class={cn(
+            'inline-flex items-center mt-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+            task.assignedTo === 'agent'
+              ? 'bg-primary/10 text-primary'
+              : 'bg-muted text-muted-foreground',
+          )}
+        >
           {task.assignedTo}
         </span>
       )}
@@ -116,7 +126,13 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   );
 }
 
-function OverviewTab({ workspace, proj }: { workspace: Workspace; proj: ReturnType<typeof getProjectForWorkspace> }) {
+function OverviewTab({
+  workspace,
+  proj,
+}: {
+  workspace: Workspace;
+  proj: ReturnType<typeof getProjectForWorkspace>;
+}) {
   if (!proj) {
     return (
       <div class="p-4">
@@ -128,13 +144,17 @@ function OverviewTab({ workspace, proj }: { workspace: Workspace; proj: ReturnTy
   return (
     <div class="p-4 flex flex-col gap-4">
       <div class="border border-primary/30 rounded-xl p-4 bg-primary/5">
-        <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-1">Win condition</p>
+        <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-1">
+          Win condition
+        </p>
         <p class="text-sm">{proj.project.winCondition}</p>
       </div>
 
       <div class="grid grid-cols-2 gap-4">
         <div class="border border-border rounded-xl p-4">
-          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Status</p>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Status
+          </p>
           <p class="text-sm capitalize">{proj.project.status}</p>
           {proj.project.dueAt && (
             <p class="text-xs text-muted-foreground mt-1 flex items-center gap-1">
@@ -144,14 +164,18 @@ function OverviewTab({ workspace, proj }: { workspace: Workspace; proj: ReturnTy
           )}
         </div>
         <div class="border border-border rounded-xl p-4">
-          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Wiki</p>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Wiki
+          </p>
           <p class="text-sm">{workspace.wikiId ?? 'Not linked'}</p>
         </div>
       </div>
 
       {workspace.description && (
         <div class="border border-border rounded-xl p-4">
-          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Description</p>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Description
+          </p>
           <p class="text-sm">{workspace.description}</p>
         </div>
       )}
@@ -159,8 +183,16 @@ function OverviewTab({ workspace, proj }: { workspace: Workspace; proj: ReturnTy
   );
 }
 
-function TasksTab({ workspaceId, onOpenTask }: { workspaceId: string; onOpenTask: (t: Task | null) => void }) {
-  const workspaceTasks = useComputed(() => tasks.value.filter((t) => t.workspaceId === workspaceId));
+function TasksTab({
+  workspaceId,
+  onOpenTask,
+}: {
+  workspaceId: string;
+  onOpenTask: (t: Task | null) => void;
+}) {
+  const workspaceTasks = useComputed(() =>
+    tasks.value.filter((t) => t.workspaceId === workspaceId),
+  );
   const grouped = useComputed(() => groupTasksByStatus(workspaceTasks.value));
 
   const failedAndCancelled = useComputed(() => [
@@ -208,7 +240,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   }, [id]);
 
   const workspace = useComputed(() => workspaces.value.find((w) => w.id === id));
-  const proj = useComputed(() => id ? getProjectForWorkspace(id) : undefined);
+  const proj = useComputed(() => (id ? getProjectForWorkspace(id) : undefined));
 
   if (!workspace.value) {
     return (
@@ -239,7 +271,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
       <div class="flex flex-col h-full overflow-y-auto">
         <div class="px-6 pt-5 pb-0 border-b border-border">
           <nav class="flex items-center gap-1 text-xs text-muted-foreground mb-3">
-            <a href="/workspaces" class="hover:text-foreground transition-colors">Workspaces</a>
+            <a href="/workspaces" class="hover:text-foreground transition-colors">
+              Workspaces
+            </a>
             <ChevronRight class="size-3" />
             <span class="text-foreground font-medium">{ws.name}</span>
           </nav>
@@ -256,7 +290,13 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
-              <Button size="sm" variant="outline" onClick={() => { showSettings.value = true; }}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  showSettings.value = true;
+                }}
+              >
                 Edit
               </Button>
               {isProj && proj.value?.project.status === 'active' && (
@@ -297,7 +337,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               <button
                 key={t}
                 type="button"
-                onClick={() => { tab.value = t; }}
+                onClick={() => {
+                  tab.value = t;
+                }}
                 class={cn(
                   'px-3 py-2 text-sm capitalize border-b-2 transition-colors',
                   tab.value === t
@@ -305,20 +347,22 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                     : 'border-transparent text-muted-foreground hover:text-foreground',
                 )}
               >
-                {t === 'tasks' ? `Tasks (${tasks.value.filter((t) => t.workspaceId === id).length})` : t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === 'tasks'
+                  ? `Tasks (${tasks.value.filter((t) => t.workspaceId === id).length})`
+                  : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
           </div>
         </div>
 
         <div class="flex-1 min-h-0 overflow-y-auto">
-          {tab.value === 'overview' && (
-            <OverviewTab workspace={ws} proj={proj.value} />
-          )}
+          {tab.value === 'overview' && <OverviewTab workspace={ws} proj={proj.value} />}
           {tab.value === 'tasks' && id && (
             <TasksTab
               workspaceId={id}
-              onOpenTask={(t) => { openTask.value = t; }}
+              onOpenTask={(t) => {
+                openTask.value = t;
+              }}
             />
           )}
           {tab.value === 'files' && (
@@ -334,15 +378,21 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
         <TaskDrawer
           task={openTask.value}
           defaultWorkspaceId={id}
-          onClose={() => { openTask.value = undefined; }}
-          onSaved={() => { if (id) void refreshTasks({ workspace_id: id }); }}
+          onClose={() => {
+            openTask.value = undefined;
+          }}
+          onSaved={() => {
+            if (id) void refreshTasks({ workspace_id: id });
+          }}
         />
       )}
 
       {showSettings.value && (
         <WorkspaceSettingsDrawer
           workspace={ws}
-          onClose={() => { showSettings.value = false; }}
+          onClose={() => {
+            showSettings.value = false;
+          }}
           onSaved={() => void refreshWorkspaces()}
         />
       )}

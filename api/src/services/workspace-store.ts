@@ -378,7 +378,9 @@ export class WorkspaceStore extends BaseStore {
   // reset to `pending` so the scheduler can pick it up again (R5).
   private recoverRunningQueueEntries(): void {
     this.db
-      .prepare(`UPDATE task_queue SET status = 'pending', started_at = NULL WHERE status = 'running'`)
+      .prepare(
+        `UPDATE task_queue SET status = 'pending', started_at = NULL WHERE status = 'running'`,
+      )
       .run();
   }
 
@@ -394,9 +396,9 @@ export class WorkspaceStore extends BaseStore {
   }
 
   getWorkspace(id: string): Workspace | null {
-    const row = this.db
-      .prepare(`SELECT * FROM workspaces WHERE id = ?`)
-      .get(id) as RawWorkspaceRow | undefined;
+    const row = this.db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get(id) as
+      | RawWorkspaceRow
+      | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -432,15 +434,42 @@ export class WorkspaceStore extends BaseStore {
     const sets: string[] = [];
     const values: unknown[] = [];
 
-    if (patch.name !== undefined) { sets.push('name = ?'); values.push(patch.name); }
-    if (patch.description !== undefined) { sets.push('description = ?'); values.push(patch.description); }
-    if (patch.goal !== undefined) { sets.push('goal = ?'); values.push(patch.goal); }
-    if (patch.remoteUrl !== undefined) { sets.push('remote_url = ?'); values.push(patch.remoteUrl); }
-    if (patch.javascript !== undefined) { sets.push('javascript = ?'); values.push(patch.javascript ? 1 : 0); }
-    if (patch.python !== undefined) { sets.push('python = ?'); values.push(patch.python ? 1 : 0); }
-    if (patch.git !== undefined) { sets.push('git = ?'); values.push(patch.git ? 1 : 0); }
-    if (patch.wikiId !== undefined) { sets.push('wiki_id = ?'); values.push(patch.wikiId); }
-    if (patch.systemPrompt !== undefined) { sets.push('system_prompt = ?'); values.push(patch.systemPrompt); }
+    if (patch.name !== undefined) {
+      sets.push('name = ?');
+      values.push(patch.name);
+    }
+    if (patch.description !== undefined) {
+      sets.push('description = ?');
+      values.push(patch.description);
+    }
+    if (patch.goal !== undefined) {
+      sets.push('goal = ?');
+      values.push(patch.goal);
+    }
+    if (patch.remoteUrl !== undefined) {
+      sets.push('remote_url = ?');
+      values.push(patch.remoteUrl);
+    }
+    if (patch.javascript !== undefined) {
+      sets.push('javascript = ?');
+      values.push(patch.javascript ? 1 : 0);
+    }
+    if (patch.python !== undefined) {
+      sets.push('python = ?');
+      values.push(patch.python ? 1 : 0);
+    }
+    if (patch.git !== undefined) {
+      sets.push('git = ?');
+      values.push(patch.git ? 1 : 0);
+    }
+    if (patch.wikiId !== undefined) {
+      sets.push('wiki_id = ?');
+      values.push(patch.wikiId);
+    }
+    if (patch.systemPrompt !== undefined) {
+      sets.push('system_prompt = ?');
+      values.push(patch.systemPrompt);
+    }
 
     if (sets.length === 0) return this.getWorkspace(id);
 
@@ -479,7 +508,14 @@ export class WorkspaceStore extends BaseStore {
          INNER JOIN projects p ON p.workspace_id = w.id
          ORDER BY w.updated_at DESC`,
       )
-      .all() as Array<RawWorkspaceRow & { win_condition: string; p_due_at: string | null; p_status: 'active' | 'closed' | 'abandoned'; closed_at: string | null }>;
+      .all() as Array<
+      RawWorkspaceRow & {
+        win_condition: string;
+        p_due_at: string | null;
+        p_status: 'active' | 'closed' | 'abandoned';
+        closed_at: string | null;
+      }
+    >;
 
     return workspaces.map((row) => ({
       ...mapWorkspace(row),
@@ -552,8 +588,14 @@ export class WorkspaceStore extends BaseStore {
     const sets: string[] = [];
     const values: unknown[] = [];
 
-    if (patch.winCondition !== undefined) { sets.push('win_condition = ?'); values.push(patch.winCondition); }
-    if (patch.dueAt !== undefined) { sets.push('due_at = ?'); values.push(patch.dueAt); }
+    if (patch.winCondition !== undefined) {
+      sets.push('win_condition = ?');
+      values.push(patch.winCondition);
+    }
+    if (patch.dueAt !== undefined) {
+      sets.push('due_at = ?');
+      values.push(patch.dueAt);
+    }
 
     if (sets.length > 0) {
       this.db
@@ -606,7 +648,8 @@ export class WorkspaceStore extends BaseStore {
 
   getTask(id: string): Task | null {
     const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as
-      RawTaskRow | undefined;
+      | RawTaskRow
+      | undefined;
     return row ? mapTask(row) : null;
   }
 
@@ -643,19 +686,58 @@ export class WorkspaceStore extends BaseStore {
     const sets: string[] = [];
     const values: unknown[] = [];
 
-    if (patch.workspaceId !== undefined) { sets.push('workspace_id = ?'); values.push(patch.workspaceId); }
-    if (patch.title !== undefined) { sets.push('title = ?'); values.push(patch.title); }
-    if (patch.description !== undefined) { sets.push('description = ?'); values.push(patch.description); }
-    if (patch.outcome !== undefined) { sets.push('outcome = ?'); values.push(patch.outcome); }
-    if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
-    if (patch.assignedTo !== undefined) { sets.push('assigned_to = ?'); values.push(patch.assignedTo); }
-    if (patch.dueAt !== undefined) { sets.push('due_at = ?'); values.push(patch.dueAt); }
-    if (patch.expiresAt !== undefined) { sets.push('expires_at = ?'); values.push(patch.expiresAt); }
-    if (patch.triggerType !== undefined) { sets.push('trigger_type = ?'); values.push(patch.triggerType); }
-    if (patch.triggerConfig !== undefined) { sets.push('trigger_config = ?'); values.push(JSON.stringify(patch.triggerConfig)); }
-    if (patch.trackerType !== undefined) { sets.push('tracker_type = ?'); values.push(patch.trackerType); }
-    if (patch.trackerId !== undefined) { sets.push('tracker_id = ?'); values.push(patch.trackerId); }
-    if (patch.plan !== undefined) { sets.push('plan = ?'); values.push(patch.plan ? JSON.stringify(patch.plan) : null); }
+    if (patch.workspaceId !== undefined) {
+      sets.push('workspace_id = ?');
+      values.push(patch.workspaceId);
+    }
+    if (patch.title !== undefined) {
+      sets.push('title = ?');
+      values.push(patch.title);
+    }
+    if (patch.description !== undefined) {
+      sets.push('description = ?');
+      values.push(patch.description);
+    }
+    if (patch.outcome !== undefined) {
+      sets.push('outcome = ?');
+      values.push(patch.outcome);
+    }
+    if (patch.status !== undefined) {
+      sets.push('status = ?');
+      values.push(patch.status);
+    }
+    if (patch.assignedTo !== undefined) {
+      sets.push('assigned_to = ?');
+      values.push(patch.assignedTo);
+    }
+    if (patch.dueAt !== undefined) {
+      sets.push('due_at = ?');
+      values.push(patch.dueAt);
+    }
+    if (patch.expiresAt !== undefined) {
+      sets.push('expires_at = ?');
+      values.push(patch.expiresAt);
+    }
+    if (patch.triggerType !== undefined) {
+      sets.push('trigger_type = ?');
+      values.push(patch.triggerType);
+    }
+    if (patch.triggerConfig !== undefined) {
+      sets.push('trigger_config = ?');
+      values.push(JSON.stringify(patch.triggerConfig));
+    }
+    if (patch.trackerType !== undefined) {
+      sets.push('tracker_type = ?');
+      values.push(patch.trackerType);
+    }
+    if (patch.trackerId !== undefined) {
+      sets.push('tracker_id = ?');
+      values.push(patch.trackerId);
+    }
+    if (patch.plan !== undefined) {
+      sets.push('plan = ?');
+      values.push(patch.plan ? JSON.stringify(patch.plan) : null);
+    }
 
     if (sets.length === 0) return this.getTask(id);
 
@@ -711,9 +793,7 @@ export class WorkspaceStore extends BaseStore {
 
   dequeueNext(): (TaskQueueEntry & { task: Task }) | null {
     const row = this.db
-      .prepare(
-        `SELECT * FROM task_queue WHERE status = 'pending' ORDER BY position ASC LIMIT 1`,
-      )
+      .prepare(`SELECT * FROM task_queue WHERE status = 'pending' ORDER BY position ASC LIMIT 1`)
       .get() as RawQueueRow | undefined;
     if (!row) return null;
 
@@ -721,7 +801,9 @@ export class WorkspaceStore extends BaseStore {
     this.db
       .prepare(`UPDATE task_queue SET status = 'running', started_at = ? WHERE id = ?`)
       .run(now, row.id);
-    this.db.prepare(`UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?`).run(now, row.task_id);
+    this.db
+      .prepare(`UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?`)
+      .run(now, row.task_id);
 
     const task = this.getTask(row.task_id);
     if (!task) return null;
@@ -736,7 +818,8 @@ export class WorkspaceStore extends BaseStore {
       .run(outcome, now, id);
 
     const entry = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      { task_id: string } | undefined;
+      | { task_id: string }
+      | undefined;
     if (entry) {
       this.db
         .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)

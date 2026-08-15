@@ -71,7 +71,7 @@ export interface TaskFilters {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -97,7 +97,10 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
   });
 }
 
-export async function patchTask(id: string, patch: Partial<CreateTaskInput & { status: TaskStatus }>): Promise<Task> {
+export async function patchTask(
+  id: string,
+  patch: Partial<CreateTaskInput & { status: TaskStatus }>,
+): Promise<Task> {
   return request<Task>(`/api/v1/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

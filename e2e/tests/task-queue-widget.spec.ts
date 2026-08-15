@@ -36,7 +36,10 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('queue widget appears and shows task when enqueued', async ({ page, request }, testInfo) => {
+    test('queue widget appears and shows task when enqueued', async ({
+      page,
+      request,
+    }, testInfo) => {
       // Create workspace via API
       const wsRes = await request.post('/api/v1/workspaces', {
         data: { name: 'queue-widget-ws', location: '/tmp/queue-widget-ws' },

@@ -91,20 +91,28 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
       <div class="flex items-center gap-1 mb-4 border border-border rounded-lg overflow-hidden w-fit text-sm">
         <button
           type="button"
-          onClick={() => { mode.value = 'workspace'; }}
+          onClick={() => {
+            mode.value = 'workspace';
+          }}
           class={cn(
             'px-3 py-1.5 transition-colors',
-            mode.value === 'workspace' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
+            mode.value === 'workspace'
+              ? 'bg-muted font-medium'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           Workspace
         </button>
         <button
           type="button"
-          onClick={() => { mode.value = 'project'; }}
+          onClick={() => {
+            mode.value = 'project';
+          }}
           class={cn(
             'px-3 py-1.5 transition-colors',
-            mode.value === 'project' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
+            mode.value === 'project'
+              ? 'bg-muted font-medium'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           Project
@@ -118,7 +126,9 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
             <Input
               placeholder="my-workspace"
               value={name.value}
-              onInput={(e) => { name.value = (e.target as HTMLInputElement).value; }}
+              onInput={(e) => {
+                name.value = (e.target as HTMLInputElement).value;
+              }}
               required
             />
           </div>
@@ -127,7 +137,9 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
             <Input
               placeholder="/home/user/projects/my-workspace"
               value={location.value}
-              onInput={(e) => { location.value = (e.target as HTMLInputElement).value; }}
+              onInput={(e) => {
+                location.value = (e.target as HTMLInputElement).value;
+              }}
               required
             />
           </div>
@@ -138,20 +150,28 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
           <textarea
             placeholder="What should be accomplished in this workspace?"
             value={goal.value}
-            onInput={(e) => { goal.value = (e.target as HTMLTextAreaElement).value; }}
+            onInput={(e) => {
+              goal.value = (e.target as HTMLTextAreaElement).value;
+            }}
             class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
         </div>
 
         {mode.value === 'project' && (
           <div class="border border-primary/30 rounded-lg p-3 bg-primary/5 flex flex-col gap-3">
-            <p class="text-xs font-semibold text-primary uppercase tracking-wider">Project fields</p>
+            <p class="text-xs font-semibold text-primary uppercase tracking-wider">
+              Project fields
+            </p>
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-muted-foreground">Win condition <span class="text-destructive">*</span></label>
+              <label class="text-xs font-medium text-muted-foreground">
+                Win condition <span class="text-destructive">*</span>
+              </label>
               <textarea
                 placeholder="The project is done when..."
                 value={winCondition.value}
-                onInput={(e) => { winCondition.value = (e.target as HTMLTextAreaElement).value; }}
+                onInput={(e) => {
+                  winCondition.value = (e.target as HTMLTextAreaElement).value;
+                }}
                 required
                 class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
@@ -161,20 +181,26 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
               <Input
                 type="date"
                 value={dueAt.value}
-                onInput={(e) => { dueAt.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  dueAt.value = (e.target as HTMLInputElement).value;
+                }}
               />
             </div>
           </div>
         )}
 
-        {error.value && (
-          <p class="text-sm text-destructive">{error.value}</p>
-        )}
+        {error.value && <p class="text-sm text-destructive">{error.value}</p>}
 
         <div class="flex items-center gap-2 justify-end">
-          <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
           <Button type="submit" disabled={saving.value}>
-            {saving.value ? 'Creating…' : mode.value === 'project' ? 'Create project' : 'Create workspace'}
+            {saving.value
+              ? 'Creating…'
+              : mode.value === 'project'
+                ? 'Create project'
+                : 'Create workspace'}
           </Button>
         </div>
       </form>
@@ -195,7 +221,9 @@ export function WorkspacesView(_props: { path?: string }) {
 
   const allWorkspaces = useComputed(() => {
     const projectIds = new Set(projects.value.map((p) => p.id));
-    const closedIds = new Set(projects.value.filter((p) => p.project.status !== 'active').map((p) => p.id));
+    const closedIds = new Set(
+      projects.value.filter((p) => p.project.status !== 'active').map((p) => p.id),
+    );
 
     return workspaces.value.filter((ws) => {
       const q = search.value.toLowerCase();
@@ -233,7 +261,12 @@ export function WorkspacesView(_props: { path?: string }) {
               </p>
             </div>
             <div class="flex items-center gap-2">
-              <Button variant="outline" onClick={() => { showCreate.value = !showCreate.value; }}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  showCreate.value = !showCreate.value;
+                }}
+              >
                 <Plus class="size-4" />
                 New workspace
               </Button>
@@ -242,8 +275,12 @@ export function WorkspacesView(_props: { path?: string }) {
 
           {showCreate.value && (
             <CreateForm
-              onCancel={() => { showCreate.value = false; }}
-              onCreated={() => { showCreate.value = false; }}
+              onCancel={() => {
+                showCreate.value = false;
+              }}
+              onCreated={() => {
+                showCreate.value = false;
+              }}
             />
           )}
 
@@ -253,10 +290,14 @@ export function WorkspacesView(_props: { path?: string }) {
                 <button
                   key={tab}
                   type="button"
-                  onClick={() => { filter.value = tab; }}
+                  onClick={() => {
+                    filter.value = tab;
+                  }}
                   class={cn(
                     'px-3 py-1.5 capitalize transition-colors',
-                    filter.value === tab ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
+                    filter.value === tab
+                      ? 'bg-muted font-medium'
+                      : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
                   {tab}
@@ -268,7 +309,9 @@ export function WorkspacesView(_props: { path?: string }) {
               <Input
                 placeholder="Search"
                 value={search.value}
-                onInput={(e) => { search.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  search.value = (e.target as HTMLInputElement).value;
+                }}
                 class="pl-8 w-52"
               />
             </div>
@@ -278,11 +321,36 @@ export function WorkspacesView(_props: { path?: string }) {
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b border-border bg-muted/40">
-                  <th class="px-4 py-2.5 text-left font-medium text-muted-foreground" style="width:2.2fr">Name</th>
-                  <th class="px-4 py-2.5 text-left font-medium text-muted-foreground" style="width:3fr">Goal</th>
-                  <th class="px-4 py-2.5 text-left font-medium text-muted-foreground" style="width:0.7fr">Git</th>
-                  <th class="px-4 py-2.5 text-left font-medium text-muted-foreground" style="width:0.8fr">Tasks</th>
-                  <th class="px-4 py-2.5 text-left font-medium text-muted-foreground" style="width:1fr">Last change</th>
+                  <th
+                    class="px-4 py-2.5 text-left font-medium text-muted-foreground"
+                    style="width:2.2fr"
+                  >
+                    Name
+                  </th>
+                  <th
+                    class="px-4 py-2.5 text-left font-medium text-muted-foreground"
+                    style="width:3fr"
+                  >
+                    Goal
+                  </th>
+                  <th
+                    class="px-4 py-2.5 text-left font-medium text-muted-foreground"
+                    style="width:0.7fr"
+                  >
+                    Git
+                  </th>
+                  <th
+                    class="px-4 py-2.5 text-left font-medium text-muted-foreground"
+                    style="width:0.8fr"
+                  >
+                    Tasks
+                  </th>
+                  <th
+                    class="px-4 py-2.5 text-left font-medium text-muted-foreground"
+                    style="width:1fr"
+                  >
+                    Last change
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -301,27 +369,47 @@ export function WorkspacesView(_props: { path?: string }) {
                   return (
                     <tr
                       key={ws.id}
-                      class={cn('border-b border-border last:border-0 hover:bg-muted/30 transition-colors', stale && 'opacity-60')}
+                      class={cn(
+                        'border-b border-border last:border-0 hover:bg-muted/30 transition-colors',
+                        stale && 'opacity-60',
+                      )}
                     >
                       <td class="px-4 py-3">
                         <a href={`/workspaces/${ws.id}`} class="font-medium hover:underline">
                           {ws.name}
                         </a>
                         {proj && (
-                          <span class={cn(
-                            'ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                            isClosed ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary',
-                          )}>
+                          <span
+                            class={cn(
+                              'ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                              isClosed
+                                ? 'bg-muted text-muted-foreground'
+                                : 'bg-primary/10 text-primary',
+                            )}
+                          >
                             {isClosed ? 'Project · closed' : 'Project'}
                           </span>
                         )}
                       </td>
-                      <td class="px-4 py-3 text-muted-foreground truncate max-w-xs">{ws.goal ?? '—'}</td>
-                      <td class="px-4 py-3">
-                        {ws.git ? <span class="text-green-600 text-xs font-medium">Yes</span> : <span class="text-muted-foreground text-xs">—</span>}
+                      <td class="px-4 py-3 text-muted-foreground truncate max-w-xs">
+                        {ws.goal ?? '—'}
                       </td>
-                      <td class="px-4 py-3 text-muted-foreground">{taskCountMap.value[ws.id] ?? 0}</td>
-                      <td class={cn('px-4 py-3 text-xs', stale ? 'text-destructive' : 'text-muted-foreground')}>
+                      <td class="px-4 py-3">
+                        {ws.git ? (
+                          <span class="text-green-600 text-xs font-medium">Yes</span>
+                        ) : (
+                          <span class="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+                      <td class="px-4 py-3 text-muted-foreground">
+                        {taskCountMap.value[ws.id] ?? 0}
+                      </td>
+                      <td
+                        class={cn(
+                          'px-4 py-3 text-xs',
+                          stale ? 'text-destructive' : 'text-muted-foreground',
+                        )}
+                      >
                         {formatRelativeTime(ws.lastChange)}
                       </td>
                     </tr>
@@ -333,12 +421,21 @@ export function WorkspacesView(_props: { path?: string }) {
 
           {inboxTasks.value.length > 0 && (
             <div class="mt-6">
-              <h2 class="text-sm font-semibold mb-3">Inbox <span class="text-muted-foreground font-normal">({inboxTasks.value.length} unassigned task{inboxTasks.value.length !== 1 ? 's' : ''})</span></h2>
+              <h2 class="text-sm font-semibold mb-3">
+                Inbox{' '}
+                <span class="text-muted-foreground font-normal">
+                  ({inboxTasks.value.length} unassigned task
+                  {inboxTasks.value.length !== 1 ? 's' : ''})
+                </span>
+              </h2>
               <div class="border border-border rounded-xl overflow-hidden">
                 <table class="w-full text-sm">
                   <tbody>
                     {inboxTasks.value.map((task) => (
-                      <tr key={task.id} class="border-b border-border last:border-0 hover:bg-muted/30">
+                      <tr
+                        key={task.id}
+                        class="border-b border-border last:border-0 hover:bg-muted/30"
+                      >
                         <td class="px-4 py-3 font-medium">{task.title}</td>
                         <td class="px-4 py-3 text-muted-foreground capitalize">{task.status}</td>
                         <td class="px-4 py-3 text-muted-foreground">{task.assignedTo ?? '—'}</td>

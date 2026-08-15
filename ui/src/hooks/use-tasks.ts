@@ -33,7 +33,10 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
   return task;
 }
 
-export async function patchTask(id: string, patch: Partial<CreateTaskInput & { status: TaskStatus }>): Promise<Task> {
+export async function patchTask(
+  id: string,
+  patch: Partial<CreateTaskInput & { status: TaskStatus }>,
+): Promise<Task> {
   const updated = await apiPatchTask(id, patch);
   tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
   return updated;

@@ -19,20 +19,22 @@ export function InboxView(_props: { path?: string }) {
   const inboxTasks = useComputed(() => tasks.value.filter((t) => !t.workspaceId));
 
   const dueSoon = useComputed(() =>
-    inboxTasks.value.filter((t) => t.dueAt).sort((a, b) => {
-      return new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime();
-    }),
+    inboxTasks.value
+      .filter((t) => t.dueAt)
+      .sort((a, b) => {
+        return new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime();
+      }),
   );
 
-  const noDueDate = useComputed(() =>
-    inboxTasks.value.filter((t) => !t.dueAt),
-  );
+  const noDueDate = useComputed(() => inboxTasks.value.filter((t) => !t.dueAt));
 
   function TaskRow({ task }: { task: Task }) {
     return (
       <tr
         class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
-        onClick={() => { openTask.value = task; }}
+        onClick={() => {
+          openTask.value = task;
+        }}
       >
         <td class="px-4 py-3">
           <p class="font-medium text-sm">{task.title}</p>
@@ -82,7 +84,11 @@ export function InboxView(_props: { path?: string }) {
                 </p>
               </div>
             </div>
-            <Button onClick={() => { openTask.value = null; }}>
+            <Button
+              onClick={() => {
+                openTask.value = null;
+              }}
+            >
               <Plus class="size-4" />
               New task
             </Button>
@@ -92,7 +98,9 @@ export function InboxView(_props: { path?: string }) {
             <div class="flex flex-col items-center justify-center py-16 text-center">
               <InboxIcon class="size-10 text-muted-foreground/40 mb-3" />
               <p class="text-sm text-muted-foreground">Inbox is empty</p>
-              <p class="text-xs text-muted-foreground/70 mt-1">Tasks without a workspace will appear here</p>
+              <p class="text-xs text-muted-foreground/70 mt-1">
+                Tasks without a workspace will appear here
+              </p>
             </div>
           )}
 
@@ -105,11 +113,21 @@ export function InboxView(_props: { path?: string }) {
                 <table class="w-full">
                   <thead>
                     <tr class="border-b border-border bg-muted/40">
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Task</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Assigned</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Trigger</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Status</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Due</th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Task
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Assigned
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Trigger
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Status
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Due
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -131,11 +149,21 @@ export function InboxView(_props: { path?: string }) {
                 <table class="w-full">
                   <thead>
                     <tr class="border-b border-border bg-muted/40">
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Task</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Assigned</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Trigger</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Status</th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Due</th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Task
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Assigned
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Trigger
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Status
+                      </th>
+                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                        Due
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -154,7 +182,9 @@ export function InboxView(_props: { path?: string }) {
         <TaskDrawer
           task={openTask.value}
           defaultWorkspaceId={null}
-          onClose={() => { openTask.value = undefined; }}
+          onClose={() => {
+            openTask.value = undefined;
+          }}
           onSaved={() => void refreshTasks({ workspace_id: null })}
         />
       )}

@@ -48,7 +48,7 @@ export interface CreateProjectInput extends CreateWorkspaceInput {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -66,7 +66,10 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Work
   });
 }
 
-export async function patchWorkspace(id: string, patch: Partial<CreateWorkspaceInput>): Promise<Workspace> {
+export async function patchWorkspace(
+  id: string,
+  patch: Partial<CreateWorkspaceInput>,
+): Promise<Workspace> {
   return request<Workspace>(`/api/v1/workspaces/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -82,7 +85,9 @@ export async function fetchProjects(): Promise<WorkspaceWithProject[]> {
   return request<WorkspaceWithProject[]>('/api/v1/projects');
 }
 
-export async function createProject(input: CreateProjectInput): Promise<{ workspace: Workspace; project: Project }> {
+export async function createProject(
+  input: CreateProjectInput,
+): Promise<{ workspace: Workspace; project: Project }> {
   return request<{ workspace: Workspace; project: Project }>('/api/v1/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -90,7 +95,10 @@ export async function createProject(input: CreateProjectInput): Promise<{ worksp
   });
 }
 
-export async function patchProject(id: string, patch: Partial<CreateProjectInput>): Promise<WorkspaceWithProject> {
+export async function patchProject(
+  id: string,
+  patch: Partial<CreateProjectInput>,
+): Promise<WorkspaceWithProject> {
   return request<WorkspaceWithProject>(`/api/v1/projects/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

@@ -16,7 +16,12 @@ export const tasksRouter = Router();
 
 // GET /queue must be registered before /:id so it isn't matched as an id param
 tasksRouter.get('/queue', (_req: Request, res: Response) => {
-  res.json(getQueueHandler(getWorkspaceStore()).data);
+  const result = getQueueHandler(getWorkspaceStore());
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 tasksRouter.get('/', (req: Request, res: Response) => {
@@ -28,18 +33,29 @@ tasksRouter.get('/', (req: Request, res: Response) => {
   if (status !== undefined) {
     filters.status = status as TaskStatus;
   }
-  res.json(listTasksHandler(getWorkspaceStore(), filters).data);
+  const result = listTasksHandler(getWorkspaceStore(), filters);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 tasksRouter.post('/', (req: Request, res: Response) => {
   const result = createTaskHandler(getWorkspaceStore(), req.body as Record<string, unknown>);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.status(201).json(result.data);
 });
 
 tasksRouter.get('/:id', (req: Request, res: Response) => {
   const result = getTaskHandler(getWorkspaceStore(), req.params['id'] as string);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.json(result.data);
 });
 
@@ -49,18 +65,27 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
     req.params['id'] as string,
     req.body as Record<string, unknown>,
   );
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.json(result.data);
 });
 
 tasksRouter.delete('/:id', (req: Request, res: Response) => {
   const result = deleteTaskHandler(getWorkspaceStore(), req.params['id'] as string);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.status(204).end();
 });
 
 tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {
   const result = enqueueTaskHandler(getWorkspaceStore(), req.params['id'] as string);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.status(201).json(result.data);
 });

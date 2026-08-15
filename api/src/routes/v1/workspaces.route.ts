@@ -12,18 +12,29 @@ import {
 export const workspacesRouter = Router();
 
 workspacesRouter.get('/', (_req: Request, res: Response) => {
-  res.json(listWorkspacesHandler(getWorkspaceStore()).data);
+  const result = listWorkspacesHandler(getWorkspaceStore());
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 workspacesRouter.post('/', (req: Request, res: Response) => {
   const result = createWorkspaceHandler(getWorkspaceStore(), req.body as Record<string, unknown>);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.status(201).json(result.data);
 });
 
 workspacesRouter.get('/:id', (req: Request, res: Response) => {
   const result = getWorkspaceHandler(getWorkspaceStore(), req.params['id'] as string);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.json(result.data);
 });
 
@@ -33,12 +44,18 @@ workspacesRouter.patch('/:id', (req: Request, res: Response) => {
     req.params['id'] as string,
     req.body as Record<string, unknown>,
   );
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.json(result.data);
 });
 
 workspacesRouter.delete('/:id', (req: Request, res: Response) => {
   const result = deleteWorkspaceHandler(getWorkspaceStore(), req.params['id'] as string);
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.status(204).end();
 });

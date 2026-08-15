@@ -4,12 +4,7 @@ import { X, Sparkles, GripVertical, Plus } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import {
-  createTask,
-  patchTask,
-  updatePlan,
-  tasks,
-} from '@/hooks/use-tasks';
+import { createTask, patchTask, updatePlan, tasks } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
 import type { Task, TaskStatus, PlanStep, CreateTaskInput } from '@/services/tasks-api';
 
@@ -104,17 +99,11 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
     }
   }
 
-  const planProgress = totalCount.value > 0
-    ? (completedCount.value / totalCount.value) * 100
-    : 0;
+  const planProgress = totalCount.value > 0 ? (completedCount.value / totalCount.value) * 100 : 0;
 
   return (
     <>
-      <div
-        class="fixed inset-0 z-40 bg-black/20"
-        onClick={onClose}
-        aria-label="Close drawer"
-      />
+      <div class="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-label="Close drawer" />
       <div
         class="fixed top-0 right-0 bottom-0 z-50 w-[400px] border-l border-border bg-background shadow-[-12px_0_32px_-8px_rgba(0,0,0,0.25)] flex flex-col"
         role="dialog"
@@ -125,13 +114,18 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
           <div class="flex items-center gap-2">
             <h2 class="font-semibold text-sm">{isNew ? 'New task' : 'Task details'}</h2>
             {!isNew && (
-              <span class={cn(
-                'rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
-                status.value === 'running' ? 'bg-primary/10 text-primary' :
-                status.value === 'done' ? 'bg-green-100 text-green-700' :
-                status.value === 'blocked' || status.value === 'failed' ? 'bg-destructive/10 text-destructive' :
-                'bg-muted text-muted-foreground',
-              )}>
+              <span
+                class={cn(
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
+                  status.value === 'running'
+                    ? 'bg-primary/10 text-primary'
+                    : status.value === 'done'
+                      ? 'bg-green-100 text-green-700'
+                      : status.value === 'blocked' || status.value === 'failed'
+                        ? 'bg-destructive/10 text-destructive'
+                        : 'bg-muted text-muted-foreground',
+                )}
+              >
                 {STATUS_LABELS[status.value]}
               </span>
             )}
@@ -154,7 +148,9 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                 autoFocus
                 placeholder="Task title"
                 value={title.value}
-                onInput={(e) => { title.value = (e.target as HTMLInputElement).value; }}
+                onInput={(e) => {
+                  title.value = (e.target as HTMLInputElement).value;
+                }}
                 required
               />
             </div>
@@ -164,7 +160,9 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
               <textarea
                 placeholder="What needs to be done?"
                 value={description.value}
-                onInput={(e) => { description.value = (e.target as HTMLTextAreaElement).value; }}
+                onInput={(e) => {
+                  description.value = (e.target as HTMLTextAreaElement).value;
+                }}
                 class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
@@ -174,7 +172,9 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
               <textarea
                 placeholder="A clear definition of done"
                 value={outcome.value}
-                onInput={(e) => { outcome.value = (e.target as HTMLTextAreaElement).value; }}
+                onInput={(e) => {
+                  outcome.value = (e.target as HTMLTextAreaElement).value;
+                }}
                 class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
@@ -195,7 +195,9 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                 {totalCount.value > 0 && (
                   <div class="px-3 py-2 border-b border-border bg-muted/30">
                     <div class="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <span>{completedCount.value} of {totalCount.value} steps</span>
+                      <span>
+                        {completedCount.value} of {totalCount.value} steps
+                      </span>
                     </div>
                     <div class="h-1.5 bg-muted rounded-full overflow-hidden">
                       <div
@@ -228,7 +230,10 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                         value={step.step}
                         onInput={(e) => updateStep(idx, (e.target as HTMLInputElement).value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); addStep(); }
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addStep();
+                          }
                         }}
                         placeholder="Step description"
                         class={cn(
@@ -259,7 +264,12 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                 </button>
 
                 {totalCount.value === 0 && (
-                  <p class="px-3 pb-2 text-xs text-muted-foreground">No plan yet. <button type="button" onClick={addStep} class="underline">Add steps</button></p>
+                  <p class="px-3 pb-2 text-xs text-muted-foreground">
+                    No plan yet.{' '}
+                    <button type="button" onClick={addStep} class="underline">
+                      Add steps
+                    </button>
+                  </p>
                 )}
               </div>
               {totalCount.value > 0 && (
@@ -270,9 +280,15 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
             {!isNew && status.value === 'running' && (
               <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
                 <span class="text-xs text-muted-foreground flex-1">Running task controls</span>
-                <Button size="xs" variant="outline" type="button">Pause</Button>
-                <Button size="xs" variant="outline" type="button">Take over</Button>
-                <Button size="xs" variant="destructive" type="button">Cancel</Button>
+                <Button size="xs" variant="outline" type="button">
+                  Pause
+                </Button>
+                <Button size="xs" variant="outline" type="button">
+                  Take over
+                </Button>
+                <Button size="xs" variant="destructive" type="button">
+                  Cancel
+                </Button>
               </div>
             )}
 
@@ -298,7 +314,9 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                 <Input
                   type="date"
                   value={dueAt.value}
-                  onInput={(e) => { dueAt.value = (e.target as HTMLInputElement).value; }}
+                  onInput={(e) => {
+                    dueAt.value = (e.target as HTMLInputElement).value;
+                  }}
                 />
               </div>
               {!isNew && (
@@ -306,11 +324,15 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
                   <label class="text-xs font-medium text-muted-foreground">Status</label>
                   <select
                     value={status.value}
-                    onChange={(e) => { status.value = (e.target as HTMLSelectElement).value as TaskStatus; }}
+                    onChange={(e) => {
+                      status.value = (e.target as HTMLSelectElement).value as TaskStatus;
+                    }}
                     class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
                   >
                     {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      <option key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -329,18 +351,20 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
               >
                 <option value="">None — inbox</option>
                 {workspaces.value.map((ws) => (
-                  <option key={ws.id} value={ws.id}>{ws.name}</option>
+                  <option key={ws.id} value={ws.id}>
+                    {ws.name}
+                  </option>
                 ))}
               </select>
             </div>
 
-            {error.value && (
-              <p class="text-sm text-destructive">{error.value}</p>
-            )}
+            {error.value && <p class="text-sm text-destructive">{error.value}</p>}
           </div>
 
           <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={saving.value}>
               {saving.value ? 'Saving…' : isNew ? 'Create task' : 'Save changes'}
             </Button>

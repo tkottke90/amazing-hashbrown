@@ -229,28 +229,17 @@ function QueueWidget() {
     >
       <div class="flex items-center gap-1.5 mb-1">
         <Circle
-          class={cn(
-            'size-[7px] fill-current',
-            isPaused ? 'text-amber-500' : 'text-primary',
-          )}
+          class={cn('size-[7px] fill-current', isPaused ? 'text-amber-500' : 'text-primary')}
         />
         <span class="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">
           Queue
         </span>
       </div>
-      <div
-        data-testid="queue-current-task"
-        class="text-[12px] font-medium truncate"
-      >
-        {running?.task.title ?? queueState.value.queue[0] && '—'}
+      <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
+        {running?.task.title ?? (queueState.value.queue[0] && '—')}
       </div>
-      <div
-        data-testid="queue-status"
-        class="text-[11px] text-muted-foreground mt-0.5"
-      >
-        {isPaused
-          ? `Paused — ${pending} pending`
-          : `running · ${pending} pending`}
+      <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
+        {isPaused ? `Paused — ${pending} pending` : `running · ${pending} pending`}
       </div>
     </div>
   );
