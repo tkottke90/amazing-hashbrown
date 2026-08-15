@@ -24,7 +24,11 @@ export async function refreshTasks(filters: TaskFilters = {}): Promise<void> {
 }
 
 export async function refreshQueue(): Promise<void> {
-  queueState.value = await fetchQueue();
+  try {
+    queueState.value = await fetchQueue();
+  } catch {
+    // best-effort — widget just stays stale until the next successful refresh
+  }
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {

@@ -252,9 +252,11 @@ export function ThreadSidebar() {
   useEffect(() => {
     refreshThreadList();
     void refreshQueue();
-    void fetchTasks({ workspace_id: null, status: 'pending' }).then((tasks) => {
-      inboxCount.value = tasks.length;
-    });
+    void fetchTasks({ workspace_id: null, status: 'pending' })
+      .then((tasks) => {
+        inboxCount.value = tasks.length;
+      })
+      .catch(() => {});
 
     const queueInterval = setInterval(() => void refreshQueue(), 10_000);
     return () => clearInterval(queueInterval);
