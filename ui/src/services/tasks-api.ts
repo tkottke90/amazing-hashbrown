@@ -1,11 +1,5 @@
 export type TaskStatus =
-  | 'pending'
-  | 'running'
-  | 'waiting_on_user'
-  | 'blocked'
-  | 'done'
-  | 'failed'
-  | 'cancelled';
+  'pending' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 

@@ -47,13 +47,17 @@ export function TaskDrawer({ task, defaultWorkspaceId, onClose, onSaved }: TaskD
 
   function updateStep(idx: number, text: string) {
     const next = [...planSteps.value];
-    next[idx] = { ...next[idx], step: text };
+    const current = next[idx];
+    if (!current) return;
+    next[idx] = { ...current, step: text };
     planSteps.value = next;
   }
 
   function toggleStep(idx: number) {
     const next = [...planSteps.value];
-    next[idx] = { ...next[idx], done: !next[idx].done };
+    const current = next[idx];
+    if (!current) return;
+    next[idx] = { ...current, done: !current.done };
     planSteps.value = next;
     if (task) {
       void updatePlan(task.id, next);
