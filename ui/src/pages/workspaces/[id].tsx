@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
-import { ChevronRight, Plus, GitBranch, BookOpen, Calendar, X } from 'lucide-preact';
+import { ChevronRight, Plus, GitBranch, BookOpen, Calendar } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
   closeProject,
   getProjectForWorkspace,
 } from '@/hooks/use-workspaces';
-import { tasks, refreshTasks, patchTask, groupTasksByStatus } from '@/hooks/use-tasks';
+import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
 import type { Task, TaskStatus } from '@/services/tasks-api';
 import type { Workspace } from '@/services/workspaces-api';
@@ -44,11 +44,13 @@ const COLUMN_ORDER: TaskStatus[] = [
 function KanbanColumn({
   status,
   taskList,
-  onOpenTask,
+  workspaceId,
+  onSaved,
 }: {
   status: TaskStatus;
   taskList: Task[];
-  onOpenTask: (t: Task) => void;
+  workspaceId: string;
+  onSaved: () => void;
 }) {
   const isDone = status === 'done';
   const isRunning = status === 'running';
@@ -81,13 +83,19 @@ function KanbanColumn({
       </div>
 
       {columnTasks.map((task) => (
-        <TaskCard key={task.id} task={task} onClick={() => onOpenTask(task)} />
+        <TaskDrawer
+          key={task.id}
+          task={task}
+          defaultWorkspaceId={workspaceId}
+          onSaved={onSaved}
+          trigger={<TaskCard task={task} />}
+        />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
+function TaskCard({ task }: { task: Task }) {
   const isRunning = task.status === 'running';
   const isDone = task.status === 'done';
 
@@ -96,7 +104,6 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
       type="button"
       data-testid="task-card"
       data-task-id={task.id}
-      onClick={onClick}
       class={cn(
         'bg-card border border-border rounded-[10px] p-[11px_12px] text-left text-sm transition-colors hover:border-primary/40 w-full',
         isRunning && 'border-primary',
@@ -185,10 +192,10 @@ function OverviewTab({
 
 function TasksTab({
   workspaceId,
-  onOpenTask,
+  onSaved,
 }: {
   workspaceId: string;
-  onOpenTask: (t: Task | null) => void;
+  onSaved: () => void;
 }) {
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
@@ -206,10 +213,17 @@ function TasksTab({
         <p class="text-xs text-muted-foreground">
           {workspaceTasks.value.length} total · queue is serial, one runs at a time
         </p>
-        <Button size="sm" onClick={() => onOpenTask(null)}>
-          <Plus class="size-3.5" />
-          Add task
-        </Button>
+        <TaskDrawer
+          task={null}
+          defaultWorkspaceId={workspaceId}
+          onSaved={onSaved}
+          trigger={
+            <Button size="sm">
+              <Plus class="size-3.5" />
+              Add task
+            </Button>
+          }
+        />
       </div>
 
       <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
@@ -218,7 +232,8 @@ function TasksTab({
             key={status}
             status={status}
             taskList={status === 'failed' ? failedAndCancelled.value : grouped.value[status]}
-            onOpenTask={onOpenTask}
+            workspaceId={workspaceId}
+            onSaved={onSaved}
           />
         ))}
       </div>
@@ -230,9 +245,6 @@ function TasksTab({
 export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   const { route } = useLocation();
   const tab = useSignal<DetailTab>('overview');
-  const openTask = useSignal<Task | null | undefined>(undefined);
-  const showSettings = useSignal(false);
-  const showCreate = useSignal(false);
 
   useEffect(() => {
     void refreshWorkspaces();
@@ -290,15 +302,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  showSettings.value = true;
-                }}
-              >
-                Edit
-              </Button>
+              <WorkspaceSettingsDrawer workspace={ws} onSaved={() => void refreshWorkspaces()} />
               {isProj && proj.value?.project.status === 'active' && (
                 <Button size="sm" variant="outline" onClick={handleClose}>
                   Close project
@@ -360,8 +364,8 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
           {tab.value === 'tasks' && id && (
             <TasksTab
               workspaceId={id}
-              onOpenTask={(t) => {
-                openTask.value = t;
+              onSaved={() => {
+                if (id) void refreshTasks({ workspace_id: id });
               }}
             />
           )}
@@ -374,28 +378,6 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
         </div>
       </div>
 
-      {openTask.value !== undefined && (
-        <TaskDrawer
-          task={openTask.value}
-          defaultWorkspaceId={id}
-          onClose={() => {
-            openTask.value = undefined;
-          }}
-          onSaved={() => {
-            if (id) void refreshTasks({ workspace_id: id });
-          }}
-        />
-      )}
-
-      {showSettings.value && (
-        <WorkspaceSettingsDrawer
-          workspace={ws}
-          onClose={() => {
-            showSettings.value = false;
-          }}
-          onSaved={() => void refreshWorkspaces()}
-        />
-      )}
     </Layout>
   );
 }

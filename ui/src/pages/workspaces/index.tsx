@@ -3,6 +3,7 @@ import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { Plus, FolderOpen, Search } from 'lucide-preact';
 
+import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,6 @@ import {
   refreshWorkspaces,
   createWorkspace,
   createProject,
-  isProject,
 } from '@/hooks/use-workspaces';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import { cn } from '@/lib/utils';
@@ -32,12 +32,25 @@ function isStale(iso: string): boolean {
   return Date.now() - new Date(iso).getTime() > 7 * 86_400_000;
 }
 
-interface CreateFormProps {
-  onCancel: () => void;
-  onCreated: (id: string) => void;
+function CreateWorkspaceDrawer() {
+  return (
+    <Drawer
+      title="New workspace"
+      className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
+      trigger={
+        <Button variant="outline">
+          <Plus class="size-4" />
+          New workspace
+        </Button>
+      }
+    >
+      <CreateWorkspaceForm />
+    </Drawer>
+  );
 }
 
-function CreateForm({ onCancel, onCreated }: CreateFormProps) {
+function CreateWorkspaceForm() {
+  const { close } = useDialog();
   const { route } = useLocation();
   const mode = useSignal<'workspace' | 'project'>('workspace');
   const name = useSignal('');
@@ -69,15 +82,15 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
           winCondition: winCondition.value.trim(),
           dueAt: dueAt.value || null,
         });
-        onCreated(entry.id);
+        close();
         route(`/workspaces/${entry.id}`);
       } else {
-        const ws = await createWorkspace({
+        await createWorkspace({
           name: name.value.trim(),
           location: location.value.trim(),
           goal: goal.value.trim() || null,
         });
-        onCreated(ws.id);
+        close();
       }
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to create.';
@@ -87,123 +100,126 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
   }
 
   return (
-    <div class="border border-border rounded-xl p-5 mb-4 bg-card">
-      <div class="flex items-center gap-1 mb-4 border border-border rounded-lg overflow-hidden w-fit text-sm">
-        <button
-          type="button"
-          onClick={() => {
-            mode.value = 'workspace';
-          }}
-          class={cn(
-            'px-3 py-1.5 transition-colors',
-            mode.value === 'workspace'
-              ? 'bg-muted font-medium'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Workspace
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            mode.value = 'project';
-          }}
-          class={cn(
-            'px-3 py-1.5 transition-colors',
-            mode.value === 'project'
-              ? 'bg-muted font-medium'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Project
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} class="flex flex-col gap-3">
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-muted-foreground">Name</label>
-            <Input
-              placeholder="my-workspace"
-              value={name.value}
-              onInput={(e) => {
-                name.value = (e.target as HTMLInputElement).value;
-              }}
-              required
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-muted-foreground">Location</label>
-            <Input
-              placeholder="/home/user/projects/my-workspace"
-              value={location.value}
-              onInput={(e) => {
-                location.value = (e.target as HTMLInputElement).value;
-              }}
-              required
-            />
-          </div>
-        </div>
-
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-muted-foreground">Goal</label>
-          <textarea
-            placeholder="What should be accomplished in this workspace?"
-            value={goal.value}
-            onInput={(e) => {
-              goal.value = (e.target as HTMLTextAreaElement).value;
+    <div class="flex flex-col min-h-0 mt-2">
+      <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+        <div class="flex items-center gap-1 border border-border rounded-lg overflow-hidden w-fit text-sm">
+          <button
+            type="button"
+            onClick={() => {
+              mode.value = 'workspace';
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
-          />
+            class={cn(
+              'px-3 py-1.5 transition-colors',
+              mode.value === 'workspace'
+                ? 'bg-muted font-medium'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Workspace
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              mode.value = 'project';
+            }}
+            class={cn(
+              'px-3 py-1.5 transition-colors',
+              mode.value === 'project'
+                ? 'bg-muted font-medium'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Project
+          </button>
         </div>
 
-        {mode.value === 'project' && (
-          <div class="border border-primary/30 rounded-lg p-3 bg-primary/5 flex flex-col gap-3">
-            <p class="text-xs font-semibold text-primary uppercase tracking-wider">
-              Project fields
-            </p>
+        <form id="create-workspace-form" onSubmit={handleSubmit} class="flex flex-col gap-4">
+          <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-muted-foreground">
-                Win condition <span class="text-destructive">*</span>
-              </label>
-              <textarea
-                placeholder="The project is done when..."
-                value={winCondition.value}
+              <label class="text-xs font-medium text-muted-foreground">Name</label>
+              <Input
+                autoFocus
+                placeholder="my-workspace"
+                value={name.value}
                 onInput={(e) => {
-                  winCondition.value = (e.target as HTMLTextAreaElement).value;
+                  name.value = (e.target as HTMLInputElement).value;
                 }}
                 required
-                class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-muted-foreground">Due date</label>
+              <label class="text-xs font-medium text-muted-foreground">Location</label>
               <Input
-                type="date"
-                value={dueAt.value}
+                placeholder="/home/user/projects/my-workspace"
+                value={location.value}
                 onInput={(e) => {
-                  dueAt.value = (e.target as HTMLInputElement).value;
+                  location.value = (e.target as HTMLInputElement).value;
                 }}
+                required
               />
             </div>
           </div>
-        )}
 
-        {error.value && <p class="text-sm text-destructive">{error.value}</p>}
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-muted-foreground">Goal</label>
+            <textarea
+              placeholder="What should be accomplished in this workspace?"
+              value={goal.value}
+              onInput={(e) => {
+                goal.value = (e.target as HTMLTextAreaElement).value;
+              }}
+              class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            />
+          </div>
 
-        <div class="flex items-center gap-2 justify-end">
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={saving.value}>
-            {saving.value
-              ? 'Creating…'
-              : mode.value === 'project'
-                ? 'Create project'
-                : 'Create workspace'}
-          </Button>
-        </div>
-      </form>
+          {mode.value === 'project' && (
+            <div class="border border-primary/30 rounded-lg p-3 bg-primary/5 flex flex-col gap-3">
+              <p class="text-xs font-semibold text-primary uppercase tracking-wider">
+                Project fields
+              </p>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-muted-foreground">
+                  Win condition <span class="text-destructive">*</span>
+                </label>
+                <textarea
+                  placeholder="The project is done when..."
+                  value={winCondition.value}
+                  onInput={(e) => {
+                    winCondition.value = (e.target as HTMLTextAreaElement).value;
+                  }}
+                  required
+                  class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-muted-foreground">Due date</label>
+                <Input
+                  type="date"
+                  value={dueAt.value}
+                  onInput={(e) => {
+                    dueAt.value = (e.target as HTMLInputElement).value;
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {error.value && <p class="text-sm text-destructive">{error.value}</p>}
+        </form>
+      </div>
+
+      <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
+        <Button type="button" variant="ghost" onClick={close}>
+          Cancel
+        </Button>
+        <Button type="submit" form="create-workspace-form" disabled={saving.value}>
+          {saving.value
+            ? 'Creating…'
+            : mode.value === 'project'
+              ? 'Create project'
+              : 'Create workspace'}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -212,7 +228,6 @@ function CreateForm({ onCancel, onCreated }: CreateFormProps) {
 export function WorkspacesView(_props: { path?: string }) {
   const filter = useSignal<FilterTab>('all');
   const search = useSignal('');
-  const showCreate = useSignal(false);
 
   useEffect(() => {
     void refreshWorkspaces();
@@ -261,28 +276,9 @@ export function WorkspacesView(_props: { path?: string }) {
               </p>
             </div>
             <div class="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  showCreate.value = !showCreate.value;
-                }}
-              >
-                <Plus class="size-4" />
-                New workspace
-              </Button>
+              <CreateWorkspaceDrawer />
             </div>
           </div>
-
-          {showCreate.value && (
-            <CreateForm
-              onCancel={() => {
-                showCreate.value = false;
-              }}
-              onCreated={() => {
-                showCreate.value = false;
-              }}
-            />
-          )}
 
           <div class="flex items-center gap-3 mb-4">
             <div class="flex items-center gap-1 border border-border rounded-lg overflow-hidden text-sm">
