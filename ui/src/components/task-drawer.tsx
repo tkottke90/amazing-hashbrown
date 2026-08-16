@@ -1,6 +1,7 @@
 import { useSignal, useComputed } from '@preact/signals';
 import { Sparkles, GripVertical, Plus, X } from 'lucide-preact';
 import type { JSX } from 'preact';
+import { useRef } from 'preact/hooks';
 
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
@@ -63,9 +64,14 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
 
   const completedCount = useComputed(() => planSteps.value.filter((s) => s.done).length);
   const totalCount = useComputed(() => planSteps.value.length);
+  const planContainerRef = useRef<HTMLDivElement>(null);
 
   function addStep() {
     planSteps.value = [...planSteps.value, { step: '', done: false }];
+    setTimeout(() => {
+      const inputs = planContainerRef.current?.querySelectorAll<HTMLInputElement>('input[type="text"]');
+      if (inputs?.length) inputs[inputs.length - 1].focus();
+    }, 0);
   }
 
   function updateStep(idx: number, text: string) {
@@ -197,7 +203,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               </div>
             )}
 
-            <div class="divide-y divide-border">
+            <div ref={planContainerRef} class="divide-y divide-border">
               {planSteps.value.map((step, idx) => (
                 <div
                   key={idx}

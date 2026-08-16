@@ -148,7 +148,15 @@ function OverviewTab({
 }) {
   if (!proj) {
     return (
-      <div class="p-4">
+      <div class="p-4 flex flex-col gap-4">
+        {workspace.goal && (
+          <div class="border border-border rounded-xl p-4">
+            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Goal
+            </p>
+            <p class="text-sm">{workspace.goal}</p>
+          </div>
+        )}
         <p class="text-sm text-muted-foreground">{workspace.description ?? 'No description.'}</p>
       </div>
     );

@@ -478,7 +478,16 @@ export class WorkspaceStore extends BaseStore {
   }
 
   deleteWorkspace(id: string): boolean {
-    const result = this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
+    const doDelete = this.db.transaction(() => {
+      // Remove task_queue entries, then tasks, then the project row (all FK'd to this workspace).
+      this.db
+        .prepare(`DELETE FROM task_queue WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`)
+        .run(id);
+      this.db.prepare(`DELETE FROM tasks WHERE workspace_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM projects WHERE workspace_id = ?`).run(id);
+      return this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
+    });
+    const result = doDelete();
     return result.changes > 0;
   }
 

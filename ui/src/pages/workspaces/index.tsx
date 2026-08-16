@@ -33,10 +33,14 @@ function isStale(iso: string): boolean {
 }
 
 function CreateWorkspaceDrawer() {
+  const openCount = useSignal(0);
   return (
     <Drawer
       title="New workspace"
       className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
+      onOpen={() => {
+        openCount.value++;
+      }}
       trigger={
         <Button variant="outline">
           <Plus class="size-4" />
@@ -44,7 +48,7 @@ function CreateWorkspaceDrawer() {
         </Button>
       }
     >
-      <CreateWorkspaceForm />
+      <CreateWorkspaceForm key={openCount.value} />
     </Drawer>
   );
 }
@@ -136,7 +140,9 @@ function CreateWorkspaceForm() {
         <form id="create-workspace-form" onSubmit={handleSubmit} class="flex flex-col gap-4">
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-muted-foreground">Name</label>
+              <label class="text-xs font-medium text-muted-foreground">
+                Name <span class="text-destructive">*</span>
+              </label>
               <Input
                 autoFocus
                 placeholder="my-workspace"
@@ -148,7 +154,9 @@ function CreateWorkspaceForm() {
               />
             </div>
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-muted-foreground">Location</label>
+              <label class="text-xs font-medium text-muted-foreground">
+                Location <span class="text-destructive">*</span>
+              </label>
               <Input
                 placeholder="/home/user/projects/my-workspace"
                 value={location.value}
@@ -308,7 +316,7 @@ export function WorkspacesView(_props: { path?: string }) {
                 onInput={(e) => {
                   search.value = (e.target as HTMLInputElement).value;
                 }}
-                class="pl-8 w-52"
+                className="pl-8 w-52"
               />
             </div>
           </div>
