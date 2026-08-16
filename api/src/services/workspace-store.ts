@@ -70,7 +70,13 @@ export interface PatchProjectInput extends PatchWorkspaceInput {
 }
 
 export type TaskStatus =
-  'pending' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  | 'pending'
+  | 'running'
+  | 'waiting_on_user'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 
@@ -391,7 +397,8 @@ export class WorkspaceStore extends BaseStore {
 
   getWorkspace(id: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get(id) as
-      RawWorkspaceRow | undefined;
+      | RawWorkspaceRow
+      | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -481,7 +488,9 @@ export class WorkspaceStore extends BaseStore {
     const doDelete = this.db.transaction(() => {
       // Remove task_queue entries, then tasks, then the project row (all FK'd to this workspace).
       this.db
-        .prepare(`DELETE FROM task_queue WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`)
+        .prepare(
+          `DELETE FROM task_queue WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
+        )
         .run(id);
       this.db.prepare(`DELETE FROM tasks WHERE workspace_id = ?`).run(id);
       this.db.prepare(`DELETE FROM projects WHERE workspace_id = ?`).run(id);
@@ -650,7 +659,8 @@ export class WorkspaceStore extends BaseStore {
 
   getTask(id: string): Task | null {
     const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as
-      RawTaskRow | undefined;
+      | RawTaskRow
+      | undefined;
     return row ? mapTask(row) : null;
   }
 
@@ -819,7 +829,8 @@ export class WorkspaceStore extends BaseStore {
       .run(outcome, now, id);
 
     const entry = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      { task_id: string } | undefined;
+      | { task_id: string }
+      | undefined;
     if (entry) {
       this.db
         .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)

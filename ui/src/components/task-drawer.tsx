@@ -69,7 +69,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   function addStep() {
     planSteps.value = [...planSteps.value, { step: '', done: false }];
     setTimeout(() => {
-      const inputs = planContainerRef.current?.querySelectorAll<HTMLInputElement>('input[type="text"]');
+      const inputs =
+        planContainerRef.current?.querySelectorAll<HTMLInputElement>('input[type="text"]');
       if (inputs?.length) inputs[inputs.length - 1].focus();
     }, 0);
   }
