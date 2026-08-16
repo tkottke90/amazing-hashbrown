@@ -28,12 +28,13 @@ const SIDE_CLASSNAME: Record<'left' | 'right', string> = {
 };
 
 // Direction-aware slide entrance/exit + frosted-glass blur for the inner
-// wrapper. Uses @starting-style (the `starting:` Tailwind variant) so the
-// transition fires in the same frame the dialog becomes displayed, avoiding
-// the one-frame delay of the [dialog[open]_&] ancestor-selector approach.
+// wrapper. The <dialog> carries overflow-hidden so the inner div is clipped
+// to the panel bounds during the animation — this hides the absolute-pixel
+// jump that sm:w-fit causes as the dialog width resolves (translate-x-full
+// is percentage-based and changes with width).
 const SIDE_CONTENT_CLASSNAME: Record<'left' | 'right', string> = {
-  left: 'translate-x-0 starting:-translate-x-full',
-  right: 'translate-x-0 starting:translate-x-full',
+  left: '-translate-x-full [dialog[open]_&]:translate-x-0',
+  right: 'translate-x-full [dialog[open]_&]:translate-x-0',
 };
 
 /**
