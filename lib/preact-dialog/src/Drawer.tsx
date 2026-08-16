@@ -20,6 +20,7 @@ const DRAWER_CLASSNAME = `
   backdrop:backdrop-blur-xs backdrop:transition-all backdrop:transition-discrete backdrop:duration-200 backdrop:ease-out
   backdrop:bg-transparent open:backdrop:bg-neutral-900/50 starting:open:backdrop:bg-transparent
   open:pointer-events-auto open:opacity-100 z-50
+  open:translate-x-0
 `;
 
 const SIDE_CLASSNAME: Record<'left' | 'right', string> = {
@@ -33,8 +34,11 @@ const SIDE_CLASSNAME: Record<'left' | 'right', string> = {
 // jump that sm:w-fit causes as the dialog width resolves (translate-x-full
 // is percentage-based and changes with width).
 const SIDE_CONTENT_CLASSNAME: Record<'left' | 'right', string> = {
-  left: '-translate-x-full [dialog[open]_&]:translate-x-0',
-  right: 'translate-x-full [dialog[open]_&]:translate-x-0',
+  // left: '-translate-x-full',
+  // right: 'translate-x-full',
+
+  left: '',
+  right: ''
 };
 
 /**
