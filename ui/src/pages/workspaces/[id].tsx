@@ -1,4 +1,5 @@
 import { useEffect } from 'preact/hooks';
+import { forwardRef } from 'preact/compat';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { ChevronRight, Plus, GitBranch, BookOpen, Calendar } from 'lucide-preact';
@@ -95,12 +96,17 @@ function KanbanColumn({
   );
 }
 
-function TaskCard({ task }: { task: Task }) {
+// forwardRef is required because preact/compat drops refs on plain function
+// components (preactjs/preact#3297). Dialog.tsx clones the trigger element and
+// attaches a ref to wire up the click→showModal handler; without forwardRef
+// that ref is silently discarded and the drawer never opens.
+const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function TaskCard({ task }, ref) {
   const isRunning = task.status === 'running';
   const isDone = task.status === 'done';
 
   return (
     <button
+      ref={ref}
       type="button"
       data-testid="task-card"
       data-task-id={task.id}
@@ -131,7 +137,7 @@ function TaskCard({ task }: { task: Task }) {
       )}
     </button>
   );
-}
+});
 
 function OverviewTab({
   workspace,
