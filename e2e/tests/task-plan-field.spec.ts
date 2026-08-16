@@ -90,7 +90,7 @@ test.describe(
       await taskCard.click();
 
       // Verify plan section with two steps
-      const planSection = page.locator('[data-testid="task-plan"]');
+      const planSection = page.locator('dialog[open] [data-testid="task-plan"]');
       await expect(planSection).toBeVisible();
 
       const planSteps = planSection.locator('[data-testid="plan-step"]');
@@ -118,7 +118,7 @@ test.describe(
       await taskCard.click();
 
       // Verify the checked state persisted
-      const reopenedPlan = page.locator('[data-testid="task-plan"]');
+      const reopenedPlan = page.locator('dialog[open] [data-testid="task-plan"]');
       await expect(reopenedPlan).toBeVisible();
 
       const reopenedSteps = reopenedPlan.locator('[data-testid="plan-step"]');
