@@ -1,7 +1,7 @@
 import { useMemo } from 'preact/hooks';
 import { DialogProps, Dialog } from './Dialog';
 
-interface DrawerProps extends DialogProps {
+export interface DrawerProps extends DialogProps {
   /**
    * The side of the screen to slide in from. Defaults to "right".
    */
