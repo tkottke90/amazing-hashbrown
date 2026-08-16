@@ -252,10 +252,10 @@ export function WorkspacesView(_props: { path?: string }) {
       const q = search.value.toLowerCase();
       if (q && !ws.name.toLowerCase().includes(q)) return false;
 
-      if (filter.value === 'workspaces') return !projectIds.has(ws.id);
+      if (filter.value === 'workspaces') return !projectIds.has(ws.id) && !closedIds.has(ws.id);
       if (filter.value === 'projects') return projectIds.has(ws.id) && !closedIds.has(ws.id);
       if (filter.value === 'closed') return closedIds.has(ws.id);
-      return true;
+      return !closedIds.has(ws.id);
     });
   });
 
