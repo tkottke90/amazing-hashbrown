@@ -8,6 +8,7 @@ const X = XIcon;
 
 export interface DialogProps {
   className?: string;
+  contentClassName?: string;
   children: ComponentChildren;
   title?: string | JSX.Element;
   trigger?: JSX.Element;
@@ -32,6 +33,7 @@ export function useDialog() {
 
 export function Dialog({
   className,
+  contentClassName,
   children,
   trigger,
   disableClose,
@@ -69,30 +71,25 @@ export function Dialog({
         ref={modalRef}
         className={`p-6 text-neutral-800 dark:text-neutral-200
         bg-neutral-50/80 dark:bg-neutral-700/80
-        rounded border border-neutral-400/50
-        absolute block pointer-events-none opacity-0 mx-auto my-4 min-w-10/12
-        transition-opacity transition-discrete duration-200
-        sm:min-w-150
-        backdrop:backdrop-blur-xs backdrop:transition-all backdrop:transition-discrete backdrop:duration-200
-        backdrop:bg-transparent open:backdrop:bg-neutral-900/50 starting:open:backdrop:bg-transparent
-        open:pointer-events-auto open:opacity-100 z-50 ${className ?? ''}`}
+        rounded border border-neutral-400/50 ${className ?? ''}`}
       >
         {/*
-          The slide-in transform AND the frosted-glass backdrop-blur both
-          live on this inner wrapper, not the <dialog> element itself.
-          `transform` (even translateY(0)) and `backdrop-filter` (even at a
-          small blur radius) each independently establish a new containing
-          block for `position: fixed` descendants — anything inside (e.g. a
-          Radix Select's dropdown, computed via getBoundingClientRect and
+          A caller-provided (e.g. overlay-variant) inner wrapper class is the
+          right place for slide/fade transforms AND frosted-glass
+          backdrop-blur — never on the <dialog> element itself. `transform`
+          (even translateY(0)) and `backdrop-filter` (even at a small blur
+          radius) each independently establish a new containing block for
+          `position: fixed` descendants — anything inside (e.g. a Radix
+          Select's dropdown, computed via getBoundingClientRect and
           positioned with position: fixed) would be positioned relative to
           the dialog's own box instead of the viewport, landing nowhere near
           its trigger. Removing the transform alone wasn't enough; the
           backdrop-blur on the <dialog> itself was doing the same thing.
-          `dialog[open]_&` is an ancestor-based arbitrary variant: Tailwind
+          If a variant's classes use `dialog[open]_&`, note Tailwind
           converts `_` to a space, so it compiles to `dialog[open] &` —
           "this element, when a `dialog[open]` ancestor exists."
         */}
-        <div className="backdrop-blur-sm translate-y-1 transition-transform transition-discrete duration-200 [dialog[open]_&]:translate-y-0">
+        <div className={contentClassName ?? ''}>
           <div className="flex">
             <h2 className="grow">{title}</h2>
             {!disableClose && (

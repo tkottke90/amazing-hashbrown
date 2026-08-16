@@ -6,6 +6,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["jest", "@testing-library/jest-dom"],
     "outDir": "dist",
     "rootDir": "src"
   },
