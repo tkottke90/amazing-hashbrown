@@ -60,7 +60,7 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await page.getByRole('button', { name: 'Add task' }).click();
 
-      const drawer = page.locator('[role="dialog"]');
+      const drawer = page.locator('dialog[open]');
       await expect(drawer).toBeVisible();
 
       // Fill in title
@@ -110,8 +110,8 @@ test.describe(
       await expect(firstCheckbox).toBeChecked();
 
       // Close the drawer
-      await page.locator('[role="dialog"]').getByRole('button', { name: 'Close' }).click();
-      await expect(page.locator('[role="dialog"]')).not.toBeVisible();
+      await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).click();
+      await expect(page.locator('dialog[open]')).not.toBeVisible();
 
       // Reopen by clicking the task card again
       await pauseBeforeAction(page, testInfo);

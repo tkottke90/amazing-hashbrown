@@ -55,7 +55,7 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await page.getByRole('button', { name: 'Add task' }).click();
 
-      const drawer = page.locator('[role="dialog"]');
+      const drawer = page.locator('dialog[open]');
       await expect(drawer).toBeVisible();
       await drawer.locator('input[placeholder="Task title"]').fill('My kanban task');
 
