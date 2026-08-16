@@ -177,6 +177,26 @@ Two things to verify for every external boundary:
 
 ### End-to-End Tests
 
+E2E tests are the automated equivalent of a manual testing walkthrough. Their primary purpose is to capture the steps a developer or reviewer would otherwise have to perform by hand after a UI change, and run them on every PR so regressions surface before merge — not after.
+
+#### Tests are a condition of PR acceptance
+
+Every PR that adds or changes UI behaviour must include E2E coverage for that behaviour. Tests are not optional or a follow-up item; they ship in the same PR as the feature. The CI E2E job posts a report comment with a link to the HTML report and recorded video so reviewers can confirm both that the tests pass _and_ that the scenarios actually exercise the right behaviour.
+
+#### Workflow for any UI change
+
+1. **Think through the manual steps** — what would you click, fill in, and verify if you were testing this by hand?
+2. **Check existing coverage** — do any current specs already exercise those steps? If yes, confirm they still pass.
+3. **Fill the gaps** — for steps not yet covered, add test cases. For steps whose expected outcome changed, update the assertion to match the new behaviour.
+
+#### Handling test failures
+
+Two distinct situations require different responses:
+
+**The test covers what you changed** — update the test. If you altered the "All" filter to exclude closed workspaces, a test asserting the old behaviour must be updated to assert the new one. Deleting the test to make CI green is not acceptable.
+
+**The test covers something unrelated to your change** — stop and report it as a regression. If you are working on the task drawer and the workspace list tests start failing, do not adjust those tests to pass; surface the breakage and investigate the root cause. A previously-green test failing on an unrelated branch is a signal that something broke, not a maintenance chore.
+
 E2E tests run against a live instance of the application and verify complete user-facing flows. Unlike developer tests they are not exhaustive — focus on expected paths. Framework: **Playwright**.
 
 Use Playwright tags to classify tests:
