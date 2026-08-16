@@ -38,7 +38,7 @@ const SIDE_CONTENT_CLASSNAME: Record<'left' | 'right', string> = {
   // right: 'translate-x-full',
 
   left: '',
-  right: ''
+  right: '',
 };
 
 /**
