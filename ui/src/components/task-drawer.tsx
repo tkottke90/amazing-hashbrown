@@ -351,7 +351,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
       </div>
 
       <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
-        <Button type="button" variant="ghost" onClick={close}>
+        <Button type="button" variant="ghost" onClick={() => close()}>
           Cancel
         </Button>
         <Button type="submit" disabled={saving.value}>

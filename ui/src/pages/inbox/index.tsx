@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks';
-import { useSignal, useComputed } from '@preact/signals';
+import { useComputed } from '@preact/signals';
 import { Plus, Inbox as InboxIcon } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
@@ -8,10 +8,76 @@ import { TaskDrawer } from '@/components/task-drawer';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import type { Task } from '@/services/tasks-api';
 
+function TaskRow({ task }: { task: Task }) {
+  return (
+    <tr class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer">
+      <td class="px-4 py-3">
+        <p class="font-medium text-sm">{task.title}</p>
+        {task.outcome && (
+          <p class="text-xs text-muted-foreground mt-0.5 truncate max-w-sm">{task.outcome}</p>
+        )}
+      </td>
+      <td class="px-4 py-3">
+        {task.assignedTo ? (
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground capitalize">
+            {task.assignedTo}
+          </span>
+        ) : (
+          <span class="text-xs text-muted-foreground">—</span>
+        )}
+      </td>
+      <td class="px-4 py-3">
+        <span class="text-xs text-muted-foreground capitalize">{task.triggerType}</span>
+      </td>
+      <td class="px-4 py-3">
+        <span class="text-xs text-muted-foreground capitalize">{task.status}</span>
+      </td>
+      <td class="px-4 py-3">
+        {task.dueAt ? (
+          <span class="text-xs text-muted-foreground">
+            {new Date(task.dueAt).toLocaleDateString()}
+          </span>
+        ) : (
+          <span class="text-xs text-muted-foreground">—</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+const TABLE_HEADER = (
+  <tr class="border-b border-border bg-muted/40">
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Task</th>
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Assigned</th>
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Trigger</th>
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Status</th>
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Due</th>
+  </tr>
+);
+
+function InboxTable({ taskList, onSaved }: { taskList: Task[]; onSaved: () => void }) {
+  return (
+    <div class="border border-border rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead>{TABLE_HEADER}</thead>
+        <tbody>
+          {taskList.map((task) => (
+            <TaskDrawer
+              key={task.id}
+              task={task}
+              defaultWorkspaceId={null}
+              onSaved={onSaved}
+              trigger={<TaskRow task={task} />}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // path prop is consumed by preact-iso's Router for route matching
 export function InboxView(_props: { path?: string }) {
-  const openTask = useSignal<Task | null | undefined>(undefined);
-
   useEffect(() => {
     void refreshTasks({ workspace_id: null });
   }, []);
@@ -21,53 +87,13 @@ export function InboxView(_props: { path?: string }) {
   const dueSoon = useComputed(() =>
     inboxTasks.value
       .filter((t) => t.dueAt)
-      .sort((a, b) => {
-        return new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime();
-      }),
+      .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime()),
   );
 
   const noDueDate = useComputed(() => inboxTasks.value.filter((t) => !t.dueAt));
 
-  function TaskRow({ task }: { task: Task }) {
-    return (
-      <tr
-        class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
-        onClick={() => {
-          openTask.value = task;
-        }}
-      >
-        <td class="px-4 py-3">
-          <p class="font-medium text-sm">{task.title}</p>
-          {task.outcome && (
-            <p class="text-xs text-muted-foreground mt-0.5 truncate max-w-sm">{task.outcome}</p>
-          )}
-        </td>
-        <td class="px-4 py-3">
-          {task.assignedTo ? (
-            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground capitalize">
-              {task.assignedTo}
-            </span>
-          ) : (
-            <span class="text-xs text-muted-foreground">—</span>
-          )}
-        </td>
-        <td class="px-4 py-3">
-          <span class="text-xs text-muted-foreground capitalize">{task.triggerType}</span>
-        </td>
-        <td class="px-4 py-3">
-          <span class="text-xs text-muted-foreground capitalize">{task.status}</span>
-        </td>
-        <td class="px-4 py-3">
-          {task.dueAt ? (
-            <span class="text-xs text-muted-foreground">
-              {new Date(task.dueAt).toLocaleDateString()}
-            </span>
-          ) : (
-            <span class="text-xs text-muted-foreground">—</span>
-          )}
-        </td>
-      </tr>
-    );
+  function onSaved() {
+    void refreshTasks({ workspace_id: null });
   }
 
   return (
@@ -84,14 +110,17 @@ export function InboxView(_props: { path?: string }) {
                 </p>
               </div>
             </div>
-            <Button
-              onClick={() => {
-                openTask.value = null;
-              }}
-            >
-              <Plus class="size-4" />
-              New task
-            </Button>
+            <TaskDrawer
+              task={null}
+              defaultWorkspaceId={null}
+              onSaved={onSaved}
+              trigger={
+                <Button>
+                  <Plus class="size-4" />
+                  New task
+                </Button>
+              }
+            />
           </div>
 
           {inboxTasks.value.length === 0 && (
@@ -109,34 +138,7 @@ export function InboxView(_props: { path?: string }) {
               <h2 class="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wider text-xs">
                 Due soon
               </h2>
-              <div class="border border-border rounded-xl overflow-hidden">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-border bg-muted/40">
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Task
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Assigned
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Trigger
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Status
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Due
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dueSoon.value.map((task) => (
-                      <TaskRow key={task.id} task={task} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InboxTable taskList={dueSoon.value} onSaved={onSaved} />
             </div>
           )}
 
@@ -145,49 +147,11 @@ export function InboxView(_props: { path?: string }) {
               <h2 class="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wider">
                 No due date
               </h2>
-              <div class="border border-border rounded-xl overflow-hidden">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-border bg-muted/40">
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Task
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Assigned
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Trigger
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Status
-                      </th>
-                      <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                        Due
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {noDueDate.value.map((task) => (
-                      <TaskRow key={task.id} task={task} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InboxTable taskList={noDueDate.value} onSaved={onSaved} />
             </div>
           )}
         </div>
       </div>
-
-      {openTask.value !== undefined && (
-        <TaskDrawer
-          task={openTask.value}
-          defaultWorkspaceId={null}
-          onClose={() => {
-            openTask.value = undefined;
-          }}
-          onSaved={() => void refreshTasks({ workspace_id: null })}
-        />
-      )}
     </Layout>
   );
 }
