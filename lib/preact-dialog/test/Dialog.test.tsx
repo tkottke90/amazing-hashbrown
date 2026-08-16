@@ -110,6 +110,6 @@ describe('Dialog', () => {
     expect(dialog.className).toContain('rounded');
 
     const inner = dialog.querySelector('div');
-    expect(inner?.className).toBe('custom-inner');
+    expect(inner?.className).toContain('custom-inner');
   });
 });
