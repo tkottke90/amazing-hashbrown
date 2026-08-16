@@ -1,13 +1,13 @@
 import { useSignal } from '@preact/signals';
 import { Plus } from 'lucide-preact';
 import { sendWikiMessage } from '@/pages/wiki/use-wiki-ingestion';
-import { Dialog, useDialog } from '@tkottke90/preact-dialog';
+import { Modal, useDialog } from '@tkottke90/preact-dialog';
 
 export function NewDomainModal() {
   const open = useSignal(false);
 
   return (
-    <Dialog
+    <Modal
       title="New Domain"
       className="
         max-w-11/12 md:max-w-lg
@@ -26,7 +26,7 @@ export function NewDomainModal() {
       }
     >
       <NewDomainForm />
-    </Dialog>
+    </Modal>
   );
 }
 

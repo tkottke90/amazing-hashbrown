@@ -10,7 +10,8 @@ describe('Modal', () => {
     const { container } = render(<Modal>content</Modal>);
     const dialog = getDialogEl(container);
 
-    expect(dialog.className).toContain('absolute');
+    expect(dialog.className).toContain('fixed');
+    expect(dialog.className).toContain('inset-0');
     expect(dialog.className).toContain('mx-auto');
     expect(dialog.className).toContain('transition-opacity');
   });

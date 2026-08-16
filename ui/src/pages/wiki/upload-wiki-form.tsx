@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal, effect } from '@preact/signals';
 import { Upload, CheckCircle, XCircle, Loader2, Circle } from 'lucide-preact';
-import { Dialog, useDialog } from '@tkottke90/preact-dialog';
+import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import { domains, refreshDomains } from '@/pages/wiki/use-wiki';
 import { fetchUploadCapabilities, startWikiUpload, fetchUploadStatus } from '@/services/wiki-api';
 import type { UploadJobState, UploadCapabilities } from '@/types/wiki-upload';
@@ -337,7 +337,7 @@ export function UploadWikiForm() {
 
 export function UploadWikiDialog() {
   return (
-    <Dialog
+    <Modal
       title="Upload Wiki"
       trigger={
         <button
@@ -350,6 +350,6 @@ export function UploadWikiDialog() {
       }
     >
       <UploadWikiForm />
-    </Dialog>
+    </Modal>
   );
 }

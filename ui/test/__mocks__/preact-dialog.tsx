@@ -4,12 +4,13 @@ import { useContext } from 'preact/hooks';
 
 const DialogCtx = createContext({ close: () => {} });
 
-export function Dialog({
+function Dialog({
   children,
   trigger,
 }: {
   title?: string;
   className?: string;
+  contentClassName?: string;
   children: ComponentChildren;
   trigger: ComponentChildren;
 }) {
@@ -20,6 +21,8 @@ export function Dialog({
     </div>
   );
 }
+
+export { Dialog, Dialog as Modal, Dialog as Drawer, Dialog as BottomSheet };
 
 export function useDialog() {
   return useContext(DialogCtx);
