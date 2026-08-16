@@ -319,6 +319,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-muted-foreground">Status</label>
               <select
+                data-testid="task-status-select"
                 value={status.value}
                 onChange={(e) => {
                   status.value = (e.target as HTMLSelectElement).value as TaskStatus;

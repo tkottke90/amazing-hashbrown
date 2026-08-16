@@ -373,6 +373,8 @@ export function WorkspacesView(_props: { path?: string }) {
                   return (
                     <tr
                       key={ws.id}
+                      data-testid="workspace-row"
+                      data-workspace-id={ws.id}
                       class={cn(
                         'border-b border-border last:border-0 hover:bg-muted/30 transition-colors',
                         stale && 'opacity-60',

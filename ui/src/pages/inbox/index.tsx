@@ -1,4 +1,5 @@
 import { useEffect } from 'preact/hooks';
+import { forwardRef } from 'preact/compat';
 import { useComputed } from '@preact/signals';
 import { Plus, Inbox as InboxIcon } from 'lucide-preact';
 
@@ -8,9 +9,16 @@ import { TaskDrawer } from '@/components/task-drawer';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import type { Task } from '@/services/tasks-api';
 
-function TaskRow({ task }: { task: Task }) {
+// forwardRef required so Dialog.tsx can attach its click→showModal ref to the
+// row element (preactjs/preact#3297 silently drops refs on plain functions).
+const TaskRow = forwardRef<HTMLTableRowElement, { task: Task }>(function TaskRow({ task }, ref) {
   return (
-    <tr class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer">
+    <tr
+      ref={ref}
+      data-testid="inbox-task-row"
+      data-task-id={task.id}
+      class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+    >
       <td class="px-4 py-3">
         <p class="font-medium text-sm">{task.title}</p>
         {task.outcome && (
@@ -43,7 +51,7 @@ function TaskRow({ task }: { task: Task }) {
       </td>
     </tr>
   );
-}
+});
 
 const TABLE_HEADER = (
   <tr class="border-b border-border bg-muted/40">
@@ -124,7 +132,10 @@ export function InboxView(_props: { path?: string }) {
           </div>
 
           {inboxTasks.value.length === 0 && (
-            <div class="flex flex-col items-center justify-center py-16 text-center">
+            <div
+              data-testid="inbox-empty"
+              class="flex flex-col items-center justify-center py-16 text-center"
+            >
               <InboxIcon class="size-10 text-muted-foreground/40 mb-3" />
               <p class="text-sm text-muted-foreground">Inbox is empty</p>
               <p class="text-xs text-muted-foreground/70 mt-1">
@@ -134,7 +145,7 @@ export function InboxView(_props: { path?: string }) {
           )}
 
           {dueSoon.value.length > 0 && (
-            <div class="mb-6">
+            <div data-testid="inbox-due-soon" class="mb-6">
               <h2 class="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wider text-xs">
                 Due soon
               </h2>
@@ -143,7 +154,7 @@ export function InboxView(_props: { path?: string }) {
           )}
 
           {noDueDate.value.length > 0 && (
-            <div>
+            <div data-testid="inbox-no-due-date">
               <h2 class="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wider">
                 No due date
               </h2>

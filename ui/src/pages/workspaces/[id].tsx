@@ -164,7 +164,7 @@ function OverviewTab({
 
   return (
     <div class="p-4 flex flex-col gap-4">
-      <div class="border border-primary/30 rounded-xl p-4 bg-primary/5">
+      <div data-testid="win-condition" class="border border-primary/30 rounded-xl p-4 bg-primary/5">
         <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-1">
           Win condition
         </p>
