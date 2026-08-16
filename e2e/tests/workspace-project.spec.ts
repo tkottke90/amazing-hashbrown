@@ -86,7 +86,7 @@ test.describe(
       await expect(drawer).toBeVisible();
 
       // Fill required fields
-      await drawer.getByPlaceholder('my-workspace').fill('e2e-ws-ui-create');
+      await drawer.getByPlaceholder('my-workspace', { exact: true }).fill('e2e-ws-ui-create');
       await drawer
         .getByPlaceholder('/home/user/projects/my-workspace')
         .fill('/tmp/e2e-ws-ui-create');
@@ -116,7 +116,7 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Project' }).click();
 
-      await drawer.getByPlaceholder('my-workspace').fill('e2e-proj-ui-create');
+      await drawer.getByPlaceholder('my-workspace', { exact: true }).fill('e2e-proj-ui-create');
       await drawer
         .getByPlaceholder('/home/user/projects/my-workspace')
         .fill('/tmp/e2e-proj-ui-create');
