@@ -9,6 +9,9 @@ const X = XIcon;
 export interface DialogProps {
   className?: string;
   contentClassName?: string;
+  /** Applied to the title-bar row. Callers that override dialog padding to zero
+   *  (e.g. Drawer with !p-0) use this to re-add padding to just the header. */
+  headerClassName?: string;
   children: ComponentChildren;
   title?: string | JSX.Element;
   trigger?: JSX.Element;
@@ -34,6 +37,7 @@ export function useDialog() {
 export function Dialog({
   className,
   contentClassName,
+  headerClassName,
   children,
   trigger,
   disableClose,
@@ -89,8 +93,8 @@ export function Dialog({
           converts `_` to a space, so it compiles to `dialog[open] &` —
           "this element, when a `dialog[open]` ancestor exists."
         */}
-        <div className={contentClassName ?? ''}>
-          <div className="flex">
+        <div className={`flex flex-col flex-1 min-h-0 ${contentClassName ?? ''}`}>
+          <div className={`flex items-center shrink-0 ${headerClassName ?? ''}`}>
             <h2 className="grow">{title}</h2>
             {!disableClose && (
               <button
@@ -103,7 +107,6 @@ export function Dialog({
               </button>
             )}
           </div>
-          <br />
           {children}
         </div>
       </dialog>

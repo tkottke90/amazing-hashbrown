@@ -67,7 +67,7 @@ function WorkspaceSettingsForm({ workspace, onSaved }: WorkspaceSettingsFormProp
   }
 
   return (
-    <form onSubmit={handleSave} class="flex flex-col min-h-0 mt-2">
+    <form onSubmit={handleSave} class="flex flex-col flex-1 min-h-0 mt-2">
       <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Name</label>
