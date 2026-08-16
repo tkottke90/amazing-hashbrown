@@ -10,8 +10,10 @@ export interface DrawerProps extends DialogProps {
 
 // Docked to a viewport edge, full height, and fades its backdrop like Modal.
 // Mobile is 90% viewport width; larger screens size to content but cap at 100ch.
+// overflow-hidden clips the content wrapper during its slide-in animation so
+// that width recalculations (sm:w-fit resolving) don't produce a visible jump.
 const DRAWER_CLASSNAME = `
-  fixed inset-y-0 m-0 h-dvh max-h-none
+  fixed inset-y-0 m-0 h-dvh max-h-none overflow-hidden
   flex flex-col pointer-events-none opacity-0
   w-[90vw] sm:w-fit sm:max-w-[100ch]
   transition-opacity transition-discrete duration-200 ease-out
@@ -26,12 +28,12 @@ const SIDE_CLASSNAME: Record<'left' | 'right', string> = {
 };
 
 // Direction-aware slide entrance/exit + frosted-glass blur for the inner
-// wrapper. See the comment in Dialog.tsx for why these must live here and
-// not on the <dialog> element itself. A left-docked drawer slides in from
-// off-screen left; a right-docked one from off-screen right.
+// wrapper. Uses @starting-style (the `starting:` Tailwind variant) so the
+// transition fires in the same frame the dialog becomes displayed, avoiding
+// the one-frame delay of the [dialog[open]_&] ancestor-selector approach.
 const SIDE_CONTENT_CLASSNAME: Record<'left' | 'right', string> = {
-  left: '-translate-x-full [dialog[open]_&]:translate-x-0',
-  right: 'translate-x-full [dialog[open]_&]:translate-x-0',
+  left: 'translate-x-0 starting:-translate-x-full',
+  right: 'translate-x-0 starting:translate-x-full',
 };
 
 /**

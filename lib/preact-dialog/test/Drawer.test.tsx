@@ -13,9 +13,9 @@ describe('Drawer', () => {
     expect(dialog.className).toContain('right-0');
 
     const inner = dialog.querySelector('div');
-    expect(inner?.className).toContain('translate-x-full');
-    expect(inner?.className).not.toContain('-translate-x-full');
-    expect(inner?.className).toContain('[dialog[open]_&]:translate-x-0');
+    expect(inner?.className).toContain('translate-x-0');
+    expect(inner?.className).toContain('starting:translate-x-full');
+    expect(inner?.className).not.toContain('starting:-translate-x-full');
     expect(inner?.className).toContain('ease-out');
   });
 
@@ -26,7 +26,7 @@ describe('Drawer', () => {
     expect(dialog.className).toContain('left-0');
 
     const inner = dialog.querySelector('div');
-    expect(inner?.className).toContain('-translate-x-full');
+    expect(inner?.className).toContain('starting:-translate-x-full');
   });
 
   it('spans the full viewport height', () => {
