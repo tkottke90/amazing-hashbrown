@@ -57,17 +57,17 @@ The base component. Renders the trigger, the native `<dialog>`, the header (titl
 </Dialog>
 ```
 
-| Prop           | Type                    | Default                 | Description                                                                            |
-| -------------- | ----------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
-| `children`     | `ComponentChildren`     | —                       | Content rendered inside the dialog panel.                                              |
-| `trigger`      | `JSX.Element`           | `<button>Open</button>` | Element that opens the dialog on click. Receives a `ref` via `cloneElement`.           |
-| `title`        | `string \| JSX.Element` | —                       | Rendered in the dialog header alongside the close button.                              |
-| `disableClose` | `boolean`               | `false`                 | Hides the built-in ✕ close button when `true`.                                         |
-| `className`    | `string`                | —                       | Extra CSS classes appended to the `<dialog>` element.                                  |
-| `contentClassName` | `string`             | —                       | CSS classes applied to the inner wrapper — where positioning/entrance-exit transform and backdrop-blur belong (see [Styling](#styling)). |
-| `onOpen`       | `() => void`            | —                       | Called just before `showModal()`.                                                      |
-| `onClose`      | `() => void`            | —                       | Called when the dialog closes via `useDialog().close()`.                               |
-| `onCancel`     | `() => void`            | —                       | Called when the dialog is dismissed via the ✕ button's cancel path or `cancelModal()`. |
+| Prop               | Type                    | Default                 | Description                                                                                                                              |
+| ------------------ | ----------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `children`         | `ComponentChildren`     | —                       | Content rendered inside the dialog panel.                                                                                                |
+| `trigger`          | `JSX.Element`           | `<button>Open</button>` | Element that opens the dialog on click. Receives a `ref` via `cloneElement`.                                                             |
+| `title`            | `string \| JSX.Element` | —                       | Rendered in the dialog header alongside the close button.                                                                                |
+| `disableClose`     | `boolean`               | `false`                 | Hides the built-in ✕ close button when `true`.                                                                                           |
+| `className`        | `string`                | —                       | Extra CSS classes appended to the `<dialog>` element.                                                                                    |
+| `contentClassName` | `string`                | —                       | CSS classes applied to the inner wrapper — where positioning/entrance-exit transform and backdrop-blur belong (see [Styling](#styling)). |
+| `onOpen`           | `() => void`            | —                       | Called just before `showModal()`.                                                                                                        |
+| `onClose`          | `() => void`            | —                       | Called when the dialog closes via `useDialog().close()`.                                                                                 |
+| `onCancel`         | `() => void`            | —                       | Called when the dialog is dismissed via the ✕ button's cancel path or `cancelModal()`.                                                   |
 
 > **Note:** `DialogProps` includes an `open?: Signal<boolean>` field, but the current implementation does not read it. Control the dialog through the `trigger` prop or `useDialog()` instead.
 >
@@ -75,7 +75,7 @@ The base component. Renders the trigger, the native `<dialog>`, the header (titl
 
 #### Styling
 
-`Dialog` itself only carries the shared "skin": padding, dark-mode-aware text/background colors, border, and corner radius. Everything about *where the overlay sits and how it enters/exits* — positioning, sizing, z-index, transitions — belongs on the `className`/`contentClassName` supplied by whichever variant wraps it.
+`Dialog` itself only carries the shared "skin": padding, dark-mode-aware text/background colors, border, and corner radius. Everything about _where the overlay sits and how it enters/exits_ — positioning, sizing, z-index, transitions — belongs on the `className`/`contentClassName` supplied by whichever variant wraps it.
 
 This split exists because of a DOM constraint worth knowing before adding a new variant: the slide/translate transform **and** the frosted-glass `backdrop-blur` must live on the inner wrapper div (`contentClassName`), never on the `<dialog>` element itself. Both `transform` and `backdrop-filter` independently establish a new containing block for `position: fixed` descendants — anything inside that relies on `position: fixed` (e.g. a Radix `Select` dropdown positioned via `getBoundingClientRect`) would render relative to the dialog's own box instead of the viewport. See the comment above the inner `<div>` in `Dialog.tsx` for the full explanation.
 
@@ -113,7 +113,7 @@ import { Drawer } from '@tkottke90/preact-dialog';
 </Drawer>;
 ```
 
-| Prop   | Type                | Default   | Description                                               |
+| Prop   | Type                | Default   | Description                                                 |
 | ------ | ------------------- | --------- | ----------------------------------------------------------- |
 | `side` | `'left' \| 'right'` | `'right'` | Which viewport edge the drawer docks to and slides in from. |
 
