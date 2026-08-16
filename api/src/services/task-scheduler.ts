@@ -23,9 +23,11 @@ export class TaskScheduler {
     if (this.timer) return;
     this.timer = setInterval(() => {
       if (!this.paused) {
-        this.tick().catch((err: unknown) => {
+        try {
+          this.tick();
+        } catch (err: unknown) {
           logger.warn('Task scheduler tick error', { err: String(err) });
-        });
+        }
       }
     }, POLL_INTERVAL_MS);
   }
@@ -80,7 +82,7 @@ export class TaskScheduler {
     return this.paused;
   }
 
-  private async tick(): Promise<void> {
+  private tick(): void {
     const store = getWorkspaceStore();
 
     // Don't start a new item if one is already running
@@ -90,17 +92,8 @@ export class TaskScheduler {
     if (!next) return;
 
     logger.info('Task scheduler: starting task', { taskId: next.taskId, queueId: next.id });
-    this.emitQueueUpdate();
-
-    try {
-      // TODO: invoke task agent when agent integration is implemented
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      store.completeQueueEntry(next.id, 'done');
-    } catch (err) {
-      logger.warn('Task scheduler: task failed', { taskId: next.taskId, err: String(err) });
-      store.completeQueueEntry(next.id, 'failed');
-    }
-
+    // TODO: invoke task agent when agent integration is implemented;
+    // for now just mark as running — the agent will call completeQueueEntry when done
     this.emitQueueUpdate();
   }
 
