@@ -94,6 +94,7 @@ export function Dialog({
             <h2 className="grow">{title}</h2>
             {!disableClose && (
               <button
+                aria-label="Close"
                 onClick={() => {
                   cancelModal(modalRef.current, onCancel);
                 }}
