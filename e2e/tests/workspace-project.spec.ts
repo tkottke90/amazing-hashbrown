@@ -196,7 +196,7 @@ test.describe(
       expect(projRes.status()).toBe(201);
       const proj = await projRes.json();
 
-      const closeRes = await request.post(`/api/v1/projects/${proj.id}/close`);
+      const closeRes = await request.post(`/api/v1/projects/${proj.workspace.id}/close`);
       expect(closeRes.status()).toBe(200);
 
       await page.goto('/workspaces');
@@ -227,8 +227,8 @@ test.describe(
       await page.goto(`/workspaces/${ws.id}`);
       await pauseBeforeAction(page, testInfo);
 
-      // Breadcrumb and heading
-      await expect(page.getByRole('link', { name: 'Workspaces' })).toBeVisible();
+      // Breadcrumb and heading (scope to main to avoid matching the sidebar nav link)
+      await expect(page.getByRole('main').getByRole('link', { name: 'Workspaces' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'e2e-detail-overview-ws' })).toBeVisible();
 
       // Goal text shows in Overview tab
@@ -286,7 +286,7 @@ test.describe(
       expect(projRes.status()).toBe(201);
       const proj = await projRes.json();
 
-      await page.goto(`/workspaces/${proj.id}`);
+      await page.goto(`/workspaces/${proj.workspace.id}`);
       await pauseBeforeAction(page, testInfo);
 
       const closeBtn = page.getByRole('button', { name: 'Close project' });
