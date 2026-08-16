@@ -71,7 +71,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
     setTimeout(() => {
       const inputs =
         planContainerRef.current?.querySelectorAll<HTMLInputElement>('input[type="text"]');
-      if (inputs?.length) inputs[inputs.length - 1].focus();
+      if (inputs?.length) inputs[inputs.length - 1]?.focus();
     }, 0);
   }
 
