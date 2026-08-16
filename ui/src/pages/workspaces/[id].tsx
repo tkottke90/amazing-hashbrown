@@ -190,13 +190,7 @@ function OverviewTab({
   );
 }
 
-function TasksTab({
-  workspaceId,
-  onSaved,
-}: {
-  workspaceId: string;
-  onSaved: () => void;
-}) {
+function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () => void }) {
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
   );
@@ -377,7 +371,6 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
           )}
         </div>
       </div>
-
     </Layout>
   );
 }
