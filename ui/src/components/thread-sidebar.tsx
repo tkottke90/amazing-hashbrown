@@ -231,9 +231,7 @@ function QueueWidget() {
       class="border border-border rounded-[10px] p-[10px_12px] bg-card mb-1"
     >
       <div class="flex items-center gap-1.5 mb-1">
-        <Circle
-          class={cn('size-[7px] fill-current', paused ? 'text-amber-500' : 'text-primary')}
-        />
+        <Circle class={cn('size-[7px] fill-current', paused ? 'text-amber-500' : 'text-primary')} />
         <span class="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">
           Queue
         </span>
