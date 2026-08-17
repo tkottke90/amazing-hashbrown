@@ -9,6 +9,9 @@ import { usageRouter } from './usage.route.js';
 import { threadsRouter } from './threads.route.js';
 import { wikiRouter } from './wiki.route.js';
 import { skillsRouter } from './skills.route.js';
+import { workspacesRouter } from './workspaces.route.js';
+import { projectsRouter } from './projects.route.js';
+import { tasksRouter } from './tasks.route.js';
 
 export const v1Router = Router();
 
@@ -22,3 +25,6 @@ v1Router.use('/usage', usageRouter);
 v1Router.use('/threads', threadsRouter);
 v1Router.use('/wiki', wikiRouter);
 v1Router.use('/skills', skillsRouter);
+v1Router.use('/workspaces', workspacesRouter);
+v1Router.use('/projects', projectsRouter);
+v1Router.use('/tasks', tasksRouter);

@@ -6,6 +6,9 @@ import { activeThreadId } from '@/hooks/use-thread';
 import { ChatRoot } from '@/pages/chat';
 import { SettingsView } from '@/pages/settings';
 import { WikiView } from '@/pages/wiki';
+import { WorkspacesView } from '@/pages/workspaces';
+import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
+import { InboxView } from '@/pages/inbox';
 
 // path prop is consumed by preact-iso's Router for route matching
 function RootRedirect(_props: { path?: string }) {
@@ -25,6 +28,9 @@ export function App() {
         <ChatRoot path="/chat/:id" />
         <WikiView path="/wiki" />
         <SettingsView path="/settings" />
+        <WorkspacesView path="/workspaces" />
+        <WorkspaceDetailView path="/workspaces/:id" />
+        <InboxView path="/inbox" />
       </Router>
     </LocationProvider>
   );

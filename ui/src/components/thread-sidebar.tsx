@@ -11,6 +11,9 @@ import {
   BookOpen,
   Cog,
   FileDown,
+  Inbox,
+  Folder,
+  Circle,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -37,6 +40,8 @@ import {
   setShowErrorMessages,
   type ThreadSummary,
 } from '@/hooks/use-thread';
+import { queueState, refreshQueue } from '@/hooks/use-tasks';
+import { fetchTasks } from '@/services/tasks-api';
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -209,11 +214,52 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
   );
 }
 
+function QueueWidget() {
+  const running = queueState.value.running;
+  const pending = queueState.value.queue.filter((e) => e.status === 'pending').length;
+
+  if (!running && pending === 0) return null;
+
+  const isPaused = !running && pending > 0;
+
+  return (
+    <div
+      data-testid="queue-widget"
+      class="border border-border rounded-[10px] p-[10px_12px] bg-card mb-1"
+    >
+      <div class="flex items-center gap-1.5 mb-1">
+        <Circle
+          class={cn('size-[7px] fill-current', isPaused ? 'text-amber-500' : 'text-primary')}
+        />
+        <span class="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">
+          Queue
+        </span>
+      </div>
+      <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
+        {running?.task.title ?? queueState.value.queue[0]?.task?.title ?? '—'}
+      </div>
+      <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
+        {isPaused ? `Paused — ${pending} pending` : `running · ${pending} pending`}
+      </div>
+    </div>
+  );
+}
+
 export function ThreadSidebar() {
   const { url, route } = useLocation();
+  const inboxCount = useSignal(0);
 
   useEffect(() => {
     refreshThreadList();
+    void refreshQueue();
+    void fetchTasks({ workspace_id: null, status: 'pending' })
+      .then((tasks) => {
+        inboxCount.value = tasks.length;
+      })
+      .catch(() => {});
+
+    const queueInterval = setInterval(() => void refreshQueue(), 10_000);
+    return () => clearInterval(queueInterval);
   }, []);
 
   return (
@@ -242,6 +288,37 @@ export function ThreadSidebar() {
       </div>
 
       <a
+        href="/inbox"
+        aria-label="Inbox"
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url === '/inbox'
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <Inbox className="size-4 shrink-0" />
+        <span class="flex-1">Inbox</span>
+        {inboxCount.value > 0 && (
+          <span class="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+            {inboxCount.value}
+          </span>
+        )}
+      </a>
+      <a
+        href="/workspaces"
+        aria-label="Workspaces"
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url.startsWith('/workspaces')
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <Folder className="size-4 shrink-0" />
+        Workspaces
+      </a>
+      <a
         href="/wiki"
         aria-label="Wiki"
         className={cn(
@@ -268,14 +345,17 @@ export function ThreadSidebar() {
         Settings
       </a>
 
-      <label className="flex items-center justify-between gap-2 border-t border-border px-2 pt-3 text-xs text-muted-foreground">
-        <span>Show failed attempts</span>
-        <Switch
-          size="sm"
-          checked={showErrorMessages.value}
-          onCheckedChange={(checked) => setShowErrorMessages(checked === true)}
-        />
-      </label>
+      <div class="border-t border-border pt-2 mt-1">
+        <QueueWidget />
+        <label className="flex items-center justify-between gap-2 px-2 pt-2 text-xs text-muted-foreground">
+          <span>Show failed attempts</span>
+          <Switch
+            size="sm"
+            checked={showErrorMessages.value}
+            onCheckedChange={(checked) => setShowErrorMessages(checked === true)}
+          />
+        </label>
+      </div>
     </nav>
   );
 }

@@ -9,3 +9,5 @@ package-lock.json
 .design-sync/
 ds-bundle/
 ds-bundle-css/
+# Design documents — not hand-authored source
+docs/Design/

@@ -1,6 +1,6 @@
 import { useSignal, type Signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { Dialog, useDialog } from '@tkottke90/preact-dialog';
+import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import { Loader2, RefreshCw } from 'lucide-preact';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,7 +38,7 @@ export function ProviderModal({ mode, initial, onSave, trigger }: ProviderModalP
   const openCount = useSignal(0);
 
   return (
-    <Dialog
+    <Modal
       title={mode === 'add' ? 'Add provider' : 'Edit provider'}
       className="mx-auto my-16 max-w-lg p-4"
       trigger={trigger}
@@ -47,7 +47,7 @@ export function ProviderModal({ mode, initial, onSave, trigger }: ProviderModalP
       }}
     >
       <ProviderForm mode={mode} initial={initial} onSave={onSave} openCount={openCount} />
-    </Dialog>
+    </Modal>
   );
 }
 

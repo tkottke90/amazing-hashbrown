@@ -14,13 +14,22 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch"
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "jest"
   },
   "peerDependencies": {
     "preact": ">=10.0.0",
     "@preact/signals": ">=1.0.0"
   },
   "devDependencies": {
+    "@preact/signals": "2.10.1",
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/preact": "^3.2.4",
+    "@types/jest": "^29.5.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "preact": "^10.22.0",
+    "ts-jest": "^29.2.0",
     "typescript": "^5.5.0"
   }
 }

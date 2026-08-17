@@ -1,5 +1,5 @@
 import { useSignal } from '@preact/signals';
-import { Dialog, useDialog } from '@tkottke90/preact-dialog';
+import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -19,13 +19,13 @@ interface RateModalProps {
 
 export function RateModal({ mode, initial, onSave, trigger }: RateModalProps) {
   return (
-    <Dialog
+    <Modal
       title={mode === 'add' ? 'Add rate' : 'Edit rate'}
       className="mx-auto my-16 max-w-md p-4"
       trigger={trigger}
     >
       <RateForm mode={mode} initial={initial} onSave={onSave} />
-    </Dialog>
+    </Modal>
   );
 }
 

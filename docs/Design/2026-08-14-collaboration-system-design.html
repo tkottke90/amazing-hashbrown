@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collaboration System</title>
+<style>
+:root {
+  --bg: #F5F6FA;
+  --surface: #FFFFFF;
+  --surface-2: #ECEEF5;
+  --border: #DDE1ED;
+  --text: #111827;
+  --text-2: #586080;
+  --accent: #3B67E0;
+  --accent-light: #EBF0FC;
+  --accent-text: #2245B8;
+  --green: #1A9E72;
+  --amber: #B45309;
+  --red: #C53030;
+  --code-bg: #EEF1F9;
+  --shadow-sm: 0 1px 2px rgba(17,24,39,0.07);
+  --shadow: 0 1px 4px rgba(17,24,39,0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0C0F18;
+    --surface: #141928;
+    --surface-2: #1A2135;
+    --border: #252E47;
+    --text: #E4EAF6;
+    --text-2: #7D8FAD;
+    --accent: #5578E8;
+    --accent-light: #162048;
+    --accent-text: #7A9AF2;
+    --green: #28C48E;
+    --amber: #E8A030;
+    --red: #F07070;
+    --code-bg: #111626;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
+    --shadow: 0 1px 5px rgba(0,0,0,0.35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0C0F18;
+  --surface: #141928;
+  --surface-2: #1A2135;
+  --border: #252E47;
+  --text: #E4EAF6;
+  --text-2: #7D8FAD;
+  --accent: #5578E8;
+  --accent-light: #162048;
+  --accent-text: #7A9AF2;
+  --green: #28C48E;
+  --amber: #E8A030;
+  --red: #F07070;
+  --code-bg: #111626;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
+  --shadow: 0 1px 5px rgba(0,0,0,0.35);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  font-size:15px;
+  line-height:1.65;
+  max-width:900px;
+  margin:0 auto;
+  padding:2.5rem 2rem 6rem;
+}
+
+/* Typography */
+h1,h2,h3{font-family:Georgia,'Times New Roman',serif;font-weight:normal;text-wrap:balance;line-height:1.2;}
+h1{font-size:2.75rem;letter-spacing:-0.025em;color:var(--text);}
+h2{font-size:1.45rem;color:var(--text);margin:3rem 0 1rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border);}
+h3{font-size:1.05rem;margin:1.75rem 0 0.45rem;font-family:system-ui,sans-serif;font-weight:600;color:var(--text);}
+h4{font-size:0.72rem;font-family:system-ui,sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-2);margin:1.2rem 0 0.4rem;}
+p{margin:0.65rem 0;max-width:70ch;color:var(--text);}
+a{color:var(--accent-text);}
+code{font-family:'Courier New',monospace;font-size:0.85em;background:var(--code-bg);padding:0.1em 0.35em;border-radius:3px;color:var(--accent-text);}
+
+/* Header */
+.doc-header{padding:3rem 0 2.25rem;border-bottom:2px solid var(--border);margin-bottom:2.25rem;}
+.eyebrow{display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent);margin-bottom:0.9rem;font-family:system-ui,sans-serif;}
+.lead{font-size:1.05rem;color:var(--text-2);margin:0.5rem 0 1rem;max-width:62ch;line-height:1.55;}
+.doc-meta{font-size:0.78rem;color:var(--text-2);font-family:'Courier New',monospace;}
+
+/* TOC */
+.toc{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:1rem 1.25rem 1.1rem;margin-bottom:2.75rem;box-shadow:var(--shadow-sm);}
+.toc-title{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-2);font-weight:700;margin-bottom:0.6rem;font-family:system-ui,sans-serif;}
+.toc ol{padding-left:1.1em;columns:2;column-gap:2rem;}
+.toc li{margin:0.22rem 0;font-size:0.83rem;}
+.toc a{color:var(--accent-text);text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+
+/* Concept cards */
+.concept-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;margin:1.2rem 0 2rem;}
+.concept-card{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:1.25rem;box-shadow:var(--shadow-sm);}
+.card-label{display:block;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:0.5rem;font-family:system-ui,sans-serif;}
+.concept-card h3{color:var(--text);font-family:Georgia,serif;font-size:1.1rem;margin:0 0 0.55rem;}
+.concept-card p{font-size:0.85rem;color:var(--text-2);margin:0;max-width:none;}
+
+/* Callout */
+.callout{border-left:3px solid var(--accent);background:var(--accent-light);padding:0.85rem 1.1rem;border-radius:0 5px 5px 0;margin:1.1rem 0;font-size:0.875rem;}
+.callout strong{color:var(--accent-text);}
+
+/* Figures */
+figure{margin:1.5rem 0 2rem;}
+figure svg{max-width:100%;height:auto;display:block;}
+figcaption{font-size:0.775rem;color:var(--text-2);margin-top:0.5rem;font-style:italic;}
+.fig-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:1.5rem 1.25rem;box-shadow:var(--shadow-sm);}
+
+/* SVG element classes */
+.svg-box{fill:var(--surface);stroke:var(--border);stroke-width:1.5;}
+.svg-box-accent{fill:var(--accent-light);stroke:var(--accent);stroke-width:1.5;}
+.svg-box-project{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5;stroke-dasharray:5 3;}
+.svg-box-warn{fill:none;stroke:var(--amber);stroke-width:1.5;stroke-dasharray:4 3;}
+.svg-box-red{fill:none;stroke:var(--red);stroke-width:1.5;stroke-dasharray:4 3;}
+.svg-label{fill:var(--text);font-family:system-ui,sans-serif;font-size:13px;font-weight:600;}
+.svg-sub{fill:var(--text-2);font-family:system-ui,sans-serif;font-size:11px;}
+.svg-sub-accent{fill:var(--accent-text);font-family:system-ui,sans-serif;font-size:11px;}
+.svg-sub-red{fill:var(--red);font-family:system-ui,sans-serif;font-size:11px;}
+.svg-sub-warn{fill:var(--amber);font-family:system-ui,sans-serif;font-size:11px;}
+.svg-sub-green{fill:var(--green);font-family:system-ui,sans-serif;font-size:11px;}
+.svg-arrow{stroke:var(--text-2);stroke-width:1.5;fill:none;}
+.svg-arrow-accent{stroke:var(--accent);stroke-width:1.75;fill:none;}
+.svg-arrow-red{stroke:var(--red);stroke-width:1.5;fill:none;}
+.svg-arrow-warn{stroke:var(--amber);stroke-width:1.5;fill:none;stroke-dasharray:5 3;}
+.svg-divider{stroke:var(--border);stroke-width:1;fill:none;}
+.ah{fill:var(--text-2);}
+.aha{fill:var(--accent);}
+.ahr{fill:var(--red);}
+
+/* Schema blocks */
+.schema-block{margin:1.1rem 0 2rem;background:var(--surface);border:1px solid var(--border);border-radius:7px;overflow:hidden;box-shadow:var(--shadow-sm);}
+.schema-header{background:var(--surface-2);border-bottom:1px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem;}
+.schema-header code{font-family:'Courier New',monospace;font-size:0.88rem;font-weight:bold;color:var(--accent-text);background:none;padding:0;}
+.schema-note{font-size:0.75rem;color:var(--text-2);}
+.schema-table{width:100%;border-collapse:collapse;font-size:0.825rem;}
+.schema-table th{text-align:left;padding:0.4rem 1rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-2);font-weight:700;border-bottom:1px solid var(--border);background:var(--surface-2);font-family:system-ui,sans-serif;}
+.schema-table td{padding:0.45rem 1rem;border-bottom:1px solid var(--border);vertical-align:top;}
+.schema-table tr:last-child td{border-bottom:none;}
+.schema-table td:first-child{font-family:'Courier New',monospace;color:var(--accent-text);white-space:nowrap;font-size:0.82rem;}
+.schema-table td:nth-child(2){color:var(--text-2);font-size:0.78rem;font-family:'Courier New',monospace;white-space:nowrap;}
+.schema-table td:nth-child(3){color:var(--text-2);font-size:0.82rem;}
+.schema-footer{padding:0.5rem 1rem;font-size:0.78rem;color:var(--text-2);border-top:1px solid var(--border);background:var(--surface-2);}
+.badge{display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1em 0.45em;border-radius:3px;font-family:system-ui,sans-serif;letter-spacing:0.04em;vertical-align:middle;margin-left:3px;}
+.badge-pk{background:var(--accent-light);color:var(--accent-text);}
+.badge-fk{background:#FEF3C7;color:#92400E;}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .badge-fk{background:#2C1900;color:var(--amber);}
+}
+:root[data-theme="dark"] .badge-fk{background:#2C1900;color:var(--amber);}
+
+/* Trigger grid */
+.trigger-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:0.75rem;margin:1rem 0 1.5rem;}
+.trigger-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0.8rem;font-size:0.82rem;color:var(--text-2);}
+.trigger-item strong{display:block;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--accent);margin-bottom:0.3rem;font-family:system-ui,sans-serif;font-weight:700;}
+
+/* Status pills */
+.pill-row{display:flex;flex-wrap:wrap;gap:0.4rem;margin:0.75rem 0;}
+.pill{display:inline-block;font-size:0.72rem;font-weight:600;padding:0.2em 0.65em;border-radius:20px;border:1px solid;font-family:system-ui,sans-serif;letter-spacing:0.02em;}
+.pill-neutral{border-color:var(--border);color:var(--text-2);background:var(--surface-2);}
+.pill-blue{border-color:var(--accent);color:var(--accent-text);background:var(--accent-light);}
+.pill-green{border-color:var(--green);color:var(--green);background:transparent;}
+.pill-red{border-color:var(--red);color:var(--red);background:transparent;}
+.pill-amber{border-color:var(--amber);color:var(--amber);background:transparent;}
+
+/* Rules list */
+.rules-list{list-style:none;margin:1rem 0;}
+.rules-list li{display:flex;gap:0.8rem;align-items:flex-start;padding:0.6rem 0;border-bottom:1px solid var(--border);font-size:0.875rem;color:var(--text);}
+.rules-list li:last-child{border-bottom:none;}
+.rule-num{font-family:'Courier New',monospace;font-size:0.75rem;color:var(--accent);font-weight:bold;min-width:22px;flex-shrink:0;padding-top:0.15em;}
+
+/* Creation paths */
+.creation-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0;}
+.creation-path{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:1.1rem;}
+.creation-path h4{color:var(--accent-text);margin-bottom:0.4rem;}
+.creation-path p{font-size:0.85rem;color:var(--text-2);max-width:none;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="doc-header">
+  <span class="eyebrow">Design Specification · 2026-08-14 · amazing-hashbrown</span>
+  <h1>Collaboration System</h1>
+  <p class="lead">Architecture for Workspaces, Tasks, and Projects — the operational layer that sits above the existing LLM-wiki and applies its knowledge to goal-directed work.</p>
+  <div class="doc-meta">pre-implementation · v1.0 · does not describe code changes</div>
+</header>
+
+<!-- TOC -->
+<nav class="toc" aria-label="Contents">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#concepts">Core Concepts</a></li>
+    <li><a href="#relationships">System Relationships</a></li>
+    <li><a href="#schemas">Data Schemas</a></li>
+    <li><a href="#runtime">Task Execution Runtime</a></li>
+    <li><a href="#wiki-scope">Wiki Binding &amp; Write Scope</a></li>
+    <li><a href="#lifecycle">Project Lifecycle</a></li>
+    <li><a href="#creation">Workspace &amp; Project Creation</a></li>
+    <li><a href="#rules">Design Rules</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <h2>Overview</h2>
+  <p>The Collaboration System introduces three first-class entities that sit between the user and the LLM-wiki layer. Together they answer two questions the wiki alone cannot: <em>where</em> is work happening, and <em>what</em> needs to be done next.</p>
+  <p>The wiki remains the long-term knowledge layer — stable, synthesized, LLM-maintained. The collaboration system is the operational layer: mutable, scoped, and tied to goals that can be completed or abandoned.</p>
+
+  <div class="callout">
+    <strong>Core distinction:</strong> Wikis accumulate knowledge that compounds over time. Workspaces are sandboxes where that knowledge is applied to a goal. Tasks are discrete units of work inside (or independent of) those sandboxes. Projects wrap all three into a goal-bounded unit with a formal close process.
+  </div>
+</section>
+
+<!-- CORE CONCEPTS -->
+<section id="concepts">
+  <h2>Core Concepts</h2>
+
+  <div class="concept-grid">
+    <div class="concept-card">
+      <span class="card-label">Foundation</span>
+      <h3>Workspace</h3>
+      <p>A sandboxed directory with a defined goal. Can be wiki-bound, git-connected, and long-lived. Both user and agent edit files directly — unlike wikis, there is no LLM-only write restriction. Supports dependency isolation per language (venv, node_modules).</p>
+    </div>
+    <div class="concept-card">
+      <span class="card-label">Work Tracking</span>
+      <h3>Task</h3>
+      <p>A discrete unit of work assigned to user or agent. Trigger-driven, Kanban-tracked, and optionally synced to an external tracker (Todoist, GitHub Issues). Can belong to a workspace or sit in the global user inbox when unassigned.</p>
+    </div>
+    <div class="concept-card">
+      <span class="card-label">Goal-Bounded</span>
+      <h3>Project</h3>
+      <p>A workspace with a dedicated ephemeral wiki and an explicit win condition. Agent writes go only to the project wiki. Requires a formal close — wiki is snapshotted into the workspace directory and selected pages are merged into persistent domains.</p>
+    </div>
+  </div>
+
+  <h3>What separates a Project from a Workspace</h3>
+  <p>A project <em>is</em> a workspace — the <code>projects</code> table extends <code>workspaces</code> 1:1. The distinguishing attributes are:</p>
+  <ul style="margin:0.5rem 0 0.5rem 1.4rem;font-size:0.875rem;">
+    <li style="margin:0.25rem 0;"><strong>Dedicated ephemeral wiki</strong> — created at project start, archived at project close</li>
+    <li style="margin:0.25rem 0;"><strong>Explicit win condition</strong> — natural language and/or requirements list; project must close or be explicitly abandoned</li>
+    <li style="margin:0.25rem 0;"><strong>Write scope restriction</strong> — agent writes go only to the project wiki, enforced at the tool level (hard guardrail, not a prompt instruction)</li>
+  </ul>
+  <p>Regular workspaces have a directional goal but no win condition, no dedicated wiki, and can live indefinitely.</p>
+
+  <h3>The global user inbox</h3>
+  <p>Tasks with no workspace assignment belong to the global user inbox. The inbox is not a workspace — it has no schema record, no directory, no goal statement. It is simply the default bucket for unassigned tasks, surfaced in the UI as a flat task list.</p>
+</section>
+
+<!-- SYSTEM RELATIONSHIPS -->
+<section id="relationships">
+  <h2>System Relationships</h2>
+
+  <figure>
+    <div class="fig-wrap">
+      <svg viewBox="0 0 755 285" role="img" aria-label="Entity relationship diagram: Workspace in centre, bound to WikiDomain (persistent) on left, has-many Tasks on right, extends to Project below, Project owns WikiDomain (ephemeral), Tasks queue into TaskQueue">
+        <defs>
+          <marker id="r-ah" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="ah"/></marker>
+          <marker id="r-aha" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="aha"/></marker>
+        </defs>
+
+        <!-- WikiDomain persistent -->
+        <rect x="10" y="60" width="165" height="80" rx="5" class="svg-box"/>
+        <text x="92" y="90" text-anchor="middle" class="svg-label">WikiDomain</text>
+        <text x="92" y="107" text-anchor="middle" class="svg-sub">persistent domain</text>
+        <text x="92" y="123" text-anchor="middle" class="svg-sub">type = persistent</text>
+
+        <!-- Workspace -->
+        <rect x="255" y="48" width="195" height="95" rx="5" class="svg-box-accent"/>
+        <text x="352" y="78" text-anchor="middle" class="svg-label">Workspace</text>
+        <text x="352" y="96" text-anchor="middle" class="svg-sub">goal · location · isolation</text>
+        <text x="352" y="112" text-anchor="middle" class="svg-sub">wiki_id FK (nullable)</text>
+        <text x="352" y="128" text-anchor="middle" class="svg-sub">git · remote_url</text>
+
+        <!-- Task -->
+        <rect x="530" y="35" width="210" height="75" rx="5" class="svg-box"/>
+        <text x="635" y="63" text-anchor="middle" class="svg-label">Task</text>
+        <text x="635" y="80" text-anchor="middle" class="svg-sub">assigned_to: user | agent</text>
+        <text x="635" y="96" text-anchor="middle" class="svg-sub">workspace_id FK (nullable)</text>
+
+        <!-- TaskQueue -->
+        <rect x="530" y="130" width="210" height="55" rx="4" class="svg-box"/>
+        <text x="635" y="156" text-anchor="middle" class="svg-label">TaskQueue</text>
+        <text x="635" y="173" text-anchor="middle" class="svg-sub">ordered · sqlite-backed</text>
+
+        <!-- Project -->
+        <rect x="255" y="205" width="195" height="72" rx="5" class="svg-box-project"/>
+        <text x="352" y="233" text-anchor="middle" class="svg-label">Project</text>
+        <text x="352" y="250" text-anchor="middle" class="svg-sub">extends Workspace 1:1</text>
+        <text x="352" y="265" text-anchor="middle" class="svg-sub">win_condition · status</text>
+
+        <!-- WikiDomain ephemeral -->
+        <rect x="530" y="205" width="210" height="72" rx="5" class="svg-box"/>
+        <text x="635" y="233" text-anchor="middle" class="svg-label">WikiDomain</text>
+        <text x="635" y="250" text-anchor="middle" class="svg-sub">ephemeral domain</text>
+        <text x="635" y="266" text-anchor="middle" class="svg-sub">type = ephemeral</text>
+
+        <!-- Arrow: WikiDomain(pers) → Workspace -->
+        <line x1="175" y1="98" x2="253" y2="90" class="svg-arrow" marker-end="url(#r-ah)"/>
+        <text x="213" y="82" text-anchor="middle" class="svg-sub">bound-to</text>
+        <text x="213" y="95" text-anchor="middle" class="svg-sub">(optional)</text>
+
+        <!-- Arrow: Workspace → Task -->
+        <line x1="450" y1="78" x2="528" y2="70" class="svg-arrow" marker-end="url(#r-ah)"/>
+        <text x="488" y="64" text-anchor="middle" class="svg-sub">has-many</text>
+
+        <!-- Arrow: Task → TaskQueue -->
+        <line x1="635" y1="110" x2="635" y2="128" class="svg-arrow" marker-end="url(#r-ah)"/>
+        <text x="648" y="123" class="svg-sub">queued-as</text>
+
+        <!-- Arrow: Workspace → Project -->
+        <line x1="352" y1="143" x2="352" y2="203" class="svg-arrow" marker-end="url(#r-ah)"/>
+        <text x="364" y="177" class="svg-sub">extends</text>
+
+        <!-- Arrow: Project → WikiDomain(eph) — ACCENT (project-exclusive) -->
+        <line x1="450" y1="241" x2="528" y2="241" class="svg-arrow-accent" marker-end="url(#r-aha)"/>
+        <text x="488" y="233" text-anchor="middle" class="svg-sub-accent">owns</text>
+        <text x="488" y="247" text-anchor="middle" class="svg-sub-accent">(write target)</text>
+      </svg>
+    </div>
+    <figcaption>Project is not a separate entity — it extends Workspace 1:1. The accent arrow (owns) is the project-exclusive write target: agent wiki writes in a project context go only to the ephemeral WikiDomain it owns.</figcaption>
+  </figure>
+</section>
+
+<!-- DATA SCHEMAS -->
+<section id="schemas">
+  <h2>Data Schemas</h2>
+
+  <!-- workspaces -->
+  <div class="schema-block">
+    <div class="schema-header">
+      <code>workspaces</code>
+      <span class="schema-note">Primary workspace record</span>
+    </div>
+    <table class="schema-table">
+      <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>workspace_id <span class="badge badge-pk">PK</span></td><td>integer</td><td>Auto-increment</td></tr>
+        <tr><td>name</td><td>varchar</td><td>Display name</td></tr>
+        <tr><td>description</td><td>text</td><td>Human-readable description of what this workspace is for</td></tr>
+        <tr><td>goal</td><td>text</td><td>Directional goal statement; long-lived workspaces use open-ended goals ("keep servers up to date")</td></tr>
+        <tr><td>location</td><td>varchar</td><td>Absolute path to workspace directory; under configurable <code>WORKSPACE_ROOT</code></td></tr>
+        <tr><td>remote_url</td><td>varchar / null</td><td>Git remote URL; non-null implies <code>git = true</code></td></tr>
+        <tr><td>javascript</td><td>boolean</td><td>Has JS/TS dependencies (node_modules); enables cleanup tooling</td></tr>
+        <tr><td>python</td><td>boolean</td><td>Has Python dependencies (venv); enables cleanup tooling</td></tr>
+        <tr><td>git</td><td>boolean</td><td>Workspace is a git repo; agent commits changes using collaborator-level operations</td></tr>
+        <tr><td>wiki_id <span class="badge badge-fk">FK</span></td><td>integer / null</td><td>Bound wiki domain — sets first lookup, not exclusive scope</td></tr>
+        <tr><td>createdAt</td><td>timestamp</td><td></td></tr>
+        <tr><td>updatedAt</td><td>timestamp</td><td>Record last modified</td></tr>
+        <tr><td>lastChange</td><td>timestamp</td><td>Last file write in the workspace directory; used for staleness display</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- projects -->
+  <div class="schema-block">
+    <div class="schema-header">
+      <code>projects</code>
+      <span class="schema-note">Extends workspaces 1:1 — no overlapping fields</span>
+    </div>
+    <table class="schema-table">
+      <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>project_id <span class="badge badge-pk">PK</span></td><td>integer</td><td>Auto-increment</td></tr>
+        <tr><td>workspace_id <span class="badge badge-fk">FK</span></td><td>integer</td><td>Unique constraint — one project per workspace</td></tr>
+        <tr><td>win_condition</td><td>text</td><td>Natural language and/or requirements checklist; evaluated by agent to determine completion readiness</td></tr>
+        <tr><td>wiki_id <span class="badge badge-fk">FK</span></td><td>integer</td><td>Ephemeral wiki domain owned by this project; the exclusive write target during active phase</td></tr>
+        <tr><td>status</td><td>varchar</td><td><code>active</code> | <code>closed</code> | <code>abandoned</code></td></tr>
+        <tr><td>due_date</td><td>timestamp / null</td><td>Optional target date; informational only — does not auto-close</td></tr>
+        <tr><td>closed_at</td><td>timestamp / null</td><td>Set on formal close or abandonment</td></tr>
+        <tr><td>createdAt</td><td>timestamp</td><td></td></tr>
+        <tr><td>updatedAt</td><td>timestamp</td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="schema-footer">Query pattern: <code>SELECT w.*, p.* FROM workspaces w JOIN projects p ON p.workspace_id = w.workspace_id</code></div>
+  </div>
+
+  <!-- tasks -->
+  <div class="schema-block">
+    <div class="schema-header">
+      <code>tasks</code>
+      <span class="schema-note">Work tracking — assigned to user or agent</span>
+    </div>
+    <table class="schema-table">
+      <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>task_id <span class="badge badge-pk">PK</span></td><td>integer</td><td>Auto-increment</td></tr>
+        <tr><td>title</td><td>varchar</td><td>Short descriptive title; shown in Kanban and inbox views</td></tr>
+        <tr><td>description</td><td>text</td><td>Full task description</td></tr>
+        <tr><td>outcome</td><td>text</td><td>Clear definition of done</td></tr>
+        <tr><td>status</td><td>varchar</td><td><code>pending</code> | <code>running</code> | <code>waiting_on_user</code> | <code>blocked</code> | <code>done</code> | <code>failed</code> | <code>cancelled</code></td></tr>
+        <tr><td>assigned_to</td><td>varchar</td><td><code>user</code> | <code>agent</code></td></tr>
+        <tr><td>workspace_id <span class="badge badge-fk">FK</span></td><td>integer / null</td><td>Null = global user inbox (no workspace record exists for inbox)</td></tr>
+        <tr><td>due_date</td><td>timestamp / null</td><td></td></tr>
+        <tr><td>expires_at</td><td>timestamp / null</td><td>Task auto-cancelled if not completed by this time</td></tr>
+        <tr><td>trigger_type</td><td>varchar</td><td><code>manual</code> | <code>chat</code> | <code>cron_once</code> | <code>cron_repeat</code> | <code>webhook</code></td></tr>
+        <tr><td>trigger_config</td><td>json / null</td><td>Schedule expression, target datetime, webhook ID, iteration count, max_iterations, stop_after date</td></tr>
+        <tr><td>tracker_type</td><td>varchar / null</td><td>External adapter name: <code>todoist</code> | <code>github</code> | …</td></tr>
+        <tr><td>tracker_id</td><td>varchar / null</td><td>ID of the corresponding record in the external system</td></tr>
+        <tr><td>plan</td><td>json / null</td><td>Ordered steps toward the outcome; <code>Record&lt;string, boolean&gt;</code> in code — key is the step description, value is completion state. Editable by both user and agent.</td></tr>
+        <tr><td>createdAt</td><td>timestamp</td><td></td></tr>
+        <tr><td>updatedAt</td><td>timestamp</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- task_queue -->
+  <div class="schema-block">
+    <div class="schema-header">
+      <code>task_queue</code>
+      <span class="schema-note">Execution runtime — the queue is this table, not an in-memory structure</span>
+    </div>
+    <table class="schema-table">
+      <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>queue_id <span class="badge badge-pk">PK</span></td><td>integer</td><td>Auto-increment</td></tr>
+        <tr><td>task_id <span class="badge badge-fk">FK</span></td><td>integer</td><td>Non-null FK constraint; one queue entry per task execution</td></tr>
+        <tr><td>position</td><td>integer</td><td>Dequeue order when multiple items are pending</td></tr>
+        <tr><td>status</td><td>varchar</td><td><code>pending</code> | <code>running</code> | <code>paused</code> | <code>completed</code> | <code>failed</code></td></tr>
+        <tr><td>enqueued_at</td><td>timestamp</td><td>When the trigger fired and added this entry</td></tr>
+        <tr><td>started_at</td><td>timestamp / null</td><td>When the agent began execution</td></tr>
+        <tr><td>completed_at</td><td>timestamp / null</td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="schema-footer">Server restart reads <code>WHERE status IN ('pending','running','paused')</code> to recover queue state. A <code>running</code> entry on restart indicates the previous execution was interrupted.</div>
+  </div>
+
+  <!-- wiki_domains extension -->
+  <div class="schema-block">
+    <div class="schema-header">
+      <code>wiki_domains</code>
+      <span class="schema-note">New columns only — extends the existing schema</span>
+    </div>
+    <table class="schema-table">
+      <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>type</td><td>varchar</td><td><code>persistent</code> (default, existing behaviour) | <code>ephemeral</code> (project-owned, has a lifecycle)</td></tr>
+        <tr><td>domain_status</td><td>varchar</td><td><code>active</code> | <code>archived</code>; write tools reject all writes to archived domains</td></tr>
+      </tbody>
+    </table>
+    <div class="schema-footer">Ephemeral status is also mirrored in the domain's <code>index.md</code> frontmatter (<code>type: ephemeral</code>, <code>status: archived</code>) so the wiki SDK enforces write restrictions without a DB lookup.</div>
+  </div>
+</section>
+
+<!-- TASK EXECUTION RUNTIME -->
+<section id="runtime">
+  <h2>Task Execution Runtime</h2>
+  <p>Task execution is queue-based and serial. The queue is the <code>task_queue</code> table — not an in-memory structure. A server restart recovers queue state from the DB.</p>
+
+  <h3>Priority rule: chat preempts the queue</h3>
+  <p>When the user sends a chat message, the queue pauses (running item moves to <code>paused</code> status). The queue resumes 30 seconds after the last chat response. Whether LangGraph's <code>interrupt()</code> mechanism can checkpoint a paused agent task is an open implementation question worth investigating before building a custom pause mechanism.</p>
+
+  <p>Two operational endpoints support the queue:</p>
+  <ul style="margin:0.4rem 0 0.6rem 1.4rem;font-size:0.875rem;">
+    <li style="margin:0.25rem 0;"><code>GET /api/v1/tasks/queue</code> — lists queued and scheduled tasks with position and status</li>
+    <li style="margin:0.25rem 0;">SSE event <code>task_queue_update</code> — signals when a task begins or completes execution</li>
+  </ul>
+
+  <h3>Trigger types</h3>
+  <div class="trigger-grid">
+    <div class="trigger-item">
+      <strong>Chat</strong>
+      User or agent explicitly enqueues during a conversation. Added immediately with the next available position.
+    </div>
+    <div class="trigger-item">
+      <strong>Cron (one-time)</strong>
+      Enqueued at a specific datetime stored in <code>trigger_config</code>. Fires once; entry remains as a record.
+    </div>
+    <div class="trigger-item">
+      <strong>Cron (repeating)</strong>
+      Enqueues on a schedule. The final step of each run is to enqueue the next iteration. Respects <code>max_iterations</code> and <code>stop_after</code> in <code>trigger_config</code>.
+    </div>
+    <div class="trigger-item">
+      <strong>Webhook</strong>
+      <code>POST /api/v1/triggers/webhook/:id</code> enqueues the task. Useful for CI completion, external alerts, or any event-driven source.
+    </div>
+  </div>
+
+  <figure>
+    <div class="fig-wrap">
+      <svg viewBox="0 0 800 225" role="img" aria-label="Task execution flow diagram: trigger sources (chat, cron, webhook) enqueue to task_queue table; scheduler dequeues when idle; chat activity pauses the queue; agent runs the task and on completion checks for the next item">
+        <defs>
+          <marker id="f-ah" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="ah"/></marker>
+          <marker id="f-aha" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="aha"/></marker>
+        </defs>
+
+        <!-- Trigger source boxes -->
+        <rect x="10" y="15" width="130" height="36" rx="4" class="svg-box"/>
+        <text x="75" y="38" text-anchor="middle" class="svg-sub">Chat trigger</text>
+        <rect x="10" y="61" width="130" height="36" rx="4" class="svg-box"/>
+        <text x="75" y="84" text-anchor="middle" class="svg-sub">Cron trigger</text>
+        <rect x="10" y="107" width="130" height="36" rx="4" class="svg-box"/>
+        <text x="75" y="130" text-anchor="middle" class="svg-sub">Webhook trigger</text>
+
+        <!-- Fan-in arrows to queue -->
+        <line x1="140" y1="33" x2="205" y2="82" class="svg-arrow" marker-end="url(#f-ah)"/>
+        <line x1="140" y1="79" x2="205" y2="88" class="svg-arrow" marker-end="url(#f-ah)"/>
+        <line x1="140" y1="125" x2="205" y2="100" class="svg-arrow" marker-end="url(#f-ah)"/>
+        <text x="168" y="68" text-anchor="middle" class="svg-sub">enqueues</text>
+
+        <!-- task_queue -->
+        <rect x="205" y="60" width="155" height="72" rx="5" class="svg-box-accent"/>
+        <text x="282" y="89" text-anchor="middle" class="svg-label">task_queue</text>
+        <text x="282" y="107" text-anchor="middle" class="svg-sub">status: pending</text>
+        <text x="282" y="121" text-anchor="middle" class="svg-sub">ordered by position</text>
+
+        <!-- Chat pause note -->
+        <rect x="205" y="155" width="155" height="55" rx="4" class="svg-box-warn"/>
+        <text x="282" y="178" text-anchor="middle" class="svg-sub-warn">chat active?</text>
+        <text x="282" y="193" text-anchor="middle" class="svg-sub-warn">→ status: paused</text>
+        <text x="282" y="207" text-anchor="middle" class="svg-sub-warn">resumes after 30s idle</text>
+
+        <!-- Scheduler -->
+        <rect x="420" y="60" width="150" height="72" rx="5" class="svg-box"/>
+        <text x="495" y="89" text-anchor="middle" class="svg-label">Scheduler</text>
+        <text x="495" y="107" text-anchor="middle" class="svg-sub">polls task_queue</text>
+        <text x="495" y="121" text-anchor="middle" class="svg-sub">dequeues when idle</text>
+
+        <!-- Queue → Scheduler -->
+        <line x1="360" y1="96" x2="418" y2="96" class="svg-arrow" marker-end="url(#f-ah)"/>
+        <text x="389" y="89" text-anchor="middle" class="svg-sub">dequeue</text>
+
+        <!-- Agent run -->
+        <rect x="625" y="45" width="160" height="102" rx="5" class="svg-box-accent"/>
+        <text x="705" y="74" text-anchor="middle" class="svg-label">Agent run</text>
+        <text x="705" y="92" text-anchor="middle" class="svg-sub">reads workspace ctx</text>
+        <text x="705" y="108" text-anchor="middle" class="svg-sub">uses wiki tools</text>
+        <text x="705" y="124" text-anchor="middle" class="svg-sub">writes scoped wiki</text>
+        <text x="705" y="140" text-anchor="middle" class="svg-sub">updates task.status</text>
+
+        <!-- Scheduler → Agent -->
+        <line x1="570" y1="96" x2="623" y2="96" class="svg-arrow" marker-end="url(#f-ah)"/>
+        <text x="596" y="89" text-anchor="middle" class="svg-sub">executes</text>
+
+        <!-- Agent → check queue (dashed loop back) -->
+        <path d="M705 147 Q705 195 495 195 Q420 195 420 134" class="svg-arrow" stroke-dasharray="5 3" marker-end="url(#f-ah)"/>
+        <text x="590" y="207" text-anchor="middle" class="svg-sub">check queue on completion</text>
+      </svg>
+    </div>
+    <figcaption>After each run, the scheduler checks for the next pending item before going idle. A repeating cron task enqueues its next iteration as the final step of its own execution, so the interval is measured from completion, not start.</figcaption>
+  </figure>
+</section>
+
+<!-- WIKI BINDING & WRITE SCOPE -->
+<section id="wiki-scope">
+  <h2>Wiki Binding &amp; Write Scope</h2>
+  <p>Every workspace can be bound to a wiki domain. That binding sets the <em>first lookup</em> — not an exclusive scope. The agent falls through to <code>wiki_locate</code> for anything the bound wiki cannot answer. Read scope is always broad.</p>
+  <p>Write scope adds a project-specific restriction: <strong>in a project, agent writes go only to the project's ephemeral wiki.</strong> This is a hard guardrail enforced at the tool level — the scoped variant of <code>wiki_create_page</code> / <code>wiki_update_page</code> is preconfigured with the allowed target domain. Calls targeting other domains are rejected by the tool, not by a prompt instruction.</p>
+
+  <figure>
+    <div class="fig-wrap">
+      <svg viewBox="0 0 750 295" role="img" aria-label="Two-part diagram: top shows read lookup path (bound wiki first, then wiki_locate fallback); bottom shows write scope (regular workspace can write anywhere, project workspace restricted to project wiki)">
+        <defs>
+          <marker id="w-ah" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="ah"/></marker>
+          <marker id="w-aha" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="aha"/></marker>
+          <marker id="w-ahr" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="ahr"/></marker>
+        </defs>
+
+        <!-- READ section label -->
+        <text x="10" y="18" class="svg-sub" style="font-size:10px;text-transform:uppercase;letter-spacing:0.07em;">Read lookup path (all contexts)</text>
+
+        <!-- Agent query -->
+        <rect x="10" y="25" width="120" height="50" rx="4" class="svg-box-accent"/>
+        <text x="70" y="48" text-anchor="middle" class="svg-label">Agent</text>
+        <text x="70" y="65" text-anchor="middle" class="svg-sub">query</text>
+
+        <!-- Bound wiki -->
+        <rect x="190" y="25" width="145" height="50" rx="4" class="svg-box"/>
+        <text x="262" y="48" text-anchor="middle" class="svg-label">Bound wiki</text>
+        <text x="262" y="65" text-anchor="middle" class="svg-sub">first lookup</text>
+
+        <!-- Found -->
+        <rect x="400" y="10" width="140" height="40" rx="4" class="svg-box"/>
+        <text x="470" y="28" text-anchor="middle" class="svg-sub-green">Found →</text>
+        <text x="470" y="43" text-anchor="middle" class="svg-sub">return result</text>
+
+        <!-- Not found / wiki_locate -->
+        <rect x="400" y="60" width="140" height="40" rx="4" class="svg-box"/>
+        <text x="470" y="78" text-anchor="middle" class="svg-sub">Not found →</text>
+        <text x="470" y="93" text-anchor="middle" class="svg-sub">wiki_locate</text>
+
+        <!-- All domains -->
+        <rect x="605" y="55" width="135" height="50" rx="4" class="svg-box"/>
+        <text x="672" y="77" text-anchor="middle" class="svg-sub">Search all</text>
+        <text x="672" y="92" text-anchor="middle" class="svg-sub">domains</text>
+
+        <!-- Read arrows -->
+        <line x1="130" y1="50" x2="188" y2="50" class="svg-arrow" marker-end="url(#w-ah)"/>
+        <line x1="335" y1="42" x2="398" y2="30" class="svg-arrow" marker-end="url(#w-ah)"/>
+        <line x1="335" y1="58" x2="398" y2="72" class="svg-arrow" marker-end="url(#w-ah)"/>
+        <line x1="540" y1="80" x2="603" y2="80" class="svg-arrow" marker-end="url(#w-ah)"/>
+
+        <!-- Divider -->
+        <line x1="10" y1="130" x2="740" y2="130" class="svg-divider" stroke-dasharray="5 4"/>
+        <text x="10" y="148" class="svg-sub" style="font-size:10px;text-transform:uppercase;letter-spacing:0.07em;">Write scope (enforced at tool level)</text>
+
+        <!-- Regular workspace -->
+        <rect x="10" y="158" width="175" height="55" rx="4" class="svg-box"/>
+        <text x="97" y="183" text-anchor="middle" class="svg-label">Regular workspace</text>
+        <text x="97" y="200" text-anchor="middle" class="svg-sub">no write restriction</text>
+
+        <!-- Project workspace -->
+        <rect x="10" y="228" width="175" height="55" rx="4" class="svg-box-project"/>
+        <text x="97" y="253" text-anchor="middle" class="svg-label">Project workspace</text>
+        <text x="97" y="270" text-anchor="middle" class="svg-sub">write scope restricted</text>
+
+        <!-- Any wiki -->
+        <rect x="255" y="158" width="165" height="55" rx="4" class="svg-box"/>
+        <text x="337" y="183" text-anchor="middle" class="svg-label">Any wiki domain</text>
+        <text x="337" y="200" text-anchor="middle" class="svg-sub-green">✓ writes permitted</text>
+
+        <!-- Project wiki only -->
+        <rect x="255" y="228" width="165" height="55" rx="4" class="svg-box-accent"/>
+        <text x="337" y="253" text-anchor="middle" class="svg-label">Project wiki only</text>
+        <text x="337" y="270" text-anchor="middle" class="svg-sub-accent">✓ hard guardrail</text>
+
+        <!-- Other domains rejected -->
+        <rect x="490" y="228" width="185" height="55" rx="4" class="svg-box-red"/>
+        <text x="582" y="253" text-anchor="middle" class="svg-sub-red">Other domains</text>
+        <text x="582" y="270" text-anchor="middle" class="svg-sub-red">✗ rejected by tool</text>
+
+        <!-- Write arrows -->
+        <line x1="185" y1="185" x2="253" y2="185" class="svg-arrow" marker-end="url(#w-ah)"/>
+        <line x1="185" y1="255" x2="253" y2="255" class="svg-arrow-accent" marker-end="url(#w-aha)"/>
+        <line x1="420" y1="255" x2="488" y2="255" class="svg-arrow-red" marker-end="url(#w-ahr)"/>
+      </svg>
+    </div>
+    <figcaption>Read scope is always broad — the bound wiki is a starting point, not a fence. Write scope is context-dependent: regular workspaces are unrestricted; project workspaces are hard-restricted to the project's own ephemeral wiki domain.</figcaption>
+  </figure>
+
+  <p>In a project, the agent can read from the homelab wiki to synthesize context while writing into the project wiki. It cannot write back to homelab mid-project. Those writes happen only at project close, through the selective merge step, under user direction.</p>
+
+  <h3>External tracker state mapping</h3>
+  <p>The adapter interface defines a set of canonical task states. Each adapter implementation maps its system's native states to those definitions. The <code>tasks</code> table stores only canonical state — the adapter owns the translation in both directions.</p>
+  <div class="pill-row">
+    <span class="pill pill-neutral">pending / backlog</span>
+    <span class="pill pill-neutral">ready</span>
+    <span class="pill pill-blue">in_progress</span>
+    <span class="pill pill-amber">waiting_on_user</span>
+    <span class="pill pill-amber">blocked</span>
+    <span class="pill pill-green">done</span>
+    <span class="pill pill-red">failed / cancelled</span>
+  </div>
+  <p style="font-size:0.85rem;color:var(--text-2);">Example: Todoist uses <code>&lt;Project&gt;/&lt;Section&gt;</code> for state; GitHub uses labels or Project column status. Each adapter maps those to the canonical states above.</p>
+</section>
+
+<!-- PROJECT LIFECYCLE -->
+<section id="lifecycle">
+  <h2>Project Lifecycle</h2>
+
+  <figure>
+    <div class="fig-wrap">
+      <svg viewBox="0 0 750 165" role="img" aria-label="Project state machine: Creation (via skill or UI form, creates ephemeral wiki domain) moves to Active (agent works in workspace, writes to project wiki, tasks tracked); Active moves to Closing when win condition is met or user marks abandoned; Closing produces two parallel outputs: wiki snapshot committed to workspace, and selective merge into persistent wikis under user direction">
+        <defs>
+          <marker id="l-ah" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="ah"/></marker>
+          <marker id="l-aha" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="aha"/></marker>
+        </defs>
+
+        <!-- Creation -->
+        <rect x="10" y="45" width="145" height="70" rx="5" class="svg-box"/>
+        <text x="82" y="73" text-anchor="middle" class="svg-label">Creation</text>
+        <text x="82" y="91" text-anchor="middle" class="svg-sub">/create-project</text>
+        <text x="82" y="106" text-anchor="middle" class="svg-sub">or UI form</text>
+        <text x="82" y="130" text-anchor="middle" class="svg-sub-accent" style="font-size:10px;">↓ creates ephemeral domain</text>
+
+        <!-- Active -->
+        <rect x="220" y="33" width="175" height="92" rx="5" class="svg-box-accent"/>
+        <text x="307" y="61" text-anchor="middle" class="svg-label">Active</text>
+        <text x="307" y="79" text-anchor="middle" class="svg-sub">agent works in workspace</text>
+        <text x="307" y="95" text-anchor="middle" class="svg-sub">writes → project wiki only</text>
+        <text x="307" y="111" text-anchor="middle" class="svg-sub">tasks tracked on Kanban</text>
+
+        <!-- Closing -->
+        <rect x="465" y="45" width="145" height="70" rx="5" class="svg-box"/>
+        <text x="537" y="73" text-anchor="middle" class="svg-label">Closing</text>
+        <text x="537" y="91" text-anchor="middle" class="svg-sub">win condition met</text>
+        <text x="537" y="106" text-anchor="middle" class="svg-sub">or abandoned</text>
+
+        <!-- Snapshot output -->
+        <rect x="668" y="15" width="75" height="50" rx="4" class="svg-box"/>
+        <text x="705" y="37" text-anchor="middle" class="svg-sub">Wiki</text>
+        <text x="705" y="51" text-anchor="middle" class="svg-sub">snapshot</text>
+        <text x="705" y="63" text-anchor="middle" class="svg-sub" style="font-size:9px;">→ workspace dir</text>
+
+        <!-- Merge output -->
+        <rect x="668" y="90" width="75" height="50" rx="4" class="svg-box"/>
+        <text x="705" y="112" text-anchor="middle" class="svg-sub">Selective</text>
+        <text x="705" y="126" text-anchor="middle" class="svg-sub">merge</text>
+        <text x="705" y="138" text-anchor="middle" class="svg-sub" style="font-size:9px;">→ persistent wikis</text>
+
+        <!-- Arrows -->
+        <line x1="155" y1="80" x2="218" y2="80" class="svg-arrow" marker-end="url(#l-ah)"/>
+        <text x="186" y="73" text-anchor="middle" class="svg-sub">init</text>
+        <line x1="395" y1="80" x2="463" y2="80" class="svg-arrow" marker-end="url(#l-ah)"/>
+        <text x="429" y="73" text-anchor="middle" class="svg-sub">close</text>
+        <line x1="610" y1="68" x2="666" y2="42" class="svg-arrow-accent" marker-end="url(#l-aha)"/>
+        <line x1="610" y1="93" x2="666" y2="116" class="svg-arrow-accent" marker-end="url(#l-aha)"/>
+
+        <!-- domain archived label -->
+        <text x="537" y="148" text-anchor="middle" class="svg-sub" style="font-size:10px;">↓ ephemeral domain status → archived</text>
+      </svg>
+    </div>
+    <figcaption>At close, two things happen in sequence: the wiki is snapshotted into the workspace directory, then the user selects which pages to merge into persistent domains. The ephemeral domain is archived after both steps complete.</figcaption>
+  </figure>
+
+  <h3>Wiki snapshot format</h3>
+  <p>In a git-connected workspace: snapshot is committed as a <code>wiki/</code> directory alongside a version tag (e.g., <code>v1.0.0</code>). In a non-git workspace: timestamped directory copy (<code>wiki-snapshot-2026-08-14/</code>). A subsequent project on the same workspace overwrites the prior snapshot.</p>
+
+  <h3>Ephemeral domain archival</h3>
+  <p>On project close, two independent checks enforce the archived state:</p>
+  <ul style="margin:0.4rem 0 0.5rem 1.4rem;font-size:0.875rem;">
+    <li style="margin:0.25rem 0;"><strong>DB check</strong> — <code>wiki_domains.domain_status = 'archived'</code> checked at the API layer before any write tool executes</li>
+    <li style="margin:0.25rem 0;"><strong>Frontmatter check</strong> — <code>status: archived</code> in <code>index.md</code> checked by the wiki SDK before any <code>commitPage()</code> call</li>
+  </ul>
+  <p>Both must reject writes independently. Either path alone is not sufficient.</p>
+</section>
+
+<!-- WORKSPACE & PROJECT CREATION -->
+<section id="creation">
+  <h2>Workspace &amp; Project Creation</h2>
+  <p>Two entry points; one underlying process. The UI form calls the same agent skill invocation under the hood — the form provides structured up-front context so the agent does not need to ask as many questions.</p>
+
+  <div class="creation-grid">
+    <div class="creation-path">
+      <h4>Chat skill</h4>
+      <p>User types <code>/create-workspace</code> or <code>/create-project</code>. The built-in skill contains the setup questions, scaffolding instructions, and scripts for creating the directory structure. Works in any chat context.</p>
+    </div>
+    <div class="creation-path">
+      <h4>UI form</h4>
+      <p>Lives on the dedicated Workspaces page. Collects name, goal, location, wiki binding, git options, and (for projects) win condition up-front, then submits as a structured skill invocation. Same process, less back-and-forth.</p>
+    </div>
+  </div>
+
+  <p>Both paths create the <code>workspaces</code> record, scaffold the directory under <code>WORKSPACE_ROOT</code>, and (for projects) create the ephemeral wiki domain and the <code>projects</code> record. Win condition is a required field for projects and is defined at creation time, not after.</p>
+</section>
+
+<!-- DESIGN RULES -->
+<section id="rules">
+  <h2>Design Rules</h2>
+  <p>These invariants must be preserved by every implementation decision. If a code change violates one, the change is wrong — not the rule.</p>
+  <ul class="rules-list">
+    <li><span class="rule-num">R1</span><span>A workspace is the base unit. A project is a workspace — the <code>projects</code> table extends <code>workspaces</code> 1:1. No separate routing, no duplicated fields.</span></li>
+    <li><span class="rule-num">R2</span><span>Wiki binding sets the first lookup, not an exclusive scope. Agents fall through to <code>wiki_locate</code> when the bound wiki returns nothing. Read scope is always broad.</span></li>
+    <li><span class="rule-num">R3</span><span>In a project, agent writes go <em>only</em> to the project's ephemeral wiki. This is a hard guardrail enforced at the tool level — not a prompt instruction.</span></li>
+    <li><span class="rule-num">R4</span><span>The task queue is serial. One item runs at a time. Chat preempts; the queue resumes 30 seconds after the last chat response.</span></li>
+    <li><span class="rule-num">R5</span><span>The queue is the <code>task_queue</code> table. There is no separate in-memory queue. Server restart reads the table and resumes from where it left off.</span></li>
+    <li><span class="rule-num">R6</span><span>Triggers are attributes of tasks, not separate entities. A repeating cron task enqueues its next iteration as the final step of its own execution.</span></li>
+    <li><span class="rule-num">R7</span><span>External tracker sync uses canonical state definitions. Each adapter maps its system's native states to those definitions. The <code>tasks</code> table stores only canonical state.</span></li>
+    <li><span class="rule-num">R8</span><span>Workspace file access is sandboxed to the workspace's <code>location</code> directory. The filesystem tool must reject any path traversal above that boundary.</span></li>
+    <li><span class="rule-num">R9</span><span>Agent git authority is collaborator-level: normal operations (checkout, pull, push, fetch, rebase) are permitted; history-rewriting operations (<code>reset --hard</code>, force-push to default branch) are not.</span></li>
+    <li><span class="rule-num">R10</span><span>Projects require a formal close. Abandoned projects must be explicitly marked <code>abandoned</code>. There is no automatic expiry or timeout.</span></li>
+    <li><span class="rule-num">R11</span><span>An archived ephemeral wiki domain must reject writes through both the API DB check and the wiki SDK frontmatter check. Either path alone is insufficient.</span></li>
+    <li><span class="rule-num">R12</span><span>Unassigned tasks belong to the global user inbox. The inbox is not a workspace and has no schema record — it is the UI view of tasks where <code>workspace_id IS NULL</code>.</span></li>
+    <li><span class="rule-num">R13</span><span>Workspace-scoped chat gets its own system prompt that injects workspace context (goal, bound wiki, write scope rules) at session start. This is the mechanism for context propagation, not a runtime lookup.</span></li>
+  </ul>
+</section>
+
+</main>
+</body>
+</html>
