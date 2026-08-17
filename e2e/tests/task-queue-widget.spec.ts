@@ -1,26 +1,19 @@
-import { randomUUID } from 'node:crypto';
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
-
-// Must match playwright.config.ts's CHAT_IDLE_RESUME_MS override for the api
-// webServer. In dev/prod this delay is 30s (see task-scheduler.ts); e2e
-// shortens it so these tests don't burn 30+ real seconds per assertion.
-const IDLE_RESUME_MS = 3000;
-// The sidebar Queue widget polls GET /api/v1/tasks/queue every 10s — see
-// thread-sidebar.tsx. We fast-forward the *browser's* virtual clock past
-// that to see widget updates without a real wait. This only reaches
-// browser-side timers: the scheduler's resume delay above runs as a
-// setTimeout in the separate Node API process, which page.clock cannot
-// touch — that's why it's controlled via env var instead (see
-// playwright.config.ts and task-scheduler.ts).
-const WIDGET_POLL_FAST_FORWARD_MS = 11_000;
+import {
+  IDLE_RESUME_MS,
+  WIDGET_POLL_FAST_FORWARD_MS,
+  getQueue,
+  sendChatFireAndForget,
+  sendHitlResumeFireAndForget,
+} from '../lib/scheduler.js';
 
 const suite: TestSuite = {
   id: 7,
   name: 'Task Queue Widget',
   description:
-    'Verifies the sidebar Queue widget becomes visible when a task is enqueued, and that a chat message pauses the queue (widget flips to "Paused"), auto-resumes after the idle delay, resets its timer on new chat activity, and holds newly-enqueued tasks pending while paused — issue #68',
+    'Verifies the sidebar Queue widget becomes visible when a task is enqueued, and that a chat message (plain send or HITL resume) pauses the queue (widget flips to "Paused"), auto-resumes after the idle delay, resets its timer on new chat activity, and holds newly-enqueued tasks pending while paused — issue #68',
   purpose:
     'Ensure the queue widget shows current task name and status after enqueue, and that background task work never competes with an active chat turn but resumes on its own once the user goes idle',
   tags: ['@user-workflow', '@functional'],
@@ -50,31 +43,15 @@ const suite: TestSuite = {
       expectedOutcome: 'The new task stays pending for the duration of the pause, not running',
       test: () => {},
     },
+    {
+      tags: ['@functional'],
+      action: 'Answer a HITL prompt via POST /:threadId/hitl',
+      expectedOutcome:
+        'The HITL-resume entry point pauses and later auto-resumes the queue exactly like a plain chat send',
+      test: () => {},
+    },
   ],
 };
-
-// Fire-and-forget a chat POST. We only need the request handler to *start*
-// (getTaskScheduler().pause() runs synchronously at the top of every chat
-// entry point, before any provider call) — not for the turn to finish, which
-// may depend on an LLM being configured in this environment. Errors (e.g. no
-// provider configured) are expected and ignored: the pause/resume behaviour
-// under test doesn't depend on the turn succeeding — see stream-handler.ts's
-// outer try/finally, which arms the resume timer on any exit path.
-function sendChatFireAndForget(request: APIRequestContext, content: string): void {
-  void request
-    .post(`/api/v1/chat/${randomUUID()}`, { data: { content }, timeout: 10_000 })
-    .catch(() => {});
-}
-
-async function getQueue(request: APIRequestContext) {
-  const res = await request.get('/api/v1/tasks/queue');
-  expect(res.status()).toBe(200);
-  return res.json() as Promise<{
-    paused: boolean;
-    running: { taskId: string } | null;
-    queue: Array<{ taskId: string; status: string }>;
-  }>;
-}
 
 // The TaskScheduler paused/resume-timer state is a single process-wide
 // singleton (see task-scheduler.ts) — not scoped per test or thread — so
@@ -248,6 +225,25 @@ test.describe(
       const finalState = await getQueue(request);
       expect(finalState.running?.taskId).toBe(sharedTaskId);
       expect(finalState.queue.find((e) => e.taskId === task.id)?.status).toBe('pending');
+    });
+
+    test('answering a HITL prompt pauses and auto-resumes the queue like a plain send', async ({
+      request,
+    }) => {
+      // resumeChatToSse (the /hitl entry point) has its own
+      // pause()/scheduleResume() wiring, independent of the plain-send path
+      // exercised above — this proves it works the same way, without needing
+      // a live LLM or a genuine prior HITL prompt (an unresolvable promptId
+      // is handled gracefully inside resumeChatToSse; see scheduler.ts).
+      sendHitlResumeFireAndForget(request);
+      await expect.poll(async () => (await getQueue(request)).paused, { timeout: 5000 }).toBe(true);
+
+      await expect
+        .poll(async () => (await getQueue(request)).paused, { timeout: IDLE_RESUME_MS + 5000 })
+        .toBe(false);
+      await expect
+        .poll(async () => (await getQueue(request)).running?.taskId, { timeout: 5000 })
+        .toBe(sharedTaskId);
     });
   },
 );
