@@ -40,6 +40,7 @@ export interface TaskQueueEntry {
 export interface QueueState {
   queue: (TaskQueueEntry & { task: Task | null })[];
   running: (TaskQueueEntry & { task: Task }) | null;
+  paused: boolean;
 }
 
 export interface CreateTaskInput {

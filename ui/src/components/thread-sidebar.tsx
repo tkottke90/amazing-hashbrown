@@ -215,12 +215,15 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
 }
 
 function QueueWidget() {
-  const running = queueState.value.running;
-  const pending = queueState.value.queue.filter((e) => e.status === 'pending').length;
+  const { running, paused, queue } = queueState.value;
+  const pending = queue.filter((e) => e.status === 'pending').length;
+  // While paused, a task that was running gets re-queued with status
+  // 'paused' rather than staying in `running` — surface it as the current
+  // task so the widget doesn't blank out mid-pause.
+  const pausedEntry = queue.find((e) => e.status === 'paused');
+  const currentTask = running?.task ?? pausedEntry?.task ?? queue[0]?.task ?? null;
 
-  if (!running && pending === 0) return null;
-
-  const isPaused = !running && pending > 0;
+  if (!currentTask && pending === 0) return null;
 
   return (
     <div
@@ -229,17 +232,19 @@ function QueueWidget() {
     >
       <div class="flex items-center gap-1.5 mb-1">
         <Circle
-          class={cn('size-[7px] fill-current', isPaused ? 'text-amber-500' : 'text-primary')}
+          class={cn('size-[7px] fill-current', paused ? 'text-amber-500' : 'text-primary')}
         />
         <span class="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">
           Queue
         </span>
       </div>
       <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
-        {running?.task.title ?? queueState.value.queue[0]?.task?.title ?? '—'}
+        {currentTask?.title ?? '—'}
       </div>
       <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
-        {isPaused ? `Paused — ${pending} pending` : `running · ${pending} pending`}
+        {paused
+          ? 'Paused — chat active · resumes 30 s after last response'
+          : `running · ${pending} pending`}
       </div>
     </div>
   );

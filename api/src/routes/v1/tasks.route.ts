@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import type { TaskListFilters, TaskStatus } from '../../services/workspace-store.js';
+import { getTaskScheduler } from '../../services/task-scheduler.js';
 import {
   listTasksHandler,
   getTaskHandler,
@@ -16,7 +17,7 @@ export const tasksRouter = Router();
 
 // GET /queue must be registered before /:id so it isn't matched as an id param
 tasksRouter.get('/queue', (_req: Request, res: Response) => {
-  const result = getQueueHandler(getWorkspaceStore());
+  const result = getQueueHandler(getWorkspaceStore(), getTaskScheduler().isPaused());
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -87,5 +88,8 @@ tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  // New work is available — let the (event-driven) scheduler know so it can
+  // pick it up immediately rather than waiting on the next unrelated trigger.
+  getTaskScheduler().wake();
   res.status(201).json(result.data);
 });

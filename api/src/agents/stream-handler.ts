@@ -8,6 +8,7 @@ import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
+import { getTaskScheduler } from '../services/task-scheduler.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { drainPendingWikiUpdates } from './after-agent.js';
 import {
@@ -412,6 +413,9 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
+  // A chat message just came in — pause the task scheduler immediately so
+  // background task work doesn't compete with this turn (issue #68).
+  getTaskScheduler().pause();
   const threadStore = getThreadStore();
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
 
@@ -519,6 +523,9 @@ export async function streamChatToSse(
     throw err;
   } finally {
     clearActiveSseWriter(threadId);
+    // Response fully sent — arm the 30s idle timer (reset if another
+    // message arrives first via the next call's pause()).
+    getTaskScheduler().scheduleResume();
   }
 }
 
@@ -532,6 +539,7 @@ export async function resumeChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
+  getTaskScheduler().pause();
   const threadStore = getThreadStore();
 
   const threadMeta = threadStore.getThreadMeta(threadId);
@@ -555,6 +563,10 @@ export async function resumeChatToSse(
       err: serializeError(err),
     });
     writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
+    // Bail out before the main try/finally below (which normally arms the
+    // resume timer) — arm it here too so a failed HITL resolve can't leave
+    // the scheduler paused indefinitely.
+    getTaskScheduler().scheduleResume();
     return;
   }
 
@@ -642,6 +654,7 @@ export async function resumeChatToSse(
     throw err;
   } finally {
     clearActiveSseWriter(threadId);
+    getTaskScheduler().scheduleResume();
   }
 }
 
@@ -660,6 +673,7 @@ export async function retryChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
+  getTaskScheduler().pause();
   const threadStore = getThreadStore();
 
   const threadMeta = threadStore.getThreadMeta(threadId);
@@ -674,6 +688,10 @@ export async function retryChatToSse(
 
   const failedId = threadStore.resolveRetryTarget(threadId);
   if (!failedId) {
+    // Bail out before the main try/finally below (which normally arms the
+    // resume timer) — arm it here too so this can't leave the scheduler
+    // paused indefinitely.
+    getTaskScheduler().scheduleResume();
     throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
   }
 
@@ -764,5 +782,6 @@ export async function retryChatToSse(
     throw err;
   } finally {
     clearActiveSseWriter(threadId);
+    getTaskScheduler().scheduleResume();
   }
 }
