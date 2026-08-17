@@ -10,6 +10,7 @@ assignees: ''
 Optional: list prerequisite issues that must be completed before this one.
 Remove this block if there are no dependencies.
 -->
+
 **Depends on:** #<!-- issue number -->
 
 ## Description
@@ -30,9 +31,9 @@ A checklist of specific, verifiable conditions that must be true for this issue 
 Each item should be testable by a reviewer without knowing the implementation details.
 -->
 
-- [ ] 
-- [ ] 
-- [ ] 
+- [ ]
+- [ ]
+- [ ]
 
 ## Developer Notes
 
