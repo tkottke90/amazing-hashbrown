@@ -1,7 +1,10 @@
 import { getWorkspaceStore } from './workspace-store.js';
 import { logger } from '../config/logger.js';
 
-const CHAT_IDLE_RESUME_MS = 30_000;
+// Overridable so e2e tests don't have to wait 30 real seconds per pause/resume
+// assertion — playwright.config.ts sets CHAT_IDLE_RESUME_MS to a few seconds
+// for the e2e webServer. Unset in dev/prod, where it stays 30s.
+const CHAT_IDLE_RESUME_MS = Number(process.env['CHAT_IDLE_RESUME_MS']) || 30_000;
 
 // Broadcast callback registered by stream-handler so the scheduler can emit
 // queue update events into all active SSE connections without importing the
