@@ -128,7 +128,14 @@ test.describe(
       await expect(queueWidget).toBeVisible({ timeout: 15_000 });
       await expect(statusLine).toContainText('running');
 
-      sendChatFireAndForget(request, 'hello from e2e');
+      // Drive this through the real chat UI, not a background API call —
+      // this is the video-recorded demonstration that a chat message is
+      // what's pausing the queue, so the pause needs to visibly follow from
+      // typing and sending, not happen off-screen. We don't wait for an
+      // assistant response (irrelevant here, and may not even resolve
+      // without a configured LLM provider) — only for the send itself.
+      await page.locator('[data-slot="textarea"]').fill('hello from e2e');
+      await page.locator('button[aria-label="Send message"]').click();
 
       // The scheduler pauses synchronously when the chat request lands —
       // wait for that server-side fact before fast-forwarding the widget's
