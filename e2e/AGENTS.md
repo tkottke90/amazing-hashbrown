@@ -88,6 +88,62 @@ test.describe('@smoke @user-workflow', () => {
 The `TestSuite` object is documentation — it is not imported by any runner.
 Keep it accurate as the tests evolve.
 
+## Mocking API responses with page.route()
+
+Use `page.route()` to coordinate the app into a specific state when reaching
+that state through the real backend would be slow, flaky, or impossible in
+this environment (no live LLM configured for non-`@llm` runs, a rare error
+branch, a state that only exists mid-way through a multi-step backend
+process). This is standard for `@smoke` tests (see the tag table above —
+"mocking APIs is acceptable") and legitimate in `@user-workflow` tests too
+when the alternative is skipping real coverage of a reachable UI branch.
+
+**SSE endpoints are not a special case.** The chat endpoints stream
+`text/event-stream` responses, but that's still just an HTTP response body to
+Playwright — `route.fulfill()` can return one or more `data: {...}\n\n` frames
+as a single static string, and the client's stream parser handles it exactly
+like a real (if instant) stream. There is nothing to "unstream" — write the
+SSE event(s) your test needs and fulfill the route with them.
+
+**Two established patterns**, both real examples worth copying rather than
+reinventing:
+
+1. **Mock hydration, not the live turn.** `hitl-shell-approval.spec.ts` mocks
+   `GET /api/v1/threads` and `GET /api/v1/threads/:id` so a pending HITL
+   prompt already exists when the page loads — no agent turn needs to run to
+   produce it. This is almost always the easier lever: fake the _state the
+   page reads on load_, not the live interaction that would normally produce
+   it.
+
+2. **Mock only enough to reach the UI state — leave the endpoint under test
+   real.** `task-queue-widget.spec.ts`'s HITL pause/resume test uses the same
+   hydration mock to render a pending prompt, but deliberately leaves
+   `POST /api/v1/chat/:threadId/hitl` unmocked. Clicking "Yes" fires a real
+   request at the real (locally-running) server, so the test both shows a
+   real click driving the UI in its recorded video _and_ verifies real
+   server-side behavior (the task scheduler actually pausing/resuming). If
+   you mock the endpoint whose behavior is the thing under test, you've
+   stopped testing your app and started testing your mock — only mock the
+   parts that gate reaching the state, not the part you're verifying.
+
+```ts
+await page.route('**/api/v1/threads**', async (route) => {
+  const url = new URL(route.request().url());
+  const match = url.pathname.match(/^\/api\/v1\/threads(?:\/([^/]+))?$/);
+  if (!match) return route.fallback(); // not a threads request — let it through
+
+  const id = match[1];
+  if (!id && route.request().method() === 'GET') {
+    return route.fulfill({ json: [mockThread] });
+  }
+  if (id === mockThread.id && route.request().method() === 'GET') {
+    return route.fulfill({ json: { ...mockThread, messages: [pendingPrompt] } });
+  }
+  await route.fallback();
+});
+// POST /api/v1/chat/:threadId/hitl is left unmocked — real request, real server.
+```
+
 ## Selector strategy
 
 Prefer selectors in this order:

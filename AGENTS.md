@@ -241,6 +241,10 @@ interface TestSuite {
 - Test from the user's perspective: "user can submit the form", not "form submit handler called"
 - Clean up any data created during the test, even on failure
 - Wait for specific conditions (element visible, text appears) rather than arbitrary timeouts
+- When the UI state you need is hard or slow to reach live (an LLM-dependent HITL prompt, a
+  streamed SSE response, a rarely-hit error branch), mock the request with Playwright's
+  `page.route()` rather than skipping the scenario — see e2e/AGENTS.md's "Mocking API responses"
+  for the pattern, including how to do this for SSE endpoints
 
 **Best practices (functional tests):**
 
