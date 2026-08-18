@@ -74,14 +74,26 @@ test.describe(
       page,
       request,
     }, testInfo) => {
-      // Create workspace via API
+      // Create the workspace via API — plain setup, not the thing this test
+      // demonstrates. Navigate to it *before* the task exists, so the actual
+      // enqueue happens while the page is already loaded and watching —
+      // otherwise the video just shows a static "already there" widget with
+      // nothing visibly causing it, which doesn't demonstrate "becomes
+      // visible when a task is enqueued" at all.
       const wsRes = await request.post('/api/v1/workspaces', {
         data: { name: 'queue-widget-ws', location: '/tmp/queue-widget-ws' },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
 
-      // Create task via API
+      await page.clock.install();
+      await page.goto(`/workspaces/${ws.id}`);
+      await pauseBeforeAction(page, testInfo);
+
+      const queueWidget = page.locator('[data-testid="queue-widget"]');
+      await expect(queueWidget).not.toBeVisible();
+
+      // Create and enqueue the task now, with the page already watching.
       const taskRes = await request.post('/api/v1/tasks', {
         data: { title: sharedTaskTitle, workspaceId: ws.id, assignedTo: 'agent' },
       });
@@ -89,17 +101,12 @@ test.describe(
       const task = await taskRes.json();
       sharedTaskId = task.id;
 
-      // Enqueue the task
       const enqRes = await request.post(`/api/v1/tasks/${task.id}/enqueue`);
       expect(enqRes.status()).toBe(201);
 
-      // Navigate to workspace detail (sidebar is visible on desktop)
-      await page.goto(`/workspaces/${ws.id}`);
-      await pauseBeforeAction(page, testInfo);
-
-      // Wait for queue widget to become visible (polling refreshes every 10s, may need to wait)
-      const queueWidget = page.locator('[data-testid="queue-widget"]');
-      await expect(queueWidget).toBeVisible({ timeout: 15_000 });
+      // Widget polls every 10s (thread-sidebar.tsx) — fast-forward the
+      // browser's virtual clock rather than waiting for real time to pass.
+      await page.clock.fastForward(WIDGET_POLL_FAST_FORWARD_MS);
 
       // Widget should show the task title
       const currentTask = queueWidget.locator('[data-testid="queue-current-task"]');
