@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
 import {
@@ -6,7 +6,6 @@ import {
   WIDGET_POLL_FAST_FORWARD_MS,
   getQueue,
   sendChatFireAndForget,
-  sendHitlResumeFireAndForget,
 } from '../lib/scheduler.js';
 
 const suite: TestSuite = {
@@ -235,14 +234,75 @@ test.describe(
     });
 
     test('answering a HITL prompt pauses and auto-resumes the queue like a plain send', async ({
+      page,
       request,
-    }) => {
+    }, testInfo) => {
       // resumeChatToSse (the /hitl entry point) has its own
       // pause()/scheduleResume() wiring, independent of the plain-send path
-      // exercised above — this proves it works the same way, without needing
-      // a live LLM or a genuine prior HITL prompt (an unresolvable promptId
-      // is handled gracefully inside resumeChatToSse; see scheduler.ts).
-      sendHitlResumeFireAndForget(request);
+      // exercised above — this proves it works the same way, driven by a
+      // real click rather than a background API call, without needing a
+      // live LLM. The trick (borrowed from hitl-shell-approval.spec.ts): mock
+      // thread *hydration* (GET) so a pending HITL prompt renders on load,
+      // but leave POST /hitl unmocked — clicking "Yes" fires a real request
+      // at the real server, which really calls pause()/scheduleResume(). An
+      // unresolvable promptId (this thread never really existed
+      // server-side) is handled gracefully inside resumeChatToSse rather
+      // than skipping that wiring — see stream-handler.ts.
+      const threadId = 'e2e-hitl-mock-thread';
+      const mockThread = {
+        id: threadId,
+        title: 'HITL Pause Test',
+        createdAt: '2026-08-06T10:00:00.000Z',
+        updatedAt: '2026-08-06T10:01:00.000Z',
+        forkedFromThreadId: null,
+        forkedFromSeq: null,
+        afterAgentState: { status: 'idle' },
+        links: {
+          self: `/api/v1/threads/${threadId}`,
+          afterAgentStatus: `/api/v1/threads/${threadId}/after-agent-status`,
+        },
+      };
+      const pendingPrompt = {
+        id: 'prompt-1',
+        kind: 'hitl_prompt',
+        seq: 2,
+        status: 'pending',
+        promptId: 'prompt-1',
+        question: 'Continue with the e2e pause/resume check?',
+        promptKind: 'yes_no',
+      };
+
+      await page.route('**/api/v1/threads**', async (route: Route) => {
+        const url = new URL(route.request().url());
+        const method = route.request().method();
+        const match = url.pathname.match(/^\/api\/v1\/threads(?:\/([^/]+))?$/);
+        if (!match) {
+          await route.fallback();
+          return;
+        }
+        const id = match[1];
+        if (!id && method === 'GET') {
+          await route.fulfill({ json: [mockThread] });
+          return;
+        }
+        if (id === threadId && method === 'GET') {
+          await route.fulfill({ json: { ...mockThread, messages: [pendingPrompt] } });
+          return;
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/');
+      const row = page.locator('[data-slot="thread-row"]').filter({ hasText: 'HITL Pause Test' });
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await pauseBeforeAction(page, testInfo);
+      await row.click();
+
+      const yesButton = page.getByRole('button', { name: 'Yes', exact: true });
+      await expect(yesButton).toBeVisible({ timeout: 10_000 });
+      await pauseBeforeAction(page, testInfo);
+      await yesButton.click();
+
       await expect.poll(async () => (await getQueue(request)).paused, { timeout: 5000 }).toBe(true);
 
       await expect

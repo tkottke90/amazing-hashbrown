@@ -41,21 +41,3 @@ export function sendChatFireAndForget(request: APIRequestContext, content: strin
     .post(`/api/v1/chat/${randomUUID()}`, { data: { content }, timeout: 10_000 })
     .catch(() => {});
 }
-
-// Same idea for the HITL-resume entry point. resumeChatToSse's pause() also
-// runs before getChatAgent(), and unlike /retry, the /hitl route has no
-// precondition check gating it — an unresolvable promptId is handled inside
-// resumeChatToSse itself (logged, written back as a stream_error) without
-// ever skipping the outer try/finally, so pause()/scheduleResume() still
-// fire around it. That's what lets this run without a live LLM or a real
-// prior HITL prompt — unlike /retry, which the route rejects outright with
-// no retryable turn to point at (see turn-retry.spec.ts for that coverage,
-// gated behind @llm since producing a real retryable turn needs one).
-export function sendHitlResumeFireAndForget(request: APIRequestContext): void {
-  void request
-    .post(`/api/v1/chat/${randomUUID()}/hitl`, {
-      data: { promptId: randomUUID(), answer: 'e2e answer' },
-      timeout: 10_000,
-    })
-    .catch(() => {});
-}
