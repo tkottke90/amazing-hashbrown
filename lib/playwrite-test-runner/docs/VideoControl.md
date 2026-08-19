@@ -1,6 +1,6 @@
 # Video Controls
 
-Playwright can record a video of a test as it runs — very useful when you want to attach a recording to a pull request so a reviewer can *watch* the change work, rather than reading a wall of assertions. This library adds two small pieces of control on top of Playwright's own video recording: a per-suite override, and a pacing helper so recordings are actually watchable.
+Playwright can record a video of a test as it runs — very useful when you want to attach a recording to a pull request so a reviewer can _watch_ the change work, rather than reading a wall of assertions. This library adds two small pieces of control on top of Playwright's own video recording: a per-suite override, and a pacing helper so recordings are actually watchable.
 
 ## Turning recording on or off for a suite: `recordVideo`
 
@@ -31,7 +31,7 @@ Two important behaviors:
 - **It costs nothing when a suite isn't being recorded.** `pauseForVideo()` checks whether the suite is actually being recorded (via `recordVideo` or, if unset, your Playwright config) and only pauses if so. In a normal, non-recorded run it's a no-op — you can leave calls to it in your test code without slowing down everyday test runs.
 - **`suiteRunner()` already calls it once per step, automatically**, right before your step's `test` function runs. You don't need to call it yourself just to pace between steps.
 
-Call it yourself, from inside a step's `test` function, when you want extra pacing *within* a single step — for example, between filling in a form and clicking submit, so a viewer can see the filled-in state before the click happens:
+Call it yourself, from inside a step's `test` function, when you want extra pacing _within_ a single step — for example, between filling in a form and clicking submit, so a viewer can see the filled-in state before the click happens:
 
 ```ts
 {

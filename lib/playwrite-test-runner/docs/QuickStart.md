@@ -62,7 +62,7 @@ suiteRunner(FileUploadSuite);
 A few things worth noticing:
 
 - `id` and `name` identify the suite in test reports — Playwright will show this test as `[1] File Upload`.
-- `purpose` explains *why* this suite exists. This is the detail that's easy to lose in a plain Playwright test file, and the whole reason this library exists (see [Overview](./Overview.md)).
+- `purpose` explains _why_ this suite exists. This is the detail that's easy to lose in a plain Playwright test file, and the whole reason this library exists (see [Overview](./Overview.md)).
 - Each step's `test` function receives `{ page }`, the same Playwright `Page` object you'd use in a regular Playwright test.
 - `tag: [TAGS.UserWorkflow]` marks this as a user-facing workflow test. See [Tags](./Tags.md) for what each tag means and when to use it.
 - You never call `test()` or `test.step()` yourself — `suiteRunner()` does that for you, running each step in order against one shared `page`.

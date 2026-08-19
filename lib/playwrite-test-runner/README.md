@@ -41,15 +41,15 @@ export const FileUploadSuite: TestSuite = {
   steps: [
     {
       action: 'Go to the upload page',
-      expectedOutcome: "The page should load and the upload form visible",
+      expectedOutcome: 'The page should load and the upload form visible',
       test: ({ page }) => {
         page.goto('/');
 
         const input = page.getByRole('form').first();
 
         expect(input, 'File Input should be visible').toBeVisible();
-      }
-    }
-  ]
-}
+      },
+    },
+  ],
+};
 ```

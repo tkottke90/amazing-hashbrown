@@ -22,15 +22,15 @@ npm install @tkottke90/playwrite-test-runner @playwright/test
 
 ## Where to find more
 
-| Question | Doc |
-| --- | --- |
-| How do I install and write my first suite? | [docs/QuickStart.md](./docs/QuickStart.md) |
-| Why does this library exist / when should I use it? | [docs/Overview.md](./docs/Overview.md) |
-| What fields can a `TestSuite` have? | [docs/TestSuite.md](./docs/TestSuite.md) |
-| What fields can a `TestStep` have? | [docs/TestStep.md](./docs/TestStep.md) |
-| What are the two testing conventions this library expects? | [docs/TestTypes.md](./docs/TestTypes.md) |
-| How do I tag and filter suites/steps? | [docs/Tags.md](./docs/Tags.md) |
-| How do I record and pace a video of a suite? | [docs/VideoControl.md](./docs/VideoControl.md) |
+| Question                                                   | Doc                                            |
+| ---------------------------------------------------------- | ---------------------------------------------- |
+| How do I install and write my first suite?                 | [docs/QuickStart.md](./docs/QuickStart.md)     |
+| Why does this library exist / when should I use it?        | [docs/Overview.md](./docs/Overview.md)         |
+| What fields can a `TestSuite` have?                        | [docs/TestSuite.md](./docs/TestSuite.md)       |
+| What fields can a `TestStep` have?                         | [docs/TestStep.md](./docs/TestStep.md)         |
+| What are the two testing conventions this library expects? | [docs/TestTypes.md](./docs/TestTypes.md)       |
+| How do I tag and filter suites/steps?                      | [docs/Tags.md](./docs/Tags.md)                 |
+| How do I record and pace a video of a suite?               | [docs/VideoControl.md](./docs/VideoControl.md) |
 
 ## Known constraints
 

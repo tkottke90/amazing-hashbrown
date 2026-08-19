@@ -8,7 +8,7 @@ The primary use-case we found for Playwright was writing automated tests to repl
 
 ## Where it fits
 
-It is important to note that this **does not replace traditional Playwright tests** where advanced usage is needed, or in repositories where you already have that type of testing in place. This library is simply meant to help you organize tests, and provide more detailed information around how each test was written and what it validates — an *encouraged* structure, not an enforced one. You can adopt it for some suites and write plain Playwright tests elsewhere in the same project.
+It is important to note that this **does not replace traditional Playwright tests** where advanced usage is needed, or in repositories where you already have that type of testing in place. This library is simply meant to help you organize tests, and provide more detailed information around how each test was written and what it validates — an _encouraged_ structure, not an enforced one. You can adopt it for some suites and write plain Playwright tests elsewhere in the same project.
 
 ## Where to go next
 

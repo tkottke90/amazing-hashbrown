@@ -18,7 +18,7 @@ Tag these suites with `TAGS.UserWorkflow` (`@user-workflow`) — see [Tags](./Ta
 
 ## Functional Tests
 
-Tests where the action is driven by something **other than a person clicking around in the browser**: a message on a queue, an incoming webhook, a scheduled job, a file watcher noticing a new file, one service calling another's API. The `page` object may still be used (e.g. to check that a result eventually shows up in the UI), but the *trigger* for the step is not a person navigating and clicking — it's automated or indirect.
+Tests where the action is driven by something **other than a person clicking around in the browser**: a message on a queue, an incoming webhook, a scheduled job, a file watcher noticing a new file, one service calling another's API. The `page` object may still be used (e.g. to check that a result eventually shows up in the UI), but the _trigger_ for the step is not a person navigating and clicking — it's automated or indirect.
 
 Because the trigger is indirect, these suites typically need more setup than user workflow suites — you often have to prepare the queue message, seed the webhook payload, or drop a file into a watched folder yourself before you can observe the result.
 
@@ -41,10 +41,10 @@ If a suite's first step is a person logging in and clicking around, but a later 
 
 ## Test type vs. test depth
 
-Test type (`UserWorkflow`/`Functional`) is a different concern from test *depth* (`TAGS.Smoke`/`TAGS.Comprehensive`, also covered in [Tags](./Tags.md)) — the two combine rather than replace each other:
+Test type (`UserWorkflow`/`Functional`) is a different concern from test _depth_ (`TAGS.Smoke`/`TAGS.Comprehensive`, also covered in [Tags](./Tags.md)) — the two combine rather than replace each other:
 
-- **Type** answers *"what's driving this suite?"* — a person in the browser, or something automated.
-- **Depth** answers *"how thorough is this particular check?"* — a fast sanity check that makes no data changes (`Smoke`), or a full end-to-end validation that's allowed to change data and may need its own setup/cleanup (`Comprehensive`).
+- **Type** answers _"what's driving this suite?"_ — a person in the browser, or something automated.
+- **Depth** answers _"how thorough is this particular check?"_ — a fast sanity check that makes no data changes (`Smoke`), or a full end-to-end validation that's allowed to change data and may need its own setup/cleanup (`Comprehensive`).
 
 A single suite carries exactly one type tag, and can also carry a depth tag:
 
@@ -60,7 +60,7 @@ const suite: TestSuite = {
 
 ### Applying depth at the step level
 
-Because `suiteRunner()` turns a whole suite into exactly one Playwright test (see [TestSuite](./TestSuite.md#running-a-suite)), a suite-level depth tag can only describe the suite *as a whole* — it can't tell you that one particular step inside an otherwise light suite is actually the risky one. Tagging depth on an individual [`TestStep`](./TestStep.md) gives you that finer control.
+Because `suiteRunner()` turns a whole suite into exactly one Playwright test (see [TestSuite](./TestSuite.md#running-a-suite)), a suite-level depth tag can only describe the suite _as a whole_ — it can't tell you that one particular step inside an otherwise light suite is actually the risky one. Tagging depth on an individual [`TestStep`](./TestStep.md) gives you that finer control.
 
 A common shape: most of a suite's steps are read-only navigation/assertion checks, but one step near the end actually mutates data. Tagging the suite `Smoke` and calling out just that one step as `Comprehensive` documents exactly which action in the flow needs a seeded record and cleanup — without marking the whole suite (and every fast, read-only step in it) as `Comprehensive`, and without splitting one coherent user flow into two separate suites:
 
@@ -97,7 +97,7 @@ const suite: TestSuite = {
 };
 ```
 
-As the [note on `--grep` filtering](./Tags.md) explains, this step-level tag won't let you *run* just that one step separately — the suite is still one test. What it gives you instead is an honest, per-step record in the test report: anyone reading the suite's source, or reviewing a failure in the HTML report, can see at a glance that steps 1–2 are safe, read-only checks while step 3 is the one action in this "smoke" suite that actually changes data and requires a seeded account. That distinction is exactly what a single suite-level tag can't express on its own.
+As the [note on `--grep` filtering](./Tags.md) explains, this step-level tag won't let you _run_ just that one step separately — the suite is still one test. What it gives you instead is an honest, per-step record in the test report: anyone reading the suite's source, or reviewing a failure in the HTML report, can see at a glance that steps 1–2 are safe, read-only checks while step 3 is the one action in this "smoke" suite that actually changes data and requires a seeded account. That distinction is exactly what a single suite-level tag can't express on its own.
 
 ## Where this fits
 
