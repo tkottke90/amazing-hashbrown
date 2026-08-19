@@ -1,5 +1,5 @@
 import { expect, type Page, type Route } from '@playwright/test';
-import { TAGS, TestSuite, suiteRunner } from '@tkottke90/playwrite-test-runner';
+import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrite-test-runner';
 
 async function mockProviders(page: Page, provider: string, model: string): Promise<void> {
   await page.route('**/api/v1/providers', async (route: Route) => {
@@ -23,12 +23,13 @@ export const ChatInterface: TestSuite = {
   name: 'Chat Interface Tests',
   purpose: 'To validate that the chat/thread interface functions and the user is able to interact with the llm',
   tag: [ TAGS.UserWorkflow ],
+  recordVideo: true,
   steps: [
     {
       action: 'Open a new thread by clicking on the "New Conversation" button',
       expectedOutcome: 'A new thread is created (unique UUID), there is no chat history, the default model is selected, and the user can send a message',
       tag: [ TAGS.Smoke ],
-      test: async ({ page }) => {
+      test: async ({ page }, testInfo) => {
         // Configure defaults for checking later
         const defaultProvider = 'openai';
         const defaultModel = 'gpt-4o-mini';
@@ -44,6 +45,7 @@ export const ChatInterface: TestSuite = {
         const initialThreadId = new URL(page.url()).pathname.split('/').pop();
 
         // Click the "New Conversation" button
+        await pauseForVideo(page, ChatInterface, testInfo);
         await page.getByRole('button', { name: 'New conversation' }).click();
         await expect(page).toHaveURL(/\/chat\/[^/]+$/);
         const newThreadId = new URL(page.url()).pathname.split('/').pop();
@@ -52,10 +54,12 @@ export const ChatInterface: TestSuite = {
         );
 
         // Verify the chat history is empty
+        await pauseForVideo(page, ChatInterface, testInfo);
         await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
         await expect(page.locator('[data-slot="chat-message"]')).toHaveCount(0);
 
         // Verify the default model is listed in the input section as a chip
+        await pauseForVideo(page, ChatInterface, testInfo);
         await expect(page.locator('[data-slot="model-chip"]')).toBeVisible();
         await expect(page.locator('[data-slot="model-chip"]')).toHaveText(defaultModel);
 
@@ -65,6 +69,7 @@ export const ChatInterface: TestSuite = {
         await chatInput.fill('Hello, can you help me with something?');
 
         // Verify the send button is enabled
+        await pauseForVideo(page, ChatInterface, testInfo);
         await expect(page.locator('button[aria-label="Send message"]')).toBeEnabled();
       }
     },
@@ -72,7 +77,7 @@ export const ChatInterface: TestSuite = {
       action: 'Send a chat message',
       expectedOutcome: 'The UI properly shows the agent message with the loading animation, then updates to show the response with metrics',
       tag: [ TAGS.Smoke ],
-      test: async ({ page }) => {
+      test: async ({ page }, testInfo) => {
         // Configure defaults for checking later
         const defaultProvider = 'openai';
         const defaultModel = 'gpt-4o-mini';
@@ -120,6 +125,7 @@ export const ChatInterface: TestSuite = {
         await expect(page).toHaveURL(/\/chat\/[^/]+$/);
 
         // Click the "New Conversation" button
+        await pauseForVideo(page, ChatInterface, testInfo);
         await page.getByRole('button', { name: 'New conversation' }).click();
         await expect(page).toHaveURL(/\/chat\/[^/]+$/);
 
@@ -129,13 +135,21 @@ export const ChatInterface: TestSuite = {
         await chatInput.fill(message);
 
         // Verify the send button is enabled
+        await pauseForVideo(page, ChatInterface, testInfo);
         const sendButton = page.locator('button[aria-label="Send message"]');
         await expect(sendButton).toBeEnabled();
 
         // Press Send button
+        await pauseForVideo(page, ChatInterface, testInfo);
         await sendButton.click();
 
         // Verify Agent Message loading (3 dots)
+        //
+        // No pauseForVideo here (or before the wait below): the dots are a
+        // transient state that self-clears within ~300ms per the mocked
+        // SSE's own artificial delay above — pausing first would let them
+        // come and go before we ever check, same reasoning as the SSE
+        // delay's own comment.
         const assistantMessage = page.locator('[data-testid="assistant-message"]');
         await expect(assistantMessage).toBeVisible();
         await expect(assistantMessage.locator('.animate-bounce').first()).toBeVisible();
@@ -147,6 +161,7 @@ export const ChatInterface: TestSuite = {
         await expect(assistantMessage).toContainText('pong');
 
         // Verify message includes metrics below the message
+        await pauseForVideo(page, ChatInterface, testInfo);
         await expect(assistantMessage).toContainText('tok/s');
       }
     }

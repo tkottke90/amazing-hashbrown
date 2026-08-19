@@ -12,9 +12,7 @@ interface TestMarkers {
   fixme?: TestMarker;
 }
 
-interface BaseTestProps extends TestDetails, TestMarkers {
-  recordVideo?: boolean;
-}
+interface BaseTestProps extends TestDetails, TestMarkers {}
 
 export type TestAction<Args, Return = unknown> = (args: Args, testInfo: TestInfo) => Promise<Return> | Return;
 
@@ -56,6 +54,7 @@ export interface TestSuite extends BaseTestProps {
   beforeEach?: TestAction<{ page: Page }>;
   afterEach?: TestAction<{ page: Page }>;
   startingPage?: string;
+  recordVideo?: boolean;
 }
 
 /**
@@ -114,7 +113,7 @@ function testAnnotations(step: TestStep, suite: TestSuite){
   // level tags are applied to any tests inside of the suite, so we don't want to duplicate them at the step level.
   test.info().tags.push(...tags.filter(tag => !suite.tag?.includes(tag)));
 
-  test.info().annotations.push({ type: 'step.action', description: step.action });
+  test.info().annotations.push({ type: `step.action`, description: step.action });
   test.info().annotations.push({ type: 'step.expectedOutcome', description: step.expectedOutcome });
 }
 
@@ -141,38 +140,99 @@ async function testRunner(page: Page, action: TestAction<{ page: Page }>): Promi
   return action({ page }, test.info());
 }
 
+const RECORDING_PAUSE_MS = 3000;
+
+/**
+ * Whether this suite's test will actually end up with video recorded.
+ * `suite.recordVideo` is an explicit override we apply ourselves via
+ * test.use() below, so it's authoritative when set. When unset, fall back
+ * to the project's own configured mode — testInfo.project.use is a static
+ * snapshot of the config file, so this branch is only accurate when we
+ * haven't overridden it with test.use() ourselves.
+ */
+function isRecordingVideo(suite: TestSuite, testInfo: TestInfo): boolean {
+  if (suite.recordVideo !== undefined) return suite.recordVideo;
+  const video = testInfo.project.use.video;
+  const mode = typeof video === 'string' ? video : video?.mode;
+  return !!mode && mode !== 'off';
+}
+
+/**
+ * Gives a video viewer a moment to see the "before" state before an action
+ * plays out — a no-op (and no wasted time) when this suite's test isn't
+ * actually being recorded. suiteRunner() already calls this once before
+ * each step; call it again from inside a step's own test() body — passing
+ * the same suite and the testInfo it's handed as its second argument — to
+ * pace individual verifications within that step too.
+ */
+export async function pauseForVideo(page: Page, suite: TestSuite, testInfo: TestInfo): Promise<void> {
+  if (isRecordingVideo(suite, testInfo)) {
+    await page.waitForTimeout(RECORDING_PAUSE_MS);
+  }
+}
+
+/**
+ * Registers exactly one test() per suite (its steps run as test.step()s
+ * inside it, sharing one page across the whole flow). Because of that 1:1
+ * mapping, hooks/video are registered directly at the file's top level
+ * rather than inside a test.describe() wrapper — a describe() around a
+ * single test buys no extra scoping and would double up its title in
+ * reports (e.g. "[1] Suite › [1] Suite"), and Playwright rejects
+ * worker-scoped test.use({ video }) calls made inside a describe() group
+ * entirely (they "force a new worker", which describe() blocks can't do).
+ *
+ * The tradeoff: call suiteRunner() at most once per spec file. Since
+ * beforeAll/afterAll/beforeEach/afterEach and recordVideo are now
+ * registered at the file's top level instead of a per-suite describe()
+ * scope, a second suiteRunner() call in the same file would leak its hooks
+ * and video setting onto every other suite's test in that file.
+ */
 export function suiteRunner(suite: TestSuite): void {
-  test.describe(`[${suite.id}] ${suite.name}`, () => {
-    // Register suite-level hooks if they are provided. These must be
-    // registered synchronously inside test.describe() — Playwright rejects
-    // beforeAll/afterAll/beforeEach/afterEach calls made from within a
-    // running test() body.
-    if (suite.afterAll) test.afterAll(suite.afterAll);
-    if (suite.beforeAll) test.beforeAll(suite.beforeAll);
-    if (suite.afterEach) test.afterEach(suite.afterEach);
-    if (suite.beforeEach) test.beforeEach(suite.beforeEach);
+  // Register suite-level hooks if they are provided. These must be
+  // registered synchronously at the top level of the file — Playwright
+  // rejects beforeAll/afterAll/beforeEach/afterEach calls made from within
+  // a running test() body.
+  if (suite.afterAll) test.afterAll(suite.afterAll);
+  if (suite.beforeAll) test.beforeAll(suite.beforeAll);
+  if (suite.afterEach) test.afterEach(suite.afterEach);
+  if (suite.beforeEach) test.beforeEach(suite.beforeEach);
 
-    // Create a test for the suite
-    test(`[${suite.id}] ${suite.name}`, async ({ page }) => {
-      // Set Metadata
-      suiteAnnotations(suite)
+  // suite.recordVideo is an explicit override on top of the project's own
+  // video setting — leave the project default alone when it's unset. Must
+  // also be top-level: test.use({ video }) forces a new worker, which
+  // Playwright only allows outside a describe() group.
+  if (suite.recordVideo === true) test.use({ video: 'on' });
+  else if (suite.recordVideo === false) test.use({ video: 'off' });
 
-      // Set the suite-level test markers
-      addTestMarkers(suite);
+  // Create a test for the suite
+  test(`[${suite.id}] ${suite.name}`, async ({ page }) => {
+    // Set Metadata
+    suiteAnnotations(suite)
 
-      // A plain forEach won't await each async test.step() call, so steps
-      // would fire concurrently instead of running in the order the suite
-      // describes them — a for..of loop keeps them sequential.
-      for (const [index, step] of suite.steps.entries()) {
-        await test.step(`[${suite.id}.${index}] ${step.action}`, async () => {
-          // Set the step-level test markers
-          addTestMarkers(step);
-          // Setup annotations/tags for tests
-          testAnnotations(step, suite);
+    // Set the suite-level test markers
+    addTestMarkers(suite);
 
-          await testRunner(page, step.test)
-        })
-      }
-    });
+    // A recording test can accumulate several pauseForVideo() waits across
+    // its steps' own verification blocks on top of the one suiteRunner()
+    // adds per step — tripling the timeout keeps that pacing from blowing
+    // through the default 30s budget on its own.
+    if (isRecordingVideo(suite, test.info())) test.slow();
+
+    // A plain forEach won't await each async test.step() call, so steps
+    // would fire concurrently instead of running in the order the suite
+    // describes them — a for..of loop keeps them sequential.
+    for (const [index, step] of suite.steps.entries()) {
+      await test.step(`[${suite.id}.${index}] ${step.action}`, async () => {
+        // Set the step-level test markers
+        addTestMarkers(step);
+        // Setup annotations/tags for tests
+        testAnnotations(step, suite);
+
+        // Give a video viewer a moment to see this step's "before" state
+        // before its actions run.
+        await pauseForVideo(page, suite, test.info());
+        await testRunner(page, step.test)
+      })
+    }
   });
 }
