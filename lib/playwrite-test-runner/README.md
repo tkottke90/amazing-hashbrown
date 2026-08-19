@@ -18,8 +18,21 @@ What I found lacking was clear documentation on _why_ we were testing this or "_
 
 This library looks attack that gap. Instead of simply defining tests, you define **test suites**. This requires that you provide information such as the **purpose for the tests**, and for each step **what action is taken** and **what is the expected outcome**.
 
+## Installation
+
+```sh
+npm install @tkottke90/playwrite-test-runner @playwright/test
+```
+
+## Documentation
+
+- [AGENTS.md](./AGENTS.md) — quick orientation and a map to the detailed docs
+- [docs/QuickStart.md](./docs/QuickStart.md) — install, configure, and write your first test suite
+
+## Example
+
 ```ts
-import { TestSuite } from `playwright-test-runner`;
+import { TestSuite } from '@tkottke90/playwrite-test-runner';
 
 export const FileUploadSuite: TestSuite = {
   id: 1,

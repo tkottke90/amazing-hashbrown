@@ -1,7 +1,6 @@
 {
   "name": "@tkottke90/playwrite-test-runner",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,11 +11,17 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "docs",
+    "AGENTS.md"
   ],
+  "publishConfig": {
+    "registry": "https://npm.artifacts.tdkottke.com/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
+    "prepack": "npm run build",
     "test": "echo \"No tests yet\""
   },
   "dependencies": {
