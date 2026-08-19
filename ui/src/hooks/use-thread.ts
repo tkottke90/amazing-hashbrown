@@ -1,9 +1,10 @@
-import { signal, batch, computed } from '@preact/signals';
+import { signal, batch, computed, effect } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
+import { providers, defaultProviderName, pickDefaultModelSelection } from './use-providers';
 
 // ---- localStorage-backed signals ----
 // use-theme.tsx is the only other localStorage consumer in this app, and it
@@ -90,6 +91,16 @@ export const activeThreadModel = signal<{ provider: string; model: string } | nu
 export function setThreadModel(provider: string, model: string): void {
   activeThreadModel.value = { provider, model };
 }
+
+// Auto-fills the model chip whenever a thread has no explicit model choice
+// (brand-new threads, or older threads that only ever used the implicit
+// backend default) — never overrides a manual pick or a hydrated thread's
+// persisted model, since the guard is purely "currently null".
+effect(() => {
+  if (activeThreadModel.value !== null) return;
+  const selection = pickDefaultModelSelection(providers.value, defaultProviderName.value);
+  if (selection) setThreadModel(selection.provider, selection.model);
+});
 
 export async function refreshThreadList(): Promise<void> {
   try {

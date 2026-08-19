@@ -1,5 +1,5 @@
 import { test, expect, type Route } from '@playwright/test';
-import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
+import { suiteAnnotations } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
 import {
   IDLE_RESUME_MS,
@@ -8,42 +8,42 @@ import {
   sendChatFireAndForget,
 } from '../lib/scheduler.js';
 
+import { TestSuite } from '@tkottke90/playwrite-test-runner';
+
 const suite: TestSuite = {
   id: 7,
   name: 'Task Queue Widget',
-  description:
-    'Verifies the sidebar Queue widget becomes visible when a task is enqueued, and that a chat message (plain send or HITL resume) pauses the queue (widget flips to "Paused"), auto-resumes after the idle delay, resets its timer on new chat activity, and holds newly-enqueued tasks pending while paused — issue #68',
   purpose:
     'Ensure the queue widget shows current task name and status after enqueue, and that background task work never competes with an active chat turn but resumes on its own once the user goes idle',
-  tags: ['@user-workflow', '@functional'],
+  tag: ['@user-workflow', '@functional'],
   steps: [
     {
-      tags: ['@user-workflow'],
+      tag: [],
       action: 'Create workspace and task via API, then enqueue it',
       expectedOutcome: 'Queue widget is visible with the task title and "running" status',
       test: () => {},
     },
     {
-      tags: ['@user-workflow'],
+      tag: [],
       action: 'Send a chat message',
       expectedOutcome:
         'Queue widget flips to "Paused — chat active…"; after the idle delay it flips back to "running" on its own',
       test: () => {},
     },
     {
-      tags: ['@functional'],
+      tag: [],
       action: 'Send a second chat message before the idle timer fires',
       expectedOutcome: 'The idle timer resets — the queue stays paused past the original deadline',
       test: () => {},
     },
     {
-      tags: ['@functional'],
+      tag: ['@functional'],
       action: 'Enqueue a new task while the queue is paused',
       expectedOutcome: 'The new task stays pending for the duration of the pause, not running',
       test: () => {},
     },
     {
-      tags: ['@functional'],
+      tag: ['@functional'],
       action: 'Answer a HITL prompt via POST /:threadId/hitl',
       expectedOutcome:
         'The HITL-resume entry point pauses and later auto-resumes the queue exactly like a plain chat send',
@@ -83,7 +83,7 @@ test.describe(
       const wsRes = await request.post('/api/v1/workspaces', {
         data: { name: 'queue-widget-ws', location: '/tmp/queue-widget-ws' },
       });
-      expect(wsRes.status()).toBe(201);
+      expect(wsRes.status(), 'Expect the workspace to be created').toBe(201);
       const ws = await wsRes.json();
 
       await page.clock.install();
@@ -91,18 +91,18 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
 
       const queueWidget = page.locator('[data-testid="queue-widget"]');
-      await expect(queueWidget).not.toBeVisible();
+      await expect(queueWidget, 'Expect the queue widget to be hidden').not.toBeVisible();
 
       // Create and enqueue the task now, with the page already watching.
       const taskRes = await request.post('/api/v1/tasks', {
         data: { title: sharedTaskTitle, workspaceId: ws.id, assignedTo: 'agent' },
       });
-      expect(taskRes.status()).toBe(201);
+      expect(taskRes.status(), 'Expect the task to be created successfully').toBe(201);
       const task = await taskRes.json();
       sharedTaskId = task.id;
 
       const enqRes = await request.post(`/api/v1/tasks/${task.id}/enqueue`);
-      expect(enqRes.status()).toBe(201);
+      expect(enqRes.status(), 'Expect the task to be enqueued').toBe(201);
 
       // Widget polls every 10s (thread-sidebar.tsx) — fast-forward the
       // browser's virtual clock rather than waiting for real time to pass.
