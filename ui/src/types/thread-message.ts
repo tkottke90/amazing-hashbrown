@@ -26,6 +26,11 @@ export type ThreadMessage =
       durationMs?: number;
       cost?: { tokensPerSecond?: number; dollars?: number };
       seq?: number;
+      // True for a bubble split off from an earlier one in the same turn
+      // by a mid-turn tool call (see use-thread.ts's text_delta handler) —
+      // it's a continuation of that response, not a new one, so it hides
+      // its own timestamp rather than looking like a second reply.
+      isContinuation?: boolean;
     }
   | {
       kind: 'tool_call';

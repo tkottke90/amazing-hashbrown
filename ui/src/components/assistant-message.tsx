@@ -39,9 +39,11 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
       className={cn('grid gap-2 max-w-[min(80%,75ch)]', className)}
       style={{ gridTemplateAreas: gridAreas, gridTemplateColumns: 'auto 1fr auto' }}
     >
-      <span className="text-xs text-muted-foreground" style={{ gridArea: 'header' }}>
-        {message.sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </span>
+      {!message.isContinuation && (
+        <span className="text-xs text-muted-foreground" style={{ gridArea: 'header' }}>
+          {message.sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      )}
 
       <div className="flex flex-col gap-2 min-w-0" style={{ gridArea: 'content' }}>
         {hasThought && (

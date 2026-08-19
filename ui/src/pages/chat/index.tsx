@@ -28,17 +28,22 @@ import { useSignal } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
-// Tool calls execute before the assistant produces its final text response, but
-// the flat messages array stores them after the assistant item (because the
-// assistant item is inserted eagerly at turn start to show streaming state).
-// This reorders tool_call items that immediately follow an assistant item to
-// appear before it, matching actual execution order.
+// A turn's assistant bubble is inserted eagerly at turn start (empty, to
+// show the loading state immediately) before any tool call has fired. If a
+// tool call happens before any text arrives, that empty placeholder is
+// still positioned ahead of it in the flat array — this reorders a
+// still-empty assistant item's immediately-following tool_call run to
+// appear before it, matching actual execution order. Once an assistant
+// item has real content, its position already reflects when that text was
+// actually streamed relative to any tool calls (use-thread.ts starts a new
+// bubble for text after a mid-turn tool call rather than merging it into
+// earlier text), so it's left in place.
 function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
   const result: ThreadMessage[] = [];
   let i = 0;
   while (i < msgs.length) {
     const msg = msgs[i]!;
-    if (msg.kind === 'assistant') {
+    if (msg.kind === 'assistant' && msg.content.length === 0) {
       const toolCalls: ThreadMessage[] = [];
       let j = i + 1;
       while (j < msgs.length && msgs[j]!.kind === 'tool_call') {
