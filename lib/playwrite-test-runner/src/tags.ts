@@ -1,11 +1,9 @@
 export enum TAGS {
-
   /**
    * User workflow tests are tests which follow the actions of an end user to complete a specific
    * task. This is typically a suite level tag.
    */
   UserWorkflow = '@user-workflow',
-
 
   /**
    * Functional tests focus on non-user workflows such as automation. These tests can trigger processes
@@ -32,5 +30,5 @@ export enum TAGS {
    * Accessability testing focuses on validating accessability choices for end-users as they are implemented, supporting
    * preferences like theme, motion, color-blindness, etc.
    */
-  Accessability = '@accessability'
+  Accessability = '@accessability',
 }

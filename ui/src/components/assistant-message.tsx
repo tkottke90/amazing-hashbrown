@@ -47,7 +47,10 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
 
       <div className="flex flex-col gap-2 min-w-0" style={{ gridArea: 'content' }}>
         {hasThought && (
-          <ThoughtBlock content={message.thoughtContent!} isStreaming={isStreaming && !hasContent} />
+          <ThoughtBlock
+            content={message.thoughtContent!}
+            isStreaming={isStreaming && !hasContent}
+          />
         )}
 
         <div

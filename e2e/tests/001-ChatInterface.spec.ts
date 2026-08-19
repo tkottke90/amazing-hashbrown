@@ -29,14 +29,16 @@ async function topY(locator: Locator): Promise<number> {
 export const ChatInterface: TestSuite = {
   id: 1,
   name: 'Chat Interface Tests',
-  purpose: 'To validate that the chat/thread interface functions and the user is able to interact with the llm',
-  tag: [ TAGS.UserWorkflow ],
+  purpose:
+    'To validate that the chat/thread interface functions and the user is able to interact with the llm',
+  tag: [TAGS.UserWorkflow],
   recordVideo: true,
   steps: [
     {
       action: 'Open a new thread by clicking on the "New Conversation" button',
-      expectedOutcome: 'A new thread is created (unique UUID), there is no chat history, the default model is selected, and the user can send a message',
-      tag: [ TAGS.Smoke ],
+      expectedOutcome:
+        'A new thread is created (unique UUID), there is no chat history, the default model is selected, and the user can send a message',
+      tag: [TAGS.Smoke],
       test: async ({ page }, testInfo) => {
         // Configure defaults for checking later
         const defaultProvider = 'openai';
@@ -79,12 +81,13 @@ export const ChatInterface: TestSuite = {
         // Verify the send button is enabled
         await pauseForVideo(page, ChatInterface, testInfo);
         await expect(page.locator('button[aria-label="Send message"]')).toBeEnabled();
-      }
+      },
     },
     {
       action: 'Send a chat message',
-      expectedOutcome: 'The UI properly shows the agent message with the loading animation, then updates to show the response with metrics',
-      tag: [ TAGS.Smoke ],
+      expectedOutcome:
+        'The UI properly shows the agent message with the loading animation, then updates to show the response with metrics',
+      tag: [TAGS.Smoke],
       test: async ({ page }, testInfo) => {
         // Configure defaults for checking later
         const defaultProvider = 'openai';
@@ -171,11 +174,12 @@ export const ChatInterface: TestSuite = {
         // Verify message includes metrics below the message
         await pauseForVideo(page, ChatInterface, testInfo);
         await expect(assistantMessage).toContainText('tok/s');
-      }
+      },
     },
     {
       action: 'Submit a chat message which requires the agent use a tool',
-      expectedOutcome: 'The agents messages will show up in chronological order rather than grouped by type',
+      expectedOutcome:
+        'The agents messages will show up in chronological order rather than grouped by type',
       tag: [TAGS.Smoke],
       test: async ({ page }, testInfo) => {
         // Configure defaults for checking later
@@ -298,9 +302,9 @@ export const ChatInterface: TestSuite = {
         await expect(
           finalAssistantMessage.locator('button[aria-label="Fork conversation"]'),
         ).toBeVisible();
-      }
-    }
-  ]
-}
+      },
+    },
+  ],
+};
 
 suiteRunner(ChatInterface);
