@@ -35,6 +35,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     rlm: { maxIterations: 10, truncateThreshold: 6000, provider: undefined, model: undefined },
     costs: {},
     tools: undefined,
+    workspaces: {},
     ...overrides,
   };
 }
@@ -218,6 +219,27 @@ describe('routes/v1/settings.handlers', () => {
       if (result.ok) {
         const data = result.data as { apiKey?: string };
         expect(data.apiKey).to.equal('****');
+      }
+    });
+
+    it('masks trackers github token to "****" when set [unit]', () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_real_token' } } } },
+      });
+      const result = getSettingsSectionHandler('trackers', envWithToken, makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal('****');
+      }
+    });
+
+    it('omits trackers github token from GET when not set [unit]', () => {
+      const result = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal(undefined);
       }
     });
 
@@ -422,6 +444,51 @@ describe('routes/v1/settings.handlers', () => {
       const written = readYaml(tmpDir);
       const savedProviders = written.providers as Array<{ apiKey?: string }>;
       expect(savedProviders[0].apiKey).to.equal('sk-new-key');
+    });
+
+    it('writes trackers github token nested under workspaces.tasks.trackers [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: 'ghp_new_token' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('ghp_new_token');
+    });
+
+    it('preserves stored trackers github token when incoming is "****" [unit]', async () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
+      });
+      const config = makeConfig(tmpDir);
+      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '****' } },
+        config,
+        envWithToken,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('ghp_stored_token');
     });
 
     it('clears apiKey when incoming is empty string for model-providers [unit]', async () => {

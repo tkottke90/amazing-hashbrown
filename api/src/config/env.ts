@@ -94,6 +94,22 @@ export const ToolsConfigSchema = z.object({
   shell: ShellExecutorConfigSchema.optional(),
 });
 
+export const GithubTrackerSchema = z.object({
+  token: z.string().optional(),
+});
+
+export const TrackersConfigSchema = z.object({
+  github: GithubTrackerSchema.optional(),
+});
+
+export const TasksConfigSchema = z.object({
+  trackers: TrackersConfigSchema.optional(),
+});
+
+export const WorkspacesSchema = z.object({
+  tasks: TasksConfigSchema.optional(),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -113,6 +129,7 @@ const AppConfigSchema = z.object({
   agent: AgentSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema.optional(),
+  workspaces: WorkspacesSchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -252,6 +269,16 @@ export const env = {
       };
     } catch {
       return undefined;
+    }
+  },
+  get workspaces(): z.infer<typeof WorkspacesSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('workspaces', WorkspacesSchema) as z.infer<
+        typeof WorkspacesSchema
+      >;
+    } catch {
+      return WorkspacesSchema.parse({});
     }
   },
 };
