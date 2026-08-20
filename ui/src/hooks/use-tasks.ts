@@ -11,7 +11,7 @@ import {
 } from '@/services/tasks-api';
 
 export const tasks = signal<Task[]>([]);
-export const queueState = signal<QueueState>({ queue: [], running: null });
+export const queueState = signal<QueueState>({ queue: [], running: null, paused: false });
 export const tasksLoading = signal(false);
 
 export async function refreshTasks(filters: TaskFilters = {}): Promise<void> {

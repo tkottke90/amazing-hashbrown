@@ -8,6 +8,7 @@ import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
+import { getTaskScheduler } from '../services/task-scheduler.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { drainPendingWikiUpdates } from './after-agent.js';
 import {
@@ -412,113 +413,127 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const threadStore = getThreadStore();
-  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
-
-  const threadMeta = threadStore.getThreadMeta(threadId);
-  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-  const effectiveModel = model ?? threadMeta?.model ?? undefined;
-  if (provider !== undefined || model !== undefined) {
-    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-  }
-
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-  const config = { configurable: { thread_id: threadId } };
-  const msgId = randomUUID();
-  const turnSentAt = new Date().toISOString();
-
-  const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
-
-  drainAndRecordWikiUpdates(res, threadStore, threadId);
-
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
-    threadId,
-    provider: effectiveProvider ?? env.defaultProvider,
-    model: effectiveModel ?? '',
-    source: 'chat',
-    systemPrompt,
-  });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
-
-  const assistantSeq = recordAssistantStart(
-    threadStore,
-    threadId,
-    msgId,
-    turnSentAt,
-    effectiveProvider,
-    effectiveModel,
-  );
-
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
+  // A chat message just came in — pause the task scheduler immediately so
+  // background task work doesn't compete with this turn (issue #68). The
+  // whole body runs inside a try/finally from here down so scheduleResume()
+  // fires no matter where this fails — including getChatAgent() below,
+  // which throws synchronously-ish on a misconfigured/unreachable provider,
+  // well before the inner try/finally that used to be the only guard.
+  getTaskScheduler().pause();
   try {
-    const eventStream = agent.streamEvents(
-      { messages: [{ role: 'human', content }] },
-      {
-        ...config,
-        version: 'v2',
-        callbacks: [obsHandler],
-        context: {
-          provider: effectiveProvider ?? env.defaultProvider,
-          // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
-          // model stays undefined — AfterAgent reads this straight into
-          // createProvider(provider, model), where `'' ?? config.defaultModel`
-          // would resolve to '' (not nullish) instead of the provider default.
-          model: effectiveModel,
-          afterAgentEnabled: afterAgent,
-        },
-        recursionLimit: env.agent?.recursionLimit ?? 100,
-      },
-    );
+    const threadStore = getThreadStore();
+    threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
 
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
-      msgId,
-      eventStream,
-      threadStore,
+    const threadMeta = threadStore.getThreadMeta(threadId);
+    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+    const effectiveModel = model ?? threadMeta?.model ?? undefined;
+    if (provider !== undefined || model !== undefined) {
+      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+    }
+
+    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const config = { configurable: { thread_id: threadId } };
+    const msgId = randomUUID();
+    const turnSentAt = new Date().toISOString();
+
+    const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
+
+    drainAndRecordWikiUpdates(res, threadStore, threadId);
+
+    const obsConfig = env.observability;
+    const store = getObservabilityStore();
+    const traceId = store.startTrace({
       threadId,
-    );
-
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      provider: effectiveProvider ?? env.defaultProvider,
+      model: effectiveModel ?? '',
+      source: 'chat',
+      systemPrompt,
     });
+    const obsHandler = new ObservabilityCallbackHandler(
+      traceId,
+      store,
+      obsConfig.spanOutputPreviewChars,
+    );
 
-    await finalizeTurn(
-      res,
+    const assistantSeq = recordAssistantStart(
       threadStore,
-      agent,
       threadId,
       msgId,
-      startedAt,
-      finalContent,
-      thoughtContent,
       turnSentAt,
-      assistantSeq,
-      userSeq,
-      obsHandler,
       effectiveProvider,
       effectiveModel,
     );
-  } catch (err) {
-    if ((err as Error).name === 'GraphRecursionError') {
-      const msg =
-        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
-      return;
+
+    setActiveSseWriter(threadId, (event) => {
+      writeSseEvent(res, event);
+    });
+    try {
+      const eventStream = agent.streamEvents(
+        { messages: [{ role: 'human', content }] },
+        {
+          ...config,
+          version: 'v2',
+          callbacks: [obsHandler],
+          context: {
+            provider: effectiveProvider ?? env.defaultProvider,
+            // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
+            // model stays undefined — AfterAgent reads this straight into
+            // createProvider(provider, model), where `'' ?? config.defaultModel`
+            // would resolve to '' (not nullish) instead of the provider default.
+            model: effectiveModel,
+            afterAgentEnabled: afterAgent,
+          },
+          recursionLimit: env.agent?.recursionLimit ?? 100,
+        },
+      );
+
+      const { content: finalContent, thoughtContent } = await pipeEvents(
+        res,
+        msgId,
+        eventStream,
+        threadStore,
+        threadId,
+      );
+
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      });
+
+      await finalizeTurn(
+        res,
+        threadStore,
+        agent,
+        threadId,
+        msgId,
+        startedAt,
+        finalContent,
+        thoughtContent,
+        turnSentAt,
+        assistantSeq,
+        userSeq,
+        obsHandler,
+        effectiveProvider,
+        effectiveModel,
+      );
+    } catch (err) {
+      if ((err as Error).name === 'GraphRecursionError') {
+        const msg =
+          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        return;
+      }
+      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      throw err;
+    } finally {
+      clearActiveSseWriter(threadId);
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
-    throw err;
   } finally {
-    clearActiveSseWriter(threadId);
+    // Response fully sent (or the turn failed outright) — arm the 30s idle
+    // timer. A message arriving before it fires calls pause() again, which
+    // clears and effectively resets it.
+    getTaskScheduler().scheduleResume();
   }
 }
 
@@ -532,116 +547,124 @@ export async function resumeChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const threadStore = getThreadStore();
-
-  const threadMeta = threadStore.getThreadMeta(threadId);
-  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-  const effectiveModel = model ?? threadMeta?.model ?? undefined;
-  if (provider !== undefined || model !== undefined) {
-    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-  }
-
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-  const config = { configurable: { thread_id: threadId } };
-  const msgId = randomUUID();
-  const turnSentAt = new Date().toISOString();
-
+  // See streamChatToSse's comment: the whole body runs inside a
+  // try/finally from here down so scheduleResume() fires no matter where
+  // this fails (including getChatAgent() below).
+  getTaskScheduler().pause();
   try {
-    resolveHitlPrompt(threadStore, threadId, promptId, answer);
-  } catch (err) {
-    logger.error('resumeChatToSse: failed to resolve HITL prompt', {
+    const threadStore = getThreadStore();
+
+    const threadMeta = threadStore.getThreadMeta(threadId);
+    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+    const effectiveModel = model ?? threadMeta?.model ?? undefined;
+    if (provider !== undefined || model !== undefined) {
+      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+    }
+
+    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const config = { configurable: { thread_id: threadId } };
+    const msgId = randomUUID();
+    const turnSentAt = new Date().toISOString();
+
+    try {
+      resolveHitlPrompt(threadStore, threadId, promptId, answer);
+    } catch (err) {
+      logger.error('resumeChatToSse: failed to resolve HITL prompt', {
+        threadId,
+        promptId,
+        err: serializeError(err),
+      });
+      writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
+      return;
+    }
+
+    drainAndRecordWikiUpdates(res, threadStore, threadId);
+
+    const obsConfig = env.observability;
+    const store = getObservabilityStore();
+    const traceId = store.startTrace({
       threadId,
-      promptId,
-      err: serializeError(err),
+      provider: effectiveProvider ?? env.defaultProvider,
+      model: effectiveModel ?? '',
+      source: 'chat',
+      systemPrompt,
     });
-    writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
-    return;
-  }
-
-  drainAndRecordWikiUpdates(res, threadStore, threadId);
-
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
-    threadId,
-    provider: effectiveProvider ?? env.defaultProvider,
-    model: effectiveModel ?? '',
-    source: 'chat',
-    systemPrompt,
-  });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
-
-  const assistantSeq = recordAssistantStart(
-    threadStore,
-    threadId,
-    msgId,
-    turnSentAt,
-    effectiveProvider,
-    effectiveModel,
-  );
-
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
-  try {
-    const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-      ...config,
-      version: 'v2',
-      recursionLimit: env.agent?.recursionLimit ?? 100,
-      callbacks: [obsHandler],
-      context: {
-        provider: effectiveProvider ?? env.defaultProvider,
-        // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-        model: effectiveModel,
-        afterAgentEnabled: afterAgent,
-      },
-    });
-
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
-      msgId,
-      eventStream,
-      threadStore,
-      threadId,
+    const obsHandler = new ObservabilityCallbackHandler(
+      traceId,
+      store,
+      obsConfig.spanOutputPreviewChars,
     );
 
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
-
-    await finalizeTurn(
-      res,
+    const assistantSeq = recordAssistantStart(
       threadStore,
-      agent,
       threadId,
       msgId,
-      startedAt,
-      finalContent,
-      thoughtContent,
       turnSentAt,
-      assistantSeq,
-      null,
-      obsHandler,
       effectiveProvider,
       effectiveModel,
     );
-  } catch (err) {
-    if ((err as Error).name === 'GraphRecursionError') {
-      const msg =
-        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
-      return;
+
+    setActiveSseWriter(threadId, (event) => {
+      writeSseEvent(res, event);
+    });
+    try {
+      const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+        ...config,
+        version: 'v2',
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        callbacks: [obsHandler],
+        context: {
+          provider: effectiveProvider ?? env.defaultProvider,
+          // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+          model: effectiveModel,
+          afterAgentEnabled: afterAgent,
+        },
+      });
+
+      const { content: finalContent, thoughtContent } = await pipeEvents(
+        res,
+        msgId,
+        eventStream,
+        threadStore,
+        threadId,
+      );
+
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      });
+
+      await finalizeTurn(
+        res,
+        threadStore,
+        agent,
+        threadId,
+        msgId,
+        startedAt,
+        finalContent,
+        thoughtContent,
+        turnSentAt,
+        assistantSeq,
+        null,
+        obsHandler,
+        effectiveProvider,
+        effectiveModel,
+      );
+    } catch (err) {
+      if ((err as Error).name === 'GraphRecursionError') {
+        const msg =
+          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        return;
+      }
+      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      throw err;
+    } finally {
+      clearActiveSseWriter(threadId);
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
-    throw err;
   } finally {
-    clearActiveSseWriter(threadId);
+    getTaskScheduler().scheduleResume();
   }
 }
 
@@ -660,109 +683,117 @@ export async function retryChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  const threadStore = getThreadStore();
-
-  const threadMeta = threadStore.getThreadMeta(threadId);
-  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-  const effectiveModel = model ?? threadMeta?.model ?? undefined;
-  if (provider !== undefined || model !== undefined) {
-    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-  }
-
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-  const config = { configurable: { thread_id: threadId } };
-
-  const failedId = threadStore.resolveRetryTarget(threadId);
-  if (!failedId) {
-    throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
-  }
-
-  const msgId = randomUUID();
-  const turnSentAt = new Date().toISOString();
-  const assistantSeq = recordRetryAttempt(
-    threadStore,
-    threadId,
-    msgId,
-    failedId,
-    turnSentAt,
-    effectiveProvider,
-    effectiveModel,
-  );
-
-  drainAndRecordWikiUpdates(res, threadStore, threadId);
-
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
-    threadId,
-    provider: effectiveProvider ?? env.defaultProvider,
-    model: effectiveModel ?? '',
-    source: 'chat',
-    systemPrompt,
-  });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
-
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
+  // See streamChatToSse's comment: the whole body runs inside a
+  // try/finally from here down so scheduleResume() fires no matter where
+  // this fails (including getChatAgent() below).
+  getTaskScheduler().pause();
   try {
-    const eventStream = agent.streamEvents(null, {
-      ...config,
-      version: 'v2',
-      recursionLimit: env.agent?.recursionLimit ?? 100,
-      callbacks: [obsHandler],
-      context: {
-        provider: effectiveProvider ?? env.defaultProvider,
-        // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-        model: effectiveModel,
-        afterAgentEnabled: afterAgent,
-      },
-    });
+    const threadStore = getThreadStore();
 
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
-      msgId,
-      eventStream,
+    const threadMeta = threadStore.getThreadMeta(threadId);
+    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+    const effectiveModel = model ?? threadMeta?.model ?? undefined;
+    if (provider !== undefined || model !== undefined) {
+      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+    }
+
+    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const config = { configurable: { thread_id: threadId } };
+
+    const failedId = threadStore.resolveRetryTarget(threadId);
+    if (!failedId) {
+      throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
+    }
+
+    const msgId = randomUUID();
+    const turnSentAt = new Date().toISOString();
+    const assistantSeq = recordRetryAttempt(
       threadStore,
       threadId,
-    );
-
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
-
-    await finalizeTurn(
-      res,
-      threadStore,
-      agent,
-      threadId,
       msgId,
-      startedAt,
-      finalContent,
-      thoughtContent,
+      failedId,
       turnSentAt,
-      assistantSeq,
-      null,
-      obsHandler,
       effectiveProvider,
       effectiveModel,
     );
-  } catch (err) {
-    if ((err as Error).name === 'GraphRecursionError') {
-      const msg =
-        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
-      return;
+
+    drainAndRecordWikiUpdates(res, threadStore, threadId);
+
+    const obsConfig = env.observability;
+    const store = getObservabilityStore();
+    const traceId = store.startTrace({
+      threadId,
+      provider: effectiveProvider ?? env.defaultProvider,
+      model: effectiveModel ?? '',
+      source: 'chat',
+      systemPrompt,
+    });
+    const obsHandler = new ObservabilityCallbackHandler(
+      traceId,
+      store,
+      obsConfig.spanOutputPreviewChars,
+    );
+
+    setActiveSseWriter(threadId, (event) => {
+      writeSseEvent(res, event);
+    });
+    try {
+      const eventStream = agent.streamEvents(null, {
+        ...config,
+        version: 'v2',
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        callbacks: [obsHandler],
+        context: {
+          provider: effectiveProvider ?? env.defaultProvider,
+          // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+          model: effectiveModel,
+          afterAgentEnabled: afterAgent,
+        },
+      });
+
+      const { content: finalContent, thoughtContent } = await pipeEvents(
+        res,
+        msgId,
+        eventStream,
+        threadStore,
+        threadId,
+      );
+
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      });
+
+      await finalizeTurn(
+        res,
+        threadStore,
+        agent,
+        threadId,
+        msgId,
+        startedAt,
+        finalContent,
+        thoughtContent,
+        turnSentAt,
+        assistantSeq,
+        null,
+        obsHandler,
+        effectiveProvider,
+        effectiveModel,
+      );
+    } catch (err) {
+      if ((err as Error).name === 'GraphRecursionError') {
+        const msg =
+          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
+        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        return;
+      }
+      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      throw err;
+    } finally {
+      clearActiveSseWriter(threadId);
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
-    throw err;
   } finally {
-    clearActiveSseWriter(threadId);
+    getTaskScheduler().scheduleResume();
   }
 }

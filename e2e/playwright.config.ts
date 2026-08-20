@@ -31,6 +31,12 @@ export default defineConfig({
       cwd: repoRoot,
       reuseExistingServer: !process.env['CI'],
       timeout: 120_000,
+      // Shortens the chat-pause idle-resume timer (30s in prod/dev — see
+      // task-scheduler.ts) so pause/resume e2e tests don't burn 30+ real
+      // seconds per assertion. Only takes effect when Playwright actually
+      // spawns the server (reuseExistingServer is false, i.e. CI, or no
+      // server was already running locally).
+      env: { CHAT_IDLE_RESUME_MS: '3000' },
     },
     {
       command: 'npm run dev:ui',

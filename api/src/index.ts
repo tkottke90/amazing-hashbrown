@@ -7,7 +7,7 @@ import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
 import { bootThreadStore } from './services/thread-store.js';
 import { bootWorkspaceStore } from './services/workspace-store.js';
-import { TaskScheduler } from './services/task-scheduler.js';
+import { bootTaskScheduler } from './services/task-scheduler.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
@@ -55,8 +55,7 @@ app.logger.info('Knowledge base booted');
 await loadAgentInstructions();
 app.logger.info('Agent instructions loaded');
 
-const taskScheduler = new TaskScheduler();
-taskScheduler.start();
+bootTaskScheduler();
 app.logger.info('Task scheduler started');
 
 app.start();

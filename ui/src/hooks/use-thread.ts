@@ -1,9 +1,10 @@
-import { signal, batch, computed } from '@preact/signals';
+import { signal, batch, computed, effect } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
-import type { ThreadMessage } from '../types/thread-message';
+import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
 import { consumeSsePost } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
+import { providers, defaultProviderName, pickDefaultModelSelection } from './use-providers';
 
 // ---- localStorage-backed signals ----
 // use-theme.tsx is the only other localStorage consumer in this app, and it
@@ -91,6 +92,16 @@ export function setThreadModel(provider: string, model: string): void {
   activeThreadModel.value = { provider, model };
 }
 
+// Auto-fills the model chip whenever a thread has no explicit model choice
+// (brand-new threads, or older threads that only ever used the implicit
+// backend default) — never overrides a manual pick or a hydrated thread's
+// persisted model, since the guard is purely "currently null".
+effect(() => {
+  if (activeThreadModel.value !== null) return;
+  const selection = pickDefaultModelSelection(providers.value, defaultProviderName.value);
+  if (selection) setThreadModel(selection.provider, selection.model);
+});
+
 export async function refreshThreadList(): Promise<void> {
   try {
     const res = await fetch('/api/v1/threads');
@@ -148,6 +159,12 @@ export const pendingHitlId = signal<string | null>(null);
 let _currentAssistantId: string | null = null;
 let _currentUserId: string | null = null;
 let _abortController: AbortController | null = null;
+// True from a tool_call_start until the next text_delta. Lets that next
+// text_delta decide whether to start a new assistant bubble (see
+// handleEvent's 'text_delta' case) so text before and after a mid-turn
+// tool call render as separate, chronologically-ordered bubbles instead of
+// merging into one.
+let _toolCallPendingSinceLastText = false;
 
 // The server returns sentAt as an ISO string (JSON has no Date type);
 // ThreadMessage expects a real Date for user/assistant kinds.
@@ -254,13 +271,46 @@ export async function regenerateTitle(id: string): Promise<void> {
 
 function handleEvent(evt: ChatSSEEvent): void {
   switch (evt.type) {
-    case 'text_delta':
-      messages.value = messages.value.map((m) =>
-        m.kind === 'assistant' && m.id === _currentAssistantId
-          ? { ...m, content: m.content + evt.delta }
-          : m,
+    case 'text_delta': {
+      const current = messages.value.find(
+        (m): m is AssistantThreadMessage => m.kind === 'assistant' && m.id === _currentAssistantId,
       );
+
+      if (_toolCallPendingSinceLastText && current && current.content.length > 0) {
+        // A tool call happened since the last text_delta, and the segment
+        // open before it already has visible content — close that segment
+        // out and start a new one for the text that follows, so the two
+        // render as separate bubbles in chronological order (Text, Tool
+        // Call, Text) instead of merging into one. If the current segment
+        // is still empty (a tool call fired before any text at all), just
+        // keep filling it in place — nothing to split there yet.
+        const newId = randomUUID();
+        messages.value = [
+          ...messages.value.map((m) =>
+            m.kind === 'assistant' && m.id === _currentAssistantId
+              ? { ...m, status: 'done' as const }
+              : m,
+          ),
+          {
+            kind: 'assistant',
+            id: newId,
+            status: 'streaming',
+            content: evt.delta,
+            sentAt: new Date(),
+            isContinuation: true,
+          },
+        ];
+        _currentAssistantId = newId;
+      } else {
+        messages.value = messages.value.map((m) =>
+          m.kind === 'assistant' && m.id === _currentAssistantId
+            ? { ...m, content: m.content + evt.delta }
+            : m,
+        );
+      }
+      _toolCallPendingSinceLastText = false;
       break;
+    }
 
     case 'thought_delta':
       messages.value = messages.value.map((m) =>
@@ -283,6 +333,7 @@ function handleEvent(evt: ChatSSEEvent): void {
           seq: evt.seq,
         },
       ];
+      _toolCallPendingSinceLastText = true;
       break;
 
     case 'tool_call_end':
@@ -428,6 +479,7 @@ export async function sendMessage(content: string): Promise<void> {
   const assistantId = randomUUID();
   _currentUserId = userId;
   _currentAssistantId = assistantId;
+  _toolCallPendingSinceLastText = false;
   _abortController = new AbortController();
 
   batch(() => {
@@ -470,6 +522,7 @@ export async function submitHitlAnswer(promptId: string, answer: string): Promis
   const assistantId = randomUUID();
   _currentAssistantId = assistantId;
   _currentUserId = null;
+  _toolCallPendingSinceLastText = false;
   _abortController = new AbortController();
 
   batch(() => {
@@ -509,6 +562,7 @@ export async function retryTurn(): Promise<void> {
 
   _currentAssistantId = targetId;
   _currentUserId = null;
+  _toolCallPendingSinceLastText = false;
   _abortController = new AbortController();
 
   batch(() => {

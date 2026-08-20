@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@playwright/test';
 
-const RECORDING_PAUSE_MS = 2000;
+const RECORDING_PAUSE_MS = 3000;
 
 /**
  * Pauses for RECORDING_PAUSE_MS, but only when the current project is

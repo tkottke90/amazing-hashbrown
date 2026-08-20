@@ -33,7 +33,7 @@ providersRouter.get('/', async (_req, res) => {
     }),
   );
 
-  res.json({ providers: results });
+  res.json({ providers: results, defaultProvider: env.defaultProvider });
 });
 
 interface ListModelsBody {

@@ -56,14 +56,14 @@ export function deleteTaskHandler(
   return ok({ deleted: true });
 }
 
-export function getQueueHandler(store: WorkspaceStore) {
+export function getQueueHandler(store: WorkspaceStore, paused: boolean) {
   const queue = store.listQueue();
   const running = store.getRunningEntry();
   const queueWithTasks = queue.map((entry) => ({
     ...entry,
     task: store.getTask(entry.taskId) ?? null,
   }));
-  return ok({ queue: queueWithTasks, running: running ?? null });
+  return ok({ queue: queueWithTasks, running: running ?? null, paused });
 }
 
 export function enqueueTaskHandler(
