@@ -16,7 +16,7 @@
   "overrides": {
     "zod": "4.4.3",
     "@langchain/core": "1.2.2",
-    "better-sqlite3": "11.10.0"
+    "better-sqlite3": "12.11.1"
   },
   "scripts": {
     "dev:api": "npm run build:libs && CONFIG_DIR='../config' npm run dev --workspace api",
