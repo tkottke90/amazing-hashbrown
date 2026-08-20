@@ -162,6 +162,9 @@ eval-logs/
 # also match lib/thread-reports/ (see the api/src/config/ fix earlier).
 /thread-reports/
 
+# Local npm registry auth (copy .npmrc.template -> .npmrc)
+.npmrc
+
 # Mac OS
 .DS_Store
 
