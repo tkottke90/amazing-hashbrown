@@ -55,6 +55,28 @@ Every test describe block must carry exactly one type tag.
 A test that sends a chat message and awaits a real LLM response carries both
 tags, e.g. `test.describe('@user-workflow @llm', () => { ... })`.
 
+### Suites gated on other external credentials
+
+`@llm` is excluded from CI by tag (`--grep-invert`). A suite gated on a
+*different* external dependency — one that should still attempt to run in CI
+whenever the credentials happen to be configured, rather than always being
+excluded — uses a dynamic `skip` instead: `002-GitHubTrackerWorkflow.spec.ts`
+hits the real GitHub API and skips itself with a descriptive reason when
+`E2E_GITHUB_TOKEN`/`E2E_GITHUB_TEST_REPO` aren't set, via the new library's
+`skip: () => condition ? 'reason' : false` (see below). Locally this means
+the suite just no-ops without those env vars; in CI, adding the
+corresponding secrets is what turns it on.
+
+## The newer `@tkottke90/playwrite-test-runner` pattern
+
+`001-ChatInterface.spec.ts` and `002-GitHubTrackerWorkflow.spec.ts` use
+`lib/playwrite-test-runner` (see its own `AGENTS.md`/`docs/`) instead of the
+`TestSuite`/`suiteAnnotations` pattern documented below — one `suiteRunner()`
+call per file, with each step's `test` function actually executed (no
+separate hand-written `test.describe()` block). New numbered spec files
+(`NNN-PascalCase.spec.ts`) should follow that library's docs, not the
+pattern below, which the rest of `e2e/tests/*.spec.ts` still uses.
+
 ## TestSuite pattern
 
 Every spec file must declare a `TestSuite` object above the `test.describe`
@@ -167,6 +189,8 @@ implementation details that change without notice.
 | `plan-step`          | `ui/src/components/task-drawer.tsx`       | Individual plan step rows; pair with `data-done="true\|false"`   |
 | `plan-step-checkbox` | `ui/src/components/task-drawer.tsx`       | Checkbox inside a plan step row                                  |
 | `task-status-select` | `ui/src/components/task-drawer.tsx`       | Status `<select>` in the task drawer edit form                   |
+| `task-tracker-type-select` | `ui/src/components/task-drawer.tsx` | Tracker adapter `<select>` in the task drawer's Tracker section  |
+| `task-tracker-preview` | `ui/src/components/task-drawer.tsx`     | Linked-item preview card once a tracker link resolves            |
 | `queue-widget`       | `ui/src/components/thread-sidebar.tsx`    | Sidebar queue widget container                                   |
 | `queue-current-task` | `ui/src/components/thread-sidebar.tsx`    | Task name text inside the queue widget                           |
 | `queue-status`       | `ui/src/components/thread-sidebar.tsx`    | Status line inside the queue widget                              |

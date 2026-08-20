@@ -493,6 +493,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Tracker</label>
           <select
+            data-testid="task-tracker-type-select"
             value={trackerType.value ?? ''}
             onChange={(e) => handleTrackerTypeChange((e.target as HTMLSelectElement).value)}
             class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
@@ -508,7 +509,10 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
           {trackerType.value && (
             <div class="flex flex-col gap-2 mt-1">
               {trackerPreview.value ? (
-                <div class="border border-border rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                <div
+                  data-testid="task-tracker-preview"
+                  class="border border-border rounded-lg px-3 py-2 flex items-center justify-between gap-2"
+                >
                   <div class="min-w-0 flex flex-col gap-0.5">
                     <a
                       href={trackerPreview.value.url}
