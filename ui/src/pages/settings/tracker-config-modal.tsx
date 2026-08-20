@@ -28,15 +28,31 @@ export function TrackerConfigModal({ tracker, initial, onSave, trigger }: Tracke
   );
 }
 
+// Mirrors the server's masking sentinel (api/src/routes/v1/settings.handlers.ts's
+// `MASK`) — a password field seeded with this value means "a token is already
+// stored"; submitting it back unchanged tells the server to keep that value.
+const MASK = '****';
+
+function isStoredField(field: AuthField, initial?: Record<string, string | undefined>): boolean {
+  return field.type === 'password' && initial?.[field.key] === MASK;
+}
+
 function TrackerConfigForm({
   tracker,
   initial,
   onSave,
 }: Omit<TrackerConfigModalProps, 'trigger'>) {
   const { close } = useDialog();
+  // Password fields always start blank — the server never sends the real
+  // secret back, only the "****" sentinel, so showing that as literal
+  // editable text is misleading. `removed` tracks an explicit "clear this
+  // field" action separately from "left blank because unchanged".
   const values = useSignal<Record<string, string>>(
-    Object.fromEntries(tracker.authSchema.map((f) => [f.key, initial?.[f.key] ?? ''])),
+    Object.fromEntries(
+      tracker.authSchema.map((f) => [f.key, isStoredField(f, initial) ? '' : (initial?.[f.key] ?? '')]),
+    ),
   );
+  const removed = useSignal<Record<string, boolean>>({});
   const testState = useSignal<TestState>({ status: 'idle' });
 
   async function runVerify() {
@@ -55,31 +71,80 @@ function TrackerConfigForm({
 
   function handleSubmit(e: Event) {
     e.preventDefault();
-    onSave(values.value);
+    const outgoing: Record<string, string> = {};
+    for (const field of tracker.authSchema) {
+      const typed = values.value[field.key] ?? '';
+      if (!isStoredField(field, initial)) {
+        outgoing[field.key] = typed;
+      } else if (removed.value[field.key]) {
+        outgoing[field.key] = '';
+      } else if (typed) {
+        outgoing[field.key] = typed;
+      } else {
+        outgoing[field.key] = MASK;
+      }
+    }
+    onSave(outgoing);
     close();
   }
 
+  const tokenIsBlank = !values.value['token'];
+  const canVerify = tracker.authSchema.some((f) => f.key === 'token') && !tokenIsBlank;
+
   return (
     <form onSubmit={handleSubmit} class="mt-4 flex flex-col gap-4">
-      {tracker.authSchema.map((field: AuthField) => (
-        <div key={field.key} class="space-y-1.5">
-          <Label htmlFor={`tracker-${tracker.type}-${field.key}`}>{field.label}</Label>
-          <Input
-            id={`tracker-${tracker.type}-${field.key}`}
-            type={field.type === 'password' ? 'password' : 'text'}
-            value={values.value[field.key] ?? ''}
-            onInput={(e) => {
-              values.value = {
-                ...values.value,
-                [field.key]: (e.target as HTMLInputElement).value,
-              };
-              testState.value = { status: 'idle' };
-            }}
-            placeholder={field.type === 'password' ? 'Leave blank to keep unchanged' : ''}
-            required={field.required}
-          />
-        </div>
-      ))}
+      {tracker.authSchema.map((field: AuthField) => {
+        const stored = isStoredField(field, initial);
+        const isRemoved = removed.value[field.key] === true;
+        return (
+          <div key={field.key} class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <Label htmlFor={`tracker-${tracker.type}-${field.key}`}>{field.label}</Label>
+              {stored &&
+                (isRemoved ? (
+                  <span class="text-xs text-destructive">Will be removed on save</span>
+                ) : (
+                  <span class="text-xs text-muted-foreground">Currently set</span>
+                ))}
+            </div>
+            <div class="flex gap-2">
+              <Input
+                id={`tracker-${tracker.type}-${field.key}`}
+                type={field.type === 'password' ? 'password' : 'text'}
+                value={values.value[field.key] ?? ''}
+                disabled={isRemoved}
+                onInput={(e) => {
+                  values.value = {
+                    ...values.value,
+                    [field.key]: (e.target as HTMLInputElement).value,
+                  };
+                  if (removed.value[field.key]) {
+                    removed.value = { ...removed.value, [field.key]: false };
+                  }
+                  testState.value = { status: 'idle' };
+                }}
+                placeholder={stored ? 'Leave blank to keep the saved value' : ''}
+                required={field.required && !stored}
+                class="flex-1"
+              />
+              {stored && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    removed.value = { ...removed.value, [field.key]: !isRemoved };
+                    values.value = { ...values.value, [field.key]: '' };
+                    testState.value = { status: 'idle' };
+                  }}
+                >
+                  {isRemoved ? 'Undo' : 'Remove'}
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
 
       {tracker.type === 'github' && (
         <div class="flex items-center gap-3">
@@ -87,7 +152,8 @@ function TrackerConfigForm({
             type="button"
             variant="outline"
             onClick={() => void runVerify()}
-            disabled={testState.value.status === 'loading'}
+            disabled={testState.value.status === 'loading' || !canVerify}
+            title={!canVerify ? 'Enter a token above to verify it' : undefined}
           >
             {testState.value.status === 'loading' ? (
               <>

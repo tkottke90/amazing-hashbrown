@@ -491,6 +491,30 @@ describe('routes/v1/settings.handlers', () => {
       expect(workspaces.tasks.trackers.github.token).to.equal('ghp_stored_token');
     });
 
+    it('clears trackers github token when incoming is empty string [unit]', async () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
+      });
+      const config = makeConfig(tmpDir);
+      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '' } },
+        config,
+        envWithToken,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('');
+    });
+
     it('clears apiKey when incoming is empty string for model-providers [unit]', async () => {
       const storedProviders: EnvAccessor['providers'] = [
         { name: 'openai', type: 'openai', apiKey: 'sk-old-key' },
