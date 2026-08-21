@@ -36,7 +36,10 @@ export function bootTrackerRegistry(): void {
 
   registry.register(createGithubTrackerAdapter(env.workspaces.tasks?.trackers?.github?.token));
 
-  const pluginList = (process.env['TRACKER_PLUGINS'] ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+  const pluginList = (process.env['TRACKER_PLUGINS'] ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
   for (const pkg of pluginList) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -54,6 +57,7 @@ export function bootTrackerRegistry(): void {
 }
 
 export function getTrackerRegistry(): TrackerRegistry {
-  if (!_registry) throw new Error('Tracker registry not initialised — call bootTrackerRegistry() first');
+  if (!_registry)
+    throw new Error('Tracker registry not initialised — call bootTrackerRegistry() first');
   return _registry;
 }

@@ -43,17 +43,22 @@ async function openTrackersSettings(page: Page): Promise<void> {
 test.afterAll(async () => {
   if (!GITHUB_TOKEN || !TEST_REPO || createdIssueNumber === null) return;
   try {
-    const res = await fetch(`https://api.github.com/repos/${TEST_REPO}/issues/${createdIssueNumber}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.github+json',
+    const res = await fetch(
+      `https://api.github.com/repos/${TEST_REPO}/issues/${createdIssueNumber}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github+json',
+        },
+        body: JSON.stringify({ state: 'closed' }),
       },
-      body: JSON.stringify({ state: 'closed' }),
-    });
+    );
     if (!res.ok) {
-      console.warn(`[002-GitHubTrackerWorkflow] cleanup: failed to close issue #${createdIssueNumber} (${res.status})`);
+      console.warn(
+        `[002-GitHubTrackerWorkflow] cleanup: failed to close issue #${createdIssueNumber} (${res.status})`,
+      );
     }
   } catch (err) {
     console.warn('[002-GitHubTrackerWorkflow] cleanup: failed to close created issue', err);
@@ -119,7 +124,8 @@ export const GitHubTrackerWorkflow: TestSuite = {
     },
     {
       action: 'Create a task and create a linked GitHub issue for it',
-      expectedOutcome: 'A real GitHub issue is created in the test repo and auto-linked to the task',
+      expectedOutcome:
+        'A real GitHub issue is created in the test repo and auto-linked to the task',
       test: async ({ page }, testInfo) => {
         const wsRes = await page.request.post('/api/v1/workspaces', {
           data: {
@@ -161,9 +167,10 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await expect(preview).toContainText(taskTitle);
 
         createdIssueUrl = (await preview.locator('a').getAttribute('href')) ?? '';
-        expect(createdIssueUrl, 'the created issue preview should link back to a real GitHub URL').toMatch(
-          /^https:\/\/github\.com\/.+\/issues\/\d+$/,
-        );
+        expect(
+          createdIssueUrl,
+          'the created issue preview should link back to a real GitHub URL',
+        ).toMatch(/^https:\/\/github\.com\/.+\/issues\/\d+$/);
         createdIssueNumber = issueNumberFromUrl(createdIssueUrl);
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
@@ -181,7 +188,9 @@ export const GitHubTrackerWorkflow: TestSuite = {
       expectedOutcome:
         'Pasting the issue URL resolves a live preview, and the link persists after closing and reopening the task',
       test: async ({ page }, testInfo) => {
-        expect(createdIssueUrl, 'previous step should have captured a created issue URL').not.toBe('');
+        expect(createdIssueUrl, 'previous step should have captured a created issue URL').not.toBe(
+          '',
+        );
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
         await page.getByRole('button', { name: 'Add task' }).click();
@@ -193,7 +202,9 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await drawer.getByTestId('task-tracker-type-select').selectOption('github');
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
-        await drawer.locator('input[placeholder="Paste a tracker URL to link it"]').fill(createdIssueUrl);
+        await drawer
+          .locator('input[placeholder="Paste a tracker URL to link it"]')
+          .fill(createdIssueUrl);
 
         const preview = drawer.getByTestId('task-tracker-preview');
         await expect(preview).toBeVisible({ timeout: 15_000 });
@@ -251,7 +262,9 @@ export const GitHubTrackerWorkflow: TestSuite = {
 
         // A fresh task drawer should no longer offer "Create new issue" —
         // and pasting the same issue URL should still resolve unauthenticated.
-        expect(workspaceTasksUrl, 'step 2 should have captured the workspace tasks URL').not.toBe('');
+        expect(workspaceTasksUrl, 'step 2 should have captured the workspace tasks URL').not.toBe(
+          '',
+        );
         await page.goto(workspaceTasksUrl);
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
         await page.getByRole('button', { name: 'Add task' }).click();
@@ -260,7 +273,9 @@ export const GitHubTrackerWorkflow: TestSuite = {
 
         await expect(drawer.getByRole('button', { name: 'Create new issue' })).not.toBeVisible();
 
-        await drawer.locator('input[placeholder="Paste a tracker URL to link it"]').fill(createdIssueUrl);
+        await drawer
+          .locator('input[placeholder="Paste a tracker URL to link it"]')
+          .fill(createdIssueUrl);
         const preview = drawer.getByTestId('task-tracker-preview');
         await expect(preview).toBeVisible({ timeout: 15_000 });
 

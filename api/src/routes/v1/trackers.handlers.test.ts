@@ -42,7 +42,13 @@ describe('routes/v1/trackers.handlers', () => {
       expect(result.ok).to.equal(true);
       if (result.ok) {
         expect(result.data).to.deep.equal([
-          { type: 'fake', displayName: 'Fake', icon: '<svg></svg>', canCreate: true, authSchema: [] },
+          {
+            type: 'fake',
+            displayName: 'Fake',
+            icon: '<svg></svg>',
+            canCreate: true,
+            authSchema: [],
+          },
         ]);
       }
     });
@@ -73,7 +79,9 @@ describe('routes/v1/trackers.handlers', () => {
           },
         }),
       );
-      const result = await resolveTrackerUrlHandler(registry, 'fake', { url: 'https://example.com' });
+      const result = await resolveTrackerUrlHandler(registry, 'fake', {
+        url: 'https://example.com',
+      });
       expect(result.ok).to.equal(false);
       if (!result.ok) {
         expect(result.status).to.equal(400);
@@ -174,7 +182,10 @@ describe('routes/v1/trackers.handlers', () => {
 
     it('reports canCreate: true when the token has the repo scope', async () => {
       globalThis.fetch = (async () =>
-        new Response('{}', { status: 200, headers: { 'x-oauth-scopes': 'repo, read:user' } })) as typeof fetch;
+        new Response('{}', {
+          status: 200,
+          headers: { 'x-oauth-scopes': 'repo, read:user' },
+        })) as typeof fetch;
 
       const result = await verifyGithubTokenHandler({ token: 'ghp_valid' });
       expect(result.ok).to.equal(true);
@@ -187,7 +198,10 @@ describe('routes/v1/trackers.handlers', () => {
 
     it('reports canCreate: false when scopes lack repo/public_repo', async () => {
       globalThis.fetch = (async () =>
-        new Response('{}', { status: 200, headers: { 'x-oauth-scopes': 'read:user' } })) as typeof fetch;
+        new Response('{}', {
+          status: 200,
+          headers: { 'x-oauth-scopes': 'read:user' },
+        })) as typeof fetch;
 
       const result = await verifyGithubTokenHandler({ token: 'ghp_readonly' });
       expect(result.ok).to.equal(true);
@@ -198,7 +212,8 @@ describe('routes/v1/trackers.handlers', () => {
     });
 
     it('reports valid: false with an error when GitHub rejects the token', async () => {
-      globalThis.fetch = (async () => new Response('bad credentials', { status: 401 })) as typeof fetch;
+      globalThis.fetch = (async () =>
+        new Response('bad credentials', { status: 401 })) as typeof fetch;
 
       const result = await verifyGithubTokenHandler({ token: 'ghp_bad' });
       expect(result.ok).to.equal(true);

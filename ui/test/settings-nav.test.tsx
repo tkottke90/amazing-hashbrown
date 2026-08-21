@@ -4,6 +4,7 @@ import { SettingsNav } from '@/pages/settings/settings-nav';
 const NAV_LABELS = [
   'General',
   'Storage',
+  'Workspaces',
   'Model providers',
   'Embeddings',
   'Agent behavior',
@@ -14,7 +15,7 @@ const NAV_LABELS = [
 ];
 
 describe('SettingsNav', () => {
-  it('renders all 9 nav labels', () => {
+  it('renders all 10 nav labels', () => {
     const onNavigate = jest.fn();
     render(<SettingsNav activeSlug="general" onNavigate={onNavigate} />);
     for (const label of NAV_LABELS) {
@@ -48,7 +49,7 @@ describe('SettingsNav', () => {
   it('has data-slot="settings-nav-item" on every button', () => {
     render(<SettingsNav activeSlug="general" onNavigate={jest.fn()} />);
     const items = screen.getAllByRole('button');
-    expect(items.length).toBe(9);
+    expect(items.length).toBe(10);
     for (const item of items) {
       expect(item).toHaveAttribute('data-slot', 'settings-nav-item');
     }

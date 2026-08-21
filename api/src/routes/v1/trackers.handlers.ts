@@ -108,7 +108,12 @@ export async function verifyGithubTokenHandler(body: {
       headers: { Authorization: `Bearer ${body.token}`, Accept: 'application/vnd.github+json' },
     });
     if (!res.ok) {
-      return ok({ valid: false, scopes: [], canCreate: false, error: `GitHub API error ${res.status}` });
+      return ok({
+        valid: false,
+        scopes: [],
+        canCreate: false,
+        error: `GitHub API error ${res.status}`,
+      });
     }
     const scopesHeader = res.headers.get('x-oauth-scopes') ?? '';
     const scopes = scopesHeader

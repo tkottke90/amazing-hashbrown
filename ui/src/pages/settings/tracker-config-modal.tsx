@@ -22,7 +22,11 @@ interface TrackerConfigModalProps {
 
 export function TrackerConfigModal({ tracker, initial, onSave, trigger }: TrackerConfigModalProps) {
   return (
-    <Modal title={`Configure ${tracker.displayName}`} className="mx-auto my-16 max-w-lg p-4" trigger={trigger}>
+    <Modal
+      title={`Configure ${tracker.displayName}`}
+      className="mx-auto my-16 max-w-lg p-4"
+      trigger={trigger}
+    >
       <TrackerConfigForm tracker={tracker} initial={initial} onSave={onSave} />
     </Modal>
   );
@@ -37,11 +41,7 @@ function isStoredField(field: AuthField, initial?: Record<string, string | undef
   return field.type === 'password' && initial?.[field.key] === MASK;
 }
 
-function TrackerConfigForm({
-  tracker,
-  initial,
-  onSave,
-}: Omit<TrackerConfigModalProps, 'trigger'>) {
+function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModalProps, 'trigger'>) {
   const { close } = useDialog();
   // Password fields always start blank — the server never sends the real
   // secret back, only the "****" sentinel, so showing that as literal
@@ -49,7 +49,10 @@ function TrackerConfigForm({
   // field" action separately from "left blank because unchanged".
   const values = useSignal<Record<string, string>>(
     Object.fromEntries(
-      tracker.authSchema.map((f) => [f.key, isStoredField(f, initial) ? '' : (initial?.[f.key] ?? '')]),
+      tracker.authSchema.map((f) => [
+        f.key,
+        isStoredField(f, initial) ? '' : (initial?.[f.key] ?? ''),
+      ]),
     ),
   );
   const removed = useSignal<Record<string, boolean>>({});
@@ -60,12 +63,18 @@ function TrackerConfigForm({
     try {
       const result = await verifyGithubToken(values.value['token'] ?? '');
       if (!result.valid) {
-        testState.value = { status: 'error', error: result.error ?? 'Token could not be verified.' };
+        testState.value = {
+          status: 'error',
+          error: result.error ?? 'Token could not be verified.',
+        };
       } else {
         testState.value = { status: 'success', canCreate: result.canCreate };
       }
     } catch (err) {
-      testState.value = { status: 'error', error: err instanceof Error ? err.message : 'Verify failed.' };
+      testState.value = {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Verify failed.',
+      };
     }
   }
 

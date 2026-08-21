@@ -1,4 +1,9 @@
-import type { AuthField, CanonicalState, TrackerAdapter, TrackerItem } from '../services/tracker-adapter.js';
+import type {
+  AuthField,
+  CanonicalState,
+  TrackerAdapter,
+  TrackerItem,
+} from '../services/tracker-adapter.js';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -75,7 +80,11 @@ export function createGithubTrackerAdapter(token?: string): TrackerAdapter {
       return toTrackerItem(owner, repo, num, issue);
     },
 
-    async createItem(params: { title: string; body?: string; repo?: string }): Promise<TrackerItem> {
+    async createItem(params: {
+      title: string;
+      body?: string;
+      repo?: string;
+    }): Promise<TrackerItem> {
       if (!canCreate) throw new Error('GitHub adapter is not configured for creating issues');
       if (!params.repo) throw new Error('repo is required to create a GitHub issue');
       const [owner, repo] = params.repo.split('/');

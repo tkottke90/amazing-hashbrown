@@ -540,9 +540,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
                   <Input
                     placeholder="Paste a tracker URL to link it"
                     value={trackerUrlInput.value}
-                    onInput={(e) =>
-                      handleTrackerUrlInput((e.target as HTMLInputElement).value)
-                    }
+                    onInput={(e) => handleTrackerUrlInput((e.target as HTMLInputElement).value)}
                   />
                   {trackerResolving.value && (
                     <p class="text-xs text-muted-foreground flex items-center gap-1.5">

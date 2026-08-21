@@ -17,10 +17,10 @@ This is also the first Settings page in the app with internal sub-navigation —
 
 Two independent things live behind `/api/v1/trackers*`, and it matters that they stay separate:
 
-- **The registry** (`GET /api/v1/trackers`) reports what's actually *running* — every `TrackerAdapter` registered at boot (the built-in GitHub adapter plus any `TRACKER_PLUGINS` packages), each with `{type, displayName, icon, canCreate, authSchema}`. This is live server state, not configuration — a plugin that fails to load, or whose token isn't set, still appears in this list (with `canCreate: false` if it lacks credentials).
-- **The settings section** (`GET`/`PATCH /api/v1/settings/trackers`) is the persisted *configuration* — today, just the GitHub token, masked on read like every other secret in the settings system. It follows the existing `SLUG_MAP` pattern in `settings.handlers.ts` exactly (see `embeddings`), writing to `workspaces.tasks.trackers.github` in `config.yaml`.
+- **The registry** (`GET /api/v1/trackers`) reports what's actually _running_ — every `TrackerAdapter` registered at boot (the built-in GitHub adapter plus any `TRACKER_PLUGINS` packages), each with `{type, displayName, icon, canCreate, authSchema}`. This is live server state, not configuration — a plugin that fails to load, or whose token isn't set, still appears in this list (with `canCreate: false` if it lacks credentials).
+- **The settings section** (`GET`/`PATCH /api/v1/settings/trackers`) is the persisted _configuration_ — today, just the GitHub token, masked on read like every other secret in the settings system. It follows the existing `SLUG_MAP` pattern in `settings.handlers.ts` exactly (see `embeddings`), writing to `workspaces.tasks.trackers.github` in `config.yaml`.
 
-The Trackers UI reads from both: the registry tells it *what rows to show*, the settings section tells it *what's currently configured* for those rows.
+The Trackers UI reads from both: the registry tells it _what rows to show_, the settings section tells it _what's currently configured_ for those rows.
 
 ### Frontend
 
@@ -41,32 +41,32 @@ The Workspaces page is a new flat entry in `SettingsNav`'s `SettingsSlug` union 
 
 ### New Files
 
-| File | Purpose |
-| --- | --- |
-| `api/src/services/tracker-adapter.ts` | `TrackerAdapter`/`TrackerItem`/`AuthField`/`CanonicalState` interface |
-| `api/src/services/tracker-registry.ts` | `TrackerRegistry` class + `bootTrackerRegistry()`/`getTrackerRegistry()` singleton, `TRACKER_PLUGINS` discovery |
-| `api/src/adapters/tracker-github.ts` | Built-in GitHub adapter (`resolveUrl`, `getItem`, `createItem`, `updateState`) |
+| File                                                           | Purpose                                                                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api/src/services/tracker-adapter.ts`                          | `TrackerAdapter`/`TrackerItem`/`AuthField`/`CanonicalState` interface                                                                      |
+| `api/src/services/tracker-registry.ts`                         | `TrackerRegistry` class + `bootTrackerRegistry()`/`getTrackerRegistry()` singleton, `TRACKER_PLUGINS` discovery                            |
+| `api/src/adapters/tracker-github.ts`                           | Built-in GitHub adapter (`resolveUrl`, `getItem`, `createItem`, `updateState`)                                                             |
 | `api/src/routes/v1/trackers.route.ts` + `trackers.handlers.ts` | `GET /trackers`, `POST /trackers/github/verify`, `POST /trackers/:type/resolve`, `GET /trackers/:type/items`, `POST /trackers/:type/items` |
 
 ### Modified Files
 
-| File | Change |
-| --- | --- |
-| `api/src/config/env.ts` | New `WorkspacesSchema` → `TasksConfigSchema` → `TrackersConfigSchema` → `GithubTrackerSchema` nesting, `env.workspaces` getter |
-| `api/src/routes/v1/index.ts` | `v1Router.use('/trackers', trackersRouter)` |
-| `api/src/routes/v1/settings.handlers.ts` | New `trackers` `SLUG_MAP` entry (masked token, writes `workspaces.tasks.trackers.github`) |
-| `api/src/index.ts` | `bootTrackerRegistry()` after `bootWorkspaceStore(db)` |
+| File                                     | Change                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `api/src/config/env.ts`                  | New `WorkspacesSchema` → `TasksConfigSchema` → `TrackersConfigSchema` → `GithubTrackerSchema` nesting, `env.workspaces` getter |
+| `api/src/routes/v1/index.ts`             | `v1Router.use('/trackers', trackersRouter)`                                                                                    |
+| `api/src/routes/v1/settings.handlers.ts` | New `trackers` `SLUG_MAP` entry (masked token, writes `workspaces.tasks.trackers.github`)                                      |
+| `api/src/index.ts`                       | `bootTrackerRegistry()` after `bootWorkspaceStore(db)`                                                                         |
 
 ### Endpoints
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/trackers` | List registered adapters (registry, not config) |
-| `POST` | `/api/v1/trackers/github/verify` | Validate a candidate token against the GitHub API, return scope-derived `canCreate` |
-| `POST` | `/api/v1/trackers/:type/resolve` | Resolve a pasted URL to a `TrackerItem` preview |
-| `GET` | `/api/v1/trackers/:type/items?id=` | Fetch current state for a linked item (id passed as a query param, not a path segment, since a GitHub id like `owner/repo#123` contains `/` and `#`) |
-| `POST` | `/api/v1/trackers/:type/items` | Create a new item (Option B only) |
-| `GET`/`PATCH` | `/api/v1/settings/trackers` | Persisted tracker config (masked token), via the generic settings-section dispatcher |
+| Method        | Path                               | Purpose                                                                                                                                              |
+| ------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`         | `/api/v1/trackers`                 | List registered adapters (registry, not config)                                                                                                      |
+| `POST`        | `/api/v1/trackers/github/verify`   | Validate a candidate token against the GitHub API, return scope-derived `canCreate`                                                                  |
+| `POST`        | `/api/v1/trackers/:type/resolve`   | Resolve a pasted URL to a `TrackerItem` preview                                                                                                      |
+| `GET`         | `/api/v1/trackers/:type/items?id=` | Fetch current state for a linked item (id passed as a query param, not a path segment, since a GitHub id like `owner/repo#123` contains `/` and `#`) |
+| `POST`        | `/api/v1/trackers/:type/items`     | Create a new item (Option B only)                                                                                                                    |
+| `GET`/`PATCH` | `/api/v1/settings/trackers`        | Persisted tracker config (masked token), via the generic settings-section dispatcher                                                                 |
 
 ---
 
@@ -85,11 +85,11 @@ ui/src/pages/settings/
 
 ### Modified Files
 
-| File | Change |
-| --- | --- |
-| `ui/src/pages/settings/settings-nav.tsx` | Add `'workspaces'` to `SettingsSlug`, a `NAV_ITEMS` entry |
-| `ui/src/pages/settings/index.tsx` | `case 'workspaces': return <WorkspacesPanel />` |
-| `ui/src/components/task-drawer.tsx` | Tracker link/create section (separate from this settings work — see the issue's task-drawer ACs) |
+| File                                     | Change                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `ui/src/pages/settings/settings-nav.tsx` | Add `'workspaces'` to `SettingsSlug`, a `NAV_ITEMS` entry                                        |
+| `ui/src/pages/settings/index.tsx`        | `case 'workspaces': return <WorkspacesPanel />`                                                  |
+| `ui/src/components/task-drawer.tsx`      | Tracker link/create section (separate from this settings work — see the issue's task-drawer ACs) |
 
 ### Sub-navigation shape
 
@@ -100,8 +100,10 @@ const activeSubsection = useSignal<'trackers'>('trackers');
 // ...
 <div class="subnav-row">
   <button data-active={activeSubsection.value === 'trackers'}>Trackers</button>
-</div>
-{activeSubsection.value === 'trackers' && <TrackersSection />}
+</div>;
+{
+  activeSubsection.value === 'trackers' && <TrackersSection />;
+}
 ```
 
 Adding a second sub-section later means adding one more button and one more conditional render — not restructuring the shell. See the **Settings page with sub-navigation** entry in `docs/Design/design-system.md` for when to reach for this pattern versus a flat panel.

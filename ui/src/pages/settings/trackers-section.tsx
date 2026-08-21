@@ -23,7 +23,8 @@ export function TrackersSection() {
         if (!cancelled) trackers.value = result;
       })
       .catch((err: unknown) => {
-        if (!cancelled) trackersError.value = err instanceof Error ? err.message : 'Failed to load trackers';
+        if (!cancelled)
+          trackersError.value = err instanceof Error ? err.message : 'Failed to load trackers';
       });
     return () => {
       cancelled = true;
@@ -104,7 +105,12 @@ export function TrackersSection() {
         </Card>
       </div>
 
-      <SaveDiscardBar isDirty={isDirty.value} isSaving={isSaving.value} onSave={save} onDiscard={discard} />
+      <SaveDiscardBar
+        isDirty={isDirty.value}
+        isSaving={isSaving.value}
+        onSave={save}
+        onDiscard={discard}
+      />
     </div>
   );
 }
