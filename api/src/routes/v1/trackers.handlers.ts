@@ -92,11 +92,31 @@ export async function createTrackerItemHandler(
   }
 }
 
+type GithubTokenType = 'classic' | 'fine-grained' | 'unknown';
+
 interface GithubVerifyResult {
   valid: boolean;
   scopes: string[];
   canCreate: boolean;
+  tokenType: GithubTokenType;
   error?: string;
+}
+
+// Fine-grained PATs (the type GitHub now recommends) don't carry OAuth-style
+// scopes at all — GitHub grants them per-repository permissions instead —
+// so `GET /user` never returns an X-OAuth-Scopes header for one. Detecting
+// the token shape from its prefix lets us stop reporting a fine-grained
+// token as "needs repo scope", which is both wrong and nonsensical advice
+// for a token type that has no such scope to add. There's no equivalent
+// upfront capability check for fine-grained tokens (permission is scoped
+// per-repository, and this endpoint has no repo in context), so `canCreate`
+// is optimistic here — same as the adapter's own boot-time check
+// (`Boolean(token)`), which already lets GitHub's real API call be the
+// actual source of truth rather than trying to predict it.
+function classifyGithubToken(token: string): GithubTokenType {
+  if (token.startsWith('github_pat_')) return 'fine-grained';
+  if (token.startsWith('ghp_')) return 'classic';
+  return 'unknown';
 }
 
 export async function verifyGithubTokenHandler(body: {
@@ -112,6 +132,7 @@ export async function verifyGithubTokenHandler(body: {
         valid: false,
         scopes: [],
         canCreate: false,
+        tokenType: 'unknown',
         error: `GitHub API error ${res.status}`,
       });
     }
@@ -120,9 +141,28 @@ export async function verifyGithubTokenHandler(body: {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    const canCreate = scopes.includes('repo') || scopes.includes('public_repo');
-    return ok({ valid: true, scopes, canCreate });
+
+    let tokenType: GithubTokenType;
+    let canCreate: boolean;
+    if (scopes.length > 0) {
+      tokenType = 'classic';
+      canCreate = scopes.includes('repo') || scopes.includes('public_repo');
+    } else if (classifyGithubToken(body.token) === 'fine-grained') {
+      tokenType = 'fine-grained';
+      canCreate = true;
+    } else {
+      tokenType = 'unknown';
+      canCreate = false;
+    }
+
+    return ok({ valid: true, scopes, canCreate, tokenType });
   } catch (err) {
-    return ok({ valid: false, scopes: [], canCreate: false, error: errorMessage(err) });
+    return ok({
+      valid: false,
+      scopes: [],
+      canCreate: false,
+      tokenType: 'unknown',
+      error: errorMessage(err),
+    });
   }
 }

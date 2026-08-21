@@ -27,6 +27,7 @@ export interface GithubVerifyResult {
   valid: boolean;
   scopes: string[];
   canCreate: boolean;
+  tokenType: 'classic' | 'fine-grained' | 'unknown';
   error?: string;
 }
 

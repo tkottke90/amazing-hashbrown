@@ -5,10 +5,13 @@ import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrit
 // GitHub API — no mocking of /api/v1/trackers/** — so it needs real
 // credentials:
 //
-//   E2E_GITHUB_TOKEN     A personal access token with `repo` (or
-//                        `public_repo`) scope. Used both to configure the
-//                        tracker through the Settings UI and to clean up the
-//                        issue this suite creates.
+//   E2E_GITHUB_TOKEN     A personal access token that can create issues in
+//                        E2E_GITHUB_TEST_REPO — a classic PAT with `repo`
+//                        (or `public_repo`) scope, or a fine-grained PAT
+//                        with "Issues: Read and write" granted on that
+//                        repo. Used both to configure the tracker through
+//                        the Settings UI and to clean up the issue this
+//                        suite creates.
 //   E2E_GITHUB_TEST_REPO A "owner/repo" the token can create issues in
 //                        (e.g. a scratch repo dedicated to e2e runs).
 //
@@ -99,10 +102,14 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await dialog.getByRole('button', { name: 'Verify' }).click();
         const verifyResult = dialog.getByText(/Connected —/);
         await expect(verifyResult).toBeVisible({ timeout: 15_000 });
+        // Accepts either a classic PAT ("create issues enabled") or a
+        // fine-grained PAT (its own message, since fine-grained permission
+        // is per-repository and can't be confirmed from this screen) —
+        // either way, this must NOT be the read-only/amber outcome.
         await expect(
           verifyResult,
-          'E2E_GITHUB_TOKEN needs `repo` (or `public_repo`) scope for this suite to create issues later',
-        ).toContainText('create issues enabled');
+          'E2E_GITHUB_TOKEN needs `repo`/`public_repo` scope (classic PAT) or "Issues: Read and write" on E2E_GITHUB_TEST_REPO (fine-grained PAT) for this suite to create issues later',
+        ).toContainText(/create issues enabled|fine-grained token/);
 
         await dialog.getByRole('button', { name: 'Save', exact: true }).click();
         await expect(dialog).not.toBeVisible();

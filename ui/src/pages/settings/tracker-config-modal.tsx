@@ -10,7 +10,7 @@ import type { JSX } from 'preact';
 type TestState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; canCreate: boolean }
+  | { status: 'success'; canCreate: boolean; tokenType: 'classic' | 'fine-grained' | 'unknown' }
   | { status: 'error'; error: string };
 
 interface TrackerConfigModalProps {
@@ -68,7 +68,11 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
           error: result.error ?? 'Token could not be verified.',
         };
       } else {
-        testState.value = { status: 'success', canCreate: result.canCreate };
+        testState.value = {
+          status: 'success',
+          canCreate: result.canCreate,
+          tokenType: result.tokenType,
+        };
       }
     } catch (err) {
       testState.value = {
@@ -174,18 +178,29 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
             )}
           </Button>
 
-          {testState.value.status === 'success' && testState.value.canCreate && (
+          {testState.value.status === 'success' && testState.value.tokenType === 'fine-grained' && (
             <span class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
               <CheckCircle2 class="size-4 shrink-0" />
-              Connected — read &amp; write (create issues enabled)
+              Connected — fine-grained token (grant <code>Issues: Read and write</code> on each
+              repository you want to create issues in)
             </span>
           )}
-          {testState.value.status === 'success' && !testState.value.canCreate && (
-            <span class="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-              <AlertTriangle class="size-4 shrink-0" />
-              Connected — read-only (token needs <code>repo</code> scope to create issues)
-            </span>
-          )}
+          {testState.value.status === 'success' &&
+            testState.value.tokenType !== 'fine-grained' &&
+            testState.value.canCreate && (
+              <span class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+                <CheckCircle2 class="size-4 shrink-0" />
+                Connected — read &amp; write (create issues enabled)
+              </span>
+            )}
+          {testState.value.status === 'success' &&
+            testState.value.tokenType !== 'fine-grained' &&
+            !testState.value.canCreate && (
+              <span class="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                <AlertTriangle class="size-4 shrink-0" />
+                Connected — read-only (token needs <code>repo</code> scope to create issues)
+              </span>
+            )}
           {testState.value.status === 'error' && (
             <span class="flex items-center gap-1.5 text-sm text-destructive">
               <XCircle class="size-4 shrink-0" />

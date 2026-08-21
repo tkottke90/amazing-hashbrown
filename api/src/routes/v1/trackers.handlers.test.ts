@@ -211,6 +211,42 @@ describe('routes/v1/trackers.handlers', () => {
       }
     });
 
+    it('reports canCreate: true and tokenType "fine-grained" for a github_pat_ token with no scopes header', async () => {
+      globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+
+      const result = await verifyGithubTokenHandler({ token: 'github_pat_fake' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.valid).to.equal(true);
+        expect(result.data.tokenType).to.equal('fine-grained');
+        expect(result.data.canCreate).to.equal(true);
+        expect(result.data.scopes).to.deep.equal([]);
+      }
+    });
+
+    it('reports tokenType "classic" when an X-OAuth-Scopes header is present', async () => {
+      globalThis.fetch = (async () =>
+        new Response('{}', {
+          status: 200,
+          headers: { 'x-oauth-scopes': 'repo' },
+        })) as typeof fetch;
+
+      const result = await verifyGithubTokenHandler({ token: 'ghp_valid' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.tokenType).to.equal('classic');
+    });
+
+    it('reports canCreate: false and tokenType "unknown" for an unrecognised token shape with no scopes', async () => {
+      globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+
+      const result = await verifyGithubTokenHandler({ token: 'some-other-token-shape' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.tokenType).to.equal('unknown');
+        expect(result.data.canCreate).to.equal(false);
+      }
+    });
+
     it('reports valid: false with an error when GitHub rejects the token', async () => {
       globalThis.fetch = (async () =>
         new Response('bad credentials', { status: 401 })) as typeof fetch;
