@@ -65,6 +65,13 @@ jobs:
       - name: Run E2E tests (CI-safe subset)
         id: run-tests
         run: npm run test:e2e:ci
+        env:
+          # Optional — gate the real-GitHub tracker suite (002-GitHubTrackerWorkflow.spec.ts).
+          # Unset in this repo today: the suite dynamically skips itself with a
+          # descriptive reason rather than failing. Set both to a PAT (repo/public_repo
+          # scope) and a scratch "owner/repo" it can create/close issues in to enable it.
+          E2E_GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+          E2E_GITHUB_TEST_REPO: ${{ vars.E2E_GITHUB_TEST_REPO }}
 
       - name: Upload Playwright report
         id: upload-report
