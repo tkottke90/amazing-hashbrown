@@ -1,7 +1,7 @@
 import { useSignal, useComputed } from '@preact/signals';
-import { Sparkles, GripVertical, Plus, X } from 'lucide-preact';
+import { Sparkles, GripVertical, Plus, X, Loader2, ExternalLink } from 'lucide-preact';
 import type { JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useRef, useEffect } from 'preact/hooks';
 
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,30 @@ import { cn } from '@/lib/utils';
 import { createTask, patchTask, updatePlan } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
 import type { Task, TaskStatus, PlanStep, CreateTaskInput } from '@/services/tasks-api';
+import {
+  listTrackers,
+  resolveTrackerUrl,
+  getTrackerItem,
+  createTrackerItem,
+  type Tracker,
+  type TrackerItem,
+} from '@/services/trackers-api';
+
+const TRACKER_STATE_LABELS: Record<TrackerItem['state'], string> = {
+  pending: 'Pending',
+  in_progress: 'In progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
+
+// Best-effort "owner/repo" extraction from a workspace's free-text remote URL
+// (e.g. "https://github.com/org/repo" or "git@github.com:org/repo.git"), used
+// only to prefill the create-issue mini-form's repo field.
+function parseGithubRepo(remoteUrl: string | null | undefined): string {
+  if (!remoteUrl) return '';
+  const match = /github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(remoteUrl.trim());
+  return match ? `${match[1]}/${match[2]}` : '';
+}
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
@@ -61,6 +85,115 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const planSteps = useSignal<PlanStep[]>(task?.plan ?? []);
   const saving = useSignal(false);
   const error = useSignal('');
+
+  const trackerType = useSignal<string | null>(task?.trackerType ?? null);
+  const trackerId = useSignal<string | null>(task?.trackerId ?? null);
+  const trackers = useSignal<Tracker[]>([]);
+  const trackerUrlInput = useSignal('');
+  const trackerPreview = useSignal<TrackerItem | null>(null);
+  const trackerResolving = useSignal(false);
+  const trackerResolveError = useSignal('');
+  const trackerUrlTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const showCreateForm = useSignal(false);
+  const createTitle = useSignal(task?.title ?? '');
+  const createBody = useSignal(task?.description ?? '');
+  const createRepo = useSignal('');
+  const createSaving = useSignal(false);
+  const createError = useSignal('');
+
+  const selectedTracker = useComputed(() =>
+    trackers.value.find((t) => t.type === trackerType.value),
+  );
+
+  useEffect(() => {
+    void listTrackers()
+      .then((result) => {
+        trackers.value = result;
+      })
+      .catch(() => {
+        // best-effort — the type select just stays empty if this fails
+      });
+  }, []);
+
+  useEffect(() => {
+    if (task?.trackerType && task?.trackerId) {
+      void getTrackerItem(task.trackerType, task.trackerId)
+        .then((item) => {
+          trackerPreview.value = item;
+        })
+        .catch(() => {
+          // best-effort — keep showing the stored link even if the live fetch fails
+        });
+    }
+  }, []);
+
+  useEffect(() => {
+    const ws = workspaces.value.find((w) => w.id === workspaceId.value);
+    createRepo.value = parseGithubRepo(ws?.remoteUrl);
+  }, [workspaceId.value]);
+
+  function handleTrackerTypeChange(value: string) {
+    trackerType.value = value || null;
+    trackerId.value = null;
+    trackerPreview.value = null;
+    trackerUrlInput.value = '';
+    trackerResolveError.value = '';
+    showCreateForm.value = false;
+  }
+
+  function handleTrackerUrlInput(value: string) {
+    trackerUrlInput.value = value;
+    trackerPreview.value = null;
+    trackerId.value = null;
+    trackerResolveError.value = '';
+    if (trackerUrlTimeout.current) clearTimeout(trackerUrlTimeout.current);
+    const type = trackerType.value;
+    const url = value.trim();
+    if (!type || !url) return;
+    trackerUrlTimeout.current = setTimeout(() => void resolveTypedUrl(type, url), 400);
+  }
+
+  async function resolveTypedUrl(type: string, url: string) {
+    trackerResolving.value = true;
+    try {
+      const item = await resolveTrackerUrl(type, url);
+      trackerPreview.value = item;
+      trackerId.value = item.id;
+      trackerResolveError.value = '';
+    } catch (err) {
+      trackerResolveError.value =
+        err instanceof Error ? err.message : 'Could not resolve this URL.';
+    } finally {
+      trackerResolving.value = false;
+    }
+  }
+
+  function unlinkTracker() {
+    trackerId.value = null;
+    trackerPreview.value = null;
+    trackerUrlInput.value = '';
+    trackerResolveError.value = '';
+  }
+
+  async function handleCreateTrackerItem() {
+    if (!trackerType.value || !createTitle.value.trim()) return;
+    createSaving.value = true;
+    createError.value = '';
+    try {
+      const item = await createTrackerItem(trackerType.value, {
+        title: createTitle.value.trim(),
+        body: createBody.value.trim() || undefined,
+        repo: createRepo.value.trim() || undefined,
+      });
+      trackerId.value = item.id;
+      trackerPreview.value = item;
+      showCreateForm.value = false;
+    } catch (err) {
+      createError.value = err instanceof Error ? err.message : 'Failed to create issue.';
+    } finally {
+      createSaving.value = false;
+    }
+  }
 
   const completedCount = useComputed(() => planSteps.value.filter((s) => s.done).length);
   const totalCount = useComputed(() => planSteps.value.length);
@@ -116,6 +249,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
         dueAt: dueAt.value || null,
         workspaceId: workspaceId.value,
         plan: planSteps.value.filter((s) => s.step.trim()),
+        trackerType: trackerType.value,
+        trackerId: trackerId.value,
       };
 
       let saved: Task;
@@ -353,6 +488,134 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-muted-foreground">Tracker</label>
+          <select
+            data-testid="task-tracker-type-select"
+            value={trackerType.value ?? ''}
+            onChange={(e) => handleTrackerTypeChange((e.target as HTMLSelectElement).value)}
+            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+          >
+            <option value="">Not linked</option>
+            {trackers.value.map((t) => (
+              <option key={t.type} value={t.type}>
+                {t.displayName}
+              </option>
+            ))}
+          </select>
+
+          {trackerType.value && (
+            <div class="flex flex-col gap-2 mt-1">
+              {trackerPreview.value ? (
+                <div
+                  data-testid="task-tracker-preview"
+                  class="border border-border rounded-lg px-3 py-2 flex items-center justify-between gap-2"
+                >
+                  <div class="min-w-0 flex flex-col gap-0.5">
+                    <a
+                      href={trackerPreview.value.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      class="text-sm font-medium truncate hover:underline flex items-center gap-1"
+                    >
+                      {trackerPreview.value.title}
+                      <ExternalLink class="size-3 shrink-0 text-muted-foreground" />
+                    </a>
+                    <span class="text-xs text-muted-foreground">
+                      {TRACKER_STATE_LABELS[trackerPreview.value.state]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={unlinkTracker}
+                    class="shrink-0 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Unlink
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Input
+                    placeholder="Paste a tracker URL to link it"
+                    value={trackerUrlInput.value}
+                    onInput={(e) => handleTrackerUrlInput((e.target as HTMLInputElement).value)}
+                  />
+                  {trackerResolving.value && (
+                    <p class="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Loader2 class="size-3 animate-spin" />
+                      Resolving…
+                    </p>
+                  )}
+                  {trackerResolveError.value && (
+                    <p class="text-xs text-destructive">{trackerResolveError.value}</p>
+                  )}
+                </>
+              )}
+
+              {selectedTracker.value?.canCreate && !trackerPreview.value && (
+                <div class="border border-border rounded-lg p-2">
+                  {!showCreateForm.value ? (
+                    <button
+                      type="button"
+                      onClick={() => (showCreateForm.value = true)}
+                      class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus class="size-3" />
+                      Create new issue
+                    </button>
+                  ) : (
+                    <div class="flex flex-col gap-2">
+                      <Input
+                        placeholder="owner/repo"
+                        value={createRepo.value}
+                        onInput={(e) => {
+                          createRepo.value = (e.target as HTMLInputElement).value;
+                        }}
+                      />
+                      <Input
+                        placeholder="Issue title"
+                        value={createTitle.value}
+                        onInput={(e) => {
+                          createTitle.value = (e.target as HTMLInputElement).value;
+                        }}
+                      />
+                      <textarea
+                        placeholder="Issue body (optional)"
+                        value={createBody.value}
+                        onInput={(e) => {
+                          createBody.value = (e.target as HTMLTextAreaElement).value;
+                        }}
+                        class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                      />
+                      {createError.value && (
+                        <p class="text-xs text-destructive">{createError.value}</p>
+                      )}
+                      <div class="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => (showCreateForm.value = false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          disabled={createSaving.value || !createTitle.value.trim()}
+                          onClick={() => void handleCreateTrackerItem()}
+                        >
+                          {createSaving.value ? 'Creating…' : 'Create issue'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {error.value && <p class="text-sm text-destructive">{error.value}</p>}

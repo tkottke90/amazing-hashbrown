@@ -8,6 +8,7 @@ import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
 import { StoragePanel } from '@/pages/settings/storage-panel';
 import { ToolsPanel } from '@/pages/settings/tools-panel';
+import { WorkspacesPanel } from '@/pages/settings/workspaces-panel';
 import { useLocation } from 'preact-iso';
 
 function resolveSection(raw: string | undefined): SettingsSlug {
@@ -21,6 +22,8 @@ function ActivePanel({ section }: { section: SettingsSlug }) {
       return <GeneralPanel />;
     case 'storage':
       return <StoragePanel />;
+    case 'workspaces':
+      return <WorkspacesPanel />;
     case 'model-providers':
       return <ModelProvidersPanel />;
     case 'embeddings':

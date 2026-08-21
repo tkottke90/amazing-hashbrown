@@ -377,6 +377,25 @@ Animation duration for overlays is `duration-100` (100ms).
 
 ---
 
+## Settings Page With Sub-Navigation
+
+Every Settings nav entry maps to exactly one flat panel — this was true for every page until the Workspaces / Trackers page (2026-08-20, see `docs/superpowers/specs/2026-08-20-workspaces-trackers-settings-design.md`), the first to need more than one grouped sub-view under one nav entry.
+
+**When to use it:** a settings area has genuinely separable sub-topics (not just long — a long single-topic panel stays flat), and at least one of them is itself substantial (a list + modal, not a couple of fields). Don't reach for this to avoid a slightly long panel; reach for it when "General" and "Trackers" wouldn't make sense as the same page.
+
+**Shape:** a thin shell component owns a local `activeSubsection` signal (not URL state — the existing `?section=` query param stays at the nav-entry granularity) defaulting to the first/only sub-section, rendered as a small horizontal pill row using the same visual language as the left `SettingsNav` buttons, sized down: `rounded-full px-3 py-1.5 text-sm`, inactive `text-muted-foreground hover:bg-muted hover:text-foreground`, active `bg-primary/10 text-primary font-medium` (the same tint already used for the "Default" badge in `model-providers-panel.tsx` — reused here for an active-tab indicator rather than invented fresh). Below the pill row, the shell switches between sub-section components — plain conditional rendering, no tab library:
+
+```tsx
+const activeSubsection = useSignal<'trackers'>('trackers');
+// ...
+<div class="subnav-row">
+  <button data-active={activeSubsection.value === 'trackers'}>Trackers</button>
+</div>
+{activeSubsection.value === 'trackers' && <TrackersSection />}
+```
+
+Each sub-section component is a normal panel otherwise — same `useSettingsSection`, `SaveDiscardBar`, `FieldError` as any flat panel; the sub-nav only decides which one is mounted. Adding a second sub-section is additive: one more pill button, one more conditional branch, no restructuring of the shell or its state model.
+
 ## Source Reference
 
 | File                                 | Role                                     |
