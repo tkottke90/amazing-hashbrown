@@ -359,6 +359,7 @@ export async function patchSettingsSectionHandler(
   loadAgentInstructions: () => Promise<void>,
   invalidateChatAgent: () => void,
   seedProviderCosts: () => void,
+  reloadTrackerRegistry: () => void,
 ): Promise<HandlerResult<unknown>> {
   const def = SLUG_MAP[slug];
   if (!def) return notFound(`Unknown settings section: ${slug}`);
@@ -379,6 +380,7 @@ export async function patchSettingsSectionHandler(
     await loadAgentInstructions();
     invalidateChatAgent();
     seedProviderCosts();
+    reloadTrackerRegistry();
   } catch (err) {
     return serverError(err instanceof Error ? err.message : String(err));
   }
@@ -393,10 +395,12 @@ export async function reloadSettingsHandler(
   loadAgentInstructions: () => Promise<void>,
   invalidateChatAgent: () => void,
   seedProviderCosts: () => void,
+  reloadTrackerRegistry: () => void,
 ): Promise<{ status: 'ok' }> {
   config.reload();
   await loadAgentInstructions();
   invalidateChatAgent();
   seedProviderCosts();
+  reloadTrackerRegistry();
   return { status: 'ok' };
 }

@@ -31,7 +31,14 @@ export class TrackerRegistry {
 
 let _registry: TrackerRegistry | null = null;
 
-export function bootTrackerRegistry(): void {
+// Builds a fresh registry from current config — used both at boot and to
+// pick up a token saved through Settings afterward. `createGithubTrackerAdapter`
+// closes over whatever token it's given at construction time (`canCreate` is
+// computed once, from `Boolean(token)`), so without re-running this the
+// adapter would keep using the token that existed when the process started
+// — a token saved later via `PATCH /settings/trackers` would silently never
+// take effect until the next server restart.
+function buildTrackerRegistry(): TrackerRegistry {
   const registry = new TrackerRegistry();
 
   registry.register(createGithubTrackerAdapter(env.workspaces.tasks?.trackers?.github?.token));
@@ -42,7 +49,6 @@ export function bootTrackerRegistry(): void {
     .filter(Boolean);
   for (const pkg of pluginList) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const adapter = require(pkg) as TrackerAdapter;
       registry.register(adapter);
       logger.info('Tracker plugin registered', { pkg, type: adapter.type });
@@ -52,8 +58,21 @@ export function bootTrackerRegistry(): void {
     }
   }
 
-  _registry = registry;
-  logger.info('Tracker registry booted', { adapters: registry.list().map((a) => a.type) });
+  return registry;
+}
+
+export function bootTrackerRegistry(): void {
+  _registry = buildTrackerRegistry();
+  logger.info('Tracker registry booted', { adapters: _registry.list().map((a) => a.type) });
+}
+
+// Called after every settings PATCH (see settings.route.ts), same as
+// invalidateChatAgent()/seedProviderCosts() — cheap to run unconditionally,
+// and the only way a saved trackers.github.token ever reaches the adapter
+// without a restart.
+export function reloadTrackerRegistry(): void {
+  _registry = buildTrackerRegistry();
+  logger.info('Tracker registry reloaded', { adapters: _registry.list().map((a) => a.type) });
 }
 
 export function getTrackerRegistry(): TrackerRegistry {

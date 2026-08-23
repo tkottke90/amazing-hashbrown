@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { invalidateChatAgent } from '../../agents/chat-agent.js';
 import { loadAgentInstructions } from '../../config/agent-instructions.js';
 import { seedProviderCosts } from '../../services/usage.js';
+import { reloadTrackerRegistry } from '../../services/tracker-registry.js';
 import { env } from '../../config/env.js';
 import {
   reloadSettingsHandler,
@@ -17,6 +18,7 @@ settingsRouter.post('/reload', async (req, res) => {
     loadAgentInstructions,
     invalidateChatAgent,
     seedProviderCosts,
+    reloadTrackerRegistry,
   );
   res.json(result);
 });
@@ -35,6 +37,7 @@ settingsRouter.patch('/:slug', async (req, res) => {
     loadAgentInstructions,
     invalidateChatAgent,
     seedProviderCosts,
+    reloadTrackerRegistry,
   );
   res.status(result.ok ? 200 : result.status).json(result);
 });
