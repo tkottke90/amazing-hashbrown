@@ -20,8 +20,11 @@ projectsRouter.get('/', (_req: Request, res: Response) => {
   res.json(result.data);
 });
 
-projectsRouter.post('/', (req: Request, res: Response) => {
-  const result = createProjectHandler(getWorkspaceStore(), req.body as Record<string, unknown>);
+projectsRouter.post('/', async (req: Request, res: Response) => {
+  const result = await createProjectHandler(
+    getWorkspaceStore(),
+    req.body as Record<string, unknown>,
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

@@ -4,6 +4,11 @@ import type {
   PatchProjectInput,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
+import {
+  isLocationRoot,
+  resolveWorkspaceLocation,
+  createWorkspaceDirectory,
+} from '../../services/workspace-location.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -29,19 +34,37 @@ export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
   return ok({ ...workspace, project });
 }
 
-export function createProjectHandler(
+export async function createProjectHandler(
   store: WorkspaceStore,
-  body: Partial<NewProjectInput>,
-): HandlerResult<{
-  workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
-  project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
-}> {
+  body: Record<string, unknown>,
+): Promise<
+  HandlerResult<{
+    workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+    project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
+  }>
+> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
-  if (!body.location || typeof body.location !== 'string')
-    return badRequest('location is required');
+  if (!isLocationRoot(body.locationRoot)) {
+    return badRequest('locationRoot must be "projects" or "temporary"');
+  }
+  if (!body.directoryName || typeof body.directoryName !== 'string') {
+    return badRequest('directoryName is required');
+  }
   if (!body.winCondition || typeof body.winCondition !== 'string')
     return badRequest('winCondition is required');
-  const result = store.createProject(body as NewProjectInput);
+
+  let location: string;
+  try {
+    location = resolveWorkspaceLocation(body.locationRoot, body.directoryName);
+    await createWorkspaceDirectory(location);
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  // store.createProject() reads only the specific fields it needs off
+  // NewProjectInput — the leftover locationRoot/directoryName keys are
+  // harmless to pass through alongside the resolved `location`.
+  const result = store.createProject({ ...body, location } as NewProjectInput);
   return ok(
     result as {
       workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;

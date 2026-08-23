@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -117,6 +119,8 @@ const AppConfigSchema = z.object({
   mcpConfigDir: z.string().default('./mcp'),
   artifactRoot: z.string().default('./artifacts'),
   skillsRoot: z.string().default('./skills'),
+  projectsRoot: z.string().default('./projects'),
+  tempProjectsRoot: z.string().optional(),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
@@ -160,6 +164,13 @@ export const env = {
   },
   get skillsRoot() {
     return configManager.getConfigDir(configManager.get('skillsRoot') as string);
+  },
+  get projectsRoot() {
+    return configManager.getConfigDir(configManager.get('projectsRoot') as string);
+  },
+  get tempProjectsRoot() {
+    const configured = configManager.get('tempProjectsRoot') as string | undefined;
+    return configured || path.join(os.tmpdir(), 'projects');
   },
   get providers(): ProviderConfig[] {
     try {

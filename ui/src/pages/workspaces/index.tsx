@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { Plus, FolderOpen, Search } from 'lucide-preact';
@@ -8,16 +8,31 @@ import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   workspaces,
   projects,
   refreshWorkspaces,
   createWorkspace,
   createProject,
 } from '@/hooks/use-workspaces';
+import type { LocationRoot } from '@/services/workspaces-api';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
-import { cn } from '@/lib/utils';
+import { cn, slugify } from '@/lib/utils';
 
 type FilterTab = 'all' | 'workspaces' | 'projects' | 'closed';
+
+const LOCATION_OPTIONS: { value: LocationRoot; label: string; hint: string }[] = [
+  { value: 'projects', label: 'Projects', hint: '(Default) Store project details locally' },
+  { value: 'temporary', label: 'Temporary', hint: 'Stored in a temp directory, deleted on reboot' },
+];
+
+const DIRECTORY_NAME_DEBOUNCE_MS = 300;
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -58,17 +73,38 @@ function CreateWorkspaceForm() {
   const { route } = useLocation();
   const mode = useSignal<'workspace' | 'project'>('workspace');
   const name = useSignal('');
-  const location = useSignal('');
+  const locationRoot = useSignal<LocationRoot>('projects');
+  const directoryName = useSignal('');
+  const directoryNameEdited = useSignal(false);
+  const directoryNameTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const goal = useSignal('');
   const winCondition = useSignal('');
   const dueAt = useSignal('');
   const saving = useSignal(false);
   const error = useSignal('');
 
+  function handleNameBlur() {
+    if (!directoryNameEdited.value) {
+      directoryName.value = slugify(name.value);
+    }
+  }
+
+  function handleDirectoryNameInput(value: string) {
+    // The visible value updates immediately (a debounced controlled input
+    // would feel broken); only the "has the user manually touched this"
+    // flag is debounced, since that's what governs whether Name's onBlur
+    // is still allowed to overwrite it.
+    directoryName.value = value;
+    if (directoryNameTimeout.current) clearTimeout(directoryNameTimeout.current);
+    directoryNameTimeout.current = setTimeout(() => {
+      directoryNameEdited.value = true;
+    }, DIRECTORY_NAME_DEBOUNCE_MS);
+  }
+
   async function handleSubmit(e: Event) {
     e.preventDefault();
-    if (!name.value.trim() || !location.value.trim()) {
-      error.value = 'Name and location are required.';
+    if (!name.value.trim() || !directoryName.value.trim()) {
+      error.value = 'Name and directory name are required.';
       return;
     }
     if (mode.value === 'project' && !winCondition.value.trim()) {
@@ -81,7 +117,8 @@ function CreateWorkspaceForm() {
       if (mode.value === 'project') {
         const entry = await createProject({
           name: name.value.trim(),
-          location: location.value.trim(),
+          locationRoot: locationRoot.value,
+          directoryName: directoryName.value.trim(),
           goal: goal.value.trim() || null,
           winCondition: winCondition.value.trim(),
           dueAt: dueAt.value || null,
@@ -91,7 +128,8 @@ function CreateWorkspaceForm() {
       } else {
         await createWorkspace({
           name: name.value.trim(),
-          location: location.value.trim(),
+          locationRoot: locationRoot.value,
+          directoryName: directoryName.value.trim(),
           goal: goal.value.trim() || null,
         });
         close();
@@ -150,6 +188,7 @@ function CreateWorkspaceForm() {
                 onInput={(e) => {
                   name.value = (e.target as HTMLInputElement).value;
                 }}
+                onBlur={handleNameBlur}
                 required
               />
             </div>
@@ -157,15 +196,41 @@ function CreateWorkspaceForm() {
               <label class="text-xs font-medium text-muted-foreground">
                 Location <span class="text-destructive">*</span>
               </label>
-              <Input
-                placeholder="/home/user/projects/my-workspace"
-                value={location.value}
-                onInput={(e) => {
-                  location.value = (e.target as HTMLInputElement).value;
+              <Select
+                value={locationRoot.value}
+                onValueChange={(v) => {
+                  locationRoot.value = v as LocationRoot;
                 }}
-                required
-              />
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue>
+                    {LOCATION_OPTIONS.find((o) => o.value === locationRoot.value)?.label}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {LOCATION_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div class="flex flex-col py-0.5">
+                        <span>{option.label}</span>
+                        <span class="text-xs text-muted-foreground">{option.hint}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-muted-foreground">
+              Directory Name <span class="text-destructive">*</span>
+            </label>
+            <Input
+              placeholder="auto-generated-from-name"
+              value={directoryName.value}
+              onInput={(e) => handleDirectoryNameInput((e.target as HTMLInputElement).value)}
+              required
+            />
           </div>
 
           <div class="flex flex-col gap-1">

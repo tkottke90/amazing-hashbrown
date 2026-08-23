@@ -4,6 +4,11 @@ import type {
   PatchWorkspaceInput,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
+import {
+  isLocationRoot,
+  resolveWorkspaceLocation,
+  createWorkspaceDirectory,
+} from '../../services/workspace-location.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -30,14 +35,30 @@ export function getWorkspaceHandler(
   return ok(ws);
 }
 
-export function createWorkspaceHandler(
+export async function createWorkspaceHandler(
   store: WorkspaceStore,
-  body: Partial<NewWorkspaceInput>,
-): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
+  body: Record<string, unknown>,
+): Promise<HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>>> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
-  if (!body.location || typeof body.location !== 'string')
-    return badRequest('location is required');
-  const ws = store.createWorkspace(body as NewWorkspaceInput);
+  if (!isLocationRoot(body.locationRoot)) {
+    return badRequest('locationRoot must be "projects" or "temporary"');
+  }
+  if (!body.directoryName || typeof body.directoryName !== 'string') {
+    return badRequest('directoryName is required');
+  }
+
+  let location: string;
+  try {
+    location = resolveWorkspaceLocation(body.locationRoot, body.directoryName);
+    await createWorkspaceDirectory(location);
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  // store.createWorkspace() reads only the specific fields it needs off
+  // NewWorkspaceInput — the leftover locationRoot/directoryName keys are
+  // harmless to pass through alongside the resolved `location`.
+  const ws = store.createWorkspace({ ...body, location } as NewWorkspaceInput);
   return ok(ws);
 }
 

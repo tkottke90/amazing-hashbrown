@@ -85,11 +85,12 @@ test.describe(
       await drawer.getByRole('button', { name: 'Create workspace' }).click();
       await expect(drawer).toBeVisible();
 
-      // Fill required fields
-      await drawer.getByPlaceholder('my-workspace', { exact: true }).fill('e2e-ws-ui-create');
-      await drawer
-        .getByPlaceholder('/home/user/projects/my-workspace')
-        .fill('/tmp/e2e-ws-ui-create');
+      // Fill required fields — Location defaults to "Projects" and Directory
+      // Name auto-derives from Name on blur, so neither needs direct
+      // interaction for the happy path.
+      const nameInput = drawer.getByPlaceholder('my-workspace', { exact: true });
+      await nameInput.fill('e2e-ws-ui-create');
+      await nameInput.blur();
       await drawer
         .getByPlaceholder('What should be accomplished in this workspace?')
         .fill('E2E test goal');
@@ -116,10 +117,9 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Project' }).click();
 
-      await drawer.getByPlaceholder('my-workspace', { exact: true }).fill('e2e-proj-ui-create');
-      await drawer
-        .getByPlaceholder('/home/user/projects/my-workspace')
-        .fill('/tmp/e2e-proj-ui-create');
+      const projectNameInput = drawer.getByPlaceholder('my-workspace', { exact: true });
+      await projectNameInput.fill('e2e-proj-ui-create');
+      await projectNameInput.blur();
       await drawer.getByPlaceholder('The project is done when...').fill('All E2E tests pass');
 
       await pauseBeforeAction(page, testInfo);
@@ -143,14 +143,19 @@ test.describe(
     }, testInfo) => {
       // Create a plain workspace and a project via API
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'e2e-filter-plain-ws', location: '/tmp/e2e-filter-plain-ws' },
+        data: {
+          name: 'e2e-filter-plain-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-filter-plain-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
 
       const projRes = await request.post('/api/v1/projects', {
         data: {
           name: 'e2e-filter-proj',
-          location: '/tmp/e2e-filter-proj',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-filter-proj',
           winCondition: 'E2E project complete',
         },
       });
@@ -189,7 +194,8 @@ test.describe(
       const projRes = await request.post('/api/v1/projects', {
         data: {
           name: 'e2e-closed-proj',
-          location: '/tmp/e2e-closed-proj',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-closed-proj',
           winCondition: 'Done',
         },
       });
@@ -217,7 +223,8 @@ test.describe(
       const wsRes = await request.post('/api/v1/workspaces', {
         data: {
           name: 'e2e-detail-overview-ws',
-          location: '/tmp/e2e-detail-overview-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-detail-overview-ws',
           goal: 'Verify the overview tab',
         },
       });
@@ -243,7 +250,11 @@ test.describe(
       request,
     }, testInfo) => {
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'e2e-settings-original', location: '/tmp/e2e-settings-original' },
+        data: {
+          name: 'e2e-settings-original',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-settings-original',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -279,7 +290,8 @@ test.describe(
       const projRes = await request.post('/api/v1/projects', {
         data: {
           name: 'e2e-close-proj',
-          location: '/tmp/e2e-close-proj',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-close-proj',
           winCondition: 'Done when closed',
         },
       });
@@ -305,7 +317,11 @@ test.describe(
       request,
     }, testInfo) => {
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'e2e-delete-ws', location: '/tmp/e2e-delete-ws' },
+        data: {
+          name: 'e2e-delete-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-delete-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();

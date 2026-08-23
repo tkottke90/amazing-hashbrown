@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Mirrors lib/llm-wiki's internal slugify (used for wiki page paths) —
+// duplicated locally rather than imported cross-package for one small pure
+// function.
+export function slugify(input: string, maxLength = 60): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, maxLength)
+    .replace(/-+$/g, '');
+}
+
 // crypto.randomUUID() only exists in secure contexts (HTTPS or localhost) —
 // it's undefined when this app is served over plain http:// to a LAN IP.
 // crypto.getRandomValues() has no such restriction, so build a UUID v4 from
