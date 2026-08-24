@@ -48,7 +48,7 @@ test.describe(
     }, testInfo) => {
       // Create workspace via API
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'plan-field-ws', location: '/tmp/plan-field-ws' },
+        data: { name: 'plan-field-ws', locationRoot: 'temporary', directoryName: 'plan-field-ws' },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();

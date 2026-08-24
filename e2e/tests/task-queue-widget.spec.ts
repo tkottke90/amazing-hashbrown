@@ -93,7 +93,11 @@ test.describe(
       // nothing visibly causing it, which doesn't demonstrate "becomes
       // visible when a task is enqueued" at all.
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'queue-widget-ws', locationRoot: 'temporary', directoryName: 'queue-widget-ws' },
+        data: {
+          name: 'queue-widget-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-widget-ws',
+        },
       });
       expect(wsRes.status(), 'Expect the workspace to be created').toBe(201);
       const ws = await wsRes.json();
@@ -381,8 +385,9 @@ test.describe(
       await expect(drawer).not.toBeVisible();
 
       const state = await getQueue(request);
-      expect(state.queue.some((e) => e.taskId === task.id) || state.running?.taskId === task.id)
-        .toBe(true);
+      expect(
+        state.queue.some((e) => e.taskId === task.id) || state.running?.taskId === task.id,
+      ).toBe(true);
     });
 
     test('patching a user-assigned task to Ready does NOT enqueue it (R14 negative case)', async ({

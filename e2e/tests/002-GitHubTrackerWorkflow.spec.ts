@@ -134,10 +134,12 @@ export const GitHubTrackerWorkflow: TestSuite = {
       expectedOutcome:
         'A real GitHub issue is created in the test repo and auto-linked to the task',
       test: async ({ page }, testInfo) => {
+        const wsName = `tracker-e2e-${Date.now()}`;
         const wsRes = await page.request.post('/api/v1/workspaces', {
           data: {
-            name: `tracker-e2e-${Date.now()}`,
-            location: `/tmp/tracker-e2e-${Date.now()}`,
+            name: wsName,
+            locationRoot: 'temporary',
+            directoryName: wsName,
             remoteUrl: `https://github.com/${TEST_REPO}`,
           },
         });

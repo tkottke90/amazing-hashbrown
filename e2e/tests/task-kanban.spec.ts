@@ -42,7 +42,11 @@ test.describe(
 
       // Create workspace via API for speed
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'kanban-test-ws', locationRoot: 'temporary', directoryName: 'kanban-test-ws' },
+        data: {
+          name: 'kanban-test-ws',
+          locationRoot: 'temporary',
+          directoryName: 'kanban-test-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -79,7 +83,11 @@ test.describe(
 
       // Create workspace and task via API
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'kanban-move-ws', locationRoot: 'temporary', directoryName: 'kanban-move-ws' },
+        data: {
+          name: 'kanban-move-ws',
+          locationRoot: 'temporary',
+          directoryName: 'kanban-move-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
