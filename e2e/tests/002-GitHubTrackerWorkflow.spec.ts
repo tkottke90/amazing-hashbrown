@@ -274,7 +274,12 @@ export const GitHubTrackerWorkflow: TestSuite = {
         expect(workspaceTasksUrl, 'step 2 should have captured the workspace tasks URL').not.toBe(
           '',
         );
+        // workspaceTasksUrl is just the workspace's base URL — the active tab
+        // is local component state (ui/src/pages/workspaces/[id].tsx), not
+        // reflected in the URL — so the Tasks tab has to be reselected after
+        // navigating back, same as every other visit to this page in this file.
         await page.goto(workspaceTasksUrl);
+        await page.getByRole('button', { name: /tasks/i }).click();
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
         await page.getByRole('button', { name: 'Add task' }).click();
         const drawer = page.locator('dialog[open]');
