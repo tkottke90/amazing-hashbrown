@@ -57,6 +57,9 @@ export interface CreateWikiInput {
   routingNotes?: string[];
   /** Path relative to the wiki root; defaults to the id. */
   path?: string;
+  /** YAML frontmatter written into the scaffolded index.md (e.g. ephemeral
+   * lifecycle markers). Never stored in registry.json. */
+  metadata?: Record<string, string>;
 }
 
 export class WikiRegistry {
@@ -145,6 +148,7 @@ export class WikiRegistry {
       name: input.name ?? input.id,
       domain: input.domain,
       tags: input.tags,
+      metadata: input.metadata,
       logger: this.logger,
       embeddingProvider: this.embeddingProvider,
     });
@@ -194,10 +198,35 @@ export class WikiRegistry {
     await this.persist();
   }
 
-  /** Remove a registered wiki from registry.json. Does not touch disk files. */
+  /** Remove a registered wiki from registry.json. Does not touch disk files —
+   * see destroy() for the variant that also deletes the wiki directory. */
   async remove(id: string): Promise<void> {
     this.data.wikis = this.data.wikis.filter((w) => w.id !== id);
     await this.persist();
+  }
+
+  /**
+   * Delete a wiki's directory from disk, then remove its registry entry.
+   * Tolerates a wiki that was scaffolded but never registered (or only
+   * half-registered) so callers can use it to roll back a failed create.
+   */
+  async destroy(id: string): Promise<void> {
+    const entry = this.data.wikis.find((w) => w.id === id);
+    let target: string;
+    if (entry) {
+      target = this.resolvePath(entry);
+    } else {
+      // Unregistered id: the directory convention is <wikiRoot>/<id>. Refuse
+      // ids that resolve outside the wiki root — id becomes a path segment.
+      target = path.join(this.wikiRoot, id);
+      if (path.dirname(target) !== this.wikiRoot) {
+        this.logger.warn(`destroy(${id}): id escapes wiki root, skipping disk delete`);
+        await this.remove(id);
+        return;
+      }
+    }
+    await fs.rm(target, { recursive: true, force: true });
+    await this.remove(id);
   }
 
   // ── Health ──────────────────────────────────────────────────────────────────

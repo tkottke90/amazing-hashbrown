@@ -54,8 +54,8 @@ workspacesRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(result.data);
 });
 
-workspacesRouter.delete('/:id', (req: Request, res: Response) => {
-  const result = deleteWorkspaceHandler(getWorkspaceStore(), req.params['id'] as string);
+workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
+  const result = await deleteWorkspaceHandler(getWorkspaceStore(), req.params['id'] as string);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
