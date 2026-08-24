@@ -14,7 +14,7 @@ export type WebFetchResult =
   | {
       status: 'ok';
       url: string;
-      contentType: 'html' | 'json';
+      contentType: 'html' | 'json' | 'markdown';
       text: string;
       metadata: { title?: string; description?: string };
       links: Array<{ text: string; href: string }>;
@@ -98,6 +98,19 @@ export async function fetchUrl(url: string): Promise<WebFetchResult> {
       text = await res.text();
     }
     return { status: 'ok', url, contentType: 'json', text, metadata: {}, links: [], outline: [] };
+  }
+
+  if (contentType.includes('text/markdown') || contentType.includes('text/plain')) {
+    const text = await res.text();
+    return {
+      status: 'ok',
+      url,
+      contentType: 'markdown',
+      text,
+      metadata: {},
+      links: [],
+      outline: [],
+    };
   }
 
   if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
