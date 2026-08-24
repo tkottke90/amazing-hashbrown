@@ -105,6 +105,7 @@ export const webFetchTool = tool(
       'For HTML pages, returns the article body in reader mode, page title and description, ' +
       'up to 50 outbound links, and a heading outline (H1–H3). ' +
       'For JSON endpoints, returns the pretty-printed JSON. ' +
+      'For Markdown or plain-text responses, returns the raw text. ' +
       'Use this when the user gives you an explicit URL to read, or when answering a question ' +
       'requires live or recent information not available in the wiki. ' +
       'Do NOT use this for general knowledge questions (answer from training) or for topics ' +
