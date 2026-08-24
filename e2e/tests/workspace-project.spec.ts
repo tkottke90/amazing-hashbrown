@@ -20,7 +20,15 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Create a project via the Project mode toggle and form',
-      expectedOutcome: 'Redirected to project detail page showing win condition card',
+      expectedOutcome:
+        'Redirected to project detail page showing win condition card and a wiki link into the auto-created project wiki',
+      test: () => {},
+    },
+    {
+      tags: ['@functional'],
+      action: 'Create and delete a project via the API',
+      expectedOutcome:
+        'A project-{id} wiki domain is registered on creation and removed again when the workspace is deleted',
       test: () => {},
     },
     {
@@ -105,6 +113,7 @@ test.describe(
 
     test('creates a project via the UI form and navigates to its detail page', async ({
       page,
+      request,
     }, testInfo) => {
       await page.goto('/workspaces');
 
@@ -135,6 +144,53 @@ test.describe(
       await expect(page.locator('[data-testid="win-condition"]')).toContainText(
         'All E2E tests pass',
       );
+
+      // The auto-created ephemeral wiki shows as a deep link into the wiki view
+      const wikiLink = page.getByTestId('wiki-link');
+      await expect(wikiLink).toBeVisible();
+      await expect(wikiLink).toHaveAttribute(
+        'href',
+        /\/wiki\?view=document&domain=project-[0-9a-f-]+&page=index\.md$/,
+      );
+
+      // Clean up: deleting the workspace also destroys its wiki domain, so
+      // reruns against a persistent dev server don't accumulate wiki dirs.
+      const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
+      expect(workspaceId).toBeTruthy();
+      const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
+      expect(delRes.status()).toBe(204);
+    });
+
+    test('project creation registers a wiki domain and deletion removes it', async ({
+      request,
+    }) => {
+      const projRes = await request.post('/api/v1/projects', {
+        data: {
+          name: `e2e-wiki-lifecycle-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `e2e-wiki-lifecycle-${Date.now()}`,
+          winCondition: 'Wiki lifecycle verified',
+        },
+      });
+      expect(projRes.status()).toBe(201);
+      const proj = await projRes.json();
+
+      // The workspace row carries the auto-provisioned domain id
+      expect(proj.workspace.wikiId).toBe(`project-${proj.workspace.id}`);
+
+      // ...and the domain is registered with the wiki registry
+      const domainsRes = await request.get('/api/v1/wiki/domains');
+      expect(domainsRes.status()).toBe(200);
+      const domains = (await domainsRes.json()) as Array<{ id: string }>;
+      expect(domains.map((d) => d.id)).toContain(proj.workspace.wikiId);
+
+      // Deleting the workspace destroys the domain again
+      const delRes = await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);
+      expect(delRes.status()).toBe(204);
+
+      const afterRes = await request.get('/api/v1/wiki/domains');
+      const after = (await afterRes.json()) as Array<{ id: string }>;
+      expect(after.map((d) => d.id)).not.toContain(proj.workspace.wikiId);
     });
 
     test('filter tabs correctly show workspaces vs projects and search filters by name', async ({
@@ -184,6 +240,10 @@ test.describe(
       await page.getByPlaceholder('Search').fill('e2e-filter-plain');
       await expect(page.getByRole('link', { name: 'e2e-filter-plain-ws' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'e2e-filter-proj' })).not.toBeVisible();
+
+      // Clean up the project so its auto-created wiki domain is destroyed
+      const proj = await projRes.json();
+      await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);
     });
 
     test('All tab excludes closed projects; Closed tab shows them', async ({
@@ -214,6 +274,9 @@ test.describe(
       // Closed tab: should appear
       await page.getByRole('button', { name: 'closed' }).click();
       await expect(page.getByRole('link', { name: 'e2e-closed-proj' })).toBeVisible();
+
+      // Clean up the project so its auto-created wiki domain is destroyed
+      await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);
     });
 
     test('workspace detail overview shows goal text and no project elements', async ({
@@ -310,6 +373,9 @@ test.describe(
 
       // Button should disappear after closing
       await expect(closeBtn).not.toBeVisible();
+
+      // Clean up the project so its auto-created wiki domain is destroyed
+      await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);
     });
 
     test('delete workspace navigates back to list and removes the entry', async ({

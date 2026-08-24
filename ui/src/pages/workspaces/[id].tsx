@@ -193,7 +193,17 @@ function OverviewTab({
           <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
             Wiki
           </p>
-          <p class="text-sm">{workspace.wikiId ?? 'Not linked'}</p>
+          {workspace.wikiId ? (
+            <a
+              data-testid="wiki-link"
+              href={`/wiki?view=document&domain=${encodeURIComponent(workspace.wikiId)}&page=index.md`}
+              class="text-sm text-primary underline underline-offset-2"
+            >
+              {workspace.wikiId}
+            </a>
+          ) : (
+            <p class="text-sm text-muted-foreground">Not linked</p>
+          )}
         </div>
       </div>
 

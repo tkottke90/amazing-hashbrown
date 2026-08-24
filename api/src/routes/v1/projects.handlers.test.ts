@@ -63,12 +63,17 @@ describe('routes/v1/projects.handlers', () => {
         throw new Error('boom');
       };
 
+      // The workspace directory is created before the injected failure and the
+      // handler intentionally leaves it in place — clean it up ourselves.
+      const directoryName = `wiki-rollback-${randomUUID()}`;
+      workspaceDirs.push(join(tmpdir(), 'projects', directoryName));
+
       const result = await createProjectHandler(
         failing,
         {
           name: 'My Project',
           locationRoot: 'temporary',
-          directoryName: `wiki-rollback-${randomUUID()}`,
+          directoryName,
           winCondition: 'It ships',
         },
         registry,
