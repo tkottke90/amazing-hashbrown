@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import matter from 'gray-matter';
 import { createWikiRegistry } from '../src/index.js';
 import { NullEmbeddingProvider } from '../src/providers/null.js';
 
@@ -135,6 +136,83 @@ describe('WikiRegistry', () => {
     await registry.saveRoutingNotes(['cardio -> fitness']);
     const reloaded = await createWikiRegistry({ wikiRoot: root });
     expect(reloaded.routingNotes()).to.deep.equal(['cardio -> fitness']);
+  });
+
+  it('writes metadata as YAML frontmatter into the scaffolded index.md', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({
+      id: 'project-abc',
+      domain: 'my-project',
+      metadata: { type: 'ephemeral', status: 'active' },
+    });
+
+    const raw = await fs.readFile(path.join(root, 'project-abc', 'index.md'), 'utf8');
+    const parsed = matter(raw);
+    expect(parsed.data).to.deep.equal({ type: 'ephemeral', status: 'active' });
+    // The catalog body must survive the frontmatter wrap untouched.
+    expect(parsed.content).to.contain('# Wiki Index');
+    expect(parsed.content).to.contain('## Entities');
+  });
+
+  it('leaves index.md frontmatter-free when no metadata is given', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({ id: 'homelab', domain: 'infrastructure' });
+
+    const raw = await fs.readFile(path.join(root, 'homelab', 'index.md'), 'utf8');
+    expect(raw.startsWith('---')).to.equal(false);
+    expect(raw).to.contain('# Wiki Index');
+  });
+
+  it('destroy() deletes the wiki directory and its registry entry', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({ id: 'project-abc', domain: 'my-project' });
+
+    await registry.destroy('project-abc');
+
+    let dirGone = false;
+    try {
+      await fs.access(path.join(root, 'project-abc'));
+    } catch {
+      dirGone = true;
+    }
+    expect(dirGone, 'wiki directory should be removed from disk').to.equal(true);
+    expect(registry.list()).to.have.length(0);
+    const reloaded = await createWikiRegistry({ wikiRoot: root });
+    expect(reloaded.list()).to.have.length(0);
+  });
+
+  it('destroy() removes a stray unregistered directory without throwing', async () => {
+    // Rollback path: LlmWiki.create scaffolded the dir but register() never ran.
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await fs.mkdir(path.join(root, 'orphan'), { recursive: true });
+    await fs.writeFile(path.join(root, 'orphan', 'SCHEMA.md'), '# Wiki Schema\n');
+
+    await registry.destroy('orphan');
+
+    let dirGone = false;
+    try {
+      await fs.access(path.join(root, 'orphan'));
+    } catch {
+      dirGone = true;
+    }
+    expect(dirGone, 'orphan directory should be removed').to.equal(true);
+  });
+
+  it('destroy() refuses an unregistered id that escapes the wiki root', async () => {
+    const root = await tmpRoot();
+    const outside = path.join(path.dirname(root), `outside-${path.basename(root)}`);
+    await fs.mkdir(outside, { recursive: true });
+    const registry = await createWikiRegistry({ wikiRoot: root });
+
+    await registry.destroy(`../${path.basename(outside)}`);
+
+    // The sibling directory outside the wiki root must survive.
+    await fs.access(outside);
+    await fs.rm(outside, { recursive: true, force: true });
   });
 
   it('lints through the registry and can flag registry_sync drift', async () => {

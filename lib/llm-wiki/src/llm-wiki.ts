@@ -78,6 +78,9 @@ export interface CreateOptions {
   name: string;
   domain: string;
   tags?: string[];
+  /** Written as YAML frontmatter at the top of the scaffolded index.md.
+   * Read back via readPage()/orient() — never stored in registry.json. */
+  metadata?: Record<string, string>;
   logger?: Logger;
   embeddingProvider?: EmbeddingAdapter;
 }
@@ -142,8 +145,13 @@ export class LlmWiki {
     }
     await fs.mkdir(path.join(base, 'raw', 'articles'), { recursive: true });
 
+    const index =
+      opts.metadata && Object.keys(opts.metadata).length > 0
+        ? fm.serialize(opts.metadata, indexTemplate(ctx))
+        : indexTemplate(ctx);
+
     await writeIfAbsent(path.join(base, SCHEMA_FILE), schemaTemplate(ctx));
-    await writeIfAbsent(path.join(base, INDEX_FILE), indexTemplate(ctx));
+    await writeIfAbsent(path.join(base, INDEX_FILE), index);
     await writeIfAbsent(path.join(base, LOG_FILE), logTemplate(ctx));
 
     logger.info(`Created wiki at ${base}`);
