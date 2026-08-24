@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import type {
   WorkspaceStore,
   NewProjectInput,
@@ -9,6 +11,8 @@ import {
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
 } from '../../services/workspace-location.js';
+import { getWikiRegistry } from '../../services/wiki.js';
+import { logger } from '../../config/logger.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -20,6 +24,18 @@ function notFound(error: string): HandlerFailure {
 
 function badRequest(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
+}
+
+function serverError(error: string): HandlerFailure {
+  return { ok: false, status: 500, error };
+}
+
+/** Routing text for the project wiki domain: lowercase, hyphen-separated. */
+export function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function listProjectsHandler(store: WorkspaceStore) {
@@ -37,6 +53,7 @@ export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
 export async function createProjectHandler(
   store: WorkspaceStore,
   body: Record<string, unknown>,
+  registry?: WikiRegistry,
 ): Promise<
   HandlerResult<{
     workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
@@ -61,10 +78,41 @@ export async function createProjectHandler(
     return badRequest(err instanceof Error ? err.message : String(err));
   }
 
+  // Provision the project's ephemeral wiki domain before the DB insert so a
+  // project row never exists without its wiki. The id is generated here (not
+  // in the store) because the domain id is derived from it.
+  const reg = registry ?? (await getWikiRegistry());
+  const id = randomUUID();
+  const domainId = `project-${id}`;
+  try {
+    await reg.create({
+      id: domainId,
+      name: body.name,
+      domain: slugify(body.name),
+      metadata: { type: 'ephemeral', status: 'active' },
+    });
+  } catch (err) {
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
+
   // store.createProject() reads only the specific fields it needs off
   // NewProjectInput — the leftover locationRoot/directoryName keys are
   // harmless to pass through alongside the resolved `location`.
-  const result = store.createProject({ ...body, location } as NewProjectInput);
+  let result;
+  try {
+    result = store.createProject({ ...body, location, id, wikiId: domainId } as NewProjectInput);
+  } catch (err) {
+    // Roll back the wiki domain so no orphaned directory is left behind.
+    try {
+      await reg.destroy(domainId);
+    } catch (destroyErr) {
+      logger.warn('createProject rollback: failed to destroy wiki domain', {
+        domainId,
+        err: String(destroyErr),
+      });
+    }
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
   return ok(
     result as {
       workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
@@ -78,6 +126,11 @@ export function patchProjectHandler(
   workspaceId: string,
   patch: PatchProjectInput,
 ) {
+  // Every workspace reached through this handler has a project, so its
+  // wiki_id is always locked (see patchWorkspaceHandler for the same rule).
+  if (patch.wikiId !== undefined) {
+    return badRequest('wiki_id is locked once a project is attached');
+  }
   const workspace = store.getWorkspace(workspaceId);
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
   const project = store.patchProject(workspaceId, patch);

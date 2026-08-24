@@ -1,3 +1,4 @@
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import type {
   WorkspaceStore,
   NewWorkspaceInput,
@@ -9,6 +10,8 @@ import {
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
 } from '../../services/workspace-location.js';
+import { getWikiRegistry } from '../../services/wiki.js';
+import { logger } from '../../config/logger.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -67,16 +70,41 @@ export function patchWorkspaceHandler(
   id: string,
   patch: PatchWorkspaceInput,
 ): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
+  // A project's wiki domain is provisioned automatically and lives for the
+  // project's lifetime — the pointer to it must not change underneath it.
+  if (patch.wikiId !== undefined && store.getProject(id)) {
+    return badRequest('wiki_id is locked once a project is attached');
+  }
   const ws = store.patchWorkspace(id, patch);
   if (!ws) return notFound(`Workspace ${id} not found`);
   return ok(ws);
 }
 
-export function deleteWorkspaceHandler(
+export async function deleteWorkspaceHandler(
   store: WorkspaceStore,
   id: string,
-): HandlerResult<{ deleted: true }> {
+  registry?: WikiRegistry,
+): Promise<HandlerResult<{ deleted: true }>> {
+  const workspace = store.getWorkspace(id);
+  const project = store.getProject(id);
   const deleted = store.deleteWorkspace(id);
   if (!deleted) return notFound(`Workspace ${id} not found`);
+
+  // Project-provisioned wikis die with the workspace. DB rows go first: a
+  // failed filesystem delete is recoverable, the reverse is not — so wiki
+  // destruction is best-effort and never fails the request. A manually-set
+  // wikiId on a project-less workspace is left alone.
+  if (project && workspace?.wikiId) {
+    try {
+      const reg = registry ?? (await getWikiRegistry());
+      await reg.destroy(workspace.wikiId);
+    } catch (err) {
+      logger.warn('deleteWorkspace: failed to destroy project wiki domain', {
+        workspaceId: id,
+        wikiId: workspace.wikiId,
+        err: String(err),
+      });
+    }
+  }
   return ok({ deleted: true });
 }
