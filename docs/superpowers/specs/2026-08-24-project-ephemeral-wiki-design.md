@@ -113,16 +113,18 @@ following the existing navigation pattern from
 `ui/src/pages/wiki/index.tsx:48-49`:
 
 ```tsx
-{workspace.wikiId ? (
-  <a
-    href={`/wiki?view=document&domain=${encodeURIComponent(workspace.wikiId)}`}
-    class="text-sm text-primary underline underline-offset-2"
-  >
-    {workspace.wikiId}
-  </a>
-) : (
-  <p class="text-sm text-muted-foreground">Not linked</p>
-)}
+{
+  workspace.wikiId ? (
+    <a
+      href={`/wiki?view=document&domain=${encodeURIComponent(workspace.wikiId)}`}
+      class="text-sm text-primary underline underline-offset-2"
+    >
+      {workspace.wikiId}
+    </a>
+  ) : (
+    <p class="text-sm text-muted-foreground">Not linked</p>
+  );
+}
 ```
 
 The read-only display in `workspace-settings-drawer.tsx:138-143` is out of
