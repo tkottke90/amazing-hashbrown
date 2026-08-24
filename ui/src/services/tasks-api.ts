@@ -1,5 +1,5 @@
 export type TaskStatus =
-  'pending' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 
@@ -35,6 +35,7 @@ export interface TaskQueueEntry {
   enqueuedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  recoveryAttempts: number;
 }
 
 export interface QueueState {

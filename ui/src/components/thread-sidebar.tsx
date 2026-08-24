@@ -255,9 +255,12 @@ export function ThreadSidebar() {
   useEffect(() => {
     refreshThreadList();
     void refreshQueue();
-    void fetchTasks({ workspace_id: null, status: 'pending' })
-      .then((tasks) => {
-        inboxCount.value = tasks.length;
+    void Promise.all([
+      fetchTasks({ workspace_id: null, status: 'pending' }),
+      fetchTasks({ workspace_id: null, status: 'ready' }),
+    ])
+      .then(([pending, ready]) => {
+        inboxCount.value = pending.length + ready.length;
       })
       .catch(() => {});
 

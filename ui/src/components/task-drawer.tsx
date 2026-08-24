@@ -37,6 +37,7 @@ function parseGithubRepo(remoteUrl: string | null | undefined): string {
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
+  ready: 'Ready',
   running: 'Running',
   waiting_on_user: 'Waiting on user',
   blocked: 'Blocked',

@@ -49,6 +49,18 @@ const suite: TestSuite = {
         'The HITL-resume entry point pauses and later auto-resumes the queue exactly like a plain chat send',
       test: () => {},
     },
+    {
+      tag: ['@functional'],
+      action: 'Set an agent-assigned task to Ready via the task drawer',
+      expectedOutcome: 'The task is enqueued (R14) without a separate /enqueue call',
+      test: () => {},
+    },
+    {
+      tag: ['@functional'],
+      action: "Patch a user-assigned task's status to Ready via the API",
+      expectedOutcome: 'The task is NOT enqueued — R14 only applies to agent-assigned tasks',
+      test: () => {},
+    },
   ],
 };
 
@@ -81,7 +93,7 @@ test.describe(
       // nothing visibly causing it, which doesn't demonstrate "becomes
       // visible when a task is enqueued" at all.
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'queue-widget-ws', location: '/tmp/queue-widget-ws' },
+        data: { name: 'queue-widget-ws', locationRoot: 'temporary', directoryName: 'queue-widget-ws' },
       });
       expect(wsRes.status(), 'Expect the workspace to be created').toBe(201);
       const ws = await wsRes.json();
@@ -198,7 +210,11 @@ test.describe(
       request,
     }) => {
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'queue-pause-enqueue-ws', location: '/tmp/queue-pause-enqueue-ws' },
+        data: {
+          name: 'queue-pause-enqueue-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-pause-enqueue-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -318,6 +334,84 @@ test.describe(
       await expect
         .poll(async () => (await getQueue(request)).running?.taskId, { timeout: 5000 })
         .toBe(sharedTaskId);
+    });
+
+    test('setting an agent-assigned task to Ready via the drawer enqueues it (R14)', async ({
+      page,
+      request,
+    }, testInfo) => {
+      // Independent workspace/task — doesn't touch sharedTaskId, since this
+      // proves the implicit enqueue-via-status=ready path works through the
+      // real UI, distinct from the direct POST /:id/enqueue path the first
+      // test in this file already covers.
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'queue-ready-ui-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-ready-ui-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'Ready-via-drawer task', workspaceId: ws.id, assignedTo: 'agent' },
+      });
+      expect(taskRes.status()).toBe(201);
+      const task = await taskRes.json();
+
+      await page.goto(`/workspaces/${ws.id}`);
+      await page.getByRole('button', { name: /tasks/i }).click();
+
+      const taskCard = page
+        .locator('[data-column="pending"]')
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'Ready-via-drawer task' });
+      await expect(taskCard).toBeVisible();
+
+      await pauseBeforeAction(page, testInfo);
+      await taskCard.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      await drawer.locator('[data-testid="task-status-select"]').selectOption('ready');
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Save changes' }).click();
+      await expect(drawer).not.toBeVisible();
+
+      const state = await getQueue(request);
+      expect(state.queue.some((e) => e.taskId === task.id) || state.running?.taskId === task.id)
+        .toBe(true);
+    });
+
+    test('patching a user-assigned task to Ready does NOT enqueue it (R14 negative case)', async ({
+      request,
+    }) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'queue-ready-user-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-ready-user-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'User-assigned ready task', workspaceId: ws.id, assignedTo: 'user' },
+      });
+      expect(taskRes.status()).toBe(201);
+      const task = await taskRes.json();
+
+      const patchRes = await request.patch(`/api/v1/tasks/${task.id}`, {
+        data: { status: 'ready' },
+      });
+      expect(patchRes.status()).toBe(200);
+
+      const state = await getQueue(request);
+      expect(state.queue.some((e) => e.taskId === task.id)).toBe(false);
+      expect(state.running?.taskId).not.toBe(task.id);
     });
   },
 );
