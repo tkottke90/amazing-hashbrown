@@ -20,8 +20,11 @@ workspacesRouter.get('/', (_req: Request, res: Response) => {
   res.json(result.data);
 });
 
-workspacesRouter.post('/', (req: Request, res: Response) => {
-  const result = createWorkspaceHandler(getWorkspaceStore(), req.body as Record<string, unknown>);
+workspacesRouter.post('/', async (req: Request, res: Response) => {
+  const result = await createWorkspaceHandler(
+    getWorkspaceStore(),
+    req.body as Record<string, unknown>,
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

@@ -45,6 +45,10 @@ export async function patchTask(
 ): Promise<Task> {
   const updated = await apiPatchTask(id, patch);
   tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
+  // A status patch may have just enqueued agent work server-side (R14) — the
+  // sidebar QueueWidget only polls every 10s, so refresh it here for a
+  // snappier update. Harmless no-op refetch when nothing actually enqueued.
+  if (patch.status !== undefined) void refreshQueue();
   return updated;
 }
 
@@ -65,6 +69,7 @@ export async function updatePlan(taskId: string, plan: PlanStep[]): Promise<Task
 export function groupTasksByStatus(taskList: Task[]): Record<TaskStatus, Task[]> {
   const groups: Record<TaskStatus, Task[]> = {
     pending: [],
+    ready: [],
     running: [],
     waiting_on_user: [],
     blocked: [],

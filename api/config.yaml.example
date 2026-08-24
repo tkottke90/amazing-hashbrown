@@ -32,6 +32,19 @@ artifactRoot: ./config/artifacts
 # first boot if it does not exist. Relative to the config directory.
 skillsRoot: ./skills
 
+# Root directory new workspaces/projects are created under when the "Projects"
+# location option is chosen in the New Workspace form. Relative to the config
+# directory, like the roots above. Each workspace gets its own subdirectory
+# here, created automatically at workspace-creation time.
+projectsRoot: ./projects
+
+# Root directory new workspaces/projects are created under when the
+# "Temporary" location option is chosen. Optional — defaults to
+# "<OS temp dir>/projects" (e.g. /tmp/projects on Linux) when unset. Unlike
+# the other root settings above, this is NOT relative to the config
+# directory — set it to an absolute path if you override it.
+# tempProjectsRoot: /tmp/projects
+
 # ---------------------------------------------------------------------------
 # LLM Providers
 #
@@ -256,3 +269,21 @@ rlm:
 #     env:
 #       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #       # GH_TOKEN: ${GH_TOKEN}
+
+# ---------------------------------------------------------------------------
+# Workspace Task Trackers
+#
+# Optional. Configures the built-in GitHub tracker adapter used for linking
+# tasks to GitHub issues/PRs from the task drawer.
+#
+# token: a GitHub personal access token. Omit it (or leave this whole block
+#        commented out) for read-only "link existing issue" mode — unauthenticated
+#        GitHub API calls, rate-limited to 60 req/hr, no issue creation. Provide
+#        a token with `repo` scope (or `public_repo` for public repos only) to
+#        also enable creating new GitHub issues from the task drawer.
+# ---------------------------------------------------------------------------
+# workspaces:
+#   tasks:
+#     trackers:
+#       github:
+#         token: ${GITHUB_TOKEN}

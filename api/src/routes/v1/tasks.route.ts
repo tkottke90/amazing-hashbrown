@@ -70,6 +70,10 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  // The patch may have just enqueued agent work (R14) — wake the scheduler
+  // immediately rather than waiting on the next unrelated trigger. Cheap and
+  // safe to call unconditionally, even when nothing actually changed.
+  getTaskScheduler().wake();
   res.json(result.data);
 });
 

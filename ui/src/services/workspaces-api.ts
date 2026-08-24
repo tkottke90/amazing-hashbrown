@@ -28,9 +28,12 @@ export interface WorkspaceWithProject extends Workspace {
   project: Project;
 }
 
+export type LocationRoot = 'projects' | 'temporary';
+
 export interface CreateWorkspaceInput {
   name: string;
-  location: string;
+  locationRoot: LocationRoot;
+  directoryName: string;
   description?: string | null;
   goal?: string | null;
   remoteUrl?: string | null;

@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -94,6 +96,22 @@ export const ToolsConfigSchema = z.object({
   shell: ShellExecutorConfigSchema.optional(),
 });
 
+export const GithubTrackerSchema = z.object({
+  token: z.string().optional(),
+});
+
+export const TrackersConfigSchema = z.object({
+  github: GithubTrackerSchema.optional(),
+});
+
+export const TasksConfigSchema = z.object({
+  trackers: TrackersConfigSchema.optional(),
+});
+
+export const WorkspacesSchema = z.object({
+  tasks: TasksConfigSchema.optional(),
+});
+
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
@@ -101,6 +119,8 @@ const AppConfigSchema = z.object({
   mcpConfigDir: z.string().default('./mcp'),
   artifactRoot: z.string().default('./artifacts'),
   skillsRoot: z.string().default('./skills'),
+  projectsRoot: z.string().default('./projects'),
+  tempProjectsRoot: z.string().optional(),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   database: DatabaseSchema.optional(),
@@ -113,6 +133,7 @@ const AppConfigSchema = z.object({
   agent: AgentSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema.optional(),
+  workspaces: WorkspacesSchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -143,6 +164,13 @@ export const env = {
   },
   get skillsRoot() {
     return configManager.getConfigDir(configManager.get('skillsRoot') as string);
+  },
+  get projectsRoot() {
+    return configManager.getConfigDir(configManager.get('projectsRoot') as string);
+  },
+  get tempProjectsRoot() {
+    const configured = configManager.get('tempProjectsRoot') as string | undefined;
+    return configured || path.join(os.tmpdir(), 'projects');
   },
   get providers(): ProviderConfig[] {
     try {
@@ -252,6 +280,16 @@ export const env = {
       };
     } catch {
       return undefined;
+    }
+  },
+  get workspaces(): z.infer<typeof WorkspacesSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('workspaces', WorkspacesSchema) as z.infer<
+        typeof WorkspacesSchema
+      >;
+    } catch {
+      return WorkspacesSchema.parse({});
     }
   },
 };

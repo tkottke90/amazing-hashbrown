@@ -398,7 +398,7 @@ figcaption{font-size:0.775rem;color:var(--text-2);margin-top:0.5rem;font-style:i
         <tr><td>title</td><td>varchar</td><td>Short descriptive title; shown in Kanban and inbox views</td></tr>
         <tr><td>description</td><td>text</td><td>Full task description</td></tr>
         <tr><td>outcome</td><td>text</td><td>Clear definition of done</td></tr>
-        <tr><td>status</td><td>varchar</td><td><code>pending</code> | <code>running</code> | <code>waiting_on_user</code> | <code>blocked</code> | <code>done</code> | <code>failed</code> | <code>cancelled</code></td></tr>
+        <tr><td>status</td><td>varchar</td><td><code>pending</code> | <code>ready</code> | <code>running</code> | <code>waiting_on_user</code> | <code>blocked</code> | <code>done</code> | <code>failed</code> | <code>cancelled</code></td></tr>
         <tr><td>assigned_to</td><td>varchar</td><td><code>user</code> | <code>agent</code></td></tr>
         <tr><td>workspace_id <span class="badge badge-fk">FK</span></td><td>integer / null</td><td>Null = global user inbox (no workspace record exists for inbox)</td></tr>
         <tr><td>due_date</td><td>timestamp / null</td><td></td></tr>
@@ -466,11 +466,18 @@ figcaption{font-size:0.775rem;color:var(--text-2);margin-top:0.5rem;font-style:i
     <li style="margin:0.25rem 0;">SSE event <code>task_queue_update</code> — signals when a task begins or completes execution</li>
   </ul>
 
+  <h3>Status lifecycle: <code>ready</code> and <code>running</code></h3>
+  <p><code>ready</code> and <code>running</code> are symmetric across both assignee types — <code>ready</code> means queued/about to start, <code>running</code> means actively being worked. Only the trigger for the <code>ready → running</code> transition differs:</p>
+  <ul style="margin:0.4rem 0 0.6rem 1.4rem;font-size:0.875rem;">
+    <li style="margin:0.25rem 0;"><strong>Agent-assigned:</strong> <code>pending → ready</code> is manual (assigning the task to an agent and marking it ready) and is exactly what enqueues it — the moment both conditions hold, a <code>task_queue</code> row is created. <code>ready → running</code> is automatic, mirroring the scheduler dequeuing the entry (<code>task_queue.status</code> flips to <code>running</code>, and <code>tasks.status</code> must be updated alongside it — today <code>dequeueNext()</code> only touches the queue row, not the task row). <code>running → done | waiting_on_user | failed</code> is agent-driven based on outcome.</li>
+    <li style="margin:0.25rem 0;"><strong>User-assigned:</strong> every transition is manual and there is no <code>task_queue</code> row — <code>ready</code> means the user has queued it up for themselves, <code>running</code> means they've started working, <code>done</code> means they finished. This gives the Kanban/inbox view a real "queued vs. in progress" distinction for human-assigned tasks too, not just agent ones.</li>
+  </ul>
+
   <h3>Trigger types</h3>
   <div class="trigger-grid">
     <div class="trigger-item">
       <strong>Chat</strong>
-      User or agent explicitly enqueues during a conversation. Added immediately with the next available position.
+      User or agent explicitly enqueues during a conversation — concretely, setting an agent-assigned task's status to <code>ready</code>. Added immediately with the next available position.
     </div>
     <div class="trigger-item">
       <strong>Cron (one-time)</strong>
@@ -762,6 +769,7 @@ figcaption{font-size:0.775rem;color:var(--text-2);margin-top:0.5rem;font-style:i
     <li><span class="rule-num">R11</span><span>An archived ephemeral wiki domain must reject writes through both the API DB check and the wiki SDK frontmatter check. Either path alone is insufficient.</span></li>
     <li><span class="rule-num">R12</span><span>Unassigned tasks belong to the global user inbox. The inbox is not a workspace and has no schema record — it is the UI view of tasks where <code>workspace_id IS NULL</code>.</span></li>
     <li><span class="rule-num">R13</span><span>Workspace-scoped chat gets its own system prompt that injects workspace context (goal, bound wiki, write scope rules) at session start. This is the mechanism for context propagation, not a runtime lookup.</span></li>
+    <li><span class="rule-num">R14</span><span>A task is enqueued exactly when it is <code>assigned_to = agent</code> and its status is set to <code>ready</code> — there is no separate "enqueue" action. <code>ready</code> and <code>running</code> carry the same meaning (queued/about-to-start vs. actively-being-worked) for both user- and agent-assigned tasks; only user tasks set both by hand, while an agent task's <code>ready → running</code> transition is scheduler-driven.</span></li>
   </ul>
 </section>
 

@@ -41,6 +41,12 @@ const suite: TestSuite = {
       expectedOutcome: 'Task card moves from Pending column to Done column',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Change task status to Ready via the drawer status select',
+      expectedOutcome: 'Task card moves from Pending column to Ready column',
+      test: () => {},
+    },
   ],
 };
 
@@ -56,7 +62,11 @@ test.describe(
     }, testInfo) => {
       // Create a workspace task (has a workspaceId) — it should NOT appear in inbox
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'e2e-inbox-empty-ws', location: '/tmp/e2e-inbox-empty-ws' },
+        data: {
+          name: 'e2e-inbox-empty-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-inbox-empty-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -176,7 +186,11 @@ test.describe(
     }, testInfo) => {
       // Set up a workspace with a pending task
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'e2e-status-done-ws', location: '/tmp/e2e-status-done-ws' },
+        data: {
+          name: 'e2e-status-done-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-status-done-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -222,6 +236,69 @@ test.describe(
         pendingColumn
           .locator('[data-testid="task-card"]')
           .filter({ hasText: 'e2e-status-done-task' }),
+      ).not.toBeVisible();
+    });
+
+    test('changing task status to Ready via the drawer moves the card to the Ready column', async ({
+      page,
+      request,
+    }, testInfo) => {
+      // Set up a workspace with a pending, user-assigned task — this suite
+      // exercises the drawer-driven status UI, not queue/enqueue behavior
+      // (see task-queue-widget.spec.ts for the enqueue-on-ready assertions).
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'e2e-status-ready-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-status-ready-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-status-ready-task', workspaceId: ws.id, assignedTo: 'user' },
+      });
+
+      // Navigate to the Tasks tab
+      await page.goto(`/workspaces/${ws.id}`);
+      await page.getByRole('button', { name: /tasks/i }).click();
+
+      // Task should be in the Pending column
+      const pendingColumn = page.locator('[data-column="pending"]');
+      const taskCard = pendingColumn
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'e2e-status-ready-task' });
+      await expect(taskCard).toBeVisible();
+
+      // Open the task drawer by clicking the card
+      await pauseBeforeAction(page, testInfo);
+      await taskCard.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+
+      // Change status to Ready via the UI select
+      await drawer.locator('[data-testid="task-status-select"]').selectOption('ready');
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Save changes' }).click();
+      await expect(drawer).not.toBeVisible();
+
+      // Card should now be in the Ready column
+      const readyColumn = page.locator('[data-column="ready"]');
+      await expect(readyColumn).toBeVisible();
+      await expect(
+        readyColumn
+          .locator('[data-testid="task-card"]')
+          .filter({ hasText: 'e2e-status-ready-task' }),
+      ).toBeVisible();
+
+      // And no longer in Pending
+      await expect(
+        pendingColumn
+          .locator('[data-testid="task-card"]')
+          .filter({ hasText: 'e2e-status-ready-task' }),
       ).not.toBeVisible();
     });
   },

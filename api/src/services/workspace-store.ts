@@ -70,7 +70,7 @@ export interface PatchProjectInput extends PatchWorkspaceInput {
 }
 
 export type TaskStatus =
-  'pending' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 
@@ -137,6 +137,7 @@ export interface TaskQueueEntry {
   enqueuedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  recoveryAttempts: number;
 }
 
 export interface TaskListFilters {
@@ -201,6 +202,7 @@ interface RawQueueRow {
   enqueued_at: string;
   started_at: string | null;
   finished_at: string | null;
+  recovery_attempts: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +269,7 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
     enqueuedAt: row.enqueued_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
+    recoveryAttempts: row.recovery_attempts,
   };
 }
 
@@ -278,7 +281,7 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
 // 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
 // 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns),
-// 17=shell_audit_log. Versions 18-21 are claimed by WorkspaceStore here.
+// 17=shell_audit_log. Versions 18-22 are claimed by WorkspaceStore here.
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -355,11 +358,19 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_task_queue_status_position ON task_queue(status, position);
     `,
   },
+  {
+    version: 22,
+    sql: `ALTER TABLE task_queue ADD COLUMN recovery_attempts INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 // ---------------------------------------------------------------------------
 // WorkspaceStore
 // ---------------------------------------------------------------------------
+
+// One automatic retry after a crash, then escalate the task to the user
+// rather than retrying forever. See recoverRunningQueueEntries() below.
+const MAX_QUEUE_RECOVERY_ATTEMPTS = 1;
 
 export class WorkspaceStore extends BaseStore {
   constructor(db: SqliteDatabase) {
@@ -369,13 +380,38 @@ export class WorkspaceStore extends BaseStore {
   }
 
   // On server start, any queue entry stuck in `running` (from a crash) is
-  // reset to `pending` so the scheduler can pick it up again (R5).
+  // reset to `pending` so the scheduler can pick it up again (R5) — but only
+  // once. A queue entry that crashes a second time in a row is assumed to be
+  // a real, unrecoverable failure rather than a transient one, and is handed
+  // back to the user instead of retried forever.
   private recoverRunningQueueEntries(): void {
-    this.db
-      .prepare(
-        `UPDATE task_queue SET status = 'pending', started_at = NULL WHERE status = 'running'`,
-      )
-      .run();
+    const stuck = this.db
+      .prepare(`SELECT id, task_id, recovery_attempts FROM task_queue WHERE status = 'running'`)
+      .all() as { id: string; task_id: string; recovery_attempts: number }[];
+
+    const now = new Date().toISOString();
+    const retry = this.db.prepare(
+      `UPDATE task_queue SET status = 'pending', started_at = NULL, recovery_attempts = recovery_attempts + 1 WHERE id = ?`,
+    );
+    const giveUp = this.db.prepare(
+      `UPDATE task_queue SET status = 'failed', finished_at = ? WHERE id = ?`,
+    );
+    const mirrorReady = this.db.prepare(
+      `UPDATE tasks SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'running'`,
+    );
+    const mirrorEscalate = this.db.prepare(
+      `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ? AND status = 'running'`,
+    );
+
+    for (const row of stuck) {
+      if (row.recovery_attempts < MAX_QUEUE_RECOVERY_ATTEMPTS) {
+        retry.run(row.id);
+        mirrorReady.run(now, row.task_id);
+      } else {
+        giveUp.run(now, row.id);
+        mirrorEscalate.run(now, row.task_id);
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

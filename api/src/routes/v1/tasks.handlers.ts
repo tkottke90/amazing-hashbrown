@@ -44,6 +44,15 @@ export function patchTaskHandler(
 ): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
   const task = store.patchTask(id, patch);
   if (!task) return notFound(`Task ${id} not found`);
+
+  // R14: a task is enqueued exactly when assigned_to='agent' and status='ready'
+  // — there is no separate enqueue action. Idempotent: only fires if no
+  // active task_queue row already exists for this task.
+  if (task.assignedTo === 'agent' && task.status === 'ready') {
+    const alreadyQueued = store.listQueue().some((entry) => entry.taskId === id);
+    if (!alreadyQueued) store.enqueueTask(id);
+  }
+
   return ok(task);
 }
 
@@ -73,5 +82,10 @@ export function enqueueTaskHandler(
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
   const entry = store.enqueueTask(taskId);
+  // Keep tasks.status in sync with the fact that this task is now queued —
+  // mirrors the same invariant patchTaskHandler enforces for the R14 path.
+  if (task.status !== 'ready') {
+    store.patchTask(taskId, { status: 'ready' });
+  }
   return ok(entry);
 }

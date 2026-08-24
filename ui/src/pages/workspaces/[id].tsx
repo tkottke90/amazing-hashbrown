@@ -25,6 +25,7 @@ type DetailTab = 'overview' | 'tasks' | 'files' | 'chat';
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
+  ready: 'Ready',
   running: 'Running',
   waiting_on_user: 'Waiting on user',
   blocked: 'Blocked',
@@ -35,6 +36,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 
 const COLUMN_ORDER: TaskStatus[] = [
   'pending',
+  'ready',
   'running',
   'waiting_on_user',
   'blocked',
@@ -54,6 +56,7 @@ function KanbanColumn({
   onSaved: () => void;
 }) {
   const isDone = status === 'done';
+  const isReady = status === 'ready';
   const isRunning = status === 'running';
   const isBlocked = status === 'blocked';
   const isFailed = status === 'failed';
@@ -73,7 +76,9 @@ function KanbanColumn({
                 ? 'text-destructive'
                 : isDone
                   ? 'text-green-600'
-                  : 'text-muted-foreground',
+                  : isReady
+                    ? 'text-amber-600'
+                    : 'text-muted-foreground',
           )}
         >
           {label}
@@ -234,7 +239,7 @@ function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () =
         />
       </div>
 
-      <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+      <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
         {COLUMN_ORDER.map((status) => (
           <KanbanColumn
             key={status}

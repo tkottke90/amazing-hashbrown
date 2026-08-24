@@ -162,6 +162,14 @@ eval-logs/
 # also match lib/thread-reports/ (see the api/src/config/ fix earlier).
 /thread-reports/
 
+# Local npm registry auth (copy .npmrc.template -> .npmrc)
+.npmrc
+
+# SQLite database created by running the API locally (dev:api / e2e webServer)
+/api/app.db
+/api/app.db-shm
+/api/app.db-wal
+
 # Mac OS
 .DS_Store
 

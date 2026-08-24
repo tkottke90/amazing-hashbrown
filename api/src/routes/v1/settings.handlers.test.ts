@@ -35,6 +35,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     rlm: { maxIterations: 10, truncateThreshold: 6000, provider: undefined, model: undefined },
     costs: {},
     tools: undefined,
+    workspaces: {},
     ...overrides,
   };
 }
@@ -88,7 +89,7 @@ describe('routes/v1/settings.handlers', () => {
       calls = [];
     });
 
-    it('calls config.reload, loadAgentInstructions, invalidateChatAgent, and seedProviderCosts, in that order [orchestration]', async () => {
+    it('calls config.reload, loadAgentInstructions, invalidateChatAgent, seedProviderCosts, and reloadTrackerRegistry, in that order [orchestration]', async () => {
       await reloadSettingsHandler(
         { reload: () => calls.push('config.reload') },
         async () => {
@@ -100,6 +101,9 @@ describe('routes/v1/settings.handlers', () => {
         () => {
           calls.push('seedProviderCosts');
         },
+        () => {
+          calls.push('reloadTrackerRegistry');
+        },
       );
 
       expect(calls).to.deep.equal([
@@ -107,11 +111,12 @@ describe('routes/v1/settings.handlers', () => {
         'loadAgentInstructions',
         'invalidateChatAgent',
         'seedProviderCosts',
+        'reloadTrackerRegistry',
       ]);
     });
 
     it('calls each dependency exactly once [orchestration]', async () => {
-      const counts = { reload: 0, load: 0, invalidate: 0, seed: 0 };
+      const counts = { reload: 0, load: 0, invalidate: 0, seed: 0, reloadTrackers: 0 };
       await reloadSettingsHandler(
         {
           reload: () => {
@@ -127,12 +132,21 @@ describe('routes/v1/settings.handlers', () => {
         () => {
           counts.seed++;
         },
+        () => {
+          counts.reloadTrackers++;
+        },
       );
-      expect(counts).to.deep.equal({ reload: 1, load: 1, invalidate: 1, seed: 1 });
+      expect(counts).to.deep.equal({
+        reload: 1,
+        load: 1,
+        invalidate: 1,
+        seed: 1,
+        reloadTrackers: 1,
+      });
     });
 
     it('resolves with { status: "ok" } [unit]', async () => {
-      const result = await reloadSettingsHandler({ reload: noop }, asyncNoop, noop, noop);
+      const result = await reloadSettingsHandler({ reload: noop }, asyncNoop, noop, noop, noop);
       expect(result).to.deep.equal({ status: 'ok' });
     });
   });
@@ -221,6 +235,27 @@ describe('routes/v1/settings.handlers', () => {
       }
     });
 
+    it('masks trackers github token to "****" when set [unit]', () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_real_token' } } } },
+      });
+      const result = getSettingsSectionHandler('trackers', envWithToken, makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal('****');
+      }
+    });
+
+    it('omits trackers github token from GET when not set [unit]', () => {
+      const result = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal(undefined);
+      }
+    });
+
     it('returns costs record for cost-rates [unit]', () => {
       const envWithCosts = makeEnv({
         costs: { 'gpt-4': { inputPer1kTokens: 0.03, outputPer1kTokens: 0.06 } },
@@ -263,11 +298,19 @@ describe('routes/v1/settings.handlers', () => {
         seedProviderCosts: () => {
           calls.push('seedProviderCosts');
         },
+        reloadTrackerRegistry: () => {
+          calls.push('reloadTrackerRegistry');
+        },
       };
     }
 
     it('returns 404 for unknown slug [unit]', async () => {
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'unknown',
         {},
@@ -276,13 +319,19 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
     it('returns 404 for mcp-servers PATCH [unit]', async () => {
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'mcp-servers',
         {},
@@ -291,13 +340,19 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
     it('returns 404 for skills PATCH [unit]', async () => {
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'skills',
         {},
@@ -306,13 +361,19 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
     it('returns 400 with fieldErrors when body fails validation [unit]', async () => {
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'general',
         { logLevel: 123 }, // should be string
@@ -321,6 +382,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) {
@@ -332,7 +394,12 @@ describe('routes/v1/settings.handlers', () => {
     it('writes logLevel to config.yaml and calls side effects on success [unit]', async () => {
       const reloaded: string[] = [];
       const config = makeConfig(tmpDir, { reload: () => reloaded.push('reload') });
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
         'general',
@@ -342,6 +409,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       expect(result.ok).to.equal(true);
@@ -352,6 +420,7 @@ describe('routes/v1/settings.handlers', () => {
         'loadAgentInstructions',
         'invalidateChatAgent',
         'seedProviderCosts',
+        'reloadTrackerRegistry',
       ]);
     });
 
@@ -359,7 +428,12 @@ describe('routes/v1/settings.handlers', () => {
       // Prime the config file with the new value so makeConfig reads it back
       writeYaml(tmpDir, { logLevel: 'debug', port: 3000 });
       const config = makeConfig(tmpDir);
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
         'general',
@@ -369,6 +443,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       expect(result.ok).to.equal(true);
@@ -384,7 +459,12 @@ describe('routes/v1/settings.handlers', () => {
       ];
       const envWithKey = makeEnv({ providers: storedProviders });
       const config = makeConfig(tmpDir);
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       await patchSettingsSectionHandler(
         'model-providers',
@@ -394,6 +474,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       const written = readYaml(tmpDir);
@@ -407,7 +488,12 @@ describe('routes/v1/settings.handlers', () => {
       ];
       const envWithKey = makeEnv({ providers: storedProviders });
       const config = makeConfig(tmpDir);
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       await patchSettingsSectionHandler(
         'model-providers',
@@ -417,11 +503,99 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       const written = readYaml(tmpDir);
       const savedProviders = written.providers as Array<{ apiKey?: string }>;
       expect(savedProviders[0].apiKey).to.equal('sk-new-key');
+    });
+
+    it('writes trackers github token nested under workspaces.tasks.trackers [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: 'ghp_new_token' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('ghp_new_token');
+    });
+
+    it('preserves stored trackers github token when incoming is "****" [unit]', async () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
+      });
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '****' } },
+        config,
+        envWithToken,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('ghp_stored_token');
+    });
+
+    it('clears trackers github token when incoming is empty string [unit]', async () => {
+      const envWithToken = makeEnv({
+        workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
+      });
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '' } },
+        config,
+        envWithToken,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('');
     });
 
     it('clears apiKey when incoming is empty string for model-providers [unit]', async () => {
@@ -430,7 +604,12 @@ describe('routes/v1/settings.handlers', () => {
       ];
       const envWithKey = makeEnv({ providers: storedProviders });
       const config = makeConfig(tmpDir);
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       await patchSettingsSectionHandler(
         'model-providers',
@@ -440,6 +619,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       const written = readYaml(tmpDir);
@@ -450,7 +630,12 @@ describe('routes/v1/settings.handlers', () => {
     it('writes cost-rates and returns updated costs [unit]', async () => {
       const config = makeConfig(tmpDir);
       const envEmpty = makeEnv({ costs: {} });
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
         'cost-rates',
@@ -460,6 +645,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
 
       expect(result.ok).to.equal(true);
@@ -471,7 +657,12 @@ describe('routes/v1/settings.handlers', () => {
     });
 
     it('does not call side effects when PATCH fails validation [unit]', async () => {
-      const { loadAgentInstructions, invalidateChatAgent, seedProviderCosts } = makeSideEffects();
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
       await patchSettingsSectionHandler(
         'general',
         { logLevel: 99 },
@@ -480,6 +671,7 @@ describe('routes/v1/settings.handlers', () => {
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
+        reloadTrackerRegistry,
       );
       expect(calls).to.deep.equal([]);
     });

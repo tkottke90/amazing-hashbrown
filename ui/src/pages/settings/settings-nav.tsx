@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 export type SettingsSlug =
   | 'general'
   | 'storage'
+  | 'workspaces'
   | 'model-providers'
   | 'embeddings'
   | 'agent-behavior'
@@ -14,6 +15,7 @@ export type SettingsSlug =
 const NAV_ITEMS: { label: string; slug: SettingsSlug }[] = [
   { label: 'General', slug: 'general' },
   { label: 'Storage', slug: 'storage' },
+  { label: 'Workspaces', slug: 'workspaces' },
   { label: 'Model providers', slug: 'model-providers' },
   { label: 'Embeddings', slug: 'embeddings' },
   { label: 'Agent behavior', slug: 'agent-behavior' },
