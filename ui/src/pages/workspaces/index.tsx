@@ -6,6 +6,7 @@ import { Plus, FolderOpen, Search } from 'lucide-preact';
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -82,6 +83,8 @@ export function CreateWorkspaceForm() {
   const goal = useSignal('');
   const gitEnabled = useSignal(false);
   const remoteUrl = useSignal('');
+  const javascriptEnabled = useSignal(false);
+  const pythonEnabled = useSignal(false);
   const winCondition = useSignal('');
   const dueAt = useSignal('');
   const saving = useSignal(false);
@@ -130,6 +133,8 @@ export function CreateWorkspaceForm() {
           goal: goal.value.trim() || null,
           git: gitEnabled.value,
           remoteUrl: gitEnabled.value ? remoteUrl.value.trim() : null,
+          javascript: javascriptEnabled.value,
+          python: pythonEnabled.value,
           winCondition: winCondition.value.trim(),
           dueAt: dueAt.value || null,
         });
@@ -143,6 +148,8 @@ export function CreateWorkspaceForm() {
           goal: goal.value.trim() || null,
           git: gitEnabled.value,
           remoteUrl: gitEnabled.value ? remoteUrl.value.trim() : null,
+          javascript: javascriptEnabled.value,
+          python: pythonEnabled.value,
         });
         close();
       }
@@ -287,6 +294,34 @@ export function CreateWorkspaceForm() {
                 />
               </div>
             )}
+          </div>
+
+          <div class="border border-border rounded-lg p-3 flex flex-col gap-3">
+            <p class="text-sm font-medium">Dependency isolation</p>
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="javascript-enabled"
+                checked={javascriptEnabled.value}
+                onCheckedChange={(checked) => {
+                  javascriptEnabled.value = checked === true;
+                }}
+              />
+              <Label htmlFor="javascript-enabled">
+                JavaScript <span class="text-muted-foreground">(node_modules)</span>
+              </Label>
+            </div>
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="python-enabled"
+                checked={pythonEnabled.value}
+                onCheckedChange={(checked) => {
+                  pythonEnabled.value = checked === true;
+                }}
+              />
+              <Label htmlFor="python-enabled">
+                Python <span class="text-muted-foreground">(venv)</span>
+              </Label>
+            </div>
           </div>
 
           {mode.value === 'project' && (

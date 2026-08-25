@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import type {
   WorkspaceStore,
@@ -11,6 +12,10 @@ import {
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
 } from '../../services/workspace-location.js';
+import {
+  provisionDependencyIsolation,
+  type ExecFileFn,
+} from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { logger } from '../../config/logger.js';
 
@@ -54,6 +59,7 @@ export async function createProjectHandler(
   store: WorkspaceStore,
   body: Record<string, unknown>,
   registry?: WikiRegistry,
+  execFileFn?: ExecFileFn,
 ): Promise<
   HandlerResult<{
     workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
@@ -76,6 +82,19 @@ export async function createProjectHandler(
     await createWorkspaceDirectory(location);
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    await provisionDependencyIsolation(
+      location,
+      { javascript: !!body.javascript, python: !!body.python },
+      execFileFn,
+    );
+  } catch (err) {
+    await rm(location, { recursive: true, force: true });
+    return badRequest(
+      `Failed to provision dependency isolation: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // Provision the project's ephemeral wiki domain before the DB insert so a

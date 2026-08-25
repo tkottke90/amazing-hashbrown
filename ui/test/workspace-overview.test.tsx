@@ -98,3 +98,36 @@ describe('WorkspaceDetailView — Git chip tooltip', () => {
     expect(screen.queryByTestId('git-chip')).not.toBeInTheDocument();
   });
 });
+
+describe('WorkspaceDetailView — Dependency isolation chips', () => {
+  afterEach(() => {
+    workspaces.value = [];
+    projects.value = [];
+  });
+
+  it('shows both chips when javascript and python are both set', () => {
+    const workspace = { ...baseWorkspace, javascript: true, python: true };
+    seed(workspace, { ...baseProject, javascript: true, python: true });
+    renderDetail();
+
+    expect(screen.getByTestId('javascript-chip')).toBeInTheDocument();
+    expect(screen.getByTestId('python-chip')).toBeInTheDocument();
+  });
+
+  it('shows only the JavaScript chip when only javascript is set', () => {
+    const workspace = { ...baseWorkspace, javascript: true, python: false };
+    seed(workspace, { ...baseProject, javascript: true, python: false });
+    renderDetail();
+
+    expect(screen.getByTestId('javascript-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('python-chip')).not.toBeInTheDocument();
+  });
+
+  it('omits both chips when javascript and python are both false', () => {
+    seed(baseWorkspace, baseProject);
+    renderDetail();
+
+    expect(screen.queryByTestId('javascript-chip')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('python-chip')).not.toBeInTheDocument();
+  });
+});

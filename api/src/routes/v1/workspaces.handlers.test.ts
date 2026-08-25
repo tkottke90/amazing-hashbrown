@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { WorkspaceStore } from '../../services/workspace-store.js';
+import type { ExecFileFn } from '../../services/workspace-provision.js';
 import {
   createWorkspaceHandler,
   deleteWorkspaceHandler,
@@ -82,6 +83,85 @@ describe('routes/v1/workspaces.handlers', () => {
         expect(result.status).to.equal(400);
         expect(result.error).to.include('Invalid directoryName');
       }
+    });
+  });
+
+  describe('createWorkspaceHandler() dependency isolation provisioning', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+    let workspaceDirs: string[];
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspaces-handlers-provision-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      workspaceDirs = [];
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+      for (const wsDir of workspaceDirs) rmSync(wsDir, { recursive: true, force: true });
+    });
+
+    it('creates the workspace with javascript/python set when provisioning succeeds', async () => {
+      const calls: unknown[][] = [];
+      const execFileFn = (async (...args: unknown[]) => {
+        calls.push(args);
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `provision-ws-ok-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createWorkspaceHandler(
+        store,
+        {
+          name: 'Provisioned Workspace',
+          locationRoot: 'temporary',
+          directoryName,
+          javascript: true,
+          python: true,
+        },
+        execFileFn,
+      );
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data?.javascript).to.equal(true);
+        expect(result.data?.python).to.equal(true);
+      }
+      expect(calls.length).to.equal(2);
+      expect(existsSync(location)).to.equal(true);
+    });
+
+    it('rolls back the directory and returns 400 when provisioning fails', async () => {
+      const execFileFn = (async () => {
+        throw new Error('npm not found');
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `provision-ws-fail-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createWorkspaceHandler(
+        store,
+        {
+          name: 'Failed Workspace',
+          locationRoot: 'temporary',
+          directoryName,
+          javascript: true,
+        },
+        execFileFn,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.error).to.include('Failed to provision dependency isolation');
+        expect(result.error).to.include('npm not found');
+      }
+      expect(existsSync(location)).to.equal(false);
     });
   });
 

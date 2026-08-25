@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import type {
   WorkspaceStore,
@@ -10,6 +11,10 @@ import {
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
 } from '../../services/workspace-location.js';
+import {
+  provisionDependencyIsolation,
+  type ExecFileFn,
+} from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { logger } from '../../config/logger.js';
 
@@ -41,6 +46,7 @@ export function getWorkspaceHandler(
 export async function createWorkspaceHandler(
   store: WorkspaceStore,
   body: Record<string, unknown>,
+  execFileFn?: ExecFileFn,
 ): Promise<HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>>> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
   if (!isLocationRoot(body.locationRoot)) {
@@ -56,6 +62,19 @@ export async function createWorkspaceHandler(
     await createWorkspaceDirectory(location);
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    await provisionDependencyIsolation(
+      location,
+      { javascript: !!body.javascript, python: !!body.python },
+      execFileFn,
+    );
+  } catch (err) {
+    await rm(location, { recursive: true, force: true });
+    return badRequest(
+      `Failed to provision dependency isolation: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // store.createWorkspace() reads only the specific fields it needs off
