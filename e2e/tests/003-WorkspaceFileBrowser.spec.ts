@@ -413,8 +413,7 @@ export const WorkspaceFileBrowser: TestSuite = {
       },
     },
     {
-      action:
-        'Edit a file directly on disk (bypassing the app), then use the tree refresh control',
+      action: 'Edit a file directly on disk (bypassing the app), then use the tree refresh control',
       expectedOutcome:
         'The refresh control eventually surfaces the change once the server-side cache accepts a fresh read',
       test: async ({ page }, testInfo) => {

@@ -2,7 +2,11 @@ import { useEffect, useRef } from 'preact/hooks';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { syntaxHighlighting, defaultHighlightStyle, type LanguageSupport } from '@codemirror/language';
+import {
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  type LanguageSupport,
+} from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { json } from '@codemirror/lang-json';
@@ -121,7 +125,9 @@ export function CodeEditor({ path, initialContent, dirty, onReady }: CodeEditorP
       view.destroy();
       viewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one view per path; other props are read only at mount time
+    // Deliberately only [path]: one view per path, other props are read only
+    // at mount time. This repo's eslint config has no react-hooks plugin, so
+    // there's no exhaustive-deps rule to disable here.
   }, [path]);
 
   // Reconfigure the theme compartment when resolvedTheme changes, without

@@ -84,9 +84,7 @@ describe('FileTree', () => {
     fileTreeError.value = 'Workspace directory is missing or unreadable.';
     renderTree();
 
-    expect(
-      screen.getByText('Workspace directory is missing or unreadable.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Workspace directory is missing or unreadable.')).toBeInTheDocument();
     expect(screen.queryByText('README.md')).not.toBeInTheDocument();
   });
 

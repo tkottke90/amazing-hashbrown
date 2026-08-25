@@ -76,7 +76,12 @@ function FileTreeRow({
       {isDir && isExpanded && node.children && (
         <div>
           {node.children.map((child) => (
-            <FileTreeRow key={child.path} node={child} depth={depth + 1} workspaceId={workspaceId} />
+            <FileTreeRow
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              workspaceId={workspaceId}
+            />
           ))}
         </div>
       )}

@@ -81,9 +81,7 @@ export async function getFileContentHandler(
     guarded = await readFileGuarded(absPath);
   } catch (err) {
     if (isEnoent(err)) return notFound(`File "${relativePath}" not found`);
-    return badRequest(
-      `Failed to read file: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    return badRequest(`Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!guarded.ok) {
@@ -125,9 +123,7 @@ export async function patchFileContentHandler(
   try {
     await writeFile(absPath, content, 'utf8');
   } catch (err) {
-    return serverError(
-      `Failed to write file: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    return serverError(`Failed to write file: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   invalidateFileTreeCache(workspaceId);

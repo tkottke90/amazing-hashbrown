@@ -117,20 +117,20 @@ Typing must not degrade with file size or with the number of open tabs. Two rule
 1. **CodeMirror's buffer is never mirrored into reactive state on keystroke.** The `EditorView` owns the live document and renders itself incrementally; no `useEffect`/signal write copies `doc.toString()` anywhere on every transaction. The only two places the full content is read are Save and Discard, both explicit, both once — not on a timer or on every keystroke.
 2. **`dirty` is an O(1) event-driven flag, never a string comparison.** CodeMirror's `updateListener` extension exposes `tr.docChanged` — a boolean already computed by the transaction, not something this code diffs itself. On the first edit after opening/saving, `dirty.value` flips to `true` once; further keystrokes in the same editing session do nothing to `dirty` (already `true`, no-op write), so there is no per-character work at all on this path, regardless of file size.
 
-Each tab owns its own `dirty` signal rather than all tabs sharing one array/object signal, so a keystroke in one tab only re-renders that tab's own unsaved-indicator dot — not the tree, not the editor chrome, not other open tabs' rows in the tab bar. Any future feature that needs the *live* content for something other than Save/Discard (e.g. a char/line count) should read it via a debounced listener (~250ms after the last keystroke), not synchronously per transaction — no such feature exists in this design, but the rule is recorded here so it isn't reintroduced accidentally later.
+Each tab owns its own `dirty` signal rather than all tabs sharing one array/object signal, so a keystroke in one tab only re-renders that tab's own unsaved-indicator dot — not the tree, not the editor chrome, not other open tabs' rows in the tab bar. Any future feature that needs the _live_ content for something other than Save/Discard (e.g. a char/line count) should read it via a debounced listener (~250ms after the last keystroke), not synchronously per transaction — no such feature exists in this design, but the rule is recorded here so it isn't reintroduced accidentally later.
 
 ---
 
 ## Error handling
 
-| Case | Behavior |
-|---|---|
-| Workspace directory missing/unreadable | `GET /files` returns a typed error; tree panel shows an error state instead of crashing |
-| File deleted on disk after the tree loaded, then clicked | `GET` content 404s → the new tab shows an inline error instead of content |
-| Binary or oversized file clicked | Blocked by the server guard → "Can't display this file" shown in place of a tab |
-| Save fails (disk error, permission denied) | Inline error shown near the Save button; buffer and `dirty` state preserved |
-| Non-git workspace | No branch label in the tree header, no status badges; tree still fully functional |
-| Closing a dirty tab | `confirm()` guard before discarding the in-memory buffer |
+| Case                                                     | Behavior                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Workspace directory missing/unreadable                   | `GET /files` returns a typed error; tree panel shows an error state instead of crashing |
+| File deleted on disk after the tree loaded, then clicked | `GET` content 404s → the new tab shows an inline error instead of content               |
+| Binary or oversized file clicked                         | Blocked by the server guard → "Can't display this file" shown in place of a tab         |
+| Save fails (disk error, permission denied)               | Inline error shown near the Save button; buffer and `dirty` state preserved             |
+| Non-git workspace                                        | No branch label in the tree header, no status badges; tree still fully functional       |
+| Closing a dirty tab                                      | `confirm()` guard before discarding the in-memory buffer                                |
 
 ---
 
@@ -164,17 +164,17 @@ This suite is authored against the `@tkottke90/playwrite-test-runner` library (`
 
 Planned steps (action / expected outcome — `test` bodies are written during implementation, not here):
 
-| Action | Expected outcome |
-|---|---|
-| Open the Files tab on a git-enabled workspace with an untracked and a modified file | Tree loads rooted at the workspace's `location`; header shows `git · <branch>`; the modified file shows `M`, the untracked file shows `A` |
-| Expand and collapse a folder in the tree | Children show/hide; state persists while switching tabs |
-| Point a workspace at a missing/unreadable directory and open Files | Tree panel shows a clear error state, not a crash |
-| Open a workspace with `git: false` | Tree loads with no branch label and no status badges |
-| Click a file, then a second file | Both open as tabs in the tab bar; content of each is shown when its tab is active |
-| Edit an open file | Unsaved-dot appears on that tab only; other open tabs are unaffected |
-| Click Save on a dirty tab | Content is written to disk; unsaved-dot clears; that file's tree status badge updates |
-| Edit a file, then click Discard | Buffer reverts to last-saved content; nothing is written to disk |
-| Attempt to close a tab with unsaved changes | A confirmation prompt appears before the tab closes |
-| Click a binary file in the tree | Viewer shows "Can't display this file" instead of a tab with garbled content |
-| Save a file made read-only on disk | Inline error is shown; the edited buffer is preserved, not reverted or lost |
-| Edit a file directly on disk (bypassing the app), then reopen the Files tab before the TTL elapses, then again after using the refresh control | Tree does not reflect the change immediately (TTL cache); refresh control shows the update |
+| Action                                                                                                                                         | Expected outcome                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Open the Files tab on a git-enabled workspace with an untracked and a modified file                                                            | Tree loads rooted at the workspace's `location`; header shows `git · <branch>`; the modified file shows `M`, the untracked file shows `A` |
+| Expand and collapse a folder in the tree                                                                                                       | Children show/hide; state persists while switching tabs                                                                                   |
+| Point a workspace at a missing/unreadable directory and open Files                                                                             | Tree panel shows a clear error state, not a crash                                                                                         |
+| Open a workspace with `git: false`                                                                                                             | Tree loads with no branch label and no status badges                                                                                      |
+| Click a file, then a second file                                                                                                               | Both open as tabs in the tab bar; content of each is shown when its tab is active                                                         |
+| Edit an open file                                                                                                                              | Unsaved-dot appears on that tab only; other open tabs are unaffected                                                                      |
+| Click Save on a dirty tab                                                                                                                      | Content is written to disk; unsaved-dot clears; that file's tree status badge updates                                                     |
+| Edit a file, then click Discard                                                                                                                | Buffer reverts to last-saved content; nothing is written to disk                                                                          |
+| Attempt to close a tab with unsaved changes                                                                                                    | A confirmation prompt appears before the tab closes                                                                                       |
+| Click a binary file in the tree                                                                                                                | Viewer shows "Can't display this file" instead of a tab with garbled content                                                              |
+| Save a file made read-only on disk                                                                                                             | Inline error is shown; the edited buffer is preserved, not reverted or lost                                                               |
+| Edit a file directly on disk (bypassing the app), then reopen the Files tab before the TTL elapses, then again after using the refresh control | Tree does not reflect the change immediately (TTL cache); refresh control shows the update                                                |

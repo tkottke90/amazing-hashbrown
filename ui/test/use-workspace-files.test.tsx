@@ -42,7 +42,10 @@ function createMockView(initialContent: string) {
   return { view, dispatch, getDoc: () => doc };
 }
 
-function makeTab(path: string, content: string): { tab: OpenTab; mock: ReturnType<typeof createMockView> } {
+function makeTab(
+  path: string,
+  content: string,
+): { tab: OpenTab; mock: ReturnType<typeof createMockView> } {
   const mock = createMockView(content);
   const tab: OpenTab = {
     path,
@@ -124,7 +127,13 @@ describe('use-workspace-files — saveTab', () => {
   });
 
   it('is a no-op for a tab with no live view (unsupported/error tabs)', async () => {
-    const tab: OpenTab = { path: 'bin.dat', view: null, savedContent: '', dirty: signal(false), unsupported: true };
+    const tab: OpenTab = {
+      path: 'bin.dat',
+      view: null,
+      savedContent: '',
+      dirty: signal(false),
+      unsupported: true,
+    };
     openTabs.value = [tab];
 
     await saveTab('ws-1', 'bin.dat');
