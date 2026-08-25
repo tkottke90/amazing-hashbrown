@@ -9,6 +9,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { WorkspaceStore } from '../../services/workspace-store.js';
 import { bootObservability } from '../../services/observability.js';
 import {
+  createTaskHandler,
   patchTaskHandler,
   enqueueTaskHandler,
   generatePlanForNewTaskHandler,
@@ -92,6 +93,104 @@ describe('routes/v1/tasks.handlers', () => {
       const result = patchTaskHandler(store, 'does-not-exist', { status: 'ready' });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('generates a webhook token when patching triggerType to webhook', () => {
+      const task = store.createTask({ title: 'Do the thing' });
+      const result = patchTaskHandler(store, task.id, { triggerType: 'webhook' });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const config = result.data!.triggerConfig as { webhookToken?: string } | null;
+        expect(config?.webhookToken).to.be.a('string').with.length.greaterThan(0);
+      }
+    });
+
+    it('replaces the token when regenerateWebhookToken is true', () => {
+      const task = store.createTask({ title: 'Do the thing' });
+      const first = patchTaskHandler(store, task.id, { triggerType: 'webhook' });
+      const tokenA = (
+        first.ok ? (first.data!.triggerConfig as { webhookToken?: string } | null) : null
+      )?.webhookToken;
+
+      const second = patchTaskHandler(store, task.id, { regenerateWebhookToken: true });
+      const tokenB = (
+        second.ok ? (second.data!.triggerConfig as { webhookToken?: string } | null) : null
+      )?.webhookToken;
+
+      expect(tokenB).to.be.a('string').with.length.greaterThan(0);
+      expect(tokenB).to.not.equal(tokenA);
+    });
+
+    it('is a no-op when regenerateWebhookToken is true on a non-webhook task', () => {
+      const task = store.createTask({ title: 'Do the thing' });
+      const result = patchTaskHandler(store, task.id, { regenerateWebhookToken: true });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.triggerConfig).to.equal(null);
+    });
+
+    it('discards a client-supplied triggerConfig.webhookToken on patch', () => {
+      const task = store.createTask({ title: 'Do the thing' });
+      const first = patchTaskHandler(store, task.id, { triggerType: 'webhook' });
+      const tokenA = (
+        first.ok ? (first.data!.triggerConfig as { webhookToken?: string } | null) : null
+      )?.webhookToken;
+
+      const second = patchTaskHandler(store, task.id, {
+        triggerConfig: { webhookToken: 'client-supplied' },
+      });
+      const tokenB = (
+        second.ok ? (second.data!.triggerConfig as { webhookToken?: string } | null) : null
+      )?.webhookToken;
+
+      expect(tokenB).to.equal(tokenA);
+      expect(tokenB).to.not.equal('client-supplied');
+    });
+  });
+
+  describe('createTaskHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-create-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('rejects a missing title', () => {
+      const result = createTaskHandler(store, {});
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('generates a webhook token when creating a task with triggerType webhook', () => {
+      const result = createTaskHandler(store, { title: 'Do the thing', triggerType: 'webhook' });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const config = result.data!.triggerConfig as { webhookToken?: string } | null;
+        expect(config?.webhookToken).to.be.a('string').with.length.greaterThan(0);
+      }
+    });
+
+    it('discards a client-supplied triggerConfig.webhookToken on create', () => {
+      const result = createTaskHandler(store, {
+        title: 'Do the thing',
+        triggerType: 'webhook',
+        triggerConfig: { webhookToken: 'client-supplied' },
+      });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const config = result.data!.triggerConfig as { webhookToken?: string } | null;
+        expect(config?.webhookToken).to.not.equal('client-supplied');
+      }
     });
   });
 

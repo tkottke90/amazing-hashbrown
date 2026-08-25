@@ -13,6 +13,7 @@ import { workspacesRouter } from './workspaces.route.js';
 import { projectsRouter } from './projects.route.js';
 import { tasksRouter } from './tasks.route.js';
 import { trackersRouter } from './trackers.route.js';
+import { triggersRouter } from './triggers.route.js';
 
 export const v1Router = Router();
 
@@ -30,3 +31,4 @@ v1Router.use('/workspaces', workspacesRouter);
 v1Router.use('/projects', projectsRouter);
 v1Router.use('/tasks', tasksRouter);
 v1Router.use('/trackers', trackersRouter);
+v1Router.use('/triggers', triggersRouter);

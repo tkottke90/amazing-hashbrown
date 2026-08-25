@@ -46,7 +46,7 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
 
 export interface HandlerFailure {
   ok: false;
-  status: 404 | 400 | 422 | 500;
+  status: 404 | 400 | 409 | 422 | 500;
   error: string;
 }
 
