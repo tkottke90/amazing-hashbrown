@@ -6,6 +6,7 @@ import { expect } from 'chai';
 import {
   isLocationRoot,
   resolvePathUnderRoot,
+  resolveFilePathUnderWorkspace,
   createWorkspaceDirectory,
 } from './workspace-location.js';
 
@@ -59,6 +60,42 @@ describe('services/workspace-location', () => {
 
     it('throws on a null byte', () => {
       expect(() => resolvePathUnderRoot(base, 'foo\0bar')).to.throw('Invalid directoryName');
+    });
+  });
+
+  describe('resolveFilePathUnderWorkspace()', () => {
+    const base = '/tmp/some-workspace';
+
+    it('resolves a nested multi-segment path correctly', () => {
+      expect(resolveFilePathUnderWorkspace(base, 'scripts/checksum-verify.py')).to.equal(
+        '/tmp/some-workspace/scripts/checksum-verify.py',
+      );
+    });
+
+    it('resolves a single-segment path (parity with resolvePathUnderRoot)', () => {
+      expect(resolveFilePathUnderWorkspace(base, 'README.md')).to.equal(
+        '/tmp/some-workspace/README.md',
+      );
+    });
+
+    it('throws on a "../../etc/passwd" traversal attempt', () => {
+      expect(() => resolveFilePathUnderWorkspace(base, '../../etc/passwd')).to.throw(
+        'Invalid file path',
+      );
+    });
+
+    it('throws on an absolute-path injection', () => {
+      expect(() => resolveFilePathUnderWorkspace(base, '/etc/passwd')).to.throw(
+        'Invalid file path',
+      );
+    });
+
+    it('throws on a null byte', () => {
+      expect(() => resolveFilePathUnderWorkspace(base, 'foo\0bar')).to.throw('Invalid file path');
+    });
+
+    it('throws on an empty path', () => {
+      expect(() => resolveFilePathUnderWorkspace(base, '')).to.throw('Invalid file path');
     });
   });
 

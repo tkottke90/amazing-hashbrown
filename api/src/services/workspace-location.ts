@@ -44,6 +44,27 @@ export function resolveWorkspaceLocation(root: LocationRoot, directoryName: stri
   return resolvePathUnderRoot(rootPath(root), directoryName);
 }
 
+// resolvePathUnderRoot() above only validates a single direct-child segment
+// (it rejects any embedded "/"), so it can't express a nested relative path
+// like "scripts/checksum-verify.py" — this sibling function allows nesting
+// while still enforcing the same containment guarantee: the resolved path
+// must land at or strictly inside workspaceLocation, never escape it via
+// "..", an embedded absolute path, or a null byte.
+export function resolveFilePathUnderWorkspace(
+  workspaceLocation: string,
+  relativePath: string,
+): string {
+  if (!relativePath || relativePath.includes('\0')) {
+    throw new Error(`Invalid file path "${relativePath}"`);
+  }
+  const base = path.resolve(workspaceLocation);
+  const resolved = path.resolve(base, relativePath);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    throw new Error(`Invalid file path "${relativePath}"`);
+  }
+  return resolved;
+}
+
 export async function createWorkspaceDirectory(location: string): Promise<void> {
   // The root (env.projectsRoot / env.tempProjectsRoot) may not exist yet on
   // a fresh install, so ensure it's there before creating the leaf
