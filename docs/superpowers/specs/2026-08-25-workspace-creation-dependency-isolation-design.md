@@ -50,11 +50,15 @@ export async function provisionDependencyIsolation(
   opts: DependencyIsolationOptions,
   execFileFn: typeof execFileAsync = execFileAsync,
 ): Promise<void> {
+  const PROVISION_TIMEOUT_MS = 30_000;
   if (opts.javascript) {
-    await execFileFn('npm', ['init', '-y'], { cwd: location });
+    await execFileFn('npm', ['init', '-y'], { cwd: location, timeout: PROVISION_TIMEOUT_MS });
   }
   if (opts.python) {
-    await execFileFn('python3', ['-m', 'venv', '.venv'], { cwd: location });
+    await execFileFn('python3', ['-m', 'venv', '.venv'], {
+      cwd: location,
+      timeout: PROVISION_TIMEOUT_MS,
+    });
   }
 }
 ```
@@ -64,6 +68,7 @@ export async function provisionDependencyIsolation(
 - Neither command runs if its flag is `false` — a workspace with both unchecked touches the filesystem exactly as it does today (just the `mkdir` from `createWorkspaceDirectory`).
 - `execFileFn` is an injectable parameter (default: the real `execFileAsync`) purely so handler/service tests can stub it instead of depending on `npm`/`python3` actually being installed in CI — mirrors the optional `registry` parameter already used in `createProjectHandler` for the same testability reason.
 - Errors (a non-zero exit, or `ENOENT` when the binary isn't on `PATH`) propagate to the caller unmodified; this function makes no decision about rollback.
+- Each call carries an explicit 30s `timeout` (see [Security considerations](#security-considerations)) — unlike the `unzip`/`tar` calls this pattern is based on, these commands run synchronously in the request path with no size-bounded input, so a stalled child process must fail fast rather than hang the response indefinitely. `execFile`'s timeout kills the process and rejects the promise, which the handler's existing `catch` (below) already turns into a cleaned-up `400`.
 
 ### 2. Handler wiring
 
@@ -164,6 +169,19 @@ No chip is rendered for an inactive mode — consistent with how the Git/Wiki ch
 
 ---
 
+## Security considerations
+
+This app has no auth layer on its API routes today (single-user, self-hosted) — the threat model is the same one the rest of the codebase already operates under, not a new one this feature introduces. Reviewed against that model:
+
+- **No command injection.** `provisionDependencyIsolation` calls `execFile` with fixed argument arrays (`['init', '-y']`, `['-m', 'venv', '.venv']`), never a shell string, so nothing from the request body is interpolated into a command. The only request-derived value that reaches the child process is `cwd`, and that value is `location` — already constrained by `resolvePathUnderRoot` (in `workspace-location.ts`) to be a direct child of `projectsRoot`/`tempProjectsRoot`, rejecting `..`, path separators, and null bytes, before provisioning ever runs.
+- **No TOCTOU window.** `createWorkspaceDirectory` calls `mkdir(location, { recursive: false })`, which fails on any pre-existing path (including a symlink planted in advance). Provisioning always runs against a directory this same request just created, in the same synchronous handler — there's no gap for something else to have replaced it.
+- **No supply-chain / arbitrary-code exposure.** Provisioning only ever runs `npm init -y` and `python3 -m venv .venv` — never `npm install`/`pip install`. No third-party package or install hook (`postinstall`, etc.) executes, and neither command makes a network call, so the private registry credentials this app's own CI uses (`NPM_TOKEN` / `npm.artifacts.tdkottke.com`) are never exercised by workspace creation.
+- **Bounded execution time.** Both `execFile` calls carry an explicit 30s `timeout` (see the provisioning snippet above) so a stalled child process — corrupted global npm/pip config, first-run venv cache stall — fails into the existing rollback path instead of hanging the (synchronous) create request indefinitely.
+- **Runs with the API server's own OS privileges**, same as the existing `unzip`/`tar` shell-outs in `wiki-upload.route.ts` — this isn't a new privilege boundary, just one more place the server process touches the filesystem/subprocess it already had access to.
+- **Error messages returned to the client include the raw `err.message`** (which may echo the absolute workspace path or command stderr). This matches the existing pattern already used elsewhere in these same handlers (e.g. `resolveWorkspaceLocation`'s catch in `createWorkspaceHandler`), and `workspace.location` is already returned as a normal field on every workspace API response today — so this doesn't create a new disclosure beyond what the app already exposes, given the no-auth, single-tenant threat model it already operates in. If that threat model ever changes (multi-tenant, exposed beyond localhost), this whole error-detail-to-client pattern — not just this feature — would need revisiting.
+
+---
+
 ## Testing
 
 ### Unit (Mocha/Chai, `api/`)
@@ -171,10 +189,11 @@ No chip is rendered for an inactive mode — consistent with how the Git/Wiki ch
 New `api/src/services/workspace-provision.test.ts`:
 
 - Neither flag set → `execFileFn` is never called.
-- `javascript: true` only → `execFileFn` called once with `('npm', ['init', '-y'], { cwd: location })`.
-- `python: true` only → `execFileFn` called once with `('python3', ['-m', 'venv', '.venv'], { cwd: location })`.
+- `javascript: true` only → `execFileFn` called once with `('npm', ['init', '-y'], { cwd: location, timeout: 30_000 })`.
+- `python: true` only → `execFileFn` called once with `('python3', ['-m', 'venv', '.venv'], { cwd: location, timeout: 30_000 })`.
 - Both set → called twice, JavaScript before Python.
 - A rejected `execFileFn` call propagates (rejects) out of `provisionDependencyIsolation` and short-circuits the second command.
+- A stubbed `execFileFn` that never resolves, combined with a short injected timeout, confirms the call surfaces as a rejection rather than hanging the test (proxy for the real `timeout` option actually bounding execution).
 
 Extend `workspaces.handlers.test.ts` / `projects.handlers.test.ts` (both already use a temp directory and a real `WorkspaceStore`):
 
