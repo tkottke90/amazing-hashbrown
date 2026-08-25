@@ -143,18 +143,26 @@ No new validation is needed — unlike Git, there's no dependent required field 
 The existing metadata chip row (which already renders Git/Wiki chips conditionally) gains two more, styled to match the mockup's "Dependency isolation" chip (a small checked-square glyph + label + muted hint), shown only when active:
 
 ```tsx
-{ws.javascript && (
-  <span class="flex items-center gap-1">
-    <span class="inline-flex items-center justify-center size-4 rounded bg-primary text-primary-foreground text-[10px]">✓</span>
-    JavaScript <span class="text-muted-foreground">(node_modules)</span>
-  </span>
-)}
-{ws.python && (
-  <span class="flex items-center gap-1">
-    <span class="inline-flex items-center justify-center size-4 rounded bg-primary text-primary-foreground text-[10px]">✓</span>
-    Python <span class="text-muted-foreground">(venv)</span>
-  </span>
-)}
+{
+  ws.javascript && (
+    <span class="flex items-center gap-1">
+      <span class="inline-flex items-center justify-center size-4 rounded bg-primary text-primary-foreground text-[10px]">
+        ✓
+      </span>
+      JavaScript <span class="text-muted-foreground">(node_modules)</span>
+    </span>
+  );
+}
+{
+  ws.python && (
+    <span class="flex items-center gap-1">
+      <span class="inline-flex items-center justify-center size-4 rounded bg-primary text-primary-foreground text-[10px]">
+        ✓
+      </span>
+      Python <span class="text-muted-foreground">(venv)</span>
+    </span>
+  );
+}
 ```
 
 No chip is rendered for an inactive mode — consistent with how the Git/Wiki chips already only appear when set.
