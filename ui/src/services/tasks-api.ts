@@ -115,3 +115,19 @@ export async function fetchQueue(): Promise<QueueState> {
 export async function enqueueTask(id: string): Promise<TaskQueueEntry> {
   return request<TaskQueueEntry>(`/api/v1/tasks/${id}/enqueue`, { method: 'POST' });
 }
+
+export async function generatePlan(taskId: string): Promise<PlanStep[]> {
+  return request<PlanStep[]>(`/api/v1/tasks/${taskId}/generate-plan`, { method: 'POST' });
+}
+
+export async function generatePlanForNewTask(input: {
+  title: string;
+  description?: string | null;
+  workspaceId?: string | null;
+}): Promise<PlanStep[]> {
+  return request<PlanStep[]>('/api/v1/tasks/generate-plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
