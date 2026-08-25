@@ -43,7 +43,11 @@ This logic lives in a small shared helper (used by both `createTaskHandler` and 
 ```ts
 function resolveTriggerConfig(
   current: { triggerType: TriggerType; triggerConfig: unknown } | null,
-  incoming: { triggerType?: TriggerType; triggerConfig?: unknown; regenerateWebhookToken?: boolean },
+  incoming: {
+    triggerType?: TriggerType;
+    triggerConfig?: unknown;
+    regenerateWebhookToken?: boolean;
+  },
 ): unknown {
   const resultingType = incoming.triggerType ?? current?.triggerType ?? 'manual';
   if (resultingType !== 'webhook') return incoming.triggerConfig;
@@ -104,13 +108,13 @@ In `TaskForm` (`ui/src/components/task-drawer.tsx`), a new "Trigger" field group
 
 ## Error handling
 
-| Case | Behavior |
-| --- | --- |
-| Token doesn't match any task | `404`, generic message — no hint about whether a task ever existed for that token |
-| Task's queue entry status is `pending`, `running`, or `paused` | `409` with a message identifying the task as already active |
-| `regenerateWebhookToken: true` sent for a non-webhook (or becoming non-webhook) task | No-op — ignored, not an error |
-| Client sends `triggerConfig.webhookToken` directly (create or patch) | Silently discarded; server-resolved value always wins |
-| Webhook request body present | Parsed by the existing global `express.json()`, never read |
+| Case                                                                                 | Behavior                                                                          |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Token doesn't match any task                                                         | `404`, generic message — no hint about whether a task ever existed for that token |
+| Task's queue entry status is `pending`, `running`, or `paused`                       | `409` with a message identifying the task as already active                       |
+| `regenerateWebhookToken: true` sent for a non-webhook (or becoming non-webhook) task | No-op — ignored, not an error                                                     |
+| Client sends `triggerConfig.webhookToken` directly (create or patch)                 | Silently discarded; server-resolved value always wins                             |
+| Webhook request body present                                                         | Parsed by the existing global `express.json()`, never read                        |
 
 ---
 
@@ -125,13 +129,13 @@ In `TaskForm` (`ui/src/components/task-drawer.tsx`), a new "Trigger" field group
 
 No component-level test framework is exercised for `task-drawer.tsx` beyond the existing Playwright e2e coverage. Extend the existing **Inbox & Task Management** suite (`e2e/tests/inbox-tasks.spec.ts`, id `17`, `suiteAnnotations`/`TestSuite` pattern) rather than adding a new suite — this is an incremental addition to a drawer already covered there, not a new page or major surface:
 
-| Action | Expected outcome |
-| --- | --- |
-| Open a task's drawer, select "Webhook" as the trigger type, save | Reopening the task shows a read-only URL field and a Regenerate URL button |
-| Click the Copy button | Clipboard receives the full URL; button shows brief confirmation |
-| Click Regenerate URL and confirm the prompt | URL field updates to a new token; the old token no longer resolves (verified via a direct API call in the same test, since the UI has no way to show a 404 sending an old link) |
-| Click Regenerate URL and cancel the prompt | URL is unchanged |
-| Select "Webhook" on a brand-new, unsaved task | Note about the URL appearing after save is shown instead of a URL field |
+| Action                                                           | Expected outcome                                                                                                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a task's drawer, select "Webhook" as the trigger type, save | Reopening the task shows a read-only URL field and a Regenerate URL button                                                                                                      |
+| Click the Copy button                                            | Clipboard receives the full URL; button shows brief confirmation                                                                                                                |
+| Click Regenerate URL and confirm the prompt                      | URL field updates to a new token; the old token no longer resolves (verified via a direct API call in the same test, since the UI has no way to show a 404 sending an old link) |
+| Click Regenerate URL and cancel the prompt                       | URL is unchanged                                                                                                                                                                |
+| Select "Webhook" on a brand-new, unsaved task                    | Note about the URL appearing after save is shown instead of a URL field                                                                                                         |
 
 ---
 
