@@ -180,7 +180,11 @@ test.describe(
       });
 
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: { name: 'plan-gen-ws', locationRoot: 'temporary', directoryName: 'plan-gen-ws' },
+        data: {
+          name: 'task-ai-plan-gen-ws',
+          locationRoot: 'temporary',
+          directoryName: 'task-ai-plan-gen-ws',
+        },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -207,7 +211,10 @@ test.describe(
       const planSection = drawer.locator('[data-testid="task-plan"]');
       const planSteps = planSection.locator('[data-testid="plan-step"]');
       await expect(planSteps).toHaveCount(1);
-      await expect(planSteps.nth(0)).toContainText('Stubbed step one');
+      // Step text lives in an <input type="text" value={...}> — an input's
+      // value is not part of its textContent, so it's read via toHaveValue,
+      // not toContainText.
+      await expect(planSteps.nth(0).locator('input[type="text"]')).toHaveValue('Stubbed step one');
 
       // --- A manual step added next, then another stubbed-success generate:
       //     existing steps (the earlier generated one plus this manual one)
@@ -219,9 +226,11 @@ test.describe(
       await stepInputs.last().fill('Manual step zero');
       await sparkleButton.click();
       await expect(planSteps).toHaveCount(3);
-      await expect(planSteps.nth(0)).toContainText('Stubbed step one');
-      await expect(planSteps.nth(1)).toContainText('Manual step zero');
-      await expect(planSteps.nth(2)).toContainText('Generated step two');
+      await expect(planSteps.nth(0).locator('input[type="text"]')).toHaveValue('Stubbed step one');
+      await expect(planSteps.nth(1).locator('input[type="text"]')).toHaveValue('Manual step zero');
+      await expect(planSteps.nth(2).locator('input[type="text"]')).toHaveValue(
+        'Generated step two',
+      );
 
       // --- Stubbed failure: inline error shown, plan unchanged ---
       await pauseBeforeAction(page, testInfo);
@@ -252,7 +261,9 @@ test.describe(
       const countBeforeSavedGenerate = await savedPlanSteps.count();
       await savedSparkleButton.click();
       await expect(savedPlanSteps).toHaveCount(countBeforeSavedGenerate + 1);
-      await expect(savedPlanSteps.last()).toContainText('Persisted generated step');
+      await expect(savedPlanSteps.last().locator('input[type="text"]')).toHaveValue(
+        'Persisted generated step',
+      );
 
       await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).click();
       await expect(page.locator('dialog[open]')).not.toBeVisible();
@@ -263,7 +274,9 @@ test.describe(
         'dialog[open] [data-testid="task-plan"] [data-testid="plan-step"]',
       );
       await expect(reopenedSavedPlanSteps).toHaveCount(countBeforeSavedGenerate + 1);
-      await expect(reopenedSavedPlanSteps.last()).toContainText('Persisted generated step');
+      await expect(reopenedSavedPlanSteps.last().locator('input[type="text"]')).toHaveValue(
+        'Persisted generated step',
+      );
     });
   },
 );
