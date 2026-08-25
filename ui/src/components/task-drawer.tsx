@@ -258,8 +258,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
         void updatePlan(task.id, next);
       }
     } catch (err) {
-      generatePlanError.value =
-        err instanceof Error ? err.message : 'Could not generate a plan.';
+      generatePlanError.value = err instanceof Error ? err.message : 'Could not generate a plan.';
     } finally {
       generatingPlan.value = false;
     }
@@ -351,7 +350,9 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               type="button"
               class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title={
-                !title.value.trim() ? 'Add a title before generating a plan' : 'Generate plan with AI'
+                !title.value.trim()
+                  ? 'Add a title before generating a plan'
+                  : 'Generate plan with AI'
               }
               aria-label="Generate plan with AI"
               disabled={!title.value.trim() || generatingPlan.value}

@@ -211,7 +211,12 @@ describe('agents/plan-generation', () => {
 
     it('lists only top-level entries, ignoring children', () => {
       const entries: FileNode[] = [
-        { name: 'src', path: 'src', type: 'dir', children: [{ name: 'index.ts', path: 'src/index.ts', type: 'file' }] },
+        {
+          name: 'src',
+          path: 'src',
+          type: 'dir',
+          children: [{ name: 'index.ts', path: 'src/index.ts', type: 'file' }],
+        },
         { name: 'README.md', path: 'README.md', type: 'file' },
       ];
       const block = buildFileListingBlock(entries);

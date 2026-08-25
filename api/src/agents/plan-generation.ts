@@ -204,9 +204,7 @@ export async function runPathA(
     obsStore.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
     });
-    return typeof response.content === 'string'
-      ? response.content
-      : String(response.content ?? '');
+    return typeof response.content === 'string' ? response.content : String(response.content ?? '');
   } catch (err) {
     await obsHandler.handleChainEnd();
     obsStore.endTrace(traceId, {

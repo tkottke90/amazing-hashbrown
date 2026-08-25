@@ -90,15 +90,15 @@ It trims/strips surrounding prose or code fences defensively (mirroring how `gen
 
 ## Error handling
 
-| Case                                                          | Behavior                                                                          |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| No title (empty/whitespace)                                     | Sparkle button disabled, tooltip: "Add a title before generating a plan"           |
-| Workspace record not found (stale `workspace_id`)                | Path A context-fetch steps are skipped as if no workspace was bound; generation proceeds with just title/description |
-| Wiki registry/domain unavailable or empty search results         | Wiki context block omitted; generation proceeds                                    |
-| File-listing fetch fails (missing/unreadable location, git error) | File-listing block omitted; generation proceeds                                    |
-| Model/provider error (network, API failure)                      | Handler returns a failure; inline error shown; existing plan untouched             |
-| Model response isn't valid `{step, done}[]` JSON                 | Treated as a generation failure (no retry); inline error shown; existing plan untouched |
-| Generation succeeds while another generation is already in flight | Sparkle button is disabled during generation, so this can't be triggered from the UI |
+| Case                                                              | Behavior                                                                                                             |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| No title (empty/whitespace)                                       | Sparkle button disabled, tooltip: "Add a title before generating a plan"                                             |
+| Workspace record not found (stale `workspace_id`)                 | Path A context-fetch steps are skipped as if no workspace was bound; generation proceeds with just title/description |
+| Wiki registry/domain unavailable or empty search results          | Wiki context block omitted; generation proceeds                                                                      |
+| File-listing fetch fails (missing/unreadable location, git error) | File-listing block omitted; generation proceeds                                                                      |
+| Model/provider error (network, API failure)                       | Handler returns a failure; inline error shown; existing plan untouched                                               |
+| Model response isn't valid `{step, done}[]` JSON                  | Treated as a generation failure (no retry); inline error shown; existing plan untouched                              |
+| Generation succeeds while another generation is already in flight | Sparkle button is disabled during generation, so this can't be triggered from the UI                                 |
 
 ---
 
@@ -122,10 +122,10 @@ It trims/strips surrounding prose or code fences defensively (mirroring how `gen
 
 Following the repo's mocking convention, e2e coverage stubs the `generate-plan` API response via Playwright route interception rather than invoking a real model:
 
-| Action                                                                 | Expected outcome                                                        |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Open a new task drawer with no title, click the sparkle button           | Button is disabled; tooltip shows "Add a title before generating a plan"   |
-| Enter a title, stub a successful `generate-plan` response, click sparkle | Loading state shown briefly, then the returned steps appear in the plan    |
-| Add a manual step first, then generate via a stubbed success response    | Manual step remains first; generated steps are appended after it           |
-| Stub a `generate-plan` failure response, click sparkle                   | Inline error shown; plan section is unchanged                              |
+| Action                                                                   | Expected outcome                                                               |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Open a new task drawer with no title, click the sparkle button           | Button is disabled; tooltip shows "Add a title before generating a plan"       |
+| Enter a title, stub a successful `generate-plan` response, click sparkle | Loading state shown briefly, then the returned steps appear in the plan        |
+| Add a manual step first, then generate via a stubbed success response    | Manual step remains first; generated steps are appended after it               |
+| Stub a `generate-plan` failure response, click sparkle                   | Inline error shown; plan section is unchanged                                  |
 | Generate on an already-saved task via a stubbed success response         | Steps appear and persist after closing/reopening the drawer (via `updatePlan`) |
