@@ -151,3 +151,68 @@ describe('CreateWorkspaceForm — Git repository section', () => {
     );
   });
 });
+
+describe('CreateWorkspaceForm — Dependency isolation section', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders both checkboxes unchecked by default', () => {
+    render(<CreateWorkspaceForm />);
+    expect(screen.getByLabelText(/JavaScript/)).not.toBeChecked();
+    expect(screen.getByLabelText(/Python/)).not.toBeChecked();
+  });
+
+  it('submits javascript: false, python: false when both are left unchecked', async () => {
+    mockCreateWorkspace.mockResolvedValue({ id: 'ws-1' } as unknown as Awaited<
+      ReturnType<typeof api.createWorkspace>
+    >);
+    render(<CreateWorkspaceForm />);
+
+    fillName('my-ws');
+    submitForm();
+
+    await waitFor(() => expect(mockCreateWorkspace).toHaveBeenCalled());
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ javascript: false, python: false }),
+    );
+  });
+
+  it('submits javascript: true when the JavaScript checkbox is checked', async () => {
+    mockCreateWorkspace.mockResolvedValue({ id: 'ws-1' } as unknown as Awaited<
+      ReturnType<typeof api.createWorkspace>
+    >);
+    render(<CreateWorkspaceForm />);
+
+    fillName('my-ws');
+    fireEvent.click(screen.getByLabelText(/JavaScript/));
+    submitForm();
+
+    await waitFor(() => expect(mockCreateWorkspace).toHaveBeenCalled());
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ javascript: true, python: false }),
+    );
+  });
+
+  it('submits javascript: true and python: true when both checkboxes are checked, in project mode too', async () => {
+    mockCreateProject.mockResolvedValue({
+      workspace: { id: 'ws-1' },
+      project: { id: 'ws-1' },
+    } as unknown as Awaited<ReturnType<typeof api.createProject>>);
+    render(<CreateWorkspaceForm />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+    fillName('my-proj');
+    fireEvent.input(screen.getByPlaceholderText('The project is done when...'), {
+      target: { value: 'Ships' },
+    });
+    fireEvent.click(screen.getByLabelText(/JavaScript/));
+    fireEvent.click(screen.getByLabelText(/Python/));
+    submitForm();
+
+    await waitFor(() => expect(mockCreateProject).toHaveBeenCalled());
+    expect(mockCreateProject).toHaveBeenCalledWith(
+      expect.objectContaining({ javascript: true, python: true }),
+    );
+  });
+});

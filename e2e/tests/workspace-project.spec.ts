@@ -32,6 +32,13 @@ const suite: TestSuite = {
       test: () => {},
     },
     {
+      tags: ['@user-workflow'],
+      action: 'Create a workspace with both dependency isolation checkboxes checked',
+      expectedOutcome:
+        'Workspace is created with javascript=true and python=true; the detail page shows both isolation chips',
+      test: () => {},
+    },
+    {
       tags: ['@functional'],
       action: 'Create and delete a project via the API',
       expectedOutcome:
@@ -155,6 +162,71 @@ test.describe(
       expect(workspaceId).toBeTruthy();
       const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
       expect(delRes.status()).toBe(204);
+    });
+
+    test('creates a workspace with both isolation checkboxes checked and shows both chips on the detail page', async ({
+      page,
+      request,
+    }, testInfo) => {
+      await page.goto('/workspaces');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByRole('button', { name: 'New workspace' }).click();
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+
+      const nameInput = drawer.getByPlaceholder('my-workspace', { exact: true });
+      await nameInput.fill('e2e-ws-isolation-create');
+      await nameInput.blur();
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByLabel(/JavaScript/).click();
+      await drawer.getByLabel(/Python/).click();
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Create workspace' }).click();
+      // Real npm init/venv provisioning runs synchronously in the create
+      // request, so this can take noticeably longer than the other
+      // (non-provisioning) creation tests' default 5s assertion timeout,
+      // especially under concurrent test-worker load.
+      await expect(drawer).not.toBeVisible({ timeout: 20_000 });
+
+      await page.getByRole('link', { name: 'e2e-ws-isolation-create' }).click();
+      await page.waitForURL(/\/workspaces\/[^/]+$/);
+
+      await expect(page.getByTestId('javascript-chip')).toBeVisible();
+      await expect(page.getByTestId('python-chip')).toBeVisible();
+
+      // Clean up so reruns against a persistent dev server don't collide on
+      // the fixed workspace name/directory used above.
+      const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
+      expect(workspaceId).toBeTruthy();
+      const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
+      expect(delRes.status()).toBe(204);
+    });
+
+    test('creates a workspace with neither isolation checkbox checked and shows neither chip', async ({
+      page,
+      request,
+    }) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'e2e-ws-no-isolation',
+          locationRoot: 'temporary',
+          directoryName: `e2e-ws-no-isolation-${Date.now()}`,
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+      expect(ws.javascript).toBe(false);
+      expect(ws.python).toBe(false);
+
+      await page.goto(`/workspaces/${ws.id}`);
+
+      await expect(page.getByTestId('javascript-chip')).not.toBeVisible();
+      await expect(page.getByTestId('python-chip')).not.toBeVisible();
+
+      await request.delete(`/api/v1/workspaces/${ws.id}`);
     });
 
     test('creates a project via the UI form and navigates to its detail page', async ({

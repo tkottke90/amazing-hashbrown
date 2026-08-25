@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { WorkspaceStore } from '../../services/workspace-store.js';
+import type { ExecFileFn } from '../../services/workspace-provision.js';
 import { createProjectHandler, patchProjectHandler, slugify } from './projects.handlers.js';
 
 describe('routes/v1/projects.handlers', () => {
@@ -141,6 +142,73 @@ describe('routes/v1/projects.handlers', () => {
         expect(result.status).to.equal(400);
         expect(result.error).to.include('winCondition');
       }
+    });
+
+    it('creates the project with javascript/python set when provisioning succeeds', async () => {
+      const calls: unknown[][] = [];
+      const execFileFn = (async (...args: unknown[]) => {
+        calls.push(args);
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `provision-project-ok-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Provisioned Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          javascript: true,
+          python: true,
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      if (result.ok) {
+        expect(result.data.workspace.javascript).to.equal(true);
+        expect(result.data.workspace.python).to.equal(true);
+      }
+      expect(calls.length).to.equal(2);
+      expect(existsSync(location)).to.equal(true);
+    });
+
+    it('rolls back the directory and returns 400 when provisioning fails, before the wiki domain is created', async () => {
+      const execFileFn = (async () => {
+        throw new Error('npm not found');
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `provision-project-fail-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Failed Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          javascript: true,
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.error).to.include('Failed to provision dependency isolation');
+        expect(result.error).to.include('npm not found');
+      }
+      expect(existsSync(location)).to.equal(false);
+      expect(registry.list(), 'no wiki domain should have been created').to.have.length(0);
+      expect(store.listProjects()).to.have.length(0);
     });
   });
 
