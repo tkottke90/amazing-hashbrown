@@ -8,6 +8,7 @@ import {
   patchWorkspaceHandler,
   deleteWorkspaceHandler,
 } from './workspaces.handlers.js';
+import { workspaceFilesRouter } from './workspace-files.route.js';
 
 export const workspacesRouter = Router();
 
@@ -62,3 +63,5 @@ workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
   }
   res.status(204).end();
 });
+
+workspacesRouter.use('/:id/files', workspaceFilesRouter);

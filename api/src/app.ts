@@ -16,7 +16,12 @@ export function createApp() {
   app.config = configManager;
 
   app.use(cors());
-  app.use(express.json());
+  // Default body-parser limit is ~100kb — well under the 2MB application-
+  // level file-content guard (workspace-files.ts), which would silently
+  // break saving any file over 100kb with a 413 before it ever reached that
+  // guard. 5mb gives headroom over the 2MB cap for JSON-string-escaping
+  // overhead; that 2MB guard is what actually enforces the business rule.
+  app.use(express.json({ limit: '5mb' }));
   app.use(requestLogger);
   app.use('/api', apiRouter);
   app.use(express.static(publicDir));
