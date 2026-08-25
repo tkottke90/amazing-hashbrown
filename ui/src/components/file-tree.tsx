@@ -22,6 +22,7 @@ const STATUS_CLASS: Record<'M' | 'A', string> = {
 function GitStatusBadge({ status }: { status: 'M' | 'A' }) {
   return (
     <span
+      data-testid="file-tree-status"
       class={cn(
         'ml-auto shrink-0 rounded px-1 text-[10px] font-semibold leading-4',
         STATUS_CLASS[status],
@@ -48,6 +49,8 @@ function FileTreeRow({
     <div>
       <button
         type="button"
+        data-testid="file-tree-row"
+        data-path={node.path}
         class="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-sm hover:bg-muted"
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
         onClick={() => (isDir ? toggleFolder(node.path) : void openFile(workspaceId, node.path))}
@@ -86,9 +89,11 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
   const error = fileTreeError.value;
 
   return (
-    <div class="flex h-full flex-col">
+    <div class="flex h-full flex-col" data-testid="file-tree">
       <div class="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-        <span class="truncate">{tree?.branch ? `git · ${tree.branch}` : ''}</span>
+        <span class="truncate" data-testid="file-tree-branch">
+          {tree?.branch ? `git · ${tree.branch}` : ''}
+        </span>
         <button
           type="button"
           aria-label="Refresh file tree"
@@ -101,7 +106,9 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
 
       <div class="flex-1 overflow-y-auto p-1">
         {error ? (
-          <div class="p-3 text-sm text-destructive">{error}</div>
+          <div class="p-3 text-sm text-destructive" data-testid="file-tree-error">
+            {error}
+          </div>
         ) : tree && tree.entries.length > 0 ? (
           tree.entries.map((node) => (
             <FileTreeRow key={node.path} node={node} depth={0} workspaceId={workspaceId} />

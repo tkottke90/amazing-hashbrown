@@ -25,6 +25,8 @@ function TabButton({ tab, isActive }: { tab: OpenTab; isActive: boolean }) {
   return (
     <button
       type="button"
+      data-testid="file-tab"
+      data-path={tab.path}
       class={cn(
         'flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm transition-colors',
         isActive
@@ -60,14 +62,21 @@ function TabButton({ tab, isActive }: { tab: OpenTab; isActive: boolean }) {
 function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }) {
   if (tab.unsupported) {
     return (
-      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div
+        data-testid="file-unsupported"
+        class="flex h-full items-center justify-center text-sm text-muted-foreground"
+      >
         Can&apos;t display this file.
       </div>
     );
   }
 
   if (tab.error && !tab.view) {
-    return <div class="p-3 text-sm text-destructive">{tab.error}</div>;
+    return (
+      <div data-testid="file-editor-error" class="p-3 text-sm text-destructive">
+        {tab.error}
+      </div>
+    );
   }
 
   return (
@@ -81,7 +90,11 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
             Discard
           </Button>
         </div>
-        {tab.error && <span class="truncate text-xs text-destructive">{tab.error}</span>}
+        {tab.error && (
+          <span data-testid="file-editor-error" class="truncate text-xs text-destructive">
+            {tab.error}
+          </span>
+        )}
       </div>
       <div class="flex-1 min-h-0">
         <CodeEditor
@@ -128,6 +141,8 @@ export function FilesTab({ workspaceId }: { workspaceId: string }) {
               openTabs.value.map((tab) => (
                 <div
                   key={tab.path}
+                  data-testid="file-editor-pane"
+                  data-path={tab.path}
                   class={cn('h-full', activeTabPath.value !== tab.path && 'hidden')}
                 >
                   <EditorPanel workspaceId={workspaceId} tab={tab} />
