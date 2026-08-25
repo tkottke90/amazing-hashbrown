@@ -336,8 +336,7 @@ export function CreateWorkspaceForm() {
 
           {mode.value === 'project' && (
             <p class="text-xs text-muted-foreground">
-              Creates an ephemeral wiki domain — the only write target while the project is
-              active.
+              Creates an ephemeral wiki domain — the only write target while the project is active.
             </p>
           )}
 
