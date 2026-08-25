@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import type { TaskListFilters, TaskStatus } from '../../services/workspace-store.js';
 import { getTaskScheduler } from '../../services/task-scheduler.js';
+import { createProvider } from '../../services/provider-factory.js';
 import {
   listTasksHandler,
   getTaskHandler,
@@ -11,6 +12,8 @@ import {
   deleteTaskHandler,
   getQueueHandler,
   enqueueTaskHandler,
+  generatePlanForNewTaskHandler,
+  generatePlanForTaskHandler,
 } from './tasks.handlers.js';
 
 export const tasksRouter = Router();
@@ -49,6 +52,35 @@ tasksRouter.post('/', (req: Request, res: Response) => {
     return;
   }
   res.status(201).json(result.data);
+});
+
+// Bare /generate-plan must be registered before /:id so it isn't matched as
+// an id param — same reason /queue is registered ahead of /:id above.
+tasksRouter.post('/generate-plan', async (req: Request, res: Response) => {
+  const { provider, model: modelName } = req.body as { provider?: string; model?: string };
+
+  let model;
+  try {
+    model = createProvider(provider, modelName);
+  } catch (err) {
+    res.status(500).json({
+      error: `No provider available: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  const result = await generatePlanForNewTaskHandler(
+    getWorkspaceStore(),
+    model,
+    provider,
+    modelName,
+    req.body as Record<string, unknown>,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(200).json(result.data);
 });
 
 tasksRouter.get('/:id', (req: Request, res: Response) => {
@@ -96,4 +128,32 @@ tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {
   // pick it up immediately rather than waiting on the next unrelated trigger.
   getTaskScheduler().wake();
   res.status(201).json(result.data);
+});
+
+tasksRouter.post('/:id/generate-plan', async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { provider, model: modelName } = req.body as { provider?: string; model?: string };
+
+  let model;
+  try {
+    model = createProvider(provider, modelName);
+  } catch (err) {
+    res.status(500).json({
+      error: `No provider available: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  const result = await generatePlanForTaskHandler(
+    getWorkspaceStore(),
+    model,
+    provider,
+    modelName,
+    id,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(200).json(result.data);
 });

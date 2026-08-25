@@ -12,6 +12,7 @@ export const TraceSourceSchema = z.enum([
   'chat',
   'after-agent',
   'generate-title',
+  'generate-plan',
   'wiki-ingestion',
 ]);
 

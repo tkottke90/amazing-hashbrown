@@ -7,6 +7,8 @@ import {
   patchTask as apiPatchTask,
   deleteTask as apiDeleteTask,
   enqueueTask as apiEnqueueTask,
+  generatePlan as apiGeneratePlan,
+  generatePlanForNewTask as apiGeneratePlanForNewTask,
   type TaskFilters,
 } from '@/services/tasks-api';
 
@@ -64,6 +66,18 @@ export async function enqueueTask(id: string): Promise<void> {
 
 export async function updatePlan(taskId: string, plan: PlanStep[]): Promise<Task> {
   return patchTask(taskId, { plan });
+}
+
+export async function generatePlan(taskId: string): Promise<PlanStep[]> {
+  return apiGeneratePlan(taskId);
+}
+
+export async function generatePlanForNewTask(input: {
+  title: string;
+  description?: string | null;
+  workspaceId?: string | null;
+}): Promise<PlanStep[]> {
+  return apiGeneratePlanForNewTask(input);
 }
 
 export function groupTasksByStatus(taskList: Task[]): Record<TaskStatus, Task[]> {

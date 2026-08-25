@@ -1,0 +1,123 @@
+suite:
+  id: task-plan-generation
+  name: AI Task Plan Generation
+  purpose: >
+    Verify that POST /api/v1/tasks/generate-plan and
+    /api/v1/tasks/:id/generate-plan (Path A — workspace_id present) produce a
+    valid, sensible JSON array of {step, done} plan steps from a task's
+    title/description and, where present, workspace context. Path B (no
+    workspace_id — a one-shot agent with wiki_search/wiki_read_page tools) is
+    not covered here: this framework's scenario types operate on a raw prompt
+    sent straight to model.invoke(), which doesn't fit an arbitrary
+    tool-calling agent loop. Path B's agent-loop mechanics are covered
+    instead by a scripted-model Mocha test
+    (api/src/agents/plan-generation.test.ts). The `input` field on every
+    scenario below is the exact prompt api/src/agents/plan-generation.ts's
+    buildPathAPrompt sends to the model — keep them in sync if the prompt
+    template changes.
+  passingThreshold: 0.75
+  # buildPathAPrompt/runPathA call model.invoke(prompt) directly — no system
+  # message at all, same as generate-title. The `input` field above already
+  # is that exact prompt, so attaching the chat agent's harness system prompt
+  # on top would test a combination that never happens in production.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: tpg-001-valid-json-array
+    name: Response is a JSON array
+    purpose: >
+      The frontend parses this response directly as PlanStep[] — anything
+      that isn't a JSON array (prose, a fenced code block with commentary
+      around it, a JSON object) breaks the append-to-plan flow.
+    type: deterministic
+    input: |
+      Title: Set up CI for the API package
+      Description: Add a GitHub Actions workflow that runs lint, typecheck, and tests on every pull request.
+
+      Generate a concrete, ordered list of steps to complete this task.
+      Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
+    match: regex
+    expected: '^\s*\['
+
+  - id: tpg-002-concrete-ordered-steps
+    name: Steps are concrete, ordered, and grounded in the task
+    purpose: >
+      A first-draft plan that's just vague filler ("Plan the work", "Do the
+      task") or a restatement of the title defeats the point of the feature
+      — the user still has to write the real plan themselves.
+    type: llm-judge
+    input: |
+      Title: Set up CI for the API package
+      Description: Add a GitHub Actions workflow that runs lint, typecheck, and tests on every pull request.
+
+      Generate a concrete, ordered list of steps to complete this task.
+      Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
+    rubric: >
+      The response should be a JSON array of objects, each with a non-empty
+      "step" string and "done": false. The steps together should form a
+      reasonable, concrete, ordered first-draft plan for setting up a CI
+      workflow (e.g. creating a workflow file, configuring lint/typecheck/test
+      steps, wiring it to run on pull requests) — not vague filler steps, not
+      a restated title, and not inventing scope beyond what the title and
+      description support (e.g. don't invent deployment or release steps that
+      weren't asked for).
+    minScore: 6
+
+  - id: tpg-003-respects-workspace-context
+    name: Plan reflects the workspace's goal, not just the task title
+    purpose: >
+      Path A's whole point is producing workspace-aware steps, not the same
+      generic plan the no-workspace path would produce. This checks the
+      generated plan actually engages with the workspace's stated goal.
+    type: llm-judge
+    input: |
+      Title: Kick off the migration
+      Description: Start moving the legacy jobs over.
+
+      ## Workspace
+      Name: Batch Pipeline Modernization
+      Goal: Migrate all legacy cron-based batch jobs onto the new event-driven task queue, retiring the old cron runner entirely by end of quarter.
+
+      Generate a concrete, ordered list of steps to complete this task.
+      Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
+    rubric: >
+      The response should be a JSON array of {"step", "done": false} objects.
+      Given how thin the task's own title/description are on their own, a
+      good plan must draw on the workspace's stated goal (migrating legacy
+      cron-based batch jobs onto an event-driven task queue and retiring the
+      old cron runner) — e.g. inventorying existing cron jobs, migrating them
+      incrementally, decommissioning the old runner. Score low if the plan
+      is so generic it could apply to any unrelated "kick off" task and
+      ignores the workspace goal entirely.
+    minScore: 6
+
+  - id: tpg-004-respects-wiki-context
+    name: Plan incorporates a specific fact from the wiki context block
+    purpose: >
+      Confirms the model actually reads and uses the wiki context block
+      (rather than ignoring it) when relevant prior-art content is available
+      — the whole reason Path A fetches it via semantic search.
+    type: llm-judge
+    input: |
+      Title: Add a new payment provider
+      Description: We need to support a second payment processor alongside the existing one.
+
+      ## Workspace
+      Name: Billing Service
+      Goal: Support multiple interchangeable payment providers behind one internal interface.
+
+      ## Relevant wiki context
+      ### Payment Provider Interface
+      All payment providers must implement the internal `PaymentProvider` interface (charge, refund, getStatus). New providers are registered in `providers/registry.ts` and require an entry in the provider config schema before they can be selected per-merchant.
+
+      Generate a concrete, ordered list of steps to complete this task.
+      Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
+    rubric: >
+      The response should be a JSON array of {"step", "done": false} objects.
+      A good plan reflects the wiki context's specific detail — implementing
+      the `PaymentProvider` interface (charge/refund/getStatus), registering
+      the new provider in `providers/registry.ts`, and updating the provider
+      config schema — rather than a generic "integrate a payment API" plan
+      that ignores this codebase's actual existing pattern. Score low if the
+      plan reads as if the wiki context block wasn't there at all.
+    minScore: 6

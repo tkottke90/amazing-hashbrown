@@ -7,7 +7,13 @@ import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { createTask, patchTask, updatePlan } from '@/hooks/use-tasks';
+import {
+  createTask,
+  patchTask,
+  updatePlan,
+  generatePlan,
+  generatePlanForNewTask,
+} from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
 import type { Task, TaskStatus, PlanStep, CreateTaskInput } from '@/services/tasks-api';
 import {
@@ -84,6 +90,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const dueAt = useSignal(task?.dueAt ? task.dueAt.slice(0, 10) : '');
   const workspaceId = useSignal<string | null>(task?.workspaceId ?? defaultWorkspaceId ?? null);
   const planSteps = useSignal<PlanStep[]>(task?.plan ?? []);
+  const generatingPlan = useSignal(false);
+  const generatePlanError = useSignal('');
   const saving = useSignal(false);
   const error = useSignal('');
 
@@ -232,6 +240,31 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
     planSteps.value = planSteps.value.filter((_, i) => i !== idx);
   }
 
+  async function handleGeneratePlan() {
+    if (!title.value.trim() || generatingPlan.value) return;
+    generatingPlan.value = true;
+    generatePlanError.value = '';
+    try {
+      const generated = task
+        ? await generatePlan(task.id)
+        : await generatePlanForNewTask({
+            title: title.value.trim(),
+            description: description.value.trim() || null,
+            workspaceId: workspaceId.value,
+          });
+      const next = [...planSteps.value, ...generated];
+      planSteps.value = next;
+      if (task) {
+        void updatePlan(task.id, next);
+      }
+    } catch (err) {
+      generatePlanError.value =
+        err instanceof Error ? err.message : 'Could not generate a plan.';
+    } finally {
+      generatingPlan.value = false;
+    }
+  }
+
   async function handleSave(e: Event) {
     e.preventDefault();
     if (!title.value.trim()) {
@@ -316,11 +349,19 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
             <label class="text-xs font-medium text-muted-foreground">Plan</label>
             <button
               type="button"
-              class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Generate plan with AI"
+              class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                !title.value.trim() ? 'Add a title before generating a plan' : 'Generate plan with AI'
+              }
               aria-label="Generate plan with AI"
+              disabled={!title.value.trim() || generatingPlan.value}
+              onClick={handleGeneratePlan}
             >
-              <Sparkles class="size-3.5" />
+              {generatingPlan.value ? (
+                <Loader2 class="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles class="size-3.5" />
+              )}
             </button>
           </div>
           <div class="border border-border rounded-lg overflow-hidden">
@@ -406,6 +447,9 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
           </div>
           {totalCount.value > 0 && (
             <p class="text-[10px] text-muted-foreground mt-0.5">Drag rows to reorder steps</p>
+          )}
+          {generatePlanError.value && (
+            <p class="text-xs text-destructive">{generatePlanError.value}</p>
           )}
         </div>
 
