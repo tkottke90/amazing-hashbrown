@@ -151,23 +151,30 @@ Each tab owns its own `dirty` signal rather than all tabs sharing one array/obje
 - Save/Discard wiring, including the failure path (inline error shown, buffer preserved)
 - `code-editor.tsx`: mounts CodeMirror with the language extension matching the file's extension; falls back to plain text for an unrecognized extension; unmounts cleanly
 
-### E2E (Playwright, new `e2e/tests/workspace-file-browser.spec.ts`)
+### E2E (Playwright, new `e2e/tests/003-WorkspaceFileBrowser.spec.ts`)
 
-This feature is reachable only through real browser interaction across a tree/viewer/tab-bar UI backed by real filesystem and git state, which is exactly the kind of behavior this repo's existing e2e suites (e.g. `workspace-project.spec.ts`) exist to cover — so unlike the [wiki-binding form-wiring change](./2026-08-25-workspace-creation-wiki-binding-design.md), this warrants a new suite rather than relying on Jest alone. New suite, `id: 18` (next after `inbox-tasks.spec.ts`'s `17`), following the same `suite`/`steps` structure:
+This feature is reachable only through real browser interaction across a tree/viewer/tab-bar UI backed by real filesystem and git state, which is exactly the kind of behavior this repo's existing e2e suites exist to cover — so unlike the [wiki-binding form-wiring change](./2026-08-25-workspace-creation-wiki-binding-design.md), this warrants a new suite rather than relying on Jest alone.
 
-| Tags | Action | Expected outcome |
-|---|---|---|
-| `@user-workflow` | Open the Files tab on a git-enabled workspace with an untracked and a modified file | Tree loads rooted at the workspace's `location`; header shows `git · <branch>`; the modified file shows `M`, the untracked file shows `A` |
-| `@user-workflow` | Expand and collapse a folder in the tree | Children show/hide; state persists while switching tabs |
-| `@user-workflow` | Point a workspace at a missing/unreadable directory and open Files | Tree panel shows a clear error state, not a crash |
-| `@user-workflow` | Open a workspace with `git: false` | Tree loads with no branch label and no status badges |
-| `@user-workflow` | Click a file, then a second file | Both open as tabs in the tab bar; content of each is shown when its tab is active |
-| `@user-workflow` | Edit an open file | Unsaved-dot appears on that tab only; other open tabs are unaffected |
-| `@user-workflow` | Click Save on a dirty tab | Content is written to disk; unsaved-dot clears; that file's tree status badge updates |
-| `@user-workflow` | Edit a file, then click Discard | Buffer reverts to last-saved content; nothing is written to disk |
-| `@user-workflow` | Attempt to close a tab with unsaved changes | A confirmation prompt appears before the tab closes |
-| `@user-workflow` | Click a binary file in the tree | Viewer shows "Can't display this file" instead of a tab with garbled content |
-| `@functional` | Save a file made read-only on disk | Inline error is shown; the edited buffer is preserved, not reverted or lost |
-| `@functional` | Edit a file directly on disk (bypassing the app), then reopen the Files tab before the TTL elapses, then again after using the refresh control | Tree does not reflect the change immediately (TTL cache); refresh control shows the update |
+This suite is authored against the `@tkottke90/playwrite-test-runner` library (`TestSuite`, `TAGS`, `suiteRunner`, `pauseForVideo`) — the pattern established in `001-ChatInterface.spec.ts` and `002-GitHubTrackerWorkflow.spec.ts` — rather than the older local `e2e/lib/suite.ts` (`suiteAnnotations` + a hand-written `test.describe`/`test()` block matching each step by convention), which is what `workspace-project.spec.ts` and most other existing suites still use. Concretely:
 
-This documents the planned suite for the implementation plan to schedule; actual `test()` bodies are filled in during implementation, per this repo's existing pattern of `test: () => {}` placeholders in the `steps` array ahead of the real Playwright code.
+- `export const WorkspaceFileBrowser: TestSuite = { id: 18, name, purpose, tag: [TAGS.UserWorkflow], recordVideo: true, steps: [...] }`, `id: 18` following on from `inbox-tasks.spec.ts`'s `17`.
+- Each step's `test` is the real Playwright test body inline (`test: async ({ page, request }, testInfo) => {...}`), not a placeholder matched up to a separately-written `test()` block — the runner generates the actual test from the step itself.
+- `suiteRunner(WorkspaceFileBrowser)` at the bottom of the file — no manual `test.describe`/`suiteAnnotations` wiring.
+- Steps use `tag: [TAGS.Smoke]` on the two or three steps that most directly cover the issue's core acceptance criteria (tree + git status on open, Save writing to disk), matching how `001`/`002` reserve `Smoke` for their most load-bearing steps rather than tagging everything.
+
+Planned steps (action / expected outcome — `test` bodies are written during implementation, not here):
+
+| Action | Expected outcome |
+|---|---|
+| Open the Files tab on a git-enabled workspace with an untracked and a modified file | Tree loads rooted at the workspace's `location`; header shows `git · <branch>`; the modified file shows `M`, the untracked file shows `A` |
+| Expand and collapse a folder in the tree | Children show/hide; state persists while switching tabs |
+| Point a workspace at a missing/unreadable directory and open Files | Tree panel shows a clear error state, not a crash |
+| Open a workspace with `git: false` | Tree loads with no branch label and no status badges |
+| Click a file, then a second file | Both open as tabs in the tab bar; content of each is shown when its tab is active |
+| Edit an open file | Unsaved-dot appears on that tab only; other open tabs are unaffected |
+| Click Save on a dirty tab | Content is written to disk; unsaved-dot clears; that file's tree status badge updates |
+| Edit a file, then click Discard | Buffer reverts to last-saved content; nothing is written to disk |
+| Attempt to close a tab with unsaved changes | A confirmation prompt appears before the tab closes |
+| Click a binary file in the tree | Viewer shows "Can't display this file" instead of a tab with garbled content |
+| Save a file made read-only on disk | Inline error is shown; the edited buffer is preserved, not reverted or lost |
+| Edit a file directly on disk (bypassing the app), then reopen the Files tab before the TTL elapses, then again after using the refresh control | Tree does not reflect the change immediately (TTL cache); refresh control shows the update |
