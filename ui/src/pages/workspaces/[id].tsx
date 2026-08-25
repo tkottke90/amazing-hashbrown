@@ -8,6 +8,7 @@ import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { TaskDrawer } from '@/components/task-drawer';
 import { WorkspaceSettingsDrawer } from '@/components/workspace-settings-drawer';
+import { FilesTab } from '@/components/files-tab';
 import {
   workspaces,
   projects,
@@ -412,9 +413,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               }}
             />
           )}
-          {tab.value === 'files' && (
-            <div class="p-4 text-sm text-muted-foreground">File browser coming soon.</div>
-          )}
+          {tab.value === 'files' && id && <FilesTab workspaceId={id} />}
           {tab.value === 'chat' && (
             <div class="p-4 text-sm text-muted-foreground">Chat tab coming soon.</div>
           )}
