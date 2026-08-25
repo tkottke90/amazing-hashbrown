@@ -94,12 +94,14 @@ Computing `remoteUrl` from `gitEnabled.value` (not just `remoteUrl.value.trim() 
 The metadata chip row already renders a Git chip conditionally on `ws.git`. It keeps its current appearance (icon + "Git" label, no layout change) and gains a `title` attribute carrying the full remote URL, shown as a native browser tooltip on hover:
 
 ```tsx
-{ws.git && (
-  <span class="flex items-center gap-1" title={ws.remoteUrl ?? undefined}>
-    <GitBranch class="size-3" />
-    Git
-  </span>
-)}
+{
+  ws.git && (
+    <span class="flex items-center gap-1" title={ws.remoteUrl ?? undefined}>
+      <GitBranch class="size-3" />
+      Git
+    </span>
+  );
+}
 ```
 
 ---

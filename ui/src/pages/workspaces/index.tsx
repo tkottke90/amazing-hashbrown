@@ -7,6 +7,7 @@ import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   workspaces,
   projects,
@@ -68,7 +70,7 @@ function CreateWorkspaceDrawer() {
   );
 }
 
-function CreateWorkspaceForm() {
+export function CreateWorkspaceForm() {
   const { close } = useDialog();
   const { route } = useLocation();
   const mode = useSignal<'workspace' | 'project'>('workspace');
@@ -78,6 +80,8 @@ function CreateWorkspaceForm() {
   const directoryNameEdited = useSignal(false);
   const directoryNameTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const goal = useSignal('');
+  const gitEnabled = useSignal(false);
+  const remoteUrl = useSignal('');
   const winCondition = useSignal('');
   const dueAt = useSignal('');
   const saving = useSignal(false);
@@ -111,6 +115,10 @@ function CreateWorkspaceForm() {
       error.value = 'Win condition is required for projects.';
       return;
     }
+    if (gitEnabled.value && !remoteUrl.value.trim()) {
+      error.value = 'Remote URL is required when Git is enabled.';
+      return;
+    }
     saving.value = true;
     error.value = '';
     try {
@@ -120,6 +128,8 @@ function CreateWorkspaceForm() {
           locationRoot: locationRoot.value,
           directoryName: directoryName.value.trim(),
           goal: goal.value.trim() || null,
+          git: gitEnabled.value,
+          remoteUrl: gitEnabled.value ? remoteUrl.value.trim() : null,
           winCondition: winCondition.value.trim(),
           dueAt: dueAt.value || null,
         });
@@ -131,6 +141,8 @@ function CreateWorkspaceForm() {
           locationRoot: locationRoot.value,
           directoryName: directoryName.value.trim(),
           goal: goal.value.trim() || null,
+          git: gitEnabled.value,
+          remoteUrl: gitEnabled.value ? remoteUrl.value.trim() : null,
         });
         close();
       }
@@ -243,6 +255,38 @@ function CreateWorkspaceForm() {
               }}
               class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
             />
+          </div>
+
+          <div class="border border-border rounded-lg p-3 flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <Label htmlFor="git-enabled">Git repository</Label>
+                <p class="text-xs text-muted-foreground">Track this workspace against a remote.</p>
+              </div>
+              <Switch
+                id="git-enabled"
+                checked={gitEnabled.value}
+                onCheckedChange={(checked) => {
+                  gitEnabled.value = checked === true;
+                }}
+              />
+            </div>
+            {gitEnabled.value && (
+              <div class="flex flex-col gap-1">
+                <Label htmlFor="remote-url">
+                  Remote URL <span class="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="remote-url"
+                  placeholder="https://github.com/org/repo or git@host:org/repo.git"
+                  value={remoteUrl.value}
+                  onInput={(e) => {
+                    remoteUrl.value = (e.target as HTMLInputElement).value;
+                  }}
+                  required
+                />
+              </div>
+            )}
           </div>
 
           {mode.value === 'project' && (

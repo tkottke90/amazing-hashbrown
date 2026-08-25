@@ -340,7 +340,11 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
           <div class="flex items-center gap-3 text-xs text-muted-foreground mb-3 flex-wrap">
             <span class="font-mono bg-muted px-1.5 py-0.5 rounded">{ws.location}</span>
             {ws.git && (
-              <span class="flex items-center gap-1">
+              <span
+                class="flex items-center gap-1"
+                data-testid="git-chip"
+                title={ws.remoteUrl ?? undefined}
+              >
                 <GitBranch class="size-3" />
                 Git
               </span>

@@ -72,3 +72,29 @@ describe('WorkspaceDetailView — Overview wiki card', () => {
     expect(screen.getByText('Not linked')).toBeInTheDocument();
   });
 });
+
+describe('WorkspaceDetailView — Git chip tooltip', () => {
+  afterEach(() => {
+    workspaces.value = [];
+    projects.value = [];
+  });
+
+  it('shows the remote URL as a title attribute on the Git chip when git is enabled', () => {
+    const workspace = {
+      ...baseWorkspace,
+      git: true,
+      remoteUrl: 'https://github.com/org/repo',
+    };
+    seed(workspace, { ...baseProject, git: true, remoteUrl: 'https://github.com/org/repo' });
+    renderDetail();
+
+    expect(screen.getByTestId('git-chip')).toHaveAttribute('title', 'https://github.com/org/repo');
+  });
+
+  it('omits the Git chip entirely when git is false', () => {
+    seed(baseWorkspace, baseProject);
+    renderDetail();
+
+    expect(screen.queryByTestId('git-chip')).not.toBeInTheDocument();
+  });
+});
