@@ -25,6 +25,13 @@ const suite: TestSuite = {
       test: () => {},
     },
     {
+      tags: ['@user-workflow'],
+      action: 'Create a workspace with Git enabled and a remote URL via the New workspace form',
+      expectedOutcome:
+        'Workspace is created with git=true; the Git chip on its detail page carries the remote URL as a title attribute',
+      test: () => {},
+    },
+    {
       tags: ['@functional'],
       action: 'Create and delete a project via the API',
       expectedOutcome:
@@ -109,6 +116,45 @@ test.describe(
       // Drawer should close and workspace should appear in the list
       await expect(drawer).not.toBeVisible();
       await expect(page.getByRole('link', { name: 'e2e-ws-ui-create' })).toBeVisible();
+    });
+
+    test('creates a workspace with Git enabled and shows the remote URL as a tooltip on the detail page', async ({
+      page,
+      request,
+    }, testInfo) => {
+      await page.goto('/workspaces');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByRole('button', { name: 'New workspace' }).click();
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+
+      const nameInput = drawer.getByPlaceholder('my-workspace', { exact: true });
+      await nameInput.fill('e2e-ws-git-create');
+      await nameInput.blur();
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('switch', { name: 'Git repository' }).click();
+      await drawer.getByLabel('Remote URL').fill('https://github.com/org/e2e-repo');
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Create workspace' }).click();
+      await expect(drawer).not.toBeVisible();
+
+      await page.getByRole('link', { name: 'e2e-ws-git-create' }).click();
+      await page.waitForURL(/\/workspaces\/[^/]+$/);
+
+      await expect(page.getByTestId('git-chip')).toHaveAttribute(
+        'title',
+        'https://github.com/org/e2e-repo',
+      );
+
+      // Clean up so reruns against a persistent dev server don't collide on
+      // the fixed workspace name/directory used above.
+      const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
+      expect(workspaceId).toBeTruthy();
+      const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
+      expect(delRes.status()).toBe(204);
     });
 
     test('creates a project via the UI form and navigates to its detail page', async ({
