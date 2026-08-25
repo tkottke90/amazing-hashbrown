@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 
 jest.mock('@/services/workspaces-api', () => ({
   fetchWorkspaces: jest.fn().mockResolvedValue([]),
@@ -10,11 +10,27 @@ jest.mock('@/services/workspaces-api', () => ({
   closeProject: jest.fn(),
 }));
 
+jest.mock('@/services/wiki-api', () => ({
+  fetchDomains: jest.fn(),
+}));
+
 import { CreateWorkspaceForm } from '@/pages/workspaces';
 import * as api from '@/services/workspaces-api';
+import * as wikiApi from '@/services/wiki-api';
 
 const mockCreateWorkspace = api.createWorkspace as jest.MockedFunction<typeof api.createWorkspace>;
 const mockCreateProject = api.createProject as jest.MockedFunction<typeof api.createProject>;
+const mockFetchDomains = wikiApi.fetchDomains as jest.MockedFunction<typeof wikiApi.fetchDomains>;
+
+// Radix renders a visually-hidden native <select> alongside the real
+// trigger (for form participation), whose <option> text duplicates the
+// visible one — scope to the "Wiki binding" field's own container and use
+// role="combobox" (the hidden fallback is aria-hidden and excluded from
+// role queries by default) to land on the real trigger unambiguously.
+function getWikiTrigger() {
+  const section = screen.getByText('Wiki binding').closest('div')!;
+  return within(section).getByRole('combobox');
+}
 
 function fillName(value: string) {
   const input = screen.getByPlaceholderText('my-workspace') as HTMLInputElement;
@@ -45,6 +61,7 @@ function submitForm() {
 describe('CreateWorkspaceForm — Git repository section', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetchDomains.mockResolvedValue([]);
   });
 
   it('hides the Remote URL field until Git is enabled', () => {
@@ -155,6 +172,7 @@ describe('CreateWorkspaceForm — Git repository section', () => {
 describe('CreateWorkspaceForm — Dependency isolation section', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetchDomains.mockResolvedValue([]);
   });
 
   it('renders both checkboxes unchecked by default', () => {
@@ -214,5 +232,115 @@ describe('CreateWorkspaceForm — Dependency isolation section', () => {
     expect(mockCreateProject).toHaveBeenCalledWith(
       expect.objectContaining({ javascript: true, python: true }),
     );
+  });
+});
+
+describe('CreateWorkspaceForm — Wiki binding section', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFetchDomains.mockResolvedValue([]);
+  });
+
+  it('shows None by default and lists fetched domains by their domain field', async () => {
+    mockFetchDomains.mockResolvedValue([
+      { id: 'wiki-1', domain: 'homelab', tags: [] },
+      { id: 'wiki-2', domain: 'nas-migration', tags: [] },
+    ]);
+    render(<CreateWorkspaceForm />);
+
+    expect(getWikiTrigger().textContent).toContain('None');
+    await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
+
+    fireEvent.click(getWikiTrigger());
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('homelab')).toBeInTheDocument();
+    expect(within(listbox).getByText('nas-migration')).toBeInTheDocument();
+  });
+
+  it('submits the selected domain id as wikiId in Workspace mode', async () => {
+    mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: 'homelab', tags: [] }]);
+    mockCreateWorkspace.mockResolvedValue({ id: 'ws-1' } as unknown as Awaited<
+      ReturnType<typeof api.createWorkspace>
+    >);
+    render(<CreateWorkspaceForm />);
+    await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
+
+    fillName('my-ws');
+    fireEvent.click(getWikiTrigger());
+    const listbox = await screen.findByRole('listbox');
+    fireEvent.click(within(listbox).getByText('homelab'));
+    submitForm();
+
+    await waitFor(() => expect(mockCreateWorkspace).toHaveBeenCalled());
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ wikiId: 'wiki-1' }));
+  });
+
+  it('sends wikiId: null when None is left selected', async () => {
+    mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: 'homelab', tags: [] }]);
+    mockCreateWorkspace.mockResolvedValue({ id: 'ws-1' } as unknown as Awaited<
+      ReturnType<typeof api.createWorkspace>
+    >);
+    render(<CreateWorkspaceForm />);
+    await waitFor(() => expect(mockFetchDomains).toHaveBeenCalled());
+
+    fillName('my-ws');
+    submitForm();
+
+    await waitFor(() => expect(mockCreateWorkspace).toHaveBeenCalled());
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ wikiId: null }));
+  });
+
+  it('shows ephemeral-wiki text and no select in Project mode, always sending wikiId: null', async () => {
+    mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: 'homelab', tags: [] }]);
+    mockCreateProject.mockResolvedValue({
+      workspace: { id: 'ws-1' },
+      project: { id: 'ws-1' },
+    } as unknown as Awaited<ReturnType<typeof api.createProject>>);
+    render(<CreateWorkspaceForm />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+    await waitFor(() => expect(mockFetchDomains).toHaveBeenCalled());
+
+    expect(screen.queryByText('Wiki binding')).not.toBeInTheDocument();
+    expect(screen.getByText(/Creates an ephemeral wiki domain/)).toBeInTheDocument();
+
+    fillName('my-proj');
+    fireEvent.input(screen.getByPlaceholderText('The project is done when...'), {
+      target: { value: 'Ships' },
+    });
+    submitForm();
+
+    await waitFor(() => expect(mockCreateProject).toHaveBeenCalled());
+    expect(mockCreateProject).toHaveBeenCalledWith(expect.objectContaining({ wikiId: null }));
+  });
+
+  it('does not show an error when the domains list resolves empty', async () => {
+    mockFetchDomains.mockResolvedValue([]);
+    render(<CreateWorkspaceForm />);
+    await waitFor(() => expect(mockFetchDomains).toHaveBeenCalled());
+
+    expect(
+      screen.queryByText("Couldn't load wiki domains — check the wiki registry config."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create workspace' })).not.toBeDisabled();
+  });
+
+  it('disables the select and submit and blocks submission when fetchDomains rejects', async () => {
+    mockFetchDomains.mockRejectedValue(new Error('503'));
+    render(<CreateWorkspaceForm />);
+
+    expect(
+      await screen.findByText("Couldn't load wiki domains — check the wiki registry config."),
+    ).toBeInTheDocument();
+
+    expect(getWikiTrigger()).toBeDisabled();
+
+    const submitButton = screen.getByRole('button', { name: 'Create workspace' });
+    expect(submitButton).toBeDisabled();
+
+    fillName('my-ws');
+    submitForm();
+    expect(mockCreateWorkspace).not.toHaveBeenCalled();
+    expect(mockCreateProject).not.toHaveBeenCalled();
   });
 });
