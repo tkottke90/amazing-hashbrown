@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
   WorkspaceStore,
@@ -5,6 +6,7 @@ import type {
   PatchTaskInput,
   PlanStep,
   TaskListFilters,
+  TriggerType,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import { getWikiRegistry } from '../../services/wiki.js';
@@ -35,6 +37,27 @@ function serverError(error: string): HandlerFailure {
   return { ok: false, status: 500, error };
 }
 
+// The server is the sole source of truth for a webhook task's token — a
+// client can never set trigger_config.webhookToken directly, even via a
+// generic patch. A token is (re)generated whenever the resulting trigger
+// type is 'webhook' and either none exists yet or regeneration was asked for.
+function resolveTriggerConfig(
+  current: { triggerType: TriggerType; triggerConfig: unknown } | null,
+  incoming: {
+    triggerType?: TriggerType;
+    triggerConfig?: unknown;
+    regenerateWebhookToken?: boolean;
+  },
+): unknown {
+  const resultingType = incoming.triggerType ?? current?.triggerType ?? 'manual';
+  if (resultingType !== 'webhook') return incoming.triggerConfig;
+
+  const existingToken = (current?.triggerConfig as { webhookToken?: string } | null)?.webhookToken;
+  const webhookToken =
+    incoming.regenerateWebhookToken || !existingToken ? randomUUID() : existingToken;
+  return { webhookToken };
+}
+
 export function listTasksHandler(store: WorkspaceStore, filters: TaskListFilters = {}) {
   return ok(store.listTasks(filters));
 }
@@ -50,16 +73,22 @@ export function createTaskHandler(
   body: Partial<NewTaskInput>,
 ): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
   if (!body.title || typeof body.title !== 'string') return badRequest('title is required');
-  const task = store.createTask(body as NewTaskInput);
+  const triggerConfig = resolveTriggerConfig(null, body);
+  const task = store.createTask({ ...body, triggerConfig } as NewTaskInput);
   return ok(task);
 }
 
 export function patchTaskHandler(
   store: WorkspaceStore,
   id: string,
-  patch: PatchTaskInput,
+  patch: PatchTaskInput & { regenerateWebhookToken?: boolean },
 ): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
-  const task = store.patchTask(id, patch);
+  const current = store.getTask(id);
+  if (!current) return notFound(`Task ${id} not found`);
+
+  const { regenerateWebhookToken, ...rest } = patch;
+  const triggerConfig = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken });
+  const task = store.patchTask(id, { ...rest, triggerConfig });
   if (!task) return notFound(`Task ${id} not found`);
 
   // R14: a task is enqueued exactly when assigned_to='agent' and status='ready'

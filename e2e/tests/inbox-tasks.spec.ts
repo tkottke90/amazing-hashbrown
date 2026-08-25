@@ -47,6 +47,36 @@ const suite: TestSuite = {
       expectedOutcome: 'Task card moves from Pending column to Ready column',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Select Webhook as the trigger type, save, and reopen the task',
+      expectedOutcome: 'Drawer shows a read-only webhook URL field and a Regenerate URL button',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Click the webhook URL Copy button',
+      expectedOutcome: 'The full webhook URL is written to the clipboard',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Click Regenerate URL and confirm the prompt',
+      expectedOutcome: 'URL field shows a new token; the old token now 404s',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Click Regenerate URL and cancel the prompt',
+      expectedOutcome: 'URL field is unchanged',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Select Webhook as the trigger type on a brand-new, unsaved task',
+      expectedOutcome: 'A placeholder note is shown instead of a URL field',
+      test: () => {},
+    },
   ],
 };
 
@@ -300,6 +330,149 @@ test.describe(
           .locator('[data-testid="task-card"]')
           .filter({ hasText: 'e2e-status-ready-task' }),
       ).not.toBeVisible();
+    });
+
+    test('selecting Webhook as the trigger type shows the URL after reopening the task', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-webhook-trigger-task' },
+      });
+      expect(taskRes.status()).toBe(201);
+
+      await page.goto('/inbox');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-testid="inbox-task-row"]')
+        .filter({ hasText: 'e2e-webhook-trigger-task' });
+      await row.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      await drawer.locator('[data-testid="task-trigger-type-select"]').selectOption('webhook');
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Save changes' }).click();
+      await expect(drawer).not.toBeVisible();
+
+      // Reopen — the drawer closes on every save, so the URL only appears
+      // once the task is reloaded with its server-generated token.
+      await row.click();
+      const reopened = page.locator('dialog[open]');
+      await expect(reopened).toBeVisible();
+      await expect(reopened.locator('[data-testid="task-webhook-url"]')).toBeVisible();
+      await expect(reopened.getByRole('button', { name: 'Regenerate URL' })).toBeVisible();
+    });
+
+    test('clicking Copy writes the webhook URL to the clipboard', async ({
+      page,
+      context,
+      request,
+    }, testInfo) => {
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-webhook-copy-task', triggerType: 'webhook' },
+      });
+      expect(taskRes.status()).toBe(201);
+
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.goto('/inbox');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-testid="inbox-task-row"]')
+        .filter({ hasText: 'e2e-webhook-copy-task' });
+      await row.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      const urlField = drawer.locator('[data-testid="task-webhook-url"]');
+      const url = await urlField.inputValue();
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.locator('[data-testid="task-webhook-copy-button"]').click();
+
+      const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+      expect(clipboardText).toBe(url);
+    });
+
+    test('regenerating the webhook URL after confirming invalidates the old token', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-webhook-regenerate-task', triggerType: 'webhook' },
+      });
+      expect(taskRes.status()).toBe(201);
+
+      await page.goto('/inbox');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-testid="inbox-task-row"]')
+        .filter({ hasText: 'e2e-webhook-regenerate-task' });
+      await row.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      const urlField = drawer.locator('[data-testid="task-webhook-url"]');
+      const oldUrl = await urlField.inputValue();
+
+      page.on('dialog', (d) => d.accept());
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Regenerate URL' }).click();
+
+      await expect(urlField).not.toHaveValue(oldUrl);
+
+      const oldTokenRes = await request.post(new URL(oldUrl).pathname);
+      expect(oldTokenRes.status()).toBe(404);
+    });
+
+    test('regenerating the webhook URL after cancelling leaves it unchanged', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-webhook-regenerate-cancel-task', triggerType: 'webhook' },
+      });
+      expect(taskRes.status()).toBe(201);
+
+      await page.goto('/inbox');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-testid="inbox-task-row"]')
+        .filter({ hasText: 'e2e-webhook-regenerate-cancel-task' });
+      await row.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      const urlField = drawer.locator('[data-testid="task-webhook-url"]');
+      const oldUrl = await urlField.inputValue();
+
+      page.on('dialog', (d) => d.dismiss());
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Regenerate URL' }).click();
+
+      await expect(urlField).toHaveValue(oldUrl);
+    });
+
+    test('selecting Webhook on a new, unsaved task shows a placeholder note instead of a URL', async ({
+      page,
+    }, testInfo) => {
+      await page.goto('/inbox');
+      await pauseBeforeAction(page, testInfo);
+      await page.getByRole('button', { name: 'New task' }).click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      await drawer.locator('[data-testid="task-trigger-type-select"]').selectOption('webhook');
+
+      await expect(
+        drawer.getByText('Webhook URL is generated once the task is saved.'),
+      ).toBeVisible();
+      await expect(drawer.locator('[data-testid="task-webhook-url"]')).not.toBeVisible();
     });
   },
 );

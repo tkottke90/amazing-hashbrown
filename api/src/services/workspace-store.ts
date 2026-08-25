@@ -695,6 +695,18 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapTask(row) : null;
   }
 
+  findTaskByWebhookToken(token: string): Task | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE trigger_type = 'webhook'
+           AND JSON_EXTRACT(trigger_config, '$.webhookToken') = ?
+         LIMIT 1`,
+      )
+      .get(token) as RawTaskRow | undefined;
+    return row ? mapTask(row) : null;
+  }
+
   createTask(input: NewTaskInput): Task {
     const id = randomUUID();
     const now = new Date().toISOString();

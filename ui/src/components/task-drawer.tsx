@@ -1,5 +1,5 @@
 import { useSignal, useComputed } from '@preact/signals';
-import { Sparkles, GripVertical, Plus, X, Loader2, ExternalLink } from 'lucide-preact';
+import { Sparkles, GripVertical, Plus, X, Loader2, ExternalLink, Copy, Check } from 'lucide-preact';
 import type { JSX } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 
@@ -15,7 +15,13 @@ import {
   generatePlanForNewTask,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
-import type { Task, TaskStatus, PlanStep, CreateTaskInput } from '@/services/tasks-api';
+import type {
+  Task,
+  TaskStatus,
+  TriggerType,
+  PlanStep,
+  CreateTaskInput,
+} from '@/services/tasks-api';
 import {
   listTrackers,
   resolveTrackerUrl,
@@ -87,6 +93,13 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const outcome = useSignal(task?.outcome ?? '');
   const status = useSignal<TaskStatus>(task?.status ?? 'pending');
   const assignedTo = useSignal<'user' | 'agent' | null>(task?.assignedTo ?? null);
+  const triggerType = useSignal<TriggerType>(task?.triggerType ?? 'manual');
+  const webhookToken = useSignal<string | null>(
+    (task?.triggerConfig as { webhookToken?: string } | null)?.webhookToken ?? null,
+  );
+  const copied = useSignal(false);
+  const regenerating = useSignal(false);
+  const regenerateError = useSignal('');
   const dueAt = useSignal(task?.dueAt ? task.dueAt.slice(0, 10) : '');
   const workspaceId = useSignal<string | null>(task?.workspaceId ?? defaultWorkspaceId ?? null);
   const planSteps = useSignal<PlanStep[]>(task?.plan ?? []);
@@ -174,6 +187,31 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
         err instanceof Error ? err.message : 'Could not resolve this URL.';
     } finally {
       trackerResolving.value = false;
+    }
+  }
+
+  async function handleCopyWebhookUrl() {
+    const url = `${window.location.origin}/api/v1/triggers/webhook/${webhookToken.value ?? ''}`;
+    await navigator.clipboard.writeText(url);
+    copied.value = true;
+    setTimeout(() => {
+      copied.value = false;
+    }, 1500);
+  }
+
+  async function handleRegenerateWebhookToken() {
+    if (!task) return;
+    if (!confirm('This will invalidate the current URL. Continue?')) return;
+    regenerating.value = true;
+    regenerateError.value = '';
+    try {
+      const updated = await patchTask(task.id, { regenerateWebhookToken: true });
+      webhookToken.value =
+        (updated.triggerConfig as { webhookToken?: string } | null)?.webhookToken ?? null;
+    } catch (err) {
+      regenerateError.value = err instanceof Error ? err.message : 'Failed to regenerate URL.';
+    } finally {
+      regenerating.value = false;
     }
   }
 
@@ -279,6 +317,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
         description: description.value.trim() || null,
         outcome: outcome.value.trim() || null,
         assignedTo: assignedTo.value,
+        triggerType: triggerType.value,
         dueAt: dueAt.value || null,
         workspaceId: workspaceId.value,
         plan: planSteps.value.filter((s) => s.step.trim()),
@@ -534,6 +573,60 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-muted-foreground">Trigger</label>
+          <select
+            data-testid="task-trigger-type-select"
+            value={triggerType.value}
+            onChange={(e) => {
+              triggerType.value = (e.target as HTMLSelectElement).value as TriggerType;
+            }}
+            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+          >
+            <option value="manual">Manual</option>
+            <option value="webhook">Webhook</option>
+          </select>
+
+          {triggerType.value === 'webhook' &&
+            (isNew ? (
+              <p class="text-xs text-muted-foreground mt-1">
+                Webhook URL is generated once the task is saved.
+              </p>
+            ) : (
+              <div class="flex flex-col gap-2 mt-1">
+                <div class="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    data-testid="task-webhook-url"
+                    value={`${window.location.origin}/api/v1/triggers/webhook/${webhookToken.value ?? ''}`}
+                    class="font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    data-testid="task-webhook-copy-button"
+                    onClick={() => void handleCopyWebhookUrl()}
+                  >
+                    {copied.value ? <Check class="size-3.5" /> : <Copy class="size-3.5" />}
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={regenerating.value}
+                  onClick={() => void handleRegenerateWebhookToken()}
+                >
+                  {regenerating.value ? 'Regenerating…' : 'Regenerate URL'}
+                </Button>
+                {regenerateError.value && (
+                  <p class="text-xs text-destructive">{regenerateError.value}</p>
+                )}
+              </div>
+            ))}
         </div>
 
         <div class="flex flex-col gap-1">
