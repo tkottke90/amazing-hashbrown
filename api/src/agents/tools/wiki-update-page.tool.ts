@@ -61,7 +61,7 @@ const WikiUpdatePageSchema = z.object({
         'not enough — the finding stays unresolved until that value is actually passed here. ' +
         "This is your own judgment of the content's reliability based on what it actually " +
         'says — plain factual statements typically warrant medium or high. There is no ' +
-        'external precedent to search for; searching the wiki for other pages\' confidence ' +
+        "external precedent to search for; searching the wiki for other pages' confidence " +
         'values does not help decide this one.',
     ),
   contested: z
