@@ -34,12 +34,23 @@ const WikiUpdatePageSchema = z.object({
   // — apparently writing frontmatter into `content` instead, which the
   // content param explicitly excludes. The description now closes that path.
   //
-  // Final sentence added after auto-eval round 1 of wiki-lint against a new
+  // Sentence added after auto-eval round 1 of wiki-lint against a new
   // Ornith build (2026-08-26): Ornith's reasoning explicitly decided on a
   // confidence value ("I'll set it to a reasonable value") but then called
   // the tool without the confidence param at all — not writing it into
   // content either, just dropping it. The decision-in-reasoning wasn't
   // wrong, it just never reached the actual call.
+  //
+  // Final sentence added after round 2 of the same loop: with the sentence
+  // above in place, `local` (gpt-oss:20b) hit a *different* failure on the
+  // same scenario — instead of deciding a value and dropping it, it got
+  // stuck on "we don't know user preference" and called wiki_search to look
+  // for a precedent instead of ever calling wiki_update_page. Nothing told
+  // it this is a judgment call it's expected to make from the content
+  // itself, not a fact to look up. NOTE: this sentence is not expected to
+  // fix Ornith's round-1/round-2 dropped-param failure on this same
+  // scenario — that recurred in the identical shape right after a targeted
+  // fix and is logged as a capability ceiling, not a wording gap.
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
@@ -47,7 +58,11 @@ const WikiUpdatePageSchema = z.object({
       "How reliable this page's content is. Omit to preserve the existing value. " +
         'This param is the only way to set the confidence frontmatter field — writing ' +
         'frontmatter into `content` does not work. Deciding on a value while reasoning is ' +
-        'not enough — the finding stays unresolved until that value is actually passed here.',
+        'not enough — the finding stays unresolved until that value is actually passed here. ' +
+        "This is your own judgment of the content's reliability based on what it actually " +
+        'says — plain factual statements typically warrant medium or high. There is no ' +
+        'external precedent to search for; searching the wiki for other pages\' confidence ' +
+        'values does not help decide this one.',
     ),
   contested: z
     .boolean()
