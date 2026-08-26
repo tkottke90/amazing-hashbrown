@@ -14,6 +14,8 @@ export const TraceSourceSchema = z.enum([
   'generate-title',
   'generate-plan',
   'wiki-ingestion',
+  'workspace-chat',
+  'workspace-summary',
 ]);
 
 export const SpanRecordSchema = z.object({

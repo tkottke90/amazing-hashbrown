@@ -80,7 +80,15 @@ describe('agents/workspace-summarizer', () => {
     seedConversationalMessages(threadStore, workspace.threadId!, 3);
     const model = new FakeListChatModel({ responses: ['# Summary'] });
 
-    await maybeSummarizeWorkspace(undefined, workspaceStore, threadStore, workspace, model, undefined, undefined);
+    await maybeSummarizeWorkspace(
+      undefined,
+      workspaceStore,
+      threadStore,
+      workspace,
+      model,
+      undefined,
+      undefined,
+    );
 
     const reloaded = workspaceStore.getWorkspace(workspace.id)!;
     expect(reloaded.summaryPath).to.equal(null);
@@ -92,7 +100,15 @@ describe('agents/workspace-summarizer', () => {
     const model = new FakeListChatModel({ responses: ['# Summary\n\nKey decision: use SQLite.'] });
     const { res, events } = fakeRes();
 
-    await maybeSummarizeWorkspace(res, workspaceStore, threadStore, workspace, model, 'local', 'fake-model');
+    await maybeSummarizeWorkspace(
+      res,
+      workspaceStore,
+      threadStore,
+      workspace,
+      model,
+      'local',
+      'fake-model',
+    );
 
     const reloaded = workspaceStore.getWorkspace(workspace.id)!;
     expect(reloaded.summaryPath).to.not.equal(null);
@@ -105,7 +121,10 @@ describe('agents/workspace-summarizer', () => {
 
     // A kind:'summary' message was inserted, and it IS the new cursor —
     // fetching messages after the cursor should exclude it.
-    const summaryMessage = threadStore.getMessage(workspace.threadId!, reloaded.lastSummarizedMessageId!);
+    const summaryMessage = threadStore.getMessage(
+      workspace.threadId!,
+      reloaded.lastSummarizedMessageId!,
+    );
     expect(summaryMessage).to.not.equal(null);
     expect(summaryMessage!.kind).to.equal('summary');
 
@@ -163,7 +182,15 @@ describe('agents/workspace-summarizer', () => {
     const model = new ThrowingChatModel({});
     const { res, events } = fakeRes();
 
-    await maybeSummarizeWorkspace(res, workspaceStore, threadStore, workspace, model, undefined, undefined);
+    await maybeSummarizeWorkspace(
+      res,
+      workspaceStore,
+      threadStore,
+      workspace,
+      model,
+      undefined,
+      undefined,
+    );
 
     const reloaded = workspaceStore.getWorkspace(workspace.id)!;
     expect(reloaded.summaryPath).to.equal(null);

@@ -61,11 +61,10 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
     readUrl: `/api/v1/workspaces/${workspace.id}/chat/${workspace.threadId}`,
   });
 
+  // Runs once per mounted instance — hydrate() is idempotent to call again
+  // on a later remount of the same thread id (e.g. navigating tabs and back).
   useEffect(() => {
     void thread.hydrate();
-    // Runs once per mounted instance — hydrate() is idempotent to call again
-    // on a later remount of the same thread id (e.g. navigating tabs and back).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace.threadId]);
 
   function handleSend() {
@@ -146,11 +145,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
 
         <div class="border-t border-border p-3">
           <div class="mb-2 flex items-center justify-between">
-            {isBusy ? (
-              <span class="text-xs text-muted-foreground">Summarising…</span>
-            ) : (
-              <span />
-            )}
+            {isBusy ? <span class="text-xs text-muted-foreground">Summarising…</span> : <span />}
             <Button
               size="sm"
               variant="secondary"

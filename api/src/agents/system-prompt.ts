@@ -749,7 +749,14 @@ export function buildSystemPrompt(userInstructions?: string, workspaceContext?: 
   const parts = [harness];
 
   if (workspaceContext?.trim()) {
-    parts.push('', '', '---', '<workspace_context>', workspaceContext.trim(), '</workspace_context>');
+    parts.push(
+      '',
+      '',
+      '---',
+      '<workspace_context>',
+      workspaceContext.trim(),
+      '</workspace_context>',
+    );
   }
 
   if (userInstructions?.trim()) {

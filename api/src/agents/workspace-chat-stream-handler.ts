@@ -4,7 +4,12 @@ import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { getWorkspaceChatAgent, type WorkspaceChatContext } from './chat-agent.js';
 import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
-import { writeSseEvent, pipeEvents, finalizeTurn, drainAndRecordWikiUpdates } from './stream-handler.js';
+import {
+  writeSseEvent,
+  pipeEvents,
+  finalizeTurn,
+  drainAndRecordWikiUpdates,
+} from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';

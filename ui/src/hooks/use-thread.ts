@@ -259,7 +259,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     switch (evt.type) {
       case 'text_delta': {
         const current = messages.value.find(
-          (m): m is AssistantThreadMessage => m.kind === 'assistant' && m.id === _currentAssistantId,
+          (m): m is AssistantThreadMessage =>
+            m.kind === 'assistant' && m.id === _currentAssistantId,
         );
 
         if (_toolCallPendingSinceLastText && current && current.content.length > 0) {
@@ -482,7 +483,13 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       messages.value = [
         ...messages.value,
         { kind: 'user', id: userId, content, sentAt: new Date() },
-        { kind: 'assistant', id: assistantId, status: 'streaming', content: '', sentAt: new Date() },
+        {
+          kind: 'assistant',
+          id: assistantId,
+          status: 'streaming',
+          content: '',
+          sentAt: new Date(),
+        },
       ];
       isStreaming.value = true;
     });
@@ -526,7 +533,13 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     batch(() => {
       messages.value = [
         ...messages.value,
-        { kind: 'assistant', id: assistantId, status: 'streaming', content: '', sentAt: new Date() },
+        {
+          kind: 'assistant',
+          id: assistantId,
+          status: 'streaming',
+          content: '',
+          sentAt: new Date(),
+        },
       ];
       isStreaming.value = true;
     });

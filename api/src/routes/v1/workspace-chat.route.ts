@@ -36,7 +36,7 @@ function resolveWorkspaceForThread(req: Request, res: Response) {
     return null;
   }
   if (workspace.threadId && workspace.threadId !== threadId) {
-    res.status(400).json({ error: 'threadId does not match this workspace\'s assigned thread' });
+    res.status(400).json({ error: "threadId does not match this workspace's assigned thread" });
     return null;
   }
   return workspace;
@@ -209,8 +209,8 @@ workspaceChatRouter.post('/:threadId/summarize', async (req: Request, res: Respo
     summaryPath: refreshed?.summaryPath ?? null,
     summarizedAt:
       refreshed?.lastSummarizedMessageId && refreshed.threadId
-        ? (threadStore.getMessage(refreshed.threadId, refreshed.lastSummarizedMessageId)?.createdAt ??
-          null)
+        ? (threadStore.getMessage(refreshed.threadId, refreshed.lastSummarizedMessageId)
+            ?.createdAt ?? null)
         : null,
   });
 });

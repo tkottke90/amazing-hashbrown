@@ -1,7 +1,11 @@
 import { describe, it, beforeEach } from 'mocha';
 import { expect } from 'chai';
 import { z } from 'zod';
-import { mcpToolToLangChain, invalidateChatAgent, invalidateWorkspaceChatAgent } from './chat-agent.js';
+import {
+  mcpToolToLangChain,
+  invalidateChatAgent,
+  invalidateWorkspaceChatAgent,
+} from './chat-agent.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
 

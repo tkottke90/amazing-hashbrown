@@ -107,24 +107,26 @@ New route: `POST /api/v1/workspaces/:workspaceId/chat/:threadId` (+ `/hitl`, `/r
 
 ## Error handling
 
-| Case | Behavior |
-| --- | --- |
-| Summarization fails (LLM error, file-write failure) | `last_summarized_message_id`/`summary_path` unchanged; `summarizing_end` emitted with an error flag; input re-enabled, no partial cursor advance |
-| Wiki write rejected (project workspace, mismatched `wikiId`) | Tool-error result the agent can explain to the user; not a stream failure |
-| Workspace has no `wiki_id` configured | Workspace-chat system prompt omits wiki orientation; session proceeds normally |
-| Thread fetch for a `workspace.thread_id` set but not yet created (pre-first-message) | Empty history returned, not a 404 — same lazy-creation semantics as global chat today |
+| Case                                                                                 | Behavior                                                                                                                                         |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Summarization fails (LLM error, file-write failure)                                  | `last_summarized_message_id`/`summary_path` unchanged; `summarizing_end` emitted with an error flag; input re-enabled, no partial cursor advance |
+| Wiki write rejected (project workspace, mismatched `wikiId`)                         | Tool-error result the agent can explain to the user; not a stream failure                                                                        |
+| Workspace has no `wiki_id` configured                                                | Workspace-chat system prompt omits wiki orientation; session proceeds normally                                                                   |
+| Thread fetch for a `workspace.thread_id` set but not yet created (pre-first-message) | Empty history returned, not a 404 — same lazy-creation semantics as global chat today                                                            |
 
 ---
 
 ## Testing
 
 **Backend** (following existing handler/store test conventions):
+
 - Migration v23: columns exist, `thread_id`/`summary_path`/`last_summarized_message_id` all nullable, no data loss on existing rows.
 - `workspace-chat-stream-handler.ts`: reuses `stream-handler.ts`'s existing test patterns for the shared pipeline; adds cases for system-prompt construction (workspace fields + wiki domain present) and `context.workspaceId` threading.
 - Summarization: threshold-crossing triggers automatic summarization; on-demand button bypasses the threshold; cursor and `summary_path` update atomically with the inserted `kind: 'summary'` message; failure leaves the cursor untouched.
 - Wiki-write enforcement: project workspace + mismatched `wikiId` → rejected; project workspace + matching `wikiId` → allowed; non-project workspace → unrestricted, matching current behavior.
 
 **Frontend:**
+
 - `useThread` factory: two instances constructed with different thread ids don't share signal state; the same thread id returns the same instance across calls.
 - `workspace-chat-tab.tsx`: hidden-message filtering by cursor; summarizing-disabled input state; context notice renders and links to `summaryPath`.
 - Manual/regression check: global `/chat` page and a workspace Chat tab open at once, each streaming, don't cross-contaminate each other's state — this is exactly the bug the `useThread` factory refactor fixes, so it's the regression that matters most here.
