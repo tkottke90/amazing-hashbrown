@@ -1,0 +1,142 @@
+suite:
+  id: create-workspace-project
+  name: Create Workspace/Project Chat Skills
+  purpose: >
+    Verifies the chat agent follows the /create-workspace and /create-project
+    skill instructions correctly: confirms with the user before creating
+    anything (even when all fields are already known), asks for missing
+    required fields rather than fabricating them, actually calls the real
+    creation tool once confirmed, and stops rather than blindly retrying
+    after a rejection. Tool-visibility gating itself (create_workspace/
+    create_project only exposed to the model once their skill is invoked) is
+    verified by skill-gated-tools.middleware.test.ts — this harness binds a
+    fixed tool list per scenario and never runs the real middleware
+    pipeline, so it can't exercise that mechanism; see bin/eval.ts.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: cwp-001-workspace-confirms-before-creating
+    name: Agent confirms before creating a workspace, even with all fields already known
+    purpose: >
+      Given a /create-workspace invocation that already states everything
+      needed, confirms the agent's first tool call is ask_user (the
+      yes/no confirmation the skill requires) rather than calling
+      create_workspace immediately — the skill explicitly requires
+      confirmation before creating, regardless of how complete the input is.
+    type: tool-call
+    input: 'Collect the workspace fields, then call create_workspace.
+
+      /create-workspace called "Homelab Ops", goal: track and automate home server maintenance.'
+    tool: ask_user
+
+  - id: cwp-002-workspace-asks-for-missing-name
+    name: Agent asks for the workspace name when it is missing
+    purpose: >
+      Given a bare /create-workspace invocation with no name at all,
+      confirms the agent asks for it via ask_user rather than inventing a
+      name or calling create_workspace with an empty/placeholder one.
+    type: tool-call
+    input: 'Collect the workspace fields, then call create_workspace.
+
+      /create-workspace'
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: free_text
+
+  - id: cwp-003-workspace-creates-after-confirmation
+    name: Agent calls create_workspace once the user confirms
+    purpose: >
+      Companion to cwp-001: given the agent already asked for confirmation
+      and the user said yes, confirms the very next tool call is
+      create_workspace with the name from the earlier turn — the
+      confirmation step must actually lead somewhere, not just stall.
+    type: tool-sequence
+    input: 'Yes, that looks right.'
+    priorTurns:
+      - tool: ask_user
+        args:
+          {
+            question: 'Create workspace "Homelab Ops" at ~/projects/homelab-ops with goal "track and automate home server maintenance"?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+    tool: create_workspace
+    argChecks:
+      - path: name
+        match: equals
+        value: Homelab Ops
+
+  - id: cwp-004-workspace-stops-after-conflict
+    name: Agent does not retry create_workspace after a 409 conflict without new direction
+    purpose: >
+      Given create_workspace was already rejected with a duplicate-name
+      conflict and the user's next turn gives no new name or direction,
+      confirms the agent does not blindly retry the identical (or
+      auto-mangled) call — the skill requires waiting for the user's next
+      instruction after a rejection, not routing around it silently.
+    type: tool-sequence
+    input: 'Hmm, okay.'
+    priorTurns:
+      - tool: create_workspace
+        args: { name: 'Homelab Ops', git: false }
+        result: { text: 'A workspace named "Homelab Ops" already exists.' }
+    tool: '!create_workspace'
+
+  - id: cwp-005-project-asks-for-missing-required-fields
+    name: Agent asks for missing required project fields before creating
+    purpose: >
+      Given a bare /create-project invocation with neither required field
+      (name, winCondition) present, confirms the agent asks via ask_user
+      rather than fabricating either one. The skill requires batching both
+      missing fields into a single question rather than asking one at a
+      time — this scenario type only inspects the model's first response,
+      so it confirms ask_user is called and not create_project, but true
+      single-call batching (one ask_user call, not two) isn't mechanically
+      assertable with this schema; left as a purpose note, not a check.
+    type: tool-call
+    input: 'Collect the required fields (name, winCondition), then call create_project.
+
+      /create-project'
+    tool: ask_user
+
+  - id: cwp-006-project-creates-after-confirmation
+    name: Agent calls create_project once the user confirms
+    purpose: >
+      Companion to cwp-005: given the agent already asked for confirmation
+      with both required fields collected and the user said yes, confirms
+      the next tool call is create_project with the collected fields.
+    type: tool-sequence
+    input: 'Yep, go ahead.'
+    priorTurns:
+      - tool: ask_user
+        args:
+          {
+            question: 'Create project "Ship Homepage Redesign" at ~/projects/ship-homepage-redesign, win condition "the new homepage is live in production"?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+    tool: create_project
+    argChecks:
+      - path: name
+        match: equals
+        value: Ship Homepage Redesign
+      - path: winCondition
+        match: equals
+        value: the new homepage is live in production
+
+  - id: cwp-007-project-stops-after-conflict
+    name: Agent does not retry create_project after a 409 conflict without new direction
+    purpose: >
+      Same check as cwp-004, for create_project — confirms the agent waits
+      for the user's next instruction after a rejection rather than
+      silently retrying.
+    type: tool-sequence
+    input: 'Hmm, okay.'
+    priorTurns:
+      - tool: create_project
+        args:
+          { name: 'Ship Homepage Redesign', winCondition: 'the new homepage is live in production' }
+        result: { text: 'A workspace named "Ship Homepage Redesign" already exists.' }
+    tool: '!create_project'

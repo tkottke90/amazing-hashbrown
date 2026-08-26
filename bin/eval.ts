@@ -28,6 +28,8 @@ import { makeWikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross
 import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
+import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
+import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
@@ -60,6 +62,14 @@ const evalTools = [
   makeWikiRebaselineSourceTool(),
   wikiRegisterDomainTool,
   webFetchTool,
+  // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware)
+  // — that gating is verified by skill-gated-tools.middleware.test.ts, not
+  // by evals, since this harness binds a fixed tool list per scenario and
+  // never runs the real middleware pipeline. Included here unconditionally
+  // so create-workspace-project.yaml's scenarios have them as an option,
+  // matching how every other tool here is unconditionally available.
+  makeCreateWorkspaceTool(),
+  makeCreateProjectTool(),
   fakeGenerateImageTool,
 ];
 
