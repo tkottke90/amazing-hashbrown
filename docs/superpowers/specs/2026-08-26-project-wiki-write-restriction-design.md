@@ -114,12 +114,12 @@ const config = {
 
 ## Error handling
 
-| Case                                                                 | Behavior                                                                                                    |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Project-scoped agent calls any of the 4 write tools with a mismatched `wikiId` | Tool returns `wikiWriteForbiddenMessage(...)` before any write executes; no partial write, no silent failure |
-| Same tools called with an unregistered `wikiId`                       | Existing `unknown_wiki` / "not registered" message takes precedence over the forbidden-domain check           |
-| `allowedWikiId` is `undefined` (global chat, non-project workspace)   | No restriction — identical to today's behavior                                                                |
-| Workspace's `wiki_id` changes via patch                               | `invalidateWorkspaceChatAgent` (already existing) evicts the cached agent; next turn rebuilds with the new restriction |
+| Case                                                                           | Behavior                                                                                                               |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Project-scoped agent calls any of the 4 write tools with a mismatched `wikiId` | Tool returns `wikiWriteForbiddenMessage(...)` before any write executes; no partial write, no silent failure           |
+| Same tools called with an unregistered `wikiId`                                | Existing `unknown_wiki` / "not registered" message takes precedence over the forbidden-domain check                    |
+| `allowedWikiId` is `undefined` (global chat, non-project workspace)            | No restriction — identical to today's behavior                                                                         |
+| Workspace's `wiki_id` changes via patch                                        | `invalidateWorkspaceChatAgent` (already existing) evicts the cached agent; next turn rebuilds with the new restriction |
 
 ---
 
@@ -132,7 +132,7 @@ const config = {
 
 ## Evaluations
 
-The guardrail itself is a deterministic value comparison, not model judgment, so it needs no eval. But whether the rejection *message* actually steers the agent to a successful recovery is a model-quality question, and it has a real gap today: `wwrite-005` only judges the agent's explanatory prose after a rejection (via `llm-judge`/rubric) — a corrected retry is scored as "acceptable, and good" but never required, so nothing currently confirms the agent actually completes a working write against the right wiki after being rejected once.
+The guardrail itself is a deterministic value comparison, not model judgment, so it needs no eval. But whether the rejection _message_ actually steers the agent to a successful recovery is a model-quality question, and it has a real gap today: `wwrite-005` only judges the agent's explanatory prose after a rejection (via `llm-judge`/rubric) — a corrected retry is scored as "acceptable, and good" but never required, so nothing currently confirms the agent actually completes a working write against the right wiki after being rejected once.
 
 Four new `tool-sequence` scenarios added to the existing `suites/wiki-write.yaml` (no new suite file), one per write-capable tool, each seeding the same rejected attempt shape as `wwrite-005` (wrong `wikiId` → `wiki_forbidden`-shaped message) followed by a user turn confirming to proceed, asserting the agent's next tool call retries with the `wikiId` named in the rejection message:
 

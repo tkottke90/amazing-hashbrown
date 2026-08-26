@@ -48,9 +48,7 @@ describe('agents/tools/wiki-rebaseline-source', () => {
     const tool = makeWikiRebaselineSourceTool('test-wiki', registry);
     const result = await tool.invoke({ wikiId: 'test-wiki', rawFilePath: 'raw/note.md' });
     expect(result).to.contain('Rebaselined raw source');
-    expect(await rawSha256(registry, 'test-wiki', 'raw/note.md')).to.not.equal(
-      'stale-placeholder',
-    );
+    expect(await rawSha256(registry, 'test-wiki', 'raw/note.md')).to.not.equal('stale-placeholder');
   });
 
   it('applies no restriction when allowedWikiId is undefined', async () => {
