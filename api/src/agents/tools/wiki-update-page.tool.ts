@@ -33,13 +33,21 @@ const WikiUpdatePageSchema = z.object({
   // local both reasoned "add confidence: high" but passed no confidence param
   // — apparently writing frontmatter into `content` instead, which the
   // content param explicitly excludes. The description now closes that path.
+  //
+  // Final sentence added after auto-eval round 1 of wiki-lint against a new
+  // Ornith build (2026-08-26): Ornith's reasoning explicitly decided on a
+  // confidence value ("I'll set it to a reasonable value") but then called
+  // the tool without the confidence param at all — not writing it into
+  // content either, just dropping it. The decision-in-reasoning wasn't
+  // wrong, it just never reached the actual call.
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
     .describe(
       "How reliable this page's content is. Omit to preserve the existing value. " +
         'This param is the only way to set the confidence frontmatter field — writing ' +
-        'frontmatter into `content` does not work.',
+        'frontmatter into `content` does not work. Deciding on a value while reasoning is ' +
+        'not enough — the finding stays unresolved until that value is actually passed here.',
     ),
   contested: z
     .boolean()

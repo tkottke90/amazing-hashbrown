@@ -52,13 +52,27 @@ export function makeWikiAddCrossLinkTool(allowedWikiId?: string, registry?: Wiki
       // outbound link leaves the page just as orphaned on the next lint run.
       // Ornith reasoned its way to the correct direction despite the old
       // wording; the description now states it outright.
+      //
+      // Worked example added after auto-eval round 1 of wiki-lint against a
+      // new Ornith build (2026-08-26): the abstract rule above was already
+      // explicit, but Ornith still got the direction backwards on wlint-005
+      // — its reasoning read the orphaned page's own content ("alice works
+      // closely with bob"), correctly found the related page, then linked
+      // FROM the orphan TO that related page anyway, the exact mistake the
+      // prose above already names. A concrete before/after pair anchors the
+      // mapping from "orphan mentions X" to "link direction" better than
+      // restating the abstract rule a second time.
       description:
         'Add a cross-link from one wiki page to another under a "## Related Pages" section ' +
         '(creating the section if absent). Use to fix orphans findings from wiki_lint. ' +
         'An orphan has no inbound links, so the orphaned page must be the link target: pass a ' +
         'related page as fromPage and the orphaned page as toPage — a link from the orphan ' +
         'outward does not fix the finding. Read the orphaned page to learn which pages it ' +
-        'relates to, then link from one of those.',
+        'relates to, then link from one of those. ' +
+        'For example: if the orphaned page is orphan.md and its content mentions related.md, ' +
+        'the fix is fromPage: "related.md", toPage: "orphan.md" — not fromPage: "orphan.md", ' +
+        'toPage: "related.md". The page you found by reading the orphan\'s content is the ' +
+        'source of the new link, not its destination.',
       schema: WikiAddCrossLinkSchema,
     },
   );
