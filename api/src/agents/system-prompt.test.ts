@@ -226,6 +226,19 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('scopes the ingest-stub instruction to when wiki_create_page is actually available', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This only applies when wiki_create_page is actually available to you right now.',
+      );
+      expect(result).to.include(
+        'not by asking the user for missing\ndetails like a title so you can call it',
+      );
+      expect(result).to.include(
+        "tell the user plainly that you don't currently have write access to store it.",
+      );
+    });
+
     // Rewritten after the RLM section's third tightening (ADR-001): the
     // truncate: false re-read workflow no longer exists — a truncated wiki
     // page is now a structure problem, and rlm_query is prohibited on wiki

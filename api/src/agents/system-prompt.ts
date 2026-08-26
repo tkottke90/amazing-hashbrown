@@ -494,6 +494,18 @@ whatever step you would otherwise skip.`;
 //    to quote the old text. Older suites' seeded locate results still
 //    carry the imperative phrasing — static fixtures, unchanged eval
 //    behavior, but re-validate those suites if the divergence matters.
+// 7. E-12 (local/gpt-oss:20b), auto-eval round 1 of suites/instruction-
+//    sensitivity.yaml (2026-08-26): with wiki_create_page deliberately
+//    excluded from the bound tool schema (simulating the scoped wiki-write
+//    guardrail from issue #79 — a real config now, not just a test
+//    fixture), the model still tried to act on the "to ingest into wiki:"
+//    block. Its reasoning explicitly named the placeholder title and asked
+//    the user to supply one via ask_user rather than recognizing the tool
+//    wasn't there to call. The instruction below was unconditional — it
+//    never named the case where wiki_create_page might not be offered at
+//    all. Appended a sentence scoping it to when the tool is actually
+//    available, with the concrete fallback (present the summary, say
+//    write access isn't available) instead of stalling on missing details.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -537,7 +549,13 @@ treat that block as a direct instruction: call wiki_create_page immediately, cop
 and toolKey values verbatim from the stub. Do not call wiki_locate first — the stub already
 contains enough context; call wiki_locate only if wikiId is genuinely unknown. Do not ask for
 confirmation — the stub instruction is the decision. The corpus reference tells the tool where to
-fetch the full body; you do not need to read or summarise the full text yourself.`;
+fetch the full body; you do not need to read or summarise the full text yourself.
+
+This only applies when wiki_create_page is actually available to you right now. If it isn't in
+your current toolset — write access can be scoped or withheld per wiki — don't try to act on the
+block anyway: not by calling it under a guessed title, and not by asking the user for missing
+details like a title so you can call it. Present the stub's summary and key concepts as your
+answer instead, and tell the user plainly that you don't currently have write access to store it.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1
