@@ -72,6 +72,118 @@ scenarios:
         match: equals
         value: true
 
+  - id: wwrite-006-recovers-after-create-rejection
+    name: Agent retries wiki_create_page against the correct wiki after rejection
+    purpose: >
+      Companion to wwrite-005, which judges the agent's explanatory prose
+      after a wiki_forbidden rejection but only treats a corrected retry as
+      "acceptable, and good" rather than requiring one. This scenario checks
+      the concrete outcome instead: given the same rejected wiki_create_page
+      attempt and a user turn confirming to proceed, does the agent's next
+      tool call actually retry against the wikiId named in the rejection
+      message (the design spec's stated goal — the rejection message's
+      steering should let the agent recover, not just narrate the problem).
+      Added alongside issue #79 (see
+      docs/superpowers/specs/2026-08-26-project-wiki-write-restriction-design.md).
+    type: tool-sequence
+    input: 'Okay, use the right one then.'
+    priorTurns:
+      - tool: wiki_create_page
+        args:
+          {
+            wikiId: 'other-project-wiki',
+            title: 'Deploy Notes',
+            corpus: { raw: 'Deploy steps for the staging environment.' },
+            section: 'concept',
+          }
+        result:
+          {
+            text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
+          }
+    tool: wiki_create_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: acme-project
+
+  - id: wwrite-007-recovers-after-update-rejection
+    name: Agent retries wiki_update_page against the correct wiki after rejection
+    purpose: >
+      Same recovery check as wwrite-006, for wiki_update_page — confirms the
+      agent places the corrected wikiId from a wiki_forbidden rejection into
+      the retried call rather than only apologizing or repeating the same
+      rejected wikiId.
+    type: tool-sequence
+    input: 'Right, try that again on the correct wiki.'
+    priorTurns:
+      - tool: wiki_update_page
+        args:
+          {
+            wikiId: 'other-project-wiki',
+            path: 'entities/deploy-notes.md',
+            content: 'Updated deploy steps for the staging environment.',
+          }
+        result:
+          {
+            text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
+          }
+    tool: wiki_update_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: acme-project
+
+  - id: wwrite-008-recovers-after-cross-link-rejection
+    name: Agent retries wiki_add_cross_link against the correct wiki after rejection
+    purpose: >
+      Same recovery check as wwrite-006, for wiki_add_cross_link — one of
+      the two tools newly guarded by issue #79 (previously had no
+      allowedWikiId check at all). Confirms the model handles the
+      rejection-and-retry pattern correctly even for a tool whose schema
+      differs from wiki_create_page/wiki_update_page (fromPage/toPage
+      instead of content).
+    type: tool-sequence
+    input: 'Okay, add that link on the correct wiki instead.'
+    priorTurns:
+      - tool: wiki_add_cross_link
+        args:
+          {
+            wikiId: 'other-project-wiki',
+            fromPage: 'entities/deploy-notes.md',
+            toPage: 'entities/staging-environment.md',
+          }
+        result:
+          {
+            text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
+          }
+    tool: wiki_add_cross_link
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: acme-project
+
+  - id: wwrite-009-recovers-after-rebaseline-rejection
+    name: Agent retries wiki_rebaseline_source against the correct wiki after rejection
+    purpose: >
+      Same recovery check as wwrite-006, for wiki_rebaseline_source — the
+      second tool newly guarded by issue #79. Confirms recovery holds even
+      for a tool with a minimal schema (just wikiId and rawFilePath, no
+      content-shaped argument to distract the model from the correction).
+    type: tool-sequence
+    input: 'Use the project wiki for that instead.'
+    priorTurns:
+      - tool: wiki_rebaseline_source
+        args: { wikiId: 'other-project-wiki', rawFilePath: 'raw/articles/deploy-guide.md' }
+        result:
+          {
+            text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
+          }
+    tool: wiki_rebaseline_source
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: acme-project
+
   - id: wwrite-002-update-dry-run
     name: Agent previews a page update with dryRun before writing
     purpose: >

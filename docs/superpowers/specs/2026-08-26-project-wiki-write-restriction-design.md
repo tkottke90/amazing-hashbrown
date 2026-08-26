@@ -130,4 +130,15 @@ const config = {
 - New/extended `chat-agent.ts` test: the global agent's wiki write tools are unrestricted; a project-workspace agent's are restricted to that workspace's `wiki_id`; a non-project workspace agent's are unrestricted.
 - Existing eval scenario `wwrite-005` (`suites/wiki-write.yaml`, wrong-project-wiki rejection) should continue to pass unmodified — it exercises externally observable agent behavior, not tool internals, so this refactor shouldn't change its outcome.
 
-No new eval suite: this is a deterministic guardrail (enforced by a value comparison, not model judgment), fully covered by the unit/integration tests above, matching how the original `allowedWikiId` mechanism was tested in PR #97.
+## Evaluations
+
+The guardrail itself is a deterministic value comparison, not model judgment, so it needs no eval. But whether the rejection *message* actually steers the agent to a successful recovery is a model-quality question, and it has a real gap today: `wwrite-005` only judges the agent's explanatory prose after a rejection (via `llm-judge`/rubric) — a corrected retry is scored as "acceptable, and good" but never required, so nothing currently confirms the agent actually completes a working write against the right wiki after being rejected once.
+
+Four new `tool-sequence` scenarios added to the existing `suites/wiki-write.yaml` (no new suite file), one per write-capable tool, each seeding the same rejected attempt shape as `wwrite-005` (wrong `wikiId` → `wiki_forbidden`-shaped message) followed by a user turn confirming to proceed, asserting the agent's next tool call retries with the `wikiId` named in the rejection message:
+
+- `wwrite-006-recovers-after-create-rejection` — `wiki_create_page`
+- `wwrite-007-recovers-after-update-rejection` — `wiki_update_page`
+- `wwrite-008-recovers-after-cross-link-rejection` — `wiki_add_cross_link`
+- `wwrite-009-recovers-after-rebaseline-rejection` — `wiki_rebaseline_source`
+
+Covering all four (not just `wiki_create_page`) matters because each tool's schema differs (`content` vs. `fromPage`/`toPage` vs. `rawFilePath`) — a model that correctly reasons about the corrected `wikiId` for one tool's shape doesn't guarantee it places that correction correctly into a different tool's argument set, especially for the two tools newly guarded by this issue that never had this rejection path before.
