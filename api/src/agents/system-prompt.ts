@@ -355,6 +355,33 @@
 // capability limits consistent with its wiki-lint ceiling flags, not
 // wording gaps. Don't re-tighten wnav-005's rubric or wnav-010c's argCheck,
 // and don't chase local's wnav-008/009/012 with further wording.
+//
+// Fourteenth entry, auto-eval round 1 of suites/wiki-write.yaml
+// (2026-08-26), the suite's first run since wwrite-006 through wwrite-009
+// were added alongside issue #79's scoped wiki-write guardrail (commit
+// c5217c1) to test recovery after a wiki_forbidden rejection. All three
+// configured models (local, Lemonade, Ornith) failed some subset of those
+// four scenarios, and nothing anywhere in this file said how to react to
+// that rejection shape at all — the closing paragraph above only covered
+// an *unrecognized* wikiId (call wiki_locate), never a *forbidden* one that
+// already names the correct wiki. Concretely: local detoured into
+// wiki_search "to find the path" on wwrite-007/008 despite the path never
+// being in question; Ornith re-explained the restriction and asked "what
+// would you like to do?" on wwrite-006/007/008 even though the user's next
+// turn ("Okay, use the right one then") was already the confirmation the
+// existing ask_user_routing "already-decided-request" rule is meant to
+// catch — it just wasn't written broadly enough to cover a rejection-and-
+// retry shape, only a plain add/save request. Added a new paragraph right
+// after the existing wikiId-error contrastive example, deliberately
+// distinguishing the two cases (unknown domain vs. known-but-wrong domain)
+// the way §3 of interpreting-results.md recommends, since an abstract
+// "follow tool corrections" restatement wouldn't disambiguate which
+// concrete action (locate vs. direct retry) applies. Re-run all three
+// models against wwrite-006 through wwrite-009 next round to check it
+// closes the gap; wwrite-002's known ornith/Lemonade dry-run-vs-prose
+// ceiling (see suite comments) and local's raw-JSON/tool-call-parsing
+// failures on wwrite-001/004 are unrelated to this fix and were not
+// targeted by it — see this round's auto-eval log for that diagnosis.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -428,7 +455,17 @@ the note was the decision, already made.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
-whatever step you would otherwise skip.`;
+whatever step you would otherwise skip.
+
+A write rejection is a different case from that one, not the same one: an unrecognized wikiId means the
+domain is genuinely unknown, so wiki_locate is the right next step. A write restricted to one workspace's
+wiki — wiki_create_page, wiki_update_page, wiki_add_cross_link, or wiki_rebaseline_source coming back
+naming the one wiki you're allowed to write to — means the domain is already known, just not the one you
+tried. When the user's next turn confirms to proceed — "use the right one," "try that again," a plain
+"yes" — retry the exact same call again with only the wikiId swapped to the one the rejection named. The
+path, content, fromPage/toPage, or rawFilePath you already had were never in question, so don't re-derive
+them with wiki_search or wiki_locate, and don't ask the user what they'd like to do next — the
+confirmation already answered that.`;
 
 // Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
 // first suite to exercise web_fetch alongside the wiki tools. Nothing in the

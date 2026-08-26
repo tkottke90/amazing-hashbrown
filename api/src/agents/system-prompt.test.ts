@@ -97,6 +97,29 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
     });
 
+    it('distinguishes an unrecognized wikiId from a forbidden one that already names the correct wiki', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "an unrecognized wikiId means the\ndomain is genuinely unknown, so wiki_locate is the right next step",
+      );
+      expect(result).to.include(
+        'means the domain is already known, just not the one you\ntried',
+      );
+    });
+
+    it('retries a rejected write directly with the corrected wikiId once the user confirms', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'retry the exact same call again with only the wikiId swapped to the one the rejection named',
+      );
+      expect(result).to.include(
+        "so don't re-derive\nthem with wiki_search or wiki_locate",
+      );
+      expect(result).to.include(
+        "don't ask the user what they'd like to do next — the\nconfirmation already answered that",
+      );
+    });
+
     it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('no other domain could plausibly cover it');
