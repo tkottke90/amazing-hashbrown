@@ -4,8 +4,8 @@ import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { askUserTool } from './tools/ask-user.tool.js';
-import { wikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
-import { wikiCreatePageTool } from './tools/wiki-create-page.tool.js';
+import { makeWikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
+import { makeWikiCreatePageTool } from './tools/wiki-create-page.tool.js';
 import { wikiLintTool } from './tools/wiki-lint.tool.js';
 import { wikiLocateTool } from './tools/wiki-locate.tool.js';
 import { wikiOrientTool } from './tools/wiki-orient.tool.js';
@@ -13,7 +13,7 @@ import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
 import { wikiCreateDomainTool } from './tools/wiki-create-domain.tool.js';
 import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
-import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
+import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { contextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
@@ -44,9 +44,9 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
       wikiOrientTool,
       wikiSearchTool,
       wikiReadPageTool,
-      wikiCreatePageTool,
-      wikiUpdatePageTool,
-      wikiAddCrossLinkTool,
+      makeWikiCreatePageTool(),
+      makeWikiUpdatePageTool(),
+      makeWikiAddCrossLinkTool(),
       wikiLintTool,
       wikiCreateDomainTool,
       wikiRegisterDomainTool,

@@ -5,6 +5,7 @@ import {
   mcpToolToLangChain,
   invalidateChatAgent,
   invalidateWorkspaceChatAgent,
+  buildWikiWriteTools,
 } from './chat-agent.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
@@ -83,6 +84,31 @@ describe('agents/chat-agent', () => {
       invalidateWorkspaceChatAgent('ws-1');
       invalidateWorkspaceChatAgent('ws-1');
       invalidateWorkspaceChatAgent('ws-2');
+    });
+  });
+
+  describe('buildWikiWriteTools()', () => {
+    const expectedNames = [
+      'wiki_create_page',
+      'wiki_update_page',
+      'wiki_add_cross_link',
+      'wiki_rebaseline_source',
+    ];
+
+    it('returns the four write-capable wiki tools, unrestricted, when called with no argument', () => {
+      const tools = buildWikiWriteTools();
+      expect(tools.map((t) => t.name)).to.have.members(expectedNames);
+    });
+
+    it('returns the same four tool names when scoped to a project wiki', () => {
+      const tools = buildWikiWriteTools('proj-wiki');
+      expect(tools.map((t) => t.name)).to.have.members(expectedNames);
+    });
+
+    it('builds a fresh set of tool instances on each call, not a shared singleton', () => {
+      const a = buildWikiWriteTools('wiki-a');
+      const b = buildWikiWriteTools('wiki-b');
+      expect(a[0]).to.not.equal(b[0]);
     });
   });
 });

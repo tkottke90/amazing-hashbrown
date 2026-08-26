@@ -3,6 +3,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { updateWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
+import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 
 const WikiUpdatePageSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the page belongs to.'),
@@ -78,66 +79,67 @@ function lineDiff(before: string, after: string): string {
   return out.length ? out.join('\n') : '(no changes)';
 }
 
-export const wikiUpdatePageTool = tool(
-  async (
-    { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
-    config,
-  ) => {
-    const allowedWikiId = config?.configurable?.allowedWikiId as string | undefined;
-    const result = await updateWikiPage(
-      {
-        wikiId,
-        path,
-        content: matter(content).content,
-        mode,
-        tags,
-        confidence,
-        contested,
-        contradictions,
-        summary,
-        dryRun,
-      },
-      undefined,
-      allowedWikiId,
-    );
+export function makeWikiUpdatePageTool(allowedWikiId?: string) {
+  return tool(
+    async (
+      { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
+      config,
+    ) => {
+      const result = await updateWikiPage(
+        {
+          wikiId,
+          path,
+          content: matter(content).content,
+          mode,
+          tags,
+          confidence,
+          contested,
+          contradictions,
+          summary,
+          dryRun,
+        },
+        undefined,
+        allowedWikiId,
+      );
 
-    switch (result.status) {
-      case 'written': {
-        const threadId = config?.configurable?.thread_id as string | undefined;
-        getActiveSseWriter(threadId ?? '')?.({
-          type: 'wiki_updated',
-          pageTitle: path,
-          pageKind: 'updated',
-          wikiName: wikiId,
-        });
-        const warnings = result.result.warnings.map((w) => w.message).join(' ');
-        const deletedWarning =
-          result.deletedSections.length > 0
-            ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
-            : '';
-        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
+      switch (result.status) {
+        case 'written': {
+          const threadId = config?.configurable?.thread_id as string | undefined;
+          getActiveSseWriter(threadId ?? '')?.({
+            type: 'wiki_updated',
+            pageTitle: path,
+            pageKind: 'updated',
+            wikiName: wikiId,
+          });
+          const warnings = result.result.warnings.map((w) => w.message).join(' ');
+          const deletedWarning =
+            result.deletedSections.length > 0
+              ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
+              : '';
+          return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
+        }
+        case 'dry_run':
+          return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;
+        case 'not_found':
+          return `Page not found at ${path}. Use wiki_create_page for a new page.`;
+        case 'invalid_path':
+          return 'Invalid path.';
+        case 'wiki_unavailable':
+          return 'Wiki knowledge base is not available.';
+        case 'unknown_wiki':
+          return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
+        case 'wiki_forbidden':
+          return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
       }
-      case 'dry_run':
-        return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;
-      case 'not_found':
-        return `Page not found at ${path}. Use wiki_create_page for a new page.`;
-      case 'invalid_path':
-        return 'Invalid path.';
-      case 'wiki_unavailable':
-        return 'Wiki knowledge base is not available.';
-      case 'unknown_wiki':
-        return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
-      case 'wiki_forbidden':
-        return `This workspace is restricted to writing wiki "${result.allowedWikiId}" — "${result.wikiId}" is not allowed here — use wiki "${result.allowedWikiId}" instead.`;
-    }
-  },
-  {
-    name: 'wiki_update_page',
-    description:
-      "Update an existing wiki page's content. Requires the page's existing path (from " +
-      'wiki_search or wiki_read_page) — use wiki_create_page for a page that does not exist yet. ' +
-      'Use mode:"append" to add new sections after the existing body without rewriting the whole page. ' +
-      'Use dryRun to preview the change as a diff without writing.',
-    schema: WikiUpdatePageSchema,
-  },
-);
+    },
+    {
+      name: 'wiki_update_page',
+      description:
+        "Update an existing wiki page's content. Requires the page's existing path (from " +
+        'wiki_search or wiki_read_page) — use wiki_create_page for a page that does not exist yet. ' +
+        'Use mode:"append" to add new sections after the existing body without rewriting the whole page. ' +
+        'Use dryRun to preview the change as a diff without writing.',
+      schema: WikiUpdatePageSchema,
+    },
+  );
+}
