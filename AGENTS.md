@@ -18,6 +18,39 @@ edits there — it has directory-specific conventions this file doesn't repeat.
 TypeScript everywhere, npm workspaces, ESLint + Prettier (shared root config),
 Node.js 20+ (Docker image targets `node:24`).
 
+## Design Principles
+
+### Composition over Customization
+
+Prefer composing small, reusable building blocks over building one generic,
+configuration-driven abstraction that every future use case has to be
+contorted to fit. This is a core tenet alongside KISS and DRY.
+
+When the same *shape* shows up in two places, decide what's actually shared
+before reaching for a generic type:
+
+- If what's shared is **behavior** (a mechanism), extract it as something
+  other units register into or compose with — e.g. the Skill-Gated Tools
+  middleware (`api/src/agents/skill-gated-tools.middleware.ts`) is one
+  generic gating mechanism that any skill can register a `{ skillCommand,
+  toolNames }` entry into, rather than each skill writing its own
+  tool-visibility logic.
+- If what's shared is **presentation**, extract small presentational
+  components and let each specific case compose them — e.g. a chat
+  "resource card" (workspace, project, and future kinds) keeps its own
+  well-typed `ThreadMessage` payload per resource type, but the card shell
+  and badge are shared UI components every resource-card kind composes,
+  instead of one `resource_card` kind with a generic `meta: Record<string,
+  string>` bag that every future resource has to squeeze itself into.
+
+A generic data schema with escape-hatch/bag fields (an untyped `meta`
+object, a `config: any`, a `type: string` discriminator with optional
+fields bolted on for every variant) is a warning sign — it tends to rot
+the moment a second consumer needs something the bag can't express.
+Composable pieces with real types don't have that failure mode: each
+consumer keeps its own honest shape and only shares what's actually
+common.
+
 ## Setup
 
 ```sh
