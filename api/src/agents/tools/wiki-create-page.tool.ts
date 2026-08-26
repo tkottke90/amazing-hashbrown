@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { getToolContent } from '../../services/tool-content-store.js';
+import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -47,32 +48,13 @@ const WikiCreatePageSchema = z.object({
     ),
 });
 
-export const wikiCreatePageTool = tool(
-  async (
-    { wikiId, title, corpus, section, tags, confidence, contested, contradictions, dryRun, force },
-    config,
-  ) => {
-    let body: string;
-    if ('raw' in corpus) {
-      body = matter(corpus.raw).content;
-    } else {
-      const stored = getToolContent(corpus.threadId, corpus.toolKey);
-      if (!stored) {
-        return (
-          `[KV content not found — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. ` +
-          `The content may have expired or belong to a different process. ` +
-          `Re-fetch with web_fetch and call wiki_create_page again with corpus.raw.]`
-        );
-      }
-      body = matter(stored).content;
-    }
-
-    const allowedWikiId = config?.configurable?.allowedWikiId as string | undefined;
-    const result = await createWikiPage(
+export function makeWikiCreatePageTool(allowedWikiId?: string) {
+  return tool(
+    async (
       {
         wikiId,
         title,
-        content: body,
+        corpus,
         section,
         tags,
         confidence,
@@ -81,45 +63,76 @@ export const wikiCreatePageTool = tool(
         dryRun,
         force,
       },
-      undefined,
-      allowedWikiId,
-    );
-
-    switch (result.status) {
-      case 'written': {
-        const threadId = config?.configurable?.thread_id as string | undefined;
-        getActiveSseWriter(threadId ?? '')?.({
-          type: 'wiki_updated',
-          pageTitle: title,
-          pageKind: section,
-          wikiName: wikiId,
-        });
-        return `Created page "${title}" at ${result.result.path}.`;
+      config,
+    ) => {
+      let body: string;
+      if ('raw' in corpus) {
+        body = matter(corpus.raw).content;
+      } else {
+        const stored = getToolContent(corpus.threadId, corpus.toolKey);
+        if (!stored) {
+          return (
+            `[KV content not found — threadId: ${corpus.threadId}, toolKey: ${corpus.toolKey}. ` +
+            `The content may have expired or belong to a different process. ` +
+            `Re-fetch with web_fetch and call wiki_create_page again with corpus.raw.]`
+          );
+        }
+        body = matter(stored).content;
       }
-      case 'dry_run':
-        return `[dry run] Would create a new "${result.section}" page titled "${result.title}" in wiki "${result.wikiId}".`;
-      case 'duplicate':
-        return (
-          `A similar page already exists: "${result.existingTitle}" at ${result.existingPath}. ` +
-          `Read it with wiki_read_page, then take one of these two actions:\n` +
-          `(1) Same topic — call wiki_update_page with mode:"append" and pass only the new sections as content. Do NOT rewrite the entire page.\n` +
-          `(2) Genuinely different document (different format, version, or use case) — retry wiki_create_page with force:true and include an additional distinguishing term in the title.\n` +
-          `Do NOT retry wiki_create_page without force:true, and do not vary the title to work around this check.`
-        );
-      case 'wiki_unavailable':
-        return 'Wiki knowledge base is not available.';
-      case 'unknown_wiki':
-        return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
-      case 'wiki_forbidden':
-        return `This workspace is restricted to writing wiki "${result.allowedWikiId}" — "${result.wikiId}" is not allowed here — use wiki "${result.allowedWikiId}" instead.`;
-    }
-  },
-  {
-    name: 'wiki_create_page',
-    description:
-      'Create a new wiki page. If a similar page already exists, this returns a pointer to it ' +
-      'instead of writing — read it with wiki_read_page and call wiki_update_page with merged ' +
-      'content instead of creating a duplicate. Use dryRun to preview without writing.',
-    schema: WikiCreatePageSchema,
-  },
-);
+
+      const result = await createWikiPage(
+        {
+          wikiId,
+          title,
+          content: body,
+          section,
+          tags,
+          confidence,
+          contested,
+          contradictions,
+          dryRun,
+          force,
+        },
+        undefined,
+        allowedWikiId,
+      );
+
+      switch (result.status) {
+        case 'written': {
+          const threadId = config?.configurable?.thread_id as string | undefined;
+          getActiveSseWriter(threadId ?? '')?.({
+            type: 'wiki_updated',
+            pageTitle: title,
+            pageKind: section,
+            wikiName: wikiId,
+          });
+          return `Created page "${title}" at ${result.result.path}.`;
+        }
+        case 'dry_run':
+          return `[dry run] Would create a new "${result.section}" page titled "${result.title}" in wiki "${result.wikiId}".`;
+        case 'duplicate':
+          return (
+            `A similar page already exists: "${result.existingTitle}" at ${result.existingPath}. ` +
+            `Read it with wiki_read_page, then take one of these two actions:\n` +
+            `(1) Same topic — call wiki_update_page with mode:"append" and pass only the new sections as content. Do NOT rewrite the entire page.\n` +
+            `(2) Genuinely different document (different format, version, or use case) — retry wiki_create_page with force:true and include an additional distinguishing term in the title.\n` +
+            `Do NOT retry wiki_create_page without force:true, and do not vary the title to work around this check.`
+          );
+        case 'wiki_unavailable':
+          return 'Wiki knowledge base is not available.';
+        case 'unknown_wiki':
+          return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
+        case 'wiki_forbidden':
+          return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
+      }
+    },
+    {
+      name: 'wiki_create_page',
+      description:
+        'Create a new wiki page. If a similar page already exists, this returns a pointer to it ' +
+        'instead of writing — read it with wiki_read_page and call wiki_update_page with merged ' +
+        'content instead of creating a duplicate. Use dryRun to preview without writing.',
+      schema: WikiCreatePageSchema,
+    },
+  );
+}

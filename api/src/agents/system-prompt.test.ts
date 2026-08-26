@@ -97,6 +97,25 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
     });
 
+    it('distinguishes an unrecognized wikiId from a forbidden one that already names the correct wiki', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'an unrecognized wikiId means the\ndomain is genuinely unknown, so wiki_locate is the right next step',
+      );
+      expect(result).to.include('means the domain is already known, just not the one you\ntried');
+    });
+
+    it('retries a rejected write directly with the corrected wikiId once the user confirms', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'retry the exact same call again with only the wikiId swapped to the one the rejection named',
+      );
+      expect(result).to.include("so don't re-derive\nthem with wiki_search or wiki_locate");
+      expect(result).to.include(
+        "don't ask the user what they'd like to do next — the\nconfirmation already answered that",
+      );
+    });
+
     it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('no other domain could plausibly cover it');
@@ -208,7 +227,15 @@ describe('agents/system-prompt', () => {
       );
       expect(result).to.include('call wiki_create_page\ndirectly with the fetched content');
       expect(result).to.include(
-        'is the confirmation round-trip ask_user_routing tells you not to make',
+        'is the confirmation round-trip ask_user_routing tells\nyou not to make',
+      );
+    });
+
+    it('shows the inline corpus.raw shape for a direct-write, non-stub fetch', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('corpus: { raw: "<the fetched page text, as markdown>" }');
+      expect(result).to.include(
+        'corpus.raw takes the content itself, as a string — not a threadId/toolKey pair',
       );
     });
 
@@ -223,6 +250,19 @@ describe('agents/system-prompt', () => {
       );
       expect(result).to.include(
         "not an error or a\ncorrection, so it doesn't override this direct-write path",
+      );
+    });
+
+    it('scopes the ingest-stub instruction to when wiki_create_page is actually available', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This only applies when wiki_create_page is actually available to you right now.',
+      );
+      expect(result).to.include(
+        'not by asking the user for missing\ndetails like a title so you can call it',
+      );
+      expect(result).to.include(
+        "tell the user plainly that you don't currently have write access to store it.",
       );
     });
 

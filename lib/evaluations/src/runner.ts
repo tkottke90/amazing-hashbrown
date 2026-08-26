@@ -141,7 +141,19 @@ function extractContent(raw: unknown): string {
   if (typeof raw === 'string') return raw;
   if (raw && typeof raw === 'object' && 'content' in raw) {
     const content = (raw as { content: unknown }).content;
-    if (typeof content === 'string') return content;
+    if (typeof content === 'string') {
+      if (content !== '') return content;
+      // Ollama "thinking" models (e.g. gpt-oss, qwen3) can leave .content
+      // empty while putting the whole answer in additional_kwargs
+      // .reasoning_content instead — the tool-call path already accounts for
+      // this via its own reasoningContent field (see ExtractedToolCallData),
+      // but the plain-invoke path used by llm-judge/deterministic/semantic
+      // scenarios had no equivalent, so a real answer was silently scored as
+      // empty. Fall back to it here too.
+      const reasoning = (raw as { additional_kwargs?: { reasoning_content?: unknown } })
+        .additional_kwargs?.reasoning_content;
+      return typeof reasoning === 'string' && reasoning !== '' ? reasoning : content;
+    }
     return JSON.stringify(content);
   }
   return String(raw);

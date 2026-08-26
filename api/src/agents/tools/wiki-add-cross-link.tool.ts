@@ -1,6 +1,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
+import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 
 const WikiAddCrossLinkSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the pages belong to.'),
@@ -10,43 +12,68 @@ const WikiAddCrossLinkSchema = z.object({
   toPage: z.string().describe('Path or slug of the page to link to.'),
 });
 
-export const wikiAddCrossLinkTool = tool(
-  async ({ wikiId, fromPage, toPage }) => {
-    let registry;
-    try {
-      registry = await getWikiRegistry();
-    } catch {
-      return 'Wiki knowledge base is not available.';
-    }
-    let wiki;
-    try {
-      wiki = await registry.load(wikiId);
-    } catch {
-      return `Wiki "${wikiId}" is not registered. Use wiki_locate to find available domains.`;
-    }
-    const result = await wiki.addCrossLink({ fromPage, toPage });
-    const warnings = result.warnings.map((w) => w.message).join(' ');
-    if (warnings.includes('already present')) {
-      return `Cross-link from ${fromPage} to ${toPage} already exists.`;
-    }
-    return `Added cross-link from ${fromPage} to ${toPage}.${warnings ? ` ${warnings}` : ''}`;
-  },
-  {
-    name: 'wiki_add_cross_link',
-    // Direction guidance rewritten after auto-eval round 3 (wiki-lint,
-    // 2026-07-28): the old text ("call wiki_read_page on the orphaned page
-    // first to identify a suitable link target") implied linking FROM the
-    // orphan outward, but checkOrphans counts inbound wikilinks only — an
-    // outbound link leaves the page just as orphaned on the next lint run.
-    // Ornith reasoned its way to the correct direction despite the old
-    // wording; the description now states it outright.
-    description:
-      'Add a cross-link from one wiki page to another under a "## Related Pages" section ' +
-      '(creating the section if absent). Use to fix orphans findings from wiki_lint. ' +
-      'An orphan has no inbound links, so the orphaned page must be the link target: pass a ' +
-      'related page as fromPage and the orphaned page as toPage — a link from the orphan ' +
-      'outward does not fix the finding. Read the orphaned page to learn which pages it ' +
-      'relates to, then link from one of those.',
-    schema: WikiAddCrossLinkSchema,
-  },
-);
+// Test-only escape hatch, same pattern as wiki-write.ts's `registry` param —
+// production callers never pass this. getWikiRegistry() is a lazy,
+// process-wide singleton bound to env.wikiRoot with no other way to redirect
+// it to a temp test directory.
+export function makeWikiAddCrossLinkTool(allowedWikiId?: string, registry?: WikiRegistry) {
+  return tool(
+    async ({ wikiId, fromPage, toPage }) => {
+      let reg = registry;
+      if (!reg) {
+        try {
+          reg = await getWikiRegistry();
+        } catch {
+          return 'Wiki knowledge base is not available.';
+        }
+      }
+      let wiki;
+      try {
+        wiki = await reg.load(wikiId);
+      } catch {
+        return `Wiki "${wikiId}" is not registered. Use wiki_locate to find available domains.`;
+      }
+      if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
+        return wikiWriteForbiddenMessage(wikiId, allowedWikiId);
+      }
+      const result = await wiki.addCrossLink({ fromPage, toPage });
+      const warnings = result.warnings.map((w) => w.message).join(' ');
+      if (warnings.includes('already present')) {
+        return `Cross-link from ${fromPage} to ${toPage} already exists.`;
+      }
+      return `Added cross-link from ${fromPage} to ${toPage}.${warnings ? ` ${warnings}` : ''}`;
+    },
+    {
+      name: 'wiki_add_cross_link',
+      // Direction guidance rewritten after auto-eval round 3 (wiki-lint,
+      // 2026-07-28): the old text ("call wiki_read_page on the orphaned page
+      // first to identify a suitable link target") implied linking FROM the
+      // orphan outward, but checkOrphans counts inbound wikilinks only — an
+      // outbound link leaves the page just as orphaned on the next lint run.
+      // Ornith reasoned its way to the correct direction despite the old
+      // wording; the description now states it outright.
+      //
+      // Worked example added after auto-eval round 1 of wiki-lint against a
+      // new Ornith build (2026-08-26): the abstract rule above was already
+      // explicit, but Ornith still got the direction backwards on wlint-005
+      // — its reasoning read the orphaned page's own content ("alice works
+      // closely with bob"), correctly found the related page, then linked
+      // FROM the orphan TO that related page anyway, the exact mistake the
+      // prose above already names. A concrete before/after pair anchors the
+      // mapping from "orphan mentions X" to "link direction" better than
+      // restating the abstract rule a second time.
+      description:
+        'Add a cross-link from one wiki page to another under a "## Related Pages" section ' +
+        '(creating the section if absent). Use to fix orphans findings from wiki_lint. ' +
+        'An orphan has no inbound links, so the orphaned page must be the link target: pass a ' +
+        'related page as fromPage and the orphaned page as toPage — a link from the orphan ' +
+        'outward does not fix the finding. Read the orphaned page to learn which pages it ' +
+        'relates to, then link from one of those. ' +
+        'For example: if the orphaned page is orphan.md and its content mentions related.md, ' +
+        'the fix is fromPage: "related.md", toPage: "orphan.md" — not fromPage: "orphan.md", ' +
+        'toPage: "related.md". The page you found by reading the orphan\'s content is the ' +
+        'source of the new link, not its destination.',
+      schema: WikiAddCrossLinkSchema,
+    },
+  );
+}

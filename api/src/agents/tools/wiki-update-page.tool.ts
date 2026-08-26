@@ -3,6 +3,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { updateWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
+import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 
 const WikiUpdatePageSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the page belongs to.'),
@@ -32,13 +33,36 @@ const WikiUpdatePageSchema = z.object({
   // local both reasoned "add confidence: high" but passed no confidence param
   // — apparently writing frontmatter into `content` instead, which the
   // content param explicitly excludes. The description now closes that path.
+  //
+  // Sentence added after auto-eval round 1 of wiki-lint against a new
+  // Ornith build (2026-08-26): Ornith's reasoning explicitly decided on a
+  // confidence value ("I'll set it to a reasonable value") but then called
+  // the tool without the confidence param at all — not writing it into
+  // content either, just dropping it. The decision-in-reasoning wasn't
+  // wrong, it just never reached the actual call.
+  //
+  // Final sentence added after round 2 of the same loop: with the sentence
+  // above in place, `local` (gpt-oss:20b) hit a *different* failure on the
+  // same scenario — instead of deciding a value and dropping it, it got
+  // stuck on "we don't know user preference" and called wiki_search to look
+  // for a precedent instead of ever calling wiki_update_page. Nothing told
+  // it this is a judgment call it's expected to make from the content
+  // itself, not a fact to look up. NOTE: this sentence is not expected to
+  // fix Ornith's round-1/round-2 dropped-param failure on this same
+  // scenario — that recurred in the identical shape right after a targeted
+  // fix and is logged as a capability ceiling, not a wording gap.
   confidence: z
     .enum(['high', 'medium', 'low'])
     .optional()
     .describe(
       "How reliable this page's content is. Omit to preserve the existing value. " +
         'This param is the only way to set the confidence frontmatter field — writing ' +
-        'frontmatter into `content` does not work.',
+        'frontmatter into `content` does not work. Deciding on a value while reasoning is ' +
+        'not enough — the finding stays unresolved until that value is actually passed here. ' +
+        "This is your own judgment of the content's reliability based on what it actually " +
+        'says — plain factual statements typically warrant medium or high. There is no ' +
+        "external precedent to search for; searching the wiki for other pages' confidence " +
+        'values does not help decide this one.',
     ),
   contested: z
     .boolean()
@@ -78,66 +102,67 @@ function lineDiff(before: string, after: string): string {
   return out.length ? out.join('\n') : '(no changes)';
 }
 
-export const wikiUpdatePageTool = tool(
-  async (
-    { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
-    config,
-  ) => {
-    const allowedWikiId = config?.configurable?.allowedWikiId as string | undefined;
-    const result = await updateWikiPage(
-      {
-        wikiId,
-        path,
-        content: matter(content).content,
-        mode,
-        tags,
-        confidence,
-        contested,
-        contradictions,
-        summary,
-        dryRun,
-      },
-      undefined,
-      allowedWikiId,
-    );
+export function makeWikiUpdatePageTool(allowedWikiId?: string) {
+  return tool(
+    async (
+      { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
+      config,
+    ) => {
+      const result = await updateWikiPage(
+        {
+          wikiId,
+          path,
+          content: matter(content).content,
+          mode,
+          tags,
+          confidence,
+          contested,
+          contradictions,
+          summary,
+          dryRun,
+        },
+        undefined,
+        allowedWikiId,
+      );
 
-    switch (result.status) {
-      case 'written': {
-        const threadId = config?.configurable?.thread_id as string | undefined;
-        getActiveSseWriter(threadId ?? '')?.({
-          type: 'wiki_updated',
-          pageTitle: path,
-          pageKind: 'updated',
-          wikiName: wikiId,
-        });
-        const warnings = result.result.warnings.map((w) => w.message).join(' ');
-        const deletedWarning =
-          result.deletedSections.length > 0
-            ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
-            : '';
-        return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
+      switch (result.status) {
+        case 'written': {
+          const threadId = config?.configurable?.thread_id as string | undefined;
+          getActiveSseWriter(threadId ?? '')?.({
+            type: 'wiki_updated',
+            pageTitle: path,
+            pageKind: 'updated',
+            wikiName: wikiId,
+          });
+          const warnings = result.result.warnings.map((w) => w.message).join(' ');
+          const deletedWarning =
+            result.deletedSections.length > 0
+              ? ` WARNING: the following sections were present in the previous version but are missing from the new content: ${result.deletedSections.map((s) => `"${s}"`).join(', ')}. If this was unintentional, re-read the page and rewrite it with all sections preserved.`
+              : '';
+          return `Updated page at ${result.result.path}.${warnings ? ` ${warnings}` : ''}${deletedWarning}`;
+        }
+        case 'dry_run':
+          return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;
+        case 'not_found':
+          return `Page not found at ${path}. Use wiki_create_page for a new page.`;
+        case 'invalid_path':
+          return 'Invalid path.';
+        case 'wiki_unavailable':
+          return 'Wiki knowledge base is not available.';
+        case 'unknown_wiki':
+          return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
+        case 'wiki_forbidden':
+          return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
       }
-      case 'dry_run':
-        return `[dry run] Would update ${result.path}:\n${lineDiff(result.existingBody, result.proposedBody)}`;
-      case 'not_found':
-        return `Page not found at ${path}. Use wiki_create_page for a new page.`;
-      case 'invalid_path':
-        return 'Invalid path.';
-      case 'wiki_unavailable':
-        return 'Wiki knowledge base is not available.';
-      case 'unknown_wiki':
-        return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
-      case 'wiki_forbidden':
-        return `This workspace is restricted to writing wiki "${result.allowedWikiId}" — "${result.wikiId}" is not allowed here — use wiki "${result.allowedWikiId}" instead.`;
-    }
-  },
-  {
-    name: 'wiki_update_page',
-    description:
-      "Update an existing wiki page's content. Requires the page's existing path (from " +
-      'wiki_search or wiki_read_page) — use wiki_create_page for a page that does not exist yet. ' +
-      'Use mode:"append" to add new sections after the existing body without rewriting the whole page. ' +
-      'Use dryRun to preview the change as a diff without writing.',
-    schema: WikiUpdatePageSchema,
-  },
-);
+    },
+    {
+      name: 'wiki_update_page',
+      description:
+        "Update an existing wiki page's content. Requires the page's existing path (from " +
+        'wiki_search or wiki_read_page) — use wiki_create_page for a page that does not exist yet. ' +
+        'Use mode:"append" to add new sections after the existing body without rewriting the whole page. ' +
+        'Use dryRun to preview the change as a diff without writing.',
+      schema: WikiUpdatePageSchema,
+    },
+  );
+}

@@ -35,6 +35,7 @@
     "eval:submit": "tsx bin/eval-submit.ts",
     "eval:calibrate": "tsx bin/eval-calibrate.ts",
     "eval:compare": "tsx bin/eval-compare.ts",
+    "eval:cleanup": "rm -rf ./eval-results/* ./eval-logs/*",
     "thread-report": "tsx bin/thread-report.ts",
     "lint": "eslint .",
     "format": "prettier --write ."

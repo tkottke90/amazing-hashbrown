@@ -97,12 +97,22 @@ scenarios:
           {
             text: 'Best match: "engineering" (domain: engineering, score 17). wiki_orient({ wikiId: "engineering" }) shows its structure if you need it.',
           }
+    # Round-1 auto-eval fix (2026-08-26 loop): the argCheck used to check a
+    # top-level `content` path, but wiki_create_page's own zod schema
+    # (api/src/agents/tools/wiki-create-page.tool.ts) has no such field — the
+    # page body is always passed as `corpus.raw` (inline) or
+    # `corpus.threadId`/`corpus.toolKey` (KV reference from an offloaded
+    # stub). All three configured models called the tool correctly with
+    # `corpus.raw` set to real fetched content and failed only because the
+    # check was looking at a path the schema doesn't have. This scenario
+    # seeds a plain (non-offloaded) web_fetch result, so `corpus.raw` is the
+    # only valid form here — checking it directly instead of `content`.
     tool: wiki_create_page
     argChecks:
       - path: wikiId
         match: equals
         value: engineering
-      - path: content
+      - path: corpus.raw
         match: exists
 
   - id: wfetch-004-json-endpoint-answer

@@ -355,6 +355,33 @@
 // capability limits consistent with its wiki-lint ceiling flags, not
 // wording gaps. Don't re-tighten wnav-005's rubric or wnav-010c's argCheck,
 // and don't chase local's wnav-008/009/012 with further wording.
+//
+// Fourteenth entry, auto-eval round 1 of suites/wiki-write.yaml
+// (2026-08-26), the suite's first run since wwrite-006 through wwrite-009
+// were added alongside issue #79's scoped wiki-write guardrail (commit
+// c5217c1) to test recovery after a wiki_forbidden rejection. All three
+// configured models (local, Lemonade, Ornith) failed some subset of those
+// four scenarios, and nothing anywhere in this file said how to react to
+// that rejection shape at all — the closing paragraph above only covered
+// an *unrecognized* wikiId (call wiki_locate), never a *forbidden* one that
+// already names the correct wiki. Concretely: local detoured into
+// wiki_search "to find the path" on wwrite-007/008 despite the path never
+// being in question; Ornith re-explained the restriction and asked "what
+// would you like to do?" on wwrite-006/007/008 even though the user's next
+// turn ("Okay, use the right one then") was already the confirmation the
+// existing ask_user_routing "already-decided-request" rule is meant to
+// catch — it just wasn't written broadly enough to cover a rejection-and-
+// retry shape, only a plain add/save request. Added a new paragraph right
+// after the existing wikiId-error contrastive example, deliberately
+// distinguishing the two cases (unknown domain vs. known-but-wrong domain)
+// the way §3 of interpreting-results.md recommends, since an abstract
+// "follow tool corrections" restatement wouldn't disambiguate which
+// concrete action (locate vs. direct retry) applies. Re-run all three
+// models against wwrite-006 through wwrite-009 next round to check it
+// closes the gap; wwrite-002's known ornith/Lemonade dry-run-vs-prose
+// ceiling (see suite comments) and local's raw-JSON/tool-call-parsing
+// failures on wwrite-001/004 are unrelated to this fix and were not
+// targeted by it — see this round's auto-eval log for that diagnosis.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -428,7 +455,17 @@ the note was the decision, already made.
 
 A tool's own result is more current than this default guidance. If a call returns an error or an explicit
 instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
-whatever step you would otherwise skip.`;
+whatever step you would otherwise skip.
+
+A write rejection is a different case from that one, not the same one: an unrecognized wikiId means the
+domain is genuinely unknown, so wiki_locate is the right next step. A write restricted to one workspace's
+wiki — wiki_create_page, wiki_update_page, wiki_add_cross_link, or wiki_rebaseline_source coming back
+naming the one wiki you're allowed to write to — means the domain is already known, just not the one you
+tried. When the user's next turn confirms to proceed — "use the right one," "try that again," a plain
+"yes" — retry the exact same call again with only the wikiId swapped to the one the rejection named. The
+path, content, fromPage/toPage, or rawFilePath you already had were never in question, so don't re-derive
+them with wiki_search or wiki_locate, and don't ask the user what they'd like to do next — the
+confirmation already answered that.`;
 
 // Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
 // first suite to exercise web_fetch alongside the wiki tools. Nothing in the
@@ -494,6 +531,35 @@ whatever step you would otherwise skip.`;
 //    to quote the old text. Older suites' seeded locate results still
 //    carry the imperative phrasing — static fixtures, unchanged eval
 //    behavior, but re-validate those suites if the divergence matters.
+// 7. E-12 (local/gpt-oss:20b), auto-eval round 1 of suites/instruction-
+//    sensitivity.yaml (2026-08-26): with wiki_create_page deliberately
+//    excluded from the bound tool schema (simulating the scoped wiki-write
+//    guardrail from issue #79 — a real config now, not just a test
+//    fixture), the model still tried to act on the "to ingest into wiki:"
+//    block. Its reasoning explicitly named the placeholder title and asked
+//    the user to supply one via ask_user rather than recognizing the tool
+//    wasn't there to call. The instruction below was unconditional — it
+//    never named the case where wiki_create_page might not be offered at
+//    all. Appended a sentence scoping it to when the tool is actually
+//    available, with the concrete fallback (present the summary, say
+//    write access isn't available) instead of stalling on missing details.
+// 8. wfetch-003, auto-eval round 2 of suites/web-fetch.yaml (2026-08-26):
+//    with the scenario's stale argCheck fixed (see suites/web-fetch.yaml's
+//    own comment — it was checking a `content` path the tool schema never
+//    had), local's actual behavior became visible for the first time:
+//    round 1 fabricated a threadId/toolKey pair for a plain, non-offloaded
+//    fetch (there was never a stub to copy those from), round 2 passed
+//    corpus as a bare string. Root cause: this section's only concrete
+//    corpus example was the compact-stub's `{ threadId, toolKey }` shape —
+//    the direct-write path this section is mostly about had no example of
+//    its own `{ raw }` shape to anchor on, so local guessed twice and
+//    missed twice. glm and Ornith got the shape right from the tool's zod
+//    schema alone both rounds, so this wasn't flagged as a ceiling — it's
+//    the classic missing-contrastive-example gap (interpreting-results.md
+//    §3), just on a tool-call argument shape instead of a routing choice.
+//    Added the missing inline-corpus example right where the direct-write
+//    instruction already lives. Re-check local's wfetch-003 next round; if
+//    it still misses in a new third shape, that's the plateau signature.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -504,10 +570,22 @@ then write.
 The reverse applies once the content is already in hand. If a web_fetch already succeeded in this
 conversation and the user asks you to save what it returned, that request is the decision — proceed
 to the write. When a wiki_locate result has already established the domain, call wiki_create_page
-directly with the fetched content; wiki_create_page itself detects near-duplicate pages and points
-you to wiki_update_page instead, so you don't need a wiki_orient pass first just to check whether
-the page already exists. Asking where to save it or whether to summarize first, when the user has
-already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.
+directly with the fetched content, passing it as an inline corpus:
+
+  wiki_create_page({
+    wikiId: "engineering",
+    title:  "Vector Databases — Concepts",
+    corpus: { raw: "<the fetched page text, as markdown>" },
+    section: "concept"
+  })
+
+corpus.raw takes the content itself, as a string — not a threadId/toolKey pair (that shape is only
+for the compact-stub case below, where the tool fetches the body itself from a key you don't have the
+text for) and not the content passed under some other field name. wiki_create_page itself detects
+near-duplicate pages and points you to wiki_update_page instead, so you don't need a wiki_orient pass
+first just to check whether the page already exists. Asking where to save it or whether to summarize
+first, when the user has already said "save it," is the confirmation round-trip ask_user_routing tells
+you not to make.
 Placement isn't a reason to orient first either — wiki_create_page derives the new page's path
 itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
 page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
@@ -537,7 +615,13 @@ treat that block as a direct instruction: call wiki_create_page immediately, cop
 and toolKey values verbatim from the stub. Do not call wiki_locate first — the stub already
 contains enough context; call wiki_locate only if wikiId is genuinely unknown. Do not ask for
 confirmation — the stub instruction is the decision. The corpus reference tells the tool where to
-fetch the full body; you do not need to read or summarise the full text yourself.`;
+fetch the full body; you do not need to read or summarise the full text yourself.
+
+This only applies when wiki_create_page is actually available to you right now. If it isn't in
+your current toolset — write access can be scoped or withheld per wiki — don't try to act on the
+block anyway: not by calling it under a guessed title, and not by asking the user for missing
+details like a title so you can call it. Present the stub's summary and key concepts as your
+answer instead, and tell the user plainly that you don't currently have write access to store it.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1

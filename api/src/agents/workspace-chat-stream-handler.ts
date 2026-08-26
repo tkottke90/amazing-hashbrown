@@ -33,10 +33,10 @@ import {
 } from './thread-message-writer.js';
 
 // A project workspace may only write to its own configured wiki — resolved
-// once per turn and threaded into the agent's tool calls via
-// config.configurable.allowedWikiId (see wiki-create-page.tool.ts /
-// wiki-update-page.tool.ts). undefined for a non-project workspace, meaning
-// unrestricted, matching today's global-chat behavior.
+// once per turn and passed to getWorkspaceChatAgent(), which builds the
+// agent's wiki write tools with this value closed over (see
+// buildWikiWriteTools() in chat-agent.ts). undefined for a non-project
+// workspace, meaning unrestricted, matching today's global-chat behavior.
 function resolveAllowedWikiId(store: WorkspaceStore, workspaceId: string): string | undefined {
   const project = store.getProject(workspaceId);
   if (!project) return undefined;
@@ -102,12 +102,12 @@ export async function streamWorkspaceChatToSse(
       workspaceContext,
       effectiveProvider,
       effectiveModel,
+      allowedWikiId,
     );
     const config = {
       configurable: {
         thread_id: threadId,
         workspaceId: workspace.id,
-        ...(allowedWikiId !== undefined ? { allowedWikiId } : {}),
       },
     };
     const msgId = randomUUID();
@@ -249,12 +249,12 @@ export async function resumeWorkspaceChatToSse(
       workspaceContext,
       effectiveProvider,
       effectiveModel,
+      allowedWikiId,
     );
     const config = {
       configurable: {
         thread_id: threadId,
         workspaceId: workspace.id,
-        ...(allowedWikiId !== undefined ? { allowedWikiId } : {}),
       },
     };
     const msgId = randomUUID();
@@ -401,12 +401,12 @@ export async function retryWorkspaceChatToSse(
       workspaceContext,
       effectiveProvider,
       effectiveModel,
+      allowedWikiId,
     );
     const config = {
       configurable: {
         thread_id: threadId,
         workspaceId: workspace.id,
-        ...(allowedWikiId !== undefined ? { allowedWikiId } : {}),
       },
     };
 

@@ -14,16 +14,16 @@ import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { shellExecTool } from './tools/shell-exec.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
-import { wikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
-import { wikiCreatePageTool } from './tools/wiki-create-page.tool.js';
+import { makeWikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
+import { makeWikiCreatePageTool } from './tools/wiki-create-page.tool.js';
 import { wikiLintTool } from './tools/wiki-lint.tool.js';
 import { wikiLocateTool } from './tools/wiki-locate.tool.js';
 import { wikiOrientTool } from './tools/wiki-orient.tool.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
-import { wikiRebaselineSourceTool } from './tools/wiki-rebaseline-source.tool.js';
+import { makeWikiRebaselineSourceTool } from './tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
-import { wikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
+import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { searchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
@@ -194,16 +194,24 @@ const STATIC_CHAT_TOOLS = [
   wikiLocateTool,
   wikiOrientTool,
   wikiLintTool,
-  wikiCreatePageTool,
-  wikiUpdatePageTool,
-  wikiAddCrossLinkTool,
-  wikiRebaselineSourceTool,
   wikiRegisterDomainTool,
   webFetchTool,
   rlmQueryTool,
   searchSkillsTool,
   searchConversationTool,
 ];
+
+// The four write-capable wiki tools are built fresh per agent construction
+// (not shared singletons like STATIC_CHAT_TOOLS) so each can close over its
+// own allowedWikiId restriction — see wiki-write-guard.ts and issue #79.
+export function buildWikiWriteTools(allowedWikiId?: string) {
+  return [
+    makeWikiCreatePageTool(allowedWikiId),
+    makeWikiUpdatePageTool(allowedWikiId),
+    makeWikiAddCrossLinkTool(allowedWikiId),
+    makeWikiRebaselineSourceTool(allowedWikiId),
+  ];
+}
 
 async function loadMcpTools() {
   // Trigger MCP initialization so mcpTools are populated
@@ -233,7 +241,7 @@ async function buildChatAgent(provider?: string, model?: string) {
   const systemPrompt = buildSystemPrompt(getAgentInstructions());
   const agent = createAgent({
     model: llm,
-    tools: [...STATIC_CHAT_TOOLS, ...mcpTools],
+    tools: [...STATIC_CHAT_TOOLS, ...buildWikiWriteTools(), ...mcpTools],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -288,6 +296,7 @@ async function buildWorkspaceChatAgent(
   workspaceContext: WorkspaceChatContext,
   provider?: string,
   model?: string,
+  allowedWikiId?: string,
 ) {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
@@ -298,7 +307,7 @@ async function buildWorkspaceChatAgent(
   );
   const agent = createAgent({
     model: llm,
-    tools: [...STATIC_CHAT_TOOLS, ...mcpTools],
+    tools: [...STATIC_CHAT_TOOLS, ...buildWikiWriteTools(allowedWikiId), ...mcpTools],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -326,10 +335,14 @@ export async function getWorkspaceChatAgent(
   workspaceContext: WorkspaceChatContext,
   provider?: string,
   model?: string,
+  allowedWikiId?: string,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const key = `${workspaceId}:${provider ?? ''}:${model ?? ''}`;
   if (!_workspaceAgents.has(key)) {
-    _workspaceAgents.set(key, await buildWorkspaceChatAgent(workspaceContext, provider, model));
+    _workspaceAgents.set(
+      key,
+      await buildWorkspaceChatAgent(workspaceContext, provider, model, allowedWikiId),
+    );
   }
   return _workspaceAgents.get(key)!;
 }
