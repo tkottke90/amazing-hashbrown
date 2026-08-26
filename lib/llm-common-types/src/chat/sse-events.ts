@@ -115,6 +115,21 @@ const WikiDomainCreatedSchema = z.object({
   wikiId: z.string(),
 });
 
+const QueueStatusSchema = z.object({
+  type: z.literal('queue_status'),
+  paused: z.boolean(),
+});
+
+const SummarizingStartSchema = z.object({
+  type: z.literal('summarizing_start'),
+});
+
+const SummarizingEndSchema = z.object({
+  type: z.literal('summarizing_end'),
+  // Present only when generation failed — absent on success.
+  error: z.string().optional(),
+});
+
 const UsageStatsSchema = z.object({
   type: z.literal('usage_stats'),
   messageId: z.string(),
@@ -141,6 +156,9 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   WikiOrientedSchema,
   WikiDomainCreatedSchema,
   UsageStatsSchema,
+  QueueStatusSchema,
+  SummarizingStartSchema,
+  SummarizingEndSchema,
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;

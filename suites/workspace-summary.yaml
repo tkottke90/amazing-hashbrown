@@ -1,0 +1,162 @@
+suite:
+  id: workspace-summary
+  name: Workspace Chat Summarization
+  purpose: >
+    Verify that api/src/agents/workspace-summarizer.ts's maybeSummarizeWorkspace
+    produces a context-preserving summary of a workspace's chat thread — not a
+    short title (see suites/thread-titles.yaml for that) and not a restatement
+    of the whole transcript. This is the only genuinely LLM-quality-facing
+    piece of the Workspace Chat Tab feature (see
+    docs/superpowers/specs/2026-08-26-workspace-chat-tab-design.md) —
+    everything else (the summary cursor, message hiding, file writing) is
+    deterministic persistence and does not belong in an eval suite. The
+    `input` field on every scenario below is the exact prompt
+    workspace-summarizer.ts sends the model (SUMMARY_PROMPT_PREFIX + the
+    speaker-prefixed transcript) — keep them in sync if the prompt template
+    changes.
+  passingThreshold: 0.75
+  # The summarizer calls model.invoke(prompt) directly, with no agent/tool
+  # harness and no checkpointer — same reasoning as thread-titles.yaml's
+  # appliesHarnessSystemPrompt: false.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: wsum-001-retains-early-decision
+    name: Summary retains a decision made early, despite later unrelated chatter
+    purpose: >
+      A summary that only reflects the most recent turns defeats the whole
+      point of summarizing for continuity — a decision made early in a long
+      thread needs to survive into the summary even after several turns of
+      unrelated discussion followed it.
+    type: llm-judge
+    input: >
+      Summarize this workspace conversation for continuity into a future
+      session. Capture: key decisions made, open threads or questions still
+      unresolved, and specific files or paths touched. Write it as a
+      structured markdown document with headings. Do not include
+      pleasantries or restate these instructions.
+
+
+      Conversation:
+      User: Let's use SQLite with better-sqlite3 for this workspace's local
+      cache instead of a full Postgres setup — it's a single-user tool, no
+      need for a network database.
+      Assistant: Agreed, SQLite is the right call here. I'll wire up
+      better-sqlite3 for the cache layer.
+      User: What's a good name for a cozy bakery in a small town?
+      Assistant: "Hearth & Crumb" has a nice warm feel for a small-town
+      bakery.
+      User: Can you suggest a color palette for its logo?
+      Assistant: Warm terracotta, cream, and a deep amber would fit a cozy
+      bakery well.
+      User: What's the weather usually like in the Pacific Northwest in
+      October?
+      Assistant: Cool and rainy, generally in the 50s Fahrenheit, with
+      increasing rain through the month.
+    rubric: >
+      The summary must explicitly mention the decision to use SQLite /
+      better-sqlite3 for the local cache, even though several turns of
+      unrelated discussion (bakery naming, logo colors, weather) followed
+      it. A summary that omits the SQLite decision, or that gives equal or
+      greater weight to the unrelated bakery/weather chatter over this
+      concrete technical decision, should score low.
+    minScore: 6
+
+  - id: wsum-002-omits-resolved-chatter
+    name: Summary omits resolved back-and-forth rather than restating it in detail
+    purpose: >
+      A good continuity summary distills outcomes, not blow-by-blow
+      dialogue — a resolved question-and-retraction exchange shouldn't
+      survive into the summary in detail once it's been superseded by its
+      own resolution.
+    type: llm-judge
+    input: >
+      Summarize this workspace conversation for continuity into a future
+      session. Capture: key decisions made, open threads or questions still
+      unresolved, and specific files or paths touched. Write it as a
+      structured markdown document with headings. Do not include
+      pleasantries or restate these instructions.
+
+
+      Conversation:
+      User: Should we add a Redis cache in front of the database for this
+      workspace?
+      Assistant: Given the current traffic pattern, a Redis cache would add
+      operational complexity without a clear performance win yet.
+      User: Actually, never mind — the in-memory cache we already have is
+      fine for now.
+      Assistant: Sounds good, sticking with the existing in-memory cache.
+      User: Let's move on — can you draft the README for this workspace?
+      Assistant: Sure, I'll draft a README covering setup and usage.
+    rubric: >
+      The summary should reflect the actual outcome (staying with the
+      existing in-memory cache, no Redis) briefly, without restating the
+      full back-and-forth (the initial Redis proposal, the reasoning against
+      it, then the retraction) in detail — a summary that spends multiple
+      sentences narrating that resolved exchange step-by-step, rather than
+      stating its outcome concisely, should score low. The summary should
+      also mention the open README-drafting task.
+    minScore: 6
+
+  - id: wsum-003-length-bound
+    name: Summary stays within a reasonable length bound
+    purpose: >
+      A summary is meant to compress a conversation for a future session's
+      context, not reproduce it — an unbounded-length response indicates the
+      model is padding or restating rather than distilling. Bound is
+      generous relative to thread-titles.yaml's 80-character title bound,
+      since a summary is meant to be substantive, just not unbounded.
+    type: deterministic
+    input: >
+      Summarize this workspace conversation for continuity into a future
+      session. Capture: key decisions made, open threads or questions still
+      unresolved, and specific files or paths touched. Write it as a
+      structured markdown document with headings. Do not include
+      pleasantries or restate these instructions.
+
+
+      Conversation:
+      User: Let's rename the `utils` module to `helpers` across this
+      workspace for clarity.
+      Assistant: I'll rename the module and update every import.
+      User: Also add a CONTRIBUTING.md with our branch naming convention.
+      Assistant: I'll draft CONTRIBUTING.md covering the branch naming
+      convention next.
+    match: regex
+    expected: '^[\s\S]{1,3000}$'
+
+  - id: wsum-004-retains-file-mentions
+    name: Summary retains specific file paths discussed
+    purpose: >
+      The design doc's "files touched" section only has value if the
+      summary names the actual paths discussed, rather than paraphrasing
+      them away into a generic reference — a future session reading the
+      summary needs the literal path to pick up where the conversation left
+      off.
+    type: llm-judge
+    input: >
+      Summarize this workspace conversation for continuity into a future
+      session. Capture: key decisions made, open threads or questions still
+      unresolved, and specific files or paths touched. Write it as a
+      structured markdown document with headings. Do not include
+      pleasantries or restate these instructions.
+
+
+      Conversation:
+      User: The bug is in api/src/services/workspace-store.ts — the
+      patchWorkspace method isn't updating updated_at when only wikiId
+      changes.
+      Assistant: Found it — patchWorkspace's set-builder was missing a case
+      for wikiId-only patches. I fixed it in
+      api/src/services/workspace-store.ts.
+      User: Can you also add a regression test for that in
+      api/src/routes/v1/workspaces.handlers.test.ts?
+      Assistant: I'll add a test there covering a wikiId-only patch.
+    rubric: >
+      The summary's mention of files touched should name the specific
+      paths discussed — api/src/services/workspace-store.ts and
+      api/src/routes/v1/workspaces.handlers.test.ts — rather than a vague
+      paraphrase like "a service file" or "some tests". Also confirm the
+      summary captures the open item (adding the regression test) as
+      unresolved. Score low if neither path is named literally.
+    minScore: 6

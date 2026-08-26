@@ -83,18 +83,23 @@ export const wikiUpdatePageTool = tool(
     { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
     config,
   ) => {
-    const result = await updateWikiPage({
-      wikiId,
-      path,
-      content: matter(content).content,
-      mode,
-      tags,
-      confidence,
-      contested,
-      contradictions,
-      summary,
-      dryRun,
-    });
+    const allowedWikiId = config?.configurable?.allowedWikiId as string | undefined;
+    const result = await updateWikiPage(
+      {
+        wikiId,
+        path,
+        content: matter(content).content,
+        mode,
+        tags,
+        confidence,
+        contested,
+        contradictions,
+        summary,
+        dryRun,
+      },
+      undefined,
+      allowedWikiId,
+    );
 
     switch (result.status) {
       case 'written': {
@@ -122,6 +127,8 @@ export const wikiUpdatePageTool = tool(
         return 'Wiki knowledge base is not available.';
       case 'unknown_wiki':
         return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
+      case 'wiki_forbidden':
+        return `This workspace is restricted to writing wiki "${result.allowedWikiId}" — "${result.wikiId}" is not allowed here — use wiki "${result.allowedWikiId}" instead.`;
     }
   },
   {

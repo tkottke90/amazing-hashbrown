@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'mocha';
 import { expect } from 'chai';
 import { z } from 'zod';
-import { mcpToolToLangChain, invalidateChatAgent } from './chat-agent.js';
+import { mcpToolToLangChain, invalidateChatAgent, invalidateWorkspaceChatAgent } from './chat-agent.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
 
@@ -67,6 +67,18 @@ describe('agents/chat-agent', () => {
       invalidateChatAgent();
       invalidateChatAgent();
       invalidateChatAgent();
+    });
+  });
+
+  describe('invalidateWorkspaceChatAgent()', () => {
+    it('does not throw when no workspace agent is cached', () => {
+      expect(() => invalidateWorkspaceChatAgent('no-such-workspace')).to.not.throw();
+    });
+
+    it('can be called multiple times without error', () => {
+      invalidateWorkspaceChatAgent('ws-1');
+      invalidateWorkspaceChatAgent('ws-1');
+      invalidateWorkspaceChatAgent('ws-2');
     });
   });
 });

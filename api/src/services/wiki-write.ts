@@ -13,7 +13,8 @@ export type CreateWikiPageResult =
   | { status: 'dry_run'; title: string; wikiId: string; section: PageType }
   | { status: 'duplicate'; existingPath: string; existingTitle: string }
   | { status: 'wiki_unavailable' }
-  | { status: 'unknown_wiki'; wikiId: string };
+  | { status: 'unknown_wiki'; wikiId: string }
+  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string };
 
 export interface CreateWikiPageParams {
   wikiId: string;
@@ -41,6 +42,10 @@ export interface CreateWikiPageParams {
 export async function createWikiPage(
   params: CreateWikiPageParams,
   registry?: WikiRegistry,
+  // Set only for a workspace-chat session scoped to a project's wiki — see
+  // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
+  // matching today's global-chat/non-project behavior.
+  allowedWikiId?: string,
 ): Promise<CreateWikiPageResult> {
   const {
     wikiId,
@@ -71,6 +76,10 @@ export async function createWikiPage(
     wiki = await reg.load(wikiId);
   } catch {
     return { status: 'unknown_wiki', wikiId };
+  }
+
+  if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
+    return { status: 'wiki_forbidden', wikiId, allowedWikiId };
   }
 
   const prep = await wiki.ingestPrep({ content, title, keywords: tags });
@@ -112,7 +121,8 @@ export type UpdateWikiPageResult =
   | { status: 'not_found' }
   | { status: 'invalid_path' }
   | { status: 'wiki_unavailable' }
-  | { status: 'unknown_wiki'; wikiId: string };
+  | { status: 'unknown_wiki'; wikiId: string }
+  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string };
 
 export interface UpdateWikiPageParams {
   wikiId: string;
@@ -141,6 +151,10 @@ function extractH2Sections(body: string): string[] {
 export async function updateWikiPage(
   params: UpdateWikiPageParams,
   registry?: WikiRegistry,
+  // Set only for a workspace-chat session scoped to a project's wiki — see
+  // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
+  // matching today's global-chat/non-project behavior.
+  allowedWikiId?: string,
 ): Promise<UpdateWikiPageResult> {
   const {
     wikiId,
@@ -170,6 +184,10 @@ export async function updateWikiPage(
     wiki = await reg.load(wikiId);
   } catch {
     return { status: 'unknown_wiki', wikiId };
+  }
+
+  if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
+    return { status: 'wiki_forbidden', wikiId, allowedWikiId };
   }
 
   // Path-escape guard — LlmWiki's own abs() is a bare path.join with no

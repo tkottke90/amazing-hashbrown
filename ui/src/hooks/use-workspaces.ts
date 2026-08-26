@@ -10,6 +10,7 @@ import {
   closeProject as apiCloseProject,
   type CreateWorkspaceInput,
   type CreateProjectInput,
+  type PatchWorkspaceInput,
 } from '@/services/workspaces-api';
 
 export const workspaces = signal<Workspace[]>([]);
@@ -44,10 +45,7 @@ export async function createProject(input: CreateProjectInput): Promise<Workspac
   return entry;
 }
 
-export async function patchWorkspace(
-  id: string,
-  patch: Partial<CreateWorkspaceInput>,
-): Promise<void> {
+export async function patchWorkspace(id: string, patch: PatchWorkspaceInput): Promise<void> {
   const updated = await apiPatchWorkspace(id, patch);
   workspaces.value = workspaces.value.map((w) => (w.id === id ? updated : w));
   if (currentWorkspace.value?.id === id) currentWorkspace.value = updated;

@@ -9,6 +9,7 @@ import {
   deleteWorkspaceHandler,
 } from './workspaces.handlers.js';
 import { workspaceFilesRouter } from './workspace-files.route.js';
+import { workspaceChatRouter } from './workspace-chat.route.js';
 
 export const workspacesRouter = Router();
 
@@ -65,3 +66,4 @@ workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
 });
 
 workspacesRouter.use('/:id/files', workspaceFilesRouter);
+workspacesRouter.use('/:id/chat', workspaceChatRouter);

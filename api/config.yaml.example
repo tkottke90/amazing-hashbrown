@@ -152,6 +152,15 @@ afterAgent:
 #   enabled:   set to false to never register the tool. Default: true.
 #   threshold: minimum number of thread messages before the tool is useful
 #              (below this the full history fits in context). Default: 20.
+#
+# workspaceSummary: periodic LLM summarization of a workspace's chat thread,
+#   so long-running project conversations don't grow unbounded.
+#   enabled:          set to false to disable automatic + on-demand
+#                     summarization. Default: true.
+#   messageThreshold: number of messages since the last summary before the
+#                     next turn automatically triggers a new summary. The
+#                     "Summarise" button in the Chat tab bypasses this and
+#                     always runs. Default: 40.
 # ---------------------------------------------------------------------------
 chat:
   showErrorMessages: false
@@ -161,6 +170,9 @@ chat:
   conversationSearch:
     enabled: true
     threshold: 20
+  workspaceSummary:
+    enabled: true
+    messageThreshold: 40
 
 # ---------------------------------------------------------------------------
 # Web Fetch

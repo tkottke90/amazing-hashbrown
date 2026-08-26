@@ -8,20 +8,10 @@ import { fetchProviders, providers } from '@/hooks/use-providers';
 import {
   activeThreadAfterAgentState,
   activeThreadId,
-  activeThreadModel,
   forkThread,
-  isStreaming,
-  messages,
-  newThread,
-  pendingHitlId,
   refreshThreadList,
-  retryTurn,
-  sendMessage,
-  setThreadModel,
-  stopGeneration,
-  submitHitlAnswer,
   switchThread,
-  useThread,
+  useThreadInstance,
 } from '@/hooks/use-thread';
 import type { ThreadMessage } from '@/types/thread-message';
 import { useSignal } from '@preact/signals';
@@ -63,6 +53,7 @@ function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
 export function ThreadView() {
   const { route } = useLocation();
   const inputValue = useSignal('');
+  const thread = useThreadInstance(activeThreadId.value);
 
   useEffect(() => {
     void fetchProviders();
@@ -72,12 +63,12 @@ export function ThreadView() {
     const content = inputValue.value.trim();
     if (!content) return;
     inputValue.value = '';
-    sendMessage(content).catch(console.error);
+    thread.sendMessage(content).catch(console.error);
   }
 
-  const allMessages = messages.value;
-  const pendingHitlMsg = pendingHitlId.value
-    ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === pendingHitlId.value)
+  const allMessages = thread.messages.value;
+  const pendingHitlMsg = thread.pendingHitlId.value
+    ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === thread.pendingHitlId.value)
     : null;
 
   // Pending HITL is shown pinned below the scroll area, not in the message list
@@ -93,8 +84,8 @@ export function ThreadView() {
             <ThreadMessageItem
               key={msg.id}
               message={msg}
-              onHitlAnswer={submitHitlAnswer}
-              onRetry={retryTurn}
+              onHitlAnswer={thread.submitHitlAnswer}
+              onRetry={thread.retryTurn}
               onFork={(seq) =>
                 void forkThread(activeThreadId.value, seq).then((id) => route(`/chat/${id}`))
               }
@@ -105,7 +96,7 @@ export function ThreadView() {
 
       {pendingHitlMsg && pendingHitlMsg.kind === 'hitl_prompt' && (
         <div class="border-t border-border p-4">
-          <HitlPromptMessage message={pendingHitlMsg} onAnswer={submitHitlAnswer} />
+          <HitlPromptMessage message={pendingHitlMsg} onAnswer={thread.submitHitlAnswer} />
         </div>
       )}
 
@@ -116,13 +107,13 @@ export function ThreadView() {
             inputValue.value = v;
           }}
           onSend={handleSend}
-          onStop={stopGeneration}
-          isGenerating={isStreaming.value}
-          disabled={!!pendingHitlId.value}
+          onStop={thread.stopGeneration}
+          isGenerating={thread.isStreaming.value}
+          disabled={!!thread.pendingHitlId.value}
           providers={providers.value}
-          activeProvider={activeThreadModel.value?.provider}
-          activeModel={activeThreadModel.value?.model}
-          onModelSelect={setThreadModel}
+          activeProvider={thread.activeThreadModel.value?.provider}
+          activeModel={thread.activeThreadModel.value?.model}
+          onModelSelect={thread.setThreadModel}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>

@@ -115,6 +115,51 @@ scenarios:
         match: equals
         value: true
 
+  - id: wwrite-005-wrong-project-wiki-rejected
+    name: Agent explains a wiki-write rejection instead of retry-looping or claiming success
+    purpose: >
+      New for the Workspace Chat Tab feature (see
+      docs/superpowers/specs/2026-08-26-workspace-chat-tab-design.md): a
+      project workspace's chat session is restricted to its own configured
+      wiki, enforced in wiki-write.ts/the wiki-create-page tool via
+      config.configurable.allowedWikiId, independent of anything in this
+      prompt. Simulates a project workspace chat where the agent already
+      attempted wiki_create_page against a wiki outside its allowed project
+      wiki and received the resulting wiki_forbidden tool message. Confirms
+      the agent's next response explains the restriction to the user rather
+      than silently retrying the identical write or claiming the page was
+      saved. No scenario type here asserts "a tool call was rejected"
+      directly (unlike wwrite-001-004's tool-sequence checks) since the
+      rejection is deterministic, code-level enforcement, not a model
+      behavior to test — what's being checked is how the agent reacts to a
+      tool result it's already been given, hence llm-judge over the final
+      response rather than tool-sequence over the next call.
+    type: llm-judge
+    input: 'Okay, go ahead and save that.'
+    priorTurns:
+      - tool: wiki_create_page
+        args:
+          {
+            wikiId: 'other-project-wiki',
+            title: 'Deploy Notes',
+            corpus: { raw: 'Deploy steps for the staging environment.' },
+            section: 'concept',
+          }
+        result:
+          {
+            text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
+          }
+    rubric: >
+      The response should: (1) clearly explain to the user that this
+      workspace can only write to its own project wiki ("acme-project") and
+      that the requested wiki ("other-project-wiki") was rejected, (2) not
+      claim the page was successfully saved, (3) not blindly retry
+      wiki_create_page against the same rejected wikiId without correcting
+      it. It is acceptable, and good, for the response to offer to retry
+      against the correct wiki id ("acme-project") since that information
+      was given directly in the tool's own result.
+    minScore: 6
+
   - id: wwrite-003-duplicate-create-then-update
     name: Agent recovers from a duplicate signal by reading/updating, not retrying create
     purpose: >

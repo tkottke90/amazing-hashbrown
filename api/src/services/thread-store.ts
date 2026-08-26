@@ -5,7 +5,7 @@ import { logger } from '../config/logger.js';
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThreadType = 'chat' | 'wiki';
+export type ThreadType = 'chat' | 'wiki' | 'workspace-chat';
 
 export interface ThreadSummary {
   id: string;
@@ -124,7 +124,9 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // Version numbers must be unique across ALL stores sharing this database.
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
 // 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
-// 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns).
+// 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns),
+// 17=shell_audit_log (workspace-store.ts). Versions 18-23 are claimed by
+// WorkspaceStore (see workspace-store.ts's own comment for the breakdown).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -428,13 +430,20 @@ export class ThreadStore extends BaseStore {
   // unresolved failure at the tail is always visible regardless of the flag.
   getThreadMessages(
     threadId: string,
-    opts: { showErrors?: boolean; limit?: number } = {},
+    opts: { showErrors?: boolean; limit?: number; afterMessageId?: string } = {},
   ): ThreadMessageRecord[] {
-    const { showErrors = false, limit = 200 } = opts;
+    const { showErrors = false, limit = 200, afterMessageId } = opts;
     const rows = this.db
       .prepare(`SELECT * FROM thread_messages WHERE thread_id = ? ORDER BY seq DESC LIMIT ?`)
       .all(threadId, limit) as RawMessageRow[];
-    const chronological = rows.reverse();
+    let chronological = rows.reverse();
+
+    if (afterMessageId) {
+      const cursor = this.db
+        .prepare(`SELECT seq FROM thread_messages WHERE thread_id = ? AND id = ?`)
+        .get(threadId, afterMessageId) as { seq: number } | undefined;
+      if (cursor) chronological = chronological.filter((r) => r.seq > cursor.seq);
+    }
 
     if (showErrors) return chronological.map(mapMessageRow);
 
@@ -446,7 +455,10 @@ export class ThreadStore extends BaseStore {
       .map(mapMessageRow);
   }
 
-  getThread(id: string, opts: { showErrors?: boolean } = {}): ThreadDetail | null {
+  getThread(
+    id: string,
+    opts: { showErrors?: boolean; afterMessageId?: string } = {},
+  ): ThreadDetail | null {
     const meta = this.getThreadMeta(id);
     if (!meta) return null;
     return { ...meta, messages: this.getThreadMessages(id, opts) };
