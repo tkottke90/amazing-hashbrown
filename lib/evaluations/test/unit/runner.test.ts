@@ -387,6 +387,33 @@ describe('executeScenario — llm-judge', () => {
     assert.equal(result.details.type, 'llm-judge');
     assert.ok(getLastInput());
   });
+
+  it('falls back to additional_kwargs.reasoning_content when .content is empty', async () => {
+    // Ollama "thinking" models (gpt-oss, qwen3) can leave .content empty
+    // while putting the real answer in reasoning_content instead — this used
+    // to score as an empty response even though the model actually answered.
+    const scenario = makeScenario();
+    const suite = makeSuite([scenario]);
+    const model = {
+      invoke: async () =>
+        new AIMessage({
+          content: '',
+          additional_kwargs: { reasoning_content: 'I have nothing on you yet.' },
+        }),
+    } as unknown as BaseChatModel;
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(8, 'Good'),
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.actualOutput, 'I have nothing on you yet.');
+  });
 });
 
 describe('computeRunSummary', () => {
