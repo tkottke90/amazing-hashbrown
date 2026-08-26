@@ -322,5 +322,32 @@ describe('agents/system-prompt', () => {
       const result = buildSystemPrompt('  Always respond in French.  \n');
       expect(result.endsWith('Always respond in French.')).to.equal(true);
     });
+
+    it('appends a workspace_context block distinct from the tone/style user-instructions framing', () => {
+      const result = buildSystemPrompt(undefined, 'Workspace goal: ship the release.');
+      expect(result.startsWith(buildSystemPrompt())).to.equal(true);
+      expect(result).to.include('<workspace_context>');
+      expect(result).to.include('</workspace_context>');
+      expect(result).to.include('Workspace goal: ship the release.');
+      // The workspace context block must not be wrapped in the tone/style
+      // framing reserved for userInstructions — it's factual/operational
+      // context meant to shape what the agent does, not just how it talks.
+      expect(result).to.not.include('Additional instructions from the user on tone, style');
+    });
+
+    it('includes both the workspace context block and the user-instructions block when both are given', () => {
+      const result = buildSystemPrompt('Always respond in French.', 'Workspace goal: ship it.');
+      expect(result).to.include('<workspace_context>');
+      expect(result).to.include('Workspace goal: ship it.');
+      expect(result).to.include(
+        'Additional instructions from the user on tone, style, and communication preferences',
+      );
+      expect(result).to.include('Always respond in French.');
+    });
+
+    it('omits the workspace_context block when workspaceContext is empty/whitespace', () => {
+      const result = buildSystemPrompt(undefined, '   \n  ');
+      expect(result).to.equal(buildSystemPrompt());
+    });
   });
 });

@@ -57,10 +57,16 @@ export const ConversationSearchSchema = z.object({
   threshold: z.number().default(20),
 });
 
+export const WorkspaceSummarySchema = z.object({
+  enabled: z.boolean().default(true),
+  messageThreshold: z.number().default(40),
+});
+
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
   contextWindow: ContextWindowSchema.optional(),
   conversationSearch: ConversationSearchSchema.optional(),
+  workspaceSummary: WorkspaceSummarySchema.optional(),
 });
 
 export const EmbeddingsSchema = z.object({

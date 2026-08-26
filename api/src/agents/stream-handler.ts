@@ -380,7 +380,7 @@ export async function finalizeTurn(
   }
 }
 
-function drainAndRecordWikiUpdates(
+export function drainAndRecordWikiUpdates(
   res: Response,
   threadStore: ThreadStore,
   threadId: string,

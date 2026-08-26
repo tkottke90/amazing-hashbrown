@@ -102,7 +102,7 @@ export function getAfterAgentStatusHandler(
 export function getThreadHandler(
   store: ThreadStore,
   id: string,
-  opts: { showErrors?: boolean } = {},
+  opts: { showErrors?: boolean; afterMessageId?: string } = {},
 ): HandlerResult<ClientThreadDetail> {
   const detail = store.getThread(id, opts);
   if (!detail) return notFound(`Thread "${id}" not found`);

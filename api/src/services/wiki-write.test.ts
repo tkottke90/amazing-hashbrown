@@ -108,6 +108,57 @@ describe('services/wiki-write', () => {
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
+
+    it('returns unknown_wiki (not wiki_forbidden) for an unregistered wikiId even when allowedWikiId is set', async () => {
+      const result = await createWikiPage(
+        { wikiId: 'does-not-exist', title: 'X', content: 'x', section: 'entity' },
+        registry,
+        'test-wiki',
+      );
+      expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
+    });
+
+    it('returns wiki_forbidden when wikiId does not match allowedWikiId', async () => {
+      await registry.create({ id: 'other-wiki', domain: 'other', tags: [] });
+      const result = await createWikiPage(
+        {
+          wikiId: 'other-wiki',
+          title: 'Forbidden Page',
+          content: 'Should not be written.',
+          section: 'entity',
+        },
+        registry,
+        'test-wiki',
+      );
+      expect(result).to.deep.equal({
+        status: 'wiki_forbidden',
+        wikiId: 'other-wiki',
+        allowedWikiId: 'test-wiki',
+      });
+
+      const wiki = await registry.load('other-wiki');
+      let threw = false;
+      try {
+        await wiki.readPage('entities/forbidden-page.md');
+      } catch {
+        threw = true;
+      }
+      expect(threw, 'a forbidden write must not create the page').to.equal(true);
+    });
+
+    it('writes normally when wikiId matches allowedWikiId', async () => {
+      const result = await createWikiPage(
+        {
+          wikiId: 'test-wiki',
+          title: 'Allowed Page',
+          content: 'This is fine. See [[dns]] and [[network]].',
+          section: 'entity',
+        },
+        registry,
+        'test-wiki',
+      );
+      expect(result.status).to.equal('written');
+    });
   });
 
   describe('updateWikiPage()', () => {
@@ -228,6 +279,61 @@ describe('services/wiki-write', () => {
         registry,
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
+    });
+
+    it('returns wiki_forbidden when wikiId does not match allowedWikiId', async () => {
+      const created = await createWikiPage(
+        {
+          wikiId: 'test-wiki',
+          title: 'Thermostat Settings',
+          content: 'v1. See [[dns]] and [[network]].',
+          section: 'entity',
+          tags: ['thermostat'],
+        },
+        registry,
+      );
+      expect(created.status).to.equal('written');
+      if (created.status !== 'written') return;
+
+      // Same page path, but requested against a wiki other than the
+      // session's allowed one — the mismatch is caught before path/existence
+      // is even considered.
+      const result = await updateWikiPage(
+        { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
+        registry,
+        'some-other-allowed-wiki',
+      );
+      expect(result).to.deep.equal({
+        status: 'wiki_forbidden',
+        wikiId: 'test-wiki',
+        allowedWikiId: 'some-other-allowed-wiki',
+      });
+
+      const wiki = await registry.load('test-wiki');
+      const page = await wiki.readPage(created.result.path);
+      expect(page.content).to.contain('v1.'); // unchanged
+    });
+
+    it('writes normally when wikiId matches allowedWikiId', async () => {
+      const created = await createWikiPage(
+        {
+          wikiId: 'test-wiki',
+          title: 'Recycling Pickup Schedule',
+          content: 'v1. See [[dns]] and [[network]].',
+          section: 'entity',
+          tags: ['recycling'],
+        },
+        registry,
+      );
+      expect(created.status).to.equal('written');
+      if (created.status !== 'written') return;
+
+      const result = await updateWikiPage(
+        { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
+        registry,
+        'test-wiki',
+      );
+      expect(result.status).to.equal('written');
     });
   });
 });

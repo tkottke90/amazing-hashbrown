@@ -181,9 +181,31 @@ export function mcpToolToLangChain(t: RegisteredTool) {
   );
 }
 
-async function buildChatAgent(provider?: string, model?: string) {
-  const llm = createProvider(provider, model);
+// Built-ins use their original LangChain tool objects to preserve interrupt()
+// semantics. Shared by buildChatAgent and buildWorkspaceChatAgent so both
+// agent flavors see the exact same tool set — MCP tools are appended
+// separately by loadMcpTools() since they're fetched, not static.
+const STATIC_CHAT_TOOLS = [
+  askUserTool,
+  shellExecTool,
+  uploadImageTool,
+  wikiSearchTool,
+  wikiReadPageTool,
+  wikiLocateTool,
+  wikiOrientTool,
+  wikiLintTool,
+  wikiCreatePageTool,
+  wikiUpdatePageTool,
+  wikiAddCrossLinkTool,
+  wikiRebaselineSourceTool,
+  wikiRegisterDomainTool,
+  webFetchTool,
+  rlmQueryTool,
+  searchSkillsTool,
+  searchConversationTool,
+];
 
+async function loadMcpTools() {
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
@@ -201,31 +223,17 @@ async function buildChatAgent(provider?: string, model?: string) {
     });
   }
 
+  return mcpTools;
+}
+
+async function buildChatAgent(provider?: string, model?: string) {
+  const llm = createProvider(provider, model);
+  const mcpTools = await loadMcpTools();
+
   const systemPrompt = buildSystemPrompt(getAgentInstructions());
   const agent = createAgent({
     model: llm,
-    // Built-ins use their original LangChain tool objects to preserve interrupt() semantics.
-    // MCP tools are converted from RegisteredTool.
-    tools: [
-      askUserTool,
-      shellExecTool,
-      uploadImageTool,
-      wikiSearchTool,
-      wikiReadPageTool,
-      wikiLocateTool,
-      wikiOrientTool,
-      wikiLintTool,
-      wikiCreatePageTool,
-      wikiUpdatePageTool,
-      wikiAddCrossLinkTool,
-      wikiRebaselineSourceTool,
-      wikiRegisterDomainTool,
-      webFetchTool,
-      rlmQueryTool,
-      searchSkillsTool,
-      searchConversationTool,
-      ...mcpTools,
-    ],
+    tools: [...STATIC_CHAT_TOOLS, ...mcpTools],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -243,6 +251,97 @@ async function buildChatAgent(provider?: string, model?: string) {
 }
 
 export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>['agent'];
+
+// ---------------------------------------------------------------------------
+// Workspace chat agent — same tool set and middleware as buildChatAgent, but
+// with a per-workspace system prompt (name/goal/location/wiki orientation).
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceChatContext {
+  name: string;
+  goal: string | null;
+  location: string;
+  systemPrompt: string | null;
+  // Resolved wiki domain name (not the raw id) for the workspace's bound
+  // wiki, or null when the workspace has none configured.
+  wikiDomain: string | null;
+}
+
+function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
+  const lines = [
+    `You are working within the workspace "${ctx.name}".`,
+    `Location on disk: ${ctx.location}`,
+  ];
+  if (ctx.goal) lines.push(`Goal: ${ctx.goal}`);
+  if (ctx.wikiDomain) {
+    lines.push(
+      `Bound wiki domain: "${ctx.wikiDomain}" — this workspace's memory lives here; orient to this domain for wiki lookups and writes relevant to this workspace.`,
+    );
+  }
+  if (ctx.systemPrompt?.trim()) {
+    lines.push('', ctx.systemPrompt.trim());
+  }
+  return lines.join('\n');
+}
+
+async function buildWorkspaceChatAgent(
+  workspaceContext: WorkspaceChatContext,
+  provider?: string,
+  model?: string,
+) {
+  const llm = createProvider(provider, model);
+  const mcpTools = await loadMcpTools();
+
+  const systemPrompt = buildSystemPrompt(
+    getAgentInstructions(),
+    buildWorkspaceContextBlock(workspaceContext),
+  );
+  const agent = createAgent({
+    model: llm,
+    tools: [...STATIC_CHAT_TOOLS, ...mcpTools],
+    systemPrompt,
+    checkpointer: getCheckpointer(),
+    middleware: [
+      createRecursionGuardMiddleware(
+        env.agent?.recursionLimit ?? 100,
+        env.agent?.recursionWarnThreshold ?? 0.75,
+      ),
+      skillExpansionMiddleware,
+      contextWindowMiddleware,
+      afterAgentMiddleware,
+    ],
+  });
+
+  return { agent, systemPrompt };
+}
+
+// Keyed by workspaceId (not just provider:model, unlike _agents below) —
+// each workspace's system prompt differs (name/goal/wiki), so the cache key
+// must include it or one workspace's prompt would silently leak onto
+// another's session whenever they share a provider/model pair.
+const _workspaceAgents = new Map<string, { agent: ChatAgent; systemPrompt: string }>();
+
+export async function getWorkspaceChatAgent(
+  workspaceId: string,
+  workspaceContext: WorkspaceChatContext,
+  provider?: string,
+  model?: string,
+): Promise<{ agent: ChatAgent; systemPrompt: string }> {
+  const key = `${workspaceId}:${provider ?? ''}:${model ?? ''}`;
+  if (!_workspaceAgents.has(key)) {
+    _workspaceAgents.set(key, await buildWorkspaceChatAgent(workspaceContext, provider, model));
+  }
+  return _workspaceAgents.get(key)!;
+}
+
+// Call whenever a workspace's goal/systemPrompt/wikiId changes, or a new
+// summary is generated — anything that changes what belongs in its system
+// prompt. Clears only this workspace's cached agents, not every workspace's.
+export function invalidateWorkspaceChatAgent(workspaceId: string): void {
+  for (const key of _workspaceAgents.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) _workspaceAgents.delete(key);
+  }
+}
 
 // Caches both the agent and the exact system prompt string it was built
 // with, so a caller reading systemPrompt always matches the cached agent

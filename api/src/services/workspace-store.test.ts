@@ -89,4 +89,41 @@ describe('services/workspace-store', () => {
       expect(restarted.getTask(task.id)!.status).to.equal('cancelled');
     });
   });
+
+  describe('workspace-chat columns (migration 23)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-chat-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('defaults threadId/summaryPath/lastSummarizedMessageId to null on a freshly created workspace', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      expect(ws.threadId).to.equal(null);
+      expect(ws.summaryPath).to.equal(null);
+      expect(ws.lastSummarizedMessageId).to.equal(null);
+    });
+
+    it('patchWorkspace can set and read back all three fields', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const updated = store.patchWorkspace(ws.id, {
+        threadId: 'thread-1',
+        summaryPath: '.hashbrown/summaries/2026-08-26T00-00-00-000Z.md',
+        lastSummarizedMessageId: 'msg-1',
+      });
+      expect(updated!.threadId).to.equal('thread-1');
+      expect(updated!.summaryPath).to.equal('.hashbrown/summaries/2026-08-26T00-00-00-000Z.md');
+      expect(updated!.lastSummarizedMessageId).to.equal('msg-1');
+
+      const reloaded = store.getWorkspace(ws.id)!;
+      expect(reloaded.threadId).to.equal('thread-1');
+    });
+  });
 });

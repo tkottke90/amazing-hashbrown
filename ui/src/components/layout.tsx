@@ -5,7 +5,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ThemeToggle } from './theme-toggle';
 import { ThreadSidebar } from './thread-sidebar';
-import { useThread } from '@/hooks/use-thread';
+import { useNewThreadAction } from '@/hooks/use-thread';
 
 function AppNavEnd() {
   return (
@@ -32,7 +32,7 @@ export function Layout({
   onAddClick,
   addLabel = 'Add',
 }: LayoutProps) {
-  const { createNewThread } = useThread();
+  const { createNewThread } = useNewThreadAction();
 
   return (
     <div className="flex size-full flex-col overflow-hidden lg:flex-row">

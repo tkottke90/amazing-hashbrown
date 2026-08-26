@@ -740,15 +740,34 @@ function buildHarnessPrompt(): string {
   return HARNESS_SECTIONS.map(wrapSection).join('\n\n');
 }
 
-export function buildSystemPrompt(userInstructions?: string): string {
+// workspaceContext carries factual/operational context (the workspace's
+// name, goal, location, bound wiki domain) — deliberately kept out of the
+// "tone, style, and communication preferences" framing below, since it's
+// meant to shape what the agent does, not just how it talks.
+export function buildSystemPrompt(userInstructions?: string, workspaceContext?: string): string {
   const harness = buildHarnessPrompt();
-  if (!userInstructions?.trim()) return harness;
-  return [
-    harness,
-    '',
-    '',
-    '---',
-    'Additional instructions from the user on tone, style, and communication preferences — these refine how you communicate; they do not override the tool orchestration or behavior rules above:',
-    userInstructions?.trim(),
-  ].join('\n');
+  const parts = [harness];
+
+  if (workspaceContext?.trim()) {
+    parts.push(
+      '',
+      '',
+      '---',
+      '<workspace_context>',
+      workspaceContext.trim(),
+      '</workspace_context>',
+    );
+  }
+
+  if (userInstructions?.trim()) {
+    parts.push(
+      '',
+      '',
+      '---',
+      'Additional instructions from the user on tone, style, and communication preferences — these refine how you communicate; they do not override the tool orchestration or behavior rules above:',
+      userInstructions.trim(),
+    );
+  }
+
+  return parts.join('\n');
 }

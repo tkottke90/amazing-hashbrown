@@ -20,6 +20,9 @@ export interface Workspace {
   git: boolean;
   wikiId: string | null;
   systemPrompt: string | null;
+  threadId: string | null;
+  summaryPath: string | null;
+  lastSummarizedMessageId: string | null;
   createdAt: string;
   updatedAt: string;
   lastChange: string;
@@ -48,6 +51,9 @@ export interface PatchWorkspaceInput {
   git?: boolean;
   wikiId?: string | null;
   systemPrompt?: string | null;
+  threadId?: string;
+  summaryPath?: string;
+  lastSummarizedMessageId?: string;
 }
 
 export interface Project {
@@ -164,6 +170,9 @@ interface RawWorkspaceRow {
   git: number;
   wiki_id: string | null;
   system_prompt: string | null;
+  thread_id: string | null;
+  summary_path: string | null;
+  last_summarized_message_id: string | null;
   created_at: string;
   updated_at: string;
   last_change: string;
@@ -225,6 +234,9 @@ function mapWorkspace(row: RawWorkspaceRow): Workspace {
     git: row.git === 1,
     wikiId: row.wiki_id,
     systemPrompt: row.system_prompt,
+    threadId: row.thread_id,
+    summaryPath: row.summary_path,
+    lastSummarizedMessageId: row.last_summarized_message_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastChange: row.last_change,
@@ -285,6 +297,8 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
 // 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns),
 // 17=shell_audit_log. Versions 18-22 are claimed by WorkspaceStore here.
+// 23=WorkspaceStore (workspaces.thread_id/summary_path/last_summarized_message_id,
+// for the Workspace Chat Tab feature).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -364,6 +378,21 @@ const MIGRATIONS: DbMigration[] = [
   {
     version: 22,
     sql: `ALTER TABLE task_queue ADD COLUMN recovery_attempts INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    version: 23,
+    // No REFERENCES threads(id) here (unlike task_queue.task_id above) —
+    // SQLite requires ALTER TABLE ADD COLUMN's referenced table to already
+    // exist at ALTER time (a plain CREATE TABLE can forward-reference one
+    // that doesn't exist yet, but ADD COLUMN can't), and WorkspaceStore is
+    // frequently constructed standalone, on a db with no threads table at
+    // all (e.g. every WorkspaceStore-only test). thread_id is still a plain
+    // threads.id value; it just isn't DB-enforced as a foreign key.
+    sql: `
+      ALTER TABLE workspaces ADD COLUMN thread_id TEXT;
+      ALTER TABLE workspaces ADD COLUMN summary_path TEXT;
+      ALTER TABLE workspaces ADD COLUMN last_summarized_message_id TEXT;
+    `,
   },
 ];
 
@@ -501,6 +530,18 @@ export class WorkspaceStore extends BaseStore {
     if (patch.systemPrompt !== undefined) {
       sets.push('system_prompt = ?');
       values.push(patch.systemPrompt);
+    }
+    if (patch.threadId !== undefined) {
+      sets.push('thread_id = ?');
+      values.push(patch.threadId);
+    }
+    if (patch.summaryPath !== undefined) {
+      sets.push('summary_path = ?');
+      values.push(patch.summaryPath);
+    }
+    if (patch.lastSummarizedMessageId !== undefined) {
+      sets.push('last_summarized_message_id = ?');
+      values.push(patch.lastSummarizedMessageId);
     }
 
     if (sets.length === 0) return this.getWorkspace(id);

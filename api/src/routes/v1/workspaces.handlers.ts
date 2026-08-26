@@ -16,6 +16,7 @@ import {
   type ExecFileFn,
 } from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
+import { invalidateWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { logger } from '../../config/logger.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -96,6 +97,13 @@ export function patchWorkspaceHandler(
   }
   const ws = store.patchWorkspace(id, patch);
   if (!ws) return notFound(`Workspace ${id} not found`);
+
+  // Any of these change what belongs in the workspace-chat system prompt —
+  // drop the cached agent so the next turn rebuilds it with fresh context.
+  if (patch.goal !== undefined || patch.systemPrompt !== undefined || patch.wikiId !== undefined) {
+    invalidateWorkspaceChatAgent(id);
+  }
+
   return ok(ws);
 }
 

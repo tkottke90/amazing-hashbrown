@@ -10,6 +10,9 @@ export interface Workspace {
   git: boolean;
   wikiId: string | null;
   systemPrompt: string | null;
+  threadId: string | null;
+  summaryPath: string | null;
+  lastSummarizedMessageId: string | null;
   createdAt: string;
   updatedAt: string;
   lastChange: string;
@@ -48,6 +51,25 @@ export interface CreateProjectInput extends CreateWorkspaceInput {
   dueAt?: string | null;
 }
 
+// Distinct from CreateWorkspaceInput (which describes what a NEW workspace
+// can be created with) since a patch can also set fields — threadId,
+// summaryPath, lastSummarizedMessageId — that only ever change after
+// creation, via the workspace-chat feature, never at creation time.
+export interface PatchWorkspaceInput {
+  name?: string;
+  description?: string | null;
+  goal?: string | null;
+  remoteUrl?: string | null;
+  javascript?: boolean;
+  python?: boolean;
+  git?: boolean;
+  wikiId?: string | null;
+  systemPrompt?: string | null;
+  threadId?: string;
+  summaryPath?: string;
+  lastSummarizedMessageId?: string;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
@@ -69,10 +91,7 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Work
   });
 }
 
-export async function patchWorkspace(
-  id: string,
-  patch: Partial<CreateWorkspaceInput>,
-): Promise<Workspace> {
+export async function patchWorkspace(id: string, patch: PatchWorkspaceInput): Promise<Workspace> {
   return request<Workspace>(`/api/v1/workspaces/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

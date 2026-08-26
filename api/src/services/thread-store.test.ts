@@ -371,6 +371,52 @@ describe('services/thread-store', () => {
     });
   });
 
+  describe('getThreadMessages afterMessageId cursor', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns only messages after the cursor id', () => {
+      store.upsertThreadOnFirstMessage('cursor-t1', 'Cursor thread');
+      store.insertMessage('cursor-t1', { id: 'c-u1', kind: 'user', payload: { content: 'one' } });
+      store.insertMessage('cursor-t1', {
+        id: 'c-a1',
+        kind: 'assistant',
+        status: 'done',
+        payload: { content: 'one reply' },
+      });
+      store.insertMessage('cursor-t1', {
+        id: 'c-summary',
+        kind: 'summary',
+        payload: { content: 'summary of the above' },
+      });
+      store.insertMessage('cursor-t1', { id: 'c-u2', kind: 'user', payload: { content: 'two' } });
+      store.insertMessage('cursor-t1', {
+        id: 'c-a2',
+        kind: 'assistant',
+        status: 'done',
+        payload: { content: 'two reply' },
+      });
+
+      const all = store.getThreadMessages('cursor-t1');
+      expect(all.map((m) => m.id)).to.deep.equal(['c-u1', 'c-a1', 'c-summary', 'c-u2', 'c-a2']);
+
+      const sinceSummary = store.getThreadMessages('cursor-t1', { afterMessageId: 'c-summary' });
+      expect(sinceSummary.map((m) => m.id)).to.deep.equal(['c-u2', 'c-a2']);
+    });
+
+    it('is a no-op when afterMessageId does not match any row', () => {
+      const all = store.getThreadMessages('cursor-t1');
+      const result = store.getThreadMessages('cursor-t1', { afterMessageId: 'no-such-id' });
+      expect(result.map((m) => m.id)).to.deep.equal(all.map((m) => m.id));
+    });
+  });
+
   describe('migration versioning', () => {
     it('records version 4 in schema_migrations', () => {
       const dir = mkdtempSync(join(tmpdir(), 'thread-store-migration-test-'));
