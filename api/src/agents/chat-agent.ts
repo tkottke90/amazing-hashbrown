@@ -1,5 +1,5 @@
 import { tool } from '@langchain/core/tools';
-import { HumanMessage, trimMessages } from '@langchain/core/messages';
+import { trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
@@ -9,7 +9,6 @@ import { getAgentInstructions } from '../config/agent-instructions.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
-import { skillsManager } from '../services/skills-manager.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { shellExecTool } from './tools/shell-exec.tool.js';
@@ -31,6 +30,13 @@ import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
+import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
+import {
+  createSkillGatedToolsMiddleware,
+  type SkillGatedToolRegistration,
+} from './skill-gated-tools.middleware.js';
+import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
+import { makeCreateProjectTool } from './tools/create-project.tool.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
 // connection every other store uses. SqliteSaver accepts the connection
@@ -126,46 +132,19 @@ export const contextWindowMiddleware = createMiddleware({
   },
 });
 
-// Expands a slash command in the latest human message immediately before each
-// LLM call. Historical messages with slash commands are passed through as-is.
-// The checkpoint always stores the original "/command args" — only the messages
-// array handed to the LLM is modified (never persisted).
-const skillExpansionMiddleware = createMiddleware({
-  name: 'SkillExpansionMiddleware',
-  beforeAgent: async (state) => {
-    const messages = [...state.messages];
-    let lastHumanIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i]?.getType() === 'human') {
-        lastHumanIdx = i;
-        break;
-      }
-    }
-    if (lastHumanIdx === -1) return undefined;
-    const lastHuman = messages[lastHumanIdx];
-    if (!lastHuman) return undefined;
-    const content = lastHuman.content;
-    if (typeof content !== 'string' || !content.startsWith('/')) return undefined;
+// Skill-Gated Tools registrations — the single source of truth both
+// skillExpansionMiddleware (sets activeGatedSkill) and
+// skillGatedToolsMiddleware (filters the model's tool list by it) read from.
+// See AGENTS.md § Composition over Customization: a future chat-invoked tool
+// that should only be visible after its skill is typed adds an entry here
+// rather than writing new middleware.
+const GATED_SKILL_REGISTRATIONS: SkillGatedToolRegistration[] = [
+  { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
+  { skillCommand: 'create-project', toolNames: ['create_project'] },
+];
 
-    const spaceIdx = content.indexOf(' ');
-    const commandName = spaceIdx === -1 ? content.slice(1) : content.slice(1, spaceIdx);
-    const args = spaceIdx === -1 ? '' : content.slice(spaceIdx + 1);
-
-    let expanded: string;
-    try {
-      const body = await skillsManager.lookup(commandName);
-      expanded = args ? `${body}\n\n${args}` : body;
-    } catch {
-      expanded = `[Skill "/${commandName}" not found — use the search_skills tool to see what's available]${args ? '\n\n' + args : ''}`;
-    }
-
-    messages[lastHumanIdx] = new HumanMessage({
-      content: expanded,
-      id: lastHuman.id,
-    });
-    return { messages };
-  },
-});
+const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
+const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 
 export function mcpToolToLangChain(t: RegisteredTool) {
   return tool(
@@ -200,6 +179,18 @@ const STATIC_CHAT_TOOLS = [
   searchSkillsTool,
   searchConversationTool,
 ];
+
+// Skill-gated tools — see GATED_SKILL_REGISTRATIONS below. Graph-registered
+// like STATIC_CHAT_TOOLS (so ToolNode can execute them), but hidden from the
+// model until their matching skill is invoked; gating only affects what
+// skillGatedToolsMiddleware exposes to the model per-call. Built fresh per
+// agent construction (not a module-scope constant) — same reason as
+// buildWikiWriteTools() below: create-workspace.tool.ts's own import chain
+// leads back to this file (via workspaces.handlers.ts), so calling the
+// factories at module load time would hit a circular-import TDZ error.
+function buildGatedTools() {
+  return [makeCreateWorkspaceTool(), makeCreateProjectTool()];
+}
 
 // The four write-capable wiki tools are built fresh per agent construction
 // (not shared singletons like STATIC_CHAT_TOOLS) so each can close over its
@@ -241,7 +232,7 @@ async function buildChatAgent(provider?: string, model?: string) {
   const systemPrompt = buildSystemPrompt(getAgentInstructions());
   const agent = createAgent({
     model: llm,
-    tools: [...STATIC_CHAT_TOOLS, ...buildWikiWriteTools(), ...mcpTools],
+    tools: [...STATIC_CHAT_TOOLS, ...buildGatedTools(), ...buildWikiWriteTools(), ...mcpTools],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -250,6 +241,7 @@ async function buildChatAgent(provider?: string, model?: string) {
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
       skillExpansionMiddleware,
+      skillGatedToolsMiddleware,
       contextWindowMiddleware,
       afterAgentMiddleware,
     ],
@@ -307,7 +299,12 @@ async function buildWorkspaceChatAgent(
   );
   const agent = createAgent({
     model: llm,
-    tools: [...STATIC_CHAT_TOOLS, ...buildWikiWriteTools(allowedWikiId), ...mcpTools],
+    tools: [
+      ...STATIC_CHAT_TOOLS,
+      ...buildGatedTools(),
+      ...buildWikiWriteTools(allowedWikiId),
+      ...mcpTools,
+    ],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -316,6 +313,7 @@ async function buildWorkspaceChatAgent(
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
       skillExpansionMiddleware,
+      skillGatedToolsMiddleware,
       contextWindowMiddleware,
       afterAgentMiddleware,
     ],

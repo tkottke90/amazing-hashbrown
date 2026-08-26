@@ -115,6 +115,16 @@ const WikiDomainCreatedSchema = z.object({
   wikiId: z.string(),
 });
 
+const ResourceCreatedSchema = z.object({
+  type: z.literal('resource_created'),
+  resourceType: z.enum(['workspace', 'project']),
+  name: z.string(),
+  goal: z.string().optional(),
+  location: z.string(),
+  workspaceId: z.string(),
+  seq: z.number().optional(),
+});
+
 const QueueStatusSchema = z.object({
   type: z.literal('queue_status'),
   paused: z.boolean(),
@@ -155,6 +165,7 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   WikiUpdatedSchema,
   WikiOrientedSchema,
   WikiDomainCreatedSchema,
+  ResourceCreatedSchema,
   UsageStatsSchema,
   QueueStatusSchema,
   SummarizingStartSchema,

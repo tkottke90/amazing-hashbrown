@@ -84,6 +84,60 @@ describe('routes/v1/workspaces.handlers', () => {
         expect(result.error).to.include('Invalid directoryName');
       }
     });
+
+    describe('name uniqueness (409)', () => {
+      const workspaceDirs: string[] = [];
+
+      afterEach(() => {
+        for (const wsDir of workspaceDirs.splice(0))
+          rmSync(wsDir, { recursive: true, force: true });
+      });
+
+      it('returns 409 when a workspace with the same name already exists', async () => {
+        const dirA = `dup-name-${randomUUID()}`;
+        const dirB = `dup-name-${randomUUID()}`;
+        workspaceDirs.push(join(tmpdir(), 'projects', dirA), join(tmpdir(), 'projects', dirB));
+
+        const first = await createWorkspaceHandler(store, {
+          name: 'My Workspace',
+          locationRoot: 'temporary',
+          directoryName: dirA,
+        });
+        expect(first.ok).to.equal(true);
+
+        const result = await createWorkspaceHandler(store, {
+          name: 'My Workspace',
+          locationRoot: 'temporary',
+          directoryName: dirB,
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(409);
+          expect(result.error).to.include('My Workspace');
+        }
+      });
+
+      it('returns 409 for a name that only differs by case', async () => {
+        const dirA = `dup-name-case-${randomUUID()}`;
+        const dirB = `dup-name-case-${randomUUID()}`;
+        workspaceDirs.push(join(tmpdir(), 'projects', dirA), join(tmpdir(), 'projects', dirB));
+
+        const first = await createWorkspaceHandler(store, {
+          name: 'My Workspace',
+          locationRoot: 'temporary',
+          directoryName: dirA,
+        });
+        expect(first.ok).to.equal(true);
+
+        const result = await createWorkspaceHandler(store, {
+          name: 'MY WORKSPACE',
+          locationRoot: 'temporary',
+          directoryName: dirB,
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      });
+    });
   });
 
   describe('createWorkspaceHandler() dependency isolation provisioning', () => {

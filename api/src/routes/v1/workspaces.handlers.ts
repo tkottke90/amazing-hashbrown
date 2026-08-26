@@ -31,6 +31,10 @@ function badRequest(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
 }
 
+function conflict(error: string): HandlerFailure {
+  return { ok: false, status: 409, error };
+}
+
 export function listWorkspacesHandler(store: WorkspaceStore) {
   return ok(store.listWorkspaces());
 }
@@ -55,6 +59,9 @@ export async function createWorkspaceHandler(
   }
   if (!body.directoryName || typeof body.directoryName !== 'string') {
     return badRequest('directoryName is required');
+  }
+  if (store.findWorkspaceByName(body.name)) {
+    return conflict(`A workspace named "${body.name}" already exists.`);
   }
 
   let location: string;

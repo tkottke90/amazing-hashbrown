@@ -395,6 +395,22 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         // Handled by the wiki ingestion chat; no-op in the main thread context.
         break;
 
+      case 'resource_created':
+        messages.value = [
+          ...messages.value,
+          {
+            kind: 'resource_card',
+            id: randomUUID(),
+            resourceType: evt.resourceType,
+            name: evt.name,
+            goal: evt.goal,
+            location: evt.location,
+            workspaceId: evt.workspaceId,
+            seq: evt.seq,
+          },
+        ];
+        break;
+
       case 'queue_status':
         isPaused.value = evt.paused;
         break;
