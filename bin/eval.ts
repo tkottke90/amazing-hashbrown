@@ -21,11 +21,11 @@ import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
 import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
 import { wikiLocateTool } from '../api/src/agents/tools/wiki-locate.tool.js';
 import { wikiOrientTool } from '../api/src/agents/tools/wiki-orient.tool.js';
-import { wikiCreatePageTool } from '../api/src/agents/tools/wiki-create-page.tool.js';
+import { makeWikiCreatePageTool } from '../api/src/agents/tools/wiki-create-page.tool.js';
 import { wikiLintTool } from '../api/src/agents/tools/wiki-lint.tool.js';
-import { wikiUpdatePageTool } from '../api/src/agents/tools/wiki-update-page.tool.js';
-import { wikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross-link.tool.js';
-import { wikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
+import { makeWikiUpdatePageTool } from '../api/src/agents/tools/wiki-update-page.tool.js';
+import { makeWikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross-link.tool.js';
+import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
@@ -49,10 +49,15 @@ const evalTools = [
   wikiLocateTool,
   wikiOrientTool,
   wikiLintTool,
-  wikiCreatePageTool,
-  wikiUpdatePageTool,
-  wikiAddCrossLinkTool,
-  wikiRebaselineSourceTool,
+  // Unrestricted (no allowedWikiId), matching production's global-chat agent
+  // — the eval runner only inspects proposed tool_calls against seeded
+  // priorTurns context, it never actually executes a tool, so this can't
+  // exercise the allowedWikiId restriction itself (that's what
+  // wwrite-005/006-009's seeded rejection results are for).
+  makeWikiCreatePageTool(),
+  makeWikiUpdatePageTool(),
+  makeWikiAddCrossLinkTool(),
+  makeWikiRebaselineSourceTool(),
   wikiRegisterDomainTool,
   webFetchTool,
   fakeGenerateImageTool,
