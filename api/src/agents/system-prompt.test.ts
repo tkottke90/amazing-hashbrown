@@ -227,7 +227,15 @@ describe('agents/system-prompt', () => {
       );
       expect(result).to.include('call wiki_create_page\ndirectly with the fetched content');
       expect(result).to.include(
-        'is the confirmation round-trip ask_user_routing tells you not to make',
+        'is the confirmation round-trip ask_user_routing tells\nyou not to make',
+      );
+    });
+
+    it('shows the inline corpus.raw shape for a direct-write, non-stub fetch', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('corpus: { raw: "<the fetched page text, as markdown>" }');
+      expect(result).to.include(
+        'corpus.raw takes the content itself, as a string — not a threadId/toolKey pair',
       );
     });
 

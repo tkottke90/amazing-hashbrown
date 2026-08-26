@@ -543,6 +543,23 @@ confirmation already answered that.`;
 //    all. Appended a sentence scoping it to when the tool is actually
 //    available, with the concrete fallback (present the summary, say
 //    write access isn't available) instead of stalling on missing details.
+// 8. wfetch-003, auto-eval round 2 of suites/web-fetch.yaml (2026-08-26):
+//    with the scenario's stale argCheck fixed (see suites/web-fetch.yaml's
+//    own comment — it was checking a `content` path the tool schema never
+//    had), local's actual behavior became visible for the first time:
+//    round 1 fabricated a threadId/toolKey pair for a plain, non-offloaded
+//    fetch (there was never a stub to copy those from), round 2 passed
+//    corpus as a bare string. Root cause: this section's only concrete
+//    corpus example was the compact-stub's `{ threadId, toolKey }` shape —
+//    the direct-write path this section is mostly about had no example of
+//    its own `{ raw }` shape to anchor on, so local guessed twice and
+//    missed twice. glm and Ornith got the shape right from the tool's zod
+//    schema alone both rounds, so this wasn't flagged as a ceiling — it's
+//    the classic missing-contrastive-example gap (interpreting-results.md
+//    §3), just on a tool-call argument shape instead of a routing choice.
+//    Added the missing inline-corpus example right where the direct-write
+//    instruction already lives. Re-check local's wfetch-003 next round; if
+//    it still misses in a new third shape, that's the plateau signature.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -553,10 +570,22 @@ then write.
 The reverse applies once the content is already in hand. If a web_fetch already succeeded in this
 conversation and the user asks you to save what it returned, that request is the decision — proceed
 to the write. When a wiki_locate result has already established the domain, call wiki_create_page
-directly with the fetched content; wiki_create_page itself detects near-duplicate pages and points
-you to wiki_update_page instead, so you don't need a wiki_orient pass first just to check whether
-the page already exists. Asking where to save it or whether to summarize first, when the user has
-already said "save it," is the confirmation round-trip ask_user_routing tells you not to make.
+directly with the fetched content, passing it as an inline corpus:
+
+  wiki_create_page({
+    wikiId: "engineering",
+    title:  "Vector Databases — Concepts",
+    corpus: { raw: "<the fetched page text, as markdown>" },
+    section: "concept"
+  })
+
+corpus.raw takes the content itself, as a string — not a threadId/toolKey pair (that shape is only
+for the compact-stub case below, where the tool fetches the body itself from a key you don't have the
+text for) and not the content passed under some other field name. wiki_create_page itself detects
+near-duplicate pages and points you to wiki_update_page instead, so you don't need a wiki_orient pass
+first just to check whether the page already exists. Asking where to save it or whether to summarize
+first, when the user has already said "save it," is the confirmation round-trip ask_user_routing tells
+you not to make.
 Placement isn't a reason to orient first either — wiki_create_page derives the new page's path
 itself from the wikiId, title, and section you pass, so orienting "to find the right spot" for a
 page you're about to create adds a round-trip for nothing. With a fetched recipe in hand and a
