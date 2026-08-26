@@ -381,8 +381,15 @@ const MIGRATIONS: DbMigration[] = [
   },
   {
     version: 23,
+    // No REFERENCES threads(id) here (unlike task_queue.task_id above) —
+    // SQLite requires ALTER TABLE ADD COLUMN's referenced table to already
+    // exist at ALTER time (a plain CREATE TABLE can forward-reference one
+    // that doesn't exist yet, but ADD COLUMN can't), and WorkspaceStore is
+    // frequently constructed standalone, on a db with no threads table at
+    // all (e.g. every WorkspaceStore-only test). thread_id is still a plain
+    // threads.id value; it just isn't DB-enforced as a foreign key.
     sql: `
-      ALTER TABLE workspaces ADD COLUMN thread_id TEXT REFERENCES threads(id);
+      ALTER TABLE workspaces ADD COLUMN thread_id TEXT;
       ALTER TABLE workspaces ADD COLUMN summary_path TEXT;
       ALTER TABLE workspaces ADD COLUMN last_summarized_message_id TEXT;
     `,

@@ -285,10 +285,10 @@ describe('services/wiki-write', () => {
       const created = await createWikiPage(
         {
           wikiId: 'test-wiki',
-          title: 'Update Target',
+          title: 'Thermostat Settings',
           content: 'v1. See [[dns]] and [[network]].',
           section: 'entity',
-          tags: ['updatetarget'],
+          tags: ['thermostat'],
         },
         registry,
       );
@@ -318,10 +318,10 @@ describe('services/wiki-write', () => {
       const created = await createWikiPage(
         {
           wikiId: 'test-wiki',
-          title: 'Allowed Update Target',
+          title: 'Recycling Pickup Schedule',
           content: 'v1. See [[dns]] and [[network]].',
           section: 'entity',
-          tags: ['allowedupdatetarget'],
+          tags: ['recycling'],
         },
         registry,
       );

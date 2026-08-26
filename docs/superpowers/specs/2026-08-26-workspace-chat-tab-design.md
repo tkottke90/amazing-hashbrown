@@ -34,10 +34,12 @@ The Chat tab in `ui/src/pages/workspaces/[id].tsx` is a placeholder stub (`<div>
 New migration, version **23** (next free slot — thread-store claims 1-16, workspace-store claims 18-22; see the shared counter comment in both files):
 
 ```sql
-ALTER TABLE workspaces ADD COLUMN thread_id TEXT REFERENCES threads(id);
+ALTER TABLE workspaces ADD COLUMN thread_id TEXT;
 ALTER TABLE workspaces ADD COLUMN summary_path TEXT;
 ALTER TABLE workspaces ADD COLUMN last_summarized_message_id TEXT;
 ```
+
+No `REFERENCES threads(id)` on `thread_id`: SQLite's `ALTER TABLE ADD COLUMN` requires a foreign key's referenced table to already exist at ALTER time (unlike a plain `CREATE TABLE`, which can forward-reference one that doesn't yet exist), and `WorkspaceStore` is frequently constructed standalone in tests, on a database with no `threads` table at all. `thread_id` is still a `threads.id` value in practice, just not DB-enforced as a foreign key.
 
 - **`thread_id`** — the workspace's one chat thread, source of truth for the 1:1 relationship. Set as soon as the Chat tab generates a UUID client-side (via a `PATCH` to the workspace), before any message is sent — mirroring how the global chat already holds a client-generated thread id in `localStorage` before the thread row exists. If a workspace already has `thread_id` set, the tab never generates a new one; it always appends to the existing thread.
 - **`last_summarized_message_id`** — the summary cursor. Messages with `seq` greater than this id's `seq` are "since last summary" and visible; everything at/before is hidden from the UI (not deleted from the thread).
