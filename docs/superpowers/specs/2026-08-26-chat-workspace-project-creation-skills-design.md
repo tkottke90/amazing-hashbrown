@@ -53,7 +53,7 @@ workspace/project creation:
   an entry instead of writing new middleware.
 - New middleware state: `activeGatedSkill: string | null`.
   `skillExpansionMiddleware` sets it to the matched command name whenever it
-  expands a *registered* gated skill (looked up from the same
+  expands a _registered_ gated skill (looked up from the same
   `registrations` list — one source of truth for "which skills gate which
   tools").
 - A new `wrapModelCall` hook (first use of this hook in the codebase;
@@ -80,15 +80,15 @@ Customization for the general principle.
 
 Issue vocabulary → actual API shape:
 
-| Issue field | `/create-workspace` | `/create-project` | Maps to |
-|---|---|---|---|
-| `name` (required) | ✓ | ✓ | `name` — also the source of `directoryName = slugify(name)` (auto-derived, never asked) |
-| `location` (optional, issue proposed default `~/workspaces/{slug}`) | dropped | dropped | Replaced: `directoryName` from `name`, `locationRoot` silently defaults to `'projects'` (not asked). The resolved path is shown in the pre-creation confirmation instead of being a separate question — the actual API has no free-form path or slug field, only `locationRoot: 'projects' \| 'temporary'` + `directoryName`. |
-| `goal` (optional) | ✓ | ✓ | `goal` |
-| `wiki_id` (optional) | ✓ | dropped | `wikiId`. `/create-project` always provisions a fresh ephemeral wiki (`createProjectHandler` rejects a caller-supplied `wikiId`), so this question doesn't apply there. |
-| git enabled (optional) | ✓ | ✓ | `git` boolean, defaults to `false` if unspecified |
-| `win_condition` (required) | n/a | ✓ | `winCondition` |
-| `due_at` (optional) | n/a | ✓ | `dueAt` |
+| Issue field                                                         | `/create-workspace` | `/create-project` | Maps to                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name` (required)                                                   | ✓                   | ✓                 | `name` — also the source of `directoryName = slugify(name)` (auto-derived, never asked)                                                                                                                                                                                                                                       |
+| `location` (optional, issue proposed default `~/workspaces/{slug}`) | dropped             | dropped           | Replaced: `directoryName` from `name`, `locationRoot` silently defaults to `'projects'` (not asked). The resolved path is shown in the pre-creation confirmation instead of being a separate question — the actual API has no free-form path or slug field, only `locationRoot: 'projects' \| 'temporary'` + `directoryName`. |
+| `goal` (optional)                                                   | ✓                   | ✓                 | `goal`                                                                                                                                                                                                                                                                                                                        |
+| `wiki_id` (optional)                                                | ✓                   | dropped           | `wikiId`. `/create-project` always provisions a fresh ephemeral wiki (`createProjectHandler` rejects a caller-supplied `wikiId`), so this question doesn't apply there.                                                                                                                                                       |
+| git enabled (optional)                                              | ✓                   | ✓                 | `git` boolean, defaults to `false` if unspecified                                                                                                                                                                                                                                                                             |
+| `win_condition` (required)                                          | n/a                 | ✓                 | `winCondition`                                                                                                                                                                                                                                                                                                                |
+| `due_at` (optional)                                                 | n/a                 | ✓                 | `dueAt`                                                                                                                                                                                                                                                                                                                       |
 
 Conversation flow, driven by the SKILL.md instructions using the existing
 `ask_user` tool (already the established path for structured clarification
@@ -129,12 +129,12 @@ so the 409 also benefits the `/workspaces` web form.
 
 Chat error-handling contract:
 
-| API response | Chat behavior |
-|---|---|
-| `201` success | Emit SSE event + resource card, clear `activeGatedSkill` |
-| `409` (new) — duplicate name | Relay the message verbatim, **stop** — no retry, no name-mangling. Wait for the user's next instruction. |
+| API response                                                                                                                                   | Chat behavior                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `201` success                                                                                                                                  | Emit SSE event + resource card, clear `activeGatedSkill`                                                                                                                                                                                                |
+| `409` (new) — duplicate name                                                                                                                   | Relay the message verbatim, **stop** — no retry, no name-mangling. Wait for the user's next instruction.                                                                                                                                                |
 | `400` — missing/invalid field, or the rarer case where two different names slugify to the same directory (e.g. "My Project!" vs "My Project?") | Relay the specific message from the response body. This is the issue's "422 Unprocessable" bucket in spirit — the API uses 400 for all validation failures rather than distinguishing 422, and this design doesn't introduce a new status split for it. |
-| `5xx` / thrown network error | Tell the user creation failed and suggest the Workspaces page (`/workspaces`) as a fallback |
+| `5xx` / thrown network error                                                                                                                   | Tell the user creation failed and suggest the Workspaces page (`/workspaces`) as a fallback                                                                                                                                                             |
 
 ## Resource card
 
@@ -168,11 +168,11 @@ the `ThreadMessage` → new `ResourceCardMessage` component in
 fields specific to what workspace/project creation actually produces — it
 is not a generic `{ resourceKind: string, meta: Record<string, string> }`
 bag that every future resource type has to be squeezed into (see `AGENTS.md`
-§ Composition over Customization). What *is* shared is presentation: two
+§ Composition over Customization). What _is_ shared is presentation: two
 small standalone components —
 
 - `ThreadCardShell` — the bordered-card layout (`rounded-md border
-  border-border bg-card`, matching `iframe-message.tsx`'s existing card
+border-border bg-card`, matching `iframe-message.tsx`'s existing card
   treatment)
 - `CardBadge` — the labeled chip (matching the existing `wiki_update` badge
   styling)
