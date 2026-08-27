@@ -7,9 +7,9 @@ import { ChevronRight, Plus, GitBranch, BookOpen, Calendar } from 'lucide-preact
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { TaskDrawer } from '@/components/task-drawer';
-import { WorkspaceSettingsDrawer } from '@/components/workspace-settings-drawer';
-import { FilesTab } from '@/components/files-tab';
-import { WorkspaceChatTab } from '@/components/workspace-chat-tab';
+import { WorkspaceSettingsDrawer } from '@/pages/workspaces/workspace-settings-drawer';
+import { FilesTab } from '@/pages/workspaces/files-tab';
+import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
 import {
   workspaces,
   projects,

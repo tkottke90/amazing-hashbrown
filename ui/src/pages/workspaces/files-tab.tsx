@@ -3,8 +3,8 @@ import { X } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { FileTree } from '@/components/file-tree';
-import { CodeEditor } from '@/components/code-editor';
+import { FileTree } from '@/pages/workspaces/file-tree';
+import { CodeEditor } from '@/pages/workspaces/code-editor';
 import {
   openTabs,
   activeTabPath,
