@@ -28,6 +28,40 @@ import type { CreateSkillInput } from '@tkottke90/skills-manager';
 // naming the specific failure mode (a wiki_locate detour for workspace, an
 // optional-field follow-up question for project) since abstract wording
 // alone didn't anchor either model away from it.
+//
+// Second tightening, added after a real eval run against the first
+// tightening above (suites/create-workspace-project.yaml round 2):
+// - cwp-003 (local) still failed, but the detour changed shape: instead of
+//   calling wiki_locate, the model called ask_user to ask the user for a
+//   wikiId, reasoning explicitly that "the create_workspace tool expects
+//   wikiId field." The first tightening blocked the one specific detour it
+//   named (wiki_locate) but never said wikiId is actually optional — the
+//   model still believed it was required and just found a different route
+//   to get one. Added an explicit "this is genuinely optional, the tool
+//   works fine without it" sentence, and widened step 4's carve-out from
+//   "don't call wiki_locate" to "don't call wiki_locate, ask_user, or
+//   anything else" to close the specific new route this round exposed.
+// - cwp-006 (Lemonade) improved from not calling the tool at all to
+//   calling it, but with two new problems visible in matchedArgs: it
+//   passed name as "ship-homepage-redesign" (a slugified, lowercased
+//   directory-style string) instead of the confirmed "Ship Homepage
+//   Redesign", and it fabricated a plausible-sounding goal rather than
+//   omitting it as the first tightening's wording asked. Likely cause of
+//   the name bug: step 3's "the directory name will be derived
+//   automatically from the project name" reads, on a careless pass, as if
+//   the model itself should supply that derived form as `name`. Added an
+//   explicit line that `name` is passed exactly as confirmed — a
+//   human-readable title, not a slug — since the tool derives the
+//   directory itself; and an explicit "do not invent a plausible value for
+//   an omitted optional field" sentence next to the omission rule, since
+//   "omit it" alone left room for the model to read "you should still
+//   have something to pass" into it.
+// cwp-001/cwp-002 also failed for Lemonade this round (previously
+// passing), but with reasoningContent addressing steps 2-3, which this
+// tightening didn't touch — most likely sampling variance (Lemonade's
+// ChatOpenAI construction sets no temperature/seed; see
+// api/src/services/provider-factory.ts), not a regression from the first
+// tightening. Flagged to verify on the next run rather than assumed.
 export const DEFAULT_SKILLS: CreateSkillInput[] = [
   {
     name: 'create-workspace',
@@ -39,14 +73,14 @@ Required field:
 
 Optional fields:
 - goal — what the workspace is for, in a sentence or two.
-- wikiId — an existing wiki domain to bind this workspace to. Only ask if the user brings it up; don't ask by default. If they name one, the create_workspace tool validates it against the real wiki domain list itself and will tell you if it doesn't match.
+- wikiId — an existing wiki domain to bind this workspace to. This is genuinely optional — create_workspace works perfectly well with it left out, and there is no requirement to have one. Only ask if the user brings it up; don't ask by default, and don't treat its absence as a blocker to resolve before creating. If they name one, the create_workspace tool validates it against the real wiki domain list itself and will tell you if it doesn't match.
 - git — whether to initialize git in the workspace directory. Defaults to no.
 
 Steps:
 1. Parse whatever the user already gave you in their message.
 2. If "name" is missing, ask for it with a single ask_user call — do not proceed without it. If other optional fields are also missing and worth asking about, batch them into that same question rather than asking one field at a time.
 3. Once you have a name (and any other fields the user wants to set), summarize what you're about to create — including that the directory name will be derived automatically from the workspace name — and confirm with a yes/no ask_user call before creating anything.
-4. Only after explicit confirmation, call create_workspace immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go looking for more. If the user never named a wikiId, that means omit the field entirely; it is not a reason to call wiki_locate or any other tool to find one for them.
+4. Only after explicit confirmation, call create_workspace immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go looking for more. If the user never named a wikiId, that means omit the field entirely; it is not a reason to call wiki_locate, ask_user, or anything else to find or confirm one for them.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
   },
@@ -71,7 +105,7 @@ Steps:
 1. Parse whatever the user already gave you in their message.
 2. If "name" or "winCondition" is missing, ask for both (and any other missing optional fields worth asking about) in a single batched ask_user call — do not ask one field at a time, and do not proceed without both required fields.
 3. Once you have the required fields, summarize what you're about to create — including that the directory name will be derived automatically from the project name — and confirm with a yes/no ask_user call before creating anything.
-4. Only after explicit confirmation, call create_project immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go collect more. Optional fields (goal, dueAt, git) that weren't part of what you confirmed are simply omitted; that is not a reason to ask about them now, even though they're still unset.
+4. Only after explicit confirmation, call create_project immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go collect more. Pass `name` exactly as confirmed — the human-readable title (e.g. "Ship Homepage Redesign"), never a lowercased or hyphenated slug — the tool derives the directory name from it internally, so you never construct that form yourself. Optional fields (goal, dueAt, git) that weren't part of what you confirmed are simply omitted; that is not a reason to ask about them now, and it is not a reason to invent a plausible-sounding value for one either — leave it unset.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
   },
