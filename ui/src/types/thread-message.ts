@@ -81,6 +81,18 @@ export type ThreadMessage =
       pageKind: string;
       wikiName: string;
       seq?: number;
+    }
+  | {
+      kind: 'resource_card';
+      id: string;
+      resourceType: 'workspace' | 'project';
+      name: string;
+      goal?: string;
+      location: string;
+      // For a project this is the same id as its workspace row (they share
+      // a row id — see api's workspace-store.ts's NewProjectInput).
+      workspaceId: string;
+      seq?: number;
     };
 
 export type UserThreadMessage = Extract<ThreadMessage, { kind: 'user' }>;
@@ -90,3 +102,4 @@ export type HitlThreadMessage = Extract<ThreadMessage, { kind: 'hitl_prompt' }>;
 export type IframeThreadMessage = Extract<ThreadMessage, { kind: 'iframe' }>;
 export type AudioThreadMessage = Extract<ThreadMessage, { kind: 'audio' }>;
 export type WikiUpdateThreadMessage = Extract<ThreadMessage, { kind: 'wiki_update' }>;
+export type ResourceCardThreadMessage = Extract<ThreadMessage, { kind: 'resource_card' }>;

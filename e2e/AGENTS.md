@@ -179,26 +179,28 @@ implementation details that change without notice.
 
 ### Known `data-testid` attributes in UI source
 
-| Attribute value            | Component file                            | Added for                                                          |
-| -------------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
-| `assistant-message`        | `ui/src/components/assistant-message.tsx` | Targeting assistant response bubbles in @llm tests                 |
-| `workspace-row`            | `ui/src/pages/workspaces/index.tsx`       | Selecting specific workspace rows; pair with `data-workspace-id`   |
-| `win-condition`            | `ui/src/pages/workspaces/[id].tsx`        | Asserting project win condition card in Overview tab               |
-| `git-chip`                 | `ui/src/pages/workspaces/[id].tsx`        | Targeting the Git metadata chip to assert its `title` (remote URL) |
-| `task-card`                | `ui/src/pages/workspaces/[id].tsx`        | Selecting task cards in Kanban columns; pair with `data-task-id`   |
-| `task-plan`                | `ui/src/components/task-drawer.tsx`       | Targeting the plan field section inside the task drawer            |
-| `plan-step`                | `ui/src/components/task-drawer.tsx`       | Individual plan step rows; pair with `data-done="true\|false"`     |
-| `plan-step-checkbox`       | `ui/src/components/task-drawer.tsx`       | Checkbox inside a plan step row                                    |
-| `task-status-select`       | `ui/src/components/task-drawer.tsx`       | Status `<select>` in the task drawer edit form                     |
-| `task-tracker-type-select` | `ui/src/components/task-drawer.tsx`       | Tracker adapter `<select>` in the task drawer's Tracker section    |
-| `task-tracker-preview`     | `ui/src/components/task-drawer.tsx`       | Linked-item preview card once a tracker link resolves              |
-| `queue-widget`             | `ui/src/components/thread-sidebar.tsx`    | Sidebar queue widget container                                     |
-| `queue-current-task`       | `ui/src/components/thread-sidebar.tsx`    | Task name text inside the queue widget                             |
-| `queue-status`             | `ui/src/components/thread-sidebar.tsx`    | Status line inside the queue widget                                |
-| `inbox-empty`              | `ui/src/pages/inbox/index.tsx`            | Empty state placeholder shown when inbox has no tasks              |
-| `inbox-due-soon`           | `ui/src/pages/inbox/index.tsx`            | Section wrapper for tasks with a due date                          |
-| `inbox-no-due-date`        | `ui/src/pages/inbox/index.tsx`            | Section wrapper for tasks with no due date                         |
-| `inbox-task-row`           | `ui/src/pages/inbox/index.tsx`            | Table row for an inbox task; pair with `data-task-id`              |
+| Attribute value            | Component file                                | Added for                                                                       |
+| -------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| `assistant-message`        | `ui/src/components/assistant-message.tsx`     | Targeting assistant response bubbles in @llm tests                              |
+| `workspace-row`            | `ui/src/pages/workspaces/index.tsx`           | Selecting specific workspace rows; pair with `data-workspace-id`                |
+| `win-condition`            | `ui/src/pages/workspaces/[id].tsx`            | Asserting project win condition card in Overview tab                            |
+| `git-chip`                 | `ui/src/pages/workspaces/[id].tsx`            | Targeting the Git metadata chip to assert its `title` (remote URL)              |
+| `task-card`                | `ui/src/pages/workspaces/[id].tsx`            | Selecting task cards in Kanban columns; pair with `data-task-id`                |
+| `task-plan`                | `ui/src/components/task-drawer.tsx`           | Targeting the plan field section inside the task drawer                         |
+| `plan-step`                | `ui/src/components/task-drawer.tsx`           | Individual plan step rows; pair with `data-done="true\|false"`                  |
+| `plan-step-checkbox`       | `ui/src/components/task-drawer.tsx`           | Checkbox inside a plan step row                                                 |
+| `task-status-select`       | `ui/src/components/task-drawer.tsx`           | Status `<select>` in the task drawer edit form                                  |
+| `task-tracker-type-select` | `ui/src/components/task-drawer.tsx`           | Tracker adapter `<select>` in the task drawer's Tracker section                 |
+| `task-tracker-preview`     | `ui/src/components/task-drawer.tsx`           | Linked-item preview card once a tracker link resolves                           |
+| `queue-widget`             | `ui/src/components/thread-sidebar.tsx`        | Sidebar queue widget container                                                  |
+| `queue-current-task`       | `ui/src/components/thread-sidebar.tsx`        | Task name text inside the queue widget                                          |
+| `queue-status`             | `ui/src/components/thread-sidebar.tsx`        | Status line inside the queue widget                                             |
+| `inbox-empty`              | `ui/src/pages/inbox/index.tsx`                | Empty state placeholder shown when inbox has no tasks                           |
+| `inbox-due-soon`           | `ui/src/pages/inbox/index.tsx`                | Section wrapper for tasks with a due date                                       |
+| `inbox-no-due-date`        | `ui/src/pages/inbox/index.tsx`                | Section wrapper for tasks with no due date                                      |
+| `inbox-task-row`           | `ui/src/pages/inbox/index.tsx`                | Table row for an inbox task; pair with `data-task-id`                           |
+| `resource-card`            | `ui/src/components/resource-card-message.tsx` | Targeting the resource card rendered after /create-workspace or /create-project |
+| `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx` | The card's Open control, navigating to `/workspaces/:id`                        |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

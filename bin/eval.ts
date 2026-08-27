@@ -11,9 +11,15 @@ import {
   loadSuites,
   loadSuite,
   type Suite,
+  type SkillExpansionMiddlewareLike,
+  type SkillGatedToolsMiddlewareLike,
 } from '../lib/evaluations/src/index.js';
 import { createProvider } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
+import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
+import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
+import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
+import { bootSkillsManager } from '../api/src/services/skills-manager.js';
 import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
 import { shellExecTool } from '../api/src/agents/tools/shell-exec.tool.js';
 import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
@@ -28,6 +34,8 @@ import { makeWikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross
 import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
+import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
+import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
@@ -60,6 +68,16 @@ const evalTools = [
   makeWikiRebaselineSourceTool(),
   wikiRegisterDomainTool,
   webFetchTool,
+  // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware).
+  // create-workspace-project.yaml now exercises that real gating directly
+  // via each scenario's `gatedSkill` field (see runner.ts and
+  // docs/superpowers/specs/2026-08-27-skill-gated-tools-hardening-design.md)
+  // — skill-gated-tools.middleware.test.ts still covers the middleware's
+  // unit-level behavior on its own. Included here unconditionally, same as
+  // every other tool in this list, so any suite/scenario can reference them
+  // as an option regardless of whether it opts into gating.
+  makeCreateWorkspaceTool(),
+  makeCreateProjectTool(),
   fakeGenerateImageTool,
 ];
 
@@ -118,6 +136,22 @@ try {
 } catch {
   console.warn('[eval] Warning: could not open SQLite database — results will be YAML-only');
 }
+
+// Seeds create-workspace/create-project (and any future default skills) if
+// missing — the same idempotent boot the production API server runs at
+// startup (see api/src/services/skills-manager.ts). Required so
+// skillExpansionMiddleware's real manager.lookup() below returns the live
+// default-skills.ts body instead of always hitting its not-found catch
+// branch. Safe to run unconditionally for every suite, not just
+// create-workspace-project.yaml — a no-op once already seeded.
+await bootSkillsManager();
+
+// Real production middleware instances, built from the same registrations
+// chat-agent.ts uses — not a reimplementation. Passed into every runEval
+// call below; inert for suites whose scenarios never set `gatedSkill` (see
+// runner.ts's gatedSkill branch).
+const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
+const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 
 const projectRoot = resolve(import.meta.url.replace('file://', ''), '../..');
 const suitesPath = resolve(projectRoot, 'suites');
@@ -213,6 +247,15 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       ci: values.ci,
       noHtml: values['no-html'],
       store,
+      // Cast through the narrow *Like interfaces lib/evaluations declares
+      // (it only peer-depends on @langchain/core, not langchain — the
+      // package these real instances' richer types live in). Verified safe
+      // against both hook bodies — see runner.ts's SkillExpansionMiddlewareLike/
+      // SkillGatedToolsMiddlewareLike doc comments; do not "fix" this into
+      // something more type-strict without re-reading that reasoning.
+      skillExpansionMiddleware: skillExpansionMiddleware as unknown as SkillExpansionMiddlewareLike,
+      skillGatedToolsMiddleware:
+        skillGatedToolsMiddleware as unknown as SkillGatedToolsMiddlewareLike,
     });
 
     const { run } = result;

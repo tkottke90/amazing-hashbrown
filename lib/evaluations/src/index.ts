@@ -45,7 +45,12 @@ export type { SuiteLoaderConfig } from './loader.js';
 
 // Runner
 export { runEval } from './runner.js';
-export type { RunConfig, RunResult } from './runner.js';
+export type {
+  RunConfig,
+  RunResult,
+  SkillExpansionMiddlewareLike,
+  SkillGatedToolsMiddlewareLike,
+} from './runner.js';
 
 // Comparator
 export { compareRuns } from './comparator.js';

@@ -6,6 +6,18 @@ The project is a work-in-progress. See [`TODO_LIST.md`](./TODO_LIST.md) for the 
 
 ---
 
+## Design philosophy: context is scarce
+
+Local LLMs are challenged by smaller context windows than frontier models. Many AI harnesses today dump a large volume of context into the system prompt, leaving little to no room for the actual work the LLM is meant to do. One of this project's main goals is to combat that by only pulling information into context when it's actually needed, rather than up front and unconditionally. Recurring strategies for this include:
+
+- **LLM Wiki** — knowledge lives in an on-disk knowledge base the agent searches and reads on demand, instead of being pre-loaded into the system prompt.
+- **RLM (Retrieval Loop Model)** — long documents are queried iteratively rather than stuffed into context wholesale.
+- **Skill-Gated Tools** — tools for a specific, less-common capability are only exposed to the model once the matching skill (slash command) is invoked, instead of sitting in the system prompt's tool list on every turn.
+
+New features that add tools, prompt sections, or other system-prompt real estate should default to one of these on-demand patterns rather than always-on inclusion.
+
+---
+
 ## How it works
 
 ```

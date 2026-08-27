@@ -126,4 +126,35 @@ describe('services/workspace-store', () => {
       expect(reloaded.threadId).to.equal('thread-1');
     });
   });
+
+  describe('findWorkspaceByName()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-find-by-name-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('finds a workspace by exact name', () => {
+      const ws = store.createWorkspace({ name: 'My Workspace', location: '/tmp/w' });
+      expect(store.findWorkspaceByName('My Workspace')!.id).to.equal(ws.id);
+    });
+
+    it('matches case-insensitively', () => {
+      const ws = store.createWorkspace({ name: 'My Workspace', location: '/tmp/w' });
+      expect(store.findWorkspaceByName('MY WORKSPACE')!.id).to.equal(ws.id);
+      expect(store.findWorkspaceByName('my workspace')!.id).to.equal(ws.id);
+    });
+
+    it('returns null when no workspace matches', () => {
+      store.createWorkspace({ name: 'My Workspace', location: '/tmp/w' });
+      expect(store.findWorkspaceByName('Someone Else')).to.equal(null);
+    });
+  });
 });

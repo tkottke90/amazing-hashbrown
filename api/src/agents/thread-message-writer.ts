@@ -218,3 +218,22 @@ export function recordWikiUpdate(
     }).seq;
   });
 }
+
+export function recordResourceCard(
+  store: ThreadStore,
+  threadId: string,
+  id: string,
+  resourceType: 'workspace' | 'project',
+  name: string,
+  goal: string | undefined,
+  location: string,
+  workspaceId: string,
+): number | null {
+  return safe(threadId, 'recordResourceCard', () => {
+    return store.insertMessage(threadId, {
+      id,
+      kind: 'resource_card',
+      payload: { resourceType, name, ...(goal ? { goal } : {}), location, workspaceId },
+    }).seq;
+  });
+}

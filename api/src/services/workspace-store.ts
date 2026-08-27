@@ -463,6 +463,13 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapWorkspace(row) : null;
   }
 
+  findWorkspaceByName(name: string): Workspace | null {
+    const row = this.db
+      .prepare(`SELECT * FROM workspaces WHERE LOWER(name) = LOWER(?) LIMIT 1`)
+      .get(name) as RawWorkspaceRow | undefined;
+    return row ? mapWorkspace(row) : null;
+  }
+
   createWorkspace(input: NewWorkspaceInput): Workspace {
     const id = randomUUID();
     const now = new Date().toISOString();

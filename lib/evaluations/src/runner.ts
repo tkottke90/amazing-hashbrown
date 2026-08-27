@@ -31,6 +31,33 @@ import type {
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
 
+// Structural, framework-agnostic shapes for the two production
+// Skill-Gated Tools middleware hooks (api/src/agents/skill-expansion.
+// middleware.ts and skill-gated-tools.middleware.ts) — deliberately NOT
+// imported from `langchain` (the package their real factory/return types
+// live in), since this package only peer-depends on @langchain/core, not
+// langchain itself. Each interface describes only the exact call shape
+// runner.ts uses; the caller (bin/eval.ts) bridges its real, richer-typed
+// middleware instances into these with an explicit, one-line `as unknown
+// as` cast at the single point they're constructed — see
+// docs/superpowers/specs/2026-08-27-skill-gated-tools-hardening-design.md.
+// Verified safe against the real hook bodies: beforeAgent only ever reads
+// state.messages, and wrapModelCall only ever reads request.state.
+// activeGatedSkill/request.tools and forwards whatever the handler returns
+// untouched — neither touches anything outside the shape described here.
+export interface SkillExpansionMiddlewareLike {
+  beforeAgent: (state: {
+    messages: BaseMessage[];
+  }) => Promise<{ messages: BaseMessage[]; activeGatedSkill?: string | null } | undefined>;
+}
+
+export interface SkillGatedToolsMiddlewareLike {
+  wrapModelCall: (
+    request: { tools: BindToolsInput[]; state: { activeGatedSkill: string | null } },
+    handler: (request: { tools: BindToolsInput[] }) => Promise<unknown>,
+  ) => Promise<unknown>;
+}
+
 export interface RunConfig {
   suiteId: string;
   model: BaseChatModel;
@@ -48,6 +75,14 @@ export interface RunConfig {
   ci?: boolean;
   noHtml?: boolean;
   store?: EvaluationsStore;
+  /** Real production skillExpansionMiddleware. Required whenever any
+   * scenario in the run sets `gatedSkill` — see the tool-call/tool-sequence
+   * branches of executeScenario, which throw a clear error rather than
+   * silently skipping gating if a gatedSkill scenario runs without it. */
+  skillExpansionMiddleware?: SkillExpansionMiddlewareLike;
+  /** Real production skillGatedToolsMiddleware. Same requirement as
+   * skillExpansionMiddleware above. */
+  skillGatedToolsMiddleware?: SkillGatedToolsMiddlewareLike;
 }
 
 export interface RunResult {
@@ -211,6 +246,53 @@ export function withSystemPrompt(
   if (!systemPrompt) return input;
   const messages = typeof input === 'string' ? [new HumanMessage(input)] : input;
   return [new SystemMessage(systemPrompt), ...messages];
+}
+
+// Resolves activeGatedSkill for a gatedSkill scenario, always deferring to
+// the real skillExpansionMiddleware first. If the scenario's last human
+// message is itself a slash command the middleware recognizes ("fresh
+// invocation" scenarios, e.g. cwp-001), the middleware's own expansion wins
+// — the model sees the live default-skills.ts body instead of hand-typed
+// scenario text, and activeGatedSkill is confirmed from that real
+// expansion rather than trusted blindly from the YAML field. If the
+// middleware returns undefined (plain continuation text — "continuation"
+// scenarios, e.g. cwp-003, where the invocation happened in a turn the
+// seeded history doesn't literally replay), falls back to trusting
+// scenario.gatedSkill directly: there's no earlier slash-command turn to
+// re-derive it from, and production's own middleware only re-expands the
+// latest human message per turn anyway, so this matches real turn-by-turn
+// behavior rather than inventing a fuller simulation. This delegates 100%
+// of "is this a slash command, which one, is it found, is it gated"
+// parsing to the real production code — no duplicated parsing here.
+export async function resolveGatedSkillState(
+  messages: BaseMessage[],
+  gatedSkill: string,
+  middleware?: SkillExpansionMiddlewareLike,
+): Promise<{ messages: BaseMessage[]; activeGatedSkill: string | null }> {
+  const result = middleware ? await middleware.beforeAgent({ messages }) : undefined;
+  if (result) {
+    return { messages: result.messages, activeGatedSkill: result.activeGatedSkill ?? null };
+  }
+  return { messages, activeGatedSkill: gatedSkill };
+}
+
+// Runs the real skillGatedToolsMiddleware.wrapModelCall against a synthetic
+// request, capturing the tools it narrows the list down to via the
+// handler — the middleware's own return value is a forwarded
+// AIMessage/Command in production and is never inspected here, matching
+// the capture-via-handler style already used in
+// skill-gated-tools.middleware.test.ts.
+export async function resolveGatedTools(
+  tools: BindToolsInput[],
+  activeGatedSkill: string | null,
+  middleware: SkillGatedToolsMiddlewareLike,
+): Promise<BindToolsInput[]> {
+  let filtered = tools;
+  await middleware.wrapModelCall({ tools, state: { activeGatedSkill } }, async (request) => {
+    filtered = request.tools;
+    return undefined;
+  });
+  return filtered;
 }
 
 // Distinct from InvokedToolCall — populated when the model attempts a tool
@@ -418,6 +500,26 @@ export async function executeScenario(
             return !excluded.has(name);
           })
         : config.tools;
+      let modelInput: string | BaseMessage[] = s.input;
+      let toolsForCall = scenarioTools;
+      if (s.gatedSkill) {
+        if (!config.skillGatedToolsMiddleware) {
+          throw new Error(
+            `scenario "${s.id}" sets gatedSkill but no skillGatedToolsMiddleware was provided in RunConfig`,
+          );
+        }
+        const resolved = await resolveGatedSkillState(
+          [new HumanMessage(s.input)],
+          s.gatedSkill,
+          config.skillExpansionMiddleware,
+        );
+        modelInput = resolved.messages;
+        toolsForCall = await resolveGatedTools(
+          scenarioTools,
+          resolved.activeGatedSkill,
+          config.skillGatedToolsMiddleware,
+        );
+      }
       const {
         toolCalls,
         invalidToolCalls,
@@ -427,8 +529,8 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(s.input, config.systemPrompt),
-        scenarioTools,
+        withSystemPrompt(modelInput, config.systemPrompt),
+        toolsForCall,
       );
       const details = {
         ...runToolCall(s, toolCalls),
@@ -463,6 +565,26 @@ export async function executeScenario(
           })
         : config.tools;
       const seeded = buildSeededMessages(s.input, s.priorTurns);
+      let modelInput: BaseMessage[] = seeded;
+      let toolsForCall = scenarioTools;
+      if (s.gatedSkill) {
+        if (!config.skillGatedToolsMiddleware) {
+          throw new Error(
+            `scenario "${s.id}" sets gatedSkill but no skillGatedToolsMiddleware was provided in RunConfig`,
+          );
+        }
+        const resolved = await resolveGatedSkillState(
+          seeded,
+          s.gatedSkill,
+          config.skillExpansionMiddleware,
+        );
+        modelInput = resolved.messages;
+        toolsForCall = await resolveGatedTools(
+          scenarioTools,
+          resolved.activeGatedSkill,
+          config.skillGatedToolsMiddleware,
+        );
+      }
       const {
         toolCalls,
         invalidToolCalls,
@@ -472,8 +594,8 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(seeded, config.systemPrompt),
-        scenarioTools,
+        withSystemPrompt(modelInput, config.systemPrompt),
+        toolsForCall,
       );
       const details = {
         ...runToolSequence(s, toolCalls),

@@ -31,6 +31,10 @@ function badRequest(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
 }
 
+function conflict(error: string): HandlerFailure {
+  return { ok: false, status: 409, error };
+}
+
 function serverError(error: string): HandlerFailure {
   return { ok: false, status: 500, error };
 }
@@ -75,6 +79,9 @@ export async function createProjectHandler(
   }
   if (!body.winCondition || typeof body.winCondition !== 'string')
     return badRequest('winCondition is required');
+  if (store.findWorkspaceByName(body.name)) {
+    return conflict(`A workspace named "${body.name}" already exists.`);
+  }
 
   let location: string;
   try {

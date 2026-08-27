@@ -131,6 +131,39 @@ describe('routes/v1/projects.handlers', () => {
       }
     });
 
+    it('returns 409 when a workspace with the same name already exists', async () => {
+      const first = await createProjectHandler(
+        store,
+        {
+          name: 'My Project',
+          locationRoot: 'temporary',
+          directoryName: `dup-project-${randomUUID()}`,
+          winCondition: 'It ships',
+        },
+        registry,
+      );
+      expect(first.ok, `expected success, got: ${JSON.stringify(first)}`).to.equal(true);
+      if (first.ok) workspaceDirs.push(first.data.workspace.location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'My Project',
+          locationRoot: 'temporary',
+          directoryName: `dup-project-${randomUUID()}`,
+          winCondition: 'It ships',
+        },
+        registry,
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(409);
+        expect(result.error).to.include('My Project');
+      }
+      // Confirm the conflict was caught before an ephemeral wiki was provisioned.
+      expect(registry.list()).to.have.length(1);
+    });
+
     it('still returns 400 when winCondition is missing (pre-existing check, unaffected)', async () => {
       const result = await createProjectHandler(store, {
         name: 'My Project',

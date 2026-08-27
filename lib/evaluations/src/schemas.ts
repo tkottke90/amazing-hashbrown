@@ -92,6 +92,19 @@ export const StructuredScenarioSchema = BaseScenario.extend({
   minScore: z.number().min(0).max(1).default(1),
 }).strict();
 
+// Shared by ToolCallScenarioSchema/ToolSequenceScenarioSchema — opts a
+// scenario into running through the real Skill-Gated Tools middleware pair
+// (skillExpansionMiddleware + skillGatedToolsMiddleware; see
+// api/src/agents/skill-gated-tools.middleware.ts) instead of the raw static
+// tool list, so the model only sees a gated tool when the named skill is
+// actually active. Set to the skill's command name (no leading slash, e.g.
+// 'create-workspace'). See runner.ts's gatedSkill branch and
+// docs/superpowers/specs/2026-08-27-skill-gated-tools-hardening-design.md.
+// Omitted (the default for every suite but create-workspace-project.yaml)
+// preserves today's behavior exactly — the full static tool list, no
+// middleware invoked.
+const GatedSkillField = z.string().min(1).optional();
+
 export const ToolCallScenarioSchema = BaseScenario.extend({
   type: z.literal('tool-call'),
   // Expected tool name, matched against AIMessage.tool_calls[].name.
@@ -101,6 +114,7 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   // Fraction of argChecks that must pass for the scenario to pass (irrelevant
   // if argChecks is omitted — the tool-name match alone determines pass/fail).
   minScore: z.number().min(0).max(1).default(1),
+  gatedSkill: GatedSkillField,
 }).strict();
 
 export const ToolSequenceScenarioSchema = BaseScenario.extend({
@@ -119,6 +133,7 @@ export const ToolSequenceScenarioSchema = BaseScenario.extend({
   tool: z.string().min(1),
   argChecks: z.array(FieldCheckSchema).optional(),
   minScore: z.number().min(0).max(1).default(1),
+  gatedSkill: GatedSkillField,
 }).strict();
 
 const ChoiceOption = z

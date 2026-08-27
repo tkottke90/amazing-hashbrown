@@ -16,6 +16,7 @@ import {
   recordHitlPrompt,
   resolveHitlPrompt,
   recordWikiUpdate,
+  recordResourceCard,
 } from './thread-message-writer.js';
 
 function makeStore(): { store: ThreadStore; dir: string } {
@@ -295,6 +296,62 @@ describe('agents/thread-message-writer', () => {
         pageTitle: 'Entity: Foo',
         pageKind: 'entity',
         wikiName: 'user',
+      });
+    });
+  });
+
+  describe('recordResourceCard', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('inserts a resource_card row with a goal', () => {
+      recordResourceCard(
+        store,
+        't1',
+        'r1',
+        'workspace',
+        'My Workspace',
+        'Ship the thing',
+        '/tmp/projects/my-workspace',
+        'ws-1',
+      );
+      const msg = store.getMessage('t1', 'r1')!;
+      expect(msg.kind).to.equal('resource_card');
+      expect(msg.payload).to.deep.equal({
+        resourceType: 'workspace',
+        name: 'My Workspace',
+        goal: 'Ship the thing',
+        location: '/tmp/projects/my-workspace',
+        workspaceId: 'ws-1',
+      });
+    });
+
+    it('omits goal from the payload when not given', () => {
+      recordResourceCard(
+        store,
+        't1',
+        'r2',
+        'project',
+        'My Project',
+        undefined,
+        '/tmp/projects/my-project',
+        'ws-2',
+      );
+      const msg = store.getMessage('t1', 'r2')!;
+      expect(msg.payload).to.deep.equal({
+        resourceType: 'project',
+        name: 'My Project',
+        location: '/tmp/projects/my-project',
+        workspaceId: 'ws-2',
       });
     });
   });

@@ -5,7 +5,7 @@ import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ThreadStore } from '../services/thread-store.js';
-import { pipeEvents, finalizeTurn } from './stream-handler.js';
+import { pipeEvents, finalizeTurn, makeLiveSseWriter } from './stream-handler.js';
 
 // A minimal fake Response — writeSseEvent() only ever calls res.write().
 // Captures each raw SSE line so tests can assert on exactly what would have
@@ -62,6 +62,57 @@ function stubObsHandler(
 }
 
 describe('agents/stream-handler', () => {
+  describe('makeLiveSseWriter', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('persists a resource_created event and attaches seq to the emitted event', () => {
+      const { res, events } = fakeRes();
+      const writer = makeLiveSseWriter(res, store, 't1');
+
+      writer({
+        type: 'resource_created',
+        resourceType: 'workspace',
+        name: 'My Workspace',
+        location: '/tmp/projects/my-workspace',
+        workspaceId: 'ws-1',
+      });
+
+      const emitted = events();
+      expect(emitted).to.have.length(1);
+      expect(emitted[0].type).to.equal('resource_created');
+      expect(emitted[0].seq).to.be.a('number');
+
+      // The row landed in thread_messages, not just the SSE stream.
+      const persisted = store.getThreadMessages('t1').find((m) => m.kind === 'resource_card');
+      expect(persisted, 'expected a persisted resource_card row').to.not.equal(undefined);
+      expect(persisted!.payload).to.deep.equal({
+        resourceType: 'workspace',
+        name: 'My Workspace',
+        location: '/tmp/projects/my-workspace',
+        workspaceId: 'ws-1',
+      });
+    });
+
+    it('passes non-resource_created events through unchanged (regression guard)', () => {
+      const { res, events } = fakeRes();
+      const writer = makeLiveSseWriter(res, store, 't1');
+
+      writer({ type: 'wiki_domain_created', wikiId: 'homelab' });
+
+      expect(events()).to.deep.equal([{ type: 'wiki_domain_created', wikiId: 'homelab' }]);
+    });
+  });
+
   describe('finalizeTurn', () => {
     it('emits stream_error and does not emit hitl_prompt when recordHitlPrompt throws', async () => {
       const { store, dir } = makeStore();
