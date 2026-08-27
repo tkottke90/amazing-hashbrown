@@ -114,8 +114,8 @@ export function FilesTab({ workspaceId }: { workspaceId: string }) {
   }, [workspaceId]);
 
   return (
-    <div class="p-4">
-      <div class="flex gap-4" style={{ height: '480px' }}>
+    <div class="p-4 size-full">
+      <div class="flex gap-4 size-full">
         <div class="w-[250px] shrink-0 overflow-hidden rounded-xl border border-border">
           <FileTree workspaceId={workspaceId} />
         </div>

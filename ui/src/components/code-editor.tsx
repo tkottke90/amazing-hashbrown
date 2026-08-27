@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   syntaxHighlighting,
@@ -103,6 +103,7 @@ export function CodeEditor({ path, initialContent, dirty, onReady }: CodeEditorP
       state: EditorState.create({
         doc: initialContent,
         extensions: [
+          lineNumbers(),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           syntaxHighlighting(defaultHighlightStyle),

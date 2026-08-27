@@ -102,10 +102,24 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
         <button
           type="button"
           aria-label="Refresh file tree"
-          class="shrink-0 rounded p-1 hover:bg-muted hover:text-foreground"
-          onClick={() => void loadFileTree(workspaceId, { force: true })}
+          class="group shrink-0 rounded p-1 hover:bg-muted hover:text-foreground"
+          onClick={(event: Event) => {
+            const elem = event.currentTarget as HTMLButtonElement;
+
+            elem.dataset.loading = 'true';
+
+            loadFileTree(workspaceId, { force: true })
+              .then(() => {
+                console.log('File Tree Loaded')
+                delete elem.dataset.loading;
+              })
+          }}
         >
-          <RefreshCw class={cn('size-3.5', fileTreeLoading.value && 'animate-spin')} />
+          <RefreshCw
+            class={cn(
+              'size-3.5 group-data-loading:animate-spin'
+            )}
+          />
         </button>
       </div>
 
