@@ -43,22 +43,30 @@ export function createSkillExpansionMiddleware(
       const args = spaceIdx === -1 ? '' : content.slice(spaceIdx + 1);
 
       let expanded: string;
-      let activeGatedSkill: string | null | undefined;
+      // Always explicitly resolved on every successful command match (gated
+      // skill -> itself, non-gated or unknown command -> null) rather than
+      // left unset — an omitted key here would leave a stale gate from an
+      // earlier turn untouched. Plain-chat turns never reach this branch at
+      // all (see the startsWith('/') check above), which is intentional:
+      // mid-flow field collection and post-rejection tool retry both rely
+      // on the gate staying open across non-slash-command turns.
+      let activeGatedSkill: string | null;
       try {
         const body = await manager.lookup(commandName);
         expanded = args ? `${body}\n\n${args}` : body;
-        if (registrations.some((r) => r.skillCommand === commandName)) {
-          activeGatedSkill = commandName;
-        }
+        activeGatedSkill = registrations.some((r) => r.skillCommand === commandName)
+          ? commandName
+          : null;
       } catch {
         expanded = `[Skill "/${commandName}" not found — use the search_skills tool to see what's available]${args ? '\n\n' + args : ''}`;
+        activeGatedSkill = null;
       }
 
       messages[lastHumanIdx] = new HumanMessage({
         content: expanded,
         id: lastHuman.id,
       });
-      return { messages, ...(activeGatedSkill !== undefined ? { activeGatedSkill } : {}) };
+      return { messages, activeGatedSkill };
     },
   });
 }

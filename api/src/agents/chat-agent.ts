@@ -31,10 +31,8 @@ import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent
 import { buildSystemPrompt } from './system-prompt.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
-import {
-  createSkillGatedToolsMiddleware,
-  type SkillGatedToolRegistration,
-} from './skill-gated-tools.middleware.js';
+import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
+import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 
@@ -131,17 +129,6 @@ export const contextWindowMiddleware = createMiddleware({
     return { messages: trimmed };
   },
 });
-
-// Skill-Gated Tools registrations — the single source of truth both
-// skillExpansionMiddleware (sets activeGatedSkill) and
-// skillGatedToolsMiddleware (filters the model's tool list by it) read from.
-// See AGENTS.md § Composition over Customization: a future chat-invoked tool
-// that should only be visible after its skill is typed adds an entry here
-// rather than writing new middleware.
-const GATED_SKILL_REGISTRATIONS: SkillGatedToolRegistration[] = [
-  { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
-  { skillCommand: 'create-project', toolNames: ['create_project'] },
-];
 
 const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
-import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import {
   buildSeededMessages,
   withSystemPrompt,
@@ -9,10 +9,14 @@ import {
   executeScenario,
   computeRunSummary,
   type RunConfig,
+  type SkillExpansionMiddlewareLike,
+  type SkillGatedToolsMiddlewareLike,
 } from '../../src/runner.js';
 import type {
   DeterministicScenario,
   LlmJudgeScenario,
+  ToolCallScenario,
+  ToolSequenceScenario,
   ScenarioResult,
   Suite,
 } from '../../src/schemas.js';
@@ -413,6 +417,192 @@ describe('executeScenario — llm-judge', () => {
     });
 
     assert.equal(result.actualOutput, 'I have nothing on you yet.');
+  });
+});
+
+// Captures the tools executeScenario's tool-call/tool-sequence branches
+// bound via model.bindTools(tools), plus the exact input passed to the
+// resulting .invoke() — distinct from makeCapturingModel above, which only
+// supports the plain .invoke() path (llm-judge/deterministic/semantic).
+function makeCapturingBindToolsModel(toolCallName: string): {
+  model: BaseChatModel;
+  getBoundTools: () => BindToolsInput[];
+  getLastInput: () => unknown;
+} {
+  let boundTools: BindToolsInput[] = [];
+  let lastInput: unknown;
+  const model = {
+    bindTools: (tools: BindToolsInput[]) => {
+      boundTools = tools;
+      return {
+        invoke: async (input: unknown) => {
+          lastInput = input;
+          return {
+            tool_calls: [{ id: 'call-1', name: toolCallName, args: {} }],
+            content: '',
+          };
+        },
+      };
+    },
+  } as unknown as BaseChatModel;
+  return { model, getBoundTools: () => boundTools, getLastInput: () => lastInput };
+}
+
+function fakeTool(name: string): BindToolsInput {
+  return { name } as unknown as BindToolsInput;
+}
+
+describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
+  const ALWAYS_ON = fakeTool('ask_user');
+  const GATED = fakeTool('create_workspace');
+
+  // Mirrors the real skillExpansionMiddleware's own behavior on a small
+  // scale: recognizes exactly one slash command, rewrites the message and
+  // reports activeGatedSkill when matched, returns undefined (its real
+  // no-op shape for plain-chat/unrecognized text) otherwise.
+  function makeFakeExpansionMiddleware(
+    command: string,
+    expandedBody: string,
+  ): SkillExpansionMiddlewareLike & { callCount: () => number } {
+    let calls = 0;
+    return {
+      callCount: () => calls,
+      beforeAgent: async (state) => {
+        calls += 1;
+        const last = state.messages[state.messages.length - 1];
+        const content = last?.content;
+        if (typeof content !== 'string' || !content.startsWith(`/${command}`)) return undefined;
+        const messages = [...state.messages];
+        messages[messages.length - 1] = new HumanMessage(expandedBody);
+        return { messages, activeGatedSkill: command };
+      },
+    };
+  }
+
+  // Mirrors the real skillGatedToolsMiddleware: always-on tools stay,
+  // GATED is added only when activeGatedSkill matches the registered command.
+  function makeFakeGatingMiddleware(command: string): SkillGatedToolsMiddlewareLike {
+    return {
+      wrapModelCall: async (request, handler) => {
+        const tools =
+          request.state.activeGatedSkill === command ? [...request.tools, GATED] : request.tools;
+        return handler({ ...request, tools });
+      },
+    };
+  }
+
+  function makeToolCallScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'gated-tc-1',
+      name: 'Gated tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: '/fake-skill do the thing',
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+      ...overrides,
+    };
+  }
+
+  it('fresh invocation: expands the real skill body and exposes the gated tool', async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools, getLastInput } = makeCapturingBindToolsModel(
+      GATED.name as string,
+    );
+    const expansion = makeFakeExpansionMiddleware('fake-skill', 'EXPANDED SKILL BODY');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillExpansionMiddleware: expansion,
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user', 'create_workspace'],
+    );
+    const input = getLastInput() as HumanMessage[];
+    assert.equal(input[0]!.content, 'EXPANDED SKILL BODY');
+  });
+
+  it('continuation: falls back to the declared gatedSkill when input is plain text', async () => {
+    const scenario: ToolSequenceScenario = {
+      id: 'gated-ts-1',
+      name: 'Gated tool-sequence scenario',
+      purpose: 'Testing',
+      type: 'tool-sequence',
+      input: 'Yes, that looks right.',
+      priorTurns: [{ tool: 'ask_user', args: { question: 'confirm?' }, result: { text: 'yes' } }],
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools } = makeCapturingBindToolsModel(GATED.name as string);
+    const expansion = makeFakeExpansionMiddleware('fake-skill', 'EXPANDED SKILL BODY');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillExpansionMiddleware: expansion,
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    // beforeAgent was called (runner always defers to the real middleware
+    // first) but took its own no-op path since 'Yes, that looks right.'
+    // isn't a slash command — proving the fallback to scenario.gatedSkill
+    // is what actually resolved the gate here, not a lucky expansion match.
+    assert.equal(expansion.callCount(), 1);
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user', 'create_workspace'],
+    );
+  });
+
+  it('is inert when gatedSkill is unset, even with both middlewares present in config', async () => {
+    const scenario = makeToolCallScenario({ input: 'plain text, no skill', gatedSkill: undefined });
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools } = makeCapturingBindToolsModel('ask_user');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillExpansionMiddleware: makeFakeExpansionMiddleware('fake-skill', 'EXPANDED SKILL BODY'),
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user'],
+    );
+  });
+
+  it('errors (not crashes) when gatedSkill is set but skillGatedToolsMiddleware is missing', async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model } = makeCapturingBindToolsModel(GATED.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.ok(result.actualOutput.includes('gatedSkill'));
   });
 });
 
