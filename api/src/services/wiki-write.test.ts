@@ -1,19 +1,36 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
+import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { createWikiPage, updateWikiPage } from './wiki-write.js';
+import { WorkspaceStore } from './workspace-store.js';
 
 describe('services/wiki-write', () => {
   let dir: string;
   let registry: WikiRegistry;
+  let store: WorkspaceStore;
 
   before(async () => {
     dir = mkdtempSync(join(tmpdir(), 'wiki-write-test-'));
     registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
     await registry.create({ id: 'test-wiki', domain: 'testing', tags: ['test'] });
+
+    store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    await registry.create({ id: 'archived-wiki', domain: 'archived', tags: [] });
+    const archivedId = randomUUID();
+    store.createProject({
+      id: archivedId,
+      name: 'Archived Project',
+      location: join(dir, 'archived-ws'),
+      winCondition: 'done',
+      wikiId: 'archived-wiki',
+    });
+    store.closeProject(archivedId, 'close');
+    store.completeClose(archivedId, 'closed');
   });
 
   after(() => {
@@ -31,6 +48,8 @@ describe('services/wiki-write', () => {
           tags: ['router'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(result.status).to.equal('written');
       if (result.status !== 'written') return;
@@ -52,6 +71,8 @@ describe('services/wiki-write', () => {
           tags: ['proxy'],
         },
         registry,
+        undefined,
+        store,
       );
 
       // "Proxy Service Details" shares 2 of 3 significant words with "Proxy Service Notes"
@@ -65,6 +86,8 @@ describe('services/wiki-write', () => {
           tags: ['proxy'],
         },
         registry,
+        undefined,
+        store,
       );
 
       expect(second.status).to.equal('duplicate');
@@ -83,6 +106,8 @@ describe('services/wiki-write', () => {
           dryRun: true,
         },
         registry,
+        undefined,
+        store,
       );
       expect(result).to.deep.equal({
         status: 'dry_run',
@@ -105,6 +130,8 @@ describe('services/wiki-write', () => {
       const result = await createWikiPage(
         { wikiId: 'does-not-exist', title: 'X', content: 'x', section: 'entity' },
         registry,
+        undefined,
+        store,
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
@@ -114,6 +141,7 @@ describe('services/wiki-write', () => {
         { wikiId: 'does-not-exist', title: 'X', content: 'x', section: 'entity' },
         registry,
         'test-wiki',
+        store,
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
@@ -129,6 +157,7 @@ describe('services/wiki-write', () => {
         },
         registry,
         'test-wiki',
+        store,
       );
       expect(result).to.deep.equal({
         status: 'wiki_forbidden',
@@ -156,8 +185,33 @@ describe('services/wiki-write', () => {
         },
         registry,
         'test-wiki',
+        store,
       );
       expect(result.status).to.equal('written');
+    });
+
+    it('returns wiki_archived and does not write when the target domain is archived', async () => {
+      const result = await createWikiPage(
+        {
+          wikiId: 'archived-wiki',
+          title: 'Too Late',
+          content: 'Should not be written.',
+          section: 'entity',
+        },
+        registry,
+        undefined,
+        store,
+      );
+      expect(result).to.deep.equal({ status: 'wiki_archived', wikiId: 'archived-wiki' });
+
+      const wiki = await registry.load('archived-wiki');
+      let threw = false;
+      try {
+        await wiki.readPage('entities/too-late.md');
+      } catch {
+        threw = true;
+      }
+      expect(threw, 'an archived-domain write must not create the page').to.equal(true);
     });
   });
 
@@ -172,6 +226,8 @@ describe('services/wiki-write', () => {
           tags: ['host'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(created.status).to.equal('written');
       if (created.status !== 'written') return;
@@ -183,6 +239,8 @@ describe('services/wiki-write', () => {
           content: 'v2. See [[dns]] and [[network]].',
         },
         registry,
+        undefined,
+        store,
       );
       expect(updated.status).to.equal('written');
       if (updated.status !== 'written') return;
@@ -204,6 +262,8 @@ describe('services/wiki-write', () => {
           sources: ['raw/original.md'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(created.status).to.equal('written');
       if (created.status !== 'written') return;
@@ -216,6 +276,8 @@ describe('services/wiki-write', () => {
           // tags/sources omitted deliberately
         },
         registry,
+        undefined,
+        store,
       );
 
       const wiki = await registry.load('test-wiki');
@@ -228,6 +290,8 @@ describe('services/wiki-write', () => {
       const result = await updateWikiPage(
         { wikiId: 'test-wiki', path: 'entities/does-not-exist.md', content: 'x' },
         registry,
+        undefined,
+        store,
       );
       expect(result).to.deep.equal({ status: 'not_found' });
     });
@@ -236,6 +300,8 @@ describe('services/wiki-write', () => {
       const result = await updateWikiPage(
         { wikiId: 'test-wiki', path: '../../../etc/passwd', content: 'x' },
         registry,
+        undefined,
+        store,
       );
       expect(result).to.deep.equal({ status: 'invalid_path' });
     });
@@ -250,6 +316,8 @@ describe('services/wiki-write', () => {
           tags: ['difftarget'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(created.status).to.equal('written');
       if (created.status !== 'written') return;
@@ -262,6 +330,8 @@ describe('services/wiki-write', () => {
           dryRun: true,
         },
         registry,
+        undefined,
+        store,
       );
       expect(dry.status).to.equal('dry_run');
       if (dry.status !== 'dry_run') return;
@@ -277,6 +347,8 @@ describe('services/wiki-write', () => {
       const result = await updateWikiPage(
         { wikiId: 'does-not-exist', path: 'entities/x.md', content: 'x' },
         registry,
+        undefined,
+        store,
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
@@ -291,6 +363,8 @@ describe('services/wiki-write', () => {
           tags: ['thermostat'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(created.status).to.equal('written');
       if (created.status !== 'written') return;
@@ -302,6 +376,7 @@ describe('services/wiki-write', () => {
         { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
         registry,
         'some-other-allowed-wiki',
+        store,
       );
       expect(result).to.deep.equal({
         status: 'wiki_forbidden',
@@ -324,6 +399,8 @@ describe('services/wiki-write', () => {
           tags: ['recycling'],
         },
         registry,
+        undefined,
+        store,
       );
       expect(created.status).to.equal('written');
       if (created.status !== 'written') return;
@@ -332,8 +409,19 @@ describe('services/wiki-write', () => {
         { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
         registry,
         'test-wiki',
+        store,
       );
       expect(result.status).to.equal('written');
+    });
+
+    it('returns wiki_archived and does not write when the target domain is archived', async () => {
+      const result = await updateWikiPage(
+        { wikiId: 'archived-wiki', path: 'entities/anything.md', content: 'v2.' },
+        registry,
+        undefined,
+        store,
+      );
+      expect(result).to.deep.equal({ status: 'wiki_archived', wikiId: 'archived-wiki' });
     });
   });
 });

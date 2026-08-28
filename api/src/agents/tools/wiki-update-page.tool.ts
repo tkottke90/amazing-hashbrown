@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { updateWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
+import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiUpdatePageSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the page belongs to.'),
@@ -153,6 +154,8 @@ export function makeWikiUpdatePageTool(allowedWikiId?: string) {
           return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
         case 'wiki_forbidden':
           return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
+        case 'wiki_archived':
+          return wikiArchivedMessage(result.wikiId);
       }
     },
     {

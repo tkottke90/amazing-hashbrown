@@ -5,6 +5,7 @@ import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { getToolContent } from '../../services/tool-content-store.js';
 import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
+import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -124,6 +125,8 @@ export function makeWikiCreatePageTool(allowedWikiId?: string) {
           return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
         case 'wiki_forbidden':
           return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
+        case 'wiki_archived':
+          return wikiArchivedMessage(result.wikiId);
       }
     },
     {

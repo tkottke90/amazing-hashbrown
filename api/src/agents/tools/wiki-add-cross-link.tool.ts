@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
+import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
+import { isWikiDomainArchived, wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiAddCrossLinkSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID the pages belong to.'),
@@ -16,7 +18,11 @@ const WikiAddCrossLinkSchema = z.object({
 // production callers never pass this. getWikiRegistry() is a lazy,
 // process-wide singleton bound to env.wikiRoot with no other way to redirect
 // it to a temp test directory.
-export function makeWikiAddCrossLinkTool(allowedWikiId?: string, registry?: WikiRegistry) {
+export function makeWikiAddCrossLinkTool(
+  allowedWikiId?: string,
+  registry?: WikiRegistry,
+  store?: WorkspaceStore,
+) {
   return tool(
     async ({ wikiId, fromPage, toPage }) => {
       let reg = registry;
@@ -35,6 +41,9 @@ export function makeWikiAddCrossLinkTool(allowedWikiId?: string, registry?: Wiki
       }
       if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
         return wikiWriteForbiddenMessage(wikiId, allowedWikiId);
+      }
+      if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
+        return wikiArchivedMessage(wikiId);
       }
       const result = await wiki.addCrossLink({ fromPage, toPage });
       const warnings = result.warnings.map((w) => w.message).join(' ');

@@ -1,6 +1,8 @@
 import path from 'node:path';
 import type { PageType, Warning, WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from './wiki.js';
+import { getWorkspaceStore, type WorkspaceStore } from './workspace-store.js';
+import { isWikiDomainArchived } from './wiki-archive-guard.js';
 
 export interface WikiWriteResult {
   path: string; // relative to the wiki root
@@ -14,7 +16,8 @@ export type CreateWikiPageResult =
   | { status: 'duplicate'; existingPath: string; existingTitle: string }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string }
-  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string };
+  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string }
+  | { status: 'wiki_archived'; wikiId: string };
 
 export interface CreateWikiPageParams {
   wikiId: string;
@@ -46,6 +49,8 @@ export async function createWikiPage(
   // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
   // matching today's global-chat/non-project behavior.
   allowedWikiId?: string,
+  // Test-injection escape hatch, same rationale as `registry` above.
+  store?: WorkspaceStore,
 ): Promise<CreateWikiPageResult> {
   const {
     wikiId,
@@ -80,6 +85,10 @@ export async function createWikiPage(
 
   if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
     return { status: 'wiki_forbidden', wikiId, allowedWikiId };
+  }
+
+  if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
+    return { status: 'wiki_archived', wikiId };
   }
 
   const prep = await wiki.ingestPrep({ content, title, keywords: tags });
@@ -122,7 +131,8 @@ export type UpdateWikiPageResult =
   | { status: 'invalid_path' }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string }
-  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string };
+  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string }
+  | { status: 'wiki_archived'; wikiId: string };
 
 export interface UpdateWikiPageParams {
   wikiId: string;
@@ -155,6 +165,8 @@ export async function updateWikiPage(
   // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
   // matching today's global-chat/non-project behavior.
   allowedWikiId?: string,
+  // Test-injection escape hatch, same rationale as `registry` above.
+  store?: WorkspaceStore,
 ): Promise<UpdateWikiPageResult> {
   const {
     wikiId,
@@ -188,6 +200,10 @@ export async function updateWikiPage(
 
   if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
     return { status: 'wiki_forbidden', wikiId, allowedWikiId };
+  }
+
+  if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
+    return { status: 'wiki_archived', wikiId };
   }
 
   // Path-escape guard — LlmWiki's own abs() is a bare path.join with no
