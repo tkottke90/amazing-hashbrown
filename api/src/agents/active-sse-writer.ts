@@ -5,7 +5,7 @@ import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 // would create: stream-handler → chat-agent → wiki-orient → stream-handler.
 // stream-handler writes to this map; tools read from it.
 
-type SseWriter = (event: ChatSSEEvent) => void;
+export type SseWriter = (event: ChatSSEEvent) => void;
 
 const _writers = new Map<string, SseWriter>();
 

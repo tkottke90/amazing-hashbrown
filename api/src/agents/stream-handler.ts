@@ -4,7 +4,7 @@ import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
-import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
@@ -27,8 +27,8 @@ import {
 
 // ---- SSE write helper ----
 
-export function writeSseEvent(res: Response, event: ChatSSEEvent): void {
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+export function writeSseEvent(sink: SseWriter, event: ChatSSEEvent): void {
+  sink(event);
 }
 
 // ---- Thought-block parser ----
@@ -49,7 +49,7 @@ const OPEN_TAG = '<think>';
 const CLOSE_TAG = '</think>';
 const SAFE_MARGIN = Math.max(OPEN_TAG.length, CLOSE_TAG.length);
 
-function flushDelta(res: Response, msgId: string, state: ParseState, chunk: string): void {
+function flushDelta(sink: SseWriter, msgId: string, state: ParseState, chunk: string): void {
   state.buf += chunk;
 
   while (state.buf.length > 0) {
@@ -59,7 +59,7 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
         if (closeIdx > 0) {
           const delta = state.buf.slice(0, closeIdx);
           state.thought += delta;
-          writeSseEvent(res, { type: 'thought_delta', messageId: msgId, delta });
+          writeSseEvent(sink, { type: 'thought_delta', messageId: msgId, delta });
         }
         state.buf = state.buf.slice(closeIdx + CLOSE_TAG.length);
         state.inThought = false;
@@ -67,7 +67,7 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
         const safe = state.buf.length > SAFE_MARGIN ? state.buf.slice(0, -SAFE_MARGIN) : '';
         if (safe) {
           state.thought += safe;
-          writeSseEvent(res, { type: 'thought_delta', messageId: msgId, delta: safe });
+          writeSseEvent(sink, { type: 'thought_delta', messageId: msgId, delta: safe });
           state.buf = state.buf.slice(safe.length);
         }
         break;
@@ -78,7 +78,7 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
         if (openIdx > 0) {
           const delta = state.buf.slice(0, openIdx);
           state.content += delta;
-          writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta });
+          writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta });
         }
         state.buf = state.buf.slice(openIdx + OPEN_TAG.length);
         state.inThought = true;
@@ -86,7 +86,7 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
         const safe = state.buf.length > SAFE_MARGIN ? state.buf.slice(0, -SAFE_MARGIN) : '';
         if (safe) {
           state.content += safe;
-          writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: safe });
+          writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: safe });
           state.buf = state.buf.slice(safe.length);
         }
         break;
@@ -95,11 +95,11 @@ function flushDelta(res: Response, msgId: string, state: ParseState, chunk: stri
   }
 }
 
-function drainBuffer(res: Response, msgId: string, state: ParseState): void {
+function drainBuffer(sink: SseWriter, msgId: string, state: ParseState): void {
   if (state.buf) {
     if (state.inThought) state.thought += state.buf;
     else state.content += state.buf;
-    writeSseEvent(res, {
+    writeSseEvent(sink, {
       type: state.inThought ? 'thought_delta' : 'text_delta',
       messageId: msgId,
       delta: state.buf,
@@ -114,7 +114,7 @@ function drainBuffer(res: Response, msgId: string, state: ParseState): void {
 // accumulation + tool-call bookkeeping wire correctly to the persistence
 // layer) without needing a live LLM through the full getChatAgent() chain.
 export async function pipeEvents(
-  res: Response,
+  sink: SseWriter,
   msgId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   eventStream: AsyncIterable<any>,
@@ -135,7 +135,7 @@ export async function pipeEvents(
       case 'on_chat_model_stream': {
         const content = evt.data?.chunk?.content;
         if (typeof content === 'string' && content.length > 0) {
-          flushDelta(res, msgId, parse, content);
+          flushDelta(sink, msgId, parse, content);
         }
         break;
       }
@@ -147,7 +147,7 @@ export async function pipeEvents(
           const inputs = (evt.data?.input ?? {}) as Record<string, unknown>;
           toolCallsInFlight.set(toolCallId, { toolName, inputs });
           const seq = recordToolCallStart(threadStore, threadId, toolCallId, toolName, inputs);
-          writeSseEvent(res, {
+          writeSseEvent(sink, {
             type: 'tool_call_start',
             messageId: randomUUID(),
             toolCallId,
@@ -174,7 +174,7 @@ export async function pipeEvents(
               outputs,
             );
           }
-          writeSseEvent(res, {
+          writeSseEvent(sink, {
             type: 'tool_call_end',
             toolCallId,
             outputs,
@@ -185,7 +185,7 @@ export async function pipeEvents(
     }
   }
 
-  drainBuffer(res, msgId, parse);
+  drainBuffer(sink, msgId, parse);
   return { content: parse.content, thoughtContent: parse.thought };
 }
 
@@ -197,7 +197,7 @@ interface AgentWithGraph {
 }
 
 export async function finalizeTurn(
-  res: Response,
+  sink: SseWriter,
   threadStore: ThreadStore,
   agent: AgentWithGraph,
   threadId: string,
@@ -216,7 +216,13 @@ export async function finalizeTurn(
   },
   effectiveProvider?: string,
   effectiveModel?: string,
-): Promise<void> {
+  // Set only when this turn belongs to an automated task run (task-execution.ts)
+  // — threaded into the hitl_prompt payload so the /hitl route can tell a
+  // task-originated prompt apart from a plain chat one and re-enqueue instead
+  // of resuming an interactive turn. Existing callers omit it; behavior is
+  // unchanged for them.
+  taskId?: string,
+): Promise<{ interrupted: boolean }> {
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.graph.getState(config);
   const checkpointId = (state.config.configurable?.checkpoint_id as string | undefined) ?? null;
@@ -255,7 +261,7 @@ export async function finalizeTurn(
         (outputTokens / 1000) * rates.outputPer1kTokens
       : undefined;
 
-    writeSseEvent(res, {
+    writeSseEvent(sink, {
       type: 'usage_stats',
       messageId: msgId,
       inputTokens,
@@ -285,8 +291,9 @@ export async function finalizeTurn(
           promptKind: 'shell_approval',
           command,
           reason,
+          ...(taskId ? { taskId } : {}),
         });
-        writeSseEvent(res, {
+        writeSseEvent(sink, {
           type: 'hitl_prompt',
           messageId: msgId,
           promptId,
@@ -312,8 +319,9 @@ export async function finalizeTurn(
           allowFreeText: true,
           stepsUsed,
           recursionLimit,
+          ...(taskId ? { taskId } : {}),
         });
-        writeSseEvent(res, {
+        writeSseEvent(sink, {
           type: 'hitl_prompt',
           messageId: msgId,
           promptId,
@@ -346,8 +354,9 @@ export async function finalizeTurn(
           approveLabel,
           approveType,
           rejectLabel,
+          ...(taskId ? { taskId } : {}),
         });
-        writeSseEvent(res, {
+        writeSseEvent(sink, {
           type: 'hitl_prompt',
           messageId: msgId,
           promptId,
@@ -369,20 +378,26 @@ export async function finalizeTurn(
         err: serializeError(err),
       });
       failAssistant(threadStore, threadId, msgId, content, turnSentAt);
-      writeSseEvent(res, { type: 'stream_error', error: 'Failed to save approval prompt' });
+      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to save approval prompt' });
+      // The interrupt could not be durably recorded, so there is no prompt
+      // for the user to ever answer — a caller must treat this as a plain
+      // failure, not a real waiting_on_user state.
+      return { interrupted: false };
     }
+    return { interrupted: true };
   } else {
-    writeSseEvent(res, {
+    writeSseEvent(sink, {
       type: 'stream_done',
       durationMs: Date.now() - startedAt,
       ...(assistantSeq !== null ? { assistantSeq } : {}),
       ...(userSeq !== null ? { userSeq } : {}),
     });
+    return { interrupted: false };
   }
 }
 
 export function drainAndRecordWikiUpdates(
-  res: Response,
+  sink: SseWriter,
   threadStore: ThreadStore,
   threadId: string,
 ): void {
@@ -396,9 +411,9 @@ export function drainAndRecordWikiUpdates(
         event.pageKind,
         event.wikiName,
       );
-      writeSseEvent(res, seq !== null ? { ...event, seq } : event);
+      writeSseEvent(sink, seq !== null ? { ...event, seq } : event);
     } else {
-      writeSseEvent(res, event);
+      writeSseEvent(sink, event);
     }
   }
 }
@@ -413,7 +428,10 @@ export function makeLiveSseWriter(
   res: Response,
   threadStore: ThreadStore,
   threadId: string,
-): (event: ChatSSEEvent) => void {
+): SseWriter {
+  const rawWrite: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
   return (event: ChatSSEEvent) => {
     if (event.type === 'resource_created') {
       const seq = recordResourceCard(
@@ -426,10 +444,10 @@ export function makeLiveSseWriter(
         event.location,
         event.workspaceId,
       );
-      writeSseEvent(res, seq !== null ? { ...event, seq } : event);
+      rawWrite(seq !== null ? { ...event, seq } : event);
       return;
     }
-    writeSseEvent(res, event);
+    rawWrite(event);
   };
 }
 
@@ -466,10 +484,11 @@ export async function streamChatToSse(
     const config = { configurable: { thread_id: threadId } };
     const msgId = randomUUID();
     const turnSentAt = new Date().toISOString();
+    const sink = makeLiveSseWriter(res, threadStore, threadId);
 
     const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -495,7 +514,7 @@ export async function streamChatToSse(
       effectiveModel,
     );
 
-    setActiveSseWriter(threadId, makeLiveSseWriter(res, threadStore, threadId));
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(
         { messages: [{ role: 'human', content }] },
@@ -517,7 +536,7 @@ export async function streamChatToSse(
       );
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -529,7 +548,7 @@ export async function streamChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -549,8 +568,8 @@ export async function streamChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -594,6 +613,7 @@ export async function resumeChatToSse(
     const config = { configurable: { thread_id: threadId } };
     const msgId = randomUUID();
     const turnSentAt = new Date().toISOString();
+    const sink = makeLiveSseWriter(res, threadStore, threadId);
 
     try {
       resolveHitlPrompt(threadStore, threadId, promptId, answer);
@@ -603,11 +623,11 @@ export async function resumeChatToSse(
         promptId,
         err: serializeError(err),
       });
-      writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
+      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
       return;
     }
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -633,7 +653,7 @@ export async function resumeChatToSse(
       effectiveModel,
     );
 
-    setActiveSseWriter(threadId, makeLiveSseWriter(res, threadStore, threadId));
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(new Command({ resume: answer }), {
         ...config,
@@ -649,7 +669,7 @@ export async function resumeChatToSse(
       });
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -661,7 +681,7 @@ export async function resumeChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -681,8 +701,8 @@ export async function resumeChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -744,7 +764,8 @@ export async function retryChatToSse(
       effectiveModel,
     );
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    const sink = makeLiveSseWriter(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -761,7 +782,7 @@ export async function retryChatToSse(
       obsConfig.spanOutputPreviewChars,
     );
 
-    setActiveSseWriter(threadId, makeLiveSseWriter(res, threadStore, threadId));
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(null, {
         ...config,
@@ -777,7 +798,7 @@ export async function retryChatToSse(
       });
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -789,7 +810,7 @@ export async function retryChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -809,8 +830,8 @@ export async function retryChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);

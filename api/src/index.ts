@@ -14,6 +14,7 @@ import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
 import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
+import { executeTask } from './agents/task-execution.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ShellExecutor, ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
@@ -58,7 +59,7 @@ app.logger.info('Knowledge base booted');
 await loadAgentInstructions();
 app.logger.info('Agent instructions loaded');
 
-bootTaskScheduler();
+bootTaskScheduler(executeTask);
 app.logger.info('Task scheduler started');
 
 app.start();

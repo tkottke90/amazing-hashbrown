@@ -1,4 +1,4 @@
-import { getWorkspaceStore } from './workspace-store.js';
+import { getWorkspaceStore, type Task, type TaskQueueEntry } from './workspace-store.js';
 import { logger } from '../config/logger.js';
 
 // Overridable so e2e tests don't have to wait 30 real seconds per pause/resume
@@ -16,6 +16,16 @@ export function registerQueueBroadcast(fn: BroadcastFn): void {
   _broadcast = fn;
 }
 
+// Runs one dequeued task to completion (or to a waiting_on_user pause) and
+// mirrors the outcome onto tasks/task_queue — see task-execution.ts's
+// executeTask(), the real implementation. Injected via the constructor
+// (bootTaskScheduler()) rather than imported directly here, for the same
+// reason registerQueueBroadcast() above exists as a callback instead of an
+// import: task-execution.ts imports pipeEvents/finalizeTurn from
+// stream-handler.ts, which already imports getTaskScheduler() from this
+// file — a direct import here would complete that cycle.
+export type TaskExecutor = (entry: TaskQueueEntry & { task: Task }) => Promise<void>;
+
 // Event-driven, not polling: the scheduler only does work in response to a
 // signal that something may have changed — a task was enqueued, the running
 // task finished, or the scheduler resumed from a chat pause. See issue #68:
@@ -24,6 +34,11 @@ export function registerQueueBroadcast(fn: BroadcastFn): void {
 export class TaskScheduler {
   private paused = false;
   private resumeTimer: ReturnType<typeof setTimeout> | null = null;
+  private executor: TaskExecutor | null;
+
+  constructor(executor?: TaskExecutor) {
+    this.executor = executor ?? null;
+  }
 
   // Picks up any work left over from a previous run (e.g. tasks that were
   // still pending when the process last stopped).
@@ -112,10 +127,31 @@ export class TaskScheduler {
     if (!next) return;
 
     logger.info('Task scheduler: starting task', { taskId: next.taskId, queueId: next.id });
-    // TODO: invoke task agent when agent integration is implemented, oriented
-    // to the task's workspace wiki (workspaces.wiki_id via WikiRegistry —
-    // see api/src/services/wiki.ts); for now just mark as running — the
-    // agent will call completeQueueEntry() and then scheduler.wake() when done.
+    if (!this.executor) {
+      logger.warn('Task scheduler: no executor registered — task left running', {
+        taskId: next.taskId,
+      });
+      return;
+    }
+    void this.runTask(next);
+  }
+
+  // Fire-and-forget from tick()'s point of view — tick() itself stays
+  // synchronous. Always wakes the scheduler again afterward (success or
+  // failure) so the next queued item, if any, gets picked up; the executor
+  // itself is responsible for never leaving a task stuck in 'running' (see
+  // task-execution.ts), but this catch is the last-resort backstop.
+  private async runTask(entry: TaskQueueEntry & { task: Task }): Promise<void> {
+    try {
+      await this.executor!(entry);
+    } catch (err: unknown) {
+      logger.error('Task scheduler: executeTask failed unexpectedly', {
+        taskId: entry.taskId,
+        err: String(err),
+      });
+    } finally {
+      this.wake();
+    }
   }
 
   private emitQueueUpdate(): void {
@@ -134,8 +170,8 @@ export class TaskScheduler {
 
 let _scheduler: TaskScheduler | null = null;
 
-export function bootTaskScheduler(): TaskScheduler {
-  _scheduler = new TaskScheduler();
+export function bootTaskScheduler(executor?: TaskExecutor): TaskScheduler {
+  _scheduler = new TaskScheduler(executor);
   _scheduler.start();
   return _scheduler;
 }

@@ -3,7 +3,12 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { getWorkspaceChatAgent, type WorkspaceChatContext } from './chat-agent.js';
-import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import {
+  setActiveSseWriter,
+  clearActiveSseWriter,
+  getActiveSseWriter,
+  type SseWriter,
+} from './active-sse-writer.js';
 import {
   writeSseEvent,
   pipeEvents,
@@ -37,13 +42,19 @@ import {
 // agent's wiki write tools with this value closed over (see
 // buildWikiWriteTools() in chat-agent.ts). undefined for a non-project
 // workspace, meaning unrestricted, matching today's global-chat behavior.
-function resolveAllowedWikiId(store: WorkspaceStore, workspaceId: string): string | undefined {
+export function resolveAllowedWikiId(
+  store: WorkspaceStore,
+  workspaceId: string,
+): string | undefined {
   const project = store.getProject(workspaceId);
   if (!project) return undefined;
   return store.getWorkspace(workspaceId)?.wikiId ?? undefined;
 }
 
-async function buildWorkspaceContext(workspace: Workspace): Promise<WorkspaceChatContext> {
+// Exported so task-execution.ts (automated task runs) can build the same
+// workspace-context block a workspace-chat turn uses, without duplicating
+// the wiki-domain lookup logic.
+export async function buildWorkspaceContext(workspace: Workspace): Promise<WorkspaceChatContext> {
   let wikiDomain: string | null = null;
   if (workspace.wikiId) {
     try {
@@ -84,9 +95,25 @@ export async function streamWorkspaceChatToSse(
   try {
     const workspaceStore = getWorkspaceStore();
     const threadStore = getThreadStore();
+    const sink: SseWriter = (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    // An automated task run currently owns this exact thread (task-execution.ts
+    // registers itself the same way a chat turn does) — reject rather than
+    // race a second agent.streamEvents() invocation against the same
+    // LangGraph checkpoint. Interrupting the task run itself is #86's job.
+    if (getActiveSseWriter(threadId)) {
+      writeSseEvent(sink, {
+        type: 'stream_error',
+        error: 'This workspace has a task running — try again in a moment.',
+      });
+      return;
+    }
+
     threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'workspace-chat');
 
-    writeSseEvent(res, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
+    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
 
     const threadMeta = threadStore.getThreadMeta(threadId);
     const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
@@ -115,7 +142,7 @@ export async function streamWorkspaceChatToSse(
 
     const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -141,9 +168,7 @@ export async function streamWorkspaceChatToSse(
       effectiveModel,
     );
 
-    setActiveSseWriter(threadId, (event) => {
-      writeSseEvent(res, event);
-    });
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(
         { messages: [{ role: 'human', content }] },
@@ -161,7 +186,7 @@ export async function streamWorkspaceChatToSse(
       );
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -173,7 +198,7 @@ export async function streamWorkspaceChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -190,7 +215,7 @@ export async function streamWorkspaceChatToSse(
       );
 
       await maybeSummarizeWorkspace(
-        res,
+        sink,
         workspaceStore,
         threadStore,
         workspace,
@@ -203,8 +228,8 @@ export async function streamWorkspaceChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -232,8 +257,19 @@ export async function resumeWorkspaceChatToSse(
   try {
     const workspaceStore = getWorkspaceStore();
     const threadStore = getThreadStore();
+    const sink: SseWriter = (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
 
-    writeSseEvent(res, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
+    if (getActiveSseWriter(threadId)) {
+      writeSseEvent(sink, {
+        type: 'stream_error',
+        error: 'This workspace has a task running — try again in a moment.',
+      });
+      return;
+    }
+
+    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
 
     const threadMeta = threadStore.getThreadMeta(threadId);
     const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
@@ -268,11 +304,11 @@ export async function resumeWorkspaceChatToSse(
         promptId,
         err: serializeError(err),
       });
-      writeSseEvent(res, { type: 'stream_error', error: 'Failed to record HITL answer' });
+      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
       return;
     }
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -298,9 +334,7 @@ export async function resumeWorkspaceChatToSse(
       effectiveModel,
     );
 
-    setActiveSseWriter(threadId, (event) => {
-      writeSseEvent(res, event);
-    });
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(new Command({ resume: answer }), {
         ...config,
@@ -315,7 +349,7 @@ export async function resumeWorkspaceChatToSse(
       });
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -327,7 +361,7 @@ export async function resumeWorkspaceChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -344,7 +378,7 @@ export async function resumeWorkspaceChatToSse(
       );
 
       await maybeSummarizeWorkspace(
-        res,
+        sink,
         workspaceStore,
         threadStore,
         workspace,
@@ -357,8 +391,8 @@ export async function resumeWorkspaceChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -384,8 +418,19 @@ export async function retryWorkspaceChatToSse(
   try {
     const workspaceStore = getWorkspaceStore();
     const threadStore = getThreadStore();
+    const sink: SseWriter = (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
 
-    writeSseEvent(res, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
+    if (getActiveSseWriter(threadId)) {
+      writeSseEvent(sink, {
+        type: 'stream_error',
+        error: 'This workspace has a task running — try again in a moment.',
+      });
+      return;
+    }
+
+    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
 
     const threadMeta = threadStore.getThreadMeta(threadId);
     const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
@@ -427,7 +472,7 @@ export async function retryWorkspaceChatToSse(
       effectiveModel,
     );
 
-    drainAndRecordWikiUpdates(res, threadStore, threadId);
+    drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
     const obsConfig = env.observability;
     const store = getObservabilityStore();
@@ -444,9 +489,7 @@ export async function retryWorkspaceChatToSse(
       obsConfig.spanOutputPreviewChars,
     );
 
-    setActiveSseWriter(threadId, (event) => {
-      writeSseEvent(res, event);
-    });
+    setActiveSseWriter(threadId, sink);
     try {
       const eventStream = agent.streamEvents(null, {
         ...config,
@@ -461,7 +504,7 @@ export async function retryWorkspaceChatToSse(
       });
 
       const { content: finalContent, thoughtContent } = await pipeEvents(
-        res,
+        sink,
         msgId,
         eventStream,
         threadStore,
@@ -473,7 +516,7 @@ export async function retryWorkspaceChatToSse(
       });
 
       await finalizeTurn(
-        res,
+        sink,
         threadStore,
         agent,
         threadId,
@@ -490,7 +533,7 @@ export async function retryWorkspaceChatToSse(
       );
 
       await maybeSummarizeWorkspace(
-        res,
+        sink,
         workspaceStore,
         threadStore,
         workspace,
@@ -503,8 +546,8 @@ export async function retryWorkspaceChatToSse(
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
         finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-        writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
       failAssistant(threadStore, threadId, msgId, '', turnSentAt);

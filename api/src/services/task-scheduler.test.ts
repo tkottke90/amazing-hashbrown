@@ -4,8 +4,22 @@ import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { WorkspaceStore, bootWorkspaceStore } from './workspace-store.js';
+import {
+  WorkspaceStore,
+  bootWorkspaceStore,
+  type Task,
+  type TaskQueueEntry,
+} from './workspace-store.js';
 import { TaskScheduler } from './task-scheduler.js';
+
+// Flushes enough microtask turns for a chain of `await this.executor(...)` →
+// `catch`/`finally` → `this.wake()` → (possibly) another dispatch to settle,
+// without a real timer or a mocking library — the repo's established
+// approach (see scheduleResume()'s timer-spy below) is a hand-rolled seam,
+// not a library, so this mirrors that.
+function flushMicrotasks(times = 4): Promise<void> {
+  return times <= 0 ? Promise.resolve() : Promise.resolve().then(() => flushMicrotasks(times - 1));
+}
 
 function makeStore(): { store: WorkspaceStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'task-scheduler-test-'));
@@ -183,6 +197,62 @@ describe('services/task-scheduler', () => {
         globalThis.clearTimeout = originalClearTimeout;
         scheduler.stop();
       }
+    });
+  });
+
+  // Issue #87: tick() dispatches a constructor-injected TaskExecutor instead
+  // of leaving a dequeued task parked in 'running' forever.
+  describe('executor dispatch', () => {
+    it('invokes the injected executor exactly once per dequeue, with the dequeued entry', () => {
+      const calls: (TaskQueueEntry & { task: Task })[] = [];
+      const fakeExecutor = async (entry: TaskQueueEntry & { task: Task }) => {
+        calls.push(entry);
+      };
+      const s = new TaskScheduler(fakeExecutor);
+      const queued = makeQueuedTask('Executor task');
+
+      s.wake();
+
+      expect(calls).to.have.length(1);
+      expect(calls[0]!.id).to.equal(queued.id);
+      expect(calls[0]!.task.title).to.equal('Executor task');
+      // A second wake() while the first entry is still 'running' (the fake
+      // executor's promise hasn't resolved and hasn't called
+      // completeQueueEntry) must not dispatch again.
+      s.wake();
+      expect(calls).to.have.length(1);
+      s.stop();
+    });
+
+    it('does not stop subsequent ticks when the executor rejects', async () => {
+      let calls = 0;
+      const fakeExecutor = async (entry: TaskQueueEntry & { task: Task }) => {
+        calls++;
+        // A real executor (task-execution.ts) always resolves the queue
+        // entry itself, success or failure, before returning/throwing —
+        // this fake mirrors that contract so the test isolates the
+        // scheduler's own resilience, not a missing completeQueueEntry call.
+        store.completeQueueEntry(entry.id, 'failed');
+        throw new Error('boom');
+      };
+      const s = new TaskScheduler(fakeExecutor);
+      makeQueuedTask('First');
+      makeQueuedTask('Second');
+
+      expect(() => s.wake()).to.not.throw();
+      await flushMicrotasks();
+
+      expect(calls).to.equal(2);
+      s.stop();
+    });
+
+    it('leaves the entry running (and logs) rather than throwing when no executor is registered', () => {
+      const s = new TaskScheduler();
+      makeQueuedTask('No executor');
+
+      expect(() => s.wake()).to.not.throw();
+      expect(store.getRunningEntry()).to.not.equal(null);
+      s.stop();
     });
   });
 });

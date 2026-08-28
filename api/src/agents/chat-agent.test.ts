@@ -6,6 +6,7 @@ import {
   invalidateChatAgent,
   invalidateWorkspaceChatAgent,
   buildWikiWriteTools,
+  buildTaskContextBlock,
 } from './chat-agent.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
@@ -109,6 +110,47 @@ describe('agents/chat-agent', () => {
       const a = buildWikiWriteTools('wiki-a');
       const b = buildWikiWriteTools('wiki-b');
       expect(a[0]).to.not.equal(b[0]);
+    });
+  });
+
+  describe('buildTaskContextBlock()', () => {
+    it('always states the task title and the complete_task/ask_user instruction', () => {
+      const block = buildTaskContextBlock({
+        title: 'Summarize the inbox',
+        description: null,
+        outcome: null,
+      });
+      expect(block).to.include('"Summarize the inbox"');
+      expect(block).to.include('complete_task');
+      expect(block).to.include('ask_user');
+    });
+
+    it('includes the description when present', () => {
+      const block = buildTaskContextBlock({
+        title: 'T',
+        description: 'Read every unread email and summarize it.',
+        outcome: null,
+      });
+      expect(block).to.include('Read every unread email and summarize it.');
+    });
+
+    it('omits a description line when absent', () => {
+      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
+      expect(block).to.not.include('Description:');
+    });
+
+    it('includes the outcome when present', () => {
+      const block = buildTaskContextBlock({
+        title: 'T',
+        description: null,
+        outcome: 'A markdown summary page exists in the wiki.',
+      });
+      expect(block).to.include('A markdown summary page exists in the wiki.');
+    });
+
+    it('omits an outcome line when absent', () => {
+      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
+      expect(block).to.not.include('Outcome to reach:');
     });
   });
 });

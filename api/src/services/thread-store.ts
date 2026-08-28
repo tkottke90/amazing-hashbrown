@@ -5,7 +5,10 @@ import { logger } from '../config/logger.js';
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThreadType = 'chat' | 'wiki' | 'workspace-chat';
+// 'task' is a global (no-workspace) automated task's own dedicated thread —
+// minted lazily on its first run (task-execution.ts). Kept out of 'chat' so
+// it never shows up in the main chat sidebar (which filters on type:'chat').
+export type ThreadType = 'chat' | 'wiki' | 'workspace-chat' | 'task';
 
 export interface ThreadSummary {
   id: string;

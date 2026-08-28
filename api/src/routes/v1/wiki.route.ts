@@ -8,6 +8,7 @@ import {
   retryWikiChatToSse,
   writeSseEvent,
 } from '../../agents/wiki-stream-handler.js';
+import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { serializeError } from '../../config/logger.js';
 import { wikiUploadRouter } from './wiki-upload.route.js';
@@ -22,6 +23,12 @@ function setSseHeaders(res: import('express').Response): void {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+}
+
+// Adapts a raw Express Response into the SseWriter shape writeSseEvent()
+// now expects — used only for this route's own catch-block error events.
+function toSink(res: import('express').Response): SseWriter {
+  return (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
 // GET /api/v1/wiki/domains
@@ -198,7 +205,7 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
     await streamWikiChatToSse(res, threadId, content.trim(), startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki chat stream error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     req.logger.info('Wiki ingestion inference completed', { threadId });
     res.end();
@@ -227,7 +234,7 @@ wikiRouter.post('/chat/:threadId/hitl', async (req, res) => {
     await resumeWikiChatToSse(res, threadId, promptId, answer, startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki HITL resume error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
   }
@@ -258,7 +265,7 @@ wikiRouter.post('/chat/:threadId/retry', async (req, res) => {
     await retryWikiChatToSse(res, threadId, startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki retry stream error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
   }

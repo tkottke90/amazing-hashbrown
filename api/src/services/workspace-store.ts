@@ -103,6 +103,15 @@ export interface Task {
   trackerType: string | null;
   trackerId: string | null;
   plan: PlanStep[] | null;
+  // Dedicated automated-execution thread for a task with no workspace —
+  // minted lazily on the task's own first run (see task-execution.ts).
+  // Workspace-scoped tasks reuse workspace.threadId instead.
+  threadId: string | null;
+  // Carries a HITL answer from the /hitl route's task re-enqueue branch
+  // through to the next executeTask() run, which consumes (clears) it and
+  // resumes the paused LangGraph checkpoint via Command({ resume }) — a
+  // fresh message cannot unblock an interrupt().
+  resumeAnswer: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -136,6 +145,8 @@ export interface PatchTaskInput {
   trackerType?: string | null;
   trackerId?: string | null;
   plan?: PlanStep[] | null;
+  threadId?: string | null;
+  resumeAnswer?: string | null;
 }
 
 export interface TaskQueueEntry {
@@ -202,6 +213,8 @@ interface RawTaskRow {
   tracker_type: string | null;
   tracker_id: string | null;
   plan: string | null;
+  thread_id: string | null;
+  resume_answer: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -270,6 +283,8 @@ function mapTask(row: RawTaskRow): Task {
     trackerType: row.tracker_type,
     trackerId: row.tracker_id,
     plan: row.plan ? (JSON.parse(row.plan) as PlanStep[]) : null,
+    threadId: row.thread_id,
+    resumeAnswer: row.resume_answer,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -298,7 +313,8 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns),
 // 17=shell_audit_log. Versions 18-22 are claimed by WorkspaceStore here.
 // 23=WorkspaceStore (workspaces.thread_id/summary_path/last_summarized_message_id,
-// for the Workspace Chat Tab feature).
+// for the Workspace Chat Tab feature). 24=WorkspaceStore (tasks.thread_id/
+// resume_answer, for Automated Task Execution).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -392,6 +408,18 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE workspaces ADD COLUMN thread_id TEXT;
       ALTER TABLE workspaces ADD COLUMN summary_path TEXT;
       ALTER TABLE workspaces ADD COLUMN last_summarized_message_id TEXT;
+    `,
+  },
+  {
+    version: 24,
+    // No REFERENCES threads(id) — same reasoning as version 23's
+    // workspaces.thread_id above. resume_answer carries a HITL answer from
+    // the /hitl route through task re-enqueue to the next executeTask() run
+    // (task-execution.ts) — LangGraph can only unblock an interrupt() via
+    // Command({ resume }), not a fresh message.
+    sql: `
+      ALTER TABLE tasks ADD COLUMN thread_id TEXT;
+      ALTER TABLE tasks ADD COLUMN resume_answer TEXT;
     `,
   },
 ];
@@ -839,6 +867,14 @@ export class WorkspaceStore extends BaseStore {
     if (patch.plan !== undefined) {
       sets.push('plan = ?');
       values.push(patch.plan ? JSON.stringify(patch.plan) : null);
+    }
+    if (patch.threadId !== undefined) {
+      sets.push('thread_id = ?');
+      values.push(patch.threadId);
+    }
+    if (patch.resumeAnswer !== undefined) {
+      sets.push('resume_answer = ?');
+      values.push(patch.resumeAnswer);
     }
 
     if (sets.length === 0) return this.getTask(id);
