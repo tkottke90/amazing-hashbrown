@@ -1,13 +1,24 @@
 import { signal } from '@preact/signals';
-import type { Workspace, WorkspaceWithProject } from '@/services/workspaces-api';
+import type {
+  Workspace,
+  WorkspaceWithProject,
+  CloseProgress,
+  CleanupDependenciesInput,
+  CleanupDependenciesResult,
+  CompleteCloseResult,
+} from '@/services/workspaces-api';
 import {
   fetchWorkspaces,
   fetchProjects,
   createWorkspace as apiCreateWorkspace,
   createProject as apiCreateProject,
   patchWorkspace as apiPatchWorkspace,
+  patchProject as apiPatchProject,
   deleteWorkspace as apiDeleteWorkspace,
   closeProject as apiCloseProject,
+  snapshotProject as apiSnapshotProject,
+  cleanupDependencies as apiCleanupDependencies,
+  completeCloseProject as apiCompleteCloseProject,
   type CreateWorkspaceInput,
   type CreateProjectInput,
   type PatchWorkspaceInput,
@@ -57,9 +68,40 @@ export async function deleteWorkspace(id: string): Promise<void> {
   projects.value = projects.value.filter((p) => p.id !== id);
 }
 
-export async function closeProject(workspaceId: string): Promise<void> {
-  await apiCloseProject(workspaceId);
+export async function closeProject(
+  workspaceId: string,
+  intent: 'close' | 'abandon',
+): Promise<void> {
+  await apiCloseProject(workspaceId, intent);
   await refreshWorkspaces();
+}
+
+export async function snapshotProject(workspaceId: string): Promise<{ snapshotPath: string }> {
+  const result = await apiSnapshotProject(workspaceId);
+  await refreshWorkspaces();
+  return result;
+}
+
+export async function patchProjectCloseProgress(
+  workspaceId: string,
+  closeProgress: CloseProgress,
+): Promise<void> {
+  const updated = await apiPatchProject(workspaceId, { closeProgress });
+  projects.value = projects.value.map((p) => (p.id === workspaceId ? updated : p));
+  workspaces.value = workspaces.value.map((w) => (w.id === workspaceId ? updated : w));
+}
+
+export async function cleanupDependencies(
+  workspaceId: string,
+  input: CleanupDependenciesInput,
+): Promise<CleanupDependenciesResult> {
+  return apiCleanupDependencies(workspaceId, input);
+}
+
+export async function completeCloseProject(workspaceId: string): Promise<CompleteCloseResult> {
+  const result = await apiCompleteCloseProject(workspaceId);
+  await refreshWorkspaces();
+  return result;
 }
 
 export function getProjectForWorkspace(workspaceId: string): WorkspaceWithProject | undefined {

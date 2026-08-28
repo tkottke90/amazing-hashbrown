@@ -1,5 +1,10 @@
 import { render, screen } from '@testing-library/preact';
 
+const mockRoute = jest.fn();
+jest.mock('preact-iso', () => ({
+  useLocation: () => ({ url: '/', path: '/', query: {}, route: mockRoute }),
+}));
+
 import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { workspaces, projects } from '@/hooks/use-workspaces';
@@ -31,6 +36,9 @@ const baseProject: WorkspaceWithProject = {
     dueAt: null,
     status: 'active',
     closedAt: null,
+    closeIntent: null,
+    snapshotPath: null,
+    closeProgress: null,
   },
 };
 
@@ -129,5 +137,67 @@ describe('WorkspaceDetailView — Dependency isolation chips', () => {
 
     expect(screen.queryByTestId('javascript-chip')).not.toBeInTheDocument();
     expect(screen.queryByTestId('python-chip')).not.toBeInTheDocument();
+  });
+});
+
+describe('WorkspaceDetailView — project status', () => {
+  afterEach(() => {
+    workspaces.value = [];
+    projects.value = [];
+    mockRoute.mockClear();
+  });
+
+  it('shows Close project and Abandon buttons plus settings/delete when active', () => {
+    seed(baseWorkspace, baseProject);
+    renderDetail();
+
+    expect(screen.getByRole('button', { name: 'Close project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abandon' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('redirects to the close page when the project status is closing', () => {
+    seed(baseWorkspace, {
+      ...baseProject,
+      project: { ...baseProject.project, status: 'closing', closeIntent: 'close' },
+    });
+    renderDetail();
+
+    expect(mockRoute).toHaveBeenCalledWith('/workspaces/ws-1/close');
+  });
+
+  it('hides Close/Abandon and the settings drawer, but still shows Delete, once closed', () => {
+    seed(baseWorkspace, {
+      ...baseProject,
+      project: { ...baseProject.project, status: 'closed', closedAt: '2026-08-28T00:00:00.000Z' },
+    });
+    renderDetail();
+
+    expect(screen.queryByRole('button', { name: 'Close project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Abandon' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    expect(mockRoute).not.toHaveBeenCalled();
+  });
+
+  it('renders the same read-only state for an abandoned project', () => {
+    seed(baseWorkspace, {
+      ...baseProject,
+      project: { ...baseProject.project, status: 'abandoned', closeIntent: 'abandon' },
+    });
+    renderDetail();
+
+    expect(screen.queryByRole('button', { name: 'Close project' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('still renders tabs and content for a closed project (read-only, not hidden)', () => {
+    seed(baseWorkspace, {
+      ...baseProject,
+      project: { ...baseProject.project, status: 'closed' },
+    });
+    renderDetail();
+
+    expect(screen.getByRole('button', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: baseWorkspace.name })).toBeInTheDocument();
   });
 });

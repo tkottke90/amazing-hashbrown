@@ -8,6 +8,7 @@ import { SettingsView } from '@/pages/settings';
 import { WikiView } from '@/pages/wiki';
 import { WorkspacesView } from '@/pages/workspaces';
 import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
+import { CloseProjectView } from '@/pages/workspaces/close/[id]';
 import { InboxView } from '@/pages/inbox';
 
 // path prop is consumed by preact-iso's Router for route matching
@@ -30,6 +31,7 @@ export function App() {
         <SettingsView path="/settings" />
         <WorkspacesView path="/workspaces" />
         <WorkspaceDetailView path="/workspaces/:id" />
+        <CloseProjectView path="/workspaces/:id/close" />
         <InboxView path="/inbox" />
       </Router>
     </LocationProvider>
