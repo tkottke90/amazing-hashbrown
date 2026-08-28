@@ -16,7 +16,7 @@ The same close process applies whether the project is being closed (win conditio
 
 ## Non-goals
 
-- Re-implementing the write-restriction guardrail itself (`allowedWikiId` scoping on the four write-capable wiki tools) — that shipped already in PR #98 for issue #79. This design adds one *new* check (archived-domain rejection) alongside it, not a replacement.
+- Re-implementing the write-restriction guardrail itself (`allowedWikiId` scoping on the four write-capable wiki tools) — that shipped already in PR #98 for issue #79. This design adds one _new_ check (archived-domain rejection) alongside it, not a replacement.
 - Any UI for editing a project's wiki pages before merge — Step 2 only lets the user pick which existing pages go where, not edit their content.
 - Deleting the project's ephemeral wiki domain on close. Closing archives it (read-only, permanent); deletion still only happens when the workspace itself is deleted (existing `deleteWorkspaceHandler`/`registry.destroy()` behavior from #77).
 - Revisiting/undoing a close once `complete-close` has run. `closed`/`abandoned` are terminal.
@@ -55,7 +55,7 @@ closeProgress.dependencySelections === undefined  → Step 3
 otherwise                              → Step 4
 ```
 
-This is what makes "reload mid-close without losing progress" work for free: the persisted fields *are* the progress, so there's nothing extra to reconstruct. Step 3's actual cleanup *execution* doesn't need its own persisted flag — it's self-evidencing. Once directories are removed from disk, a reload's directory scan simply finds none, which the existing "no `javascript`/`python` flags set and no matching directories found → step is skipped automatically with a notice" acceptance criterion already handles.
+This is what makes "reload mid-close without losing progress" work for free: the persisted fields _are_ the progress, so there's nothing extra to reconstruct. Step 3's actual cleanup _execution_ doesn't need its own persisted flag — it's self-evidencing. Once directories are removed from disk, a reload's directory scan simply finds none, which the existing "no `javascript`/`python` flags set and no matching directories found → step is skipped automatically with a notice" acceptance criterion already handles.
 
 ---
 
@@ -99,7 +99,7 @@ If the merge fails partway through the page list, the handler stops before steps
 
 ### Read/write gating (R11 — API half)
 
-Every handler that writes to a wiki domain — the four existing write-capable tools (`wiki_create_page`, `wiki_update_page`, `wiki_add_cross_link`, `wiki_rebaseline_source`) plus the new merge-write path in `complete-close` — looks up `SELECT status FROM projects WHERE wiki_id = ?` for the *target* domain and rejects (403 for the HTTP-reachable paths; the tool's existing rejection-message shape for the agent-facing ones) if that project's status is `'closed'` or `'abandoned'`. This is independent of, and in addition to, the existing `allowedWikiId` scoping from #79 — that check answers "is this agent allowed to touch this domain at all," this one answers "is this domain still writable by anyone."
+Every handler that writes to a wiki domain — the four existing write-capable tools (`wiki_create_page`, `wiki_update_page`, `wiki_add_cross_link`, `wiki_rebaseline_source`) plus the new merge-write path in `complete-close` — looks up `SELECT status FROM projects WHERE wiki_id = ?` for the _target_ domain and rejects (403 for the HTTP-reachable paths; the tool's existing rejection-message shape for the agent-facing ones) if that project's status is `'closed'` or `'abandoned'`. This is independent of, and in addition to, the existing `allowedWikiId` scoping from #79 — that check answers "is this agent allowed to touch this domain at all," this one answers "is this domain still writable by anyone."
 
 ---
 
@@ -109,7 +109,7 @@ Every handler that writes to a wiki domain — the four existing write-capable t
 
 Rather than duplicating an "am I archived?" check into each of `commitPage`, `addCrossLink`, `saveRaw`, and `rebaselineSource` separately, the guard lives in the one place every mutating method already funnels through: `writeFileRel` (`llm-wiki.ts:693`). Before writing, it reads `index.md`'s frontmatter and throws if `status === 'archived'`.
 
-One nuance: `writeFileRel` is also how `index.md` itself normally gets written (`commitPage`'s index-refresh). If the archival flip went through `writeFileRel` too, it would block itself the moment it tried to run. The clean fix is to make archiving *not* go through `writeFileRel` at all: a new `LlmWiki.archive(): Promise<void>` method writes `index.md`'s frontmatter directly. That keeps the guard itself simple — unconditional on every `writeFileRel` call, no path special-casing needed, since the one write that must survive an archived wiki (the archival write itself) never reaches it in the first place.
+One nuance: `writeFileRel` is also how `index.md` itself normally gets written (`commitPage`'s index-refresh). If the archival flip went through `writeFileRel` too, it would block itself the moment it tried to run. The clean fix is to make archiving _not_ go through `writeFileRel` at all: a new `LlmWiki.archive(): Promise<void>` method writes `index.md`'s frontmatter directly. That keeps the guard itself simple — unconditional on every `writeFileRel` call, no path special-casing needed, since the one write that must survive an archived wiki (the archival write itself) never reaches it in the first place.
 
 ```ts
 // llm-wiki.ts
@@ -135,7 +135,7 @@ private async writeFileRel(rel: string, content: string): Promise<void> {
 
 ### Merge-write mechanism
 
-`complete-close` copies each selected page directly: `targetWiki.commitPage({ title, body, type, tags, sources, confidence, contested, contradictions })`, built from the parsed source page (`sourceWiki.readPage(filename)`). This deliberately bypasses `wiki-write.ts`'s duplicate-detection — that machinery exists to catch an *agent* proposing content that might already exist; here the user has already explicitly chosen "move this specific page to this specific domain," so a duplicate-title warning would just be an unwanted extra confirmation on an already-confirmed action. The merge always runs before `archive()` in the same handler, so nothing it writes is ever blocked by the guard above.
+`complete-close` copies each selected page directly: `targetWiki.commitPage({ title, body, type, tags, sources, confidence, contested, contradictions })`, built from the parsed source page (`sourceWiki.readPage(filename)`). This deliberately bypasses `wiki-write.ts`'s duplicate-detection — that machinery exists to catch an _agent_ proposing content that might already exist; here the user has already explicitly chosen "move this specific page to this specific domain," so a duplicate-title warning would just be an unwanted extra confirmation on an already-confirmed action. The merge always runs before `archive()` in the same handler, so nothing it writes is ever blocked by the guard above.
 
 ---
 
@@ -160,13 +160,13 @@ New page, `ui/src/pages/workspaces/close/[id].tsx`, routed in `app.tsx` alongsid
 
 ## Error handling
 
-| Case | Behavior |
-|---|---|
-| Snapshot fails (Step 1) | `snapshot_path` stays `null`; UI shows retry; flow can't advance |
-| `complete-close` merge fails partway | `status` stays `'closing'`; response lists succeeded/failed pages; UI offers per-page retry |
+| Case                                                                                     | Behavior                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Snapshot fails (Step 1)                                                                  | `snapshot_path` stays `null`; UI shows retry; flow can't advance                                                                                                          |
+| `complete-close` merge fails partway                                                     | `status` stays `'closing'`; response lists succeeded/failed pages; UI offers per-page retry                                                                               |
 | Write attempted against an archived domain (any of the 4 agent tools, or a future merge) | Rejected independently at the API layer (`projects.status` lookup) and the library layer (`index.md` frontmatter) — either check alone is sufficient to block it, per R11 |
-| `POST /:id/close` with missing/invalid `intent`, or on a project not in `active` status | 400 / 409 respectively, matching this handler family's existing validation style |
-| `cleanup-dependencies` given a path that would escape `workspace.location` | Rejected — reuses the containment already proven out in `workspace-location.ts` |
+| `POST /:id/close` with missing/invalid `intent`, or on a project not in `active` status  | 400 / 409 respectively, matching this handler family's existing validation style                                                                                          |
+| `cleanup-dependencies` given a path that would escape `workspace.location`               | Rejected — reuses the containment already proven out in `workspace-location.ts`                                                                                           |
 
 ---
 
