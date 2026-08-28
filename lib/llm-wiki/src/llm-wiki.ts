@@ -637,6 +637,16 @@ export class LlmWiki {
     await this.appendLog(opts);
   }
 
+  /** Mark this wiki archived (index.md frontmatter `status: archived`),
+   *  causing all subsequent writes to reject via writeFileRel()'s guard.
+   *  Bypasses writeFileRel deliberately — the archival write itself must
+   *  succeed even on an already-archived wiki (idempotent). */
+  async archive(): Promise<void> {
+    const raw = await readFileOr(this.abs(INDEX_FILE), '');
+    const { data, body } = fm.parse(raw);
+    await fs.writeFile(this.abs(INDEX_FILE), fm.serialize({ ...data, status: 'archived' }, body));
+  }
+
   /** Run all applicable lint checks and return a structured report. */
   async lint(registry?: { wikiIds: string[]; onDiskDirs: string[] }): Promise<LintReport> {
     const ctx = await this.buildLintContext(registry);
@@ -690,7 +700,18 @@ export class LlmWiki {
     return path.join(this.basePath, rel);
   }
 
+  /** Throws if this wiki's index.md frontmatter marks it archived. Checked
+   *  independently of any DB/registry state — see writeFileRel(). */
+  private async assertNotArchived(): Promise<void> {
+    const raw = await readFileOr(this.abs(INDEX_FILE), '');
+    const { data } = fm.parse(raw);
+    if (data.status === 'archived') {
+      throw new Error('This wiki domain is archived — writes are not permitted.');
+    }
+  }
+
   private async writeFileRel(rel: string, content: string): Promise<void> {
+    await this.assertNotArchived();
     const target = this.abs(rel);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf8');

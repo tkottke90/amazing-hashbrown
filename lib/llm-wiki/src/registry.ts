@@ -205,6 +205,16 @@ export class WikiRegistry {
     await this.persist();
   }
 
+  /** Mark a registered wiki archived: excluded from list()'s default
+   * (active-only) results and from routing, but still load()-able by id.
+   * Does not touch the wiki's own index.md — see LlmWiki.archive() for that
+   * independent, disk-level marker. */
+  async archive(id: string): Promise<void> {
+    const entry = this.entry(id);
+    entry.status = 'archived';
+    await this.persist();
+  }
+
   /**
    * Delete a wiki's directory from disk, then remove its registry entry.
    * Tolerates a wiki that was scaffolded but never registered (or only

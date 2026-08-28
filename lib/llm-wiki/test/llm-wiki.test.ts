@@ -426,3 +426,78 @@ describe('LlmWiki.buildGraph', () => {
     expect(node?.contested).to.equal(undefined);
   });
 });
+
+/** Awaits `p`, returning its rejection message. Fails the test if `p` resolves. */
+async function rejectionMessage(p: Promise<unknown>): Promise<string> {
+  try {
+    await p;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  throw new Error('expected promise to reject, but it resolved');
+}
+
+describe('LlmWiki.archive', () => {
+  it('sets index.md frontmatter status to archived, preserving the rest', async () => {
+    const wiki = await newWiki();
+    await wiki.archive();
+    const { index } = await wiki.orient();
+    expect(index).to.match(/status:\s*archived/);
+    expect(index).to.contain('# Wiki Index');
+  });
+
+  it('is idempotent — calling archive() twice does not throw', async () => {
+    const wiki = await newWiki();
+    await wiki.archive();
+    await wiki.archive();
+    const { index } = await wiki.orient();
+    expect(index).to.match(/status:\s*archived/);
+  });
+
+  it('rejects commitPage once archived', async () => {
+    const wiki = await newWiki();
+    await wiki.archive();
+    const message = await rejectionMessage(
+      wiki.commitPage({ type: 'entity', title: 'A', tags: [], sources: [], body: 'body' }),
+    );
+    expect(message).to.contain('archived');
+  });
+
+  it('rejects addCrossLink once archived', async () => {
+    const wiki = await newWiki();
+    await wiki.commitPage({ type: 'entity', title: 'A', tags: [], sources: [], body: 'body' });
+    await wiki.commitPage({ type: 'entity', title: 'B', tags: [], sources: [], body: 'body' });
+    await wiki.archive();
+    const message = await rejectionMessage(
+      wiki.addCrossLink({ fromPage: 'entities/a.md', toPage: 'entities/b.md' }),
+    );
+    expect(message).to.contain('archived');
+  });
+
+  it('rejects saveRawSource once archived', async () => {
+    const wiki = await newWiki();
+    await wiki.archive();
+    const message = await rejectionMessage(
+      wiki.saveRawSource({ path: 'raw/x.md', sourceUrl: '', sha256: 'abc', content: 'body' }),
+    );
+    expect(message).to.contain('archived');
+  });
+
+  it('rejects rebaselineRawSource once archived', async () => {
+    const wiki = await newWiki();
+    await wiki.saveRawSource({ path: 'raw/x.md', sourceUrl: '', sha256: 'abc', content: 'body' });
+    await wiki.archive();
+    const message = await rejectionMessage(wiki.rebaselineRawSource('raw/x.md'));
+    expect(message).to.contain('archived');
+  });
+
+  it('still allows reads once archived', async () => {
+    const wiki = await newWiki();
+    await wiki.commitPage({ type: 'entity', title: 'A', tags: [], sources: [], body: 'body' });
+    await wiki.archive();
+    const pages = await wiki.listPages();
+    expect(pages).to.have.length(1);
+    const { schema } = await wiki.orient();
+    expect(schema).to.contain('infrastructure and services');
+  });
+});
