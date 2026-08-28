@@ -137,8 +137,7 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   // agent forward. See docs/superpowers/specs/2026-08-27-automated-task-execution-design.md §6.
   const existingPrompt = getThreadStore().getMessage(threadId, promptId);
   const taskId = (existingPrompt?.payload as Record<string, unknown> | undefined)?.['taskId'] as
-    | string
-    | undefined;
+    string | undefined;
 
   if (taskId) {
     setSseHeaders(res);

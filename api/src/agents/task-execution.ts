@@ -125,8 +125,12 @@ export async function executeTask(
   // a forwarding shim for the rare case a client is already watching this
   // exact thread's own active writer slot (there isn't a general broadcast
   // mechanism today — see the design doc's scope note).
+  // Captured before we claim the slot below — looking this up dynamically
+  // inside the closure would return `sink` itself once registered, causing
+  // unbounded self-recursion on every event.
+  const previousWriter = getActiveSseWriter(threadId);
   const sink: SseWriter = (event) => {
-    getActiveSseWriter(threadId)?.(event);
+    previousWriter?.(event);
   };
   setActiveSseWriter(threadId, sink);
 
