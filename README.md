@@ -2,6 +2,8 @@
 
 A locally-hosted LLM agent harness. It pairs a **ReAct chat agent** with a domain-organized **knowledge base** (wiki) so the agent can read, learn from, and write back to a structured body of knowledge — all running on your own machine against a local inference backend (Ollama by default).
 
+![alt text](./docs/Images/image.png)
+
 The project is a work-in-progress. See [`TODO_LIST.md`](./TODO_LIST.md) for the current roadmap.
 
 ---
