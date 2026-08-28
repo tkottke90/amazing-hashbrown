@@ -56,13 +56,21 @@ export interface PatchWorkspaceInput {
   lastSummarizedMessageId?: string;
 }
 
+export interface CloseProgress {
+  mergeSelections?: { filename: string; targetDomainId: string }[];
+  dependencySelections?: { removeNodeModules: boolean; removePythonEnv: boolean };
+}
+
 export interface Project {
   id: string;
   workspaceId: string;
   winCondition: string;
   dueAt: string | null;
-  status: 'active' | 'closed' | 'abandoned';
+  status: 'active' | 'closing' | 'closed' | 'abandoned';
   closedAt: string | null;
+  closeIntent: 'close' | 'abandon' | null;
+  snapshotPath: string | null;
+  closeProgress: CloseProgress | null;
 }
 
 export interface NewProjectInput extends NewWorkspaceInput {
@@ -76,6 +84,7 @@ export interface NewProjectInput extends NewWorkspaceInput {
 export interface PatchProjectInput extends PatchWorkspaceInput {
   winCondition?: string;
   dueAt?: string | null;
+  closeProgress?: CloseProgress;
 }
 
 export type TaskStatus =
@@ -194,8 +203,11 @@ interface RawProjectRow {
   workspace_id: string;
   win_condition: string;
   due_at: string | null;
-  status: 'active' | 'closed' | 'abandoned';
+  status: 'active' | 'closing' | 'closed' | 'abandoned';
   closed_at: string | null;
+  close_intent: 'close' | 'abandon' | null;
+  snapshot_path: string | null;
+  close_progress: string | null;
 }
 
 interface RawTaskRow {
@@ -264,6 +276,9 @@ function mapProject(row: RawProjectRow): Project {
     dueAt: row.due_at,
     status: row.status,
     closedAt: row.closed_at,
+    closeIntent: row.close_intent,
+    snapshotPath: row.snapshot_path,
+    closeProgress: row.close_progress ? (JSON.parse(row.close_progress) as CloseProgress) : null,
   };
 }
 
@@ -314,7 +329,9 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 17=shell_audit_log. Versions 18-22 are claimed by WorkspaceStore here.
 // 23=WorkspaceStore (workspaces.thread_id/summary_path/last_summarized_message_id,
 // for the Workspace Chat Tab feature). 24=WorkspaceStore (tasks.thread_id/
-// resume_answer, for Automated Task Execution).
+// resume_answer, for Automated Task Execution). 25=WorkspaceStore
+// (projects.close_intent/snapshot_path/close_progress, for the Project Close
+// Process feature).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -420,6 +437,14 @@ const MIGRATIONS: DbMigration[] = [
     sql: `
       ALTER TABLE tasks ADD COLUMN thread_id TEXT;
       ALTER TABLE tasks ADD COLUMN resume_answer TEXT;
+    `,
+  },
+  {
+    version: 25,
+    sql: `
+      ALTER TABLE projects ADD COLUMN close_intent TEXT;
+      ALTER TABLE projects ADD COLUMN snapshot_path TEXT;
+      ALTER TABLE projects ADD COLUMN close_progress TEXT;
     `,
   },
 ];
@@ -622,7 +647,8 @@ export class WorkspaceStore extends BaseStore {
   listProjects(): Array<Workspace & { project: Project }> {
     const workspaces = this.db
       .prepare(
-        `SELECT w.*, p.win_condition, p.due_at AS p_due_at, p.status AS p_status, p.closed_at
+        `SELECT w.*, p.win_condition, p.due_at AS p_due_at, p.status AS p_status, p.closed_at,
+                p.close_intent, p.snapshot_path, p.close_progress
          FROM workspaces w
          INNER JOIN projects p ON p.workspace_id = w.id
          ORDER BY w.updated_at DESC`,
@@ -631,8 +657,11 @@ export class WorkspaceStore extends BaseStore {
       RawWorkspaceRow & {
         win_condition: string;
         p_due_at: string | null;
-        p_status: 'active' | 'closed' | 'abandoned';
+        p_status: 'active' | 'closing' | 'closed' | 'abandoned';
         closed_at: string | null;
+        close_intent: 'close' | 'abandon' | null;
+        snapshot_path: string | null;
+        close_progress: string | null;
       }
     >;
 
@@ -645,6 +674,11 @@ export class WorkspaceStore extends BaseStore {
         dueAt: row.p_due_at,
         status: row.p_status,
         closedAt: row.closed_at,
+        closeIntent: row.close_intent,
+        snapshotPath: row.snapshot_path,
+        closeProgress: row.close_progress
+          ? (JSON.parse(row.close_progress) as CloseProgress)
+          : null,
       },
     }));
   }
@@ -715,6 +749,15 @@ export class WorkspaceStore extends BaseStore {
       sets.push('due_at = ?');
       values.push(patch.dueAt);
     }
+    if (patch.closeProgress !== undefined) {
+      // Shallow-merge with whatever's already stored so a PATCH from one
+      // close-wizard step (e.g. mergeSelections) never clobbers a key
+      // written by another step (e.g. dependencySelections).
+      const existing = this.getProject(workspaceId);
+      const merged: CloseProgress = { ...(existing?.closeProgress ?? {}), ...patch.closeProgress };
+      sets.push('close_progress = ?');
+      values.push(JSON.stringify(merged));
+    }
 
     if (sets.length > 0) {
       this.db
@@ -725,13 +768,51 @@ export class WorkspaceStore extends BaseStore {
     return this.getProject(workspaceId);
   }
 
-  closeProject(workspaceId: string): Project | null {
+  /** Look up the project (if any) that owns the wiki domain `wikiId`, via
+   * the owning workspace's wiki_id. Used to gate writes against a domain
+   * belonging to a closed/abandoned project (R11). */
+  getProjectByWikiId(wikiId: string): Project | null {
+    const row = this.db
+      .prepare(
+        `SELECT p.* FROM projects p
+         JOIN workspaces w ON w.id = p.workspace_id
+         WHERE w.wiki_id = ?`,
+      )
+      .get(wikiId) as RawProjectRow | undefined;
+    return row ? mapProject(row) : null;
+  }
+
+  /** Move a project into the closing state. Only succeeds from 'active'. */
+  closeProject(workspaceId: string, intent: 'close' | 'abandon'): Project | null {
+    const result = this.db
+      .prepare(
+        `UPDATE projects SET status = 'closing', close_intent = ? WHERE workspace_id = ? AND status = 'active'`,
+      )
+      .run(intent, workspaceId);
+    if (result.changes === 0) return null;
+    return this.getProject(workspaceId);
+  }
+
+  /** Idempotent — a second call with the same or a different path still
+   * succeeds; callers that want "only once" check project.snapshotPath first. */
+  setSnapshotPath(workspaceId: string, snapshotPath: string): Project | null {
+    const result = this.db
+      .prepare(`UPDATE projects SET snapshot_path = ? WHERE workspace_id = ?`)
+      .run(snapshotPath, workspaceId);
+    if (result.changes === 0) return null;
+    return this.getProject(workspaceId);
+  }
+
+  /** Terminal transition out of 'closing'. Clears close_progress — no longer
+   * needed once the project is closed/abandoned. */
+  completeClose(workspaceId: string, status: 'closed' | 'abandoned'): Project | null {
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
-        `UPDATE projects SET status = 'closed', closed_at = ? WHERE workspace_id = ? AND status = 'active'`,
+        `UPDATE projects SET status = ?, closed_at = ?, close_progress = NULL
+         WHERE workspace_id = ? AND status = 'closing'`,
       )
-      .run(now, workspaceId);
+      .run(status, now, workspaceId);
     if (result.changes === 0) return null;
     return this.getProject(workspaceId);
   }

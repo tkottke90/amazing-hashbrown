@@ -169,6 +169,106 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('project close process columns (migration 25)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+    let projectId: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-close-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      projectId = 'proj-1';
+      store.createProject({
+        id: projectId,
+        name: 'P',
+        location: '/tmp/p',
+        winCondition: 'ship it',
+      });
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('defaults closeIntent/snapshotPath/closeProgress to null on a freshly created project', () => {
+      const project = store.getProject(projectId)!;
+      expect(project.status).to.equal('active');
+      expect(project.closeIntent).to.equal(null);
+      expect(project.snapshotPath).to.equal(null);
+      expect(project.closeProgress).to.equal(null);
+    });
+
+    it('closeProject moves an active project to closing and records the intent', () => {
+      const project = store.closeProject(projectId, 'close');
+      expect(project!.status).to.equal('closing');
+      expect(project!.closeIntent).to.equal('close');
+    });
+
+    it('closeProject records abandon intent too', () => {
+      const project = store.closeProject(projectId, 'abandon');
+      expect(project!.closeIntent).to.equal('abandon');
+    });
+
+    it('closeProject refuses a project that is not active', () => {
+      store.closeProject(projectId, 'close');
+      const second = store.closeProject(projectId, 'close');
+      expect(second).to.equal(null);
+    });
+
+    it('setSnapshotPath is idempotent and overwrites on a later call', () => {
+      store.closeProject(projectId, 'close');
+      store.setSnapshotPath(projectId, '/tmp/p/wiki-snapshot-2026-08-28');
+      expect(store.getProject(projectId)!.snapshotPath).to.equal('/tmp/p/wiki-snapshot-2026-08-28');
+      store.setSnapshotPath(projectId, '/tmp/p/wiki-snapshot-2026-08-29');
+      expect(store.getProject(projectId)!.snapshotPath).to.equal('/tmp/p/wiki-snapshot-2026-08-29');
+    });
+
+    it('completeClose sets the terminal status, closedAt, and clears closeProgress', () => {
+      store.closeProject(projectId, 'abandon');
+      store.patchProject(projectId, { closeProgress: { mergeSelections: [] } });
+      const closed = store.completeClose(projectId, 'abandoned');
+      expect(closed!.status).to.equal('abandoned');
+      expect(closed!.closedAt).to.not.equal(null);
+      expect(closed!.closeProgress).to.equal(null);
+    });
+
+    it('completeClose refuses a project that is not in the closing state', () => {
+      const result = store.completeClose(projectId, 'closed');
+      expect(result).to.equal(null);
+    });
+
+    it('patchProject shallow-merges closeProgress across separate calls', () => {
+      store.closeProject(projectId, 'close');
+      store.patchProject(projectId, {
+        closeProgress: { mergeSelections: [{ filename: 'a.md', targetDomainId: 'user' }] },
+      });
+      store.patchProject(projectId, {
+        closeProgress: {
+          dependencySelections: { removeNodeModules: true, removePythonEnv: false },
+        },
+      });
+      const project = store.getProject(projectId)!;
+      expect(project.closeProgress?.mergeSelections).to.deep.equal([
+        { filename: 'a.md', targetDomainId: 'user' },
+      ]);
+      expect(project.closeProgress?.dependencySelections).to.deep.equal({
+        removeNodeModules: true,
+        removePythonEnv: false,
+      });
+    });
+
+    it('getProjectByWikiId finds the project owning a workspace wiki_id', () => {
+      store.patchWorkspace(projectId, { wikiId: 'project-proj-1' });
+      const found = store.getProjectByWikiId('project-proj-1');
+      expect(found?.id).to.equal(projectId);
+    });
+
+    it('getProjectByWikiId returns null for an unowned wiki id', () => {
+      expect(store.getProjectByWikiId('user')).to.equal(null);
+    });
+  });
+
   describe('findWorkspaceByName()', () => {
     let store: WorkspaceStore;
     let dir: string;
