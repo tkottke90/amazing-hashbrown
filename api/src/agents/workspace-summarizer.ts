@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Response } from 'express';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { SseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { getObservabilityStore } from '../services/observability.js';
@@ -29,7 +29,7 @@ const MAX_SUMMARY_TRANSCRIPT_CHARS = 16000;
 // generateTitleHandler (threads.handlers.ts) — a single plain,
 // non-agentic model.invoke() over the thread's content, no tool harness.
 //
-// `res` is the live SSE response for an in-turn (automatic) call, so
+// `sink` is the live SSE writer for an in-turn (automatic) call, so
 // summarizing_start/summarizing_end can ride the same connection as the
 // chat stream; it's undefined for the on-demand endpoint, which has no SSE
 // connection of its own — those events are simply skipped in that case.
@@ -39,7 +39,7 @@ const MAX_SUMMARY_TRANSCRIPT_CHARS = 16000;
 // error here would otherwise propagate into the caller's own error
 // handling and incorrectly mark an already-finished turn as failed.
 export async function maybeSummarizeWorkspace(
-  res: Response | undefined,
+  sink: SseWriter | undefined,
   store: WorkspaceStore,
   threadStore: ThreadStore,
   workspace: Workspace,
@@ -62,7 +62,7 @@ export async function maybeSummarizeWorkspace(
   const threshold = env.chat.workspaceSummary?.messageThreshold ?? 40;
   if (!force && conversational.length < threshold) return;
 
-  if (res) writeSseEvent(res, { type: 'summarizing_start' });
+  if (sink) writeSseEvent(sink, { type: 'summarizing_start' });
 
   try {
     const transcript = conversational
@@ -136,14 +136,14 @@ export async function maybeSummarizeWorkspace(
     // the cached agent so the next turn picks it up.
     invalidateWorkspaceChatAgent(workspace.id);
 
-    if (res) writeSseEvent(res, { type: 'summarizing_end' });
+    if (sink) writeSseEvent(sink, { type: 'summarizing_end' });
   } catch (err) {
     logger.error('workspace-summarizer: summarization failed', {
       workspaceId: workspace.id,
       err: serializeError(err),
     });
-    if (res) {
-      writeSseEvent(res, {
+    if (sink) {
+      writeSseEvent(sink, {
         type: 'summarizing_end',
         error: err instanceof Error ? err.message : String(err),
       });

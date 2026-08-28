@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { FakeListChatModel } from '@langchain/core/utils/testing';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { ThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootObservability } from '../services/observability.js';
@@ -21,15 +22,16 @@ class ThrowingChatModel extends BaseChatModel {
   }
 }
 
-// A minimal fake Response — same shape as stream-handler.test.ts's fakeRes(),
-// since writeSseEvent() only ever calls res.write().
-function fakeRes() {
-  const chunks: string[] = [];
+// A minimal fake SseWriter — writeSseEvent() now just calls the sink
+// directly with the event object, so this only needs to record it. events()
+// keeps the loose Record<string, unknown> cast the old fakeRes() used, so
+// assertions below can read whichever event-specific field they need
+// without narrowing the ChatSSEEvent union first.
+function fakeSink() {
+  const chunks: ChatSSEEvent[] = [];
   return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    res: { write: (chunk: string) => chunks.push(chunk) } as any,
-    events: () =>
-      chunks.map((c) => JSON.parse(c.replace(/^data: /, '').trim()) as Record<string, unknown>),
+    sink: (event: ChatSSEEvent) => chunks.push(event),
+    events: () => chunks as unknown as Record<string, unknown>[],
   };
 }
 
@@ -98,10 +100,10 @@ describe('agents/workspace-summarizer', () => {
   it('summarizes automatically once the message threshold is crossed', async () => {
     seedConversationalMessages(threadStore, workspace.threadId!, 40);
     const model = new FakeListChatModel({ responses: ['# Summary\n\nKey decision: use SQLite.'] });
-    const { res, events } = fakeRes();
+    const { sink, events } = fakeSink();
 
     await maybeSummarizeWorkspace(
-      res,
+      sink,
       workspaceStore,
       threadStore,
       workspace,
@@ -180,10 +182,10 @@ describe('agents/workspace-summarizer', () => {
   it('leaves the cursor/summaryPath untouched and emits an error event when the model throws', async () => {
     seedConversationalMessages(threadStore, workspace.threadId!, 40);
     const model = new ThrowingChatModel({});
-    const { res, events } = fakeRes();
+    const { sink, events } = fakeSink();
 
     await maybeSummarizeWorkspace(
-      res,
+      sink,
       workspaceStore,
       threadStore,
       workspace,

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
-import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { writeSseEvent, pipeEvents, finalizeTurn } from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
@@ -51,9 +51,10 @@ export async function streamWikiChatToSse(
 
   const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  setActiveSseWriter(threadId, sink);
   try {
     const eventStream = agent.streamEvents(
       { messages: [{ role: 'human', content }] },
@@ -70,7 +71,7 @@ export async function streamWikiChatToSse(
     );
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
+      sink,
       msgId,
       eventStream,
       threadStore,
@@ -82,7 +83,7 @@ export async function streamWikiChatToSse(
     });
 
     await finalizeTurn(
-      res,
+      sink,
       threadStore,
       agent,
       threadId,
@@ -102,8 +103,8 @@ export async function streamWikiChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -147,9 +148,10 @@ export async function resumeWikiChatToSse(
 
   const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  setActiveSseWriter(threadId, sink);
   try {
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
       ...config,
@@ -163,7 +165,7 @@ export async function resumeWikiChatToSse(
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
+      sink,
       msgId,
       eventStream,
       threadStore,
@@ -175,7 +177,7 @@ export async function resumeWikiChatToSse(
     });
 
     await finalizeTurn(
-      res,
+      sink,
       threadStore,
       agent,
       threadId,
@@ -195,8 +197,8 @@ export async function resumeWikiChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);
@@ -241,9 +243,10 @@ export async function retryWikiChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  setActiveSseWriter(threadId, (event) => {
-    writeSseEvent(res, event);
-  });
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  setActiveSseWriter(threadId, sink);
   try {
     const eventStream = agent.streamEvents(null, {
       ...config,
@@ -257,7 +260,7 @@ export async function retryWikiChatToSse(
     });
 
     const { content: finalContent, thoughtContent } = await pipeEvents(
-      res,
+      sink,
       msgId,
       eventStream,
       threadStore,
@@ -269,7 +272,7 @@ export async function retryWikiChatToSse(
     });
 
     await finalizeTurn(
-      res,
+      sink,
       threadStore,
       agent,
       threadId,
@@ -289,8 +292,8 @@ export async function retryWikiChatToSse(
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(res, { type: 'text_delta', messageId: msgId, delta: msg });
-      writeSseEvent(res, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
     failAssistant(threadStore, threadId, msgId, '', turnSentAt);

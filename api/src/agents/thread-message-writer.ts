@@ -160,6 +160,11 @@ export interface HitlPromptFields {
   reason?: string;
   stepsUsed?: number;
   recursionLimit?: number;
+  // Set only when this prompt was raised by an automated task run
+  // (task-execution.ts) — lets the /hitl route tell a task-originated prompt
+  // apart from a plain chat one and re-enqueue the task instead of resuming
+  // an interactive turn.
+  taskId?: string;
 }
 
 export function recordHitlPrompt(
@@ -234,6 +239,28 @@ export function recordResourceCard(
       id,
       kind: 'resource_card',
       payload: { resourceType, name, ...(goal ? { goal } : {}), location, workspaceId },
+    }).seq;
+  });
+}
+
+// Brackets an automated task run in its thread — a 'start' marker before the
+// agent begins and an 'end' marker (with the outcome) once it finishes —
+// so the user can tell task-originated activity apart from their own chat
+// turns in a workspace's shared thread. See task-execution.ts.
+export function recordTaskRunMarker(
+  store: ThreadStore,
+  threadId: string,
+  id: string,
+  taskId: string,
+  taskTitle: string,
+  phase: 'start' | 'end',
+  outcome?: 'done' | 'failed' | 'waiting_on_user',
+): number | null {
+  return safe(threadId, 'recordTaskRunMarker', () => {
+    return store.insertMessage(threadId, {
+      id,
+      kind: 'task_run_marker',
+      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}) },
     }).seq;
   });
 }

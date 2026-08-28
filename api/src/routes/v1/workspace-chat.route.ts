@@ -6,10 +6,13 @@ import {
   retryWorkspaceChatToSse,
 } from '../../agents/workspace-chat-stream-handler.js';
 import { writeSseEvent } from '../../agents/stream-handler.js';
+import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
+import { resolveHitlPrompt } from '../../agents/thread-message-writer.js';
 import { createProvider } from '../../services/provider-factory.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getThreadStore } from '../../services/thread-store.js';
+import { getTaskScheduler } from '../../services/task-scheduler.js';
 import { getThreadHandler } from './threads.handlers.js';
 import { serializeError } from '../../config/logger.js';
 
@@ -23,6 +26,12 @@ function setSseHeaders(res: Response): void {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+}
+
+// Adapts a raw Express Response into the SseWriter shape writeSseEvent()
+// now expects — used only for this route's own catch-block error events.
+function toSink(res: Response): SseWriter {
+  return (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
 // Resolves the workspace for :id and confirms :threadId is (or can become)
@@ -98,7 +107,7 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
     );
   } catch (err) {
     req.logger.error('Workspace chat stream error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
   }
@@ -122,6 +131,35 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   const workspace = resolveWorkspaceForThread(req, res);
   if (!workspace) return;
 
+  // A prompt raised by an automated task run (task-execution.ts) carries
+  // taskId in its payload — re-enqueue the task instead of resuming an
+  // interactive turn, so the scheduler (not this HTTP request) drives the
+  // agent forward. See docs/superpowers/specs/2026-08-27-automated-task-execution-design.md §6.
+  const existingPrompt = getThreadStore().getMessage(threadId, promptId);
+  const taskId = (existingPrompt?.payload as Record<string, unknown> | undefined)?.['taskId'] as
+    string | undefined;
+
+  if (taskId) {
+    setSseHeaders(res);
+    try {
+      resolveHitlPrompt(getThreadStore(), threadId, promptId, answer);
+      getWorkspaceStore().patchTask(taskId, {
+        status: 'ready',
+        assignedTo: 'agent',
+        resumeAnswer: answer,
+      });
+      getWorkspaceStore().enqueueTask(taskId);
+      getTaskScheduler().wake();
+      res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
+    } catch (err) {
+      req.logger.error('Workspace chat HITL task re-enqueue error', { err: serializeError(err) });
+      writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    } finally {
+      res.end();
+    }
+    return;
+  }
+
   setSseHeaders(res);
   const startedAt = Date.now();
   try {
@@ -138,7 +176,7 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
     );
   } catch (err) {
     req.logger.error('Workspace chat HITL resume error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
   }
@@ -166,7 +204,7 @@ workspaceChatRouter.post('/:threadId/retry', async (req: Request, res: Response)
     await retryWorkspaceChatToSse(res, workspace, threadId, startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('Workspace chat retry stream error', { err: serializeError(err) });
-    writeSseEvent(res, { type: 'stream_error', error: String(err) });
+    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
   } finally {
     res.end();
   }

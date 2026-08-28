@@ -4,12 +4,12 @@ import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { ThreadStore } from '../services/thread-store.js';
 import { pipeEvents, finalizeTurn, makeLiveSseWriter } from './stream-handler.js';
 
-// A minimal fake Response — writeSseEvent() only ever calls res.write().
-// Captures each raw SSE line so tests can assert on exactly what would have
-// reached the client, alongside what landed in thread_messages.
+// A minimal fake Response — makeLiveSseWriter() still takes a real
+// Response-shaped object and calls res.write() internally.
 function fakeRes() {
   const chunks: string[] = [];
   return {
@@ -17,6 +17,17 @@ function fakeRes() {
     res: { write: (chunk: string) => chunks.push(chunk) } as any,
     events: () =>
       chunks.map((c) => JSON.parse(c.replace(/^data: /, '').trim()) as Record<string, unknown>),
+  };
+}
+
+// A minimal fake SseWriter — pipeEvents()/finalizeTurn() now take the sink
+// function directly rather than a Response, so this just records the event
+// objects as-is (no JSON round-trip needed).
+function fakeSink() {
+  const chunks: ChatSSEEvent[] = [];
+  return {
+    sink: (event: ChatSSEEvent) => chunks.push(event),
+    events: () => chunks as unknown as Record<string, unknown>[],
   };
 }
 
@@ -118,10 +129,10 @@ describe('agents/stream-handler', () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       store.close(); // closed DB — recordHitlPrompt will throw, finalizeAssistant swallows via safe()
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent({ kind: 'shell_approval', command: 'ls -la', reason: 'list' });
-      await finalizeTurn(
-        res,
+      const result = await finalizeTurn(
+        sink,
         store,
         agent,
         't1',
@@ -136,16 +147,19 @@ describe('agents/stream-handler', () => {
       const emitted = events();
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);
+      // The interrupt could not be durably recorded — there is no prompt for
+      // the user to ever answer, so this must not be reported as interrupted.
+      expect(result.interrupted).to.equal(false);
       rmSync(dir, { recursive: true });
     });
 
     it('emits usage_stats before stream_done when obsHandler is provided', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t2', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent(null);
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't2',
@@ -175,10 +189,10 @@ describe('agents/stream-handler', () => {
     it('computes tokensPerSecond from turnDurationMs and outputTokens', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t3', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent(null);
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't3',
@@ -203,10 +217,10 @@ describe('agents/stream-handler', () => {
     it('omits tokensPerSecond when turnDurationMs is 0', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t4', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent(null);
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't4',
@@ -228,10 +242,10 @@ describe('agents/stream-handler', () => {
     it('omits contextWindowTokens when lastContextWindowInputTokens is 0', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t5', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent(null);
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't5',
@@ -253,10 +267,10 @@ describe('agents/stream-handler', () => {
     it('does not emit usage_stats when no obsHandler is provided', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t6', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent(null);
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't6',
@@ -275,7 +289,7 @@ describe('agents/stream-handler', () => {
     it('emits hitl_prompt with multiple_choice kind for recursion_limit_warning interrupt', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t7', 'Hello');
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const agent = stubAgent({
         kind: 'recursion_limit_warning',
         question: "I've been working for 75 LLM calls and want to check in.",
@@ -284,8 +298,8 @@ describe('agents/stream-handler', () => {
         stepsUsed: 75,
         recursionLimit: 100,
       });
-      await finalizeTurn(
-        res,
+      const result = await finalizeTurn(
+        sink,
         store,
         agent,
         't7',
@@ -306,13 +320,14 @@ describe('agents/stream-handler', () => {
       expect(prompt?.allowFreeText).to.equal(true);
       expect(prompt?.choices).to.be.an('array').with.length(2);
       expect(emitted.some((e) => e.type === 'stream_done')).to.equal(false);
+      expect(result.interrupted).to.equal(true);
       rmSync(dir, { recursive: true });
     });
 
     it('persists the recursion_limit_warning prompt to thread_messages with multiple_choice promptKind', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t8', 'Hello');
-      const { res } = fakeRes();
+      const { sink } = fakeSink();
       const agent = stubAgent({
         kind: 'recursion_limit_warning',
         question: "I've been working for 50 LLM calls.",
@@ -322,7 +337,7 @@ describe('agents/stream-handler', () => {
         recursionLimit: 100,
       });
       await finalizeTurn(
-        res,
+        sink,
         store,
         agent,
         't8',
@@ -343,6 +358,88 @@ describe('agents/stream-handler', () => {
       expect((hitlRow?.payload as Record<string, unknown>)?.stepsUsed).to.equal(50);
       rmSync(dir, { recursive: true });
     });
+
+    it('threads taskId into the persisted hitl_prompt payload when provided', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t9', 'Hello');
+      const { sink } = fakeSink();
+      const agent = stubAgent({
+        kind: 'free_text',
+        question: 'What should I call the new page?',
+      });
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't9',
+        'msg9',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        'task-123',
+      );
+      const messages = store.getThreadMessages('t9', { showErrors: true });
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect((hitlRow?.payload as Record<string, unknown>)?.taskId).to.equal('task-123');
+      rmSync(dir, { recursive: true });
+    });
+
+    it('omits taskId from the persisted hitl_prompt payload when not provided (regression guard)', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t10', 'Hello');
+      const { sink } = fakeSink();
+      const agent = stubAgent({
+        kind: 'free_text',
+        question: 'What should I call the new page?',
+      });
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't10',
+        'msg10',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const messages = store.getThreadMessages('t10', { showErrors: true });
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect(Object.prototype.hasOwnProperty.call(hitlRow?.payload ?? {}, 'taskId')).to.equal(
+        false,
+      );
+      rmSync(dir, { recursive: true });
+    });
+
+    it('resolves interrupted:false when there is no interrupt', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t11', 'Hello');
+      const { sink } = fakeSink();
+      const agent = stubAgent(null);
+      const result = await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't11',
+        'msg11',
+        Date.now(),
+        '',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      expect(result.interrupted).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
   });
 
   describe('pipeEvents', () => {
@@ -359,9 +456,9 @@ describe('agents/stream-handler', () => {
     });
 
     it('accumulates plain text deltas into the returned content, streamed as text_delta', async () => {
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const result = await pipeEvents(
-        res,
+        sink,
         'msg1',
         eventsFrom([
           { event: 'on_chat_model_stream', data: { chunk: { content: 'Hello' } } },
@@ -383,9 +480,9 @@ describe('agents/stream-handler', () => {
     });
 
     it('separates <think>...</think> content into thoughtContent, not content', async () => {
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       const result = await pipeEvents(
-        res,
+        sink,
         'msg2',
         eventsFrom([
           {
@@ -407,9 +504,9 @@ describe('agents/stream-handler', () => {
     });
 
     it('records a tool call start/end pair and finalizes with the right toolName/inputs/outputs', async () => {
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       await pipeEvents(
-        res,
+        sink,
         'msg3',
         eventsFrom([
           {
@@ -440,9 +537,9 @@ describe('agents/stream-handler', () => {
     });
 
     it('skips ask_user tool calls entirely — no SSE event, no thread_messages row', async () => {
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       await pipeEvents(
-        res,
+        sink,
         'msg4',
         eventsFrom([
           { event: 'on_tool_start', name: 'ask_user', run_id: 'tc-ask', data: { input: {} } },
@@ -457,12 +554,12 @@ describe('agents/stream-handler', () => {
     });
 
     it('emits and accumulates a final trailing delta on stream end (drainBuffer)', async () => {
-      const { res, events } = fakeRes();
+      const { sink, events } = fakeSink();
       // The safe-margin buffering logic holds back the tail of a chunk in case
       // it's a split tag boundary — the final flush only happens once the
       // stream ends, via drainBuffer.
       const result = await pipeEvents(
-        res,
+        sink,
         'msg5',
         eventsFrom([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hi' } } }]),
         store,

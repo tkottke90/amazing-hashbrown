@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { render } from '@testing-library/preact';
 
-import { CodeEditor } from '@/components/code-editor';
+import { CodeEditor } from '@/pages/workspaces/code-editor';
 import { ThemeProvider } from '@/hooks/use-theme';
 
 describe('CodeEditor', () => {

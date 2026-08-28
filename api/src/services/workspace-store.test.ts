@@ -127,6 +127,48 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('task automated-execution columns (migration 24)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-exec-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('defaults threadId/resumeAnswer to null on a freshly created task', () => {
+      const task = store.createTask({ title: 't' });
+      expect(task.threadId).to.equal(null);
+      expect(task.resumeAnswer).to.equal(null);
+    });
+
+    it('patchTask can set and read back both fields', () => {
+      const task = store.createTask({ title: 't' });
+      const updated = store.patchTask(task.id, {
+        threadId: 'thread-1',
+        resumeAnswer: 'yes, proceed',
+      });
+      expect(updated!.threadId).to.equal('thread-1');
+      expect(updated!.resumeAnswer).to.equal('yes, proceed');
+
+      const reloaded = store.getTask(task.id)!;
+      expect(reloaded.threadId).to.equal('thread-1');
+      expect(reloaded.resumeAnswer).to.equal('yes, proceed');
+    });
+
+    it('patchTask can clear resumeAnswer back to null', () => {
+      const task = store.createTask({ title: 't' });
+      store.patchTask(task.id, { resumeAnswer: 'an answer' });
+      const cleared = store.patchTask(task.id, { resumeAnswer: null });
+      expect(cleared!.resumeAnswer).to.equal(null);
+    });
+  });
+
   describe('findWorkspaceByName()', () => {
     let store: WorkspaceStore;
     let dir: string;

@@ -35,6 +35,8 @@ import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
+import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
+import type { Task } from '../services/workspace-store.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
 // connection every other store uses. SqliteSaver accepts the connection
@@ -360,4 +362,83 @@ export async function getChatAgent(
 
 export function invalidateChatAgent(): void {
   _agents.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Task agent — an automated task run's agent. Not cached like the two above:
+// each run's system prompt and tool set are specific to one task (its own
+// goal, its own complete_task tool closed over that task's id), so rebuilding
+// fresh per run is correct, not wasteful. See task-execution.ts.
+// ---------------------------------------------------------------------------
+
+interface TaskContext {
+  title: string;
+  description: string | null;
+  outcome: string | null;
+}
+
+// Exported for direct testing (see buildWikiWriteTools() above for the same
+// rationale) — buildTaskAgent() itself calls createProvider()/createAgent(),
+// which needs a real provider config to exercise end-to-end.
+export function buildTaskContextBlock(ctx: TaskContext): string {
+  const lines = [`You are running an automated task: "${ctx.title}".`];
+  if (ctx.description) lines.push(`Description: ${ctx.description}`);
+  if (ctx.outcome) lines.push(`Outcome to reach: ${ctx.outcome}`);
+  lines.push(
+    '',
+    'When the outcome has been met, or you cannot proceed further, call complete_task with ' +
+      'outcome ("done" or "failed") and a summary. If you need information only the user can ' +
+      'provide, call ask_user — the run will pause and resume once they answer.',
+  );
+  return lines.join('\n');
+}
+
+export interface TaskWorkspaceScope {
+  workspaceContext: WorkspaceChatContext;
+  allowedWikiId?: string;
+}
+
+export async function buildTaskAgent(
+  task: Task,
+  provider?: string,
+  model?: string,
+  workspaceScope?: TaskWorkspaceScope,
+): Promise<{ agent: ChatAgent; systemPrompt: string }> {
+  const llm = createProvider(provider, model);
+  const mcpTools = await loadMcpTools();
+
+  const taskBlock = buildTaskContextBlock({
+    title: task.title,
+    description: task.description,
+    outcome: task.outcome,
+  });
+  const contextBlock = workspaceScope
+    ? `${buildWorkspaceContextBlock(workspaceScope.workspaceContext)}\n\n${taskBlock}`
+    : taskBlock;
+  const systemPrompt = buildSystemPrompt(getAgentInstructions(), contextBlock);
+
+  const agent = createAgent({
+    model: llm,
+    tools: [
+      ...STATIC_CHAT_TOOLS,
+      ...buildGatedTools(),
+      ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
+      makeCompleteTaskTool(task.id),
+      ...mcpTools,
+    ],
+    systemPrompt,
+    checkpointer: getCheckpointer(),
+    middleware: [
+      createRecursionGuardMiddleware(
+        env.agent?.recursionLimit ?? 100,
+        env.agent?.recursionWarnThreshold ?? 0.75,
+      ),
+      skillExpansionMiddleware,
+      skillGatedToolsMiddleware,
+      contextWindowMiddleware,
+      afterAgentMiddleware,
+    ],
+  });
+
+  return { agent, systemPrompt };
 }

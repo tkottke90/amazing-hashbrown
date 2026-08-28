@@ -108,18 +108,13 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
 
             elem.dataset.loading = 'true';
 
-            loadFileTree(workspaceId, { force: true })
-              .then(() => {
-                console.log('File Tree Loaded')
-                delete elem.dataset.loading;
-              })
+            loadFileTree(workspaceId, { force: true }).then(() => {
+              console.log('File Tree Loaded');
+              delete elem.dataset.loading;
+            });
           }}
         >
-          <RefreshCw
-            class={cn(
-              'size-3.5 group-data-loading:animate-spin'
-            )}
-          />
+          <RefreshCw class={cn('size-3.5 group-data-loading:animate-spin')} />
         </button>
       </div>
 

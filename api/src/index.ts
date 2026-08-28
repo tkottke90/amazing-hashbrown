@@ -14,6 +14,7 @@ import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
 import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
+import { executeTask } from './agents/task-execution.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ShellExecutor, ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
@@ -58,7 +59,18 @@ app.logger.info('Knowledge base booted');
 await loadAgentInstructions();
 app.logger.info('Agent instructions loaded');
 
-bootTaskScheduler();
+// e2e CI has no LLM provider configured anywhere (no config.yaml, no Ollama/
+// LLM backend service in the workflow) — task-queue-widget.spec.ts only
+// exercises the scheduler's pause/resume/HITL queue mechanics, and needs a
+// task to stay "running" for the length of the test rather than actually
+// complete. Playwright's webServer sets this flag instead of wiring the real
+// executeTask() there, so CI doesn't need a live or fake LLM backend just to
+// exercise queue plumbing. See e2e/playwright.config.ts.
+const taskExecutor = process.env['E2E_NOOP_TASK_EXECUTOR']
+  ? () => new Promise<void>(() => {})
+  : executeTask;
+
+bootTaskScheduler(taskExecutor);
 app.logger.info('Task scheduler started');
 
 app.start();

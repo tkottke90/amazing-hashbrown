@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/preact';
 
-import { FileTree } from '@/components/file-tree';
+import { FileTree } from '@/pages/workspaces/file-tree';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { fileTree, fileTreeError, expandedFolders } from '@/hooks/use-workspace-files';
 import type { FileTreeResponse } from '@/services/workspace-files-api';

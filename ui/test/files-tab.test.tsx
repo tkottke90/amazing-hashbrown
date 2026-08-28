@@ -11,7 +11,7 @@ jest.mock('@/services/workspace-files-api', () => {
   };
 });
 
-import { FilesTab } from '@/components/files-tab';
+import { FilesTab } from '@/pages/workspaces/files-tab';
 import { ThemeProvider } from '@/hooks/use-theme';
 import {
   openTabs,

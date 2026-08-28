@@ -93,6 +93,19 @@ export type ThreadMessage =
       // a row id — see api's workspace-store.ts's NewProjectInput).
       workspaceId: string;
       seq?: number;
+    }
+  | {
+      // Brackets an automated task's run in the shared thread — one 'start'
+      // row before the agent begins, one 'end' row (with outcome) once it
+      // finishes — so task-originated activity is visually distinguishable
+      // from the user's own chat turns. See api's task-execution.ts.
+      kind: 'task_run_marker';
+      id: string;
+      taskId: string;
+      taskTitle: string;
+      phase: 'start' | 'end';
+      outcome?: 'done' | 'failed' | 'waiting_on_user';
+      seq?: number;
     };
 
 export type UserThreadMessage = Extract<ThreadMessage, { kind: 'user' }>;
@@ -103,3 +116,4 @@ export type IframeThreadMessage = Extract<ThreadMessage, { kind: 'iframe' }>;
 export type AudioThreadMessage = Extract<ThreadMessage, { kind: 'audio' }>;
 export type WikiUpdateThreadMessage = Extract<ThreadMessage, { kind: 'wiki_update' }>;
 export type ResourceCardThreadMessage = Extract<ThreadMessage, { kind: 'resource_card' }>;
+export type TaskRunMarkerThreadMessage = Extract<ThreadMessage, { kind: 'task_run_marker' }>;
