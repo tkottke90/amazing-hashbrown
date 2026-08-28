@@ -98,6 +98,13 @@ describe('shared-database migrations (cross-store)', () => {
     ).map((c) => c.name);
     expect(shellAuditColumns).to.include('trust_all');
 
+    const projectColumns = (
+      db.prepare('PRAGMA table_info(projects)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(projectColumns).to.include('close_intent');
+    expect(projectColumns).to.include('snapshot_path');
+    expect(projectColumns).to.include('close_progress');
+
     db.close();
   });
 });

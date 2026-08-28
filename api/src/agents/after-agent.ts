@@ -3,6 +3,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
 import { createProvider } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
+import type { WorkspaceStore } from '../services/workspace-store.js';
 import {
   createWikiPage,
   updateWikiPage,
@@ -270,6 +271,11 @@ export interface RunAfterAgentPipelineParams {
   // exercise the real write-dispatch path (createWikiPage/updateWikiPage)
   // against a temp wiki instead of the real config/kb singleton.
   registry?: WikiRegistry;
+  // Test-only escape hatch, same rationale as `registry` above — createWikiPage/
+  // updateWikiPage's archived-domain check (R11) reads project status via
+  // WorkspaceStore, which in production is the process-wide getWorkspaceStore()
+  // singleton (booted once at server start). Production callers never set this.
+  store?: WorkspaceStore;
 }
 
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
@@ -400,6 +406,8 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
           summary: extract.summary,
         },
         params.registry,
+        undefined,
+        params.store,
       );
     } else {
       writeResult = await createWikiPage(
@@ -413,6 +421,8 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
           summary: extract.summary,
         },
         params.registry,
+        undefined,
+        params.store,
       );
     }
 

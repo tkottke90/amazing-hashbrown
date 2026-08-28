@@ -18,13 +18,21 @@ export interface Workspace {
   lastChange: string;
 }
 
+export interface CloseProgress {
+  mergeSelections?: { filename: string; targetDomainId: string }[];
+  dependencySelections?: { removeNodeModules: boolean; removePythonEnv: boolean };
+}
+
 export interface Project {
   id: string;
   workspaceId: string;
   winCondition: string;
   dueAt: string | null;
-  status: 'active' | 'closed' | 'abandoned';
+  status: 'active' | 'closing' | 'closed' | 'abandoned';
   closedAt: string | null;
+  closeIntent: 'close' | 'abandon' | null;
+  snapshotPath: string | null;
+  closeProgress: CloseProgress | null;
 }
 
 export interface WorkspaceWithProject extends Workspace {
@@ -119,7 +127,7 @@ export async function createProject(
 
 export async function patchProject(
   id: string,
-  patch: Partial<CreateProjectInput>,
+  patch: Partial<CreateProjectInput> & { closeProgress?: CloseProgress },
 ): Promise<WorkspaceWithProject> {
   return request<WorkspaceWithProject>(`/api/v1/projects/${id}`, {
     method: 'PATCH',
@@ -128,6 +136,49 @@ export async function patchProject(
   });
 }
 
-export async function closeProject(id: string): Promise<Project> {
-  return request<Project>(`/api/v1/projects/${id}/close`, { method: 'POST' });
+export async function closeProject(id: string, intent: 'close' | 'abandon'): Promise<Project> {
+  return request<Project>(`/api/v1/projects/${id}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intent }),
+  });
+}
+
+export async function snapshotProject(id: string): Promise<{ snapshotPath: string }> {
+  return request<{ snapshotPath: string }>(`/api/v1/projects/${id}/snapshot`, { method: 'POST' });
+}
+
+export interface CleanupDependenciesInput {
+  removeNodeModules: boolean;
+  removePythonEnv: boolean;
+  dryRun?: boolean;
+}
+
+export type CleanupDependenciesResult =
+  | { dryRun: true; candidates: { path: string; sizeBytes: number }[] }
+  | { dryRun: false; removed: string[]; bytesFreed: number };
+
+export async function cleanupDependencies(
+  workspaceId: string,
+  input: CleanupDependenciesInput,
+): Promise<CleanupDependenciesResult> {
+  return request<CleanupDependenciesResult>(
+    `/api/v1/workspaces/${workspaceId}/cleanup-dependencies`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export interface CompleteCloseResult {
+  succeeded: string[];
+  failed: { filename: string; error: string }[];
+}
+
+export async function completeCloseProject(id: string): Promise<CompleteCloseResult> {
+  return request<CompleteCloseResult>(`/api/v1/projects/${id}/complete-close`, {
+    method: 'POST',
+  });
 }

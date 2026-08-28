@@ -5,6 +5,7 @@ import type {
   WorkspaceStore,
   NewProjectInput,
   PatchProjectInput,
+  Project,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import {
@@ -17,6 +18,8 @@ import {
   type ExecFileFn,
 } from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
+import { snapshotProjectWiki } from '../../services/wiki-snapshot.js';
+import { isWikiDomainArchived } from '../../services/wiki-archive-guard.js';
 import { logger } from '../../config/logger.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -167,8 +170,118 @@ export function patchProjectHandler(
 export function closeProjectHandler(
   store: WorkspaceStore,
   workspaceId: string,
-): HandlerResult<NonNullable<ReturnType<WorkspaceStore['getProject']>>> {
-  const project = store.closeProject(workspaceId);
-  if (!project) return notFound(`Project ${workspaceId} not found or already closed`);
+  body: Record<string, unknown>,
+): HandlerResult<Project> {
+  const intent = body.intent;
+  if (intent !== 'close' && intent !== 'abandon') {
+    return badRequest('intent must be "close" or "abandon"');
+  }
+  const project = store.closeProject(workspaceId, intent);
+  if (!project) return conflict(`Project ${workspaceId} is not active`);
   return ok(project);
+}
+
+// Step 1 of the close process. Idempotent — a project that already has a
+// snapshotPath returns it as-is rather than re-copying, so a page reload or
+// the retry-on-error button can safely call this again.
+export async function snapshotProjectHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  registry?: WikiRegistry,
+  execFileFn?: ExecFileFn,
+): Promise<HandlerResult<{ snapshotPath: string }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  const project = store.getProject(workspaceId);
+  if (!workspace || !project) return notFound(`Project ${workspaceId} not found`);
+  if (project.status !== 'closing') {
+    return conflict(`Project ${workspaceId} is not in the closing state`);
+  }
+  if (project.snapshotPath) return ok({ snapshotPath: project.snapshotPath });
+  if (!workspace.wikiId) return serverError('Project has no wiki domain to snapshot');
+
+  const reg = registry ?? (await getWikiRegistry());
+  let wikiAbsPath: string;
+  try {
+    wikiAbsPath = (await reg.load(workspace.wikiId)).basePath;
+  } catch (err) {
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    const { snapshotPath } = await snapshotProjectWiki(
+      workspace.location,
+      wikiAbsPath,
+      workspace.git,
+      execFileFn,
+    );
+    store.setSnapshotPath(workspaceId, snapshotPath);
+    return ok({ snapshotPath });
+  } catch (err) {
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// Step 4's final action. Runs the selective merge, then — only if every
+// selected page landed — transitions the project to its terminal status and
+// archives its wiki domain (both the on-disk index.md and the registry
+// entry). A partial merge failure leaves status at 'closing' and reports
+// which pages need retrying, rather than half-closing the project.
+export async function completeCloseProjectHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  registry?: WikiRegistry,
+): Promise<HandlerResult<{ succeeded: string[]; failed: { filename: string; error: string }[] }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  const project = store.getProject(workspaceId);
+  if (!workspace || !project) return notFound(`Project ${workspaceId} not found`);
+  if (project.status !== 'closing') {
+    return conflict(`Project ${workspaceId} is not in the closing state`);
+  }
+  if (!workspace.wikiId) return serverError('Project has no wiki domain');
+
+  const reg = registry ?? (await getWikiRegistry());
+  let sourceWiki;
+  try {
+    sourceWiki = await reg.load(workspace.wikiId);
+  } catch (err) {
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
+
+  const selections = project.closeProgress?.mergeSelections ?? [];
+  const succeeded: string[] = [];
+  const failed: { filename: string; error: string }[] = [];
+
+  for (const { filename, targetDomainId } of selections) {
+    try {
+      if (isWikiDomainArchived(targetDomainId, store)) {
+        throw new Error(`Target domain "${targetDomainId}" is archived`);
+      }
+      const targetWiki = await reg.load(targetDomainId);
+      const page = await sourceWiki.readPage(filename);
+      await targetWiki.commitPage({
+        type: page.frontmatter.type,
+        title: page.frontmatter.title,
+        tags: page.frontmatter.tags,
+        sources: page.frontmatter.sources,
+        body: page.content,
+        confidence: page.frontmatter.confidence,
+        contested: page.frontmatter.contested,
+        contradictions: page.frontmatter.contradictions,
+      });
+      succeeded.push(filename);
+    } catch (err) {
+      failed.push({ filename, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  if (failed.length > 0) {
+    return ok({ succeeded, failed });
+  }
+
+  const terminalStatus = project.closeIntent === 'abandon' ? 'abandoned' : 'closed';
+  store.completeClose(workspaceId, terminalStatus);
+  await sourceWiki.archive();
+  await reg.archive(workspace.wikiId);
+
+  return ok({ succeeded, failed: [] });
 }

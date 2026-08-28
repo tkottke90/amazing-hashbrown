@@ -72,8 +72,10 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Close project removes the Close project button',
-      expectedOutcome: 'Button disappears after confirming close',
+      action:
+        'Close project walks the full close wizard (snapshot, skip merge, skip cleanup, complete)',
+      expectedOutcome:
+        'Navigates to /workspaces/:id/close, auto-advances through snapshot and auto-skipped cleanup, and returns to a read-only project detail page after completing',
       test: () => {},
     },
     {
@@ -380,7 +382,9 @@ test.describe(
       expect(projRes.status()).toBe(201);
       const proj = await projRes.json();
 
-      const closeRes = await request.post(`/api/v1/projects/${proj.workspace.id}/close`);
+      const closeRes = await request.post(`/api/v1/projects/${proj.workspace.id}/close`, {
+        data: { intent: 'close' },
+      });
       expect(closeRes.status()).toBe(200);
 
       await page.goto('/workspaces');
@@ -467,7 +471,10 @@ test.describe(
       await expect(page.getByRole('heading', { name: 'e2e-settings-renamed' })).toBeVisible();
     });
 
-    test('close project removes the Close project button', async ({ page, request }, testInfo) => {
+    test('close project walks the full wizard: snapshot, skip merge, skip cleanup, complete', async ({
+      page,
+      request,
+    }, testInfo) => {
       const projRes = await request.post('/api/v1/projects', {
         data: {
           name: 'e2e-close-proj',
@@ -489,8 +496,27 @@ test.describe(
       page.on('dialog', (d) => d.accept());
       await closeBtn.click();
 
-      // Button should disappear after closing
-      await expect(closeBtn).not.toBeVisible();
+      // Navigates to the close wizard
+      await page.waitForURL(`/workspaces/${proj.workspace.id}/close`);
+      await pauseBeforeAction(page, testInfo);
+
+      // Step 1 (wiki snapshot) runs automatically and advances to Step 2
+      await expect(page.getByRole('heading', { name: 'Selective merge' })).toBeVisible();
+      await page.getByRole('button', { name: 'Skip this step' }).click();
+
+      // Step 3 (dependency cleanup) — no js/python flags set, so it
+      // auto-skips straight to Step 4.
+      await expect(page.getByRole('heading', { name: 'Review & close' })).toBeVisible();
+      await expect(page.getByText('No pages merged')).toBeVisible();
+      await expect(page.getByText('No cleanup performed')).toBeVisible();
+
+      await pauseBeforeAction(page, testInfo);
+      await page.getByRole('button', { name: 'Complete close' }).click();
+
+      // Redirects back to the now-read-only project detail page
+      await page.waitForURL(`/workspaces/${proj.workspace.id}`);
+      await expect(page.getByRole('button', { name: 'Close project' })).not.toBeVisible();
+      await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible();
 
       // Clean up the project so its auto-created wiki domain is destroyed
       await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);

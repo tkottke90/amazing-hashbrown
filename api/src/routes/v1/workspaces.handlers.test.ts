@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -12,6 +12,7 @@ import {
   createWorkspaceHandler,
   deleteWorkspaceHandler,
   patchWorkspaceHandler,
+  cleanupDependenciesHandler,
 } from './workspaces.handlers.js';
 
 describe('routes/v1/workspaces.handlers', () => {
@@ -332,6 +333,98 @@ describe('routes/v1/workspaces.handlers', () => {
       const result = await deleteWorkspaceHandler(store, 'does-not-exist', registry);
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('cleanupDependenciesHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+    let location: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspaces-handlers-cleanup-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      location = join(dir, 'ws');
+      mkdirSync(location, { recursive: true });
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function seedDependencyDirs() {
+      mkdirSync(join(location, 'node_modules', 'some-pkg'), { recursive: true });
+      writeFileSync(join(location, 'node_modules', 'some-pkg', 'index.js'), 'module.exports = {};');
+      mkdirSync(join(location, '.venv', 'lib'), { recursive: true });
+      writeFileSync(join(location, '.venv', 'lib', 'site.py'), 'x = 1\n');
+    }
+
+    it('returns 404 for an unknown workspace id', async () => {
+      const result = await cleanupDependenciesHandler(store, 'does-not-exist', {});
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('dry run reports found directories with sizes without removing anything', async () => {
+      seedDependencyDirs();
+      const ws = store.createWorkspace({ name: 'W', location, javascript: true, python: true });
+
+      const result = await cleanupDependenciesHandler(store, ws.id, {
+        removeNodeModules: true,
+        removePythonEnv: true,
+        dryRun: true,
+      });
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      if (!result.ok || result.data.dryRun === false) return;
+      const paths = result.data.candidates.map((c) => c.path).sort();
+      expect(paths).to.deep.equal(['.venv', 'node_modules']);
+      for (const candidate of result.data.candidates) {
+        expect(candidate.sizeBytes).to.be.greaterThan(0);
+      }
+      expect(existsSync(join(location, 'node_modules'))).to.equal(true);
+      expect(existsSync(join(location, '.venv'))).to.equal(true);
+    });
+
+    it('reports only the requested category when the other flag is false', async () => {
+      seedDependencyDirs();
+      const ws = store.createWorkspace({ name: 'W', location, javascript: true, python: true });
+
+      const result = await cleanupDependenciesHandler(store, ws.id, {
+        removeNodeModules: true,
+        removePythonEnv: false,
+        dryRun: true,
+      });
+      expect(result.ok).to.equal(true);
+      if (!result.ok || result.data.dryRun === false) return;
+      expect(result.data.candidates.map((c) => c.path)).to.deep.equal(['node_modules']);
+    });
+
+    it('removes the selected directories and reports bytes freed', async () => {
+      seedDependencyDirs();
+      const ws = store.createWorkspace({ name: 'W', location, javascript: true, python: true });
+
+      const result = await cleanupDependenciesHandler(store, ws.id, {
+        removeNodeModules: true,
+        removePythonEnv: true,
+      });
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      if (!result.ok || result.data.dryRun === true) return;
+      expect(result.data.removed.sort()).to.deep.equal(['.venv', 'node_modules']);
+      expect(result.data.bytesFreed).to.be.greaterThan(0);
+      expect(existsSync(join(location, 'node_modules'))).to.equal(false);
+      expect(existsSync(join(location, '.venv'))).to.equal(false);
+    });
+
+    it('is a no-op when neither flag is set', async () => {
+      seedDependencyDirs();
+      const ws = store.createWorkspace({ name: 'W', location, javascript: true, python: true });
+
+      const result = await cleanupDependenciesHandler(store, ws.id, {});
+      expect(result.ok).to.equal(true);
+      if (!result.ok || result.data.dryRun === true) return;
+      expect(result.data.removed).to.deep.equal([]);
+      expect(existsSync(join(location, 'node_modules'))).to.equal(true);
     });
   });
 });

@@ -278,6 +278,13 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
 
   const workspace = useComputed(() => workspaces.value.find((w) => w.id === id));
   const proj = useComputed(() => (id ? getProjectForWorkspace(id) : undefined));
+  const projectStatus = proj.value?.project.status;
+
+  useEffect(() => {
+    if (id && projectStatus === 'closing') {
+      route(`/workspaces/${id}/close`);
+    }
+  }, [id, projectStatus]);
 
   if (!workspace.value) {
     return (
@@ -291,6 +298,8 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
 
   const ws = workspace.value;
   const isProj = !!proj.value;
+  const isActive = !isProj || projectStatus === 'active';
+  const isTerminal = projectStatus === 'closed' || projectStatus === 'abandoned';
 
   async function handleDelete() {
     if (!confirm(`Delete workspace "${ws.name}"? This cannot be undone.`)) return;
@@ -298,9 +307,11 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
     route('/workspaces');
   }
 
-  async function handleClose() {
-    if (!confirm(`Close project "${ws.name}"?`)) return;
-    await closeProject(ws.id);
+  async function handleCloseIntent(intent: 'close' | 'abandon') {
+    const verb = intent === 'close' ? 'Close' : 'Abandon';
+    if (!confirm(`${verb} project "${ws.name}"?`)) return;
+    await closeProject(ws.id, intent);
+    route(`/workspaces/${ws.id}/close`);
   }
 
   return (
@@ -323,15 +334,36 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                   Project
                 </span>
               )}
-              <span class="size-2 rounded-full bg-green-500 inline-block" title="Active" />
+              <span
+                class={cn(
+                  'size-2 rounded-full inline-block',
+                  isTerminal ? 'bg-muted-foreground' : isActive ? 'bg-green-500' : 'bg-amber-500',
+                )}
+                title={isTerminal ? 'Closed' : isActive ? 'Active' : 'Closing'}
+              />
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
-              <WorkspaceSettingsDrawer workspace={ws} onSaved={() => void refreshWorkspaces()} />
-              {isProj && proj.value?.project.status === 'active' && (
-                <Button size="sm" variant="outline" onClick={handleClose}>
-                  Close project
-                </Button>
+              {!isTerminal && (
+                <WorkspaceSettingsDrawer workspace={ws} onSaved={() => void refreshWorkspaces()} />
+              )}
+              {isProj && projectStatus === 'active' && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleCloseIntent('close')}
+                  >
+                    Close project
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleCloseIntent('abandon')}
+                  >
+                    Abandon
+                  </Button>
+                </>
               )}
               <Button size="sm" variant="destructive" onClick={handleDelete}>
                 Delete

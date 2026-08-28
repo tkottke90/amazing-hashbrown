@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { bootObservability } from '../services/observability.js';
+import { WorkspaceStore } from '../services/workspace-store.js';
 import type { ObservabilityCallbackHandler } from './observability-handler.js';
 import { logger } from '../config/logger.js';
 import {
@@ -264,10 +265,13 @@ describe('agents/after-agent', () => {
   describe('runAfterAgentPipeline() — write dispatch (createWikiPage/updateWikiPage)', () => {
     let dir: string;
     let registry: WikiRegistry;
+    let store: WorkspaceStore;
 
     before(async () => {
       dir = mkdtempSync(join(tmpdir(), 'after-agent-write-test-'));
-      bootObservability(openDatabase(join(dir, 'test.db')));
+      const db = openDatabase(join(dir, 'test.db'));
+      bootObservability(db);
+      store = new WorkspaceStore(db);
       registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
       await registry.create({ id: 'user', domain: 'user', tags: [] });
     });
@@ -295,6 +299,7 @@ describe('agents/after-agent', () => {
         messages: [new HumanMessage('I prefer tea over coffee.')],
         llm,
         registry,
+        store,
       });
 
       const state = getAfterAgentState(threadId);
@@ -338,6 +343,7 @@ describe('agents/after-agent', () => {
         messages: [new HumanMessage('Actually I switched to decaf coffee.')],
         llm,
         registry,
+        store,
       });
 
       const updated = await wiki.readPage('entities/coffee-habit.md');
@@ -354,10 +360,13 @@ describe('agents/after-agent', () => {
     // domain doesn't pick up pages left by other tests in this block.
     let dir: string;
     let testRegistry: WikiRegistry;
+    let store: WorkspaceStore;
 
     before(async () => {
       dir = mkdtempSync(join(tmpdir(), 'after-agent-lint-test-'));
-      bootObservability(openDatabase(join(dir, 'test.db')));
+      const db = openDatabase(join(dir, 'test.db'));
+      bootObservability(db);
+      store = new WorkspaceStore(db);
       testRegistry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
     });
 
@@ -388,6 +397,7 @@ describe('agents/after-agent', () => {
           messages: [new HumanMessage('Write a page with a broken link.')],
           llm,
           registry: testRegistry,
+          store,
         });
       } finally {
         warnSpy.restore();
@@ -437,6 +447,7 @@ describe('agents/after-agent', () => {
           messages: [new HumanMessage('Write a brief note.')],
           llm,
           registry: testRegistry,
+          store,
         });
       } finally {
         warnSpy.restore();
@@ -487,6 +498,7 @@ describe('agents/after-agent', () => {
           messages: [new HumanMessage('Write something.')],
           llm,
           registry: testRegistry,
+          store,
         });
       } finally {
         (testRegistry as unknown as Record<string, unknown>).lint = originalLint;

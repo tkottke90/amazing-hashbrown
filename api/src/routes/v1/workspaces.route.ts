@@ -7,6 +7,7 @@ import {
   createWorkspaceHandler,
   patchWorkspaceHandler,
   deleteWorkspaceHandler,
+  cleanupDependenciesHandler,
 } from './workspaces.handlers.js';
 import { workspaceFilesRouter } from './workspace-files.route.js';
 import { workspaceChatRouter } from './workspace-chat.route.js';
@@ -63,6 +64,19 @@ workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
     return;
   }
   res.status(204).end();
+});
+
+workspacesRouter.post('/:id/cleanup-dependencies', async (req: Request, res: Response) => {
+  const result = await cleanupDependenciesHandler(
+    getWorkspaceStore(),
+    req.params['id'] as string,
+    req.body as Record<string, unknown>,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 workspacesRouter.use('/:id/files', workspaceFilesRouter);

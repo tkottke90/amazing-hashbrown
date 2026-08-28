@@ -16,6 +16,11 @@ import {
   type ExecFileFn,
 } from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
+import {
+  scanDependencyTargets,
+  removeDependencyTargets,
+  type DependencyScanEntry,
+} from '../../services/dependency-cleanup.js';
 import { invalidateWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { logger } from '../../config/logger.js';
 
@@ -141,4 +146,41 @@ export async function deleteWorkspaceHandler(
     }
   }
   return ok({ deleted: true });
+}
+
+export type CleanupDependenciesResult =
+  | { dryRun: true; candidates: DependencyScanEntry[] }
+  | { dryRun: false; removed: string[]; bytesFreed: number };
+
+// Step 3 of the project close process. `dryRun: true` only scans and reports
+// what's found (used to populate the checklist before the user acts);
+// omitted/false actually removes the selected subset. Both branches re-scan
+// (rather than trusting the client's relPath list wholesale) so removal is
+// always scoped to what scanDependencyTargets() itself would find.
+export async function cleanupDependenciesHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  body: Record<string, unknown>,
+): Promise<HandlerResult<CleanupDependenciesResult>> {
+  const workspace = store.getWorkspace(workspaceId);
+  if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
+
+  const removeNodeModules = !!body.removeNodeModules;
+  const removePythonEnv = !!body.removePythonEnv;
+  const dryRun = !!body.dryRun;
+
+  const found = await scanDependencyTargets(workspace.location, {
+    javascript: removeNodeModules,
+    python: removePythonEnv,
+  });
+
+  if (dryRun) {
+    return ok({ dryRun: true, candidates: found });
+  }
+
+  const { removed, bytesFreed } = await removeDependencyTargets(
+    workspace.location,
+    found.map((f) => f.path),
+  );
+  return ok({ dryRun: false, removed, bytesFreed });
 }

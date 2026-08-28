@@ -215,6 +215,47 @@ describe('WikiRegistry', () => {
     await fs.rm(outside, { recursive: true, force: true });
   });
 
+  it('archive() marks the entry archived and excludes it from list() by default', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({ id: 'project-abc', domain: 'my-project' });
+
+    await registry.archive('project-abc');
+
+    expect(registry.list()).to.have.length(0);
+    expect(registry.list(true)).to.have.length(1);
+    expect(registry.list(true)[0]?.status).to.equal('archived');
+
+    // Persists across a reload.
+    const reloaded = await createWikiRegistry({ wikiRoot: root });
+    expect(reloaded.list()).to.have.length(0);
+    expect(reloaded.list(true)[0]?.status).to.equal('archived');
+  });
+
+  it('archive() leaves the wiki still load()-able by id', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    await registry.create({ id: 'project-abc', domain: 'my-project' });
+
+    await registry.archive('project-abc');
+
+    const wiki = await registry.load('project-abc');
+    const { schema } = await wiki.orient();
+    expect(schema).to.contain('my-project');
+  });
+
+  it('archive() throws for an unregistered id', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    let threw = false;
+    try {
+      await registry.archive('nope');
+    } catch {
+      threw = true;
+    }
+    expect(threw).to.equal(true);
+  });
+
   it('lints through the registry and can flag registry_sync drift', async () => {
     const root = await tmpRoot();
     const registry = await createWikiRegistry({ wikiRoot: root });
