@@ -97,7 +97,9 @@ The 3 existing HTTP call sites (`chat.route.ts`, `workspace-chat.route.ts`, `wik
 New `api/src/agents/task-execution.ts` (sibling to `workspace-chat-stream-handler.ts`) hosts `executeTask()`. Its sink:
 
 ```ts
-const sink: SseWriter = (event) => { getActiveSseWriter(threadId)?.(event); };
+const sink: SseWriter = (event) => {
+  getActiveSseWriter(threadId)?.(event);
+};
 ```
 
 — a no-op unless a live chat turn's SSE writer happens to already occupy that slot, which (per §6) it never will while a task is running.
@@ -114,7 +116,8 @@ export function makeCompleteTaskTool(taskId: string) {
     },
     {
       name: 'complete_task',
-      description: 'Call this when the task\'s outcome has been met, or when you cannot proceed further. This ends the automated run.',
+      description:
+        "Call this when the task's outcome has been met, or when you cannot proceed further. This ends the automated run.",
       schema: CompleteTaskSchema, // { outcome: enum('done','failed'), summary: string }
     },
   );
@@ -127,13 +130,13 @@ The tool's return value doesn't drive completion directly (LangChain tools can't
 
 `executeTask()` receives the queue entry from `dequeueNext()` (`entry.id` is the `task_queue` row id, `entry.taskId` the task's id — referred to below as `queueId`/`taskId`). It runs `agent.streamEvents(...)` through `pipeEvents`/`finalizeTurn` (mirroring `streamWorkspaceChatToSse`'s shape, minus the HTTP-specific pieces), then branches on what happened during the run:
 
-| What happened during the run | Result |
-| --- | --- |
-| `complete_task` called with `outcome` | `completeQueueEntry(queueId, outcome)` — mirrors onto `tasks.status` as today |
-| `ask_user` interrupted the graph (a `hitl_prompt` row was recorded `pending`) | `tasks.status = 'waiting_on_user'`, `assigned_to = 'user'`; `completeQueueEntry(queueId, 'done')` — the queue entry is done (off the scheduler's plate; `task_queue.status` has no `waiting_on_user` value), the *task* is not |
-| Stream ended with neither (trailed off, or `GraphRecursionError`) | `completeQueueEntry(queueId, 'failed')` with a synthesized summary ("ran out of steps before completing" / "stopped without finishing or asking for help") — never left stuck in `running`, which is the exact bug this issue fixes |
+| What happened during the run                                                  | Result                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `complete_task` called with `outcome`                                         | `completeQueueEntry(queueId, outcome)` — mirrors onto `tasks.status` as today                                                                                                                                                       |
+| `ask_user` interrupted the graph (a `hitl_prompt` row was recorded `pending`) | `tasks.status = 'waiting_on_user'`, `assigned_to = 'user'`; `completeQueueEntry(queueId, 'done')` — the queue entry is done (off the scheduler's plate; `task_queue.status` has no `waiting_on_user` value), the _task_ is not      |
+| Stream ended with neither (trailed off, or `GraphRecursionError`)             | `completeQueueEntry(queueId, 'failed')` with a synthesized summary ("ran out of steps before completing" / "stopped without finishing or asking for help") — never left stuck in `running`, which is the exact bug this issue fixes |
 
-`recordHitlPrompt`'s payload for a task-originated prompt includes `taskId` (payload is already free-form JSON — no schema change). The existing `/workspaces/:id/chat/:threadId/hitl` route, on resolving a prompt, checks for `payload.taskId`: if present, it re-enqueues the task (`tasks.status = 'ready'`, `assigned_to = 'agent'`, new `task_queue` row) instead of resuming as a plain chat turn. The scheduler's normal dequeue path picks it back up and resumes the *same* LangGraph checkpoint (same `thread_id`), continuing mid-goal with prior tool results intact. Routing through re-enqueue (rather than a second inline-resume code path) keeps the "one task runs at a time" invariant intact and reuses the scheduler's existing logging/broadcast/error handling instead of duplicating it.
+`recordHitlPrompt`'s payload for a task-originated prompt includes `taskId` (payload is already free-form JSON — no schema change). The existing `/workspaces/:id/chat/:threadId/hitl` route, on resolving a prompt, checks for `payload.taskId`: if present, it re-enqueues the task (`tasks.status = 'ready'`, `assigned_to = 'agent'`, new `task_queue` row) instead of resuming as a plain chat turn. The scheduler's normal dequeue path picks it back up and resumes the _same_ LangGraph checkpoint (same `thread_id`), continuing mid-goal with prior tool results intact. Routing through re-enqueue (rather than a second inline-resume code path) keeps the "one task runs at a time" invariant intact and reuses the scheduler's existing logging/broadcast/error handling instead of duplicating it.
 
 After every branch above, `executeTask()` calls `this.wake()` to pick up the next queued item — matching the handoff the current TODO comment already describes.
 

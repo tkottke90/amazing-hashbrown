@@ -178,7 +178,10 @@ export async function executeTask(
       ? new Command({ resume: resumeAnswer })
       : { messages: [{ role: 'human', content: buildKickoffMessage(task) }] };
 
-    let completeTaskResult: CompleteTaskCall | null = null;
+    // A boxed value rather than a bare `let` — TS's control-flow narrowing
+    // can't see the reassignment happening inside tapCompleteTask's callback,
+    // so a bare variable would narrow to `null` at the check below.
+    const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
     const rawStream = agent.streamEvents(input, {
       ...config,
       version: 'v2',
@@ -190,7 +193,7 @@ export async function executeTask(
       },
     });
     const tapped = tapCompleteTask(rawStream, (result) => {
-      completeTaskResult = result;
+      completeTaskBox.current = result;
     });
 
     const { content, thoughtContent } = await pipeEvents(
@@ -218,9 +221,9 @@ export async function executeTask(
       task.id,
     );
 
-    if (completeTaskResult) {
-      finalOutcome = completeTaskResult.outcome;
-      store.completeQueueEntry(entry.id, completeTaskResult.outcome);
+    if (completeTaskBox.current) {
+      finalOutcome = completeTaskBox.current.outcome;
+      store.completeQueueEntry(entry.id, completeTaskBox.current.outcome);
     } else if (interrupted) {
       finalOutcome = 'waiting_on_user';
       // completeQueueEntry() mirrors its outcome onto tasks.status too — it

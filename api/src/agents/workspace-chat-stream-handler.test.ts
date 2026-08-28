@@ -7,11 +7,7 @@ import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { bootThreadStore } from '../services/thread-store.js';
-import {
-  WorkspaceStore,
-  bootWorkspaceStore,
-  type Workspace,
-} from '../services/workspace-store.js';
+import { WorkspaceStore, bootWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootTaskScheduler, type TaskScheduler } from '../services/task-scheduler.js';
 import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
 import {

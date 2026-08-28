@@ -413,9 +413,9 @@ describe('agents/stream-handler', () => {
       );
       const messages = store.getThreadMessages('t10', { showErrors: true });
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
-      expect(
-        Object.prototype.hasOwnProperty.call(hitlRow?.payload ?? {}, 'taskId'),
-      ).to.equal(false);
+      expect(Object.prototype.hasOwnProperty.call(hitlRow?.payload ?? {}, 'taskId')).to.equal(
+        false,
+      );
       rmSync(dir, { recursive: true });
     });
 
