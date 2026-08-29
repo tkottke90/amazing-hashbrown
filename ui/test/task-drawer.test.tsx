@@ -45,7 +45,8 @@ function renderDrawer(task: Task) {
 // saving) — every panel button lookup is scoped to the action panel itself
 // so it never collides with that unrelated button of the same name.
 function getPanel() {
-  const label = screen.queryByText('Running task controls') ?? screen.queryByText('Paused task controls');
+  const label =
+    screen.queryByText('Running task controls') ?? screen.queryByText('Paused task controls');
   if (!label) return null;
   return within(label.parentElement as HTMLElement);
 }
@@ -176,7 +177,9 @@ describe('TaskDrawer — running task controls', () => {
 
     fireEvent.click(getPanel()!.getByRole('button', { name: 'Pause' }));
 
-    await waitFor(() => expect(getPanel()!.getByRole('button', { name: 'Resume' })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getPanel()!.getByRole('button', { name: 'Resume' })).toBeInTheDocument(),
+    );
     expect(getPanel()!.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
   });
 });

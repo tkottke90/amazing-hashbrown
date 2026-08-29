@@ -1065,7 +1065,9 @@ export class WorkspaceStore extends BaseStore {
   pauseQueueEntry(id: string): void {
     const now = new Date().toISOString();
     this.db
-      .prepare(`UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`,
+      )
       .run(now, id);
   }
 
@@ -1075,7 +1077,9 @@ export class WorkspaceStore extends BaseStore {
   parkQueueEntry(id: string): void {
     const now = new Date().toISOString();
     this.db
-      .prepare(`UPDATE task_queue SET status = 'paused', pause_reason = 'user', paused_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE task_queue SET status = 'paused', pause_reason = 'user', paused_at = ? WHERE id = ?`,
+      )
       .run(now, id);
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
       { task_id: string } | undefined;

@@ -65,7 +65,11 @@ function fakeThrowingAgent(eventsBeforeThrow: RawEvent[]) {
 // registerTaskAbort() call and sets the intent, then throws — this
 // sidesteps any ordering race between the test and that real call, since
 // the abort registry entry only exists once executeTask itself creates it.
-function fakeAbortingAgent(queueEntryId: string, intent: AbortIntent, eventsBeforeAbort: RawEvent[] = []) {
+function fakeAbortingAgent(
+  queueEntryId: string,
+  intent: AbortIntent,
+  eventsBeforeAbort: RawEvent[] = [],
+) {
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     streamEvents: (): AsyncIterable<any> => {
