@@ -20,7 +20,7 @@ A related discovery made while investigating: **no mechanism anywhere in this co
 
 ## Non-goals
 
-- True LangGraph checkpoint-resume (re-invoking a graph with no new input to continue exactly where an `interrupt()` left off). Resume in this design re-enqueues the task with a continuation-flavored kickoff message on the same thread — the agent has full prior context via thread history, but restarts its own reasoning for the remaining work rather than resuming mid-graph-step. Revisit if this proves insufficient in practice.
+- True LangGraph checkpoint-resume (re-invoking a graph with no new input to continue exactly where an `interrupt()` left off). Resume in this design restarts the same `task_queue` row with a continuation-flavored kickoff message on the same thread — the agent has full prior context via thread history, but restarts its own reasoning for the remaining work rather than resuming mid-graph-step. Revisit if this proves insufficient in practice.
 - Hard-killing in-flight tool processes (e.g. `SIGTERM`/`SIGKILL` on a shell-executor child process). Abort is best-effort: LLM calls stop immediately (LangChain respects `AbortSignal`), but an already-spawned tool call is allowed to finish naturally and its result is discarded.
 - A forced timeout that fails a task if abort doesn't take effect within some bound. Accepted as a known limitation of "best-effort graceful" for this iteration.
 - Generalizing `pause_reason` beyond `'chat' | 'user'`, or building a broader "why is this paused" taxonomy.
@@ -54,7 +54,7 @@ ALTER TABLE task_queue ADD COLUMN paused_at TEXT;      -- ISO timestamp, set on 
 A new module, `api/src/agents/active-task-abort.ts`, structurally identical to the existing `active-sse-writer.ts`:
 
 ```ts
-export type AbortIntent = 'cancel' | 'pause' | null;
+export type AbortIntent = 'cancel' | 'pause' | 'take-over' | null;
 
 interface AbortEntry {
   controller: AbortController;
@@ -73,9 +73,12 @@ export function clearTaskAbort(queueEntryId: string): void { /* delete */ }
 2. Its existing `catch` block — today unconditionally treats any thrown error as a hard failure (`completeQueueEntry(id, 'failed')`) — now checks whether the error is an abort and, if so, reads back the stored intent before deciding the outcome:
    - `intent === 'cancel'` → `completeQueueEntry(entry.id, 'cancelled')`; `tasks.status` mirrors to `'cancelled'`.
    - `intent === 'pause'` → new `store.parkQueueEntry(entry.id)`: sets `task_queue.status = 'paused'`, `pause_reason = 'user'`, `paused_at = now` (same row, not a new one); `tasks.status = 'blocked'`. This drops the entry out of `getRunningEntry()`, so the scheduler's `tick()` immediately considers the next queued item instead of sitting idle.
+   - `intent === 'take-over'` → new `store.detachQueueEntry(entry.id)`: sets `task_queue.status = 'cancelled'` and `finished_at = now`, but **does not touch `tasks.status` or `tasks.assigned_to` at all**. Those fields were already set synchronously by the `/take-over` route handler before it triggered the abort (see API surface below) — `executeTask`'s catch only needs to retire the now-orphaned queue row without clobbering a task state the user already committed to.
    - no intent recorded (genuine crash, timeout, network error) → existing `'failed'` path, byte-for-byte unchanged.
 3. `finally` calls `clearTaskAbort(entry.id)`, mirroring `clearActiveSseWriter`'s placement.
 4. `buildKickoffMessage(task)` branches on whether the dequeued row's `paused_at` was already set: if so, send a continuation-flavored message ("Resume this task — continue from where you left off.") instead of the fresh-start one.
+
+**Why `take-over` needs its own intent (not just reuse of `cancel`):** `cancel`'s branch sets `tasks.status = 'cancelled'`, which is wrong for take-over — a taken-over task isn't abandoned, it now belongs to the user (`assignedTo = 'user'`, `status = 'pending'`). Reusing the `cancel` intent would create a race where `executeTask`'s async catch could overwrite the take-over route's own status write. Keeping them distinct means the executor's job for a take-over is *only* "stop running and clean up the queue row" — the task-level fields are never its responsibility for that path.
 
 **Resume mechanism (corrected from the initial framing during design discussion):** Since Pause keeps the *same* `task_queue` row (flips it to `paused`, exactly like the pre-existing chat-pause mechanism), Resume reuses the existing `resumePausedEntry(id)` store method — which flips that same row back to `pending` — rather than calling `enqueueTask()` to create a new one. A fresh `enqueueTask()` would leave the old paused row behind as a phantom duplicate, since `listQueue()` includes `paused` rows and `patchTaskHandler`'s R14 dedup check (`alreadyQueued`) would then see two live rows for one task.
 
@@ -89,7 +92,7 @@ Mirroring the existing `POST /:id/enqueue` pattern in `tasks.route.ts`:
 |---|---|---|
 | `POST /api/v1/tasks/:id/cancel` | `ready` or `running` | `ready`: dequeue the row directly (no abort needed, nothing executing yet) → `tasks.status = 'cancelled'`. `running`: `setAbortIntent(entryId, 'cancel')` then abort; transition to `'cancelled'` lands asynchronously in `executeTask`'s catch, surfaced via the existing `task_queue_update` SSE broadcast. |
 | `POST /api/v1/tasks/:id/pause` | `running` only | `setAbortIntent(entryId, 'pause')` then abort. |
-| `POST /api/v1/tasks/:id/take-over` | `ready` or `running` | `running`: same abort as Cancel (in-flight work is discarded either way), but the task lands at `tasks.status = 'pending'` / `assignedTo = 'user'` instead of `'cancelled'` — the task still exists for the user to act on, it isn't being abandoned. `ready`: dequeue the row directly, same resulting status. |
+| `POST /api/v1/tasks/:id/take-over` | `ready` or `running` | Sets `tasks.status = 'pending'` / `assignedTo = 'user'` **first** (synchronously, in the same handler), then retires the queue row via the same queue-only `detachQueueEntry(id)` used by the executor: `running` → `setAbortIntent(entryId, 'take-over')` and abort, letting the executor's catch call `detachQueueEntry` once the stream actually stops; `ready` → the route calls `detachQueueEntry(id)` itself immediately (no live run to abort). Setting the task fields before touching the queue — not after, and not left to the executor to decide — is what guarantees no clobbering regardless of how the async abort resolves. |
 | `PATCH /api/v1/tasks/:id` | any | Gains a guard: reject (400) any patch that changes `assignedTo` away from `'agent'` while current `tasks.status` is `ready` or `running`. Error message points at `take-over`. Also special-cases `status: 'blocked' → 'ready'`: instead of falling into the normal R14 auto-enqueue path (which would call `enqueueTask()` and create a duplicate row per the correction above), it calls `resumePausedEntry()` on the task's existing paused queue row. |
 
 Every route calls `getTaskScheduler().wake()` after acting, same as the existing `/enqueue` route, so the queue re-evaluates immediately rather than waiting on an unrelated trigger.
@@ -129,9 +132,9 @@ New `tasks-api.ts` client functions: `cancelTask(id)`, `pauseTask(id)`, `takeOve
 
 Following this repo's established pattern (real `WorkspaceStore` instances against `mkdtempSync` temp dirs, no mocking):
 
-- `workspace-store.test.ts`: `parkQueueEntry`; `task_queue.status` `'cancelled'` round-trips; `pause_reason`/`paused_at` columns; `resumePausedEntry` reuse for the resume path.
+- `workspace-store.test.ts`: `parkQueueEntry`; `detachQueueEntry` (queue-only, confirms `tasks` row is untouched); `task_queue.status` `'cancelled'` round-trips; `pause_reason`/`paused_at` columns; `resumePausedEntry` reuse for the resume path.
 - `task-scheduler.test.ts`: a `pause_reason: 'user'` entry is **not** touched by the chat-idle `resume()` timer; a `pause_reason: 'chat'` entry still is — regression guard for the race this design fixes.
-- `task-execution.test.ts`: inject a fake `streamEvents` that throws an abort error; assert all three branches (`cancel` intent → `'cancelled'`, `pause` intent → `'blocked'`/parked, no intent → `'failed'` unchanged) and the continuation-kickoff message path when `paused_at` is set on the dequeued row.
+- `task-execution.test.ts`: inject a fake `streamEvents` that throws an abort error; assert all four branches (`cancel` intent → `'cancelled'`, `pause` intent → `'blocked'`/parked, `take-over` intent → queue row retired with `tasks.status`/`assignedTo` left untouched, no intent → `'failed'` unchanged) and the continuation-kickoff message path when `paused_at` is set on the dequeued row.
 - `tasks.handlers.test.ts`: the three new routes (happy path + 409 races), and the `patchTaskHandler` reassignment guard (400) plus the `blocked → ready` resume special-case.
 - UI (Jest): button visibility per status, `confirm()` gating, disabled/loading state during an in-flight action.
 - E2E (Playwright): extend `workspace-project.spec.ts` (or a new spec) — start a task running, Pause it, verify `blocked`, Resume, verify `running` again; separately, Cancel a running task and verify `cancelled`. LLM-dependent portions mocked per `e2e/AGENTS.md`'s existing convention.
