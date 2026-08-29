@@ -161,12 +161,14 @@ export interface PatchTaskInput {
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
   position: number;
   enqueuedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   recoveryAttempts: number;
+  pauseReason: 'chat' | 'user' | null;
+  pausedAt: string | null;
 }
 
 export interface TaskListFilters {
@@ -234,12 +236,14 @@ interface RawTaskRow {
 interface RawQueueRow {
   id: string;
   task_id: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
   position: number;
   enqueued_at: string;
   started_at: string | null;
   finished_at: string | null;
   recovery_attempts: number;
+  pause_reason: 'chat' | 'user' | null;
+  paused_at: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +319,8 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     recoveryAttempts: row.recovery_attempts,
+    pauseReason: row.pause_reason,
+    pausedAt: row.paused_at,
   };
 }
 
@@ -331,7 +337,8 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // for the Workspace Chat Tab feature). 24=WorkspaceStore (tasks.thread_id/
 // resume_answer, for Automated Task Execution). 25=WorkspaceStore
 // (projects.close_intent/snapshot_path/close_progress, for the Project Close
-// Process feature).
+// Process feature). 26=WorkspaceStore (task_queue.pause_reason/paused_at,
+// for Task Cancel/Pause/Take-over).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -445,6 +452,13 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE projects ADD COLUMN close_intent TEXT;
       ALTER TABLE projects ADD COLUMN snapshot_path TEXT;
       ALTER TABLE projects ADD COLUMN close_progress TEXT;
+    `,
+  },
+  {
+    version: 26,
+    sql: `
+      ALTER TABLE task_queue ADD COLUMN pause_reason TEXT;
+      ALTER TABLE task_queue ADD COLUMN paused_at TEXT;
     `,
   },
 ];
@@ -1030,7 +1044,7 @@ export class WorkspaceStore extends BaseStore {
     return { ...mapQueueEntry({ ...row, status: 'running', started_at: now }), task };
   }
 
-  completeQueueEntry(id: string, outcome: 'done' | 'failed'): void {
+  completeQueueEntry(id: string, outcome: 'done' | 'failed' | 'cancelled'): void {
     const now = new Date().toISOString();
     this.db
       .prepare(`UPDATE task_queue SET status = ?, finished_at = ? WHERE id = ?`)
@@ -1045,10 +1059,48 @@ export class WorkspaceStore extends BaseStore {
     }
   }
 
+  // Chat-turn auto-pause (task-scheduler.ts's pause()) — always tagged
+  // 'chat' so resume() can tell it apart from a user-initiated parkQueueEntry
+  // pause and never auto-resume the latter.
   pauseQueueEntry(id: string): void {
-    this.db.prepare(`UPDATE task_queue SET status = 'paused' WHERE id = ?`).run(id);
+    const now = new Date().toISOString();
+    this.db
+      .prepare(`UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`)
+      .run(now, id);
   }
 
+  // User-initiated Pause: parks the row (same 'paused' status the chat-pause
+  // path uses) but tagged 'user' so the chat-idle auto-resume never touches
+  // it, and additionally parks the task itself at 'blocked'.
+  parkQueueEntry(id: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(`UPDATE task_queue SET status = 'paused', pause_reason = 'user', paused_at = ? WHERE id = ?`)
+      .run(now, id);
+    const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
+      { task_id: string } | undefined;
+    if (row) {
+      this.db
+        .prepare(`UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?`)
+        .run(now, row.task_id);
+    }
+  }
+
+  // Queue-only cleanup for a take-over: retires the row but deliberately
+  // never touches `tasks` — the take-over route handler already committed
+  // tasks.status/assigned_to synchronously before this runs (see
+  // tasks.handlers.ts), and this must not clobber that.
+  detachQueueEntry(id: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(`UPDATE task_queue SET status = 'cancelled', finished_at = ? WHERE id = ?`)
+      .run(now, id);
+  }
+
+  // Reused for both the chat-resume path and the new user-Resume path.
+  // Deliberately leaves pause_reason/paused_at in place (not cleared) so
+  // task-execution.ts can still see pausedAt on the next dequeue and send a
+  // continuation-flavored kickoff message instead of a fresh-start one.
   resumePausedEntry(id: string): void {
     this.db.prepare(`UPDATE task_queue SET status = 'pending' WHERE id = ?`).run(id);
   }

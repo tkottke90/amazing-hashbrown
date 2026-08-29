@@ -88,7 +88,12 @@ export class TaskScheduler {
       this.resumeTimer = null;
     }
     const store = getWorkspaceStore();
-    const pausedEntry = store.listQueue().find((e) => e.status === 'paused');
+    // Only auto-resume a chat-idle pause — a user-initiated Pause
+    // (pauseReason 'user', via parkQueueEntry) must never be silently
+    // resumed just because an unrelated chat turn ended elsewhere.
+    const pausedEntry = store
+      .listQueue()
+      .find((e) => e.status === 'paused' && e.pauseReason === 'chat');
     if (pausedEntry) {
       store.resumePausedEntry(pausedEntry.id);
     }

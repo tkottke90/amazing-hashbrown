@@ -269,6 +269,82 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('task cancel/pause/take-over queue columns (migration 26)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-cancel-abort-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeRunningEntry(title = 't') {
+      const task = store.createTask({ title, assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      return store.dequeueNext()!;
+    }
+
+    it('parkQueueEntry pauses the row with reason "user" and parks the task at "blocked"', () => {
+      const entry = makeRunningEntry();
+      store.parkQueueEntry(entry.id);
+
+      const row = store.listQueue().find((e) => e.id === entry.id)!;
+      expect(row.status).to.equal('paused');
+      expect(row.pauseReason).to.equal('user');
+      expect(row.pausedAt).to.not.equal(null);
+      expect(store.getTask(entry.taskId)!.status).to.equal('blocked');
+    });
+
+    it('detachQueueEntry retires the queue row without touching the task at all', () => {
+      const entry = makeRunningEntry();
+      // Simulate the take-over route handler's synchronous pre-write —
+      // detachQueueEntry must leave this completely alone.
+      const preWrite = store.patchTask(entry.taskId, { status: 'pending', assignedTo: 'user' })!;
+
+      store.detachQueueEntry(entry.id);
+
+      const row = store.listQueue().find((e) => e.id === entry.id);
+      expect(row).to.equal(undefined); // 'cancelled' rows drop out of listQueue()'s active filter
+      expect(store.getTask(entry.taskId)).to.deep.equal(preWrite);
+    });
+
+    it('completeQueueEntry(id, "cancelled") mirrors onto both tables', () => {
+      const entry = makeRunningEntry();
+      store.completeQueueEntry(entry.id, 'cancelled');
+      expect(store.getTask(entry.taskId)!.status).to.equal('cancelled');
+    });
+
+    it('pauseQueueEntry (chat-pause) stamps reason "chat", distinct from parkQueueEntry', () => {
+      const entry = makeRunningEntry();
+      store.pauseQueueEntry(entry.id);
+
+      const row = store.listQueue().find((e) => e.id === entry.id)!;
+      expect(row.status).to.equal('paused');
+      expect(row.pauseReason).to.equal('chat');
+      expect(row.pausedAt).to.not.equal(null);
+      // Unlike parkQueueEntry, the chat-pause path never touches tasks.status.
+      expect(store.getTask(entry.taskId)!.status).to.equal('running');
+    });
+
+    it('resumePausedEntry un-pauses either kind of pause and leaves pauseReason/pausedAt intact', () => {
+      const entry = makeRunningEntry();
+      store.parkQueueEntry(entry.id);
+      store.resumePausedEntry(entry.id);
+
+      const row = store.listQueue().find((e) => e.id === entry.id)!;
+      expect(row.status).to.equal('pending');
+      // Left in place so task-execution.ts can detect a resumed run on the
+      // next dequeue and send a continuation-flavored kickoff message.
+      expect(row.pauseReason).to.equal('user');
+      expect(row.pausedAt).to.not.equal(null);
+    });
+  });
+
   describe('findWorkspaceByName()', () => {
     let store: WorkspaceStore;
     let dir: string;

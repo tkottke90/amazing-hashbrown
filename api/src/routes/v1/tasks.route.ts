@@ -12,6 +12,9 @@ import {
   deleteTaskHandler,
   getQueueHandler,
   enqueueTaskHandler,
+  cancelTaskHandler,
+  pauseTaskHandler,
+  takeOverTaskHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
 } from './tasks.handlers.js';
@@ -128,6 +131,36 @@ tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {
   // pick it up immediately rather than waiting on the next unrelated trigger.
   getTaskScheduler().wake();
   res.status(201).json(result.data);
+});
+
+tasksRouter.post('/:id/cancel', (req: Request, res: Response) => {
+  const result = cancelTaskHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  getTaskScheduler().wake();
+  res.status(200).json(result.data);
+});
+
+tasksRouter.post('/:id/pause', (req: Request, res: Response) => {
+  const result = pauseTaskHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  getTaskScheduler().wake();
+  res.status(200).json(result.data);
+});
+
+tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
+  const result = takeOverTaskHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  getTaskScheduler().wake();
+  res.status(200).json(result.data);
 });
 
 tasksRouter.post('/:id/generate-plan', async (req: Request, res: Response) => {
