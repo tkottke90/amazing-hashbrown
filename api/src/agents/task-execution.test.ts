@@ -12,6 +12,7 @@ import {
   type TaskQueueEntry,
 } from '../services/workspace-store.js';
 import { getActiveSseWriter } from './active-sse-writer.js';
+import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
 import { executeTask, type QueueEntryWithTask } from './task-execution.js';
 import type { buildTaskAgent } from './chat-agent.js';
 
@@ -47,6 +48,61 @@ function fakeThrowingAgent(eventsBeforeThrow: RawEvent[]) {
       async function* gen() {
         for (const e of eventsBeforeThrow) yield e;
         throw new Error('simulated stream failure');
+      }
+      return gen();
+    },
+    graph: {
+      getState: async () => ({
+        tasks: [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+// The generator aborts the real controller registered by executeTask's own
+// registerTaskAbort() call and sets the intent, then throws — this
+// sidesteps any ordering race between the test and that real call, since
+// the abort registry entry only exists once executeTask itself creates it.
+function fakeAbortingAgent(
+  queueEntryId: string,
+  intent: AbortIntent,
+  eventsBeforeAbort: RawEvent[] = [],
+) {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamEvents: (): AsyncIterable<any> => {
+      async function* gen() {
+        for (const e of eventsBeforeAbort) yield e;
+        const abortEntry = getTaskAbort(queueEntryId);
+        if (!abortEntry) throw new Error('test setup error: no abort entry registered');
+        setAbortIntent(queueEntryId, intent);
+        // Simulates the actual AbortSignal firing (which is what would
+        // reject/interrupt a real streamEvents() call mid-flight).
+        abortEntry.controller.abort();
+        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+      return gen();
+    },
+    graph: {
+      getState: async () => ({
+        tasks: [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+// Captures the `input` argument passed to streamEvents so a test can assert
+// on the kickoff message's exact content (fresh-start vs. continuation).
+function fakeCapturingAgent(events: RawEvent[], capture: { input: unknown }) {
+  return {
+    streamEvents: (input: unknown): AsyncIterable<RawEvent> => {
+      capture.input = input;
+      async function* gen() {
+        for (const e of events) yield e;
       }
       return gen();
     },
@@ -254,5 +310,88 @@ describe('agents/task-execution', () => {
 
     const task = store.getTask(entry.task.id)!;
     expect(getActiveSseWriter(task.threadId!)).to.equal(undefined);
+  });
+
+  describe('abort handling (cancel / pause / take-over)', () => {
+    it('marks the task cancelled when the abort registry shows a "cancel" intent', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAbortingAgent(entry.id, 'cancel', [
+        { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
+      ]);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('cancelled');
+      // 'cancelled' entries fall out of listQueue()'s active-status filter.
+      expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+    });
+
+    it('parks the task at "blocked" when the abort registry shows a "pause" intent', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAbortingAgent(entry.id, 'pause');
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('blocked');
+      const queue = store.listQueue().find((q) => q.id === entry.id)!;
+      expect(queue.status).to.equal('paused');
+      expect(queue.pauseReason).to.equal('user');
+      expect(queue.pausedAt).to.not.equal(null);
+    });
+
+    it('retires the queue row without touching status/assignedTo on a "take-over" intent', async () => {
+      const entry = makeGlobalEntry();
+      // Simulates the take-over route handler's synchronous pre-write,
+      // committed before the abort is even triggered.
+      store.patchTask(entry.task.id, { status: 'pending', assignedTo: 'user' });
+      const agent = fakeAbortingAgent(entry.id, 'take-over');
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('pending');
+      expect(task.assignedTo).to.equal('user');
+      expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+    });
+
+    it('still marks the task failed when the stream throws with no abort intent recorded (regression)', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeThrowingAgent([]);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('failed');
+    });
+
+    it('sends a continuation-flavored kickoff message when resuming a paused entry', async () => {
+      const fresh = makeGlobalEntry('Resume me');
+      store.parkQueueEntry(fresh.id);
+      store.resumePausedEntry(fresh.id);
+      const resumed = store.dequeueNext()! as QueueEntryWithTask;
+      expect(resumed.pausedAt, 'expected pausedAt to survive the resume').to.not.equal(null);
+
+      const capture: { input: unknown } = { input: undefined };
+      await executeTask(resumed, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent(COMPLETE_TASK_DONE_EVENTS, capture)),
+      });
+
+      const input = capture.input as { messages: { role: string; content: string }[] };
+      expect(input.messages[0].content).to.include('continue from where you left off');
+    });
+
+    it('sends the fresh-start kickoff message for a task that was never paused (regression)', async () => {
+      const entry = makeGlobalEntry('Fresh task');
+      const capture: { input: unknown } = { input: undefined };
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent(COMPLETE_TASK_DONE_EVENTS, capture)),
+      });
+
+      const input = capture.input as { messages: { role: string; content: string }[] };
+      expect(input.messages[0].content).to.include('Begin work on this task now');
+    });
   });
 });

@@ -30,7 +30,7 @@ export interface Task {
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
   position: number;
   enqueuedAt: string;
   startedAt: string | null;
@@ -114,6 +114,22 @@ export async function fetchQueue(): Promise<QueueState> {
 
 export async function enqueueTask(id: string): Promise<TaskQueueEntry> {
   return request<TaskQueueEntry>(`/api/v1/tasks/${id}/enqueue`, { method: 'POST' });
+}
+
+export async function cancelTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' });
+}
+
+export async function pauseTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/pause`, { method: 'POST' });
+}
+
+export async function takeOverTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/take-over`, { method: 'POST' });
+}
+
+export async function resumeTask(id: string): Promise<Task> {
+  return patchTask(id, { status: 'ready' });
 }
 
 export async function generatePlan(taskId: string): Promise<PlanStep[]> {

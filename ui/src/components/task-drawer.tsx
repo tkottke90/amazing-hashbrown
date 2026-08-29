@@ -13,6 +13,10 @@ import {
   updatePlan,
   generatePlan,
   generatePlanForNewTask,
+  cancelTask,
+  pauseTask,
+  takeOverTask,
+  resumeTask,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
 import type {
@@ -92,6 +96,15 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const description = useSignal(task?.description ?? '');
   const outcome = useSignal(task?.outcome ?? '');
   const status = useSignal<TaskStatus>(task?.status ?? 'pending');
+  // Tracks the task's actual server-side status for the action-panel's
+  // gating, distinct from `status` above (which the user can freely edit via
+  // the Status <select> before hitting Save). Using `status` for gating
+  // would show action buttons reflecting an unsaved dropdown choice rather
+  // than reality; using the raw `task` prop would never reflect a
+  // successful Cancel/Pause/Take-over/Resume without the drawer being
+  // closed and reopened. Both signals are updated together on success so
+  // the dropdown and the action panel never disagree.
+  const liveStatus = useSignal<TaskStatus>(task?.status ?? 'pending');
   const assignedTo = useSignal<'user' | 'agent' | null>(task?.assignedTo ?? null);
   const triggerType = useSignal<TriggerType>(task?.triggerType ?? 'manual');
   const webhookToken = useSignal<string | null>(
@@ -107,6 +120,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const generatePlanError = useSignal('');
   const saving = useSignal(false);
   const error = useSignal('');
+  const actionLoading = useSignal<'pause' | 'take-over' | 'cancel' | 'resume' | null>(null);
+  const actionError = useSignal('');
 
   const trackerType = useSignal<string | null>(task?.trackerType ?? null);
   const trackerId = useSignal<string | null>(task?.trackerId ?? null);
@@ -212,6 +227,74 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
       regenerateError.value = err instanceof Error ? err.message : 'Failed to regenerate URL.';
     } finally {
       regenerating.value = false;
+    }
+  }
+
+  async function handlePause() {
+    if (!task) return;
+    actionLoading.value = 'pause';
+    actionError.value = '';
+    try {
+      const updated = await pauseTask(task.id);
+      status.value = updated.status;
+      liveStatus.value = updated.status;
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to pause.';
+    } finally {
+      actionLoading.value = null;
+    }
+  }
+
+  async function handleTakeOver() {
+    if (!task) return;
+    if (
+      liveStatus.value === 'running' &&
+      !confirm('Take over this task? In-progress work will be discarded.')
+    ) {
+      return;
+    }
+    actionLoading.value = 'take-over';
+    actionError.value = '';
+    try {
+      const updated = await takeOverTask(task.id);
+      status.value = updated.status;
+      liveStatus.value = updated.status;
+      assignedTo.value = updated.assignedTo;
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to take over.';
+    } finally {
+      actionLoading.value = null;
+    }
+  }
+
+  async function handleCancel() {
+    if (!task) return;
+    if (!confirm('Cancel this task? In-progress work will be discarded.')) return;
+    actionLoading.value = 'cancel';
+    actionError.value = '';
+    try {
+      const updated = await cancelTask(task.id);
+      status.value = updated.status;
+      liveStatus.value = updated.status;
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to cancel.';
+    } finally {
+      actionLoading.value = null;
+    }
+  }
+
+  async function handleResume() {
+    if (!task) return;
+    actionLoading.value = 'resume';
+    actionError.value = '';
+    try {
+      const updated = await resumeTask(task.id);
+      status.value = updated.status;
+      liveStatus.value = updated.status;
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to resume.';
+    } finally {
+      actionLoading.value = null;
     }
   }
 
@@ -493,20 +576,64 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
           )}
         </div>
 
-        {!isNew && status.value === 'running' && (
-          <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
-            <span class="text-xs text-muted-foreground flex-1">Running task controls</span>
-            <Button size="xs" variant="outline" type="button">
-              Pause
-            </Button>
-            <Button size="xs" variant="outline" type="button">
-              Take over
-            </Button>
-            <Button size="xs" variant="destructive" type="button">
-              Cancel
-            </Button>
-          </div>
-        )}
+        {!isNew &&
+          task &&
+          (liveStatus.value === 'ready' ||
+            liveStatus.value === 'running' ||
+            liveStatus.value === 'blocked') && (
+            <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-muted-foreground flex-1">
+                {liveStatus.value === 'blocked' ? 'Paused task controls' : 'Running task controls'}
+              </span>
+              {liveStatus.value === 'blocked' && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  disabled={actionLoading.value !== null}
+                  onClick={() => void handleResume()}
+                >
+                  {actionLoading.value === 'resume' ? 'Resuming…' : 'Resume'}
+                </Button>
+              )}
+              {liveStatus.value === 'running' && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  disabled={actionLoading.value !== null}
+                  onClick={() => void handlePause()}
+                >
+                  {actionLoading.value === 'pause' ? 'Pausing…' : 'Pause'}
+                </Button>
+              )}
+              {(liveStatus.value === 'ready' || liveStatus.value === 'running') && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  disabled={actionLoading.value !== null}
+                  onClick={() => void handleTakeOver()}
+                >
+                  {actionLoading.value === 'take-over' ? 'Taking over…' : 'Take over'}
+                </Button>
+              )}
+              {(liveStatus.value === 'ready' || liveStatus.value === 'running') && (
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  type="button"
+                  disabled={actionLoading.value !== null}
+                  onClick={() => void handleCancel()}
+                >
+                  {actionLoading.value === 'cancel' ? 'Cancelling…' : 'Cancel'}
+                </Button>
+              )}
+              {actionError.value && (
+                <p class="text-xs text-destructive w-full">{actionError.value}</p>
+              )}
+            </div>
+          )}
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Assigned to</label>

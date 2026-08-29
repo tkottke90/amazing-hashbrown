@@ -12,9 +12,13 @@ import {
   createTaskHandler,
   patchTaskHandler,
   enqueueTaskHandler,
+  cancelTaskHandler,
+  pauseTaskHandler,
+  takeOverTaskHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
 } from './tasks.handlers.js';
+import { registerTaskAbort, getTaskAbort, clearTaskAbort } from '../../agents/active-task-abort.js';
 
 class ThrowingChatModel extends BaseChatModel {
   _llmType() {
@@ -224,6 +228,310 @@ describe('routes/v1/tasks.handlers', () => {
       patchTaskHandler(store, task.id, { status: 'ready' });
 
       expect(store.listQueue().filter((e) => e.taskId === task.id)).to.have.length(1);
+    });
+  });
+
+  describe('patchTaskHandler() — reassignment guard', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-reassign-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('400s reassigning a ready task away from the agent', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready' });
+
+      const result = patchTaskHandler(store, task.id, { assignedTo: 'user' });
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+      expect(store.getTask(task.id)!.assignedTo).to.equal('agent');
+    });
+
+    it('400s reassigning a running task away from the agent', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      store.dequeueNext();
+
+      const result = patchTaskHandler(store, task.id, { assignedTo: null });
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('allows a patch that resends the same assignedTo on a running task (Save re-sending unchanged fields)', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      store.dequeueNext();
+
+      const result = patchTaskHandler(store, task.id, {
+        assignedTo: 'agent',
+        status: 'running',
+        title: 'still t',
+      });
+
+      expect(result.ok).to.equal(true);
+    });
+
+    it('allows reassignment away from the agent on a task that is not ready/running', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+
+      const result = patchTaskHandler(store, task.id, { assignedTo: 'user' });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.assignedTo).to.equal('user');
+    });
+  });
+
+  describe('patchTaskHandler() — resume special case', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-resume-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('reuses the existing paused queue row rather than enqueuing a new one', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+      store.parkQueueEntry(entry.id); // status: 'blocked', queue row: 'paused'
+
+      const result = patchTaskHandler(store, task.id, { status: 'ready' });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.status).to.equal('ready');
+      const rows = store.listQueue().filter((e) => e.taskId === task.id);
+      expect(rows).to.have.length(1);
+      expect(rows[0]!.id).to.equal(entry.id);
+      expect(rows[0]!.status).to.equal('pending');
+    });
+  });
+
+  describe('cancelTaskHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-cancel-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeReadyTask() {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      store.patchTask(task.id, { status: 'ready' });
+      return task;
+    }
+
+    function makeRunningTask() {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+      return { task, entry };
+    }
+
+    it('cancels a ready task synchronously', () => {
+      const task = makeReadyTask();
+      const result = cancelTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.status).to.equal('cancelled');
+      expect(store.listQueue().find((e) => e.taskId === task.id)).to.equal(undefined);
+    });
+
+    it('aborts a running task with a registered abort entry, leaving status "running" in the response', () => {
+      const { task, entry } = makeRunningTask();
+      const controller = registerTaskAbort(entry.id);
+
+      const result = cancelTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.status).to.equal('running'); // lands asynchronously
+      expect(getTaskAbort(entry.id)!.intent).to.equal('cancel');
+      expect(controller.signal.aborted).to.equal(true);
+      clearTaskAbort(entry.id);
+    });
+
+    it('409s a running task with no registered abort entry (e.g. the e2e noop executor)', () => {
+      const { task } = makeRunningTask();
+      const result = cancelTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+
+    it('409s for a task that is done/failed/pending/blocked', () => {
+      for (const status of ['done', 'failed', 'pending', 'blocked'] as const) {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        store.patchTask(task.id, { status });
+        const result = cancelTaskHandler(store, task.id);
+        expect(result.ok, `expected ${status} to 409`).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      }
+    });
+
+    it('404s for a nonexistent task', () => {
+      const result = cancelTaskHandler(store, 'does-not-exist');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('pauseTaskHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-pause-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeRunningTask() {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+      return { task, entry };
+    }
+
+    it('aborts a running task, leaving status "running" in the response', () => {
+      const { task, entry } = makeRunningTask();
+      const controller = registerTaskAbort(entry.id);
+
+      const result = pauseTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.status).to.equal('running'); // 'blocked' lands asynchronously
+      expect(getTaskAbort(entry.id)!.intent).to.equal('pause');
+      expect(controller.signal.aborted).to.equal(true);
+      clearTaskAbort(entry.id);
+    });
+
+    it('409s when running but no abort entry is registered', () => {
+      const { task } = makeRunningTask();
+      const result = pauseTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+
+    it('409s a ready task (nothing running yet to pause)', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+
+      const result = pauseTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+
+    it('404s for a nonexistent task', () => {
+      const result = pauseTaskHandler(store, 'does-not-exist');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('takeOverTaskHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-take-over-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('reassigns a ready task synchronously and retires its queue row', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.patchTask(task.id, { status: 'ready' });
+
+      const result = takeOverTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data!.status).to.equal('pending');
+        expect(result.data!.assignedTo).to.equal('user');
+      }
+      expect(store.listQueue().find((e) => e.id === entry.id)).to.equal(undefined);
+    });
+
+    it('reassigns a running task synchronously regardless of abort outcome, and aborts the live run', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+      const controller = registerTaskAbort(entry.id);
+
+      const result = takeOverTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data!.status).to.equal('pending');
+        expect(result.data!.assignedTo).to.equal('user');
+      }
+      expect(getTaskAbort(entry.id)!.intent).to.equal('take-over');
+      expect(controller.signal.aborted).to.equal(true);
+      clearTaskAbort(entry.id);
+    });
+
+    it('reassigns a running task even with no registered abort entry, detaching the queue row directly', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+
+      const result = takeOverTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data!.status).to.equal('pending');
+        expect(result.data!.assignedTo).to.equal('user');
+      }
+      expect(store.listQueue().find((e) => e.id === entry.id)).to.equal(undefined);
+    });
+
+    it('409s for a task that is done/failed/blocked', () => {
+      for (const status of ['done', 'failed', 'blocked'] as const) {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        store.patchTask(task.id, { status });
+        const result = takeOverTaskHandler(store, task.id);
+        expect(result.ok, `expected ${status} to 409`).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      }
+    });
+
+    it('404s for a nonexistent task', () => {
+      const result = takeOverTaskHandler(store, 'does-not-exist');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
     });
   });
 

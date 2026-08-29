@@ -39,6 +39,20 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   } as unknown as typeof IntersectionObserver;
 }
 
+// jsdom 20 doesn't implement <dialog>'s imperative API at all — needed by
+// @tkottke90/preact-dialog's Dialog/Drawer/Modal, which call showModal()/
+// close() directly on the underlying <dialog> element.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+}
+if (!HTMLDialogElement.prototype.close) {
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+}
+
 if (typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

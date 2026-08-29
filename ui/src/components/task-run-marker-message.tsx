@@ -9,11 +9,15 @@ const OUTCOME_LABEL: Record<NonNullable<TaskRunMarkerThreadMessage['outcome']>, 
   done: 'completed',
   failed: 'failed',
   waiting_on_user: 'waiting on you',
+  cancelled: 'cancelled',
+  blocked: 'paused',
 };
 
 function EndIcon({ outcome }: { outcome: TaskRunMarkerThreadMessage['outcome'] }) {
-  if (outcome === 'failed') return <XCircle className="size-3.5 shrink-0 text-red-500" />;
-  if (outcome === 'waiting_on_user') {
+  if (outcome === 'failed' || outcome === 'cancelled') {
+    return <XCircle className="size-3.5 shrink-0 text-red-500" />;
+  }
+  if (outcome === 'waiting_on_user' || outcome === 'blocked') {
     return <HelpCircle className="size-3.5 shrink-0 text-amber-500" />;
   }
   return <CheckCircle2 className="size-3.5 shrink-0 text-green-600" />;

@@ -152,6 +152,34 @@ describe('services/task-scheduler', () => {
       expect(running).to.not.equal(null);
       expect(running!.id).to.equal(queued.id);
     });
+
+    it('never auto-resumes a user-initiated pause (pauseReason "user")', () => {
+      const first = makeQueuedTask('Running');
+      scheduler.wake();
+      const running = store.getRunningEntry()!;
+      // Simulates a user-initiated Pause action, distinct from the
+      // scheduler's own chat-idle pauseQueueEntry() call.
+      store.parkQueueEntry(running.id);
+
+      scheduler.resume();
+
+      expect(store.getRunningEntry()).to.equal(null);
+      const entry = store.listQueue().find((e) => e.id === first.id)!;
+      expect(entry.status).to.equal('paused');
+      expect(entry.pauseReason).to.equal('user');
+    });
+
+    it('still auto-resumes a chat-idle pause (pauseReason "chat")', () => {
+      const first = makeQueuedTask('Running');
+      scheduler.wake();
+      scheduler.pause(); // uses pauseQueueEntry() internally -> pauseReason 'chat'
+
+      scheduler.resume();
+
+      const running = store.getRunningEntry();
+      expect(running).to.not.equal(null);
+      expect(running!.id).to.equal(first.id);
+    });
   });
 
   describe('isPaused()', () => {

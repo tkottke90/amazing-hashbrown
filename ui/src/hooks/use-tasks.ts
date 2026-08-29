@@ -7,6 +7,10 @@ import {
   patchTask as apiPatchTask,
   deleteTask as apiDeleteTask,
   enqueueTask as apiEnqueueTask,
+  cancelTask as apiCancelTask,
+  pauseTask as apiPauseTask,
+  takeOverTask as apiTakeOverTask,
+  resumeTask as apiResumeTask,
   generatePlan as apiGeneratePlan,
   generatePlanForNewTask as apiGeneratePlanForNewTask,
   type TaskFilters,
@@ -62,6 +66,34 @@ export async function deleteTask(id: string): Promise<void> {
 export async function enqueueTask(id: string): Promise<void> {
   await apiEnqueueTask(id);
   await refreshQueue();
+}
+
+export async function cancelTask(id: string): Promise<Task> {
+  const updated = await apiCancelTask(id);
+  tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
+  await refreshQueue();
+  return updated;
+}
+
+export async function pauseTask(id: string): Promise<Task> {
+  const updated = await apiPauseTask(id);
+  tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
+  await refreshQueue();
+  return updated;
+}
+
+export async function takeOverTask(id: string): Promise<Task> {
+  const updated = await apiTakeOverTask(id);
+  tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
+  await refreshQueue();
+  return updated;
+}
+
+export async function resumeTask(id: string): Promise<Task> {
+  const updated = await apiResumeTask(id);
+  tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
+  await refreshQueue();
+  return updated;
 }
 
 export async function updatePlan(taskId: string, plan: PlanStep[]): Promise<Task> {

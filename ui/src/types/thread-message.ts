@@ -104,7 +104,7 @@ export type ThreadMessage =
       taskId: string;
       taskTitle: string;
       phase: 'start' | 'end';
-      outcome?: 'done' | 'failed' | 'waiting_on_user';
+      outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked';
       seq?: number;
     };
 

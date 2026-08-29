@@ -61,6 +61,19 @@ const suite: TestSuite = {
       expectedOutcome: 'The task is NOT enqueued — R14 only applies to agent-assigned tasks',
       test: () => {},
     },
+    {
+      tag: ['@functional'],
+      action: 'POST /:id/cancel on a task that is ready but not yet running',
+      expectedOutcome: 'The task is cancelled synchronously and drops out of the queue',
+      test: () => {},
+    },
+    {
+      tag: ['@functional'],
+      action: 'POST /:id/take-over on a task that is ready but not yet running',
+      expectedOutcome:
+        'The task is reassigned to the user (status pending) synchronously and drops out of the queue',
+      test: () => {},
+    },
   ],
 };
 
@@ -417,6 +430,89 @@ test.describe(
       const state = await getQueue(request);
       expect(state.queue.some((e) => e.taskId === task.id)).toBe(false);
       expect(state.running?.taskId).not.toBe(task.id);
+    });
+
+    // The two tests below cover only the synchronous ready-task branches of
+    // cancelTaskHandler/takeOverTaskHandler (api/src/routes/v1/tasks.handlers.ts)
+    // — sharedTaskId occupies the scheduler's one 'running' slot for the
+    // whole file (the noop executor never resolves), so a freshly enqueued
+    // task here reliably stays 'ready'/pending rather than being dequeued
+    // out from under the test. The abort-branch behavior (pause, and
+    // cancel/take-over while actually running) needs a real or fake agent
+    // run to interrupt, which this e2e harness's noop executor can't
+    // provide — that's covered instead by task-execution.test.ts's
+    // fake-agent unit tests, which can control timing exactly.
+    test('cancelling a ready (not-yet-running) task removes it from the queue', async ({
+      request,
+    }) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'queue-cancel-ready-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-cancel-ready-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'Cancel-me-while-ready task', workspaceId: ws.id, assignedTo: 'agent' },
+      });
+      expect(taskRes.status()).toBe(201);
+      const task = await taskRes.json();
+      const enqRes = await request.post(`/api/v1/tasks/${task.id}/enqueue`);
+      expect(enqRes.status()).toBe(201);
+
+      // Confirms the setup assumption: sharedTaskId is still occupying
+      // 'running', so this task is genuinely 'ready', not dequeued.
+      const before = await getQueue(request);
+      expect(before.running?.taskId).toBe(sharedTaskId);
+      expect(before.queue.find((e) => e.taskId === task.id)?.status).toBe('pending');
+
+      const cancelRes = await request.post(`/api/v1/tasks/${task.id}/cancel`);
+      expect(cancelRes.status()).toBe(200);
+      const cancelled = await cancelRes.json();
+      expect(cancelled.status).toBe('cancelled');
+
+      const after = await getQueue(request);
+      expect(after.queue.some((e) => e.taskId === task.id)).toBe(false);
+      const fetched = await (await request.get(`/api/v1/tasks/${task.id}`)).json();
+      expect(fetched.status).toBe('cancelled');
+    });
+
+    test('taking over a ready task reassigns it to the user and drops it from the queue', async ({
+      request,
+    }) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'queue-take-over-ready-ws',
+          locationRoot: 'temporary',
+          directoryName: 'queue-take-over-ready-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'Take-over-me-while-ready task', workspaceId: ws.id, assignedTo: 'agent' },
+      });
+      expect(taskRes.status()).toBe(201);
+      const task = await taskRes.json();
+      const enqRes = await request.post(`/api/v1/tasks/${task.id}/enqueue`);
+      expect(enqRes.status()).toBe(201);
+
+      const before = await getQueue(request);
+      expect(before.running?.taskId).toBe(sharedTaskId);
+      expect(before.queue.find((e) => e.taskId === task.id)?.status).toBe('pending');
+
+      const takeOverRes = await request.post(`/api/v1/tasks/${task.id}/take-over`);
+      expect(takeOverRes.status()).toBe(200);
+      const takenOver = await takeOverRes.json();
+      expect(takenOver.status).toBe('pending');
+      expect(takenOver.assignedTo).toBe('user');
+
+      const after = await getQueue(request);
+      expect(after.queue.some((e) => e.taskId === task.id)).toBe(false);
     });
   },
 );

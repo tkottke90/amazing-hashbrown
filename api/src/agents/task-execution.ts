@@ -15,6 +15,7 @@ import {
   getActiveSseWriter,
   type SseWriter,
 } from './active-sse-writer.js';
+import { registerTaskAbort, getTaskAbort, clearTaskAbort } from './active-task-abort.js';
 import { pipeEvents, finalizeTurn, drainAndRecordWikiUpdates } from './stream-handler.js';
 import { buildTaskAgent, type WorkspaceChatContext } from './chat-agent.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
@@ -60,7 +61,10 @@ async function* tapCompleteTask(
   }
 }
 
-function buildKickoffMessage(task: Task): string {
+function buildKickoffMessage(task: Task, entry: QueueEntryWithTask): string {
+  if (entry.pausedAt) {
+    return `Resume this task — continue from where you left off: ${task.title}.`;
+  }
   return `Begin work on this task now: ${task.title}.`;
 }
 
@@ -83,6 +87,10 @@ export async function executeTask(
   const { task } = entry;
   const store = getWorkspaceStore();
   const threadStore = getThreadStore();
+
+  // Registered as early as possible so a Cancel/Pause/Take-over click can
+  // never land before there's anything to abort — see active-task-abort.ts.
+  const controller = registerTaskAbort(entry.id);
 
   let threadId: string;
   let workspaceScope: WorkspaceScope | undefined;
@@ -116,6 +124,7 @@ export async function executeTask(
       err: serializeError(err),
     });
     store.completeQueueEntry(entry.id, 'failed');
+    clearTaskAbort(entry.id);
     return;
   }
 
@@ -134,7 +143,7 @@ export async function executeTask(
   };
   setActiveSseWriter(threadId, sink);
 
-  let finalOutcome: 'done' | 'failed' | 'waiting_on_user' = 'failed';
+  let finalOutcome: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' = 'failed';
   // Hoisted above the try block (rather than declared inside it) so the
   // catch block below can still reach them to clean up a mid-stream failure
   // — mirroring failAssistant's role in the interactive chat/workspace-chat
@@ -180,7 +189,7 @@ export async function executeTask(
     }
     const input = resumeAnswer
       ? new Command({ resume: resumeAnswer })
-      : { messages: [{ role: 'human', content: buildKickoffMessage(task) }] };
+      : { messages: [{ role: 'human', content: buildKickoffMessage(task, entry) }] };
 
     // A boxed value rather than a bare `let` — TS's control-flow narrowing
     // can't see the reassignment happening inside tapCompleteTask's callback,
@@ -190,6 +199,7 @@ export async function executeTask(
       ...config,
       version: 'v2',
       recursionLimit: env.agent?.recursionLimit ?? 100,
+      signal: controller.signal,
       context: {
         provider: env.defaultProvider,
         model: undefined,
@@ -244,24 +254,55 @@ export async function executeTask(
       store.completeQueueEntry(entry.id, 'failed');
     }
   } catch (err) {
-    logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
-    finalOutcome = 'failed';
-    if (msgId !== undefined && turnSentAt !== undefined) {
-      if ((err as Error).name === 'GraphRecursionError') {
-        finalizeAssistant(
-          threadStore,
-          threadId,
-          msgId,
-          'Ran out of steps before completing this task.',
-          '',
-          turnSentAt,
-          null,
-        );
-      } else {
-        failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    // Distinguish "this catch fired because a Cancel/Pause/Take-over
+    // aborted the stream" from a genuine failure by checking the abort
+    // registry's own signal, not by string-matching err.name (there's no
+    // reliable precedent in this codebase for what @langchain/core throws
+    // on abort).
+    const abortEntry = getTaskAbort(entry.id);
+    const wasAborted = abortEntry?.controller.signal.aborted ?? false;
+    const intent = wasAborted ? abortEntry?.intent : null;
+
+    if (intent === 'cancel') {
+      logger.info('task-execution: run cancelled', { taskId: task.id });
+      finalOutcome = 'cancelled';
+      store.completeQueueEntry(entry.id, 'cancelled');
+    } else if (intent === 'pause') {
+      logger.info('task-execution: run paused', { taskId: task.id });
+      finalOutcome = 'blocked';
+      store.parkQueueEntry(entry.id);
+    } else if (intent === 'take-over') {
+      logger.info('task-execution: run taken over', { taskId: task.id });
+      finalOutcome = 'cancelled';
+      store.detachQueueEntry(entry.id);
+    } else {
+      logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
+      finalOutcome = 'failed';
+      if (msgId !== undefined && turnSentAt !== undefined) {
+        if ((err as Error).name === 'GraphRecursionError') {
+          finalizeAssistant(
+            threadStore,
+            threadId,
+            msgId,
+            'Ran out of steps before completing this task.',
+            '',
+            turnSentAt,
+            null,
+          );
+        } else {
+          failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+        }
       }
+      store.completeQueueEntry(entry.id, 'failed');
     }
-    store.completeQueueEntry(entry.id, 'failed');
+
+    // For an aborted run (any of the three intents), the streaming
+    // assistant row is still mid-turn — close it out the same way a
+    // genuine failure does, or it stays stuck "in progress" in the thread
+    // UI forever.
+    if (intent && msgId !== undefined && turnSentAt !== undefined) {
+      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    }
   } finally {
     recordTaskRunMarker(
       threadStore,
@@ -273,5 +314,6 @@ export async function executeTask(
       finalOutcome,
     );
     clearActiveSseWriter(threadId);
+    clearTaskAbort(entry.id);
   }
 }
