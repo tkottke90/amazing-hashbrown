@@ -5,6 +5,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
+import { estimateTokens as estimateTokensForText } from '@tkottke90/llm-common-types/tokens';
 import { getAgentInstructions } from '../config/agent-instructions.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
@@ -88,13 +89,14 @@ const afterAgentMiddleware = createMiddleware({
   },
 });
 
-// Rough token estimator: 4 characters ≈ 1 token. Used by the context window
-// middleware to avoid a model round-trip for counting. Accurate enough for the
-// purpose of keeping context below a configurable ceiling.
+// Sums the shared per-text estimate (@tkottke90/llm-common-types/tokens)
+// across a message list. Used by the context window middleware to avoid a
+// model round-trip for counting — accurate enough for the purpose of
+// keeping context below a configurable ceiling.
 function estimateTokens(messages: BaseMessage[]): number {
   return messages.reduce((sum, m) => {
     const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-    return sum + Math.ceil(text.length / 4);
+    return sum + estimateTokensForText(text);
   }, 0);
 }
 

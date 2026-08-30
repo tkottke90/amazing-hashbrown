@@ -69,6 +69,7 @@ This produces one thread-level snapshot (not a per-turn history, per the approve
 These are added to `ThreadReportData` (exact placement — top-level vs. nested under `stats` — is an implementation detail for the plan). If the thread has zero messages, the block is omitted rather than showing zeros, to avoid implying trimming happened when it's actually indeterminate.
 
 **Rendering:**
+
 - `report.njk`'s summary/stats area (near `turnCount`/`toolCallCount`) gets a new "Context Window" block: Total vs. Active tokens and the fraction of budget in use.
 - In the Conversation section, the message whose `id === boundaryMessageId` gets a visible divider rendered just above it (e.g. "── active context window begins here ──"), so a reader scrolling the conversation sees directly which messages the model would no longer see on the next turn.
 
@@ -95,17 +96,17 @@ Computed lazily in `build.ts` via `estimateTokens(trace.systemPrompt)` — the t
 
 ## 7. Files Changed
 
-| File | Change |
-| --- | --- |
-| `lib/llm-common-types/src/tokens/index.ts` (new) | Shared `estimateTokens` heuristic, with a `TODO(tokenizer)` comment marking where a real tokenizer would plug in later |
-| `lib/llm-common-types/package.json` | Add `./tokens` export path |
-| `api/src/agents/chat-agent.ts` | Remove private `estimateTokens`; import shared one |
-| `api/src/agents/observability-handler.ts` | Remove private `estimateTokens`; import shared one |
-| `api/src/agents/chat-agent.test.ts`, `api/src/agents/observability-handler.test.ts` | Update imports to the shared estimator |
-| `lib/thread-reports/src/types.ts` | Add `systemPromptTokens` to `TraceTimelineEvent`; add step index to `ThreadReportMessageRecord` (or a parallel structure); add context-window snapshot fields to `ThreadReportData` |
-| `lib/thread-reports/src/build.ts` | Step-index counting; budget-walk implementation (Total/Active Context Size, boundary message); system-prompt token attachment |
-| `lib/thread-reports/templates/report.njk` | Render step-index badges on assistant messages; render the Context Window summary block; render the boundary-marker divider in the Conversation section; render system-prompt token counts |
-| `lib/thread-reports/src/build.test.ts` (new or extended, matching existing test conventions) | Cover step-index, budget-walk, and system-prompt-token cases from §6 |
+| File                                                                                         | Change                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `lib/llm-common-types/src/tokens/index.ts` (new)                                             | Shared `estimateTokens` heuristic, with a `TODO(tokenizer)` comment marking where a real tokenizer would plug in later                                                                     |
+| `lib/llm-common-types/package.json`                                                          | Add `./tokens` export path                                                                                                                                                                 |
+| `api/src/agents/chat-agent.ts`                                                               | Remove private `estimateTokens`; import shared one                                                                                                                                         |
+| `api/src/agents/observability-handler.ts`                                                    | Remove private `estimateTokens`; import shared one                                                                                                                                         |
+| `api/src/agents/chat-agent.test.ts`, `api/src/agents/observability-handler.test.ts`          | Update imports to the shared estimator                                                                                                                                                     |
+| `lib/thread-reports/src/types.ts`                                                            | Add `systemPromptTokens` to `TraceTimelineEvent`; add step index to `ThreadReportMessageRecord` (or a parallel structure); add context-window snapshot fields to `ThreadReportData`        |
+| `lib/thread-reports/src/build.ts`                                                            | Step-index counting; budget-walk implementation (Total/Active Context Size, boundary message); system-prompt token attachment                                                              |
+| `lib/thread-reports/templates/report.njk`                                                    | Render step-index badges on assistant messages; render the Context Window summary block; render the boundary-marker divider in the Conversation section; render system-prompt token counts |
+| `lib/thread-reports/src/build.test.ts` (new or extended, matching existing test conventions) | Cover step-index, budget-walk, and system-prompt-token cases from §6                                                                                                                       |
 
 ---
 

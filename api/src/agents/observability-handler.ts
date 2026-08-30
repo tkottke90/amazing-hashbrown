@@ -2,12 +2,7 @@ import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import type { LLMResult } from '@langchain/core/outputs';
 import type { Serialized } from '@langchain/core/load/serializable';
 import type { ObservabilityStore, SpanRecord } from '@tkottke90/observability';
-
-// Simple char-based token estimate (4 chars ≈ 1 token) used when the
-// provider does not return usage_metadata in the LLM response.
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+import { estimateTokens } from '@tkottke90/llm-common-types/tokens';
 
 export class ObservabilityCallbackHandler extends BaseCallbackHandler {
   readonly name = 'observability';
