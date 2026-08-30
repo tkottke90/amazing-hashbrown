@@ -38,7 +38,7 @@ export function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
           ref.current = el;
         }}
         {...props}
-        className={cn(props.className, 'overflow-hidden whitespace-pre-line')}
+        className={cn('overflow-hidden whitespace-pre-line', props.className)}
       />
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         {lang && <span className="text-xs text-muted-foreground capitalize">{lang}</span>}
