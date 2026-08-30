@@ -10,16 +10,15 @@ import { TextEllipsis } from '@/components/text-ellipsis';
 import { fetchSkills, type SkillInfo } from '@/services/skills-api';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ProviderModelPicker } from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
 export interface ChatInputProps {
@@ -243,32 +242,12 @@ export function ChatInput({
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
-                      {providers.map((p) => (
-                        <DropdownMenuSub key={p.name}>
-                          <DropdownMenuSubTrigger
-                            className={p.name === activeProvider ? 'font-semibold' : undefined}
-                          >
-                            {p.name}
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent>
-                            {p.models.map((m) => (
-                              <DropdownMenuCheckboxItem
-                                key={m.id}
-                                checked={m.id === activeModel && p.name === activeProvider}
-                                onSelect={() => onModelSelect?.(p.name, m.id)}
-                              >
-                                {m.id}
-                                {m.inputPricePerM !== undefined &&
-                                  m.outputPricePerM !== undefined && (
-                                    <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
-                                      ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
-                                    </DropdownMenuLabel>
-                                  )}
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      ))}
+                      <ProviderModelPicker
+                        providers={providers}
+                        activeProvider={activeProvider ?? undefined}
+                        activeModel={activeModel ?? undefined}
+                        onSelect={(provider, model) => onModelSelect?.(provider, model)}
+                      />
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 </>

@@ -16,6 +16,17 @@ function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
 }
 
+// Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
+// top-level DropdownMenuTrigger above — it opens on click, or on real
+// pointer hover (timing-dependent), or an ArrowRight keypress while
+// focused. Layer click + keyboard so this doesn't depend on which of
+// those internal paths jsdom's synthetic events actually satisfy.
+function openSubmenu(element: HTMLElement) {
+  element.focus();
+  fireEvent.click(element);
+  fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
+
 describe('ChatInput', () => {
   it('renders the textarea with the given placeholder', () => {
     render(<ControlledChatInput placeholder="Ask anything" />);
@@ -82,5 +93,30 @@ describe('ChatInput', () => {
     const item = screen.getByText('Add file');
     fireEvent.click(item);
     expect(onAddFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the provider submenu and lists the configured providers', () => {
+    const onModelSelect = jest.fn();
+    render(
+      <ControlledChatInput
+        onModelSelect={onModelSelect}
+        providers={[
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
+          { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
+        ]}
+      />,
+    );
+
+    // This only proves ChatInput wires providers/onModelSelect into
+    // ProviderModelPicker correctly (the "Provider" submenu renders both
+    // configured providers). ProviderModelPicker's own test covers the
+    // deeper provider->model->onSelect flow — a third level of nested
+    // Radix submenu-in-a-submenu isn't reliably openable via jsdom's
+    // synthetic events the way a single level of nesting is.
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByText('Provider'));
+
+    expect(screen.getByText('openai')).toBeInTheDocument();
+    expect(screen.getByText('ollama')).toBeInTheDocument();
   });
 });

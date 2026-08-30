@@ -228,6 +228,11 @@ rlm:
 #   openai/gpt-4.1-mini:
 #     inputPer1kTokens: 0.0004
 #     outputPer1kTokens: 0.0012
+#   glm/glm-5.3:
+#     inputScale: 1M
+#     inputPer1kTokens: 0.0014 # $1.40 / 1,000,000
+#     outputScale: 1M
+#     outputPer1kTokens: 0.0044 # $4.40 / 1,000,000
 
 
 # ---------------------------------------------------------------------------

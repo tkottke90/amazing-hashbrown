@@ -4,8 +4,41 @@ import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronRightIcon } from 'lucide-react';
 
-function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+// Which element DropdownMenuContent/DropdownMenuSubContent should portal
+// into. Mirrors select.tsx's SelectPortalContext — see the comment there for
+// the full rationale: portaling to document.body (the Portal default)
+// renders behind a native <dialog> shown via showModal() (see
+// lib/preact-dialog), since the dialog's own top-layer promotion always
+// paints above regular body-level content, and its ::backdrop swallows
+// pointer events for anything outside the dialog's own descendants
+// regardless of stacking order. So this portals into the open <dialog>
+// itself when one is open, falling back to the Portal default otherwise.
+const DropdownMenuPortalContext = React.createContext<HTMLElement | undefined>(undefined);
+
+function DropdownMenu({
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>(undefined);
+
+  return (
+    <DropdownMenuPortalContext.Provider value={portalContainer}>
+      <DropdownMenuPrimitive.Root
+        data-slot="dropdown-menu"
+        onOpenChange={(open) => {
+          // Recomputed on every open, not once at mount — see select.tsx's
+          // identical comment for why (content mounts before any dialog is
+          // open, so a value computed inline in Content's render body would
+          // freeze at whatever was true before anything ever opened).
+          if (open) {
+            setPortalContainer(document.querySelector<HTMLElement>('dialog[open]') ?? undefined);
+          }
+          onOpenChange?.(open);
+        }}
+        {...props}
+      />
+    </DropdownMenuPortalContext.Provider>
+  );
 }
 
 function DropdownMenuPortal({
@@ -26,8 +59,12 @@ function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  // See the comment above DropdownMenu (the Root wrapper) for why this
+  // portals into the currently-open <dialog> rather than document.body.
+  const portalContainer = React.useContext(DropdownMenuPortalContext);
+
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal container={portalContainer}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
@@ -217,15 +254,25 @@ function DropdownMenuSubContent({
   className,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  // See the comment above DropdownMenu (the Root wrapper) for why this
+  // portals into the currently-open <dialog> rather than document.body.
+  // Unlike DropdownMenuContent, Radix does not portal SubContent by default,
+  // so without this explicit Portal a submenu (e.g. ProviderModelPicker's
+  // provider/model drill-down) would render as a plain in-tree child instead
+  // of escaping an ancestor's overflow/stacking context.
+  const portalContainer = React.useContext(DropdownMenuPortalContext);
+
   return (
-    <DropdownMenuPrimitive.SubContent
-      data-slot="dropdown-menu-sub-content"
-      className={cn(
-        'z-50 min-w-[96px] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
-        className,
-      )}
-      {...props}
-    />
+    <DropdownMenuPrimitive.Portal container={portalContainer}>
+      <DropdownMenuPrimitive.SubContent
+        data-slot="dropdown-menu-sub-content"
+        className={cn(
+          'z-50 min-w-[96px] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+          className,
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
   );
 }
 

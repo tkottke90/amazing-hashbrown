@@ -258,7 +258,14 @@ describe('routes/v1/settings.handlers', () => {
 
     it('returns costs record for cost-rates [unit]', () => {
       const envWithCosts = makeEnv({
-        costs: { 'gpt-4': { inputPer1kTokens: 0.03, outputPer1kTokens: 0.06 } },
+        costs: {
+          'gpt-4': {
+            inputPer1kTokens: 0.03,
+            inputScale: '1k',
+            outputPer1kTokens: 0.06,
+            outputScale: '1k',
+          },
+        },
       });
       const result = getSettingsSectionHandler('cost-rates', envWithCosts, makeConfig(tmpDir));
       expect(result.ok).to.equal(true);
@@ -266,7 +273,9 @@ describe('routes/v1/settings.handlers', () => {
         const data = result.data as { costs: Record<string, unknown> };
         expect(data.costs['gpt-4']).to.deep.equal({
           inputPer1kTokens: 0.03,
+          inputScale: '1k',
           outputPer1kTokens: 0.06,
+          outputScale: '1k',
         });
       }
     });
@@ -652,7 +661,9 @@ describe('routes/v1/settings.handlers', () => {
       const written = readYaml(tmpDir);
       expect((written.costs as Record<string, unknown>)['gpt-4']).to.deep.equal({
         inputPer1kTokens: 0.03,
+        inputScale: '1k',
         outputPer1kTokens: 0.06,
+        outputScale: '1k',
       });
     });
 

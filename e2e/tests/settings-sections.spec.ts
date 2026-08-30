@@ -123,7 +123,12 @@ const STUBS: StubMap = {
   },
   'cost-rates': {
     costs: {
-      'gpt-4o': { inputPer1kTokens: 0.005, outputPer1kTokens: 0.015 },
+      'gpt-4o': {
+        inputPer1kTokens: 0.005,
+        inputScale: '1k',
+        outputPer1kTokens: 0.015,
+        outputScale: '1k',
+      },
     },
   },
   'mcp-servers': {},
@@ -338,7 +343,12 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=cost-rates');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('gpt-4o')).toBeVisible();
+    // Two elements match: the row's own summary text, and the same model
+    // key as static read-only text inside that row's (closed) Edit-mode
+    // dialog — hidden via the native <dialog>'s default display:none, but
+    // still present in the DOM and still matched by a text locator. The
+    // row's own paragraph renders first.
+    await expect(page.getByText('gpt-4o').first()).toBeVisible();
     await expect(page.getByText(/In: \$0.005\/1k/)).toBeVisible();
   });
 

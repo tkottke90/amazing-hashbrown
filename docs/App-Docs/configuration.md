@@ -165,10 +165,12 @@ to per-1,000-token prices in USD, used to estimate spend in observability data. 
 provider/model pair treats it as free (`$0`) — local/Ollama models can typically be omitted
 entirely.
 
-| Key                 | Type   | Default | Description                        |
-| ------------------- | ------ | ------- | ---------------------------------- |
-| `inputPer1kTokens`  | number | `0`     | USD price per 1,000 input tokens.  |
-| `outputPer1kTokens` | number | `0`     | USD price per 1,000 output tokens. |
+| Key                 | Type         | Default | Description                                                                                                                                    |
+| ------------------- | ------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputPer1kTokens`  | number       | `0`     | USD price per 1,000 input tokens — always normalized to this unit, regardless of `inputScale`.                                                 |
+| `inputScale`        | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in (so the Settings UI's toggle can restore it). Does not affect cost calculation. |
+| `outputPer1kTokens` | number       | `0`     | USD price per 1,000 output tokens — always normalized to this unit, regardless of `outputScale`.                                               |
+| `outputScale`       | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in. Does not affect cost calculation.                                              |
 
 ```yaml
 costs:
@@ -178,6 +180,11 @@ costs:
   openai/gpt-4.1-mini:
     inputPer1kTokens: 0.0004
     outputPer1kTokens: 0.0012
+  glm/glm-5.3:
+    inputScale: 1M
+    inputPer1kTokens: 0.0014 # $1.40 / 1,000,000
+    outputScale: 1M
+    outputPer1kTokens: 0.0044 # $4.40 / 1,000,000
 ```
 
 Rates are stored historically — changing a price does not rewrite past data. Spans already
