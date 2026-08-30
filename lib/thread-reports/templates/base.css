@@ -138,6 +138,11 @@ h3 {
   font-weight: 600;
   margin-top: 0.15rem;
 }
+.meta-card .sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
 
 .badge {
   display: inline-flex;
@@ -579,6 +584,39 @@ summary {
 .msg-retry-tag {
   font-size: 0.7rem;
   color: var(--warn);
+}
+
+.step-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: var(--neutral-bg);
+  color: var(--neutral);
+  white-space: nowrap;
+}
+.step-badge-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.boundary-marker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.25rem 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.boundary-marker::before,
+.boundary-marker::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border);
 }
 
 .chip {

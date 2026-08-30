@@ -37,7 +37,15 @@ try {
 const threadStore = new ThreadStore(db);
 const observabilityStore = new ObservabilityStore(db);
 
-const data = buildThreadReport(threadId, { threadStore, observabilityStore });
+const data = buildThreadReport(
+  threadId,
+  { threadStore, observabilityStore },
+  {
+    recursionLimit: env.agent.recursionLimit,
+    recursionWarnThreshold: env.agent.recursionWarnThreshold,
+    contextWindowMaxTokens: env.chat.contextWindow?.maxTokens ?? 32000,
+  },
+);
 if (!data) {
   console.error(`Error: no thread found with id "${threadId}" in "${dbPath}"`);
   process.exit(2);

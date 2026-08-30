@@ -20,6 +20,12 @@ export interface ThreadReportMessageRecord {
   payload: unknown;
   createdAt: string;
   updatedAt: string;
+  // Set only on kind === 'assistant' records, only by build.ts (never
+  // present on the raw ThreadStore row) — cumulative 1-based count of
+  // assistant messages up to and including this one, in `seq` order. Same
+  // count api/src/agents/recursion-guard.middleware.ts checks against
+  // env.agent.recursionLimit.
+  stepIndex?: number;
 }
 
 export interface ThreadReportThreadDetail {
@@ -89,6 +95,14 @@ export interface WikiUpdatePayload {
   wikiName: string;
 }
 
+// Written by api/src/agents/workspace-summarizer.ts directly via
+// threadStore.insertMessage() — not by thread-message-writer.ts like the
+// other kinds above.
+export interface SummaryPayload {
+  content: string;
+  summaryPath: string;
+}
+
 // ---------------------------------------------------------------------------
 // Report data
 // ---------------------------------------------------------------------------
@@ -116,6 +130,9 @@ export interface TraceTimelineEvent {
   // for HITL-resume/retry traces, which don't insert a fresh user message
   // of their own — they fall back to the same original triggering message.
   userMessage?: ThreadReportMessageRecord;
+  // estimateTokens(trace.systemPrompt) — null when trace.systemPrompt is
+  // null (e.g. source: 'after-agent', which never has one).
+  systemPromptTokens: number | null;
 }
 
 export interface WikiUpdateTimelineEvent {
@@ -129,10 +146,34 @@ export interface WikiUpdateTimelineEvent {
 
 export type TimelineEvent = TraceTimelineEvent | WikiUpdateTimelineEvent;
 
+export interface ContextWindowSnapshot {
+  totalContextTokens: number;
+  activeContextTokens: number;
+  contextWindowMaxTokens: number;
+  // Id of the oldest ThreadReportMessageRecord the budget walk kept. null
+  // when nothing would be trimmed (active === total), or in the rare case
+  // where even the single newest counted message alone exceeds maxTokens
+  // (nothing is kept, so there's no boundary to point at).
+  boundaryMessageId: string | null;
+}
+
+// Plain-primitive recursion config, resolved by bin/thread-report.ts from
+// env.agent and passed into buildThreadReport() — this package must not
+// import api/src/config/env.ts directly (see the file-header comment above).
+export interface RecursionInfo {
+  recursionLimit: number;
+  recursionWarnThreshold: number;
+}
+
 export interface ThreadReportData {
   threadId: string;
   generatedAt: string;
   thread: ThreadReportThreadDetail;
   stats: ThreadReportStats;
   timeline: TimelineEvent[];
+  recursion: RecursionInfo;
+  // Omitted (not zeroed) when the thread has no messages that were ever
+  // part of the LLM's actual context — see build.ts's budget walk — to
+  // avoid implying trimming happened when it's actually indeterminate.
+  contextWindow?: ContextWindowSnapshot;
 }

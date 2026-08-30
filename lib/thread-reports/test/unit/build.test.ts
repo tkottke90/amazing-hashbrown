@@ -4,9 +4,14 @@ import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { estimateTokens } from '@tkottke90/llm-common-types/tokens';
 import { ObservabilityStore } from '@tkottke90/observability';
 import { buildThreadReport } from '../../src/build.js';
-import type { ThreadReportThreadDetail, ThreadStoreLike } from '../../src/types.js';
+import type {
+  ThreadReportMessageRecord,
+  ThreadReportThreadDetail,
+  ThreadStoreLike,
+} from '../../src/types.js';
 
 function fakeThreadStore(thread: ThreadReportThreadDetail | null): ThreadStoreLike {
   return {
@@ -24,6 +29,32 @@ function makeThread(overrides: Partial<ThreadReportThreadDetail> = {}): ThreadRe
     forkedFromSeq: null,
     messages: [],
     ...overrides,
+  };
+}
+
+// Used by the step-index/context-window test suites below, which construct
+// many small synthetic message lists — a helper here cuts the boilerplate
+// the other describe blocks in this file spell out fully inline.
+function makeMessage(overrides: {
+  id: string;
+  seq: number;
+  kind: string;
+  payload: unknown;
+  status?: string | null;
+  retryOf?: string | null;
+  threadId?: string;
+}): ThreadReportMessageRecord {
+  return {
+    id: overrides.id,
+    threadId: overrides.threadId ?? 't1',
+    seq: overrides.seq,
+    kind: overrides.kind,
+    status: overrides.status ?? null,
+    retryOf: overrides.retryOf ?? null,
+    checkpointId: null,
+    payload: overrides.payload,
+    createdAt: `2026-07-18T10:00:${String(overrides.seq).padStart(2, '0')}.000Z`,
+    updatedAt: `2026-07-18T10:00:${String(overrides.seq).padStart(2, '0')}.000Z`,
   };
 }
 
@@ -466,5 +497,485 @@ describe('build/buildThreadReport', () => {
       'You have no built-in memory of this specific user.',
     );
     expect(byTraceId.get(afterAgentTraceId)!.trace.systemPrompt).to.equal(null);
+  });
+
+  describe('step index', () => {
+    it('gives a single assistant message stepIndex 1', () => {
+      const thread = makeThread({
+        id: 't10',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'hi', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: 'hello', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t10', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const assistant = result!.thread.messages.find((m) => m.id === 'a1');
+      expect(assistant!.stepIndex).to.equal(1);
+    });
+
+    it('increments only on assistant messages across multiple tool-calling loops in one turn', () => {
+      const thread = makeThread({
+        id: 't11',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'go', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: '', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'tc1',
+            seq: 3,
+            kind: 'tool_call',
+            payload: { toolCallId: 'x', toolName: 'wiki_search', inputs: {} },
+          }),
+          makeMessage({
+            id: 'tc2',
+            seq: 4,
+            kind: 'tool_call',
+            payload: { toolCallId: 'y', toolName: 'wiki_search', inputs: {} },
+          }),
+          makeMessage({
+            id: 'a2',
+            seq: 5,
+            kind: 'assistant',
+            payload: { content: '', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'tc3',
+            seq: 6,
+            kind: 'tool_call',
+            payload: { toolCallId: 'z', toolName: 'wiki_search', inputs: {} },
+          }),
+          makeMessage({
+            id: 'a3',
+            seq: 7,
+            kind: 'assistant',
+            payload: { content: 'done', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t11', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const byId = new Map(result!.thread.messages.map((m) => [m.id, m]));
+      expect(byId.get('a1')!.stepIndex).to.equal(1);
+      expect(byId.get('a2')!.stepIndex).to.equal(2);
+      expect(byId.get('a3')!.stepIndex).to.equal(3);
+      expect(byId.get('tc1')!.stepIndex).to.equal(undefined);
+      expect(byId.get('u1')!.stepIndex).to.equal(undefined);
+    });
+
+    it('gives a retried assistant message its own incremented stepIndex', () => {
+      const thread = makeThread({
+        id: 't12',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'go', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            status: 'error',
+            payload: { content: '', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'a1-retry',
+            seq: 3,
+            kind: 'assistant',
+            retryOf: 'a1',
+            payload: { content: 'retry result', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t12', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const byId = new Map(result!.thread.messages.map((m) => [m.id, m]));
+      expect(byId.get('a1')!.stepIndex).to.equal(1);
+      expect(byId.get('a1-retry')!.stepIndex).to.equal(2);
+    });
+  });
+
+  describe('context window budget walk', () => {
+    it('reports nothing trimmed when the full history fits in the budget', () => {
+      const thread = makeThread({
+        id: 't20',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: 'bbbb', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport(
+        't20',
+        { threadStore: fakeThreadStore(thread), observabilityStore: store },
+        { contextWindowMaxTokens: 1000 },
+      );
+
+      expect(result!.contextWindow).to.deep.equal({
+        totalContextTokens: 2,
+        activeContextTokens: 2,
+        contextWindowMaxTokens: 1000,
+        boundaryMessageId: null,
+      });
+    });
+
+    it('trims the oldest messages and reports the boundary when the budget is exceeded', () => {
+      // Each message is 4 chars -> 1 token via estimateTokens.
+      const thread = makeThread({
+        id: 't21',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: 'bbbb', sentAt: '' },
+          }),
+          makeMessage({ id: 'u2', seq: 3, kind: 'user', payload: { content: 'cccc', sentAt: '' } }),
+          makeMessage({
+            id: 'a2',
+            seq: 4,
+            kind: 'assistant',
+            payload: { content: 'dddd', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport(
+        't21',
+        { threadStore: fakeThreadStore(thread), observabilityStore: store },
+        { contextWindowMaxTokens: 2 },
+      );
+
+      expect(result!.contextWindow).to.deep.equal({
+        totalContextTokens: 4,
+        activeContextTokens: 2,
+        contextWindowMaxTokens: 2,
+        boundaryMessageId: 'u2',
+      });
+    });
+
+    it('keeps a message whose inclusion lands the running total exactly on the budget', () => {
+      // u0/a0 = 1 token each (older, expected to be dropped), u1/a1 = 2
+      // tokens each (newer). maxTokens=4 lands exactly after including u1,
+      // which must be kept, not excluded, by the strictly-greater-than check.
+      const thread = makeThread({
+        id: 't22',
+        messages: [
+          makeMessage({ id: 'u0', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+          makeMessage({
+            id: 'a0',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: 'bbbb', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'u1',
+            seq: 3,
+            kind: 'user',
+            payload: { content: 'cccccccc', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'a1',
+            seq: 4,
+            kind: 'assistant',
+            payload: { content: 'dddddddd', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport(
+        't22',
+        { threadStore: fakeThreadStore(thread), observabilityStore: store },
+        { contextWindowMaxTokens: 4 },
+      );
+
+      expect(result!.contextWindow).to.deep.equal({
+        totalContextTokens: 6,
+        activeContextTokens: 4,
+        contextWindowMaxTokens: 4,
+        boundaryMessageId: 'u1',
+      });
+    });
+
+    it('omits contextWindow when the thread has no countable messages', () => {
+      const emptyThread = makeThread({ id: 't23', messages: [] });
+      const emptyResult = buildThreadReport('t23', {
+        threadStore: fakeThreadStore(emptyThread),
+        observabilityStore: store,
+      });
+      expect(emptyResult!.contextWindow).to.equal(undefined);
+
+      const onlySideChannelThread = makeThread({
+        id: 't24',
+        messages: [
+          makeMessage({
+            id: 'h1',
+            seq: 1,
+            kind: 'hitl_prompt',
+            payload: { promptId: 'h1', question: 'Continue?', kind: 'yes_no' },
+          }),
+          makeMessage({
+            id: 'w1',
+            seq: 2,
+            kind: 'wiki_update',
+            payload: { pageTitle: 'X', pageKind: 'entity', wikiName: 'user' },
+          }),
+        ],
+      });
+      const sideChannelResult = buildThreadReport('t24', {
+        threadStore: fakeThreadStore(onlySideChannelThread),
+        observabilityStore: store,
+      });
+      expect(sideChannelResult!.contextWindow).to.equal(undefined);
+    });
+
+    it('counts both inputs and outputs of a tool_call message', () => {
+      const inputs = { query: 'x'.repeat(40) };
+      const outputs = { result: 'y'.repeat(40) };
+      const thread = makeThread({
+        id: 't25',
+        messages: [
+          makeMessage({
+            id: 'tc1',
+            seq: 1,
+            kind: 'tool_call',
+            payload: { toolCallId: 'x', toolName: 'wiki_search', inputs, outputs },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t25', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const expectedTokens = estimateTokens(
+        `${JSON.stringify(inputs)}\n${JSON.stringify(outputs)}`,
+      );
+      expect(result!.contextWindow!.totalContextTokens).to.equal(expectedTokens);
+    });
+
+    it('includes summary-kind messages in the walk', () => {
+      const content = 'This thread summarizes a long conversation about wiki tuning.';
+      const thread = makeThread({
+        id: 't26',
+        messages: [
+          makeMessage({
+            id: 's1',
+            seq: 1,
+            kind: 'summary',
+            payload: { content, summaryPath: '/wiki/thread-t26-summary.md' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t26', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      expect(result!.contextWindow!.totalContextTokens).to.equal(estimateTokens(content));
+    });
+
+    it('excludes hitl_prompt, wiki_update, resource_card, and task_run_marker from totals and stepping', () => {
+      const thread = makeThread({
+        id: 't27',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+          makeMessage({
+            id: 'h1',
+            seq: 2,
+            kind: 'hitl_prompt',
+            payload: { promptId: 'h1', question: 'Continue?', kind: 'yes_no' },
+          }),
+          makeMessage({
+            id: 'w1',
+            seq: 3,
+            kind: 'wiki_update',
+            payload: { pageTitle: 'X', pageKind: 'entity', wikiName: 'user' },
+          }),
+          makeMessage({
+            id: 'r1',
+            seq: 4,
+            kind: 'resource_card',
+            payload: { resourceType: 'workspace', name: 'X', location: '/x', workspaceId: 'w' },
+          }),
+          makeMessage({
+            id: 't1',
+            seq: 5,
+            kind: 'task_run_marker',
+            payload: { taskId: 'task1', taskTitle: 'X', phase: 'start' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport('t27', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      expect(result!.contextWindow!.totalContextTokens).to.equal(estimateTokens('aaaa'));
+      expect(result!.contextWindow!.activeContextTokens).to.equal(estimateTokens('aaaa'));
+    });
+
+    it('advances a tentative cutoff landing mid-tool_call forward to the nearest user message', () => {
+      // All messages 4 chars -> 1 token each. maxTokens=3 tentatively keeps
+      // a2, u2, tc1 (3 tokens) before the startOn:'human' correction — tc1
+      // is not a user message, so the correction must push the kept tail
+      // forward to u2, dropping tc1 (and a1) from Active even though tc1's
+      // inclusion didn't exceed the raw budget.
+      const thread = makeThread({
+        id: 't28',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+          makeMessage({
+            id: 'a1',
+            seq: 2,
+            kind: 'assistant',
+            payload: { content: 'bbbb', sentAt: '' },
+          }),
+          makeMessage({
+            id: 'tc1',
+            // inputs/outputs chosen so this message's estimated size is
+            // exactly 1 token too — see the header comment above.
+            seq: 3,
+            kind: 'tool_call',
+            payload: { toolCallId: 'x', toolName: 'wiki_search', inputs: 0, outputs: 0 },
+          }),
+          makeMessage({ id: 'u2', seq: 4, kind: 'user', payload: { content: 'cccc', sentAt: '' } }),
+          makeMessage({
+            id: 'a2',
+            seq: 5,
+            kind: 'assistant',
+            payload: { content: 'dddd', sentAt: '' },
+          }),
+        ],
+      });
+
+      const result = buildThreadReport(
+        't28',
+        { threadStore: fakeThreadStore(thread), observabilityStore: store },
+        { contextWindowMaxTokens: 3 },
+      );
+
+      expect(result!.contextWindow).to.deep.equal({
+        totalContextTokens: 5,
+        activeContextTokens: 2,
+        contextWindowMaxTokens: 3,
+        boundaryMessageId: 'u2',
+      });
+    });
+  });
+
+  describe('system prompt tokens', () => {
+    it('computes systemPromptTokens from trace.systemPrompt when present', () => {
+      const threadId = 't30';
+      const systemPrompt = 'You are a helpful assistant with access to the wiki.';
+      const traceId = store.startTrace({
+        threadId,
+        provider: 'local',
+        model: 'llama3.2',
+        source: 'chat',
+        systemPrompt,
+      });
+      store.endTrace(traceId, { totalTokens: 0 });
+
+      const thread = makeThread({ id: threadId, messages: [] });
+      const result = buildThreadReport(threadId, {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const event = result!.timeline.find((e) => e.kind === 'trace' && e.trace.traceId === traceId);
+      expect(event).to.not.equal(undefined);
+      expect((event as { systemPromptTokens: number | null }).systemPromptTokens).to.equal(
+        estimateTokens(systemPrompt),
+      );
+    });
+
+    it('gives systemPromptTokens null when trace.systemPrompt is null', () => {
+      const threadId = 't31';
+      const traceId = store.startTrace({
+        threadId,
+        provider: 'local',
+        model: 'llama3.2',
+        source: 'after-agent',
+      });
+      store.endTrace(traceId, { totalTokens: 0 });
+
+      const thread = makeThread({ id: threadId, messages: [] });
+      const result = buildThreadReport(threadId, {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      const event = result!.timeline.find((e) => e.kind === 'trace' && e.trace.traceId === traceId);
+      expect((event as { systemPromptTokens: number | null }).systemPromptTokens).to.equal(null);
+    });
+  });
+
+  describe('options defaults', () => {
+    it('defaults recursion info to recursionLimit 100 / recursionWarnThreshold 0.75 when omitted', () => {
+      const thread = makeThread({ id: 't40', messages: [] });
+      const result = buildThreadReport('t40', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      expect(result!.recursion).to.deep.equal({
+        recursionLimit: 100,
+        recursionWarnThreshold: 0.75,
+      });
+    });
+
+    it('reflects explicit recursion overrides when passed', () => {
+      const thread = makeThread({ id: 't41', messages: [] });
+      const result = buildThreadReport(
+        't41',
+        { threadStore: fakeThreadStore(thread), observabilityStore: store },
+        { recursionLimit: 50, recursionWarnThreshold: 0.5 },
+      );
+
+      expect(result!.recursion).to.deep.equal({ recursionLimit: 50, recursionWarnThreshold: 0.5 });
+    });
+
+    it('defaults contextWindowMaxTokens to 32000 when omitted', () => {
+      const thread = makeThread({
+        id: 't42',
+        messages: [
+          makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'aaaa', sentAt: '' } }),
+        ],
+      });
+      const result = buildThreadReport('t42', {
+        threadStore: fakeThreadStore(thread),
+        observabilityStore: store,
+      });
+
+      expect(result!.contextWindow!.contextWindowMaxTokens).to.equal(32000);
+    });
   });
 });

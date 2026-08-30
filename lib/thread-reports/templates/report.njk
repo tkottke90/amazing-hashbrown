@@ -39,6 +39,13 @@
     <div class="label">Wiki writes</div>
     <div class="value">{{ stats.wikiWriteCount }}</div>
   </div>
+  {% if contextWindow %}
+    <div class="meta-card">
+      <div class="label">Context Window</div>
+      <div class="value">{{ contextWindow.activeContextTokens }} / {{ contextWindow.totalContextTokens }} tokens</div>
+      <div class="sub">of {{ contextWindow.contextWindowMaxTokens }} max budget</div>
+    </div>
+  {% endif %}
 </div>
 
 <h2>Trace</h2>
@@ -63,7 +70,7 @@
           <details class="span-row">
             <summary>
               <span class="span-type">system</span>
-              <span class="span-name">System Prompt</span>
+              <span class="span-name">System Prompt{% if event.systemPromptTokens != None %} &middot; {{ event.systemPromptTokens }} tokens{% endif %}</span>
             </summary>
             <div class="span-preview">{{ event.trace.systemPrompt | json }}</div>
           </details>
@@ -117,6 +124,9 @@
 <h2>Conversation</h2>
 <div class="conversation">
   {% for message in thread.messages %}
+    {% if contextWindow and message.id == contextWindow.boundaryMessageId %}
+      <div class="boundary-marker">active context window begins here</div>
+    {% endif %}
     {% if message.kind == 'user' %}
       <div class="msg msg-user">
         <span class="msg-time">{{ message.payload.sentAt | reportTime }}</span>
@@ -126,6 +136,11 @@
       <div class="msg msg-assistant {{ 'msg-error' if message.status == 'error' }}">
         <span class="msg-time">
           {{ message.payload.sentAt | reportTime }}
+          {% if message.stepIndex %}
+            <span class="step-badge {{ 'step-badge-warn' if message.stepIndex >= (recursion.recursionLimit * recursion.recursionWarnThreshold) }}">
+              Step {{ message.stepIndex }} / {{ recursion.recursionLimit }}
+            </span>
+          {% endif %}
           {% if message.status %}&middot; {{ message.status }}{% endif %}
           {% if message.retryOf %}<span class="msg-retry-tag">&middot; retry of {{ message.retryOf }}</span>{% endif %}
         </span>
