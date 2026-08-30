@@ -24,9 +24,9 @@ const allEdges = graphData.value.edges.filter(
 );
 ```
 
-`.filter()` returns a new array, but each edge is the *same object reference* held by the `graphData` signal. Those shared objects are handed straight to `d3Force.forceLink(visibleEdges)` (line 184), which — per d3-force's documented behavior — mutates `edge.source`/`edge.target` in place, resolving them from string ids to node object references during simulation setup. Because the edges were never cloned, this mutation persists on the objects inside `graphData.value.edges` itself.
+`.filter()` returns a new array, but each edge is the _same object reference_ held by the `graphData` signal. Those shared objects are handed straight to `d3Force.forceLink(visibleEdges)` (line 184), which — per d3-force's documented behavior — mutates `edge.source`/`edge.target` in place, resolving them from string ids to node object references during simulation setup. Because the edges were never cloned, this mutation persists on the objects inside `graphData.value.edges` itself.
 
-On the *next* effect run — a remount from switching tabs (Graph/Documents render conditionally in `ui/src/pages/wiki/index.tsx:122-126`, so leaving Graph fully unmounts it) or a re-run triggered by `enabledDomainIds.value` changing (`ui/src/pages/wiki/domain-filter.tsx:30-33` → `use-wiki.ts:73-81`) — the filter at line 52-53 checks `allowedIds.has(e.source)` against a `Set<string>` of node ids. Since `e.source` is now a node object, not a string, the check always fails, `allEdges`/`visibleEdges` come back empty, and no `<line>` elements render. Node filtering is unaffected (it only checks `n.domainId`, which is never touched by the mutation), matching the reported symptom exactly.
+On the _next_ effect run — a remount from switching tabs (Graph/Documents render conditionally in `ui/src/pages/wiki/index.tsx:122-126`, so leaving Graph fully unmounts it) or a re-run triggered by `enabledDomainIds.value` changing (`ui/src/pages/wiki/domain-filter.tsx:30-33` → `use-wiki.ts:73-81`) — the filter at line 52-53 checks `allowedIds.has(e.source)` against a `Set<string>` of node ids. Since `e.source` is now a node object, not a string, the check always fails, `allEdges`/`visibleEdges` come back empty, and no `<line>` elements render. Node filtering is unaffected (it only checks `n.domainId`, which is never touched by the mutation), matching the reported symptom exactly.
 
 A secondary casualty: `edgeCounts` (lines 57-61), which drives node radius scaling, is also computed from `e.source`/`e.target` and silently goes wrong on any re-run for the same reason.
 
@@ -41,7 +41,7 @@ export function buildGraphData(
   nodes: GraphNode[],
   edges: GraphEdge[],
   enabledDomainIds: Set<string>,
-): { nodes: D3Node[]; edges: D3Edge[] }
+): { nodes: D3Node[]; edges: D3Edge[] };
 ```
 
 It performs the same filtering, edge-count computation, and `derived_from` exclusion as today, with one change: edges are shallow-cloned (`{ ...e }`) before being returned. Callers (including d3-force) can then freely mutate the returned edge objects — including the `source`/`target` id→object resolution `forceLink` performs — without ever touching the objects `graphData.value.edges` holds. The `D3Node`/`D3Edge` type definitions move into this new file alongside the function; `graph-view.tsx` imports them from there.
@@ -56,9 +56,9 @@ This also fixes the `edgeCounts` miscounting as a side effect, since counts are 
 
 ## 3. Testing
 
-### Unit (`ui/src/pages/wiki/build-graph-data.test.ts`, new)
+### Unit (`ui/test/wiki-build-graph-data.test.ts`, new)
 
-This is the first unit test file in `ui/src` — Jest is already configured (`ui/jest.config.js`) but has no test files yet.
+This is the first unit test file in the `ui/` workspace — Jest is already configured (`ui/jest.config.js`) but has no test files yet. Note: `ui/jest.config.js`'s `testMatch` only discovers tests under the flat `ui/test/` directory, not colocated with `ui/src` — this corrects an earlier draft of this section, which stated a colocated path.
 
 - Returned edges are distinct object references from the input `edges` array (proves cloning happened).
 - Mutating a field (e.g. `source`) on a returned edge does not affect the corresponding object in the original input array.
@@ -77,12 +77,13 @@ No wiki e2e spec exists yet. Following `e2e/AGENTS.md`'s route-mocking pattern, 
 
 ## 4. Files Changed
 
-| File | Change |
-| --- | --- |
-| `ui/src/pages/wiki/build-graph-data.ts` (new) | Pure `buildGraphData()` extracted from `graph-view.tsx`'s effect; clones edges before returning; hosts the `D3Node`/`D3Edge` type definitions |
-| `ui/src/pages/wiki/graph-view.tsx` | Effect calls `buildGraphData()` instead of inlining the filter/count logic; imports `D3Node`/`D3Edge` from the new file |
-| `ui/src/pages/wiki/build-graph-data.test.ts` (new) | Unit coverage per §3 |
-| `e2e/tests/wiki-graph.spec.ts` (new) | E2E coverage per §3 |
+| File                                          | Change                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ui/src/pages/wiki/build-graph-data.ts` (new) | Pure `buildGraphData()` extracted from `graph-view.tsx`'s effect; clones edges before returning; hosts the `D3Node`/`D3Edge` type definitions                                                                                                                                                                                           |
+| `ui/src/pages/wiki/graph-view.tsx`            | Effect calls `buildGraphData()` instead of inlining the filter/count logic; imports `D3Node`/`D3Edge` from the new file; adds `data-testid="graph-edges"`/`"graph-nodes"` to the edge/node `<g>` groups so the new e2e spec can select rendered edges/nodes reliably (per `e2e/AGENTS.md`'s selector priority — no CSS-class selectors) |
+| `ui/test/wiki-build-graph-data.test.ts` (new) | Unit coverage per §3                                                                                                                                                                                                                                                                                                                    |
+| `e2e/tests/wiki-graph.spec.ts` (new)          | E2E coverage per §3                                                                                                                                                                                                                                                                                                                     |
+| `e2e/AGENTS.md`                               | Records the two new `data-testid` values in the "Known `data-testid` attributes" table                                                                                                                                                                                                                                                  |
 
 ---
 
