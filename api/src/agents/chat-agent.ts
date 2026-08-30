@@ -105,7 +105,7 @@ function estimateTokens(messages: BaseMessage[]): number {
 // tool-call/tool-result pairing required by LangGraph.
 export const contextWindowMiddleware = createMiddleware({
   name: 'ContextWindowMiddleware',
-  beforeAgent: async (state) => {
+  beforeModel: async (state) => {
     const cfg = env.chat?.contextWindow;
     // Enabled by default; only skip if explicitly set to false.
     if (cfg?.enabled === false) return undefined;

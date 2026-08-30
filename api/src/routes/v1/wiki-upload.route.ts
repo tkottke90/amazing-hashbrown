@@ -149,6 +149,25 @@ async function validateStructure(extractedDir: string): Promise<string | null> {
   return null; // valid
 }
 
+/**
+ * Remove macOS AppleDouble metadata files (._*) that tar creates when archiving
+ * from HFS+/APFS volumes. These are not wiki pages and will always fail lint.
+ */
+async function stripMacMetadata(dir: string): Promise<number> {
+  let removed = 0;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      removed += await stripMacMetadata(full);
+    } else if (entry.name.startsWith('._')) {
+      await fs.rm(full, { force: true });
+      removed++;
+    }
+  }
+  return removed;
+}
+
 async function walkDir(dir: string): Promise<string[]> {
   const results: string[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -213,6 +232,12 @@ export async function processUpload(
       setUploadState(jobId, { stage: 'failed', error: `Extraction failed: ${String(err)}` });
       await cleanupDmzJob(jobId, wikiRootOverride);
       return;
+    }
+
+    // Strip macOS AppleDouble metadata files (._*) before validation/lint
+    const stripped = await stripMacMetadata(extractedDir);
+    if (stripped > 0) {
+      logger.info('Wiki upload: stripped macOS metadata files', { jobId, count: stripped });
     }
 
     // ── Stage: validating ───────────────────────────────────────────────────
