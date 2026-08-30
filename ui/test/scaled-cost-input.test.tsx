@@ -52,7 +52,13 @@ describe('ScaledCostInput', () => {
   it('editing the number while scale is 1M converts back to per-1k on emit', () => {
     const onChange = jest.fn();
     render(
-      <ScaledCostInput id="cost" label="Input cost" per1kValue={0} scale="1M" onChange={onChange} />,
+      <ScaledCostInput
+        id="cost"
+        label="Input cost"
+        per1kValue={0}
+        scale="1M"
+        onChange={onChange}
+      />,
     );
     fireEvent.input(screen.getByLabelText('Input cost'), { target: { value: '2.8' } });
     expect(onChange).toHaveBeenCalledWith(0.0028, '1M');

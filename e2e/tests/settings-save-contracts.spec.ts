@@ -69,7 +69,8 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Add a cost rate via the provider/model picker and Save',
-      expectedOutcome: 'PATCH body costs map includes the new provider/model key with the entered prices',
+      expectedOutcome:
+        'PATCH body costs map includes the new provider/model key with the entered prices',
       test: () => {},
     },
     {
@@ -411,7 +412,9 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
-    await mockProvidersListApi(page, [{ name: 'glm', type: 'openai', models: [{ id: 'glm-5.3' }] }]);
+    await mockProvidersListApi(page, [
+      { name: 'glm', type: 'openai', models: [{ id: 'glm-5.3' }] },
+    ]);
     await page.goto('/settings?section=cost-rates');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
@@ -426,7 +429,11 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     // accessible names, so scope each toggle to its own field via the
     // number input it sits beside (rate-modal.tsx's grid layout puts them in
     // the same row).
-    await dialog.locator('#rate-input').locator('xpath=..').getByRole('radio', { name: '1M' }).click();
+    await dialog
+      .locator('#rate-input')
+      .locator('xpath=..')
+      .getByRole('radio', { name: '1M' })
+      .click();
     await dialog.getByLabel('Input cost').fill('1.4');
     await dialog
       .locator('#rate-output')

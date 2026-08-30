@@ -38,7 +38,6 @@ function ScaledCostInput({ id, label, per1kValue, scale, onChange }: ScaledCostI
   // a stored scale. Deliberately not keyed on per1kValue too: that would
   // fight the user's own in-progress typing, since handleNumberInput below
   // already keeps displayText in sync with whatever per1kValue it emits.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     setDisplayText(String(scaledDisplayValue(per1kValue, scale)));
   }, [scale]);

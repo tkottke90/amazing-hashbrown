@@ -83,7 +83,11 @@ function RateForm({ mode, initial, costs, onSave }: RateFormProps) {
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger
-              className={buttonVariants({ variant: 'outline', size: 'default', className: 'w-full justify-start' })}
+              className={buttonVariants({
+                variant: 'outline',
+                size: 'default',
+                className: 'w-full justify-start',
+              })}
             >
               {modelKey.value || 'Select provider/model…'}
             </DropdownMenuTrigger>

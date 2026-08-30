@@ -165,12 +165,12 @@ to per-1,000-token prices in USD, used to estimate spend in observability data. 
 provider/model pair treats it as free (`$0`) — local/Ollama models can typically be omitted
 entirely.
 
-| Key                 | Type            | Default | Description                                                                                             |
-| ------------------- | --------------- | ------- | --------------------------------------------------------------------------------------------------------- |
-| `inputPer1kTokens`  | number          | `0`     | USD price per 1,000 input tokens — always normalized to this unit, regardless of `inputScale`.          |
-| `inputScale`        | `1k` \| `1M`    | `1k`    | UI-only metadata recording which unit the value was entered in (so the Settings UI's toggle can restore it). Does not affect cost calculation. |
-| `outputPer1kTokens` | number          | `0`     | USD price per 1,000 output tokens — always normalized to this unit, regardless of `outputScale`.        |
-| `outputScale`       | `1k` \| `1M`    | `1k`    | UI-only metadata recording which unit the value was entered in. Does not affect cost calculation.       |
+| Key                 | Type         | Default | Description                                                                                                                                    |
+| ------------------- | ------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputPer1kTokens`  | number       | `0`     | USD price per 1,000 input tokens — always normalized to this unit, regardless of `inputScale`.                                                 |
+| `inputScale`        | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in (so the Settings UI's toggle can restore it). Does not affect cost calculation. |
+| `outputPer1kTokens` | number       | `0`     | USD price per 1,000 output tokens — always normalized to this unit, regardless of `outputScale`.                                               |
+| `outputScale`       | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in. Does not affect cost calculation.                                              |
 
 ```yaml
 costs:

@@ -116,7 +116,7 @@ interface ScaledCostInputProps {
 }
 ```
 
-Internally displays `per1kValue * (scale === '1M' ? 1000 : 1)` in the number field. On number input, converts the displayed value back to per-1k before calling `onChange`. On toggle change, re-displays the *same* underlying `per1kValue` converted to the new unit (switching units alone doesn't change the effective price) and calls `onChange` with the unchanged `per1kValue` and the new `scale`.
+Internally displays `per1kValue * (scale === '1M' ? 1000 : 1)` in the number field. On number input, converts the displayed value back to per-1k before calling `onChange`. On toggle change, re-displays the _same_ underlying `per1kValue` converted to the new unit (switching units alone doesn't change the effective price) and calls `onChange` with the unchanged `per1kValue` and the new `scale`.
 
 Grid implementation:
 
@@ -144,7 +144,7 @@ Grid implementation:
 ### Edit mode
 
 - The provider/model is shown as static read-only text (e.g. the current `modelKey` string), not the picker component — the key cannot change after creation, so there's no interactive picker to render or disable.
-- Both `ScaledCostInput`s remain fully editable, initialized from the entry's stored `inputPer1kTokens`/`inputScale` and `outputPer1kTokens`/`outputScale`. The toggle can be flipped at any time; per `ScaledCostInput`'s contract, this only changes the *displayed* unit and the stored `scale`, never the underlying price, unless the user also edits the number.
+- Both `ScaledCostInput`s remain fully editable, initialized from the entry's stored `inputPer1kTokens`/`inputScale` and `outputPer1kTokens`/`outputScale`. The toggle can be flipped at any time; per `ScaledCostInput`'s contract, this only changes the _displayed_ unit and the stored `scale`, never the underlying price, unless the user also edits the number.
 
 ### Submission
 
@@ -173,17 +173,17 @@ Grid implementation:
 
 ## 7. Files Changed
 
-| File | Change |
-| --- | --- |
-| `api/src/config/env.ts` | Add `inputScale`/`outputScale` to `CostEntrySchema` |
-| `ui/src/components/provider-model-picker.tsx` | New — shared provider→model drill-down, extracted from `chat-input.tsx` |
-| `ui/src/components/chat-input.tsx` | Use `ProviderModelPicker`; no behavior change |
-| `ui/src/components/ui/dropdown-menu.tsx` | Port dialog-portal-target fix from `select.tsx` |
-| `ui/src/components/ui/scale-toggle.tsx` | New — Radix `RadioGroup`-based `1k`/`1M` segmented control |
-| `ui/src/components/ui/scaled-cost-input.tsx` | New — number input + `ScaleToggle`, normalizes to per-1k |
-| `ui/src/pages/settings/rate-modal.tsx` | Replace free-text model input with `ProviderModelPicker` (Add) / static text (Edit); replace plain cost inputs with `ScaledCostInput` |
-| `ui/src/pages/settings/cost-rates-panel.tsx` | Update rate summary line to display in the entry's stored scale |
-| `docs/App-Docs/configuration.md` | Document `inputScale`/`outputScale` in the Cost Rates schema table |
+| File                                          | Change                                                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/src/config/env.ts`                       | Add `inputScale`/`outputScale` to `CostEntrySchema`                                                                                   |
+| `ui/src/components/provider-model-picker.tsx` | New — shared provider→model drill-down, extracted from `chat-input.tsx`                                                               |
+| `ui/src/components/chat-input.tsx`            | Use `ProviderModelPicker`; no behavior change                                                                                         |
+| `ui/src/components/ui/dropdown-menu.tsx`      | Port dialog-portal-target fix from `select.tsx`                                                                                       |
+| `ui/src/components/ui/scale-toggle.tsx`       | New — Radix `RadioGroup`-based `1k`/`1M` segmented control                                                                            |
+| `ui/src/components/ui/scaled-cost-input.tsx`  | New — number input + `ScaleToggle`, normalizes to per-1k                                                                              |
+| `ui/src/pages/settings/rate-modal.tsx`        | Replace free-text model input with `ProviderModelPicker` (Add) / static text (Edit); replace plain cost inputs with `ScaledCostInput` |
+| `ui/src/pages/settings/cost-rates-panel.tsx`  | Update rate summary line to display in the entry's stored scale                                                                       |
+| `docs/App-Docs/configuration.md`              | Document `inputScale`/`outputScale` in the Cost Rates schema table                                                                    |
 
 ---
 
@@ -192,4 +192,4 @@ Grid implementation:
 - Unifying `costs` with the provider config's `ModelPricingSchema.inputPricePerM`/`outputPricePerM` (confirmed unrelated — display-only annotation, not read by cost calculation).
 - Any change to how `stream-handler.ts` computes cost, or to `CostStore`'s historical-rate schema.
 - A generic reusable "radio button group" design-system component beyond the specific `1k`/`1M` `ScaleToggle` needed here.
-- Deleting/renaming existing cost entries whose key doesn't match the `provider/model` convention (e.g. hand-edited `config.yaml` entries) — they continue to work via `stream-handler.ts`'s lookup as before; this design only changes how *new* keys are produced by the UI.
+- Deleting/renaming existing cost entries whose key doesn't match the `provider/model` convention (e.g. hand-edited `config.yaml` entries) — they continue to work via `stream-handler.ts`'s lookup as before; this design only changes how _new_ keys are produced by the UI.

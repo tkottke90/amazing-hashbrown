@@ -25,7 +25,7 @@ function ScaleToggle({
   className?: string;
 } & Omit<
   React.ComponentProps<typeof RadioGroupPrimitive.Root>,
-  'value' | 'onValueChange' | 'className'
+  'value' | 'onValueChange' | 'className' | 'onChange'
 >) {
   return (
     <RadioGroupPrimitive.Root

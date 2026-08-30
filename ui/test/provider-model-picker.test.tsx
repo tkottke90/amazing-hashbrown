@@ -4,7 +4,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ProviderModelPicker, type ProviderModelPickerProps } from '@/components/provider-model-picker';
+import {
+  ProviderModelPicker,
+  type ProviderModelPickerProps,
+} from '@/components/provider-model-picker';
 
 // jsdom has no `onpointerdown` IDL property — mirrors chat-input.test.tsx's
 // helper, needed to open Radix's pointerdown-driven dropdown/submenu.
