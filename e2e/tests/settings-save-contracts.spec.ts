@@ -68,8 +68,15 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Add a cost rate via the modal and Save',
-      expectedOutcome: 'PATCH body costs map includes the new model key with the entered prices',
+      action: 'Add a cost rate via the provider/model picker and Save',
+      expectedOutcome: 'PATCH body costs map includes the new provider/model key with the entered prices',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add a cost rate with the 1M scale toggle selected and Save',
+      expectedOutcome:
+        'PATCH body normalizes the entered 1M-scale price to per-1k and records the 1M scale',
       test: () => {},
     },
   ],
@@ -167,6 +174,27 @@ async function mockSettingsApi(
 async function mockProviderModelsApi(page: Page, models: string[]): Promise<void> {
   await page.route('**/api/v1/providers/models', async (route) => {
     await route.fulfill({ json: { ok: true, data: { models } } });
+  });
+}
+
+/**
+ * Mocks GET /api/v1/providers — the provider+model list behind the Cost
+ * rates "Add rate" modal's provider/model picker (and the chat input's own
+ * model switcher). Deliberately a separate route from
+ * `**\/api/v1/providers/models` above: that one is POST and lists live
+ * models for the provider-modal's Select; this one is GET and returns the
+ * already-configured provider list with their model IDs.
+ */
+async function mockProvidersListApi(
+  page: Page,
+  providers: Array<{ name: string; type: string; defaultModel?: string; models: { id: string }[] }>,
+): Promise<void> {
+  await page.route('**/api/v1/providers', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({ json: { providers, defaultProvider: '' } });
   });
 }
 
@@ -345,6 +373,9 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
+    await mockProvidersListApi(page, [
+      { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o-mini' }] },
+    ]);
     await page.goto('/settings?section=cost-rates');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
@@ -353,15 +384,69 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     // only one "Add rate" dialog exists and the trigger/submit text collision
     // only affects the very first click, resolved with .first().
     await page.getByRole('button', { name: 'Add rate' }).first().click();
-    await page.getByLabel('Model key').fill('gpt-4o-mini');
-    await page.getByLabel('Input cost per 1k tokens ($)').fill('0.01');
-    await page.getByLabel('Output cost per 1k tokens ($)').fill('0.03');
-    await page.getByRole('dialog').getByRole('button', { name: 'Add rate' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText('Select provider/model…').click();
+    await dialog.getByText('openai').click();
+    await dialog.getByText('gpt-4o-mini').click();
+    await dialog.getByLabel('Input cost').fill('0.01');
+    await dialog.getByLabel('Output cost').fill('0.03');
+    await dialog.getByRole('button', { name: 'Add rate' }).click();
 
     await save(page);
 
     const expected: CostRatesSettings = {
-      costs: { 'gpt-4o-mini': { inputPer1kTokens: 0.01, outputPer1kTokens: 0.03 } },
+      costs: {
+        'openai/gpt-4o-mini': {
+          inputPer1kTokens: 0.01,
+          inputScale: '1k',
+          outputPer1kTokens: 0.03,
+          outputScale: '1k',
+        },
+      },
+    };
+    expect(captured['cost-rates']).toEqual(expected);
+  });
+
+  test('Cost rates: entering a 1M-scale price normalizes it to per-1k on save @user-workflow', async ({
+    page,
+  }, testInfo) => {
+    const captured = await mockSettingsApi(page);
+    await mockProvidersListApi(page, [{ name: 'glm', type: 'openai', models: [{ id: 'glm-5.3' }] }]);
+    await page.goto('/settings?section=cost-rates');
+    await page.waitForSelector('[data-slot="settings-nav-item"]');
+    await pauseBeforeAction(page, testInfo);
+
+    await page.getByRole('button', { name: 'Add rate' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText('Select provider/model…').click();
+    await dialog.getByText('glm').click();
+    await dialog.getByText('glm-5.3').click();
+
+    // Each ScaledCostInput renders its own "1M"/"1k" radio pair with the same
+    // accessible names, so scope each toggle to its own field via the
+    // number input it sits beside (rate-modal.tsx's grid layout puts them in
+    // the same row).
+    await dialog.locator('#rate-input').locator('xpath=..').getByRole('radio', { name: '1M' }).click();
+    await dialog.getByLabel('Input cost').fill('1.4');
+    await dialog
+      .locator('#rate-output')
+      .locator('xpath=..')
+      .getByRole('radio', { name: '1M' })
+      .click();
+    await dialog.getByLabel('Output cost').fill('4.4');
+
+    await dialog.getByRole('button', { name: 'Add rate' }).click();
+    await save(page);
+
+    const expected: CostRatesSettings = {
+      costs: {
+        'glm/glm-5.3': {
+          inputPer1kTokens: 0.0014,
+          inputScale: '1M',
+          outputPer1kTokens: 0.0044,
+          outputScale: '1M',
+        },
+      },
     };
     expect(captured['cost-rates']).toEqual(expected);
   });

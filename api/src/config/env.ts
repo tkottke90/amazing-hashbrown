@@ -38,7 +38,9 @@ export const ObservabilitySchema = z.object({
 
 export const CostEntrySchema = z.object({
   inputPer1kTokens: z.number().default(0),
+  inputScale: z.enum(['1k', '1M']).default('1k'),
   outputPer1kTokens: z.number().default(0),
+  outputScale: z.enum(['1k', '1M']).default('1k'),
 });
 
 export type CostEntry = z.infer<typeof CostEntrySchema>;

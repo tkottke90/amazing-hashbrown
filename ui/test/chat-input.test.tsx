@@ -83,4 +83,24 @@ describe('ChatInput', () => {
     fireEvent.click(item);
     expect(onAddFile).toHaveBeenCalledTimes(1);
   });
+
+  it('drills into the provider/model submenu and calls onModelSelect', () => {
+    const onModelSelect = jest.fn();
+    render(
+      <ControlledChatInput
+        onModelSelect={onModelSelect}
+        providers={[
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
+          { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
+        ]}
+      />,
+    );
+
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    firePointerDown(screen.getByText('Provider'));
+    firePointerDown(screen.getByText('openai'));
+    fireEvent.click(screen.getByText('gpt-4o-mini'));
+
+    expect(onModelSelect).toHaveBeenCalledWith('openai', 'gpt-4o-mini');
+  });
 });

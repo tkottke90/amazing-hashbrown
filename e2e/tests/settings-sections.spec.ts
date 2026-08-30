@@ -123,7 +123,12 @@ const STUBS: StubMap = {
   },
   'cost-rates': {
     costs: {
-      'gpt-4o': { inputPer1kTokens: 0.005, outputPer1kTokens: 0.015 },
+      'gpt-4o': {
+        inputPer1kTokens: 0.005,
+        inputScale: '1k',
+        outputPer1kTokens: 0.015,
+        outputScale: '1k',
+      },
     },
   },
   'mcp-servers': {},
