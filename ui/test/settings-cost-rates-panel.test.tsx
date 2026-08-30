@@ -43,6 +43,27 @@ function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
 }
 
+// Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
+// top-level DropdownMenuTrigger above — it opens on click, or on real
+// pointer hover (timing-dependent), or an ArrowRight keypress while
+// focused. Layer click + keyboard so this doesn't depend on which of
+// those internal paths jsdom's synthetic events actually satisfy.
+function openSubmenu(element: HTMLElement) {
+  element.focus();
+  fireEvent.click(element);
+  fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
+
+// The mocked Dialog (test/__mocks__/preact-dialog.tsx) always renders its
+// children, so every row's Edit-mode RateModal — including its own
+// read-only `{modelKey}` text — is present in the DOM alongside that row's
+// own summary line, which renders the same text. The row's own paragraph
+// always comes first in DOM order, so pick that one explicitly rather than
+// an unscoped getByText, which throws on the duplicate match.
+function firstMatch(text: string): HTMLElement {
+  return screen.getAllByText(text)[0]!;
+}
+
 describe('CostRatesPanel', () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -72,9 +93,9 @@ describe('CostRatesPanel', () => {
     });
 
     render(<CostRatesPanel />);
-    await waitFor(() => expect(screen.getByText('gpt-4o')).toBeInTheDocument());
+    await waitFor(() => expect(firstMatch('gpt-4o')).toBeInTheDocument());
 
-    expect(screen.getByText('claude-3-opus')).toBeInTheDocument();
+    expect(firstMatch('claude-3-opus')).toBeInTheDocument();
     expect(screen.getByText(/In: \$0.005\/1k/)).toBeInTheDocument();
     expect(screen.getByText(/In: \$0.015\/1k/)).toBeInTheDocument();
   });
@@ -92,7 +113,7 @@ describe('CostRatesPanel', () => {
     });
 
     render(<CostRatesPanel />);
-    await waitFor(() => expect(screen.getByText('glm/glm-5.3')).toBeInTheDocument());
+    await waitFor(() => expect(firstMatch('glm/glm-5.3')).toBeInTheDocument());
 
     expect(screen.getByText(/In: \$1.4\/1M/)).toBeInTheDocument();
     expect(screen.getByText(/Out: \$4.4\/1M/)).toBeInTheDocument();
@@ -111,7 +132,7 @@ describe('CostRatesPanel', () => {
     });
 
     render(<CostRatesPanel />);
-    await waitFor(() => expect(screen.getByText('gpt-4o')).toBeInTheDocument());
+    await waitFor(() => expect(firstMatch('gpt-4o')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
@@ -135,7 +156,7 @@ describe('CostRatesPanel', () => {
     // both the trigger and the form content, so the Add-rate form is
     // already present — no need to "open" it first.
     firePointerDown(screen.getByText('Select provider/model…'));
-    firePointerDown(screen.getByText('openai'));
+    openSubmenu(screen.getByText('openai'));
     fireEvent.click(screen.getByText('gpt-4o-mini'));
 
     // Two ScaledCostInputs (input/output) each render their own "1M" radio
@@ -149,7 +170,7 @@ describe('CostRatesPanel', () => {
     const form = container.querySelector('form') as HTMLFormElement;
     fireEvent.click(within(form).getByRole('button', { name: 'Add rate' }));
 
-    await waitFor(() => expect(screen.getByText('openai/gpt-4o-mini')).toBeInTheDocument());
+    await waitFor(() => expect(firstMatch('openai/gpt-4o-mini')).toBeInTheDocument());
     expect(screen.getByText(/In: \$1.4\/1M/)).toBeInTheDocument();
   });
 });

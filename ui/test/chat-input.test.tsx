@@ -16,6 +16,17 @@ function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
 }
 
+// Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
+// top-level DropdownMenuTrigger above — it opens on click, or on real
+// pointer hover (timing-dependent), or an ArrowRight keypress while
+// focused. Layer click + keyboard so this doesn't depend on which of
+// those internal paths jsdom's synthetic events actually satisfy.
+function openSubmenu(element: HTMLElement) {
+  element.focus();
+  fireEvent.click(element);
+  fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
+
 describe('ChatInput', () => {
   it('renders the textarea with the given placeholder', () => {
     render(<ControlledChatInput placeholder="Ask anything" />);
@@ -97,8 +108,8 @@ describe('ChatInput', () => {
     );
 
     firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
-    firePointerDown(screen.getByText('Provider'));
-    firePointerDown(screen.getByText('openai'));
+    openSubmenu(screen.getByText('Provider'));
+    openSubmenu(screen.getByText('openai'));
     fireEvent.click(screen.getByText('gpt-4o-mini'));
 
     expect(onModelSelect).toHaveBeenCalledWith('openai', 'gpt-4o-mini');
