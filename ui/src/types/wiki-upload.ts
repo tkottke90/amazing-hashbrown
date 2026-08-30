@@ -24,7 +24,7 @@ export type UploadJobState =
   | { stage: 'pending' | 'unpacking' | 'validating' | 'registering' | 'linting' }
   | { stage: 'embedding'; pagesEmbedded: number; pagesTotal: number }
   | { stage: 'done'; wikiId: string; lintReport: LintReport }
-  | { stage: 'failed'; error: string };
+  | { stage: 'failed'; error: string; findings?: LintFinding[] };
 
 export interface UploadCapabilities {
   acceptedFormats: string[];

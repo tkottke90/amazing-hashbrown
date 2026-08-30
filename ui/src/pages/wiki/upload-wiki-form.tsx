@@ -4,8 +4,34 @@ import { Upload, CheckCircle, XCircle, Loader2, Circle } from 'lucide-preact';
 import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import { domains, refreshDomains } from '@/pages/wiki/use-wiki';
 import { fetchUploadCapabilities, startWikiUpload, fetchUploadStatus } from '@/services/wiki-api';
-import type { UploadJobState, UploadCapabilities } from '@/types/wiki-upload';
+import type { UploadJobState, UploadCapabilities, LintFinding } from '@/types/wiki-upload';
 import { CodeBlock } from '@/components/markdown';
+
+// ---------------------------------------------------------------------------
+// Failure display — groups lint findings by file, falls back to the plain
+// error message for non-lint failures (registration errors, thrown
+// exceptions, etc.) that carry no `findings`.
+// ---------------------------------------------------------------------------
+
+function groupFindingsByPage(findings: LintFinding[]): Map<string | undefined, LintFinding[]> {
+  const grouped = new Map<string | undefined, LintFinding[]>();
+  for (const finding of findings) {
+    const existing = grouped.get(finding.page);
+    if (existing) existing.push(finding);
+    else grouped.set(finding.page, [finding]);
+  }
+  return grouped;
+}
+
+function formatFailureBody(error: string, findings?: LintFinding[]): string {
+  if (!findings?.length) return error;
+  const lines = [error, ''];
+  for (const [page, pageFindings] of groupFindingsByPage(findings)) {
+    lines.push(page ?? 'General');
+    for (const f of pageFindings) lines.push(`  - ${f.check}: ${f.message}`);
+  }
+  return lines.join('\n');
+}
 
 // ---------------------------------------------------------------------------
 // Step definitions
@@ -86,7 +112,7 @@ function StepRow({
 // Form
 // ---------------------------------------------------------------------------
 
-export function UploadWikiForm() {
+export function UploadWikiForm({ resetRef }: { resetRef: { current: () => void } }) {
   const { close } = useDialog();
   const capabilities = useSignal<UploadCapabilities | null>(null);
 
@@ -138,9 +164,22 @@ export function UploadWikiForm() {
     }
   }
 
+  resetRef.current = reset;
+
   function handleClose() {
     reset();
     close();
+  }
+
+  function backToForm() {
+    jobId.value = null;
+    jobState.value = null;
+    file.value = null;
+    submitting.value = false;
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
   }
 
   function applyFile(f: File) {
@@ -235,12 +274,14 @@ export function UploadWikiForm() {
           )}
 
           {isFailed && (
-            <div class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
-              {jobState.value?.stage === 'failed' ? jobState.value.error : 'Upload failed'}
-            </div>
+            <CodeBlock className="max-h-40 overflow-y-auto whitespace-pre-wrap text-destructive">
+              {jobState.value?.stage === 'failed'
+                ? formatFailureBody(jobState.value.error, jobState.value.findings)
+                : 'Upload failed'}
+            </CodeBlock>
           )}
 
-          {(isDone || isFailed) && (
+          {isDone && (
             <div class="flex justify-end">
               <button
                 type="button"
@@ -248,6 +289,25 @@ export function UploadWikiForm() {
                 class="rounded bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90"
               >
                 Close
+              </button>
+            </div>
+          )}
+
+          {isFailed && (
+            <div class="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                class="rounded px-3 py-1.5 text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={backToForm}
+                class="rounded bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90"
+              >
+                Back to Form
               </button>
             </div>
           )}
@@ -336,9 +396,12 @@ export function UploadWikiForm() {
 // ---------------------------------------------------------------------------
 
 export function UploadWikiDialog() {
+  const resetRef = useRef<() => void>(() => {});
+
   return (
     <Modal
       title="Upload Wiki"
+      onCancel={() => resetRef.current()}
       trigger={
         <button
           type="button"
@@ -349,7 +412,7 @@ export function UploadWikiDialog() {
         </button>
       }
     >
-      <UploadWikiForm />
+      <UploadWikiForm resetRef={resetRef} />
     </Modal>
   );
 }

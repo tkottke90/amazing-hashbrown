@@ -2,6 +2,7 @@ import { Signal, useSignal } from '@preact/signals';
 import { X as XIcon } from 'lucide-preact';
 import { cloneElement, ComponentChildren, createContext, type JSX } from 'preact';
 import { useContext, useRef } from 'preact/hooks';
+import { cn } from './cn';
 import { useHtmlElementListeners } from './eventListeners';
 
 const X = XIcon;
@@ -73,9 +74,10 @@ export function Dialog({
       {triggerElement}
       <dialog
         ref={modalRef}
-        className={`p-6 text-neutral-800 dark:text-neutral-200
-        bg-neutral-50/80 dark:bg-neutral-700/80
-        rounded border border-neutral-400/50 ${className ?? ''}`}
+        className={cn(
+          'p-6 text-neutral-800 dark:text-neutral-200 bg-neutral-50/80 dark:bg-neutral-700/80 rounded border border-neutral-400/50',
+          className,
+        )}
       >
         {/*
           A caller-provided (e.g. overlay-variant) inner wrapper class is the

@@ -1,3 +1,4 @@
+import { cn } from './cn';
 import { Dialog, DialogProps } from './Dialog';
 
 // Positioning, sizing, stacking, and the dialog/backdrop fade transition.
@@ -17,6 +18,7 @@ const MODAL_CLASSNAME = `
   fixed inset-0 block pointer-events-none opacity-0 mx-auto my-4 min-w-10/12
   transition-opacity transition-discrete duration-200
   sm:min-w-150
+  lg:max-w-[60vw]
   backdrop:backdrop-blur-xs backdrop:transition-all backdrop:transition-discrete backdrop:duration-200
   backdrop:bg-transparent open:backdrop:bg-neutral-900/50 starting:open:backdrop:bg-transparent
   open:pointer-events-auto open:opacity-100 z-50
@@ -34,7 +36,7 @@ const MODAL_CONTENT_CLASSNAME = `backdrop-blur-sm translate-y-1 transition-trans
 export function Modal({ children, className, ...props }: DialogProps) {
   return (
     <Dialog
-      className={`${MODAL_CLASSNAME} ${className ?? ''}`}
+      className={cn(MODAL_CLASSNAME, className)}
       contentClassName={MODAL_CONTENT_CLASSNAME}
       {...props}
     >

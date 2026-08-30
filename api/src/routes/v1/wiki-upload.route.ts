@@ -6,6 +6,7 @@ import { Router } from 'express';
 import type { Request } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 import {
   createUploadJob,
@@ -33,7 +34,12 @@ execFile('which', ['unzip'], (err) => {
 // DMZ directory
 // ---------------------------------------------------------------------------
 
-const dmzRoot = path.resolve(process.cwd(), env.wikiRoot ?? './wiki', '_dmz');
+function dmzRootPath(wikiRootOverride?: string): string {
+  return path.join(
+    wikiRootOverride ?? path.resolve(process.cwd(), env.wikiRoot ?? './wiki'),
+    '_dmz',
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Multer — disk storage into the DMZ; jobId injected before middleware fires
@@ -46,7 +52,7 @@ interface RequestWithJobId extends Request {
 const storage = multer.diskStorage({
   destination: async (req, _file, cb) => {
     const jobId = (req as RequestWithJobId).jobId;
-    const dir = path.join(dmzRoot, jobId);
+    const dir = path.join(dmzRootPath(), jobId);
     try {
       await fs.mkdir(dir, { recursive: true });
       cb(null, dir);
@@ -157,33 +163,45 @@ async function walkDir(dir: string): Promise<string[]> {
   return results;
 }
 
-async function cleanupDmzJob(jobId: string): Promise<void> {
+async function cleanupDmzJob(jobId: string, wikiRootOverride?: string): Promise<void> {
   try {
-    await fs.rm(path.join(dmzRoot, jobId), { recursive: true, force: true });
+    await fs.rm(path.join(dmzRootPath(wikiRootOverride), jobId), { recursive: true, force: true });
   } catch {
     // best-effort
   }
 }
 
-async function rollback(wikiId: string, wikiPath: string, jobId: string): Promise<void> {
+async function rollback(
+  wikiId: string,
+  wikiPath: string,
+  jobId: string,
+  injectedRegistry?: WikiRegistry,
+  wikiRootOverride?: string,
+): Promise<void> {
   await fs.rm(wikiPath, { recursive: true, force: true }).catch(() => undefined);
   try {
-    const registry = await getWikiRegistry();
+    const registry = injectedRegistry ?? (await getWikiRegistry());
     await registry.remove(wikiId);
   } catch {
     // already removed or never registered
   }
-  await cleanupDmzJob(jobId);
+  await cleanupDmzJob(jobId, wikiRootOverride);
 }
 
 // ---------------------------------------------------------------------------
 // Async upload pipeline — runs after the HTTP response is sent
 // ---------------------------------------------------------------------------
 
-async function processUpload(jobId: string, wikiId: string, archivePath: string): Promise<void> {
-  const dmzJobDir = path.join(dmzRoot, jobId);
+export async function processUpload(
+  jobId: string,
+  wikiId: string,
+  archivePath: string,
+  injectedRegistry?: WikiRegistry,
+  wikiRootOverride?: string,
+): Promise<void> {
+  const dmzJobDir = path.join(dmzRootPath(wikiRootOverride), jobId);
   const extractedDir = path.join(dmzJobDir, 'extracted');
-  const wikiRoot = path.resolve(process.cwd(), env.wikiRoot ?? './wiki');
+  const wikiRoot = wikiRootOverride ?? path.resolve(process.cwd(), env.wikiRoot ?? './wiki');
   const wikiDestPath = path.join(wikiRoot, wikiId);
 
   try {
@@ -193,7 +211,7 @@ async function processUpload(jobId: string, wikiId: string, archivePath: string)
       await extractArchive(archivePath, extractedDir);
     } catch (err) {
       setUploadState(jobId, { stage: 'failed', error: `Extraction failed: ${String(err)}` });
-      await cleanupDmzJob(jobId);
+      await cleanupDmzJob(jobId, wikiRootOverride);
       return;
     }
 
@@ -202,7 +220,7 @@ async function processUpload(jobId: string, wikiId: string, archivePath: string)
     const validationError = await validateStructure(extractedDir);
     if (validationError) {
       setUploadState(jobId, { stage: 'failed', error: `Validation failed: ${validationError}` });
-      await cleanupDmzJob(jobId);
+      await cleanupDmzJob(jobId, wikiRootOverride);
       return;
     }
 
@@ -215,20 +233,20 @@ async function processUpload(jobId: string, wikiId: string, archivePath: string)
         stage: 'failed',
         error: `Could not move wiki to destination: ${String(err)}`,
       });
-      await cleanupDmzJob(jobId);
+      await cleanupDmzJob(jobId, wikiRootOverride);
       return;
     }
 
-    let registry;
+    let registry: WikiRegistry;
     try {
-      registry = await getWikiRegistry();
+      registry = injectedRegistry ?? (await getWikiRegistry());
       await registry.register(wikiId);
     } catch (err) {
       setUploadState(jobId, {
         stage: 'failed',
         error: `Registration failed: ${String(err)}`,
       });
-      await rollback(wikiId, wikiDestPath, jobId);
+      await rollback(wikiId, wikiDestPath, jobId, injectedRegistry, wikiRootOverride);
       return;
     }
 
@@ -242,18 +260,18 @@ async function processUpload(jobId: string, wikiId: string, archivePath: string)
         stage: 'failed',
         error: `Lint check failed to run: ${String(err)}`,
       });
-      await rollback(wikiId, wikiDestPath, jobId);
+      await rollback(wikiId, wikiDestPath, jobId, injectedRegistry, wikiRootOverride);
       return;
     }
 
     const lintErrors = lintReport.checks.filter((c) => c.severity === 'error');
     if (lintErrors.length > 0) {
-      const summary = lintErrors.map((c) => `${c.check}: ${c.message}`).join('; ');
       setUploadState(jobId, {
         stage: 'failed',
-        error: `Wiki has ${lintErrors.length} error-severity lint finding(s) — fix before uploading. ${summary}`,
+        error: `Wiki has ${lintErrors.length} error-severity lint finding(s) — fix before uploading.`,
+        findings: lintErrors,
       });
-      await rollback(wikiId, wikiDestPath, jobId);
+      await rollback(wikiId, wikiDestPath, jobId, injectedRegistry, wikiRootOverride);
       return;
     }
 
@@ -273,12 +291,14 @@ async function processUpload(jobId: string, wikiId: string, archivePath: string)
 
     // ── Done ────────────────────────────────────────────────────────────────
     setUploadState(jobId, { stage: 'done', wikiId, lintReport });
-    await cleanupDmzJob(jobId);
+    await cleanupDmzJob(jobId, wikiRootOverride);
     logger.info('Wiki upload complete', { jobId, wikiId });
   } catch (err) {
     logger.error('Wiki upload unexpected error', { jobId, err: String(err) });
     setUploadState(jobId, { stage: 'failed', error: `Unexpected error: ${String(err)}` });
-    await rollback(wikiId, wikiDestPath, jobId).catch(() => undefined);
+    await rollback(wikiId, wikiDestPath, jobId, injectedRegistry, wikiRootOverride).catch(
+      () => undefined,
+    );
   }
 }
 
@@ -323,7 +343,7 @@ wikiUploadRouter.post(
     const parsed = UploadBodySchema.safeParse(req.body);
     if (!parsed.success) {
       await fs
-        .rm(path.join(dmzRoot, jobId), { recursive: true, force: true })
+        .rm(path.join(dmzRootPath(), jobId), { recursive: true, force: true })
         .catch(() => undefined);
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid name' });
       return;
@@ -340,7 +360,7 @@ wikiUploadRouter.post(
     }
     if (registry.list().some((w) => w.id === wikiId)) {
       await fs
-        .rm(path.join(dmzRoot, jobId), { recursive: true, force: true })
+        .rm(path.join(dmzRootPath(), jobId), { recursive: true, force: true })
         .catch(() => undefined);
       res.status(409).json({ error: `Wiki domain "${wikiId}" already exists` });
       return;
