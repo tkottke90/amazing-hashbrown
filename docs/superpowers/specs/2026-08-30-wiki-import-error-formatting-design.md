@@ -114,7 +114,7 @@ Per `ui/src/components/AGENTS.md`'s documented pattern, the `Dialog`/`Modal` com
 
 ## 5. Modal Width Cap (App-Wide)
 
-Separately from the error-formatting work, the `Modal` component (`lib/preact-dialog/src/Modal.tsx`) currently sets only a *min*-width (`min-w-10/12`, growing to `sm:min-w-150`) with no max-width at all, so any modal grows to fit its content — observed on the Upload Wiki modal reaching ~95% of viewport width on larger screens. This design adds a max-width cap to `MODAL_CLASSNAME` itself, so every modal in the app is capped, not just Upload Wiki:
+Separately from the error-formatting work, the `Modal` component (`lib/preact-dialog/src/Modal.tsx`) currently sets only a _min_-width (`min-w-10/12`, growing to `sm:min-w-150`) with no max-width at all, so any modal grows to fit its content — observed on the Upload Wiki modal reaching ~95% of viewport width on larger screens. This design adds a max-width cap to `MODAL_CLASSNAME` itself, so every modal in the app is capped, not just Upload Wiki:
 
 ```typescript
 const MODAL_CLASSNAME = `
@@ -143,22 +143,22 @@ const MODAL_CLASSNAME = `
 
 ## 7. Files Changed
 
-| File | Change |
-| --- | --- |
-| `lib/llm-wiki/src/types.ts` | Add optional `findings?: LintFinding[]` to `UploadJobState`'s `failed` variant |
-| `ui/src/types/wiki-upload.ts` | Mirror the same `findings?: LintFinding[]` addition |
-| `api/src/routes/v1/wiki-upload.route.ts` | Lint-failure branch (~line 249-258): pass `lintErrors` through as `findings`, shorten `error` to the summary line only |
-| `ui/src/components/markdown.tsx` | `CodeBlock`: swap `cn()` argument order so caller `className` can override `overflow`/`whitespace` |
-| `ui/src/pages/wiki/upload-wiki-form.tsx` | Replace plain-text failure `<div>` with grouped/scrollable `CodeBlock`; add "Back to Form" button and its handler; wire `onCancel={reset}` on the `Modal` in `UploadWikiDialog` |
-| `api/src/routes/v1/wiki-upload.handlers.test.ts` (new, name to match sibling `*.handlers.test.ts` convention) | Cover the lint-failure branch's `findings` output |
-| `lib/preact-dialog/src/Modal.tsx` | Add `lg:max-w-[60vw]` to `MODAL_CLASSNAME`, capping every modal's width above the tablet breakpoint |
+| File                                                                                                          | Change                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/llm-wiki/src/types.ts`                                                                                   | Add optional `findings?: LintFinding[]` to `UploadJobState`'s `failed` variant                                                                                                  |
+| `ui/src/types/wiki-upload.ts`                                                                                 | Mirror the same `findings?: LintFinding[]` addition                                                                                                                             |
+| `api/src/routes/v1/wiki-upload.route.ts`                                                                      | Lint-failure branch (~line 249-258): pass `lintErrors` through as `findings`, shorten `error` to the summary line only                                                          |
+| `ui/src/components/markdown.tsx`                                                                              | `CodeBlock`: swap `cn()` argument order so caller `className` can override `overflow`/`whitespace`                                                                              |
+| `ui/src/pages/wiki/upload-wiki-form.tsx`                                                                      | Replace plain-text failure `<div>` with grouped/scrollable `CodeBlock`; add "Back to Form" button and its handler; wire `onCancel={reset}` on the `Modal` in `UploadWikiDialog` |
+| `api/src/routes/v1/wiki-upload.handlers.test.ts` (new, name to match sibling `*.handlers.test.ts` convention) | Cover the lint-failure branch's `findings` output                                                                                                                               |
+| `lib/preact-dialog/src/Modal.tsx`                                                                             | Add `lg:max-w-[60vw]` to `MODAL_CLASSNAME`, capping every modal's width above the tablet breakpoint                                                                             |
 
 ---
 
 ## 8. Out of Scope
 
 - Fixing Escape-key dismissal bypassing `onCancel`/`onClose` in the shared `lib/preact-dialog` package — a pre-existing, app-wide gap, not specific to this issue (see §4).
-- Adding per-finding remediation hints beyond the existing lint check `message` text (e.g. "add a `title:` field to frontmatter") — the issue's acceptance criteria ask for identifying *which file* and *why*, both already carried in the existing `LintFinding.message`; authoring new guidance text per check is a separate effort.
+- Adding per-finding remediation hints beyond the existing lint check `message` text (e.g. "add a `title:` field to frontmatter") — the issue's acceptance criteria ask for identifying _which file_ and _why_, both already carried in the existing `LintFinding.message`; authoring new guidance text per check is a separate effort.
 - Standing up the first Jest component test suite for `ui/src` — deferred per §6; this issue is verified manually instead.
 - Grouping or restructuring the non-error-severity lint findings shown on the success path (`isDone`'s "N lint finding(s) to review" line) — only the failure path's display is in scope.
 - A pixel-perfect design pass on every other modal (`rate-modal.tsx`, `provider-modal.tsx`, `tracker-config-modal.tsx`, `new-domain-form.tsx`) at the new 60vw cap — per §5, a visual smoke check during implementation is sufficient; none are expected to regress.
