@@ -24,6 +24,7 @@ import {
   recordWikiUpdate,
   recordResourceCard,
 } from './thread-message-writer.js';
+import { extractToolResultContent } from './tool-output.js';
 
 // ---- SSE write helper ----
 
@@ -162,7 +163,7 @@ export async function pipeEvents(
       case 'on_tool_end': {
         if (evt.name !== 'ask_user') {
           const toolCallId = evt.run_id as string;
-          const outputs = evt.data?.output;
+          const outputs = extractToolResultContent(evt.data?.output);
           const started = toolCallsInFlight.get(toolCallId);
           if (started) {
             finalizeToolCall(

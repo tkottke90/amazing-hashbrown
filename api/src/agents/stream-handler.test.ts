@@ -5,6 +5,7 @@ import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
+import { ToolMessage } from '@langchain/core/messages';
 import { ThreadStore } from '../services/thread-store.js';
 import { pipeEvents, finalizeTurn, makeLiveSseWriter } from './stream-handler.js';
 
@@ -534,6 +535,48 @@ describe('agents/stream-handler', () => {
         inputs: { a: 2, b: 3 },
         outputs: '5',
       });
+    });
+
+    it('unwraps a LangChain ToolMessage output to its plain content in both the DB payload and the SSE event', async () => {
+      const { sink, events } = fakeSink();
+      const toolMessage = new ToolMessage({
+        content: 'Added cross-link from entities/wireguard.md to entities/windows-pc.md.',
+        tool_call_id: 'tc-link',
+        name: 'wiki_add_cross_link',
+      });
+      await pipeEvents(
+        sink,
+        'msg3b',
+        eventsFrom([
+          {
+            event: 'on_tool_start',
+            name: 'wiki_add_cross_link',
+            run_id: 'tc-link',
+            data: { input: { fromPage: 'a.md', toPage: 'b.md' } },
+          },
+          {
+            event: 'on_tool_end',
+            name: 'wiki_add_cross_link',
+            run_id: 'tc-link',
+            data: { output: toolMessage },
+          },
+        ]),
+        store,
+        't1',
+      );
+
+      const toolMsg = store.getMessage('t1', 'tc-link')!;
+      expect(toolMsg.payload).to.deep.equal({
+        toolCallId: 'tc-link',
+        toolName: 'wiki_add_cross_link',
+        inputs: { fromPage: 'a.md', toPage: 'b.md' },
+        outputs: 'Added cross-link from entities/wireguard.md to entities/windows-pc.md.',
+      });
+
+      const endEvent = events().find((e) => e.type === 'tool_call_end')!;
+      expect(endEvent.outputs).to.equal(
+        'Added cross-link from entities/wireguard.md to entities/windows-pc.md.',
+      );
     });
 
     it('skips ask_user tool calls entirely — no SSE event, no thread_messages row', async () => {
