@@ -4,19 +4,10 @@ import * as d3Force from 'd3-force';
 import * as d3Selection from 'd3-selection';
 import * as d3Zoom from 'd3-zoom';
 import * as d3Drag from 'd3-drag';
-import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { D3ZoomEvent } from 'd3-zoom';
 import { graphData, enabledDomainIds, domains, loadPage } from '@/pages/wiki/use-wiki';
-import type { GraphNode, GraphEdge } from '@/services/wiki-api';
+import { buildGraphData, type D3Node, type D3Edge } from './build-graph-data';
 import { getDomainColor } from './domain-filter';
-
-// ---- D3 node/edge types ----
-
-interface D3Node extends SimulationNodeDatum, GraphNode {
-  edgeCount?: number;
-}
-
-type D3Edge = SimulationLinkDatum<D3Node> & GraphEdge;
 
 // ---- Hover card ----
 
@@ -47,27 +38,12 @@ export function GraphView({ onOpenInEditor }: Props) {
     // Build domain → color index map
     const domainColorIndex = new Map<string, number>(domainList.map((d, i) => [d.id, i]));
 
-    const allNodes = graphData.value.nodes.filter((n) => enabled.has(n.domainId));
-    const allowedIds = new Set(allNodes.map((n) => n.id));
-    const allEdges = graphData.value.edges.filter(
-      (e) => enabled.has(e.domainId) && allowedIds.has(e.source) && allowedIds.has(e.target),
+    const { nodes, edges: visibleEdges } = buildGraphData(
+      graphData.value.nodes,
+      graphData.value.edges,
+      enabled,
     );
-
-    // Count edges per node for radius scaling
-    const edgeCounts = new Map<string, number>();
-    for (const e of allEdges) {
-      edgeCounts.set(e.source as string, (edgeCounts.get(e.source as string) ?? 0) + 1);
-      edgeCounts.set(e.target as string, (edgeCounts.get(e.target as string) ?? 0) + 1);
-    }
-    const maxEdges = Math.max(1, ...edgeCounts.values());
-
-    const nodes: D3Node[] = allNodes.map((n) => ({
-      ...n,
-      edgeCount: edgeCounts.get(n.id) ?? 0,
-    }));
-
-    // Hidden derived_from edges excluded by default
-    const visibleEdges: D3Edge[] = (allEdges as D3Edge[]).filter((e) => e.type !== 'derived_from');
+    const maxEdges = Math.max(1, ...nodes.map((n) => n.edgeCount ?? 0));
 
     // Clear previous render
     const sel = d3Selection.select(svg);
@@ -112,6 +88,7 @@ export function GraphView({ onOpenInEditor }: Props) {
     const linkSel = g
       .append('g')
       .attr('class', 'edges')
+      .attr('data-testid', 'graph-edges')
       .selectAll<SVGLineElement, D3Edge>('line')
       .data(visibleEdges)
       .enter()
@@ -127,6 +104,7 @@ export function GraphView({ onOpenInEditor }: Props) {
     const nodeSel = g
       .append('g')
       .attr('class', 'nodes')
+      .attr('data-testid', 'graph-nodes')
       .selectAll<SVGCircleElement, D3Node>('circle')
       .data(nodes)
       .enter()
