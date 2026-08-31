@@ -107,6 +107,14 @@ No server-side confirmation gate is added on push — it's invoked only by an ex
 - Buttons disable while their request is in flight; errors render inline, following the existing inline-error convention (`workspace-settings-drawer.tsx`, the create-workspace form).
 - On any successful mutating action, re-run `loadFileTree(workspaceId, { force: true })` (already exported from `use-workspace-files.ts`) so the branch name and file-status badges refresh immediately.
 
+### 3.4 Note on non-GitHub git backends (e.g. Radicle)
+
+Nothing in this design is GitHub-specific: every operation shells out to plain `git` against whatever remote is already configured, so a repository backed by a different transport should work without code changes, *provided that transport's git-remote-helper is installed and reachable in the environment*. [Radicle](https://radicle.dev/), for example, ships a `git-remote-rad` helper — once installed, a `rad://<repo-id>` URL is just another value for `remoteUrl`, and `git clone -- <remoteUrl> .` (§2) resolves it exactly like an `https://` or `git@` URL.
+
+One known gap: `pushBranch`'s no-upstream-yet fallback (§3.1) is hardcoded to `git push -u origin <branch>`. GitHub clones conventionally name their remote `origin`, but a Radicle-cloned repo's remote is conventionally named `rad` — so the very first push of a newly created branch on such a workspace would target a remote that doesn't exist. Fixing this (detect the configured remote name instead of assuming `origin`, e.g. from `git remote`) is straightforward but out of scope for this pass; it's called out here as a known limitation rather than fixed speculatively, since GitHub is the only backend in active use today.
+
+Also out of scope, and unlike GitHub: Radicle's auth model is a running `radicle-node` process with a locally provisioned identity (`rad auth`), not a static credential file. This design's "no credential handling — rides on the environment's ambient git auth" stance (§2) assumes that auth is already sitting there when a git command runs; Radicle would need that *process* running and reachable, which is a heavier environmental prerequisite this design doesn't provision or verify.
+
 ---
 
 ## 4. Testing
@@ -172,3 +180,5 @@ Following `workspace-create-form.test.tsx`'s Preact Testing Library conventions:
 - Auto-stashing, force-checkout, or any other data-discarding recovery path for a dirty working tree — conflicts and blocked operations are surfaced as errors, not auto-resolved.
 - Credential management for private remotes — relies entirely on the host environment's already-configured git/`gh` authentication.
 - Merge/rebase (beyond the fast-forward-only sync), cherry-pick, tag management, or any other git operation not explicitly listed in §3.1.
+- Installing, configuring, or provisioning any non-GitHub git backend (e.g. Radicle's `git-remote-rad` helper or a running `radicle-node`) in the Docker image or elsewhere — see §3.4 for what would and wouldn't already work if one were present.
+- Fixing `pushBranch`'s hardcoded `origin` fallback to detect the actual configured remote name — documented as a known limitation in §3.4, not fixed in this pass.
