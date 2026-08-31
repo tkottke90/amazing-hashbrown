@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
+import { flushSync } from 'preact/compat';
 import { Plus, Send, Square, X } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
@@ -18,7 +19,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ProviderModelPicker } from '@/components/provider-model-picker';
+import {
+  ProviderModelPicker,
+  MODEL_SUBMENU_CLOSE_GRACE_MS,
+} from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
 export interface ChatInputProps {
@@ -99,6 +103,84 @@ export function ChatInput({
   const menuItems = useSignal<SkillInfo[]>([]);
   const menuIndex = useSignal(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // App-controlled open state for the "Provider" sub-menu, mirroring
+  // ProviderModelPicker's own per-provider Subs (see the comment there and
+  // docs/superpowers/specs/2026-08-31-model-picker-submenu-fix-design.md).
+  // This one also needs to be controlled: with only the inner per-provider
+  // Sub controlled, opening it via a genuine keyboard ArrowRight collapsed
+  // the entire menu tree back to the root and threw focus out to <body> —
+  // Radix's own synchronous "move focus into the newly-opened content" code
+  // runs immediately after onOpenChange, and when that inner content's own
+  // controlled-Sub render hadn't landed yet relative to *this* Sub's own
+  // uncontrolled bookkeeping, this outer Sub's tracking got corrupted and it
+  // tore the whole thing down. Controlling this level too, with the same
+  // flushSync-forced synchronous open, keeps both levels' state consistent
+  // with what Radix expects at every step.
+  const providerMenuOpen = useSignal(false);
+  const providerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Whether some provider's own model list (a separately-portaled subtree —
+  // see handleProviderModelMenuOpenChange below) is currently open. While
+  // true, this Sub's own close must never actually schedule: the cursor
+  // leaving THIS Sub's own trigger/content fires repeatedly as it moves
+  // around inside that already-open child (every one of those direct
+  // pointer-leave events calls scheduleProviderMenuClose again), and only
+  // one of those calls happening to route through the child-open callback
+  // isn't enough to guard against the rest.
+  const childMenuOpen = useSignal(false);
+
+  function cancelProviderMenuClose() {
+    if (providerCloseTimerRef.current !== null) {
+      clearTimeout(providerCloseTimerRef.current);
+      providerCloseTimerRef.current = null;
+    }
+  }
+
+  function openProviderMenuNow() {
+    cancelProviderMenuClose();
+    flushSync(() => {
+      providerMenuOpen.value = true;
+    });
+  }
+
+  function scheduleProviderMenuClose() {
+    if (childMenuOpen.peek()) return;
+    cancelProviderMenuClose();
+    providerCloseTimerRef.current = setTimeout(() => {
+      providerCloseTimerRef.current = null;
+      providerMenuOpen.value = false;
+    }, MODEL_SUBMENU_CLOSE_GRACE_MS);
+  }
+
+  function keepProviderMenuOpenOnFocus() {
+    if (providerMenuOpen.peek()) {
+      cancelProviderMenuClose();
+    }
+  }
+
+  // A provider's own model list (rendered by ProviderModelPicker) is a
+  // separately-portaled DOM subtree — not a DOM descendant of this "Provider"
+  // Sub's own trigger/content. So the moment the user's cursor moves off
+  // this Sub's own elements and into a provider's model list, THIS Sub's
+  // onPointerLeave fires and its own close timer starts, even though the
+  // user is still actively using the menu — the cursor just never comes
+  // back to re-enter this Sub's own DOM nodes while browsing the model
+  // list. Without this signal, that timer fires on schedule and closes
+  // "Provider", tearing down the open model list underneath it. Forcing
+  // this Sub open whenever ProviderModelPicker reports any provider's
+  // model list open — and re-arming this Sub's own close grace once that
+  // reports closed — keeps the levels' liveness in sync with each other
+  // instead of each one only knowing about its own direct DOM events.
+  function handleProviderModelMenuOpenChange(isOpen: boolean) {
+    childMenuOpen.value = isOpen;
+    if (isOpen) {
+      openProviderMenuNow();
+    } else {
+      scheduleProviderMenuClose();
+    }
+  }
+
+  useEffect(() => () => cancelProviderMenuClose(), []);
 
   function selectSkill(skill: SkillInfo) {
     onValueChange(`${skill.slashCommand} `);
@@ -239,14 +321,34 @@ export function ChatInput({
               {providers && providers.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
+                  <DropdownMenuSub
+                    open={providerMenuOpen.value}
+                    onOpenChange={(open) => {
+                      if (open) {
+                        openProviderMenuNow();
+                      } else {
+                        scheduleProviderMenuClose();
+                      }
+                    }}
+                  >
+                    <DropdownMenuSubTrigger
+                      onPointerEnter={openProviderMenuNow}
+                      onFocus={keepProviderMenuOpenOnFocus}
+                      onPointerLeave={scheduleProviderMenuClose}
+                    >
+                      Provider
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      onPointerEnter={openProviderMenuNow}
+                      onFocus={keepProviderMenuOpenOnFocus}
+                      onPointerLeave={scheduleProviderMenuClose}
+                    >
                       <ProviderModelPicker
                         providers={providers}
                         activeProvider={activeProvider ?? undefined}
                         activeModel={activeModel ?? undefined}
                         onSelect={(provider, model) => onModelSelect?.(provider, model)}
+                        onAnyOpenChange={handleProviderModelMenuOpenChange}
                       />
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
