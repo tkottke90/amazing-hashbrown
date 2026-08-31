@@ -18,12 +18,12 @@ Goal: make model selection reliable via both mouse and keyboard, without changin
 
 The provider→model drill-down is implemented once, in `ProviderModelPicker` (`ui/src/components/provider-model-picker.tsx`), and reused by two callers:
 
-| Caller | Nesting depth | Reported broken? |
-| --- | --- | --- |
-| `chat-input.tsx` — "Add to message" menu (wraps `ProviderModelPicker` in an extra "Provider" `DropdownMenuSub`) | 3 levels (`Content` → `Sub` "Provider" → `Sub` per-provider) | Yes |
-| `rate-modal.tsx` — Settings → cost rates "Add rate" modal (mounts `ProviderModelPicker` directly under `DropdownMenuContent`) | 2 levels (`Content` → `Sub` per-provider) | No |
+| Caller                                                                                                                        | Nesting depth                                                | Reported broken? |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------- |
+| `chat-input.tsx` — "Add to message" menu (wraps `ProviderModelPicker` in an extra "Provider" `DropdownMenuSub`)               | 3 levels (`Content` → `Sub` "Provider" → `Sub` per-provider) | Yes              |
+| `rate-modal.tsx` — Settings → cost rates "Add rate" modal (mounts `ProviderModelPicker` directly under `DropdownMenuContent`) | 2 levels (`Content` → `Sub` per-provider)                    | No               |
 
-Both callers render the *same* component; the only difference is nesting depth. This matches several open, unresolved upstream Radix issues describing `DropdownMenu.Sub`/`SubContent` closing prematurely or inconsistently once menus nest beyond a single `Sub` level (e.g. [radix-ui/primitives#3761](https://github.com/radix-ui/primitives/issues/3761), [#2652](https://github.com/radix-ui/primitives/issues/2652)) — there is no released fix to upgrade into.
+Both callers render the _same_ component; the only difference is nesting depth. This matches several open, unresolved upstream Radix issues describing `DropdownMenu.Sub`/`SubContent` closing prematurely or inconsistently once menus nest beyond a single `Sub` level (e.g. [radix-ui/primitives#3761](https://github.com/radix-ui/primitives/issues/3761), [#2652](https://github.com/radix-ui/primitives/issues/2652)) — there is no released fix to upgrade into.
 
 The project's own test suite already flags this: `ui/test/chat-input.test.tsx` (lines 110–115) notes that "a third level of nested Radix submenu-in-a-submenu isn't reliably openable via jsdom's synthetic events."
 
@@ -38,7 +38,7 @@ There is no custom mouseleave/blur/timer code causing this — Radix's own inter
 Convert the per-provider `DropdownMenuSub` from Radix's uncontrolled (hover-timing-driven) mode to **app-controlled** mode, so the decision of when to open/close no longer depends on Radix's own depth-sensitive internal timing:
 
 - One shared `openProvider: string | null` state and one shared close-timer live in `ProviderModelPicker`.
-- `onPointerEnter` / `onFocus` on a provider's `SubTrigger` *or* its `SubContent` cancels any pending close and immediately sets `openProvider` to that provider. Moving the cursor into the content — even diagonally, even if Radix's internal logic would otherwise race to close it — keeps it open.
+- `onPointerEnter` / `onFocus` on a provider's `SubTrigger` _or_ its `SubContent` cancels any pending close and immediately sets `openProvider` to that provider. Moving the cursor into the content — even diagonally, even if Radix's internal logic would otherwise race to close it — keeps it open.
 - `onPointerLeave` on either element, or Radix itself calling `onOpenChange(false)`, does **not** close immediately. It schedules a close after a short grace delay (~200ms). If the pointer or focus re-enters either boundary before the delay elapses, the scheduled close is cancelled.
 - Radix's own "close this" signal is treated as a suggestion, not a command: even when Radix's internal timing decides prematurely to close, the app doesn't act on it synchronously — it only starts the same grace window a real pointer-leave would trigger. This neutralizes the specific premature-close race without needing to know exactly why Radix's timing is wrong at this depth.
 - Selecting a model still closes the entire menu tree (Radix's default close-on-select, unchanged) — `ProviderModelPicker` unmounts, so any pending grace timer becomes moot.
@@ -79,17 +79,17 @@ Mouse/diagonal-hover interaction is verified manually (dev server + Chromium) ra
 
 ## 5. Files Changed
 
-| File | Change |
-| --- | --- |
+| File                                          | Change                                                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `ui/src/components/provider-model-picker.tsx` | Convert per-provider `DropdownMenuSub` to app-controlled open state with shared hover/focus boundary + grace-delay close |
-| `ui/test/provider-model-picker.test.tsx` | Add tests for diagonal pointer movement, no-return close, and sibling-switch behavior |
-| `e2e/tests/chat-model-picker.spec.ts` | New — keyboard-only regression test for issue #113 against the base chat page |
+| `ui/test/provider-model-picker.test.tsx`      | Add tests for diagonal pointer movement, no-return close, and sibling-switch behavior                                    |
+| `e2e/tests/chat-model-picker.spec.ts`         | New — keyboard-only regression test for issue #113 against the base chat page                                            |
 
 ---
 
 ## 6. Out of Scope
 
-- The graph-view.tsx "Open in editor" hover card bug (same bug *class* — an isolated `mouseleave` with no shared hover boundary — but a separate, hand-rolled D3 component, not a Radix menu). Tracked as a follow-up, not fixed here.
+- The graph-view.tsx "Open in editor" hover card bug (same bug _class_ — an isolated `mouseleave` with no shared hover boundary — but a separate, hand-rolled D3 component, not a Radix menu). Tracked as a follow-up, not fixed here.
 - Any change to the menu's visual structure or the number of nesting levels.
 - Upgrading the `radix-ui` package version (checked upstream; no confirmed fix exists to upgrade into for this class of nested-`Sub` bug).
 - Automated (Playwright) coverage of mouse/diagonal-hover movement — verified manually only.
