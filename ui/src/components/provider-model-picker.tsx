@@ -22,6 +22,19 @@ export interface ProviderModelPickerProps {
    * every provider/model unfiltered.
    */
   isModelHidden?: (provider: string, modelId: string) => boolean;
+  /**
+   * Fires `true` the moment any provider's model list opens, and `false`
+   * once it actually closes (after the grace delay, not on every
+   * momentary pointer-leave). A caller nesting this inside its own
+   * hover-controlled wrapper Sub (e.g. chat-input.tsx's "Provider" menu)
+   * needs this: a provider's model list is a separately-portaled DOM
+   * subtree, not a descendant of the wrapper's own trigger/content, so the
+   * wrapper's own pointer-leave fires the instant the cursor moves off its
+   * elements into the (physically elsewhere) model list — even though the
+   * user is still actively using the menu. Without being told "a child is
+   * open," the wrapper has no way to know it shouldn't act on that leave.
+   */
+  onAnyOpenChange?: (isOpen: boolean) => void;
 }
 
 // How long we wait, after the pointer/focus leaves a provider's trigger or
@@ -53,6 +66,7 @@ export function ProviderModelPicker({
   activeModel,
   onSelect,
   isModelHidden,
+  onAnyOpenChange,
 }: ProviderModelPickerProps) {
   // Which single provider's model list is open. One shared value rather
   // than one boolean per provider, so moving directly from one provider's
@@ -68,6 +82,7 @@ export function ProviderModelPicker({
   }
 
   function openProviderNow(name: string) {
+    const wasAnyOpen = openProvider.peek() !== null;
     cancelPendingClose();
     // Radix runs synchronous continuation code right after calling
     // onOpenChange(true) — e.g. moving focus onto the first item inside the
@@ -82,6 +97,7 @@ export function ProviderModelPicker({
     flushSync(() => {
       openProvider.value = name;
     });
+    if (!wasAnyOpen) onAnyOpenChange?.(true);
   }
 
   function scheduleProviderClose(name: string) {
@@ -90,6 +106,7 @@ export function ProviderModelPicker({
       closeTimerRef.current = null;
       if (openProvider.peek() === name) {
         openProvider.value = null;
+        onAnyOpenChange?.(false);
       }
     }, MODEL_SUBMENU_CLOSE_GRACE_MS);
   }

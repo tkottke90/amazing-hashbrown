@@ -56,6 +56,17 @@ The above was validated by unit tests and by e2e/manual checks driven through Pl
 
 Root-caused via a throwaway diagnostic script that logged `document.activeElement` after each real (not locator-forced) keyboard event against the running dev server, plus an isolated comparison against `rate-modal.tsx`'s 1-Sub-level usage (which worked correctly, pointing at the _interaction between_ the two Sub levels rather than the controlled-Sub mechanism itself). The committed e2e spec (`e2e/tests/chat-model-picker.spec.ts`) was also rewritten to use only `page.keyboard.press()` against whatever currently has focus — the original version used `locator.press()` on specific target elements, which programmatically re-focuses each element and bypasses Radix's roving-tabindex focus travel, silently hiding this exact regression.
 
+### 3b. Addendum — still broken in real usage; the actual root cause
+
+Even after 3a, the reporter found the bug reproducing again in real manual testing (both Chrome and Firefox), specifically when lingering on or moving the cursor _within_ an already-open model list rather than just arriving at it. Two things were checked and ruled out first:
+
+- **Reverting to fully uncontrolled, unmodified Radix** (matching the shadcn/Radix docs' nested-submenu example exactly, including confirming `DropdownMenuSubContent` already wraps in a `Portal` — it does, just inside the shared `dropdown-menu.tsx` wrapper rather than written explicitly at each call site) **reproduces the identical bug.** This was verified with the same real-keyboard diagnostic technique from 3a: pressing `ArrowRight` on a focused provider still collapses the entire menu and throws focus to `<body>`. The app-controlled approach was not "over-engineering" masking a simpler underlying fix — pure Radix has the same defect at this nesting depth.
+- Firefox was suspected as engine-specific, but the reporter also reproduced it on Chrome (only the outer "Provider" and model sub-menu closed there, not the root menu) — ruling out a single-engine quirk.
+
+**Actual root cause:** a provider's own model list, rendered by `ProviderModelPicker`, is a **separately-portaled DOM subtree** — it is not a DOM descendant of `chat-input.tsx`'s outer "Provider" `Sub`'s own trigger/content, even though it is logically nested inside it. The moment the cursor moves off "Provider"'s own trigger/content elements and into a provider's model list, "Provider"'s own `onPointerLeave` fires and schedules 3a's grace-delay close — correctly, from "Provider"'s own point of view, since nothing tells it a descendant menu is what the cursor moved into. If the cursor spends more than the ~200ms grace window inside the model list (exactly what happens when a user actually reads model names before picking one, and exactly what none of the automated tests had done — they moved and clicked in well under 200ms), that scheduled close fires and unmounts "Provider," cascading down and killing the model list the user was actively using underneath it.
+
+**Fix:** `ProviderModelPicker` gained an `onAnyOpenChange?: (isOpen: boolean) => void` prop, called the moment any provider's model list opens (`true`) and once it actually closes after its own grace delay elapses with no re-entry (`false`) — never on every intermediate pointer event. `chat-input.tsx` wires this to force "Provider" open (and cancel any pending close) the instant a child opens, and — critically — tracks a persistent `childMenuOpen` signal that gates `scheduleProviderMenuClose`: while a child is open, "Provider"'s own direct `onPointerLeave` handlers (which keep firing every time the cursor moves around inside the already-open, separately-portaled child) are no-ops instead of re-arming a close each time. Only once the child itself has genuinely closed does "Provider" get its own chance to close on the same grace timer. This was verified by reproducing the exact failure (mouse arrives at a model, lingers ~300ms, then moves to a sibling model within the same list) directly against a running dev server in both Firefox and Chromium (Firefox was downloaded via `npx playwright install firefox` for this — not part of the repo's pre-installed Chromium), confirming the sequence failed before this change and passed reliably after, in both engines, across repeated runs — while a genuine "move away entirely" still closes the menu correctly in both.
+
 ---
 
 ## 4. Testing Plan
@@ -80,9 +91,11 @@ This gives real-browser, real-Radix-event coverage of the keyboard path, which i
 
 Added to `npm run test:ci` alongside the rest of the suite, becoming the durable regression test for issue #113.
 
-### Manual verification
+### Mouse test (added in 3b: `chat-model-picker.spec.ts`, "mouse: lingering in and moving within an open model list does not close the menu")
 
-Mouse/diagonal-hover interaction is verified manually (dev server + Chromium) rather than automated — real cursor-path timing is not reliably assertable even in Playwright. Repro steps: open the base chat, click "Add to message," hover "Provider," hover a provider, move the mouse diagonally into the model sub-menu, click a model, confirm the model chip updates.
+Originally scoped as manual-only (see the removed rationale below), but 3b's actual root cause — closing during a lingering/within-content move, not just a fast arrival — turned out to reproduce reliably enough to automate once the test moved the cursor in discrete steps with real waits between them (matching realistic human cursor speed) rather than a single fast synthetic move: hover into an open model list, wait ~300ms, move to a sibling model within the same list, click it, assert the chip updates. This is now part of the same committed spec and CI run.
+
+~~Manual verification~~ — superseded: mouse interaction is now covered by the automated test above.
 
 ---
 
@@ -101,4 +114,4 @@ Mouse/diagonal-hover interaction is verified manually (dev server + Chromium) ra
 - The graph-view.tsx "Open in editor" hover card bug (same bug _class_ — an isolated `mouseleave` with no shared hover boundary — but a separate, hand-rolled D3 component, not a Radix menu). Tracked as a follow-up, not fixed here.
 - Any change to the menu's visual structure or the number of nesting levels.
 - Upgrading the `radix-ui` package version (checked upstream; no confirmed fix exists to upgrade into for this class of nested-`Sub` bug).
-- Automated (Playwright) coverage of mouse/diagonal-hover movement — verified manually only.
+- Reverting to fully uncontrolled Radix (tried and ruled out in 3b — reproduces the same bug).

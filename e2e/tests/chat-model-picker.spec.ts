@@ -24,6 +24,14 @@ const suite: TestSuite = {
       expectedOutcome: "The model chip updates to the second provider's selected model",
       test: () => {},
     },
+    {
+      tags: ['@smoke'],
+      action:
+        'Open the menu with the mouse, hover into a model list, linger, then move the cursor between two models before clicking one',
+      expectedOutcome:
+        'The menu stays open through the linger and the move, and the model chip shows the clicked model',
+      test: () => {},
+    },
   ],
 };
 
@@ -117,6 +125,63 @@ test.describe(
       await pressKey(page, 'Enter');
 
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('llama3.2');
+    });
+
+    test('mouse: lingering in and moving within an open model list does not close the menu', async ({
+      page,
+    }, testInfo) => {
+      await mockProvidersApi(page);
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.locator('button[aria-label="Add to message"]').click();
+      await page.getByRole('menuitem', { name: 'Provider' }).hover();
+      const openaiTrigger = page.getByRole('menuitem', { name: 'openai', exact: true });
+      await openaiTrigger.hover();
+
+      const firstModel = page.getByRole('menuitemcheckbox', { name: 'gpt-4o', exact: true });
+      await expect(firstModel).toBeVisible();
+
+      // Move onto the first model in several discrete steps, matching a
+      // real cursor's speed rather than Playwright's near-instant default —
+      // this is what actually exposed the bug: an unhurried move stayed
+      // well clear of the fix's grace window, while a fast synthetic one
+      // didn't.
+      const triggerBox = await openaiTrigger.boundingBox();
+      const firstModelBox = await firstModel.boundingBox();
+      if (!triggerBox || !firstModelBox) throw new Error('missing bounding box');
+      for (let i = 1; i <= 6; i++) {
+        await page.mouse.move(
+          triggerBox.x + ((firstModelBox.x - triggerBox.x) * i) / 6,
+          triggerBox.y + ((firstModelBox.y - triggerBox.y) * i) / 6,
+        );
+        await page.waitForTimeout(50);
+      }
+      await expect(firstModel).toBeVisible();
+
+      // Linger — the model list's own trigger/content are still under the
+      // cursor's neighborhood, but the outer "Provider" menu's own DOM
+      // nodes are not; this is the exact gap the fix closes (a provider's
+      // model list is a separately-portaled subtree, so the outer menu's
+      // own pointer-leave already fired on the way in).
+      await page.waitForTimeout(300);
+      await expect(firstModel).toBeVisible();
+
+      // Move within the open content to a sibling model, well past the
+      // grace window since first arriving.
+      const secondModel = page.getByRole('menuitemcheckbox', { name: 'gpt-4o-mini', exact: true });
+      const secondModelBox = await secondModel.boundingBox();
+      if (!secondModelBox) throw new Error('missing bounding box for second model');
+      await page.mouse.move(
+        secondModelBox.x + secondModelBox.width / 2,
+        secondModelBox.y + secondModelBox.height / 2,
+        { steps: 10 },
+      );
+      await page.waitForTimeout(300);
+      await expect(secondModel).toBeVisible();
+
+      await secondModel.click();
+      await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o-mini');
     });
   },
 );
