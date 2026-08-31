@@ -28,7 +28,7 @@ export const ProviderSchema = z.object({
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
 export const DatabaseSchema = z.object({
-  path: z.string().default('app.db'),
+  path: z.string().default('./app.db'),
 });
 
 export const ObservabilitySchema = z.object({
