@@ -40,7 +40,7 @@ No existing utility in the codebase unwraps this envelope. `lib/evaluations/src/
 **New file:** `api/src/agents/tool-output.ts`, exporting one pure function:
 
 ```ts
-export function extractToolResultContent(output: unknown): unknown
+export function extractToolResultContent(output: unknown): unknown;
 ```
 
 Logic:
@@ -89,11 +89,11 @@ No new UI or Thread Report tests are needed, since neither rendering path change
 
 ## 5. Files Changed
 
-| File                                        | Change                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------- |
-| `api/src/agents/tool-output.ts`             | New — `extractToolResultContent()` pure function                                |
-| `api/src/agents/tool-output.test.ts`        | New — unit tests for the extraction function                                    |
-| `api/src/agents/stream-handler.ts`          | `on_tool_end` handler calls `extractToolResultContent()` on `evt.data?.output` |
+| File                                 | Change                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------ |
+| `api/src/agents/tool-output.ts`      | New — `extractToolResultContent()` pure function                               |
+| `api/src/agents/tool-output.test.ts` | New — unit tests for the extraction function                                   |
+| `api/src/agents/stream-handler.ts`   | `on_tool_end` handler calls `extractToolResultContent()` on `evt.data?.output` |
 
 ---
 
