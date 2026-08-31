@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
+import { flushSync } from 'preact/compat';
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
@@ -68,7 +69,19 @@ export function ProviderModelPicker({
 
   function openProviderNow(name: string) {
     cancelPendingClose();
-    openProvider.value = name;
+    // Radix runs synchronous continuation code right after calling
+    // onOpenChange(true) — e.g. moving focus onto the first item inside the
+    // newly-opened content — but Preact/signals batches the render from a
+    // plain signal write until a later microtask. In a real browser (no
+    // Testing Library act() forcing a flush, unlike the unit/e2e tests that
+    // originally validated this), Radix's own follow-up code runs before
+    // that render lands, finds the content not yet in the DOM, and aborts
+    // by closing the whole menu tree. flushSync forces the DOM to reflect
+    // `openProvider` before this function returns, so Radix's own
+    // synchronous logic sees it.
+    flushSync(() => {
+      openProvider.value = name;
+    });
   }
 
   function scheduleProviderClose(name: string) {

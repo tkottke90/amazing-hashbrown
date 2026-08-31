@@ -47,6 +47,15 @@ Convert the per-provider `DropdownMenuSub` from Radix's uncontrolled (hover-timi
 
 Because the fix lives inside the shared component rather than either caller, it applies uniformly to every current and future consumer of `ProviderModelPicker` — there is nothing to duplicate the fix into, and no risk of leaving a second, differently-nested instance still broken.
 
+### 3a. Addendum — real-browser manual testing found two more gaps
+
+The above was validated by unit tests and by e2e/manual checks driven through Playwright, all of which passed — but real manual testing in a browser still showed the sub-menu closing, for both mouse and keyboard. Two gaps existed that automated testing had missed:
+
+1. **`chat-input.tsx`'s scope claim above was wrong.** The outer "Provider" `DropdownMenuSub` (one level up, still Radix-uncontrolled) also needed the same controlled-open treatment. With only the inner per-provider `Sub` controlled, a genuine keyboard `ArrowRight` on a provider (e.g. "openai") collapsed the _entire_ menu tree back to the root and threw focus out to `<body>` — the outer Sub's own uncontrolled bookkeeping got corrupted by the inner Sub's controlled re-render. `chat-input.tsx` now has its own `providerMenuOpen` signal, close-timer, and the same `onPointerEnter`/`onFocus`/`onPointerLeave`/`onOpenChange` wiring as `ProviderModelPicker`, sharing `MODEL_SUBMENU_CLOSE_GRACE_MS`.
+2. **Preact batches renders asynchronously in a real browser; Testing Library's `act()` does not.** Radix runs synchronous continuation code immediately after calling `onOpenChange(true)` — e.g. moving focus onto the first item inside the newly-opened content. In the unit and e2e tests, `act()` (used internally by `fireEvent`) forces a synchronous flush after every dispatched event, so the DOM always reflected the new `open` state by the time Radix's follow-up code ran. In a real browser there is no such forced flush: Preact's normal batching meant Radix's synchronous code sometimes ran _before_ the render landed, found the not-yet-mounted content, and aborted by closing everything. Both `openProviderNow` (in `ProviderModelPicker`) and `openProviderMenuNow` (in `chat-input.tsx`) now wrap their signal write in `flushSync` (from `preact/compat`) to force the DOM to reflect the new open state synchronously, before returning control to Radix.
+
+Root-caused via a throwaway diagnostic script that logged `document.activeElement` after each real (not locator-forced) keyboard event against the running dev server, plus an isolated comparison against `rate-modal.tsx`'s 1-Sub-level usage (which worked correctly, pointing at the _interaction between_ the two Sub levels rather than the controlled-Sub mechanism itself). The committed e2e spec (`e2e/tests/chat-model-picker.spec.ts`) was also rewritten to use only `page.keyboard.press()` against whatever currently has focus — the original version used `locator.press()` on specific target elements, which programmatically re-focuses each element and bypasses Radix's roving-tabindex focus travel, silently hiding this exact regression.
+
 ---
 
 ## 4. Testing Plan

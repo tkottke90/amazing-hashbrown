@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
+import { flushSync } from 'preact/compat';
 import { Plus, Send, Square, X } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
@@ -18,7 +19,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ProviderModelPicker } from '@/components/provider-model-picker';
+import {
+  ProviderModelPicker,
+  MODEL_SUBMENU_CLOSE_GRACE_MS,
+} from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
 export interface ChatInputProps {
@@ -99,6 +103,52 @@ export function ChatInput({
   const menuItems = useSignal<SkillInfo[]>([]);
   const menuIndex = useSignal(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // App-controlled open state for the "Provider" sub-menu, mirroring
+  // ProviderModelPicker's own per-provider Subs (see the comment there and
+  // docs/superpowers/specs/2026-08-31-model-picker-submenu-fix-design.md).
+  // This one also needs to be controlled: with only the inner per-provider
+  // Sub controlled, opening it via a genuine keyboard ArrowRight collapsed
+  // the entire menu tree back to the root and threw focus out to <body> —
+  // Radix's own synchronous "move focus into the newly-opened content" code
+  // runs immediately after onOpenChange, and when that inner content's own
+  // controlled-Sub render hadn't landed yet relative to *this* Sub's own
+  // uncontrolled bookkeeping, this outer Sub's tracking got corrupted and it
+  // tore the whole thing down. Controlling this level too, with the same
+  // flushSync-forced synchronous open, keeps both levels' state consistent
+  // with what Radix expects at every step.
+  const providerMenuOpen = useSignal(false);
+  const providerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function cancelProviderMenuClose() {
+    if (providerCloseTimerRef.current !== null) {
+      clearTimeout(providerCloseTimerRef.current);
+      providerCloseTimerRef.current = null;
+    }
+  }
+
+  function openProviderMenuNow() {
+    cancelProviderMenuClose();
+    flushSync(() => {
+      providerMenuOpen.value = true;
+    });
+  }
+
+  function scheduleProviderMenuClose() {
+    cancelProviderMenuClose();
+    providerCloseTimerRef.current = setTimeout(() => {
+      providerCloseTimerRef.current = null;
+      providerMenuOpen.value = false;
+    }, MODEL_SUBMENU_CLOSE_GRACE_MS);
+  }
+
+  function keepProviderMenuOpenOnFocus() {
+    if (providerMenuOpen.peek()) {
+      cancelProviderMenuClose();
+    }
+  }
+
+  useEffect(() => () => cancelProviderMenuClose(), []);
 
   function selectSkill(skill: SkillInfo) {
     onValueChange(`${skill.slashCommand} `);
@@ -239,9 +289,28 @@ export function ChatInput({
               {providers && providers.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
+                  <DropdownMenuSub
+                    open={providerMenuOpen.value}
+                    onOpenChange={(open) => {
+                      if (open) {
+                        openProviderMenuNow();
+                      } else {
+                        scheduleProviderMenuClose();
+                      }
+                    }}
+                  >
+                    <DropdownMenuSubTrigger
+                      onPointerEnter={openProviderMenuNow}
+                      onFocus={keepProviderMenuOpenOnFocus}
+                      onPointerLeave={scheduleProviderMenuClose}
+                    >
+                      Provider
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      onPointerEnter={openProviderMenuNow}
+                      onFocus={keepProviderMenuOpenOnFocus}
+                      onPointerLeave={scheduleProviderMenuClose}
+                    >
                       <ProviderModelPicker
                         providers={providers}
                         activeProvider={activeProvider ?? undefined}

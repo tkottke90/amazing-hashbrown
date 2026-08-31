@@ -50,6 +50,16 @@ async function mockProvidersApi(page: import('@playwright/test').Page) {
   });
 }
 
+// A real keyboard user has reaction/movement time between key presses —
+// pressing the next arrow key within single-digit milliseconds of the last
+// (as Playwright does with a bare loop of page.keyboard.press() calls) can
+// outrun Radix's own auto-focus-on-open handling and desync which item is
+// actually focused. 120ms approximates an unhurried but deliberate press.
+async function pressKey(page: import('@playwright/test').Page, key: string) {
+  await page.keyboard.press(key);
+  await page.waitForTimeout(120);
+}
+
 test.describe(
   '@smoke @user-workflow',
   {
@@ -64,18 +74,24 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
 
       const addTrigger = page.locator('button[aria-label="Add to message"]');
-      await addTrigger.press('Enter'); // open "Add to message"
+      await addTrigger.focus();
 
-      // Target each level by role/name rather than counting ArrowDown
-      // presses between items (Radix's initial-focus-on-open and roving
-      // tabindex behavior isn't a stable thing to count blindly) — each
-      // press() still focuses the real element and dispatches a genuine
-      // keyboard event on it, so this still exercises the real
-      // open-via-keyboard path the fix targets, just without a brittle
-      // fixed step count.
-      await page.getByRole('menuitem', { name: 'Provider' }).press('ArrowRight'); // open Provider submenu
-      await page.getByRole('menuitem', { name: 'openai', exact: true }).press('ArrowRight'); // open openai's model list
-      await page.getByRole('menuitemcheckbox', { name: 'gpt-4o', exact: true }).press('Enter'); // select
+      // Genuine roving-focus keyboard navigation — every step is a real
+      // key event dispatched on whatever currently has focus, exercising
+      // Radix's own focus-travel exactly as a real keyboard user would.
+      // Deliberately NOT using locator.press() on specific target elements:
+      // that programmatically re-focuses each element before dispatching
+      // the key, which bypasses Radix's roving-tabindex mechanism entirely
+      // and previously hid a real regression (issue #113 follow-up) where
+      // navigating this way, for real, collapsed the whole menu.
+      await pressKey(page, 'Enter'); // open "Add to message"
+      await pressKey(page, 'ArrowDown'); // -> "Add file"
+      await pressKey(page, 'ArrowDown'); // -> "Provider"
+      await pressKey(page, 'ArrowRight'); // open Provider submenu
+      await pressKey(page, 'ArrowDown'); // -> "openai"
+      await pressKey(page, 'ArrowRight'); // open openai's model list
+      await pressKey(page, 'ArrowDown'); // -> "gpt-4o"
+      await pressKey(page, 'Enter'); // select
 
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o');
     });
@@ -88,11 +104,17 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
 
       const addTrigger = page.locator('button[aria-label="Add to message"]');
-      await addTrigger.press('Enter');
+      await addTrigger.focus();
 
-      await page.getByRole('menuitem', { name: 'Provider' }).press('ArrowRight');
-      await page.getByRole('menuitem', { name: 'ollama', exact: true }).press('ArrowRight'); // open ollama's model list
-      await page.getByRole('menuitemcheckbox', { name: 'llama3.2', exact: true }).press('Enter');
+      await pressKey(page, 'Enter');
+      await pressKey(page, 'ArrowDown'); // -> "Add file"
+      await pressKey(page, 'ArrowDown'); // -> "Provider"
+      await pressKey(page, 'ArrowRight');
+      await pressKey(page, 'ArrowDown'); // -> "openai"
+      await pressKey(page, 'ArrowDown'); // -> "ollama"
+      await pressKey(page, 'ArrowRight'); // open ollama's model list
+      await pressKey(page, 'ArrowDown'); // -> "llama3.2"
+      await pressKey(page, 'Enter');
 
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('llama3.2');
     });
