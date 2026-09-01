@@ -50,7 +50,10 @@ describe('routes/v1/workspace-git.handlers', () => {
     { name: 'fetchHandler', invoke: (id, f) => fetchHandler(store, id, f) },
     { name: 'syncHandler', invoke: (id, f) => syncHandler(store, id, f) },
     { name: 'pushHandler', invoke: (id, f) => pushHandler(store, id, f) },
-    { name: 'checkoutHandler', invoke: (id, f) => checkoutHandler(store, id, { branch: 'main' }, f) },
+    {
+      name: 'checkoutHandler',
+      invoke: (id, f) => checkoutHandler(store, id, { branch: 'main' }, f),
+    },
     {
       name: 'createBranchHandler',
       invoke: (id, f) => createBranchHandler(store, id, { name: 'feature-x' }, f),
@@ -151,12 +154,7 @@ describe('routes/v1/workspace-git.handlers', () => {
       const ws = makeWorkspace({ git: true });
       const execFileFn = (async () => ({ stdout: '', stderr: '' })) as unknown as ExecFileFn;
 
-      const result = await createBranchHandler(
-        store,
-        ws.id,
-        { name: 'feature-x' },
-        execFileFn,
-      );
+      const result = await createBranchHandler(store, ws.id, { name: 'feature-x' }, execFileFn);
       expect(result.ok).to.equal(true);
     });
   });

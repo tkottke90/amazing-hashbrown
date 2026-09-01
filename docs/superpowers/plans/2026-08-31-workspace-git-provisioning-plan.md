@@ -34,6 +34,7 @@ export async function provisionGitRepository(
 - Let a rejection from `execFileFn` propagate uncaught (matches `provisionDependencyIsolation`'s existing behavior — the caller handles rollback).
 
 **Tests** (extend `workspace-provision.test.ts`, new `describe('provisionGitRepository()', ...)` block, same `makeStub` helper already in the file):
+
 - No-op / no shell-out when `git: false`.
 - `git init` invoked with the exact argv/opts when `git: true` and no `remoteUrl`.
 - `git clone -- <url> .` invoked with the exact argv/opts when `remoteUrl` is set; a `remoteUrl` with leading/trailing whitespace is trimmed first.
@@ -53,6 +54,7 @@ In `api/src/routes/v1/workspaces.handlers.ts` and `api/src/routes/v1/projects.ha
 - Pass `{ git: !!body.git, remoteUrl: body.remoteUrl as string | undefined }` — `body.remoteUrl` is untyped `Record<string, unknown>` input at this point, same as every other field pulled off `body` in these handlers today.
 
 **Tests** (extend `workspaces.handlers.test.ts` and `projects.handlers.test.ts`, following the existing stubbed-`execFileFn` pattern already used for dependency-isolation assertions in these files):
+
 - `git: true` + `remoteUrl` → the stub receives a `git clone` call before the `npm`/`python3` calls (order matters — assert call order, not just call presence).
 - `git: true`, no `remoteUrl` → stub receives `git init` before dependency-isolation calls.
 - `git: false` → no git call at all, dependency isolation still runs as before (regression check — this must not break the existing dependency-isolation tests).
@@ -68,6 +70,7 @@ In `api/src/agents/tools/create-workspace.tool.ts` and `create-project.tool.ts`:
 - Destructure `remoteUrl` in the tool's async handler and pass it through in the `createWorkspaceHandler`/`createProjectHandler` call body alongside `git`.
 
 **Tests** (extend `create-workspace.tool.test.ts`, `create-project.tool.test.ts`):
+
 - Calling the tool with `git: true, remoteUrl: '...'` results in the store/handler receiving that `remoteUrl` (assert via the injected test store/registry, same pattern the existing `git: true` assertion in `create-workspace.tool.test.ts:56` uses).
 - Omitting `remoteUrl` leaves existing behavior unchanged (`git: true` alone still works — this is a non-regression check).
 
@@ -89,9 +92,10 @@ Functions, per spec §3.1:
 - `checkoutBranch(location, branch, execFileFn?)` → `execFileFn('git', ['checkout', '--', branch], ...)`.
 - `createBranch(location, name, from, execFileFn?)` → `execFileFn('git', ['checkout', '-b', '--', name, ...(from ? [from] : [])], ...)` — confirm `git checkout -b` accepts `--` in this position while writing the test (some git subcommands place `--` differently); if `-b` doesn't compose cleanly with a trailing `--`, fall back to validating `name`/`from` don't start with `-` before invoking, and document why in a code comment.
 
-**Concurrency lock**: a module-level `const locked = new Set<string>()`. A small wrapper `withLock<T>(workspaceId: string, fn: () => Promise<T>): Promise<T>` that throws a distinguishable error (e.g. `class GitOperationInProgressError extends Error`) if `workspaceId` is already in the set, otherwise adds it, runs `fn()` in a `try/finally` that deletes it. Applied only around `fetchRemote`, `syncFastForward`, `pushBranch`, `checkoutBranch`, `createBranch` at the handler layer (Step 5) — keep the lock in the service module but let the *handlers* decide which calls acquire it, since `getGitStatus`/`listBranches` must stay lock-free even while a mutation is running (so the UI can still show "sync in progress" state).
+**Concurrency lock**: a module-level `const locked = new Set<string>()`. A small wrapper `withLock<T>(workspaceId: string, fn: () => Promise<T>): Promise<T>` that throws a distinguishable error (e.g. `class GitOperationInProgressError extends Error`) if `workspaceId` is already in the set, otherwise adds it, runs `fn()` in a `try/finally` that deletes it. Applied only around `fetchRemote`, `syncFastForward`, `pushBranch`, `checkoutBranch`, `createBranch` at the handler layer (Step 5) — keep the lock in the service module but let the _handlers_ decide which calls acquire it, since `getGitStatus`/`listBranches` must stay lock-free even while a mutation is running (so the UI can still show "sync in progress" state).
 
 **Tests**, new `api/src/services/workspace-git.test.ts`, same `makeStub`-style helper as `workspace-provision.test.ts`:
+
 - `getGitStatus` parsing: clean repo with upstream ahead/behind, repo with no upstream, dirty repo (uncommitted changes present).
 - `listBranches` parsing against representative `for-each-ref` output (local branches, remote branches, no `HEAD` entry leaking through).
 - `fetchRemote`, `syncFastForward` (success and ff-only-failure-propagates-message cases), `checkoutBranch`, `createBranch`: exact argv assertions, including the `--` guard.
@@ -107,22 +111,22 @@ New `api/src/routes/v1/workspace-git.handlers.ts`, following `workspace-files.ha
 Handler set (spec §3.2 table): `getGitStatusHandler`, `listBranchesHandler`, `fetchHandler`, `syncHandler`, `pushHandler`, `checkoutHandler` (body `{ branch }`), `createBranchHandler` (body `{ name, from? }`).
 
 Shared guard logic at the top of every handler:
+
 1. `const workspace = store.getWorkspace(workspaceId); if (!workspace) return notFound(...)`.
 2. `if (!workspace.git) return badRequest('Workspace does not have git enabled')`.
 
-Mutating handlers (`fetch`, `sync`, `push`, `checkout`, `createBranch`):
-3. Wrap the service call in `withLock`; catch `GitOperationInProgressError` specifically and return `conflict('A git operation is already running for this workspace')` (409).
-4. On success, call `invalidateFileTreeCache(workspaceId)` (import from `workspace-files.ts`, already exported) before returning `ok(...)`.
-5. On any other thrown error, return `badRequest(err.message)` — matches how git-command failures are surfaced elsewhere in this codebase (e.g. `getFileTreeHandler`'s catch block).
+Mutating handlers (`fetch`, `sync`, `push`, `checkout`, `createBranch`): 3. Wrap the service call in `withLock`; catch `GitOperationInProgressError` specifically and return `conflict('A git operation is already running for this workspace')` (409). 4. On success, call `invalidateFileTreeCache(workspaceId)` (import from `workspace-files.ts`, already exported) before returning `ok(...)`. 5. On any other thrown error, return `badRequest(err.message)` — matches how git-command failures are surfaced elsewhere in this codebase (e.g. `getFileTreeHandler`'s catch block).
 
 New `api/src/routes/v1/workspace-git.route.ts`, mirroring `workspace-files.route.ts` (`Router({ mergeParams: true })`, one route per handler, `req.params['id']`).
 
 Mount in `api/src/routes/v1/workspaces.route.ts`:
+
 ```typescript
 workspacesRouter.use('/:id/git', workspaceGitRouter);
 ```
 
 **Tests**, new `api/src/routes/v1/workspace-git.handlers.test.ts`, following `workspace-files.handlers.test.ts`'s temp-dir-backed `WorkspaceStore` + stubbed-`execFileFn` pattern:
+
 - 404 for an unknown workspace id, once per handler (a small loop/table-driven test is fine here rather than seven near-identical `it` blocks).
 - 400 for a workspace with `git: false`, once per handler.
 - Success path per handler, including the `invalidateFileTreeCache` effect (assert via a subsequent `getFileTree` call returning fresh, not cached, data — same technique the existing file-tree cache test already uses).
@@ -136,8 +140,18 @@ workspacesRouter.use('/:id/git', workspaceGitRouter);
 New `ui/src/services/workspace-git-api.ts`, following the `request<T>()` pattern already duplicated in `workspace-files-api.ts`/`workspaces-api.ts` (don't try to extract a shared helper across files — matches the existing convention).
 
 ```typescript
-export interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; hasRemote: boolean; dirty: boolean }
-export interface GitBranches { local: string[]; remote: string[] }
+export interface GitStatus {
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  hasRemote: boolean;
+  dirty: boolean;
+}
+export interface GitBranches {
+  local: string[];
+  remote: string[];
+}
 
 export function fetchGitStatus(workspaceId: string): Promise<GitStatus>;
 export function fetchGitBranches(workspaceId: string): Promise<GitBranches>;
@@ -145,7 +159,11 @@ export function gitFetch(workspaceId: string): Promise<GitStatus>;
 export function gitSync(workspaceId: string): Promise<GitStatus>;
 export function gitPush(workspaceId: string): Promise<GitStatus>;
 export function gitCheckout(workspaceId: string, branch: string): Promise<GitStatus>;
-export function gitCreateBranch(workspaceId: string, name: string, from?: string): Promise<GitStatus>;
+export function gitCreateBranch(
+  workspaceId: string,
+  name: string,
+  from?: string,
+): Promise<GitStatus>;
 ```
 
 No tests needed for this file alone (thin wrappers, matching that `workspace-files-api.ts` itself has no dedicated unit test today — it's exercised indirectly through the hook/component tests).
@@ -163,6 +181,7 @@ New `ui/src/pages/workspaces/git-controls.tsx`. Signal-based state local to the 
 In `ui/src/pages/workspaces/files-tab.tsx`: render `<GitControls workspaceId={workspaceId} />` conditionally — needs the workspace's `git` flag, which `FilesTab` doesn't currently receive as a prop (it only takes `workspaceId`). Check how `FilesTab` is invoked from its parent (`[id].tsx`) and either pass `git: boolean` down as a new prop, or have `GitControls` itself receive that flag from the caller — confirm the simplest wiring against the actual call site before choosing.
 
 **Tests**, new `ui/test/git-controls.test.tsx`, following `workspace-create-form.test.tsx`'s Preact Testing Library + mocked-API-module conventions:
+
 - Not rendered when `git` is `false`.
 - Status/branch data from a mocked `fetchGitStatus`/`fetchGitBranches` renders correctly (branch name, ahead/behind badge only when `hasRemote`).
 - Clicking Sync/Push calls the corresponding mocked API function, disables the button while its promise is pending, and shows the returned error message on rejection.

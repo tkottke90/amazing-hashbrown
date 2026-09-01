@@ -18,7 +18,9 @@ import * as gitApi from '@/services/workspace-git-api';
 import * as filesHooks from '@/hooks/use-workspace-files';
 import type { GitStatus, GitBranches } from '@/services/workspace-git-api';
 
-const mockFetchGitStatus = gitApi.fetchGitStatus as jest.MockedFunction<typeof gitApi.fetchGitStatus>;
+const mockFetchGitStatus = gitApi.fetchGitStatus as jest.MockedFunction<
+  typeof gitApi.fetchGitStatus
+>;
 const mockFetchGitBranches = gitApi.fetchGitBranches as jest.MockedFunction<
   typeof gitApi.fetchGitBranches
 >;
@@ -28,7 +30,9 @@ const mockGitCheckout = gitApi.gitCheckout as jest.MockedFunction<typeof gitApi.
 const mockGitCreateBranch = gitApi.gitCreateBranch as jest.MockedFunction<
   typeof gitApi.gitCreateBranch
 >;
-const mockLoadFileTree = filesHooks.loadFileTree as jest.MockedFunction<typeof filesHooks.loadFileTree>;
+const mockLoadFileTree = filesHooks.loadFileTree as jest.MockedFunction<
+  typeof filesHooks.loadFileTree
+>;
 
 const BASE_STATUS: GitStatus = {
   branch: 'main',

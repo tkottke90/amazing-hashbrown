@@ -31,9 +31,13 @@ function makeStub(impl?: (...args: Parameters<ExecFileFn>) => unknown) {
 describe('services/workspace-git', () => {
   describe('parseStatusPorcelainV2()', () => {
     it('parses a clean branch with an upstream, no ahead/behind', () => {
-      const output = ['# branch.oid abc123', '# branch.head main', '# branch.upstream origin/main', '# branch.ab +0 -0', ''].join(
-        '\n',
-      );
+      const output = [
+        '# branch.oid abc123',
+        '# branch.head main',
+        '# branch.upstream origin/main',
+        '# branch.ab +0 -0',
+        '',
+      ].join('\n');
       const result: GitStatus = parseStatusPorcelainV2(output);
       expect(result).to.deep.equal({
         branch: 'main',
@@ -250,7 +254,11 @@ describe('services/workspace-git', () => {
       const { stub, calls } = makeStub();
       await createBranch('/tmp/ws', 'feature-y', 'origin/main', stub);
       expect(calls).to.deep.equal([
-        ['git', ['checkout', '-b', 'feature-y', 'origin/main'], { cwd: '/tmp/ws', timeout: 10_000 }],
+        [
+          'git',
+          ['checkout', '-b', 'feature-y', 'origin/main'],
+          { cwd: '/tmp/ws', timeout: 10_000 },
+        ],
       ]);
     });
 

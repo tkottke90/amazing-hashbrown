@@ -54,9 +54,10 @@ describe('agents/tools/create-workspace', () => {
     workspaceDirs.push(created.location);
     expect(created.goal).to.equal('Ship the thing');
     expect(created.git).to.equal(true);
-    expect(created.remoteUrl, 'omitting remoteUrl leaves plain git init behavior unchanged').to.equal(
-      null,
-    );
+    expect(
+      created.remoteUrl,
+      'omitting remoteUrl leaves plain git init behavior unchanged',
+    ).to.equal(null);
 
     expect(sseEvents).to.have.length(1);
     expect(sseEvents[0]).to.deep.include({

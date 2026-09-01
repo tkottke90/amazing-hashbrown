@@ -63,15 +63,15 @@ A git-enabled workspace needs to stay in sync after creation: fetch, fast-forwar
 
 Mirrors the `execFileFn`-injectable pattern already used by `workspace-files.ts` / `workspace-provision.ts` / `wiki-snapshot.ts`.
 
-| Function | Behavior |
-| --- | --- |
-| `getGitStatus(location)` | Returns `{ branch, upstream: string \| null, ahead: number, behind: number, hasRemote: boolean, dirty: boolean }`. A read-only, lightweight call — separate from the existing `getGitOverlay()`, which stays untouched and keeps serving the file tree's per-file M/A badges. |
-| `listBranches(location)` | Returns `{ local: string[], remote: string[] }` for the branch-switcher dropdown. |
-| `fetchRemote(location)` | `git fetch`. |
-| `syncFastForward(location)` | `git fetch` + `git merge --ff-only @{u}`. Surfaces git's own error message on conflict/diverged history rather than stashing or forcing anything. |
-| `pushBranch(location)` | `git push`, or `git push -u origin <branch>` the first time the current branch has no upstream. |
-| `checkoutBranch(location, branch)` | `git checkout <branch>` for an existing local or remote-tracking branch. |
-| `createBranch(location, name, from?)` | `git checkout -b <name> [<from>]`, then the branch is current. |
+| Function                              | Behavior                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getGitStatus(location)`              | Returns `{ branch, upstream: string \| null, ahead: number, behind: number, hasRemote: boolean, dirty: boolean }`. A read-only, lightweight call — separate from the existing `getGitOverlay()`, which stays untouched and keeps serving the file tree's per-file M/A badges. |
+| `listBranches(location)`              | Returns `{ local: string[], remote: string[] }` for the branch-switcher dropdown.                                                                                                                                                                                             |
+| `fetchRemote(location)`               | `git fetch`.                                                                                                                                                                                                                                                                  |
+| `syncFastForward(location)`           | `git fetch` + `git merge --ff-only @{u}`. Surfaces git's own error message on conflict/diverged history rather than stashing or forcing anything.                                                                                                                             |
+| `pushBranch(location)`                | `git push`, or `git push -u origin <branch>` the first time the current branch has no upstream.                                                                                                                                                                               |
+| `checkoutBranch(location, branch)`    | `git checkout <branch>` for an existing local or remote-tracking branch.                                                                                                                                                                                                      |
+| `createBranch(location, name, from?)` | `git checkout -b <name> [<from>]`, then the branch is current.                                                                                                                                                                                                                |
 
 Every ref/branch/name argument that originates from a request body is passed to `execFile` after a `--` separator, the same flag-injection guard used for `remoteUrl` in Part 1.
 
@@ -85,15 +85,15 @@ New `api/src/routes/v1/workspace-git.handlers.ts` (same `ok`/`notFound`/`badRequ
 workspacesRouter.use('/:id/git', workspaceGitRouter);
 ```
 
-| Method & path | Body | Behavior |
-| --- | --- | --- |
-| `GET /v1/workspaces/:id/git/status` | — | `getGitStatus` |
-| `GET /v1/workspaces/:id/git/branches` | — | `listBranches` |
-| `POST /v1/workspaces/:id/git/fetch` | — | `fetchRemote` |
-| `POST /v1/workspaces/:id/git/sync` | — | `syncFastForward` |
-| `POST /v1/workspaces/:id/git/push` | — | `pushBranch` |
-| `POST /v1/workspaces/:id/git/checkout` | `{ branch: string }` | `checkoutBranch` |
-| `POST /v1/workspaces/:id/git/branches` | `{ name: string, from?: string }` | `createBranch` |
+| Method & path                          | Body                              | Behavior          |
+| -------------------------------------- | --------------------------------- | ----------------- |
+| `GET /v1/workspaces/:id/git/status`    | —                                 | `getGitStatus`    |
+| `GET /v1/workspaces/:id/git/branches`  | —                                 | `listBranches`    |
+| `POST /v1/workspaces/:id/git/fetch`    | —                                 | `fetchRemote`     |
+| `POST /v1/workspaces/:id/git/sync`     | —                                 | `syncFastForward` |
+| `POST /v1/workspaces/:id/git/push`     | —                                 | `pushBranch`      |
+| `POST /v1/workspaces/:id/git/checkout` | `{ branch: string }`              | `checkoutBranch`  |
+| `POST /v1/workspaces/:id/git/branches` | `{ name: string, from?: string }` | `createBranch`    |
 
 Every handler 404s if the workspace doesn't exist and 400s up front if `workspace.git` is not `true`. Every mutating handler calls `invalidateFileTreeCache(workspaceId)` (already exported from `workspace-files.ts`) on success, so the Files tab's branch/status picks up the change on its next load. The concurrency lock surfaces as `409` from the handler layer.
 
@@ -109,27 +109,31 @@ No server-side confirmation gate is added on push — it's invoked only by an ex
 
 ### 3.4 Note on non-GitHub git backends (e.g. Radicle)
 
-Nothing in this design is GitHub-specific: every operation shells out to plain `git` against whatever remote is already configured, so a repository backed by a different transport should work without code changes, *provided that transport's git-remote-helper is installed and reachable in the environment*. [Radicle](https://radicle.dev/), for example, ships a `git-remote-rad` helper — once installed, a `rad://<repo-id>` URL is just another value for `remoteUrl`, and `git clone -- <remoteUrl> .` (§2) resolves it exactly like an `https://` or `git@` URL.
+Nothing in this design is GitHub-specific: every operation shells out to plain `git` against whatever remote is already configured, so a repository backed by a different transport should work without code changes, _provided that transport's git-remote-helper is installed and reachable in the environment_. [Radicle](https://radicle.dev/), for example, ships a `git-remote-rad` helper — once installed, a `rad://<repo-id>` URL is just another value for `remoteUrl`, and `git clone -- <remoteUrl> .` (§2) resolves it exactly like an `https://` or `git@` URL.
 
 One known gap: `pushBranch`'s no-upstream-yet fallback (§3.1) is hardcoded to `git push -u origin <branch>`. GitHub clones conventionally name their remote `origin`, but a Radicle-cloned repo's remote is conventionally named `rad` — so the very first push of a newly created branch on such a workspace would target a remote that doesn't exist. Fixing this (detect the configured remote name instead of assuming `origin`, e.g. from `git remote`) is straightforward but out of scope for this pass; it's called out here as a known limitation rather than fixed speculatively, since GitHub is the only backend in active use today.
 
-Also out of scope, and unlike GitHub: Radicle's auth model is a running `radicle-node` process with a locally provisioned identity (`rad auth`), not a static credential file. This design's "no credential handling — rides on the environment's ambient git auth" stance (§2) assumes that auth is already sitting there when a git command runs; Radicle would need that *process* running and reachable, which is a heavier environmental prerequisite this design doesn't provision or verify.
+Also out of scope, and unlike GitHub: Radicle's auth model is a running `radicle-node` process with a locally provisioned identity (`rad auth`), not a static credential file. This design's "no credential handling — rides on the environment's ambient git auth" stance (§2) assumes that auth is already sitting there when a git command runs; Radicle would need that _process_ running and reachable, which is a heavier environmental prerequisite this design doesn't provision or verify.
 
 ---
 
 ## 4. Testing
 
 ### Unit — `api/src/services/workspace-provision.test.ts` (extend or add)
+
 - `provisionGitRepository`: no-op when `git: false`; `git init` invoked when `git: true` with no `remoteUrl`; `git clone -- <url> .` invoked when `remoteUrl` is set; failure propagates (for the handler-level rollback test to catch).
 
 ### Unit — `api/src/services/workspace-git.test.ts` (new)
+
 - `getGitStatus`: parses branch/upstream/ahead/behind/dirty from stubbed `execFileFn` output, including the no-upstream-configured case (`hasRemote: false`).
 - `listBranches`: parses local vs. remote-tracking branch names from stubbed output.
 - `fetchRemote` / `syncFastForward` / `pushBranch` / `checkoutBranch` / `createBranch`: correct argv (including the `--` guard) passed to `execFileFn`; `pushBranch` uses `-u origin <branch>` only when no upstream is configured; `syncFastForward` surfaces the underlying git error message unchanged on failure.
 - Concurrency lock: two overlapping mutating calls on the same workspace location — the second is rejected while the first is in flight, and the lock is released after completion (success or failure) so a subsequent call succeeds.
 
 ### Handler tests — `api/src/routes/v1/workspace-git.handlers.test.ts` (new)
+
 Follows `workspace-files.handlers.test.ts`'s pattern (temp-dir-backed `WorkspaceStore`, stubbed `execFileFn`):
+
 - 404 for an unknown workspace id, on every endpoint.
 - 400 for a workspace with `git: false`, on every endpoint.
 - Success path per endpoint, asserting `invalidateFileTreeCache` was triggered (observable via a subsequent `getFileTree` call not returning stale cached data, matching the existing cache test pattern in `workspace-files.test.ts`).
@@ -137,10 +141,13 @@ Follows `workspace-files.handlers.test.ts`'s pattern (temp-dir-backed `Workspace
 - Concurrency: a second request while a mutating one is in flight gets `409`.
 
 ### Agent tool tests — extend `create-workspace.tool.test.ts` / `create-project.tool.test.ts`
+
 - `remoteUrl` passed through to the handler body when provided; omitted (`undefined`) leaves existing `git: true`-only ("plain init") behavior unchanged.
 
 ### UI — `ui/test/git-controls.test.tsx` (new)
+
 Following `workspace-create-form.test.tsx`'s Preact Testing Library conventions:
+
 - Not rendered when `workspace.git` is `false`.
 - Branch/ahead-behind display reflects the fetched status.
 - Sync/Push/Checkout/Create-branch buttons call the corresponding API function, disable while in flight, and render the returned error message on failure.
@@ -149,26 +156,26 @@ Following `workspace-create-form.test.tsx`'s Preact Testing Library conventions:
 
 ## 5. Files Changed
 
-| File | Change |
-| --- | --- |
-| `api/src/services/workspace-provision.ts` | Adds `provisionGitRepository()` and `GitProvisionOptions` |
-| `api/src/routes/v1/workspaces.handlers.ts` | `createWorkspaceHandler` calls `provisionGitRepository()` before `provisionDependencyIsolation`, with rollback on failure |
-| `api/src/routes/v1/projects.handlers.ts` | `createProjectHandler` — same wiring as above |
-| `api/src/agents/tools/create-workspace.tool.ts` | `CreateWorkspaceSchema` gains optional `remoteUrl`, threaded through to the handler |
-| `api/src/agents/tools/create-project.tool.ts` | `CreateProjectSchema` gains optional `remoteUrl`, threaded through to the handler |
-| `api/src/services/workspace-git.ts` (new) | Status/branches/fetch/sync/push/checkout/create-branch operations, with the per-workspace concurrency lock |
-| `api/src/routes/v1/workspace-git.handlers.ts` (new) | HTTP handlers wrapping the service, per §3.2 |
-| `api/src/routes/v1/workspace-git.route.ts` (new) | Router, mounted at `/:id/git` |
-| `api/src/routes/v1/workspaces.route.ts` | Mounts `workspaceGitRouter` |
-| `ui/src/services/workspace-git-api.ts` (new) | Client wrappers for the new endpoints |
-| `ui/src/pages/workspaces/git-controls.tsx` (new) | Branch display, ahead/behind badge, branch switcher, Sync/Push buttons |
-| `ui/src/pages/workspaces/files-tab.tsx` | Renders `GitControls` when `workspace.git` is true |
-| `api/src/services/workspace-provision.test.ts` | Coverage per §4 |
-| `api/src/services/workspace-git.test.ts` (new) | Coverage per §4 |
-| `api/src/routes/v1/workspace-git.handlers.test.ts` (new) | Coverage per §4 |
-| `api/src/agents/tools/create-workspace.tool.test.ts` | Coverage for the new `remoteUrl` param |
-| `api/src/agents/tools/create-project.tool.test.ts` | Coverage for the new `remoteUrl` param |
-| `ui/test/git-controls.test.tsx` (new) | Coverage per §4 |
+| File                                                     | Change                                                                                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `api/src/services/workspace-provision.ts`                | Adds `provisionGitRepository()` and `GitProvisionOptions`                                                                 |
+| `api/src/routes/v1/workspaces.handlers.ts`               | `createWorkspaceHandler` calls `provisionGitRepository()` before `provisionDependencyIsolation`, with rollback on failure |
+| `api/src/routes/v1/projects.handlers.ts`                 | `createProjectHandler` — same wiring as above                                                                             |
+| `api/src/agents/tools/create-workspace.tool.ts`          | `CreateWorkspaceSchema` gains optional `remoteUrl`, threaded through to the handler                                       |
+| `api/src/agents/tools/create-project.tool.ts`            | `CreateProjectSchema` gains optional `remoteUrl`, threaded through to the handler                                         |
+| `api/src/services/workspace-git.ts` (new)                | Status/branches/fetch/sync/push/checkout/create-branch operations, with the per-workspace concurrency lock                |
+| `api/src/routes/v1/workspace-git.handlers.ts` (new)      | HTTP handlers wrapping the service, per §3.2                                                                              |
+| `api/src/routes/v1/workspace-git.route.ts` (new)         | Router, mounted at `/:id/git`                                                                                             |
+| `api/src/routes/v1/workspaces.route.ts`                  | Mounts `workspaceGitRouter`                                                                                               |
+| `ui/src/services/workspace-git-api.ts` (new)             | Client wrappers for the new endpoints                                                                                     |
+| `ui/src/pages/workspaces/git-controls.tsx` (new)         | Branch display, ahead/behind badge, branch switcher, Sync/Push buttons                                                    |
+| `ui/src/pages/workspaces/files-tab.tsx`                  | Renders `GitControls` when `workspace.git` is true                                                                        |
+| `api/src/services/workspace-provision.test.ts`           | Coverage per §4                                                                                                           |
+| `api/src/services/workspace-git.test.ts` (new)           | Coverage per §4                                                                                                           |
+| `api/src/routes/v1/workspace-git.handlers.test.ts` (new) | Coverage per §4                                                                                                           |
+| `api/src/agents/tools/create-workspace.tool.test.ts`     | Coverage for the new `remoteUrl` param                                                                                    |
+| `api/src/agents/tools/create-project.tool.test.ts`       | Coverage for the new `remoteUrl` param                                                                                    |
+| `ui/test/git-controls.test.tsx` (new)                    | Coverage per §4                                                                                                           |
 
 ---
 

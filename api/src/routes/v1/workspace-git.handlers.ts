@@ -38,8 +38,7 @@ function conflict(error: string): HandlerFailure {
 }
 
 type GitWorkspaceCheck =
-  | { ok: true; workspace: Workspace }
-  | { ok: false; failure: HandlerFailure };
+  { ok: true; workspace: Workspace } | { ok: false; failure: HandlerFailure };
 
 function requireGitWorkspace(store: WorkspaceStore, workspaceId: string): GitWorkspaceCheck {
   const workspace = store.getWorkspace(workspaceId);

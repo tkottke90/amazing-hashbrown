@@ -4,7 +4,13 @@ import { GitBranch, Plus } from 'lucide-preact';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   fetchGitStatus,
   fetchGitBranches,
@@ -59,7 +65,6 @@ export function GitControls({ workspaceId, git }: GitControlsProps) {
   useEffect(() => {
     if (!git) return;
     void loadStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, git]);
 
   function applyStatus(next: GitStatus) {
