@@ -15,6 +15,7 @@ import {
 } from '../../services/workspace-location.js';
 import {
   provisionDependencyIsolation,
+  provisionGitRepository,
   type ExecFileFn,
 } from '../../services/workspace-provision.js';
 import { getWikiRegistry } from '../../services/wiki.js';
@@ -92,6 +93,19 @@ export async function createProjectHandler(
     await createWorkspaceDirectory(location);
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    await provisionGitRepository(
+      location,
+      { git: !!body.git, remoteUrl: body.remoteUrl as string | undefined },
+      execFileFn,
+    );
+  } catch (err) {
+    await rm(location, { recursive: true, force: true });
+    return badRequest(
+      `Failed to provision git repository: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   try {

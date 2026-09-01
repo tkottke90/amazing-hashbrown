@@ -250,6 +250,135 @@ describe('routes/v1/projects.handlers', () => {
       expect(registry.list(), 'no wiki domain should have been created').to.have.length(0);
       expect(store.listProjects()).to.have.length(0);
     });
+
+    it('runs git init before dependency isolation when git is true and no remoteUrl', async () => {
+      const calls: unknown[][] = [];
+      const execFileFn = (async (...args: unknown[]) => {
+        calls.push(args);
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `git-provision-project-init-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Git Init Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          git: true,
+          javascript: true,
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      expect(calls.length).to.equal(2);
+      expect(calls[0]).to.deep.equal(['git', ['init'], { cwd: location, timeout: 10_000 }]);
+      expect(calls[1]).to.deep.equal(['npm', ['init', '-y'], { cwd: location, timeout: 30_000 }]);
+    });
+
+    it('runs git clone before dependency isolation when git is true and remoteUrl is set', async () => {
+      const calls: unknown[][] = [];
+      const execFileFn = (async (...args: unknown[]) => {
+        calls.push(args);
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `git-provision-project-clone-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Git Clone Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          git: true,
+          remoteUrl: 'https://example.com/org/repo.git',
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      expect(calls).to.deep.equal([
+        [
+          'git',
+          ['clone', '--', 'https://example.com/org/repo.git', '.'],
+          { cwd: location, timeout: 60_000 },
+        ],
+      ]);
+    });
+
+    it('does not run any git command when git is false', async () => {
+      const calls: unknown[][] = [];
+      const execFileFn = (async (...args: unknown[]) => {
+        calls.push(args);
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `git-provision-project-off-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'No Git Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          git: false,
+          remoteUrl: 'https://example.com/org/repo.git',
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      expect(calls.length).to.equal(0);
+    });
+
+    it('rolls back the directory and returns 400 when git provisioning fails, before the wiki domain is created', async () => {
+      const execFileFn = (async () => {
+        throw new Error('Repository not found');
+      }) as unknown as ExecFileFn;
+
+      const directoryName = `git-provision-project-fail-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Failed Git Project',
+          locationRoot: 'temporary',
+          directoryName,
+          winCondition: 'It ships',
+          git: true,
+          remoteUrl: 'https://example.com/org/nope.git',
+        },
+        registry,
+        execFileFn,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.error).to.include('Failed to provision git repository');
+        expect(result.error).to.include('Repository not found');
+      }
+      expect(existsSync(location)).to.equal(false);
+      expect(registry.list(), 'no wiki domain should have been created').to.have.length(0);
+      expect(store.listProjects()).to.have.length(0);
+    });
   });
 
   describe('closeProjectHandler()', () => {
