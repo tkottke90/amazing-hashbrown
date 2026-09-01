@@ -16,7 +16,12 @@ import {
   type SseWriter,
 } from './active-sse-writer.js';
 import { registerTaskAbort, getTaskAbort, clearTaskAbort } from './active-task-abort.js';
-import { pipeEvents, finalizeTurn, drainAndRecordWikiUpdates } from './stream-handler.js';
+import {
+  pipeEvents,
+  finalizeTurn,
+  drainAndRecordWikiUpdates,
+  extractPartialAssistantState,
+} from './stream-handler.js';
 import { buildTaskAgent, type WorkspaceChatContext } from './chat-agent.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
 import {
@@ -210,19 +215,20 @@ export async function executeTask(
       completeTaskBox.current = result;
     });
 
-    const { content, thoughtContent } = await pipeEvents(
+    const { content, thoughtContent, finalSegmentId } = await pipeEvents(
       sink,
       msgId,
       tapped,
       threadStore,
       threadId,
+      turnSentAt,
     );
     const { interrupted } = await finalizeTurn(
       sink,
       threadStore,
       agent,
       threadId,
-      msgId,
+      finalSegmentId,
       startedAt,
       content,
       thoughtContent,
@@ -263,6 +269,11 @@ export async function executeTask(
     const wasAborted = abortEntry?.controller.signal.aborted ?? false;
     const intent = wasAborted ? abortEntry?.intent : null;
 
+    // Recovers the segment id/partial content pipeEvents was mid-way through
+    // when it threw (see stream-handler.ts's PipeEventsError), used by both
+    // the genuine-failure and aborted-run branches below.
+    const partialState = msgId !== undefined ? extractPartialAssistantState(err, msgId) : undefined;
+
     if (intent === 'cancel') {
       logger.info('task-execution: run cancelled', { taskId: task.id });
       finalOutcome = 'cancelled';
@@ -278,19 +289,26 @@ export async function executeTask(
     } else {
       logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
       finalOutcome = 'failed';
-      if (msgId !== undefined && turnSentAt !== undefined) {
+      if (partialState && turnSentAt !== undefined) {
         if ((err as Error).name === 'GraphRecursionError') {
           finalizeAssistant(
             threadStore,
             threadId,
-            msgId,
+            partialState.segmentId,
             'Ran out of steps before completing this task.',
             '',
             turnSentAt,
             null,
           );
         } else {
-          failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+          failAssistant(
+            threadStore,
+            threadId,
+            partialState.segmentId,
+            partialState.content,
+            turnSentAt,
+            partialState.thoughtContent,
+          );
         }
       }
       store.completeQueueEntry(entry.id, 'failed');
@@ -300,8 +318,15 @@ export async function executeTask(
     // assistant row is still mid-turn — close it out the same way a
     // genuine failure does, or it stays stuck "in progress" in the thread
     // UI forever.
-    if (intent && msgId !== undefined && turnSentAt !== undefined) {
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    if (intent && partialState && turnSentAt !== undefined) {
+      failAssistant(
+        threadStore,
+        threadId,
+        partialState.segmentId,
+        partialState.content,
+        turnSentAt,
+        partialState.thoughtContent,
+      );
     }
   } finally {
     recordTaskRunMarker(

@@ -354,7 +354,7 @@ export function ThreadSidebar() {
       <div class="border-t border-border pt-2 mt-1">
         <QueueWidget />
         <label className="flex items-center justify-between gap-2 px-2 pt-2 text-xs text-muted-foreground">
-          <span>Show failed attempts</span>
+          <span>Expand failed attempts</span>
           <Switch
             size="sm"
             checked={showErrorMessages.value}

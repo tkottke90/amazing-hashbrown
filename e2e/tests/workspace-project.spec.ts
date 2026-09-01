@@ -144,7 +144,10 @@ test.describe(
 
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('switch', { name: 'Git repository' }).click();
-      await drawer.getByLabel('Remote URL').fill('https://github.com/org/e2e-repo');
+      // A real, tiny, stable public repo — creation now actually clones this
+      // URL (see #107's fix), so a placeholder/non-existent URL would make
+      // the create request fail instead of just being stored as metadata.
+      await drawer.getByLabel('Remote URL').fill('https://github.com/octocat/Hello-World');
 
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Create workspace' }).click();
@@ -155,7 +158,7 @@ test.describe(
 
       await expect(page.getByTestId('git-chip')).toHaveAttribute(
         'title',
-        'https://github.com/org/e2e-repo',
+        'https://github.com/octocat/Hello-World',
       );
 
       // Clean up so reruns against a persistent dev server don't collide on

@@ -35,6 +35,12 @@ export interface ThreadMessageRecord {
   model: string | null;
   createdAt: string;
   updatedAt: string;
+  // Only set by getThreadMessages()/getThread(), which see the whole
+  // thread and can tell whether some other row's retryOf points back at
+  // this one. true means a failed (status: 'error') assistant row has
+  // since been retried — undefined from a single-row lookup like
+  // getMessage(), which has no such context.
+  superseded?: boolean;
 }
 
 export interface ThreadDetail extends ThreadSummary {
@@ -428,14 +434,18 @@ export class ThreadStore extends BaseStore {
 
   // Returns the thread's messages, newest-`limit` capped (soft cap, no
   // pagination — see design doc's "Out of Scope"), oldest-first for display.
-  // Hides a status:'error' row only if it has been superseded by a retry
-  // (another row's retry_of points at it) and showErrors is false — an
-  // unresolved failure at the tail is always visible regardless of the flag.
+  // Always includes every row, including a failed (status: 'error')
+  // assistant row that a later retry has superseded — annotated
+  // `superseded: true` rather than hidden, so the UI can render it
+  // collapsed instead of silently dropping it (see the chat-formatting
+  // design doc's retry-visibility section). Callers that want superseded
+  // rows excluded (e.g. search-conversation.tool.ts feeding an LLM context)
+  // filter on that flag themselves.
   getThreadMessages(
     threadId: string,
-    opts: { showErrors?: boolean; limit?: number; afterMessageId?: string } = {},
+    opts: { limit?: number; afterMessageId?: string } = {},
   ): ThreadMessageRecord[] {
-    const { showErrors = false, limit = 200, afterMessageId } = opts;
+    const { limit = 200, afterMessageId } = opts;
     const rows = this.db
       .prepare(`SELECT * FROM thread_messages WHERE thread_id = ? ORDER BY seq DESC LIMIT ?`)
       .all(threadId, limit) as RawMessageRow[];
@@ -448,20 +458,16 @@ export class ThreadStore extends BaseStore {
       if (cursor) chronological = chronological.filter((r) => r.seq > cursor.seq);
     }
 
-    if (showErrors) return chronological.map(mapMessageRow);
-
-    const superseded = new Set(
+    const supersededIds = new Set(
       chronological.filter((r) => r.retry_of !== null).map((r) => r.retry_of),
     );
-    return chronological
-      .filter((r) => !(r.status === 'error' && superseded.has(r.id)))
-      .map(mapMessageRow);
+    return chronological.map((r) => ({
+      ...mapMessageRow(r),
+      superseded: r.status === 'error' && supersededIds.has(r.id),
+    }));
   }
 
-  getThread(
-    id: string,
-    opts: { showErrors?: boolean; afterMessageId?: string } = {},
-  ): ThreadDetail | null {
+  getThread(id: string, opts: { afterMessageId?: string } = {}): ThreadDetail | null {
     const meta = this.getThreadMeta(id);
     if (!meta) return null;
     return { ...meta, messages: this.getThreadMessages(id, opts) };

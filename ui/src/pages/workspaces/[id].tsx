@@ -460,7 +460,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               }}
             />
           )}
-          {tab.value === 'files' && id && <FilesTab workspaceId={id} />}
+          {tab.value === 'files' && id && <FilesTab workspaceId={id} git={ws.git} />}
           {tab.value === 'chat' && <WorkspaceChatTab workspace={ws} />}
         </div>
       </div>

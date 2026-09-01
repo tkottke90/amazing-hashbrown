@@ -14,6 +14,7 @@ import {
   pipeEvents,
   finalizeTurn,
   drainAndRecordWikiUpdates,
+  extractPartialAssistantState,
 } from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
@@ -185,12 +186,19 @@ export async function streamWorkspaceChatToSse(
         },
       );
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -202,7 +210,7 @@ export async function streamWorkspaceChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -224,15 +232,20 @@ export async function streamWorkspaceChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);
@@ -348,12 +361,19 @@ export async function resumeWorkspaceChatToSse(
         },
       });
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -365,7 +385,7 @@ export async function resumeWorkspaceChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -387,15 +407,20 @@ export async function resumeWorkspaceChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);
@@ -503,12 +528,19 @@ export async function retryWorkspaceChatToSse(
         },
       });
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -520,7 +552,7 @@ export async function retryWorkspaceChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -542,15 +574,20 @@ export async function retryWorkspaceChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);

@@ -217,7 +217,7 @@ export function buildThreadReport(
   const contextWindowMaxTokens =
     options.contextWindowMaxTokens ?? DEFAULT_CONTEXT_WINDOW_MAX_TOKENS;
 
-  const thread = stores.threadStore.getThread(threadId, { showErrors: true });
+  const thread = stores.threadStore.getThread(threadId);
   if (!thread) return null;
 
   const traceSummaries = stores.observabilityStore.find({ threadId, limit: 1000 });
