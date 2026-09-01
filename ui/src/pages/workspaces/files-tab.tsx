@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { FileTree } from '@/pages/workspaces/file-tree';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
+import { GitControls } from '@/pages/workspaces/git-controls';
 import {
   openTabs,
   activeTabPath,
@@ -108,7 +109,7 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
   );
 }
 
-export function FilesTab({ workspaceId }: { workspaceId: string }) {
+export function FilesTab({ workspaceId, git }: { workspaceId: string; git: boolean }) {
   useEffect(() => {
     void loadFileTree(workspaceId);
   }, [workspaceId]);
@@ -121,6 +122,8 @@ export function FilesTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         <div class="flex flex-1 min-w-0 flex-col overflow-hidden rounded-xl border border-border">
+          <GitControls workspaceId={workspaceId} git={git} />
+
           {openTabs.value.length > 0 && (
             <div class="flex items-center gap-1 overflow-x-auto border-b border-border px-1">
               {openTabs.value.map((tab) => (

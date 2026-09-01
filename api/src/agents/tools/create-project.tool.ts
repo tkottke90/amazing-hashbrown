@@ -16,6 +16,12 @@ const CreateProjectSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether to initialize git in the project directory. Defaults to false.'),
+  remoteUrl: z
+    .string()
+    .optional()
+    .describe(
+      'Git remote URL to clone into the project directory instead of a plain git init. Only used when git is true.',
+    ),
 });
 
 // Factory-injected store/registry (defaulting to the production singletons)
@@ -26,7 +32,7 @@ const CreateProjectSchema = z.object({
 // wiki and rejects a caller-supplied one, so /create-project never asks.
 export function makeCreateProjectTool(store?: WorkspaceStore, registry?: WikiRegistry) {
   return tool(
-    async ({ name, goal, winCondition, dueAt, git }, runtime: ToolRuntime) => {
+    async ({ name, goal, winCondition, dueAt, git, remoteUrl }, runtime: ToolRuntime) => {
       const s = store ?? getWorkspaceStore();
 
       const directoryName = slugify(name);
@@ -38,6 +44,7 @@ export function makeCreateProjectTool(store?: WorkspaceStore, registry?: WikiReg
           winCondition,
           dueAt,
           git: git ?? false,
+          remoteUrl,
           directoryName,
           locationRoot: 'projects',
         },

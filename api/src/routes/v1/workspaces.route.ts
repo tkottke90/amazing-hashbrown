@@ -10,6 +10,7 @@ import {
   cleanupDependenciesHandler,
 } from './workspaces.handlers.js';
 import { workspaceFilesRouter } from './workspace-files.route.js';
+import { workspaceGitRouter } from './workspace-git.route.js';
 import { workspaceChatRouter } from './workspace-chat.route.js';
 
 export const workspacesRouter = Router();
@@ -80,4 +81,5 @@ workspacesRouter.post('/:id/cleanup-dependencies', async (req: Request, res: Res
 });
 
 workspacesRouter.use('/:id/files', workspaceFilesRouter);
+workspacesRouter.use('/:id/git', workspaceGitRouter);
 workspacesRouter.use('/:id/chat', workspaceChatRouter);

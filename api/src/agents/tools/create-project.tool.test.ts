@@ -86,4 +86,25 @@ describe('agents/tools/create-project', () => {
     // No orphaned ephemeral wiki from the rejected second attempt.
     expect(registry.list()).to.have.length(1);
   });
+
+  // git is false here specifically so this never triggers a real network
+  // clone — the tool doesn't expose an injectable execFileFn, so this test
+  // only exercises remoteUrl reaching the store, not the actual git command.
+  it('threads remoteUrl through to the created project', async () => {
+    const tool = makeCreateProjectTool(store, registry);
+
+    await tool.invoke(
+      {
+        name: `My Project ${randomUUID()}`,
+        winCondition: 'It ships',
+        git: false,
+        remoteUrl: 'https://example.com/org/repo.git',
+      },
+      invokeConfig(),
+    );
+
+    const created = store.listProjects()[0]!;
+    workspaceDirs.push(created.location);
+    expect(created.remoteUrl).to.equal('https://example.com/org/repo.git');
+  });
 });

@@ -22,6 +22,12 @@ const CreateWorkspaceSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether to initialize git in the workspace directory. Defaults to false.'),
+  remoteUrl: z
+    .string()
+    .optional()
+    .describe(
+      'Git remote URL to clone into the workspace directory instead of a plain git init. Only used when git is true.',
+    ),
 });
 
 function matchesWikiQuery(
@@ -42,7 +48,7 @@ function matchesWikiQuery(
 // rather than wiki-create-domain.tool.ts's untestable singleton-only style.
 export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiRegistry) {
   return tool(
-    async ({ name, goal, wikiId, git }, runtime: ToolRuntime) => {
+    async ({ name, goal, wikiId, git, remoteUrl }, runtime: ToolRuntime) => {
       const s = store ?? getWorkspaceStore();
 
       let resolvedWikiId = wikiId;
@@ -63,6 +69,7 @@ export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiR
         goal,
         wikiId: resolvedWikiId,
         git: git ?? false,
+        remoteUrl,
         directoryName,
         locationRoot: 'projects',
       });

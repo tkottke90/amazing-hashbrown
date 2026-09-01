@@ -33,7 +33,7 @@ function makeTab(path: string, opts: Partial<OpenTab> = {}): OpenTab {
 function renderFilesTab() {
   return render(
     <ThemeProvider>
-      <FilesTab workspaceId="ws-1" />
+      <FilesTab workspaceId="ws-1" git={false} />
     </ThemeProvider>,
   );
 }

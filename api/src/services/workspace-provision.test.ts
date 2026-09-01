@@ -1,6 +1,10 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { provisionDependencyIsolation, type ExecFileFn } from './workspace-provision.js';
+import {
+  provisionDependencyIsolation,
+  provisionGitRepository,
+  type ExecFileFn,
+} from './workspace-provision.js';
 
 function makeStub(impl?: (...args: Parameters<ExecFileFn>) => unknown) {
   const calls: unknown[][] = [];
@@ -55,6 +59,98 @@ describe('services/workspace-provision', () => {
       }
       expect(error?.message).to.equal('npm not found');
       expect(calls.length).to.equal(1);
+    });
+  });
+
+  describe('provisionGitRepository()', () => {
+    it('calls nothing when git is false', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository('/tmp/ws', { git: false }, stub);
+      expect(calls.length).to.equal(0);
+    });
+
+    it('calls nothing when git is false even with a remoteUrl set', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository(
+        '/tmp/ws',
+        { git: false, remoteUrl: 'https://example.com/org/repo.git' },
+        stub,
+      );
+      expect(calls.length).to.equal(0);
+    });
+
+    it('runs git init when git is true and no remoteUrl is given', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository('/tmp/ws', { git: true }, stub);
+      expect(calls).to.deep.equal([['git', ['init'], { cwd: '/tmp/ws', timeout: 10_000 }]]);
+    });
+
+    it('runs git init when git is true and remoteUrl is an empty/whitespace string', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository('/tmp/ws', { git: true, remoteUrl: '   ' }, stub);
+      expect(calls).to.deep.equal([['git', ['init'], { cwd: '/tmp/ws', timeout: 10_000 }]]);
+    });
+
+    it('runs git clone -- <url> . when git is true and remoteUrl is set', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository(
+        '/tmp/ws',
+        { git: true, remoteUrl: 'https://example.com/org/repo.git' },
+        stub,
+      );
+      expect(calls).to.deep.equal([
+        [
+          'git',
+          ['clone', '--', 'https://example.com/org/repo.git', '.'],
+          { cwd: '/tmp/ws', timeout: 60_000 },
+        ],
+      ]);
+    });
+
+    it('trims the remoteUrl before cloning', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository(
+        '/tmp/ws',
+        { git: true, remoteUrl: '  https://example.com/org/repo.git  ' },
+        stub,
+      );
+      expect(calls).to.deep.equal([
+        [
+          'git',
+          ['clone', '--', 'https://example.com/org/repo.git', '.'],
+          { cwd: '/tmp/ws', timeout: 60_000 },
+        ],
+      ]);
+    });
+
+    it('propagates a clone rejection', async () => {
+      const { stub } = makeStub(() => {
+        throw new Error('Repository not found');
+      });
+      let error: Error | undefined;
+      try {
+        await provisionGitRepository(
+          '/tmp/ws',
+          { git: true, remoteUrl: 'https://example.com/org/nope.git' },
+          stub,
+        );
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error?.message).to.equal('Repository not found');
+    });
+
+    it('propagates an init rejection', async () => {
+      const { stub } = makeStub(() => {
+        throw new Error('git not found');
+      });
+      let error: Error | undefined;
+      try {
+        await provisionGitRepository('/tmp/ws', { git: true }, stub);
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error?.message).to.equal('git not found');
     });
   });
 });

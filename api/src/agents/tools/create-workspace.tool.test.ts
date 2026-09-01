@@ -54,6 +54,9 @@ describe('agents/tools/create-workspace', () => {
     workspaceDirs.push(created.location);
     expect(created.goal).to.equal('Ship the thing');
     expect(created.git).to.equal(true);
+    expect(created.remoteUrl, 'omitting remoteUrl leaves plain git init behavior unchanged').to.equal(
+      null,
+    );
 
     expect(sseEvents).to.have.length(1);
     expect(sseEvents[0]).to.deep.include({
@@ -108,5 +111,25 @@ describe('agents/tools/create-workspace', () => {
     const created = store.listWorkspaces()[0]!;
     workspaceDirs.push(created.location);
     expect(created.wikiId).to.equal('homelab');
+  });
+
+  // git is false here specifically so this never triggers a real network
+  // clone — the tool doesn't expose an injectable execFileFn, so this test
+  // only exercises remoteUrl reaching the store, not the actual git command.
+  it('threads remoteUrl through to the created workspace', async () => {
+    const tool = makeCreateWorkspaceTool(store, registry);
+
+    await tool.invoke(
+      {
+        name: `My Workspace ${randomUUID()}`,
+        git: false,
+        remoteUrl: 'https://example.com/org/repo.git',
+      },
+      invokeConfig(),
+    );
+
+    const created = store.listWorkspaces()[0]!;
+    workspaceDirs.push(created.location);
+    expect(created.remoteUrl).to.equal('https://example.com/org/repo.git');
   });
 });
