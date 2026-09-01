@@ -6,6 +6,7 @@ import { isWikiDomainArchived } from './wiki-archive-guard.js';
 
 export interface WikiWriteResult {
   path: string; // relative to the wiki root
+  title: string;
   created: boolean;
   warnings: Warning[];
 }
@@ -121,7 +122,7 @@ export async function createWikiPage(
     relPath: undefined,
   });
 
-  return { status: 'written', result };
+  return { status: 'written', result: { ...result, title } };
 }
 
 export type UpdateWikiPageResult =
@@ -277,5 +278,5 @@ export async function updateWikiPage(
     relPath,
   });
 
-  return { status: 'written', result, deletedSections };
+  return { status: 'written', result: { ...result, title: existing.title }, deletedSections };
 }

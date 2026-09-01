@@ -182,3 +182,30 @@ describe('use-thread — retryTurn', () => {
     expect(thread.messages.value).toHaveLength(2);
   });
 });
+
+describe('use-thread — wiki_updated handling', () => {
+  it('creates a wiki_update message carrying pageTitle, pageKind, wikiName, and path from the event', async () => {
+    respondWith([
+      {
+        type: 'wiki_updated',
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'homelab',
+        path: 'entities/router.md',
+      },
+      { type: 'stream_done', durationMs: 10 },
+    ]);
+
+    const thread = newThread('t7');
+    await thread.sendMessage('Remember my router.');
+
+    const wikiUpdateMessages = thread.messages.value.filter((m) => m.kind === 'wiki_update');
+    expect(wikiUpdateMessages).toHaveLength(1);
+    expect(wikiUpdateMessages[0]).toMatchObject({
+      pageTitle: 'Router',
+      pageKind: 'created',
+      wikiName: 'homelab',
+      path: 'entities/router.md',
+    });
+  });
+});

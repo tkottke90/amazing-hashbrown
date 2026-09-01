@@ -55,6 +55,7 @@ describe('services/wiki-write', () => {
       if (result.status !== 'written') return;
       expect(result.result.created).to.equal(true);
       expect(result.result.path).to.equal('entities/router.md');
+      expect(result.result.title).to.equal('Router');
 
       const wiki = await registry.load('test-wiki');
       const page = await wiki.readPage('entities/router.md');
@@ -245,6 +246,7 @@ describe('services/wiki-write', () => {
       expect(updated.status).to.equal('written');
       if (updated.status !== 'written') return;
       expect(updated.result.created).to.equal(false);
+      expect(updated.result.title).to.equal('Host');
 
       const wiki = await registry.load('test-wiki');
       const page = await wiki.readPage(created.result.path);

@@ -309,6 +309,13 @@ describe('agents/after-agent', () => {
       const wiki = await registry.load('user');
       const page = await wiki.readPage('entities/favorite-drink.md');
       expect(page.content).to.contain('The user prefers tea.');
+
+      const events = drainPendingWikiUpdates(threadId);
+      expect(events).to.have.length(1);
+      expect(events[0]).to.deep.include({
+        pageKind: 'created',
+        path: 'entities/favorite-drink.md',
+      });
     });
 
     it('updates the existing page when ingestPrep finds a match, via the merge step', async () => {
@@ -352,6 +359,13 @@ describe('agents/after-agent', () => {
       const state = getAfterAgentState(threadId);
       expect(state.status).to.equal('done');
       expect((state as { outcome: string }).outcome).to.equal('identified');
+
+      const events = drainPendingWikiUpdates(threadId);
+      expect(events).to.have.length(1);
+      expect(events[0]).to.deep.include({
+        pageKind: 'updated',
+        path: 'entities/coffee-habit.md',
+      });
     });
   });
 

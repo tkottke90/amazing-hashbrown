@@ -20,4 +20,14 @@ describe('CardBadge', () => {
     render(<CardBadge variant="violet">Project</CardBadge>);
     expect(slot('card-badge')).toHaveClass('bg-violet-100');
   });
+
+  it('applies the green variant when requested', () => {
+    render(<CardBadge variant="green">Created</CardBadge>);
+    expect(slot('card-badge')).toHaveClass('bg-green-100');
+  });
+
+  it('applies the amber variant when requested', () => {
+    render(<CardBadge variant="amber">Updated</CardBadge>);
+    expect(slot('card-badge')).toHaveClass('bg-amber-100');
+  });
 });

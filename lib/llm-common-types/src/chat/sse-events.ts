@@ -99,8 +99,9 @@ const StreamErrorSchema = z.object({
 const WikiUpdatedSchema = z.object({
   type: z.literal('wiki_updated'),
   pageTitle: z.string(),
-  pageKind: z.string(),
+  pageKind: z.enum(['created', 'updated']),
   wikiName: z.string(),
+  path: z.string(),
   seq: z.number().optional(),
 });
 

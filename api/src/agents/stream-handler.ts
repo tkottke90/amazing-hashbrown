@@ -500,6 +500,7 @@ export function drainAndRecordWikiUpdates(
         event.pageTitle,
         event.pageKind,
         event.wikiName,
+        event.path,
       );
       writeSseEvent(sink, seq !== null ? { ...event, seq } : event);
     } else {
