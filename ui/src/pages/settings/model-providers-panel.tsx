@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -26,6 +27,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function ModelProvidersPanel() {
+  useTitle('Settings - Model providers');
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<ModelProvidersSettings>('model-providers');
 

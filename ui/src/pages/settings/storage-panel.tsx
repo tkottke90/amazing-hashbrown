@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -42,6 +43,7 @@ const FIELDS: { id: string; label: string; key: string; description: string }[] 
 ];
 
 export function StoragePanel() {
+  useTitle('Settings - Storage');
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<StorageSettings>('storage');
 

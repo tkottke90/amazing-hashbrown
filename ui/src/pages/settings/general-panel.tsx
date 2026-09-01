@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -21,6 +22,7 @@ interface GeneralSettings {
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 
 export function GeneralPanel() {
+  useTitle('Settings - General');
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<GeneralSettings>('general');
 

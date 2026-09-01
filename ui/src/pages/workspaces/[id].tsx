@@ -19,6 +19,7 @@ import {
   getProjectForWorkspace,
 } from '@/hooks/use-workspaces';
 import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
+import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
 import type { Task, TaskStatus } from '@/services/tasks-api';
 import type { Workspace } from '@/services/workspaces-api';
@@ -34,6 +35,13 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   done: 'Done',
   failed: 'Failed',
   cancelled: 'Cancelled',
+};
+
+const DETAIL_TAB_TITLE_SUFFIX: Record<DetailTab, string> = {
+  overview: '',
+  tasks: ' - Kanban',
+  files: ' - Files',
+  chat: ' - Chat',
 };
 
 const COLUMN_ORDER: TaskStatus[] = [
@@ -269,6 +277,7 @@ function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () =
 // path prop is consumed by preact-iso's Router for route matching
 export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   const { route } = useLocation();
+  const { setPageTitle } = useTitle();
   const tab = useSignal<DetailTab>('overview');
 
   useEffect(() => {
@@ -285,6 +294,11 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
       route(`/workspaces/${id}/close`);
     }
   }, [id, projectStatus]);
+
+  useEffect(() => {
+    if (!workspace.value) return;
+    setPageTitle(`${workspace.value.name}${DETAIL_TAB_TITLE_SUFFIX[tab.value]}`);
+  }, [workspace.value?.name, tab.value]);
 
   if (!workspace.value) {
     return (

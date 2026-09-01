@@ -11,10 +11,12 @@ import {
   forkThread,
   refreshThreadList,
   switchThread,
+  threads,
   useThreadInstance,
 } from '@/hooks/use-thread';
+import { useTitle } from '@/hooks/use-title';
 import type { ThreadMessage } from '@/types/thread-message';
-import { useSignal } from '@preact/signals';
+import { useComputed, useSignal } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
@@ -52,8 +54,17 @@ function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
 
 export function ThreadView() {
   const { route } = useLocation();
+  const { setPageTitle } = useTitle();
   const inputValue = useSignal('');
   const thread = useThreadInstance(activeThreadId.value);
+
+  const threadTitle = useComputed(
+    () => threads.value.find((t) => t.id === activeThreadId.value)?.title,
+  );
+
+  useEffect(() => {
+    setPageTitle(threadTitle.value ?? 'Chat');
+  }, [threadTitle.value]);
 
   useEffect(() => {
     void fetchProviders();

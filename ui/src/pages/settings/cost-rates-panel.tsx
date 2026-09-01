@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { scaledDisplayValue } from '@/components/ui/scaled-cost-input';
 import { fetchProviders, providers } from '@/hooks/use-providers';
+import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { RateModal, type CostEntry } from './rate-modal';
@@ -12,6 +13,7 @@ interface CostRatesSettings {
 }
 
 export function CostRatesPanel() {
+  useTitle('Settings - Cost rates');
   const { form, isDirty, isSaving, fetchError, setField, save, discard } =
     useSettingsSection<CostRatesSettings>('cost-rates');
 

@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { cn } from '@/lib/utils';
+import { useTitle } from '@/hooks/use-title';
 import { TrackersSection } from './trackers-section';
 
 type WorkspacesSubsection = 'trackers';
@@ -9,6 +10,7 @@ const SUBSECTIONS: { label: string; slug: WorkspacesSubsection }[] = [
 ];
 
 export function WorkspacesPanel() {
+  useTitle('Settings - Workspaces');
   const activeSubsection = useSignal<WorkspacesSubsection>('trackers');
 
   return (

@@ -1,4 +1,5 @@
 import { Layout } from '@/components/layout';
+import { useTitle } from '@/hooks/use-title';
 import { DocumentView } from '@/pages/wiki/document-view';
 import { DomainFilter } from '@/pages/wiki/domain-filter';
 import { GraphView } from '@/pages/wiki/graph-view';
@@ -19,6 +20,7 @@ import { useEffect, useRef } from 'preact/hooks';
 
 // path prop is consumed by preact-iso's Router for route matching
 export function WikiView(_props: { path?: string }) {
+  const { setPageTitle } = useTitle('Wiki');
   const { query, route } = useLocation();
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,10 +39,25 @@ export function WikiView(_props: { path?: string }) {
   // Sync signals from URL params whenever the document view params change.
   // This covers initial deep-link loads AND browser back/forward navigation.
   useEffect(() => {
-    if (canvasView === 'document' && urlDomain && urlPage) {
-      activeDomainId.value = urlDomain;
-      void refreshPages(urlDomain);
-      void loadPage(urlDomain, urlPage);
+    setPageTitle(
+      canvasView === 'graph' ? 'Wiki - Graph' : 'Wiki - Document'
+    )
+
+    if (canvasView === 'document') {
+      if (urlDomain && urlPage) {
+        activeDomainId.value = urlDomain;
+        void refreshPages(urlDomain);
+        void loadPage(urlDomain, urlPage);
+      }
+
+      if (urlPage) {
+        setPageTitle(`Wiki - ${urlPage.split('/').at(-1)}`);
+      } else {
+        setPageTitle('Wiki - Documents');
+      }
+
+    } else {
+      setPageTitle('Wiki - Graph');
     }
   }, [canvasView, urlDomain, urlPage]);
 

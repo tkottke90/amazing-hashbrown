@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { fetchSettingsSection } from '@/services/settings-api';
+import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -45,6 +46,7 @@ function linesToArray(text: string): string[] {
 }
 
 export function ToolsPanel() {
+  useTitle('Settings - Tools');
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<ToolsSettings>('tools');
 

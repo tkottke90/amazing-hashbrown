@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { TaskDrawer } from '@/components/task-drawer';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import type { Task } from '@/services/tasks-api';
+import { useTitle } from '@/hooks/use-title';
 
 // forwardRef required so Dialog.tsx can attach its click→showModal ref to the
 // row element (preactjs/preact#3297 silently drops refs on plain functions).
@@ -86,6 +87,8 @@ function InboxTable({ taskList, onSaved }: { taskList: Task[]; onSaved: () => vo
 
 // path prop is consumed by preact-iso's Router for route matching
 export function InboxView(_props: { path?: string }) {
+  useTitle('Inbox');
+
   useEffect(() => {
     void refreshTasks({ workspace_id: null });
   }, []);
