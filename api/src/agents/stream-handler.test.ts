@@ -7,7 +7,16 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { ToolMessage } from '@langchain/core/messages';
 import { ThreadStore } from '../services/thread-store.js';
-import { pipeEvents, finalizeTurn, makeLiveSseWriter } from './stream-handler.js';
+import {
+  pipeEvents,
+  finalizeTurn,
+  makeLiveSseWriter,
+  PipeEventsError,
+  extractPartialAssistantState,
+} from './stream-handler.js';
+import { recordAssistantStart } from './thread-message-writer.js';
+
+const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
 
 // A minimal fake Response — makeLiveSseWriter() still takes a real
 // Response-shaped object and calls res.write() internally.
@@ -350,7 +359,7 @@ describe('agents/stream-handler', () => {
         null,
         null,
       );
-      const messages = store.getThreadMessages('t8', { showErrors: true });
+      const messages = store.getThreadMessages('t8');
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
       expect(hitlRow, 'hitl_prompt row should be written to thread_messages').to.not.equal(
         undefined,
@@ -385,7 +394,7 @@ describe('agents/stream-handler', () => {
         undefined,
         'task-123',
       );
-      const messages = store.getThreadMessages('t9', { showErrors: true });
+      const messages = store.getThreadMessages('t9');
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
       expect((hitlRow?.payload as Record<string, unknown>)?.taskId).to.equal('task-123');
       rmSync(dir, { recursive: true });
@@ -412,7 +421,7 @@ describe('agents/stream-handler', () => {
         null,
         null,
       );
-      const messages = store.getThreadMessages('t10', { showErrors: true });
+      const messages = store.getThreadMessages('t10');
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
       expect(Object.prototype.hasOwnProperty.call(hitlRow?.payload ?? {}, 'taskId')).to.equal(
         false,
@@ -467,6 +476,7 @@ describe('agents/stream-handler', () => {
         ]),
         store,
         't1',
+        TEST_SENT_AT,
       );
 
       expect(result.content).to.equal('Hello world');
@@ -493,6 +503,7 @@ describe('agents/stream-handler', () => {
         ]),
         store,
         't1',
+        TEST_SENT_AT,
       );
 
       expect(result.content).to.equal('Before  after');
@@ -520,6 +531,7 @@ describe('agents/stream-handler', () => {
         ]),
         store,
         't1',
+        TEST_SENT_AT,
       );
 
       const toolMsg = store.getMessage('t1', 'tc1')!;
@@ -563,6 +575,7 @@ describe('agents/stream-handler', () => {
         ]),
         store,
         't1',
+        TEST_SENT_AT,
       );
 
       const toolMsg = store.getMessage('t1', 'tc-link')!;
@@ -590,6 +603,7 @@ describe('agents/stream-handler', () => {
         ]),
         store,
         't1',
+        TEST_SENT_AT,
       );
 
       expect(events()).to.deep.equal([]);
@@ -607,9 +621,120 @@ describe('agents/stream-handler', () => {
         eventsFrom([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hi' } } }]),
         store,
         't1',
+        TEST_SENT_AT,
       );
       expect(result.content).to.equal('hi');
       expect(events()).to.deep.equal([{ type: 'text_delta', messageId: 'msg5', delta: 'hi' }]);
+    });
+
+    it('splits into a new assistant row when text resumes after a mid-turn tool call', async () => {
+      recordAssistantStart(store, 't1', 'msg6', TEST_SENT_AT);
+      const { sink, events } = fakeSink();
+      const result = await pipeEvents(
+        sink,
+        'msg6',
+        eventsFrom([
+          { event: 'on_chat_model_stream', data: { chunk: { content: 'Checking the weather.' } } },
+          {
+            event: 'on_tool_start',
+            name: 'get_weather',
+            run_id: 'tc-weather',
+            data: { input: {} },
+          },
+          {
+            event: 'on_tool_end',
+            name: 'get_weather',
+            run_id: 'tc-weather',
+            data: { output: 'sunny' },
+          },
+          { event: 'on_chat_model_stream', data: { chunk: { content: 'It is sunny today.' } } },
+        ]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      // A new segment row was opened for the text that followed the tool call.
+      expect(result.finalSegmentId).to.not.equal('msg6');
+      expect(result.content).to.equal('It is sunny today.');
+
+      const firstSegment = store.getMessage('t1', 'msg6')!;
+      expect(firstSegment.status).to.equal('done');
+      expect((firstSegment.payload as { content: string }).content).to.equal(
+        'Checking the weather.',
+      );
+
+      // pipeEvents only opens the trailing segment's row — finalizing it with
+      // the real content is finalizeTurn's job once the whole turn ends, same
+      // as it always was for a single-segment turn.
+      const secondSegment = store.getMessage('t1', result.finalSegmentId)!;
+      expect(secondSegment.status).to.equal('streaming');
+
+      // The tool call's own row sits between the two assistant segments in
+      // seq order, matching what actually happened live.
+      const toolMsg = store.getMessage('t1', 'tc-weather')!;
+      expect(firstSegment.seq).to.be.lessThan(toolMsg.seq);
+      expect(toolMsg.seq).to.be.lessThan(secondSegment.seq);
+
+      // The live SSE stream reflects the same split via messageId.
+      const textDeltas = events().filter((e) => e.type === 'text_delta');
+      expect(textDeltas[0]!.messageId).to.equal('msg6');
+      expect(textDeltas[textDeltas.length - 1]!.messageId).to.equal(result.finalSegmentId);
+    });
+
+    it('does not split when a tool call fires before any text has arrived', async () => {
+      recordAssistantStart(store, 't1', 'msg6b', TEST_SENT_AT);
+      const { sink } = fakeSink();
+      const result = await pipeEvents(
+        sink,
+        'msg6b',
+        eventsFrom([
+          { event: 'on_tool_start', name: 'get_time', run_id: 'tc-time', data: { input: {} } },
+          { event: 'on_tool_end', name: 'get_time', run_id: 'tc-time', data: { output: 'noon' } },
+          { event: 'on_chat_model_stream', data: { chunk: { content: "It's noon." } } },
+        ]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      // Still-empty segment when the tool call fired — nothing to split yet,
+      // so the trailing text keeps filling the original row in place.
+      expect(result.finalSegmentId).to.equal('msg6b');
+      expect(result.content).to.equal("It's noon.");
+    });
+
+    it('wraps a mid-stream failure in PipeEventsError carrying the in-flight segment id and partial content', async () => {
+      recordAssistantStart(store, 't1', 'msg7', TEST_SENT_AT);
+      const { sink } = fakeSink();
+      const longChunk = 'This is a longer partial response than the safe margin holds back';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async function* throwingStream(): AsyncGenerator<any> {
+        yield { event: 'on_chat_model_stream', data: { chunk: { content: longChunk } } };
+        throw new Error('boom');
+      }
+
+      let caught: unknown;
+      try {
+        await pipeEvents(sink, 'msg7', throwingStream(), store, 't1', TEST_SENT_AT);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).to.be.instanceOf(PipeEventsError);
+      const err = caught as PipeEventsError;
+      expect(err.segmentId).to.equal('msg7');
+      expect(err.partialContent.length).to.be.greaterThan(0);
+      expect(longChunk.startsWith(err.partialContent)).to.equal(true);
+
+      const recovered = extractPartialAssistantState(err, 'msg7');
+      expect(recovered.segmentId).to.equal('msg7');
+      expect(recovered.content).to.equal(err.partialContent);
+    });
+
+    it('extractPartialAssistantState falls back to the given id and empty content for a non-PipeEventsError', () => {
+      const recovered = extractPartialAssistantState(new Error('unrelated'), 'msg8');
+      expect(recovered).to.deep.equal({ segmentId: 'msg8', content: '', thoughtContent: '' });
     });
   });
 });

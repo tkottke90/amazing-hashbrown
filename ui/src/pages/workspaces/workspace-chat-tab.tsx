@@ -11,31 +11,6 @@ import { patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 import { randomUUID } from '@/lib/utils';
 
-// Mirrors pages/chat/index.tsx's reorderMessagesForDisplay exactly — same
-// eagerly-inserted-empty-assistant-bubble ordering concern applies to any
-// thread, not just the global one.
-function reorderMessagesForDisplay<T extends { kind: string; content?: string }>(msgs: T[]): T[] {
-  const result: T[] = [];
-  let i = 0;
-  while (i < msgs.length) {
-    const msg = msgs[i]!;
-    if (msg.kind === 'assistant' && msg.content?.length === 0) {
-      const toolCalls: T[] = [];
-      let j = i + 1;
-      while (j < msgs.length && msgs[j]!.kind === 'tool_call') {
-        toolCalls.push(msgs[j]!);
-        j++;
-      }
-      result.push(...toolCalls, msg);
-      i = j;
-    } else {
-      result.push(msg);
-      i++;
-    }
-  }
-  return result;
-}
-
 export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   const inputValue = useSignal('');
   // Local, button-driven loading state for the on-demand summarize request —
@@ -91,8 +66,8 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   const pendingHitlMsg = thread.pendingHitlId.value
     ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === thread.pendingHitlId.value)
     : null;
-  const scrollMessages = reorderMessagesForDisplay(
-    allMessages.filter((m) => !(m.kind === 'hitl_prompt' && m.status === 'pending')),
+  const scrollMessages = thread.displayMessages.value.filter(
+    (m) => !(m.kind === 'hitl_prompt' && m.status === 'pending'),
   );
 
   return (

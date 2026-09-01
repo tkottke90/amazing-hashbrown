@@ -7,13 +7,14 @@ import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapp
 import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import {
-  wikiMessages,
+  wikiDisplayMessages,
   wikiIsStreaming,
   wikiPendingHitlId,
   wikiThreadId,
   sendWikiMessage,
   submitWikiHitlAnswer,
   stopWikiGeneration,
+  retryWikiTurn,
   newWikiThread,
   activeWikiModel,
   setWikiModel,
@@ -72,7 +73,7 @@ export function IngestionChat({ chatInputRef }: Props) {
     providers.value.find((p) => p.name === resolvedProvider)?.defaultModel ??
     providers.value[0]?.models[0]?.id;
 
-  const allMessages = wikiMessages.value;
+  const allMessages = wikiDisplayMessages.value;
   const pendingHitlId = wikiPendingHitlId.value;
   const pendingHitlMsg = pendingHitlId
     ? allMessages.find((m) => m.kind === 'hitl_prompt' && m.promptId === pendingHitlId)
@@ -124,7 +125,12 @@ export function IngestionChat({ chatInputRef }: Props) {
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">
           {scrollMessages.map((msg) => (
-            <ThreadMessageItem key={msg.id} message={msg} onHitlAnswer={submitWikiHitlAnswer} />
+            <ThreadMessageItem
+              key={msg.id}
+              message={msg}
+              onHitlAnswer={submitWikiHitlAnswer}
+              onRetry={retryWikiTurn}
+            />
           ))}
         </div>
       </ChatMessageScrollWrapper>

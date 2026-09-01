@@ -52,7 +52,6 @@ export async function maybeSummarizeWorkspace(
   if (!enabled || !workspace.threadId) return;
 
   const sinceLast = threadStore.getThreadMessages(workspace.threadId, {
-    showErrors: true,
     afterMessageId: workspace.lastSummarizedMessageId ?? undefined,
     limit: MAX_SUMMARY_SOURCE_MESSAGES,
   });

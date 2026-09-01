@@ -39,10 +39,11 @@ export interface ThreadReportThreadDetail {
 }
 
 // The subset of ThreadStore's interface this package actually calls.
-// { showErrors: true } is always passed by the caller — a debugging report
-// shows every message, including ones the live UI hides by default.
+// getThread() always returns every message (including a superseded retried-
+// over error row, annotated rather than hidden) — a debugging report shows
+// everything, same as the live UI now does.
 export interface ThreadStoreLike {
-  getThread(threadId: string, opts?: { showErrors?: boolean }): ThreadReportThreadDetail | null;
+  getThread(threadId: string): ThreadReportThreadDetail | null;
 }
 
 // The subset of ObservabilityStore's interface this package actually calls.

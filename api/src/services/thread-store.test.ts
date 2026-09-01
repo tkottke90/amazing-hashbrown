@@ -252,7 +252,7 @@ describe('services/thread-store', () => {
     });
   });
 
-  describe('getThreadMessages — showErrorMessages visibility filter', () => {
+  describe('getThreadMessages — superseded-row annotation', () => {
     let store: ThreadStore;
     let dir: string;
 
@@ -274,20 +274,18 @@ describe('services/thread-store', () => {
       rmSync(dir, { recursive: true });
     });
 
-    it('hides a superseded error row by default', () => {
+    it('always returns a superseded error row, annotated rather than hidden', () => {
       const messages = store.getThreadMessages('t1');
-      expect(messages.map((m) => m.id)).to.deep.equal(['b']);
-    });
-
-    it('shows the superseded error row when showErrors is true', () => {
-      const messages = store.getThreadMessages('t1', { showErrors: true });
       expect(messages.map((m) => m.id)).to.deep.equal(['a', 'b']);
+      expect(messages.find((m) => m.id === 'a')!.superseded).to.equal(true);
+      expect(messages.find((m) => m.id === 'b')!.superseded).to.equal(false);
     });
 
-    it('never hides an unresolved error row at the tail, even with showErrors false', () => {
+    it('never marks an unresolved error row at the tail as superseded', () => {
       store.insertMessage('t1', { id: 'c', kind: 'assistant', status: 'error', payload: {} });
       const messages = store.getThreadMessages('t1');
-      expect(messages.map((m) => m.id)).to.deep.equal(['b', 'c']);
+      expect(messages.map((m) => m.id)).to.deep.equal(['a', 'b', 'c']);
+      expect(messages.find((m) => m.id === 'c')!.superseded).to.equal(false);
     });
   });
 

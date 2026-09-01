@@ -130,6 +130,32 @@ describe('agents/thread-message-writer', () => {
       expect(store.getMessage('t1', 'a3')!.status).to.equal('error');
       expect(store.getMessage('t1', 'tc1')!.status).to.equal('interrupted');
     });
+
+    it('failAssistant persists partialThought when given, omits it when not', () => {
+      recordAssistantStart(store, 't1', 'a3b', '2026-07-18T00:00:00.000Z');
+      failAssistant(
+        store,
+        't1',
+        'a3b',
+        'partial content',
+        '2026-07-18T00:00:00.000Z',
+        'partial thought',
+      );
+      const withThought = store.getMessage('t1', 'a3b')!;
+      expect(withThought.payload).to.deep.equal({
+        content: 'partial content',
+        thoughtContent: 'partial thought',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
+
+      recordAssistantStart(store, 't1', 'a3c', '2026-07-18T00:00:00.000Z');
+      failAssistant(store, 't1', 'a3c', 'partial content', '2026-07-18T00:00:00.000Z');
+      const withoutThought = store.getMessage('t1', 'a3c')!;
+      expect(withoutThought.payload).to.deep.equal({
+        content: 'partial content',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
+    });
   });
 
   describe('recordRetryAttempt', () => {
