@@ -133,7 +133,14 @@ describe('agents/thread-message-writer', () => {
 
     it('failAssistant persists partialThought when given, omits it when not', () => {
       recordAssistantStart(store, 't1', 'a3b', '2026-07-18T00:00:00.000Z');
-      failAssistant(store, 't1', 'a3b', 'partial content', '2026-07-18T00:00:00.000Z', 'partial thought');
+      failAssistant(
+        store,
+        't1',
+        'a3b',
+        'partial content',
+        '2026-07-18T00:00:00.000Z',
+        'partial thought',
+      );
       const withThought = store.getMessage('t1', 'a3b')!;
       expect(withThought.payload).to.deep.equal({
         content: 'partial content',

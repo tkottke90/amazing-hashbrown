@@ -1,7 +1,18 @@
 import { signal, computed } from '@preact/signals';
 import { randomUUID } from '@/lib/utils';
-import { useThreadInstance, type ThreadInstance, type ThreadInstanceOptions } from '@/hooks/use-thread';
-import { activeDomainId, refreshDomains, refreshGraph, refreshPages, loadPage, activePagePath } from './use-wiki';
+import {
+  useThreadInstance,
+  type ThreadInstance,
+  type ThreadInstanceOptions,
+} from '@/hooks/use-thread';
+import {
+  activeDomainId,
+  refreshDomains,
+  refreshGraph,
+  refreshPages,
+  loadPage,
+  activePagePath,
+} from './use-wiki';
 
 // ---- Persistent thread ID ----
 // Wiki chat is a single, persistent, globally-current thread — unlike the

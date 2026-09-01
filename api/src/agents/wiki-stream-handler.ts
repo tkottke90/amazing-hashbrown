@@ -79,7 +79,16 @@ export async function streamWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
-    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
+    } = await pipeEvents(
+      sink,
+      msgId,
+      eventStream,
+      threadStore,
+      threadId,
+      turnSentAt,
+      provider,
+      model,
+    );
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -176,7 +185,16 @@ export async function resumeWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
-    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
+    } = await pipeEvents(
+      sink,
+      msgId,
+      eventStream,
+      threadStore,
+      threadId,
+      turnSentAt,
+      provider,
+      model,
+    );
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -274,7 +292,16 @@ export async function retryWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
-    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
+    } = await pipeEvents(
+      sink,
+      msgId,
+      eventStream,
+      threadStore,
+      threadId,
+      turnSentAt,
+      provider,
+      model,
+    );
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,

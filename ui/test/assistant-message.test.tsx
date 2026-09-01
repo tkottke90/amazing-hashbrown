@@ -21,7 +21,9 @@ afterEach(() => {
 describe('AssistantMessage — error rendering', () => {
   it('shows partial content plus an inline indicator instead of replacing it, on error', () => {
     render(
-      <AssistantMessage message={baseMessage({ status: 'error', content: 'Here is what I had' })} />,
+      <AssistantMessage
+        message={baseMessage({ status: 'error', content: 'Here is what I had' })}
+      />,
     );
 
     expect(screen.getByText('Here is what I had')).toBeInTheDocument();

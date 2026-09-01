@@ -21,22 +21,24 @@ Goal: tool calls and assistant text render in the order they actually happened, 
 ## 2. Scope
 
 **In scope:**
+
 - Live and persisted chronological ordering of assistant text and tool calls, across all three chat surfaces.
 - Preserving partial assistant content when a turn errors, both in the UI and in the database, with an inline error indicator instead of a full replacement.
 - Making a failed-then-retried attempt visible (collapsed by default) instead of hidden once a retry supersedes it.
 - Consolidating wiki chat onto the same `useThreadInstance()` hook used by global chat and workspace chat.
 
 **Out of scope:**
+
 - Tool-call card visual structure/content (`tool-call-message.tsx`) — confirmed correct as-is.
 - Any other chat formatting issue not tied to ordering, error handling, or the wiki/shared-hook duplication — the audit found none beyond a duplicated `reorderMessagesForDisplay()` helper, which is resolved as a side effect of consolidation.
 
 **Surfaces affected:**
 
-| Surface | Page | Current state hook |
-|---|---|---|
-| Global chat | `ui/src/pages/chat/index.tsx` | `useThreadInstance()` |
-| Workspace chat tab | `ui/src/pages/workspaces/workspace-chat-tab.tsx` | `useThreadInstance()` |
-| Wiki ingestion chat | `ui/src/pages/wiki/ingestion-chat.tsx` | `use-wiki-ingestion.ts` (bespoke, to be removed) |
+| Surface             | Page                                             | Current state hook                               |
+| ------------------- | ------------------------------------------------ | ------------------------------------------------ |
+| Global chat         | `ui/src/pages/chat/index.tsx`                    | `useThreadInstance()`                            |
+| Workspace chat tab  | `ui/src/pages/workspaces/workspace-chat-tab.tsx` | `useThreadInstance()`                            |
+| Wiki ingestion chat | `ui/src/pages/wiki/ingestion-chat.tsx`           | `use-wiki-ingestion.ts` (bespoke, to be removed) |
 
 All three already render through the shared `ThreadMessageItem` (`ui/src/components/thread-message.tsx`); the divergence is entirely in state management upstream of that.
 
@@ -106,17 +108,17 @@ Net effect: `GET /threads/:id` returns multiple assistant rows per turn when too
 
 ## 6. Files Changed (expected)
 
-| File | Change |
-|---|---|
-| `ui/src/hooks/use-thread.ts` | Add wiki-only SSE event handling (`wiki_updated`, `wiki_oriented`, `wiki_domain_created`); absorb `reorderMessagesForDisplay()` |
-| `ui/src/pages/wiki/use-wiki-ingestion.ts` | Deleted |
-| `ui/src/pages/wiki/ingestion-chat.tsx` | Rewired onto `useThreadInstance()` |
-| `ui/src/pages/chat/index.tsx`, `ui/src/pages/workspaces/workspace-chat-tab.tsx` | Remove now-duplicated local `reorderMessagesForDisplay()` |
-| `ui/src/components/assistant-message.tsx` | Render content + error indicator together instead of one replacing the other |
-| `api/src/agents/thread-message-writer.ts` | Segment-based assistant row writes (`recordAssistantStart`/`finalizeAssistant`); pass real content to `failAssistant` |
-| `api/src/agents/stream-handler.ts`, `wiki-stream-handler.ts`, `workspace-chat-stream-handler.ts` | Split text buffer at tool-call boundaries; pass accumulated content on failure |
-| `api/src/services/thread-store.ts` | Remove the filter hiding superseded error rows in `getThreadMessages` |
-| New/updated tests | Per Testing Plan above, including `e2e/tests/turn-retry.spec.ts` |
+| File                                                                                             | Change                                                                                                                          |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ui/src/hooks/use-thread.ts`                                                                     | Add wiki-only SSE event handling (`wiki_updated`, `wiki_oriented`, `wiki_domain_created`); absorb `reorderMessagesForDisplay()` |
+| `ui/src/pages/wiki/use-wiki-ingestion.ts`                                                        | Deleted                                                                                                                         |
+| `ui/src/pages/wiki/ingestion-chat.tsx`                                                           | Rewired onto `useThreadInstance()`                                                                                              |
+| `ui/src/pages/chat/index.tsx`, `ui/src/pages/workspaces/workspace-chat-tab.tsx`                  | Remove now-duplicated local `reorderMessagesForDisplay()`                                                                       |
+| `ui/src/components/assistant-message.tsx`                                                        | Render content + error indicator together instead of one replacing the other                                                    |
+| `api/src/agents/thread-message-writer.ts`                                                        | Segment-based assistant row writes (`recordAssistantStart`/`finalizeAssistant`); pass real content to `failAssistant`           |
+| `api/src/agents/stream-handler.ts`, `wiki-stream-handler.ts`, `workspace-chat-stream-handler.ts` | Split text buffer at tool-call boundaries; pass accumulated content on failure                                                  |
+| `api/src/services/thread-store.ts`                                                               | Remove the filter hiding superseded error rows in `getThreadMessages`                                                           |
+| New/updated tests                                                                                | Per Testing Plan above, including `e2e/tests/turn-retry.spec.ts`                                                                |
 
 ---
 

@@ -56,7 +56,10 @@ async function mockWikiChatTurn(page: import('@playwright/test').Page): Promise<
   });
   await page.route('**/api/v1/wiki/chat/**', async (route: Route) => {
     const url = new URL(route.request().url());
-    if (route.request().method() !== 'POST' || !/\/api\/v1\/wiki\/chat\/[^/]+$/.test(url.pathname)) {
+    if (
+      route.request().method() !== 'POST' ||
+      !/\/api\/v1\/wiki\/chat\/[^/]+$/.test(url.pathname)
+    ) {
       await route.fallback();
       return;
     }

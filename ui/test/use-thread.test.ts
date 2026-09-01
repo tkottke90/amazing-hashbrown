@@ -139,7 +139,13 @@ describe('use-thread — retryTurn', () => {
     const thread = newThread('t5');
     thread.messages.value = [
       { kind: 'user', id: 'u1', content: 'hi', sentAt: new Date() },
-      { kind: 'assistant', id: 'a1', status: 'error', content: 'oops, cut off', sentAt: new Date() },
+      {
+        kind: 'assistant',
+        id: 'a1',
+        status: 'error',
+        content: 'oops, cut off',
+        sentAt: new Date(),
+      },
     ];
 
     respondWith([

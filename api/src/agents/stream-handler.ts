@@ -121,7 +121,12 @@ export class PipeEventsError extends Error {
   readonly partialContent: string;
   readonly partialThought: string;
 
-  constructor(sourceErr: unknown, segmentId: string, partialContent: string, partialThought: string) {
+  constructor(
+    sourceErr: unknown,
+    segmentId: string,
+    partialContent: string,
+    partialThought: string,
+  ) {
     super(sourceErr instanceof Error ? sourceErr.message : String(sourceErr));
     // Preserve the original error's name (e.g. 'GraphRecursionError') so the
     // existing `(err as Error).name === 'GraphRecursionError'` checks below
