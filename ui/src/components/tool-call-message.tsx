@@ -29,6 +29,7 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
 
   return (
     <div
+      data-testid="tool-call-message"
       className={cn(
         'rounded-md border border-border bg-muted/20 text-sm max-w-[min(80%,75ch)]',
         className,

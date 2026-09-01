@@ -32,6 +32,7 @@ function toClientMessage(record: ThreadMessageRecord): Record<string, unknown> {
     kind: record.kind,
     seq: record.seq,
     ...(record.status !== null ? { status: record.status } : {}),
+    ...(record.superseded ? { superseded: true } : {}),
   };
 }
 
@@ -102,7 +103,7 @@ export function getAfterAgentStatusHandler(
 export function getThreadHandler(
   store: ThreadStore,
   id: string,
-  opts: { showErrors?: boolean; afterMessageId?: string } = {},
+  opts: { afterMessageId?: string } = {},
 ): HandlerResult<ClientThreadDetail> {
   const detail = store.getThread(id, opts);
   if (!detail) return notFound(`Thread "${id}" not found`);
@@ -185,7 +186,7 @@ export async function generateTitleHandler(
   provider: string | undefined,
   modelName: string | undefined,
 ): Promise<HandlerResult<ThreadSummary>> {
-  const detail = store.getThread(threadId, { showErrors: true });
+  const detail = store.getThread(threadId);
   if (!detail) return notFound(`Thread "${threadId}" not found`);
 
   const conversational = detail.messages.filter((m) => m.kind === 'user' || m.kind === 'assistant');

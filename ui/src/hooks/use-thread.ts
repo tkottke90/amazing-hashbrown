@@ -46,6 +46,10 @@ function readStoredShowErrors(): boolean {
 export const activeThreadId = signal<string>(readStoredThreadId());
 persistActiveThreadId(activeThreadId.value);
 
+// A superseded (retried-over) failed attempt is always present in the data
+// now (see thread-store.ts's getThreadMessages) — this signal no longer
+// controls what gets fetched, only whether such rows render expanded by
+// default across every thread instance, so it's a pure display preference.
 export const showErrorMessages = signal<boolean>(readStoredShowErrors());
 
 export function setShowErrorMessages(value: boolean): void {
@@ -54,13 +58,6 @@ export function setShowErrorMessages(value: boolean): void {
     localStorage.setItem(SHOW_ERRORS_KEY, String(value));
   } catch {
     // best-effort only
-  }
-  // The setting changes what GET /threads/:id returns — re-fetch so the
-  // currently-open thread reflects it immediately. Skipped mid-stream so
-  // toggling doesn't clobber an in-progress turn.
-  const current = useThreadInstance(activeThreadId.value);
-  if (!current.isStreaming.value) {
-    void current.hydrate();
   }
 }
 
@@ -166,6 +163,10 @@ function reviveMessage(raw: any): ThreadMessage {
 // instance rather than resetting it.
 // ---------------------------------------------------------------------------
 
+type WikiUpdatedEvent = Extract<ChatSSEEvent, { type: 'wiki_updated' }>;
+type WikiOrientedEvent = Extract<ChatSSEEvent, { type: 'wiki_oriented' }>;
+type WikiDomainCreatedEvent = Extract<ChatSSEEvent, { type: 'wiki_domain_created' }>;
+
 export interface ThreadInstanceOptions {
   // Base URL for POST turns: `${endpointBase}/:threadId`,
   // `${endpointBase}/:threadId/hitl`, `${endpointBase}/:threadId/retry`.
@@ -173,10 +174,22 @@ export interface ThreadInstanceOptions {
   endpointBase?: string;
   // Full GET URL for hydrating history. Default `/api/v1/threads/:threadId`.
   readUrl?: string;
+  // Wiki-only side effects (graph/page refresh, orientation state) a plain
+  // ThreadInstance has no reason to know about — the wiki ingestion chat
+  // wires these; every other caller leaves them unset and these events
+  // still push their own message/no-op as before, just without the extra
+  // side effect. Keeps this hook generic while letting wiki chat share it.
+  onWikiUpdated?: (evt: WikiUpdatedEvent) => void;
+  onWikiOriented?: (evt: WikiOrientedEvent) => void;
+  onWikiDomainCreated?: (evt: WikiDomainCreatedEvent) => void;
 }
 
 export interface ThreadInstance {
   messages: Signal<ThreadMessage[]>;
+  // `messages` reordered so a still-empty assistant placeholder never sorts
+  // ahead of a tool call that actually ran first (see
+  // reorderMessagesForDisplay below) — what every page should render.
+  displayMessages: Signal<ThreadMessage[]>;
   isStreaming: Signal<boolean>;
   pendingHitlId: Signal<string | null>;
   activeThreadModel: Signal<{ provider: string; model: string } | null>;
@@ -194,6 +207,38 @@ export interface ThreadInstance {
   stopGeneration: () => void;
 }
 
+// A turn's assistant bubble is inserted eagerly at turn start (empty, to
+// show the loading state immediately) before any tool call has fired. If a
+// tool call happens before any text arrives, that empty placeholder is
+// still positioned ahead of it in the flat array — this reorders a
+// still-empty assistant item's immediately-following tool_call run to
+// appear before it, matching actual execution order. Once an assistant
+// item has real content, its position already reflects when that text was
+// actually streamed relative to any tool calls (handleEvent starts a new
+// bubble for text after a mid-turn tool call rather than merging it into
+// earlier text), so it's left in place.
+function reorderMessagesForDisplay(msgs: ThreadMessage[]): ThreadMessage[] {
+  const result: ThreadMessage[] = [];
+  let i = 0;
+  while (i < msgs.length) {
+    const msg = msgs[i]!;
+    if (msg.kind === 'assistant' && msg.content.length === 0) {
+      const toolCalls: ThreadMessage[] = [];
+      let j = i + 1;
+      while (j < msgs.length && msgs[j]!.kind === 'tool_call') {
+        toolCalls.push(msgs[j]!);
+        j++;
+      }
+      result.push(...toolCalls, msg);
+      i = j;
+    } else {
+      result.push(msg);
+      i++;
+    }
+  }
+  return result;
+}
+
 const _instances = new Map<string, ThreadInstance>();
 
 function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): ThreadInstance {
@@ -201,6 +246,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const readUrl = opts.readUrl ?? `/api/v1/threads/${threadId}`;
 
   const messages = signal<ThreadMessage[]>([]);
+  const displayMessages = computed(() => reorderMessagesForDisplay(messages.value));
   const isStreaming = signal(false);
   const pendingHitlId = signal<string | null>(null);
   const activeThreadModel = signal<{ provider: string; model: string } | null>(null);
@@ -235,8 +281,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
 
   async function hydrate(): Promise<void> {
     try {
-      const url = `${readUrl}${showErrorMessages.value ? (readUrl.includes('?') ? '&' : '?') + 'showErrors=true' : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(readUrl);
       if (!res.ok) return; // 404 (fresh thread) or any other failure — start empty, not an error
       const data = (await res.json()) as {
         messages: unknown[];
@@ -388,11 +433,18 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             seq: evt.seq,
           },
         ];
+        opts.onWikiUpdated?.(evt);
         break;
 
       case 'wiki_oriented':
+        // No message of its own — a pure side effect the wiki ingestion
+        // chat opts into via onWikiOriented; a no-op for every other caller.
+        opts.onWikiOriented?.(evt);
+        break;
+
       case 'wiki_domain_created':
-        // Handled by the wiki ingestion chat; no-op in the main thread context.
+        // Same as wiki_oriented — side-effect only, wiki-chat-specific.
+        opts.onWikiDomainCreated?.(evt);
         break;
 
       case 'resource_created':
@@ -576,28 +628,38 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     }
   }
 
-  // Retries the thread's most recent turn if it failed — reuses the SAME
-  // local message id so incoming deltas update the existing bubble in place,
-  // rather than appending a new one (matching the backend's retry_of chain,
-  // which the client doesn't need to know about for this to look right live).
+  // Retries the thread's most recent turn if it failed. Marks the failed
+  // bubble `superseded` (rendered collapsed — see assistant-message.tsx)
+  // and starts a genuinely new bubble for the retry, rather than morphing
+  // the old one in place — matching the backend's retry_of chain, which
+  // always inserts a new row rather than overwriting the failed one, and
+  // matching what a reload of the same thread would show either way.
   async function retryTurn(): Promise<void> {
     const target = [...messages.value]
       .reverse()
       .find((m) => m.kind === 'assistant' && m.status === 'error');
     if (!target) return;
     const targetId = target.id;
+    const newId = randomUUID();
 
-    _currentAssistantId = targetId;
+    _currentAssistantId = newId;
     _currentUserId = null;
     _toolCallPendingSinceLastText = false;
     _abortController = new AbortController();
 
     batch(() => {
-      messages.value = messages.value.map((m) =>
-        m.kind === 'assistant' && m.id === targetId
-          ? { ...m, status: 'streaming', content: '', thoughtContent: undefined }
-          : m,
-      );
+      messages.value = [
+        ...messages.value.map((m) =>
+          m.kind === 'assistant' && m.id === targetId ? { ...m, superseded: true } : m,
+        ),
+        {
+          kind: 'assistant',
+          id: newId,
+          status: 'streaming',
+          content: '',
+          sentAt: new Date(),
+        },
+      ];
       isStreaming.value = true;
     });
 
@@ -631,6 +693,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
 
   return {
     messages,
+    displayMessages,
     isStreaming,
     pendingHitlId,
     activeThreadModel,
@@ -661,6 +724,13 @@ export function useThreadInstance(
     _instances.set(threadId, inst);
   }
   return inst;
+}
+
+// Test-only: clears every memoized ThreadInstance so a fresh test file (or
+// `afterEach`) doesn't observe state left over from a previous one calling
+// useThreadInstance() with the same thread id.
+export function _resetThreadInstancesForTests(): void {
+  _instances.clear();
 }
 
 // ---- Thread CRUD (sidebar actions, global chat only) ----

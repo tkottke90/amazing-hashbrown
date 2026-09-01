@@ -111,6 +111,46 @@ function drainBuffer(sink: SseWriter, msgId: string, state: ParseState): void {
 
 // ---- LangGraph event → SSE (+ thread_messages persistence) ----
 
+// Thrown when the LangGraph event stream itself throws mid-turn. Carries
+// whatever text had already streamed to the client in the segment that was
+// open at the time, so callers can persist real partial content instead of
+// discarding it — see extractPartialAssistantState and
+// thread-message-writer.ts's failAssistant.
+export class PipeEventsError extends Error {
+  readonly segmentId: string;
+  readonly partialContent: string;
+  readonly partialThought: string;
+
+  constructor(sourceErr: unknown, segmentId: string, partialContent: string, partialThought: string) {
+    super(sourceErr instanceof Error ? sourceErr.message : String(sourceErr));
+    // Preserve the original error's name (e.g. 'GraphRecursionError') so the
+    // existing `(err as Error).name === 'GraphRecursionError'` checks below
+    // (and in the wiki/workspace equivalents) keep working against this
+    // wrapper without change.
+    this.name = sourceErr instanceof Error ? sourceErr.name : 'PipeEventsError';
+    this.segmentId = segmentId;
+    this.partialContent = partialContent;
+    this.partialThought = partialThought;
+  }
+}
+
+// Recovers whatever partial assistant content/segment id was in flight when
+// pipeEvents threw, falling back to the turn's original message id and empty
+// content for any other error shape (e.g. thrown before pipeEvents ran).
+export function extractPartialAssistantState(
+  err: unknown,
+  fallbackMsgId: string,
+): { segmentId: string; content: string; thoughtContent: string } {
+  if (err instanceof PipeEventsError) {
+    return {
+      segmentId: err.segmentId,
+      content: err.partialContent,
+      thoughtContent: err.partialThought,
+    };
+  }
+  return { segmentId: fallbackMsgId, content: '', thoughtContent: '' };
+}
+
 // Exported for direct testing — the highest-risk piece of this module (does
 // accumulation + tool-call bookkeeping wire correctly to the persistence
 // layer) without needing a live LLM through the full getChatAgent() chain.
@@ -121,7 +161,10 @@ export async function pipeEvents(
   eventStream: AsyncIterable<any>,
   threadStore: ThreadStore,
   threadId: string,
-): Promise<{ content: string; thoughtContent: string }> {
+  sentAt: string,
+  provider?: string | null,
+  model?: string | null,
+): Promise<{ content: string; thoughtContent: string; finalSegmentId: string }> {
   const parse: ParseState = { inThought: false, buf: '', content: '', thought: '' };
   // updateMessage() replaces payload wholesale rather than merging, so
   // finalizeToolCall needs the original toolName/inputs back — tracked here
@@ -131,63 +174,98 @@ export async function pipeEvents(
     { toolName: string; inputs: Record<string, unknown> }
   >();
 
-  for await (const evt of eventStream) {
-    switch (evt.event) {
-      case 'on_chat_model_stream': {
-        const content = evt.data?.chunk?.content;
-        if (typeof content === 'string' && content.length > 0) {
-          flushDelta(sink, msgId, parse, content);
-        }
-        break;
-      }
+  // Mirrors use-thread.ts's `_toolCallPendingSinceLastText` client-side
+  // continuation logic: once a tool call starts, the next real text opens a
+  // new assistant row instead of appending onto text written before the
+  // tool call, so a reload's seq ordering matches what the live client
+  // already showed instead of collapsing a whole turn's text into one row
+  // that always sorts ahead of its own tool calls.
+  let currentSegmentId = msgId;
+  let toolCallPendingSinceLastText = false;
 
-      case 'on_tool_start': {
-        if (evt.name !== 'ask_user') {
-          const toolCallId = evt.run_id as string;
-          const toolName = evt.name as string;
-          const inputs = (evt.data?.input ?? {}) as Record<string, unknown>;
-          toolCallsInFlight.set(toolCallId, { toolName, inputs });
-          const seq = recordToolCallStart(threadStore, threadId, toolCallId, toolName, inputs);
-          writeSseEvent(sink, {
-            type: 'tool_call_start',
-            messageId: randomUUID(),
-            toolCallId,
-            toolName,
-            inputs,
-            ...(seq !== null ? { seq } : {}),
-          });
-        }
-        break;
-      }
-
-      case 'on_tool_end': {
-        if (evt.name !== 'ask_user') {
-          const toolCallId = evt.run_id as string;
-          const outputs = extractToolResultContent(evt.data?.output);
-          const started = toolCallsInFlight.get(toolCallId);
-          if (started) {
-            finalizeToolCall(
-              threadStore,
-              threadId,
-              toolCallId,
-              started.toolName,
-              started.inputs,
-              outputs,
-            );
+  try {
+    for await (const evt of eventStream) {
+      switch (evt.event) {
+        case 'on_chat_model_stream': {
+          const content = evt.data?.chunk?.content;
+          if (typeof content === 'string' && content.length > 0) {
+            if (toolCallPendingSinceLastText && parse.content.length > 0) {
+              finalizeAssistant(
+                threadStore,
+                threadId,
+                currentSegmentId,
+                parse.content,
+                parse.thought,
+                sentAt,
+                null,
+              );
+              const newSegmentId = randomUUID();
+              recordAssistantStart(threadStore, threadId, newSegmentId, sentAt, provider, model);
+              currentSegmentId = newSegmentId;
+              parse.content = '';
+              parse.thought = '';
+            }
+            toolCallPendingSinceLastText = false;
+            flushDelta(sink, currentSegmentId, parse, content);
           }
-          writeSseEvent(sink, {
-            type: 'tool_call_end',
-            toolCallId,
-            outputs,
-          });
+          break;
         }
-        break;
+
+        case 'on_tool_start': {
+          if (evt.name !== 'ask_user') {
+            const toolCallId = evt.run_id as string;
+            const toolName = evt.name as string;
+            const inputs = (evt.data?.input ?? {}) as Record<string, unknown>;
+            toolCallsInFlight.set(toolCallId, { toolName, inputs });
+            const seq = recordToolCallStart(threadStore, threadId, toolCallId, toolName, inputs);
+            writeSseEvent(sink, {
+              type: 'tool_call_start',
+              messageId: randomUUID(),
+              toolCallId,
+              toolName,
+              inputs,
+              ...(seq !== null ? { seq } : {}),
+            });
+            toolCallPendingSinceLastText = true;
+          }
+          break;
+        }
+
+        case 'on_tool_end': {
+          if (evt.name !== 'ask_user') {
+            const toolCallId = evt.run_id as string;
+            const outputs = extractToolResultContent(evt.data?.output);
+            const started = toolCallsInFlight.get(toolCallId);
+            if (started) {
+              finalizeToolCall(
+                threadStore,
+                threadId,
+                toolCallId,
+                started.toolName,
+                started.inputs,
+                outputs,
+              );
+            }
+            writeSseEvent(sink, {
+              type: 'tool_call_end',
+              toolCallId,
+              outputs,
+            });
+          }
+          break;
+        }
       }
     }
+  } catch (err) {
+    throw new PipeEventsError(err, currentSegmentId, parse.content, parse.thought);
   }
 
-  drainBuffer(sink, msgId, parse);
-  return { content: parse.content, thoughtContent: parse.thought };
+  drainBuffer(sink, currentSegmentId, parse);
+  return {
+    content: parse.content,
+    thoughtContent: parse.thought,
+    finalSegmentId: currentSegmentId,
+  };
 }
 
 // ---- Finalize the assistant row, then emit either a HITL prompt or done ----
@@ -536,12 +614,19 @@ export async function streamChatToSse(
         },
       );
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -553,7 +638,7 @@ export async function streamChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -565,15 +650,20 @@ export async function streamChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);
@@ -669,12 +759,19 @@ export async function resumeChatToSse(
         },
       });
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -686,7 +783,7 @@ export async function resumeChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -698,15 +795,20 @@ export async function resumeChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);
@@ -798,12 +900,19 @@ export async function retryChatToSse(
         },
       });
 
-      const { content: finalContent, thoughtContent } = await pipeEvents(
+      const {
+        content: finalContent,
+        thoughtContent,
+        finalSegmentId,
+      } = await pipeEvents(
         sink,
         msgId,
         eventStream,
         threadStore,
         threadId,
+        turnSentAt,
+        effectiveProvider,
+        effectiveModel,
       );
 
       store.endTrace(traceId, {
@@ -815,7 +924,7 @@ export async function retryChatToSse(
         threadStore,
         agent,
         threadId,
-        msgId,
+        finalSegmentId,
         startedAt,
         finalContent,
         thoughtContent,
@@ -827,15 +936,20 @@ export async function retryChatToSse(
         effectiveModel,
       );
     } catch (err) {
+      const {
+        segmentId,
+        content: partialContent,
+        thoughtContent: partialThought,
+      } = extractPartialAssistantState(err, msgId);
       if ((err as Error).name === 'GraphRecursionError') {
         const msg =
           'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
       throw err;
     } finally {
       clearActiveSseWriter(threadId);

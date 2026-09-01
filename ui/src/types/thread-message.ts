@@ -31,6 +31,10 @@ export type ThreadMessage =
       // it's a continuation of that response, not a new one, so it hides
       // its own timestamp rather than looking like a second reply.
       isContinuation?: boolean;
+      // True once a later retry has superseded this failed attempt (see
+      // use-thread.ts's retryTurn and the API's thread-store.ts). Rendered
+      // collapsed by default rather than hidden — see assistant-message.tsx.
+      superseded?: boolean;
     }
   | {
       kind: 'tool_call';

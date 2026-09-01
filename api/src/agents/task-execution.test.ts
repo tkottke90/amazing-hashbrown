@@ -218,7 +218,7 @@ describe('agents/task-execution', () => {
 
     // The persisted hitl_prompt row carries taskId, so the /hitl route can
     // re-enqueue this exact task instead of resuming an interactive turn.
-    const messages = threadStore.getThreadMessages(task.threadId!, { showErrors: true });
+    const messages = threadStore.getThreadMessages(task.threadId!);
     const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
     expect(hitlRow, 'expected a persisted hitl_prompt row').to.not.equal(undefined);
     expect((hitlRow!.payload as Record<string, unknown>).taskId).to.equal(task.id);
@@ -292,7 +292,7 @@ describe('agents/task-execution', () => {
 
     const task = store.getTask(entry.task.id)!;
     const markers = threadStore
-      .getThreadMessages(task.threadId!, { showErrors: true })
+      .getThreadMessages(task.threadId!)
       .filter((m) => m.kind === 'task_run_marker');
     expect(markers).to.have.length(2);
     const start = markers.find((m) => (m.payload as Record<string, unknown>).phase === 'start');

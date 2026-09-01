@@ -56,9 +56,7 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
   const workspace = resolveWorkspaceForThread(req, res);
   if (!workspace) return;
 
-  const showErrors = req.query['showErrors'] === 'true';
   const result = getThreadHandler(getThreadStore(), threadId, {
-    showErrors,
     afterMessageId: workspace.lastSummarizedMessageId ?? undefined,
   });
   if (!result.ok) {

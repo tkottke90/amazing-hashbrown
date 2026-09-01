@@ -1,8 +1,10 @@
-import { RotateCcw } from 'lucide-preact';
+import { useSignal } from '@preact/signals';
+import { RotateCcw, ChevronRight, ChevronDown, AlertTriangle } from 'lucide-preact';
 import { Markdown } from './markdown';
 import { ThoughtBlock } from './thought-block';
 import { ActionButton, ChatMessageForkAction } from './chat-message';
 import { cn } from '@/lib/utils';
+import { showErrorMessages } from '@/hooks/use-thread';
 import type { AssistantThreadMessage } from '../types/thread-message';
 
 interface AssistantMessageProps {
@@ -29,9 +31,39 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
   const hasContent = message.content.length > 0;
   const hasThought = !!message.thoughtContent;
   const canFork = message.status === 'done' && message.seq !== undefined;
-  const showRetry = message.status === 'error' && !!onRetry;
+  const isError = message.status === 'error';
+  const isSuperseded = isError && !!message.superseded;
+  // A superseded attempt was already retried — offering to retry it again
+  // doesn't make sense, so it never shows the Retry action even expanded.
+  const showRetry = isError && !isSuperseded && !!onRetry;
   const showFork = canFork && !!onFork;
   const hasMetrics = !isStreaming && (message.durationMs !== undefined || !!message.cost);
+
+  // Collapsed by default for a superseded row. The repurposed "Show failed
+  // attempts" toggle (showErrorMessages) expands every superseded row at
+  // once; clicking a single row overrides that default independently of it.
+  const expandedOverride = useSignal<boolean | null>(null);
+  const expanded = expandedOverride.value ?? showErrorMessages.value;
+
+  if (isSuperseded && !expanded) {
+    return (
+      <button
+        type="button"
+        data-testid="assistant-message"
+        data-slot="superseded-assistant-message"
+        onClick={() => {
+          expandedOverride.value = true;
+        }}
+        className={cn(
+          'flex items-center gap-1.5 max-w-[min(80%,75ch)] rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-destructive/10',
+          className,
+        )}
+      >
+        <ChevronRight className="size-3.5 shrink-0" />
+        Attempt failed — click to view
+      </button>
+    );
+  }
 
   return (
     <div
@@ -40,7 +72,21 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
       style={{ gridTemplateAreas: gridAreas, gridTemplateColumns: 'auto 1fr auto' }}
     >
       {!message.isContinuation && (
-        <span className="text-xs text-muted-foreground" style={{ gridArea: 'header' }}>
+        <span
+          className="flex items-center gap-1 text-xs text-muted-foreground"
+          style={{ gridArea: 'header' }}
+        >
+          {isSuperseded && (
+            <button
+              type="button"
+              title="Collapse"
+              onClick={() => {
+                expandedOverride.value = false;
+              }}
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+          )}
           {message.sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
       )}
@@ -56,16 +102,23 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
         <div
           className={cn(
             'rounded-lg px-4 py-3 text-sm',
-            message.status === 'error' &&
-              'border border-destructive/50 bg-destructive/10 text-destructive',
+            isError && 'border border-destructive/50 bg-destructive/10 text-destructive',
           )}
         >
           {isStreaming && !hasContent ? (
             <LoadingDots />
-          ) : message.status === 'error' ? (
-            <span>Something went wrong. Please try again.</span>
+          ) : hasContent ? (
+            <>
+              <Markdown>{message.content}</Markdown>
+              {isError && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs opacity-80">
+                  <AlertTriangle className="size-3.5 shrink-0" />
+                  <span>Response interrupted</span>
+                </div>
+              )}
+            </>
           ) : (
-            <Markdown>{message.content}</Markdown>
+            <span>Something went wrong. Please try again.</span>
           )}
         </div>
       </div>

@@ -3,7 +3,12 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
 import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
-import { writeSseEvent, pipeEvents, finalizeTurn } from './stream-handler.js';
+import {
+  writeSseEvent,
+  pipeEvents,
+  finalizeTurn,
+  extractPartialAssistantState,
+} from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
@@ -70,13 +75,11 @@ export async function streamWikiChatToSse(
       },
     );
 
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      sink,
-      msgId,
-      eventStream,
-      threadStore,
-      threadId,
-    );
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -87,7 +90,7 @@ export async function streamWikiChatToSse(
       threadStore,
       agent,
       threadId,
-      msgId,
+      finalSegmentId,
       startedAt,
       finalContent,
       thoughtContent,
@@ -99,15 +102,20 @@ export async function streamWikiChatToSse(
       model,
     );
   } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
     throw err;
   } finally {
     clearActiveSseWriter(threadId);
@@ -164,13 +172,11 @@ export async function resumeWikiChatToSse(
       recursionLimit: env.agent?.recursionLimit ?? 100,
     });
 
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      sink,
-      msgId,
-      eventStream,
-      threadStore,
-      threadId,
-    );
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -181,7 +187,7 @@ export async function resumeWikiChatToSse(
       threadStore,
       agent,
       threadId,
-      msgId,
+      finalSegmentId,
       startedAt,
       finalContent,
       thoughtContent,
@@ -193,15 +199,20 @@ export async function resumeWikiChatToSse(
       model,
     );
   } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
     throw err;
   } finally {
     clearActiveSseWriter(threadId);
@@ -259,13 +270,11 @@ export async function retryWikiChatToSse(
       recursionLimit: env.agent?.recursionLimit ?? 100,
     });
 
-    const { content: finalContent, thoughtContent } = await pipeEvents(
-      sink,
-      msgId,
-      eventStream,
-      threadStore,
-      threadId,
-    );
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+    } = await pipeEvents(sink, msgId, eventStream, threadStore, threadId, turnSentAt, provider, model);
 
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -276,7 +285,7 @@ export async function retryWikiChatToSse(
       threadStore,
       agent,
       threadId,
-      msgId,
+      finalSegmentId,
       startedAt,
       finalContent,
       thoughtContent,
@@ -288,15 +297,20 @@ export async function retryWikiChatToSse(
       model,
     );
   } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-      finalizeAssistant(threadStore, threadId, msgId, msg, '', turnSentAt, null);
-      writeSseEvent(sink, { type: 'text_delta', messageId: msgId, delta: msg });
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, msgId, '', turnSentAt);
+    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
     throw err;
   } finally {
     clearActiveSseWriter(threadId);

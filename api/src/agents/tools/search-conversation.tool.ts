@@ -141,7 +141,9 @@ export const searchConversationTool = tool(
     const threshold = chatCfg.conversationSearch?.threshold ?? 20;
 
     const threadStore = getThreadStore();
-    const messages = threadStore.getThreadMessages(threadId, { showErrors: false });
+    // Superseded failed attempts are excluded from the search corpus — a
+    // retried-over error isn't real conversation content worth citing back.
+    const messages = threadStore.getThreadMessages(threadId).filter((m) => !m.superseded);
 
     if (messages.length < threshold) {
       return (
