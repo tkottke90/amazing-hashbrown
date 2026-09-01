@@ -27,6 +27,7 @@ import {
 import type { LocationRoot } from '@/services/workspaces-api';
 import { fetchDomains, type WikiDomain } from '@/services/wiki-api';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
+import { useTitle } from '@/hooks/use-title';
 import { cn, slugify } from '@/lib/utils';
 
 type FilterTab = 'all' | 'workspaces' | 'projects' | 'closed';
@@ -458,6 +459,7 @@ export function CreateWorkspaceForm() {
 
 // path prop is consumed by preact-iso's Router for route matching
 export function WorkspacesView(_props: { path?: string }) {
+  useTitle('Workspaces');
   const filter = useSignal<FilterTab>('all');
   const search = useSignal('');
 
