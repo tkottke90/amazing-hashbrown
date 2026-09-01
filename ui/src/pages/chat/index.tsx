@@ -15,8 +15,8 @@ import {
   useThreadInstance,
 } from '@/hooks/use-thread';
 import { useTitle } from '@/hooks/use-title';
-import type { ThreadMessage } from '@/types/thread-message';
-import { useComputed, useSignal } from '@preact/signals';so';
+import { useComputed, useSignal } from '@preact/signals';
+import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
 export function ThreadView() {

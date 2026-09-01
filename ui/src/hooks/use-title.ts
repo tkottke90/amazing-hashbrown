@@ -1,4 +1,4 @@
-import { useEffect } from "preact/hooks";
+import { useEffect } from 'preact/hooks';
 
 function setPageTitle(title: string) {
   document.title = title.slice(0, 1).toUpperCase() + title.slice(1);
@@ -12,12 +12,12 @@ function setPageTitle(title: string) {
 export function useTitle(title?: string) {
   useEffect(() => {
     if (title) {
-      setPageTitle(title)
+      setPageTitle(title);
     }
   }, []);
 
   return {
     setPageTitle,
-    resetPageTitle: () => document.title = 'Amazing Hashbrown'
-  }
+    resetPageTitle: () => (document.title = 'Amazing Hashbrown'),
+  };
 }

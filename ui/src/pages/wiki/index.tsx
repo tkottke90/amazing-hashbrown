@@ -39,9 +39,7 @@ export function WikiView(_props: { path?: string }) {
   // Sync signals from URL params whenever the document view params change.
   // This covers initial deep-link loads AND browser back/forward navigation.
   useEffect(() => {
-    setPageTitle(
-      canvasView === 'graph' ? 'Wiki - Graph' : 'Wiki - Document'
-    )
+    setPageTitle(canvasView === 'graph' ? 'Wiki - Graph' : 'Wiki - Document');
 
     if (canvasView === 'document') {
       if (urlDomain && urlPage) {
@@ -55,7 +53,6 @@ export function WikiView(_props: { path?: string }) {
       } else {
         setPageTitle('Wiki - Documents');
       }
-
     } else {
       setPageTitle('Wiki - Graph');
     }
