@@ -195,6 +195,12 @@ export async function pipeEvents(
           const content = evt.data?.chunk?.content;
           if (typeof content === 'string' && content.length > 0) {
             if (toolCallPendingSinceLastText && parse.content.length > 0) {
+              // flushDelta withholds a SAFE_MARGIN-sized tail in parse.buf in
+              // case it's a split tag boundary — drain it (using the OLD
+              // segment id) before closing that segment out, or it leaks
+              // into the new segment's content the next time the buffer
+              // flushes.
+              drainBuffer(sink, currentSegmentId, parse);
               finalizeAssistant(
                 threadStore,
                 threadId,
