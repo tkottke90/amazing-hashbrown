@@ -84,6 +84,10 @@ export type ThreadMessage =
       pageTitle: string;
       pageKind: string;
       wikiName: string;
+      // Absent for a message persisted before this field existed — the
+      // card renders without an Open link in that case, see
+      // wiki-update-message.tsx.
+      path?: string;
       seq?: number;
     }
   | {

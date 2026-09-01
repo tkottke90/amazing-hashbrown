@@ -430,6 +430,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             pageTitle: evt.pageTitle,
             pageKind: evt.pageKind,
             wikiName: evt.wikiName,
+            path: evt.path,
             seq: evt.seq,
           },
         ];

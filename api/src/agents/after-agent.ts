@@ -26,8 +26,9 @@ const threadState = new Map<string, { rollingSummary: string }>();
 export interface WikiUpdatedEvent {
   type: 'wiki_updated';
   pageTitle: string;
-  pageKind: string;
+  pageKind: 'created' | 'updated';
   wikiName: string;
+  path: string;
 }
 
 const pendingWikiUpdates = new Map<string, WikiUpdatedEvent[]>();
@@ -41,7 +42,9 @@ export function drainPendingWikiUpdates(threadId: string): WikiUpdatedEvent[] {
   return events;
 }
 
-function queueWikiUpdate(threadId: string, event: WikiUpdatedEvent): void {
+/** Queues a wiki_updated event for a thread — exported for test seeding
+ * (stream-handler.test.ts), alongside drainPendingWikiUpdates. */
+export function queueWikiUpdate(threadId: string, event: WikiUpdatedEvent): void {
   const events = pendingWikiUpdates.get(threadId) ?? [];
   events.push(event);
   pendingWikiUpdates.set(threadId, events);
@@ -442,8 +445,9 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     queueWikiUpdate(threadId, {
       type: 'wiki_updated',
       pageTitle: extract.title,
-      pageKind: extract.type,
+      pageKind: commitResult.created ? 'created' : 'updated',
       wikiName: domainEntry.id,
+      path: commitResult.path,
     });
     setAfterAgentDone(threadId, 'identified');
 

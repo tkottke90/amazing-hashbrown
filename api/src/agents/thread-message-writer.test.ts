@@ -314,7 +314,7 @@ describe('agents/thread-message-writer', () => {
     });
 
     it('inserts a complete-as-emitted wiki_update row', () => {
-      recordWikiUpdate(store, 't1', 'w1', 'Entity: Foo', 'entity', 'user');
+      recordWikiUpdate(store, 't1', 'w1', 'Entity: Foo', 'entity', 'user', 'entities/foo.md');
       const msg = store.getMessage('t1', 'w1')!;
       expect(msg.kind).to.equal('wiki_update');
       expect(msg.status).to.equal(null);
@@ -322,6 +322,7 @@ describe('agents/thread-message-writer', () => {
         pageTitle: 'Entity: Foo',
         pageKind: 'entity',
         wikiName: 'user',
+        path: 'entities/foo.md',
       });
     });
   });

@@ -1,11 +1,13 @@
 import { tool } from '@langchain/core/tools';
 import matter from 'gray-matter';
 import { z } from 'zod';
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { getToolContent } from '../../services/tool-content-store.js';
 import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
+import type { WorkspaceStore } from '../../services/workspace-store.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -49,7 +51,15 @@ const WikiCreatePageSchema = z.object({
     ),
 });
 
-export function makeWikiCreatePageTool(allowedWikiId?: string) {
+// Test-only escape hatch, same pattern as wiki-write.ts's `registry`/`store`
+// params — production callers never pass these. getWikiRegistry() is a
+// lazy, process-wide singleton bound to env.wikiRoot with no other way to
+// redirect it to a temp test directory.
+export function makeWikiCreatePageTool(
+  allowedWikiId?: string,
+  registry?: WikiRegistry,
+  store?: WorkspaceStore,
+) {
   return tool(
     async (
       {
@@ -94,8 +104,9 @@ export function makeWikiCreatePageTool(allowedWikiId?: string) {
           dryRun,
           force,
         },
-        undefined,
+        registry,
         allowedWikiId,
+        store,
       );
 
       switch (result.status) {
@@ -103,9 +114,10 @@ export function makeWikiCreatePageTool(allowedWikiId?: string) {
           const threadId = config?.configurable?.thread_id as string | undefined;
           getActiveSseWriter(threadId ?? '')?.({
             type: 'wiki_updated',
-            pageTitle: title,
-            pageKind: section,
+            pageTitle: result.result.title,
+            pageKind: 'created',
             wikiName: wikiId,
+            path: result.result.path,
           });
           return `Created page "${title}" at ${result.result.path}.`;
         }

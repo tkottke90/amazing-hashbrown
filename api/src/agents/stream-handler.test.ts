@@ -13,8 +13,10 @@ import {
   makeLiveSseWriter,
   PipeEventsError,
   extractPartialAssistantState,
+  drainAndRecordWikiUpdates,
 } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
+import { queueWikiUpdate } from './after-agent.js';
 
 const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
 
@@ -735,6 +737,51 @@ describe('agents/stream-handler', () => {
     it('extractPartialAssistantState falls back to the given id and empty content for a non-PipeEventsError', () => {
       const recovered = extractPartialAssistantState(new Error('unrelated'), 'msg8');
       expect(recovered).to.deep.equal({ segmentId: 'msg8', content: '', thoughtContent: '' });
+    });
+  });
+
+  describe('drainAndRecordWikiUpdates', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('forwards a queued wiki_updated event to the sink and persists it with path', () => {
+      queueWikiUpdate('t1', {
+        type: 'wiki_updated',
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'homelab',
+        path: 'entities/router.md',
+      });
+
+      const { sink, events } = fakeSink();
+      drainAndRecordWikiUpdates(sink, store, 't1');
+
+      expect(events()).to.have.length(1);
+      expect(events()[0]).to.deep.include({
+        type: 'wiki_updated',
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'homelab',
+        path: 'entities/router.md',
+      });
+
+      const messages = store.getThreadMessages('t1');
+      const wikiUpdateRow = messages.find((m) => m.kind === 'wiki_update')!;
+      expect(wikiUpdateRow.payload).to.deep.equal({
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'homelab',
+        path: 'entities/router.md',
+      });
     });
   });
 });

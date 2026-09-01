@@ -219,12 +219,13 @@ export function recordWikiUpdate(
   pageTitle: string,
   pageKind: string,
   wikiName: string,
+  path: string,
 ): number | null {
   return safe(threadId, 'recordWikiUpdate', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'wiki_update',
-      payload: { pageTitle, pageKind, wikiName },
+      payload: { pageTitle, pageKind, wikiName, path },
     }).seq;
   });
 }
