@@ -4,6 +4,7 @@ import {
   listModels,
   listModelsOrThrow,
   listEmbeddingModels,
+  resolveVisionCapabilityFromConfig,
 } from '../../services/provider-factory.js';
 import { unmaskApiKey } from './settings.handlers.js';
 import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
@@ -15,20 +16,24 @@ providersRouter.get('/', async (_req, res) => {
     env.providers.map(async (p) => {
       const liveIds = await listModels(p);
       const pricingMap = new Map((p.models ?? []).map((m) => [m.id, m]));
+      const models = await Promise.all(
+        liveIds.map(async (id) => {
+          const pricing = pricingMap.get(id);
+          const imageInput = await resolveVisionCapabilityFromConfig(p, id);
+          return {
+            id,
+            imageInput,
+            ...(pricing
+              ? { inputPricePerM: pricing.inputPricePerM, outputPricePerM: pricing.outputPricePerM }
+              : {}),
+          };
+        }),
+      );
       return {
         name: p.name,
         type: p.type,
         defaultModel: p.defaultModel,
-        models: liveIds.map((id) => {
-          const pricing = pricingMap.get(id);
-          return pricing
-            ? {
-                id,
-                inputPricePerM: pricing.inputPricePerM,
-                outputPricePerM: pricing.outputPricePerM,
-              }
-            : { id };
-        }),
+        models,
       };
     }),
   );
