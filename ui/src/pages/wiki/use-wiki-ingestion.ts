@@ -104,8 +104,8 @@ export async function hydrateWikiThread(id: string): Promise<void> {
   await useThreadInstance(id, wikiThreadOpts(id)).hydrate();
 }
 
-export async function sendWikiMessage(content: string): Promise<void> {
-  await currentWikiThread().sendMessage(content);
+export async function sendWikiMessage(content: string, attachmentId?: string): Promise<void> {
+  await currentWikiThread().sendMessage(content, attachmentId);
 }
 
 export async function submitWikiHitlAnswer(promptId: string, answer: string): Promise<void> {

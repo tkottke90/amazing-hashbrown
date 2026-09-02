@@ -183,6 +183,32 @@ describe('use-thread — retryTurn', () => {
   });
 });
 
+describe('use-thread — sendMessage attachmentId', () => {
+  it('includes attachmentId in the POST body when provided', async () => {
+    respondWith([{ type: 'stream_done', durationMs: 10 }]);
+
+    const thread = newThread('t8');
+    await thread.sendMessage('Look at this image.', 'artifact-1');
+
+    expect(mockConsumeSsePost).toHaveBeenCalledWith(
+      '/api/v1/chat/t8',
+      expect.objectContaining({ attachmentId: 'artifact-1' }),
+      expect.any(Function),
+      expect.anything(),
+    );
+  });
+
+  it('omits attachmentId from the POST body when not provided', async () => {
+    respondWith([{ type: 'stream_done', durationMs: 10 }]);
+
+    const thread = newThread('t9');
+    await thread.sendMessage('Just text, no attachment.');
+
+    const [, body] = mockConsumeSsePost.mock.calls[0]!;
+    expect(body).not.toHaveProperty('attachmentId');
+  });
+});
+
 describe('use-thread — wiki_updated handling', () => {
   it('creates a wiki_update message carrying pageTitle, pageKind, wikiName, and path from the event', async () => {
     respondWith([

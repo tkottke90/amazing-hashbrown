@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { ChatInput } from '@/components/chat-input';
+import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
@@ -13,6 +13,7 @@ import { randomUUID } from '@/lib/utils';
 
 export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   const inputValue = useSignal('');
+  const stagedAttachment = useSignal<StagedAttachment | null>(null);
   // Local, button-driven loading state for the on-demand summarize request —
   // distinct from thread.isSummarizing (SSE-driven, only fires for the
   // automatic in-turn path), so both trigger paths show the same disabled/
@@ -46,7 +47,9 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
     const content = inputValue.value.trim();
     if (!content) return;
     inputValue.value = '';
-    thread.sendMessage(content).catch(console.error);
+    const attachmentId = stagedAttachment.value?.id;
+    stagedAttachment.value = null;
+    thread.sendMessage(content, attachmentId).catch(console.error);
   }
 
   async function handleSummarizeClick() {
@@ -140,6 +143,10 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
             activeProvider={thread.activeThreadModel.value?.provider}
             activeModel={thread.activeThreadModel.value?.model}
             onModelSelect={thread.setThreadModel}
+            threadId={workspace.threadId}
+            onAttachmentChange={(attachment) => {
+              stagedAttachment.value = attachment;
+            }}
           />
         </div>
       </div>
