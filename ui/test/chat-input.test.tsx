@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
-import { fireEvent, render, screen } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 
 import { ChatInput, ChatInputChip } from '@/components/chat-input';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
@@ -25,6 +26,20 @@ function openSubmenu(element: HTMLElement) {
   element.focus();
   fireEvent.click(element);
   fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
+
+// @testing-library/preact's fireEvent.change/fireEvent.input wrappers never
+// reach a <input type="file">'s listener when a Radix component is also
+// mounted in the tree (confirmed: this only affects type="file" specifically
+// — a type="text" sibling's fireEvent.change works fine under the same
+// conditions, and a raw, non-Preact addEventListener('change', ...) on the
+// exact same node also never fires through the wrapper). A plain
+// `element.dispatchEvent(new Event('change', {bubbles:true}))` — bypassing
+// the wrapper entirely — reaches the listener correctly and is exactly what
+// a real browser does on file selection, so that's what this drives instead.
+function fireFileInputChange(input: HTMLInputElement, file: File) {
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 }
 
 describe('ChatInput', () => {
@@ -118,5 +133,159 @@ describe('ChatInput', () => {
 
     expect(screen.getByText('openai')).toBeInTheDocument();
     expect(screen.getByText('ollama')).toBeInTheDocument();
+  });
+});
+
+describe('ChatInput — file attachment', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function mockUploadSuccess(overrides: Partial<Record<string, unknown>> = {}) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'artifact-1',
+        mimeType: 'image/png',
+        displayFilename: 'photo.png',
+        requiresVision: true,
+        ...overrides,
+      }),
+    }) as unknown as typeof fetch;
+  }
+
+  it('uploads a selected file and renders a chip, calling onAttachmentChange', async () => {
+    mockUploadSuccess();
+    const onAttachmentChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['bytes'], 'photo.png', { type: 'image/png' });
+    fireFileInputChange(input, file);
+
+    await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/artifacts', expect.objectContaining({ method: 'POST' }));
+    expect(onAttachmentChange).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'artifact-1', displayFilename: 'photo.png' }),
+    );
+  });
+
+  it('shows an inline error and does not call onAttachmentChange when the upload fails', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'Unsupported file type' }),
+    }) as unknown as typeof fetch;
+    const onAttachmentChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, new File(['bytes'], 'bad.zip', { type: 'application/zip' }));
+
+    await waitFor(() => expect(screen.getByText('Unsupported file type')).toBeInTheDocument());
+    expect(onAttachmentChange).not.toHaveBeenCalled();
+  });
+
+  it('clicking the chip remove button deletes the artifact and clears the attachment', async () => {
+    mockUploadSuccess();
+    const onAttachmentChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
+    await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
+
+    global.fetch = jest.fn().mockResolvedValue({ ok: true }) as unknown as typeof fetch;
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/artifacts/artifact-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(screen.queryByText('photo.png')).not.toBeInTheDocument();
+    expect(onAttachmentChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('dropping a file uploads it the same way as the file picker', async () => {
+    mockUploadSuccess({ displayFilename: 'dropped.png' });
+    render(<ControlledChatInput threadId="t1" />);
+
+    const dropZone = document.querySelector('[data-slot="chat-input"]') as HTMLElement;
+    const file = new File(['bytes'], 'dropped.png', { type: 'image/png' });
+    fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByText('dropped.png')).toBeInTheDocument());
+  });
+
+  it('does nothing on drop/select when no threadId is given', () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+    render(<ControlledChatInput />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatInput — vision-capability warning badge', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function renderWithStagedImage(providers: Parameters<typeof ControlledChatInput>[0]['providers']) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'artifact-1',
+        mimeType: 'image/png',
+        displayFilename: 'photo.png',
+        requiresVision: true,
+      }),
+    }) as unknown as typeof fetch;
+
+    render(
+      <TooltipProvider>
+        <ControlledChatInput
+          threadId="t1"
+          activeProvider="ollama"
+          activeModel="llava"
+          providers={providers}
+        />
+      </TooltipProvider>,
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
+  }
+
+  it('shows the warning badge when the attachment requires vision and the model does not support it', async () => {
+    renderWithStagedImage([
+      { name: 'ollama', type: 'ollama', models: [{ id: 'llava', imageInput: false }] },
+    ]);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /does not support image input/ })).toBeInTheDocument(),
+    );
+  });
+
+  it('hides the warning badge when the model supports vision', async () => {
+    renderWithStagedImage([
+      { name: 'ollama', type: 'ollama', models: [{ id: 'llava', imageInput: true }] },
+    ]);
+
+    await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /does not support image input/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the warning badge when no model is known for the provider (conservative default)', async () => {
+    renderWithStagedImage([{ name: 'ollama', type: 'ollama', models: [] }]);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /does not support image input/ })).toBeInTheDocument(),
+    );
   });
 });
