@@ -2,6 +2,11 @@ import { signal } from '@preact/signals';
 
 export interface ModelInfo {
   id: string;
+  // Whether this model accepts image input — resolved server-side (see
+  // resolveVisionCapability in api/src/services/provider-factory.ts).
+  // Absent/false is treated the same: the conservative "unsupported"
+  // default when nothing is known about the model.
+  imageInput?: boolean;
   inputPricePerM?: number;
   outputPricePerM?: number;
 }
