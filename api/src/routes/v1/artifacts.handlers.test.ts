@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
-import { bootArtifactStore } from '../../artifacts/artifact-store.js';
-import { uploadArtifactHandler } from './artifacts.handlers.js';
+import { bootArtifactStore, getArtifactMeta, storeArtifact } from '../../artifacts/artifact-store.js';
+import { uploadArtifactHandler, deleteArtifactHandler } from './artifacts.handlers.js';
 
 // A real, valid 1x1 transparent PNG — small enough to embed inline, but a
 // genuine image sharp can decode (verified against real `sharp` output, not
@@ -85,6 +85,100 @@ describe('routes/v1/artifacts.handlers', () => {
       if (!result.ok) return;
       expect(result.data.threadId).to.equal(null);
       expect(result.data.taskId).to.equal(null);
+    });
+
+    it('rejects an unsupported MIME type with a 400', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'application/zip',
+        original: Buffer.from('whatever'),
+      });
+
+      expect(result.ok).to.equal(false);
+      if (result.ok) return;
+      expect(result.status).to.equal(400);
+      expect(result.error).to.match(/unsupported file type/i);
+    });
+
+    it('classifies an uploaded image as requiring vision', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'image/png',
+        original: Buffer.from(TINY_PNG_BASE64, 'base64'),
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.requiresVision).to.equal(true);
+      expect(result.data.hasExtractedText).to.equal(false);
+    });
+
+    it('classifies an uploaded text/markdown file as not requiring vision, extracting its text', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'text/markdown',
+        original: Buffer.from('# Hello'),
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.requiresVision).to.equal(false);
+      expect(result.data.hasExtractedText).to.equal(true);
+    });
+
+    it('round-trips displayFilename from the upload input', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'text/plain',
+        original: Buffer.from('hi'),
+        displayFilename: 'notes.txt',
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.displayFilename).to.equal('notes.txt');
+    });
+  });
+
+  describe('deleteArtifactHandler', () => {
+    let dir: string;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'artifacts-handlers-delete-test-'));
+      await bootArtifactStore(dir);
+    });
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('returns 404 for an unknown id', async () => {
+      const result = await deleteArtifactHandler('nonexistent');
+      expect(result.ok).to.equal(false);
+      if (result.ok) return;
+      expect(result.status).to.equal(404);
+    });
+
+    it('returns 403 for an agent-generated artifact and does not delete it', async () => {
+      const id = await storeArtifact({
+        mimeType: 'image/png',
+        original: Buffer.from(TINY_PNG_BASE64, 'base64'),
+        origin: 'agent-generated',
+      });
+
+      const result = await deleteArtifactHandler(id);
+      expect(result.ok).to.equal(false);
+      if (result.ok) return;
+      expect(result.status).to.equal(403);
+      expect(getArtifactMeta(id)).to.not.equal(undefined);
+    });
+
+    it('deletes a user-upload artifact', async () => {
+      const uploadResult = await uploadArtifactHandler({
+        mimeType: 'text/plain',
+        original: Buffer.from('hi'),
+      });
+      expect(uploadResult.ok).to.equal(true);
+      if (!uploadResult.ok) return;
+
+      const result = await deleteArtifactHandler(uploadResult.data.id);
+      expect(result.ok).to.equal(true);
+      expect(getArtifactMeta(uploadResult.data.id)).to.equal(undefined);
     });
   });
 });

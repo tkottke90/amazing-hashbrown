@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import { getArtifact } from '../../artifacts/artifact-store.js';
-import { uploadArtifactHandler } from './artifacts.handlers.js';
+import { uploadArtifactHandler, deleteArtifactHandler } from './artifacts.handlers.js';
 
 export const artifactsRouter = Router();
 
@@ -40,6 +40,7 @@ artifactsRouter.post('/', handleFileUpload, async (req: Request, res: Response) 
   const result = await uploadArtifactHandler({
     mimeType: req.file.mimetype,
     original: req.file.buffer,
+    displayFilename: req.file.originalname,
     threadId,
     taskId,
   });
@@ -49,6 +50,15 @@ artifactsRouter.post('/', handleFileUpload, async (req: Request, res: Response) 
     return;
   }
   res.status(201).json(result.data);
+});
+
+artifactsRouter.delete('/:id', async (req, res) => {
+  const result = await deleteArtifactHandler(req.params.id);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(204).end();
 });
 
 artifactsRouter.get('/:id', async (req, res) => {
