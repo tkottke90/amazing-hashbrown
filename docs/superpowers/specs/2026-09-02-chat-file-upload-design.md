@@ -31,12 +31,12 @@ Most of the storage-layer plumbing for this already exists but has never been wi
 - A capability check that prevents sending vision-only content to a model that doesn't support it, surfaced as a non-blocking warning in the composer.
 - Explicit removal of a staged, not-yet-sent attachment (with server-side deletion).
 - Message-history rendering of what was attached and whether the model actually received it.
+- Garbage collection of orphaned uploads — a file uploaded then abandoned without being sent or explicitly removed (e.g. the browser tab is closed mid-flow). Covered in §5.3.
 
 **Explicitly out of scope (v1):**
 
 - Multiple attachments per message.
 - OCR fallback for vision-only content on non-vision models — such content is excluded from the message, not degraded into an OCR text summary (decided explicitly: simpler behavior, matches the original ask of "don't try to send it").
-- Garbage collection of orphaned uploads (a file uploaded then abandoned without being sent or explicitly removed — e.g. the tab is closed mid-flow). This matches the artifact store's existing lack of GC for agent-generated artifacts; a cleanup job is a separate concern if it ever becomes a real problem.
 - Attachments on HITL resume (`resumeChatToSse`) or retry (`retryChatToSse`) turns — attachment handling is scoped to the initial message send. A retry re-runs an already-persisted turn, which already recorded whatever attachment decision was made the first time.
 - Click-to-open/download an attachment thumbnail in message history (visual indicator only in v1).
 - Audio/video attachments, and any file type outside the allow-list in §5.1.
@@ -104,17 +104,29 @@ The existing multer-based route (`api/src/routes/v1/artifacts.route.ts`, 25MB li
   - `application/pdf` → attempt text-layer extraction (new dependency: `pdf-parse`). Text found → `requiresVision: false`, extracted text stored. No text found (scanned/image-only PDF) → `requiresVision: true`.
   - docx (new dependency: `mammoth`) → `requiresVision: false`, text always extracted.
   - `text/plain`, `text/markdown` → `requiresVision: false`, content read directly as UTF-8 text (no library needed).
-- `ArtifactMeta` gains `requiresVision: boolean` and `extractedText: string | null`. Extracted text is stored as a sibling file (`text.txt`) in the artifact's directory, following the existing pattern of `web.webp`/`preview.jpg` as sibling files rather than growing `meta.json` with large text blobs.
+- `ArtifactMeta` gains `requiresVision: boolean`, `extractedText: string | null`, and `referencedAt: string | null` (set in §6 once the artifact is actually used in a sent message; `null` means "still just staged, or truly orphaned" — this is what §5.3's GC sweep keys off). Extracted text is stored as a sibling file (`text.txt`) in the artifact's directory, following the existing pattern of `web.webp`/`preview.jpg` as sibling files rather than growing `meta.json` with large text blobs.
 - Response body gains `requiresVision` and `displayFilename` so the client can render the chip and decide the warning immediately after upload, with no extra round trip.
 
 ### 5.2 Delete (`DELETE /api/v1/artifacts/:id`, new)
 
-Follows the existing delete-route convention in this codebase (`tasks.route.ts`, `threads.route.ts`, `workspaces.route.ts`):
+Follows the existing delete-route convention in this codebase (`tasks.route.ts`, `threads.route.ts`, `workspaces.route.ts`). Backed by a new shared primitive, `deleteArtifact(id)` in `artifact-store.ts`, so this route and §5.3's GC sweep share one implementation of the origin guard rather than duplicating it:
 
 - Looks up `ArtifactMeta`; `404` if missing.
-- Only permits deletion when `meta.origin === 'user-upload'` — this route can never delete an `'agent-generated'` artifact (e.g. one `upload_image` created), regardless of who calls it.
+- Only permits deletion when `meta.origin === 'user-upload'` — this can never delete an `'agent-generated'` artifact (e.g. one `upload_image` created), regardless of who calls it.
 - Removes the artifact's directory and its in-memory index entry.
-- Called by the frontend only when the user removes a **staged, unsent** attachment chip. Once a message has been sent referencing an artifact, nothing in this design deletes it — it needs to persist so message history (§8) can keep rendering it after the fact.
+- Called by the frontend only when the user removes a **staged, unsent** attachment chip. Once a message has been sent referencing an artifact, nothing in this design deletes it — it needs to persist so message history (§8) can keep rendering it after the fact. (This is also exactly why §6 sets `referencedAt` on send — so §5.3's sweep knows not to touch it.)
+
+### 5.3 Garbage collection of orphaned uploads (new)
+
+An artifact is **orphaned** when it's `origin === 'user-upload'`, `referencedAt === null` (never made it into a sent message), and the user didn't explicitly remove it either — the tab was closed, the browser crashed, or the compose was simply abandoned mid-flow. Nothing else in this design cleans these up, so without this they accumulate on disk indefinitely.
+
+There's no existing periodic-sweep pattern anywhere in this codebase to extend (`task-scheduler.ts`'s `TaskScheduler` is event-driven, not a timer sweep, and solves a different problem), so this introduces a small new one deliberately kept minimal — no new dependency, just a `setInterval`, consistent with this codebase's general preference for hand-rolled simplicity:
+
+- New module `api/src/artifacts/artifact-gc.ts`, exporting `sweepOrphanedArtifacts(now: Date = new Date())`, injectable `now` for deterministic tests (same style as the `execFileFn`-injection pattern used elsewhere in this codebase for testability). Scans the in-memory index for `origin === 'user-upload' && referencedAt === null && createdAt` older than a grace period, and calls the same `deleteArtifact(id)` primitive as §5.2 for each match.
+- **Grace period: 24 hours**, configurable (`env.artifactGc?.graceMs`, following the existing `env.agent?.recursionLimit ?? 100` optional-config convention). Long enough that a user who steps away mid-compose for a few hours doesn't lose their staged upload; short enough that abandoned files don't linger.
+- **Sweep interval: 1 hour**, configurable (`env.artifactGc?.intervalMs`) — a separate knob from the grace period, since how often to check and how old something must be before it's eligible are different concerns.
+- Started once at boot, alongside `bootArtifactStore()` (same server-bootstrap file), running one sweep immediately on boot — to catch orphans that accumulated while the process was down — and then on the configured interval.
+- Scoped to `origin === 'user-upload'` only. `'agent-generated'` artifacts (e.g. from `upload_image`) are never touched — they're referenced inline in the assistant's own message content immediately on creation, a different lifecycle this GC has no opinion on.
 
 ---
 
@@ -143,6 +155,7 @@ if (attachmentId) {
 ```
 
 - The `included` outcome (and `attachmentId`/`displayFilename`/`mimeType`) is passed into `recordUserMessage` (`thread-message-writer.ts`) so it's persisted on the `thread_messages` row's JSON `payload` — no new SQL column needed, `payload` is already a JSON blob.
+- Whenever `attachmentId` is present, `ArtifactMeta.referencedAt` is stamped (via a small `markArtifactReferenced(id)` in `artifact-store.ts`) right after `recordUserMessage` succeeds — **regardless of `included`**. An excluded attachment was still legitimately used and resolved by the user's send, not abandoned; it must not be swept by §5.3's GC.
 - Scoped to `streamChatToSse` only — not `resumeChatToSse` or `retryChatToSse` (§2).
 
 ---
@@ -189,7 +202,7 @@ Two independent pieces of UI consume this, deliberately decoupled — one always
 
 - **Unsupported file type at upload**: `400` from the server-side allow-list check (§5.1); the client shows an inline error near the chip location rather than staging a chip that will only be excluded later.
 - **Upload failure (network, size limit)**: existing multer error-shaping in `artifacts.route.ts` already returns a consistent JSON error; the client surfaces it without staging a chip.
-- **Delete failure**: if `DELETE` fails (network error, artifact already gone), the client removes the chip locally anyway — a failed cleanup of an abandoned upload is a (deliberately, per §2) unhandled orphan, not a reason to block the user from continuing.
+- **Delete failure**: if `DELETE` fails (network error, artifact already gone), the client removes the chip locally anyway rather than blocking the user — a failed explicit delete just leaves the artifact orphaned, which §5.3's GC sweep will clean up after the grace period regardless.
 - **Model switched after staging, before send**: the warning badge re-evaluates against `activeModel` reactively (it's already computed from props on every render) — switching to a vision-capable model clears the warning without re-uploading.
 - **Attachment referenced by a deleted/expired thread**: out of scope; artifacts are never cascade-deleted with their thread today (no existing behavior to preserve or change).
 
@@ -197,8 +210,8 @@ Two independent pieces of UI consume this, deliberately decoupled — one always
 
 ## 10. Testing Plan
 
-- **Backend unit tests**: `uploadArtifactHandler` classification branches (image / text-bearing PDF / scanned PDF / docx / txt / md / rejected type); the new delete handler's origin guard (`user-upload` vs `agent-generated`); the vision-gate branch in the chat-send path (included vs excluded, for both cases against a `.profile`-known model and a fallback-table model).
-- **Backend integration tests**: full `POST /api/v1/artifacts` → `POST /api/v1/chat/:threadId` round trip for an image against a vision model (included) and a non-vision model (excluded), asserting the persisted `thread_messages` payload's `attachment.included` value in both cases.
+- **Backend unit tests**: `uploadArtifactHandler` classification branches (image / text-bearing PDF / scanned PDF / docx / txt / md / rejected type); the new delete handler's origin guard (`user-upload` vs `agent-generated`); the vision-gate branch in the chat-send path (included vs excluded, for both cases against a `.profile`-known model and a fallback-table model); `sweepOrphanedArtifacts` with an injected `now` — an artifact just under the grace period survives, one just over it is deleted, a `referencedAt`-stamped one survives regardless of age, and an `'agent-generated'` artifact is never touched.
+- **Backend integration tests**: full `POST /api/v1/artifacts` → `POST /api/v1/chat/:threadId` round trip for an image against a vision model (included) and a non-vision model (excluded), asserting the persisted `thread_messages` payload's `attachment.included` value in both cases, and that `referencedAt` gets stamped in both cases too.
 - **Frontend unit tests**: `ChatInput`'s button and drag-drop paths both reach the same staged-attachment state; warning badge shows/hides correctly as `requiresVision`/`imageInput` combinations change; remove-chip triggers the delete call.
 - **Frontend unit tests**: message-history rendering — image thumbnail, colored doc box per extension, and the "Attachments Not Processed" action's presence/absence based on `included`.
 - **Manual/e2e**: drag-and-drop onto the real browser DOM (jsdom drag events are notoriously unreliable — worth a real Playwright drag-and-drop check per the `run` skill's guidance on testing UI changes in an actual browser, not just unit tests).
