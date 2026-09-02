@@ -15,6 +15,14 @@ export type ThreadMessage =
       content: string;
       sentAt: Date;
       seq?: number;
+      // Absent for a message sent before this field existed, or the
+      // optimistic local bubble before it round-trips (see use-thread.ts's
+      // sendMessage) — the message just renders with no attachment preview
+      // in either case. `included` is the server-side vision-gate decision
+      // (api's stream-handler.ts's resolveAttachmentForTurn): false means
+      // the user uploaded it anyway despite the warning badge, and it was
+      // excluded from what the model actually received.
+      attachment?: { id: string; filename: string; mimeType: string; included: boolean };
     }
   | {
       kind: 'assistant';
