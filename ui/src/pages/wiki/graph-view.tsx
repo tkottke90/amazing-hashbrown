@@ -27,6 +27,20 @@ const NODE_RADIUS_MAX = 20;
 export function GraphView({ onOpenInEditor }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const hoveredNode = useSignal<HoveredNode | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function cancelClose() {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }
+
+  function scheduleClose() {
+    closeTimerRef.current = setTimeout(() => {
+      hoveredNode.value = null;
+    }, 200);
+  }
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -122,6 +136,7 @@ export function GraphView({ onOpenInEditor }: Props) {
       .attr('stroke-dasharray', (d: D3Node) => (d.contested ? '4 2' : 'none'))
       .attr('cursor', 'pointer')
       .on('mouseenter', (event: MouseEvent, d: D3Node) => {
+        cancelClose();
         const rect = svg.getBoundingClientRect();
         hoveredNode.value = {
           node: d,
@@ -130,7 +145,7 @@ export function GraphView({ onOpenInEditor }: Props) {
         };
       })
       .on('mouseleave', () => {
-        hoveredNode.value = null;
+        scheduleClose();
       });
 
     // Drag
@@ -177,6 +192,7 @@ export function GraphView({ onOpenInEditor }: Props) {
 
     return () => {
       simulation.stop();
+      cancelClose();
     };
   }, [graphData.value, enabledDomainIds.value]);
 
@@ -188,11 +204,13 @@ export function GraphView({ onOpenInEditor }: Props) {
 
       {hovered && (
         <div
-          class="pointer-events-none absolute z-10 w-56 rounded-lg border border-border bg-card p-3 shadow-lg text-sm"
+          class="absolute z-10 w-56 rounded-lg border border-border bg-card p-3 shadow-lg text-sm"
           style={{
             left: Math.min(hovered.x + 12, window.innerWidth - 250),
             top: Math.max(hovered.y - 12, 8),
           }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
           <div class="font-semibold text-foreground truncate">{hovered.node.title}</div>
           <div class="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
@@ -218,8 +236,12 @@ export function GraphView({ onOpenInEditor }: Props) {
           )}
           <button
             type="button"
-            class="pointer-events-auto mt-2 w-full rounded bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
-            onClick={() => onOpenInEditor(hovered.node.domainId, hovered.node.id)}
+            class="mt-2 w-full rounded bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
+            onClick={() => {
+              cancelClose();
+              hoveredNode.value = null;
+              onOpenInEditor(hovered.node.domainId, hovered.node.id);
+            }}
           >
             Open in editor
           </button>
