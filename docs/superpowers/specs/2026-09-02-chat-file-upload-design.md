@@ -152,7 +152,7 @@ if (attachmentId) {
   } else if (meta.mimeType.startsWith('image/')) {
     content = [
       { type: 'text', text: content },
-      { type: 'image', source_type: 'base64', data: <base64 of artifact original>, mime_type: meta.mimeType },
+      { type: 'image', mimeType: meta.mimeType, data: <base64 of artifact original> }, // real @langchain/core@1.2.2 field names — not source_type/mime_type
     ];
     included = true;
   } else {

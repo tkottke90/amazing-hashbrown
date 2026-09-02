@@ -28,11 +28,12 @@ function toSink(res: import('express').Response): SseWriter {
 
 chatRouter.post('/:threadId', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, afterAgent } = req.body as {
+  const { content, provider, model, afterAgent, attachmentId } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
     afterAgent?: boolean;
+    attachmentId?: string;
   };
 
   if (!threadId || !content?.trim()) {
@@ -45,7 +46,16 @@ chatRouter.post('/:threadId', async (req, res) => {
 
   try {
     req.logger.info(`Inference started for thread`, { threadId, provider, model });
-    await streamChatToSse(res, threadId, content.trim(), startedAt, provider, model, afterAgent);
+    await streamChatToSse(
+      res,
+      threadId,
+      content.trim(),
+      startedAt,
+      provider,
+      model,
+      afterAgent,
+      attachmentId,
+    );
   } catch (err) {
     req.logger.error('Chat stream error', { err: serializeError(err) });
     writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
