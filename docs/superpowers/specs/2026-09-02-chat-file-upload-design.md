@@ -76,16 +76,24 @@ Classification and text extraction happen **once, at upload time**, not at send 
 
 ## 4. Backend: Model Capability Plumbing
 
-`GET /api/v1/providers` (`api/src/routes/v1/providers.route.ts`) is extended: for each model it already lists, it additionally reads capability from the model instance already available via `createProvider(providerName, modelId)`:
+`GET /api/v1/providers` (`api/src/routes/v1/providers.route.ts`) is extended: for each model it already lists, it additionally resolves an `imageInput: boolean` via a new `resolveVisionCapability(providerName, modelId)` in `provider-factory.ts`, dispatched by provider type — **not a single uniform lookup**, corrected from an earlier draft of this section after verifying the actual installed LangChain packages:
 
 ```typescript
+// Ollama: live query, mirroring the existing listEmbeddingModels() pattern
+// in provider-factory.ts (per-model client.show(), 'embedding' → 'vision').
+const info = await client.show({ model: modelName });
+const imageInput = info.capabilities?.includes('vision') ?? false;
+
+// OpenAI/Anthropic: LangChain's beta ModelProfile, wrapped in try/catch
+// (ChatAnthropic's constructor throws synchronously with no resolvable
+// apiKey — a lookup loop must not let that break the whole response).
 const llm = createProvider(p.name, id);
-const imageInput = llm.profile?.image_inputs ?? FALLBACK_CAPABILITIES[p.type]?.[id]?.imageInput ?? false;
+const imageInput = llm.profile?.imageInputs ?? FALLBACK_VISION_CAPABILITIES[p.type]?.[id] ?? false;
 ```
 
-- `llm.profile` is LangChain's beta `ModelProfile` (`langchain >= 1.1`, per prior research — see `docs/research/issue-125/01-langchain-multimodal-detection.md`). It requires no network call; it's populated from static per-model data.
-- `FALLBACK_CAPABILITIES` is a small hardcoded table (provider type + model id/pattern → `{ imageInput: boolean }`) for models `.profile` doesn't cover. Starts empty/minimal — entries are added only as specific gaps are actually found, not pre-populated speculatively.
-- **Default when neither source knows: `false` (unsupported).** Given the requirement not to send unsupported content, an unknown model is treated conservatively rather than optimistically — a false negative (unnecessary warning) is a minor annoyance; a false positive (silently failed send) is worse.
+- **Why two mechanisms, not one:** LangChain's `.profile` (`@langchain/core@1.2.2`'s real `ModelProfile` TS interface — camelCase, e.g. `imageInputs`, not the Python TypedDict's `image_inputs` an earlier draft of this doc cited) is a hardcoded, per-package static table for `ChatOpenAI`/`ChatAnthropic`, keyed by exact model-id strings. `ChatOllama` never overrides `.profile` at all — the base class's stub always returns `{}`. Since this repo's default and only-enabled-by-default provider (`config.yaml.example`) is Ollama, relying on `.profile` alone would show the warning badge on every Ollama model, always, including real vision models. Ollama's own `/api/show` endpoint already exposes an authoritative `capabilities` array — this codebase already queries it today for `'embedding'` detection (`listEmbeddingModels()`), so the identical live-query pattern, checking for `'vision'` instead, is the correct mechanism for Ollama specifically.
+- `FALLBACK_VISION_CAPABILITIES` is a small hardcoded table (provider type → model id → `boolean`) for OpenAI/Anthropic models `.profile` doesn't cover. Starts empty/minimal — entries are added only as specific gaps are actually found, not pre-populated speculatively. Not used for Ollama, which always has the live check.
+- **Default when nothing is known: `false` (unsupported).** Given the requirement not to send unsupported content, an unknown model is treated conservatively rather than optimistically — a false negative (unnecessary warning) is a minor annoyance; a false positive (silently failed send) is worse.
 
 `ModelInfo` (`ui/src/hooks/use-providers.ts`) gains `imageInput?: boolean`, populated straight from this response. No other capability flags (`pdf_inputs`, `audio_inputs`, etc.) are surfaced — out of scope, since nothing in this design needs them.
 
@@ -104,7 +112,7 @@ The existing multer-based route (`api/src/routes/v1/artifacts.route.ts`, 25MB li
   - `application/pdf` → attempt text-layer extraction (new dependency: `pdf-parse`). Text found → `requiresVision: false`, extracted text stored. No text found (scanned/image-only PDF) → `requiresVision: true`.
   - docx (new dependency: `mammoth`) → `requiresVision: false`, text always extracted.
   - `text/plain`, `text/markdown` → `requiresVision: false`, content read directly as UTF-8 text (no library needed).
-- `ArtifactMeta` gains `requiresVision: boolean`, `extractedText: string | null`, and `referencedAt: string | null` (set in §6 once the artifact is actually used in a sent message; `null` means "still just staged, or truly orphaned" — this is what §5.3's GC sweep keys off). Extracted text is stored as a sibling file (`text.txt`) in the artifact's directory, following the existing pattern of `web.webp`/`preview.jpg` as sibling files rather than growing `meta.json` with large text blobs.
+- `ArtifactMeta` gains `requiresVision: boolean`, `hasExtractedText: boolean`, and `referencedAt: string | null` (set in §6 once the artifact is actually used in a sent message; `null` means "still just staged, or truly orphaned" — this is what §5.3's GC sweep keys off). `hasExtractedText` mirrors the existing `hasVariants` boolean — the actual text is never put on `ArtifactMeta`/`meta.json` itself; it's stored as a sibling file (`text.txt`) in the artifact's directory (same pattern as `web.webp`/`preview.jpg`) and read on demand via a new `getExtractedText(id)` accessor.
 - Response body gains `requiresVision` and `displayFilename` so the client can render the chip and decide the warning immediately after upload, with no extra round trip.
 
 ### 5.2 Delete (`DELETE /api/v1/artifacts/:id`, new)
@@ -148,7 +156,8 @@ if (attachmentId) {
     ];
     included = true;
   } else {
-    content = `${content}\n\n---\nAttached file "${meta.displayFilename}":\n${meta.extractedText}`;
+    const text = await getExtractedText(attachmentId); // reads the sibling text.txt on demand
+    content = `${content}\n\n---\nAttached file "${meta.displayFilename}":\n${text}`;
     included = true;
   }
 }
