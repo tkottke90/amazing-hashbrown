@@ -12,6 +12,7 @@ import {
   deleteArtifact,
   markArtifactReferenced,
   listArtifactMeta,
+  resetArtifactStoreForTests,
 } from './artifact-store.js';
 
 function makeInput(overrides: Partial<Parameters<typeof storeArtifact>[0]> = {}) {
@@ -25,11 +26,14 @@ function makeInput(overrides: Partial<Parameters<typeof storeArtifact>[0]> = {})
 }
 
 describe('artifacts/artifact-store', () => {
-  // Must run before any other describe block in this file calls
-  // bootArtifactStore() — module-level store state is a singleton, and this
-  // test relies on it never having been initialised yet.
+  // Explicitly resets the singleton first rather than relying on this
+  // being the first thing in the whole mocha process to touch the store —
+  // another *.test.ts file's own bootArtifactStore() call could otherwise
+  // run first (file execution order is glob-order, not something this
+  // file controls) and silently invalidate this test's premise.
   describe('uninitialised store', () => {
     it('throws when storeArtifact is called before bootArtifactStore', async () => {
+      resetArtifactStoreForTests();
       let threw = false;
       try {
         await storeArtifact(makeInput());

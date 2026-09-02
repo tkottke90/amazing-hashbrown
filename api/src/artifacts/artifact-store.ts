@@ -97,6 +97,17 @@ function artifactDir(id: string): string {
   return path.join(getRoot(), id);
 }
 
+// Test-only: puts the module-level singleton back into its pre-boot
+// state. Mocha runs every *.test.ts file in one process against the same
+// module instance, so a test asserting "throws before bootArtifactStore"
+// can't otherwise guarantee it's really the first thing in the whole
+// suite to touch the store — which file runs first is glob-order, not
+// something any single test file controls.
+export function resetArtifactStoreForTests(): void {
+  currentRoot = null;
+  index.clear();
+}
+
 /** Scan the artifact root and hydrate the in-memory metadata index. */
 export async function bootArtifactStore(root: string = env.artifactRoot): Promise<void> {
   currentRoot = root;
