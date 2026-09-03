@@ -95,6 +95,26 @@ export const AgentSchema = z.object({
 
 export type AgentConfig = z.infer<typeof AgentSchema>;
 
+export const ArtifactGcSchema = z.object({
+  // How long a user-uploaded artifact must sit unreferenced before the
+  // GC sweep will delete it — long enough that stepping away mid-compose
+  // for a few hours doesn't lose a staged upload.
+  graceMs: z
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60 * 1000),
+  // How often the sweep runs — a separate knob from graceMs, since how
+  // often to check and how old something must be are different concerns.
+  intervalMs: z
+    .number()
+    .int()
+    .positive()
+    .default(60 * 60 * 1000),
+});
+
+export type ArtifactGcConfig = z.infer<typeof ArtifactGcSchema>;
+
 export const WebFetchConfigSchema = z.object({
   timeoutMs: z.number().default(10000),
   respectRobotsTxt: z.boolean().default(true),
@@ -139,6 +159,7 @@ const AppConfigSchema = z.object({
   webFetch: WebFetchConfigSchema.optional(),
   rlm: RLMConfigSchema.optional(),
   agent: AgentSchema.optional(),
+  artifactGc: ArtifactGcSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema.optional(),
   workspaces: WorkspacesSchema.optional(),
@@ -267,6 +288,14 @@ export const env = {
       return (configManager as any).getSection('agent', AgentSchema) as AgentConfig;
     } catch {
       return AgentSchema.parse({});
+    }
+  },
+  get artifactGc(): ArtifactGcConfig {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('artifactGc', ArtifactGcSchema) as ArtifactGcConfig;
+    } catch {
+      return ArtifactGcSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

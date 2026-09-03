@@ -14,9 +14,11 @@ import {
   PipeEventsError,
   extractPartialAssistantState,
   drainAndRecordWikiUpdates,
+  resolveAttachmentForTurn,
 } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
 import { queueWikiUpdate } from './after-agent.js';
+import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
 
 const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
 
@@ -781,6 +783,103 @@ describe('agents/stream-handler', () => {
         pageKind: 'created',
         wikiName: 'homelab',
         path: 'entities/router.md',
+      });
+    });
+  });
+
+  describe('resolveAttachmentForTurn', () => {
+    let dir: string;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'stream-handler-attachment-test-'));
+      await bootArtifactStore(dir);
+    });
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('passes plain content through unchanged when no attachmentId is given', async () => {
+      const result = await resolveAttachmentForTurn(undefined, 'hello', 'p', 'm');
+      expect(result).to.deep.equal({ llmContent: 'hello', record: undefined });
+    });
+
+    it('passes plain content through unchanged for an unknown attachmentId', async () => {
+      const result = await resolveAttachmentForTurn('nonexistent', 'hello', 'p', 'm');
+      expect(result).to.deep.equal({ llmContent: 'hello', record: undefined });
+    });
+
+    it('excludes a vision-required attachment when the model lacks vision support', async () => {
+      const id = await storeArtifact({
+        mimeType: 'image/png',
+        original: Buffer.from('fake-image-bytes'),
+        displayFilename: 'photo.png',
+        requiresVision: true,
+      });
+
+      const result = await resolveAttachmentForTurn(
+        id,
+        'look at this',
+        'p',
+        'm',
+        async () => false,
+      );
+
+      expect(result.llmContent).to.equal('look at this');
+      expect(result.record).to.deep.equal({
+        id,
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        included: false,
+      });
+    });
+
+    it('builds a multimodal content block for a vision-required attachment when the model supports vision', async () => {
+      const original = Buffer.from('fake-image-bytes');
+      const id = await storeArtifact({
+        mimeType: 'image/png',
+        original,
+        displayFilename: 'photo.png',
+        requiresVision: true,
+      });
+
+      const result = await resolveAttachmentForTurn(id, 'look at this', 'p', 'm', async () => true);
+
+      expect(result.llmContent).to.deep.equal([
+        { type: 'text', text: 'look at this' },
+        { type: 'image', mimeType: 'image/png', data: original.toString('base64') },
+      ]);
+      expect(result.record).to.deep.equal({
+        id,
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        included: true,
+      });
+    });
+
+    it('merges extracted text for a document attachment without ever checking vision capability', async () => {
+      const id = await storeArtifact({
+        mimeType: 'text/plain',
+        original: Buffer.from('the doc bytes'),
+        displayFilename: 'notes.txt',
+        requiresVision: false,
+        extractedText: 'the extracted notes',
+      });
+
+      let checkVisionCalled = false;
+      const result = await resolveAttachmentForTurn(id, 'here is a doc', 'p', 'm', async () => {
+        checkVisionCalled = true;
+        return false;
+      });
+
+      expect(checkVisionCalled).to.equal(false);
+      expect(result.llmContent).to.equal(
+        'here is a doc\n\n---\nAttached file "notes.txt":\nthe extracted notes',
+      );
+      expect(result.record).to.deep.equal({
+        id,
+        filename: 'notes.txt',
+        mimeType: 'text/plain',
+        included: true,
       });
     });
   });

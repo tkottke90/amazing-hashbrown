@@ -201,7 +201,7 @@ export interface ThreadInstance {
   summaryPath: Signal<string | null>;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, attachmentId?: string) => Promise<void>;
   submitHitlAnswer: (promptId: string, answer: string) => Promise<void>;
   retryTurn: () => Promise<void>;
   stopGeneration: () => void;
@@ -540,7 +540,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     });
   }
 
-  async function sendMessage(content: string): Promise<void> {
+  async function sendMessage(content: string, attachmentId?: string): Promise<void> {
     const userId = randomUUID();
     const assistantId = randomUUID();
     _currentUserId = userId;
@@ -551,6 +551,9 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     batch(() => {
       messages.value = [
         ...messages.value,
+        // The optimistic bubble omits `attachment` — whether it was actually
+        // included is a server-side (vision-gate) decision that only exists
+        // once the turn round-trips; the preview appears then, not instantly.
         { kind: 'user', id: userId, content, sentAt: new Date() },
         {
           kind: 'assistant',
@@ -572,6 +575,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
           ...(modelSelection
             ? { provider: modelSelection.provider, model: modelSelection.model }
             : {}),
+          ...(attachmentId ? { attachmentId } : {}),
         },
         handleEvent,
         _abortController.signal,

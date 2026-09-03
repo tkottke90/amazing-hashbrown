@@ -1,5 +1,5 @@
 import { AfterAgentIndicator } from '@/components/after-agent-indicator';
-import { ChatInput } from '@/components/chat-input';
+import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { Layout } from '@/components/layout';
@@ -23,6 +23,7 @@ export function ThreadView() {
   const { route } = useLocation();
   const { setPageTitle } = useTitle();
   const inputValue = useSignal('');
+  const stagedAttachment = useSignal<StagedAttachment | null>(null);
   const thread = useThreadInstance(activeThreadId.value);
 
   const threadTitle = useComputed(
@@ -41,7 +42,9 @@ export function ThreadView() {
     const content = inputValue.value.trim();
     if (!content) return;
     inputValue.value = '';
-    thread.sendMessage(content).catch(console.error);
+    const attachmentId = stagedAttachment.value?.id;
+    stagedAttachment.value = null;
+    thread.sendMessage(content, attachmentId).catch(console.error);
   }
 
   const allMessages = thread.messages.value;
@@ -92,6 +95,10 @@ export function ThreadView() {
           activeProvider={thread.activeThreadModel.value?.provider}
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}
+          threadId={activeThreadId.value}
+          onAttachmentChange={(attachment) => {
+            stagedAttachment.value = attachment;
+          }}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>

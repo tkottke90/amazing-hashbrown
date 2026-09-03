@@ -163,7 +163,7 @@ export async function listEmbeddingModels(provider: ProviderConfig): Promise<str
   return allModels;
 }
 
-export function createProvider(name?: string, model?: string): BaseChatModel {
+function resolveProviderConfig(name?: string): ProviderConfig {
   const providers = env.providers;
   if (providers.length === 0) {
     throw new Error('No providers configured. Add a providers[] block to config.yaml.');
@@ -177,5 +177,102 @@ export function createProvider(name?: string, model?: string): BaseChatModel {
     throw new Error(`Provider "${targetName}" not found in config.yaml providers list.`);
   }
 
-  return createProviderFromConfig(providerConfig, model);
+  return providerConfig;
+}
+
+export function createProvider(name?: string, model?: string): BaseChatModel {
+  return createProviderFromConfig(resolveProviderConfig(name), model);
+}
+
+/**
+ * Checks Ollama's own /api/show `capabilities` array for `'vision'` on a
+ * single model — the live, authoritative source for Ollama, since
+ * ChatOllama never overrides LangChain's `.profile` (it always inherits
+ * the base stub, which returns `{}`). Mirrors listEmbeddingModels()'s
+ * existing per-model `client.show()` pattern for `'embedding'` detection.
+ * Client is injected so this is unit-testable without a real Ollama
+ * instance; a `show()` failure for one model returns `false` rather than
+ * throwing, so it never sinks a caller looping over many models.
+ */
+export async function hasOllamaVisionCapability(
+  client: Pick<Ollama, 'show'>,
+  modelName: string,
+): Promise<boolean> {
+  try {
+    const info = await client.show({ model: modelName });
+    return info.capabilities?.includes('vision') ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Hand-maintained last-resort table for OpenAI/Anthropic models whose
+ * exact id isn't (yet) covered by LangChain's own per-package ModelProfile
+ * data. Starts empty — entries are added only as specific gaps are found,
+ * never populated speculatively. Not consulted for Ollama, which always
+ * uses the live check above instead.
+ */
+export const FALLBACK_VISION_CAPABILITIES: Record<
+  ProviderConfig['type'],
+  Record<string, boolean>
+> = {
+  ollama: {},
+  openai: {},
+  anthropic: {},
+};
+
+/**
+ * Pure version of resolveVisionCapability() — accepts an explicit
+ * ProviderConfig rather than resolving one from the live env, same split
+ * as createProviderFromConfig()/createProvider() above. This is what's
+ * actually unit-testable; resolveVisionCapability() is a thin env-resolving
+ * wrapper around this for real callers (mirrors createProvider()).
+ *
+ * Ollama uses the live capabilities check above; OpenAI/Anthropic use
+ * LangChain's beta `.profile.imageInputs` (camelCase — the real
+ * @langchain/core@1.2.2 field name) with FALLBACK_VISION_CAPABILITIES as a
+ * last resort. Never throws: a misconfigured provider (e.g. Anthropic with
+ * no resolvable apiKey, which throws synchronously at construction) or an
+ * unknown model both resolve to `false` — the conservative default, since
+ * sending unsupported content is worse than an unnecessary warning.
+ */
+export async function resolveVisionCapabilityFromConfig(
+  providerConfig: ProviderConfig,
+  modelId: string,
+): Promise<boolean> {
+  if (providerConfig.type === 'ollama') {
+    const client = new Ollama({ host: providerConfig.baseUrl });
+    return hasOllamaVisionCapability(client, modelId);
+  }
+
+  try {
+    const llm = createProviderFromConfig(providerConfig, modelId);
+    return (
+      llm.profile?.imageInputs ??
+      FALLBACK_VISION_CAPABILITIES[providerConfig.type][modelId] ??
+      false
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves whether a given provider/model combination (looked up by
+ * provider name against the live env config, same fallback chain as
+ * createProvider()) accepts image input. See
+ * resolveVisionCapabilityFromConfig() for the actual logic.
+ */
+export async function resolveVisionCapability(
+  providerName: string | undefined,
+  modelId: string,
+): Promise<boolean> {
+  let providerConfig: ProviderConfig;
+  try {
+    providerConfig = resolveProviderConfig(providerName);
+  } catch {
+    return false;
+  }
+  return resolveVisionCapabilityFromConfig(providerConfig, modelId);
 }

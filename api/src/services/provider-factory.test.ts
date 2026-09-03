@@ -3,8 +3,26 @@ import { expect } from 'chai';
 import { ChatOllama } from '@langchain/ollama';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
-import { createProvider, createProviderFromConfig } from './provider-factory.js';
+import type { Ollama } from 'ollama';
+import {
+  createProvider,
+  createProviderFromConfig,
+  hasOllamaVisionCapability,
+  resolveVisionCapability,
+  resolveVisionCapabilityFromConfig,
+  FALLBACK_VISION_CAPABILITIES,
+} from './provider-factory.js';
 import type { ProviderConfig } from '../config/env.js';
+
+function stubOllamaClient(capabilities: string[] | undefined, fail = false): Pick<Ollama, 'show'> {
+  return {
+    show: async () => {
+      if (fail) throw new Error('boom');
+      // Only the `capabilities` field is exercised by hasOllamaVisionCapability.
+      return { capabilities } as Awaited<ReturnType<Ollama['show']>>;
+    },
+  };
+}
 
 const ollamaConfig: ProviderConfig = {
   name: 'local',
@@ -90,6 +108,85 @@ describe('services/provider-factory', () => {
       // so this test is limited to a documentation assertion.
       // The factory logic is fully covered by createProviderFromConfig tests above.
       expect(createProvider).to.be.a('function');
+    });
+  });
+
+  describe('hasOllamaVisionCapability()', () => {
+    it('returns true when capabilities includes vision', async () => {
+      const client = stubOllamaClient(['vision', 'completion']);
+      expect(await hasOllamaVisionCapability(client, 'llava')).to.equal(true);
+    });
+
+    it('returns false when capabilities omits vision', async () => {
+      const client = stubOllamaClient(['completion', 'tools']);
+      expect(await hasOllamaVisionCapability(client, 'qwen3')).to.equal(false);
+    });
+
+    it('returns false (not throw) when capabilities is undefined', async () => {
+      const client = stubOllamaClient(undefined);
+      expect(await hasOllamaVisionCapability(client, 'unknown')).to.equal(false);
+    });
+
+    it('returns false (not throw) when show() rejects', async () => {
+      const client = stubOllamaClient(undefined, true);
+      expect(await hasOllamaVisionCapability(client, 'gone')).to.equal(false);
+    });
+  });
+
+  describe('resolveVisionCapabilityFromConfig()', () => {
+    it('falls back to FALLBACK_VISION_CAPABILITIES for an unknown openai model', async () => {
+      FALLBACK_VISION_CAPABILITIES.openai['my-custom-vision-model'] = true;
+      try {
+        const result = await resolveVisionCapabilityFromConfig(
+          openaiConfig,
+          'my-custom-vision-model',
+        );
+        expect(result).to.equal(true);
+      } finally {
+        delete FALLBACK_VISION_CAPABILITIES.openai['my-custom-vision-model'];
+      }
+    });
+
+    it('resolves false, not a thrown error, for an unknown openai model with no fallback entry', async () => {
+      // openaiConfig has an apiKey, so createProviderFromConfig succeeds; the
+      // model id just isn't in any known PROFILES table or the fallback map.
+      expect(await resolveVisionCapabilityFromConfig(openaiConfig, 'not-a-real-model-id')).to.equal(
+        false,
+      );
+    });
+
+    it('does not throw for an anthropic provider with no resolvable apiKey', async () => {
+      // Regression test for the try/catch guard — ChatAnthropic's
+      // constructor throws synchronously when no apiKey is resolvable.
+      const originalKey = process.env.ANTHROPIC_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+      const noKeyConfig: ProviderConfig = {
+        name: 'claude-no-key',
+        type: 'anthropic',
+        defaultModel: 'claude-sonnet-4-6',
+      };
+      try {
+        const result = await resolveVisionCapabilityFromConfig(noKeyConfig, 'claude-sonnet-4-6');
+        expect(result).to.equal(false);
+      } finally {
+        if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
+      }
+    });
+
+    it('dispatches ollama configs to the live capabilities check', async () => {
+      // Can't inject a stub client through the public function (it
+      // constructs a real `Ollama` internally), so this just confirms it
+      // resolves rather than throwing when the real client can't connect —
+      // hasOllamaVisionCapability's own describe block covers the actual
+      // true/false/reject-safe logic in isolation.
+      const result = await resolveVisionCapabilityFromConfig(ollamaConfig, 'llama3');
+      expect(result).to.equal(false);
+    });
+  });
+
+  describe('resolveVisionCapability()', () => {
+    it('resolves false for an unknown provider name rather than throwing', async () => {
+      expect(await resolveVisionCapability('no-such-provider', 'whatever')).to.equal(false);
     });
   });
 });

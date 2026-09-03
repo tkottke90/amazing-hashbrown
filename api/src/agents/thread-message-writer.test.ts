@@ -60,6 +60,41 @@ describe('agents/thread-message-writer', () => {
       expect(seq).to.equal(null);
       expect(store.getMessage('no-such-thread', 'u2')).to.equal(null);
     });
+
+    it('persists an included attachment alongside content', () => {
+      recordUserMessage(store, 't1', 'u3', 'look at this', '2026-07-18T00:00:00.000Z', {
+        id: 'artifact-1',
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        included: true,
+      });
+
+      const msg = store.getMessage('t1', 'u3')!;
+      expect(msg.payload).to.deep.equal({
+        content: 'look at this',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        attachment: {
+          id: 'artifact-1',
+          filename: 'photo.png',
+          mimeType: 'image/png',
+          included: true,
+        },
+      });
+    });
+
+    it('persists an excluded attachment — content stays the plain text the user typed', () => {
+      recordUserMessage(store, 't1', 'u4', 'look at this', '2026-07-18T00:00:00.000Z', {
+        id: 'artifact-2',
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        included: false,
+      });
+
+      const msg = store.getMessage('t1', 'u4')!;
+      const payload = msg.payload as { content: string; attachment: { included: boolean } };
+      expect(payload.content).to.equal('look at this');
+      expect(payload.attachment.included).to.equal(false);
+    });
   });
 
   describe('assistant lifecycle: start -> finalize / fail', () => {

@@ -2,10 +2,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 
 import {
   ChatMessage,
+  ChatMessageAttachmentWarningAction,
   ChatMessageCopyAction,
   ChatMessageForkAction,
   ChatMessageSaveAction,
 } from '@/components/chat-message';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const NOW = Date.now();
 
@@ -125,6 +127,68 @@ describe('ChatMessage', () => {
     it('renders nothing in the actions area when actions is omitted', () => {
       render(<ChatMessage message="hi" sentAt={new Date()} />);
       expect(slot('chat-message-actions')).toBeEmptyDOMElement();
+    });
+  });
+
+  describe('attachment preview', () => {
+    it('renders an image thumbnail sourced from the artifacts endpoint', () => {
+      render(
+        <ChatMessage
+          message="check this out"
+          sentAt={new Date()}
+          attachment={{ id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png' }}
+        />,
+      );
+      const img = screen.getByAltText('photo.png') as HTMLImageElement;
+      expect(img.src).toContain('/api/v1/artifacts/artifact-1');
+    });
+
+    it.each([
+      ['notes.pdf', 'PDF'],
+      ['notes.docx', 'DOCX'],
+      ['notes.md', 'MD'],
+      ['notes.txt', 'TXT'],
+    ])('renders a colored extension box for %s', (filename, expectedText) => {
+      render(
+        <ChatMessage
+          message="see attached"
+          sentAt={new Date()}
+          attachment={{ id: 'artifact-1', filename, mimeType: 'application/octet-stream' }}
+        />,
+      );
+      expect(screen.getByText(expectedText)).toBeInTheDocument();
+    });
+
+    it('falls back to a generic gray box for an unrecognized extension', () => {
+      render(
+        <ChatMessage
+          message="see attached"
+          sentAt={new Date()}
+          attachment={{
+            id: 'artifact-1',
+            filename: 'data.xyz',
+            mimeType: 'application/octet-stream',
+          }}
+        />,
+      );
+      const box = screen.getByText('XYZ');
+      expect(box).toHaveClass('bg-gray-100');
+    });
+
+    it('renders nothing extra when no attachment is provided', () => {
+      render(<ChatMessage message="hi" sentAt={new Date()} />);
+      expect(document.querySelector('[data-slot="chat-message-attachment"]')).toBeNull();
+    });
+  });
+
+  describe('ChatMessageAttachmentWarningAction', () => {
+    it('renders a button with a tooltip explaining the exclusion', () => {
+      render(
+        <TooltipProvider>
+          <ChatMessageAttachmentWarningAction />
+        </TooltipProvider>,
+      );
+      expect(screen.getByRole('button', { name: 'Attachments Not Processed' })).toBeInTheDocument();
     });
   });
 

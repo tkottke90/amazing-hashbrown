@@ -24,15 +24,32 @@ function safe<T>(threadId: string, action: string, fn: () => T): T | null {
   }
 }
 
+export interface UserMessageAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  // Whether the model actually received this attachment (false when it
+  // required vision and the active model didn't support it) — the stored
+  // `content` is always the plain text the user typed, never the
+  // multimodal/merged-text variant handed to the LLM, so history always
+  // shows what the user wrote regardless of `included`.
+  included: boolean;
+}
+
 export function recordUserMessage(
   store: ThreadStore,
   threadId: string,
   id: string,
   content: string,
   sentAt: string,
+  attachment?: UserMessageAttachment,
 ): number | null {
   return safe(threadId, 'recordUserMessage', () => {
-    return store.insertMessage(threadId, { id, kind: 'user', payload: { content, sentAt } }).seq;
+    return store.insertMessage(threadId, {
+      id,
+      kind: 'user',
+      payload: { content, sentAt, ...(attachment ? { attachment } : {}) },
+    }).seq;
   });
 }
 

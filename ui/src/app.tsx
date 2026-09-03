@@ -2,6 +2,7 @@ import { LocationProvider, Router, useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
 import { ToastContainer } from '@/components/toast-container';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { activeThreadId } from '@/hooks/use-thread';
 import { ChatRoot } from '@/pages/chat';
 import { SettingsView } from '@/pages/settings';
@@ -23,17 +24,19 @@ function RootRedirect(_props: { path?: string }) {
 export function App() {
   return (
     <LocationProvider>
-      <ToastContainer />
-      <Router>
-        <RootRedirect path="/" />
-        <ChatRoot path="/chat/:id" />
-        <WikiView path="/wiki" />
-        <SettingsView path="/settings" />
-        <WorkspacesView path="/workspaces" />
-        <WorkspaceDetailView path="/workspaces/:id" />
-        <CloseProjectView path="/workspaces/:id/close" />
-        <InboxView path="/inbox" />
-      </Router>
+      <TooltipProvider>
+        <ToastContainer />
+        <Router>
+          <RootRedirect path="/" />
+          <ChatRoot path="/chat/:id" />
+          <WikiView path="/wiki" />
+          <SettingsView path="/settings" />
+          <WorkspacesView path="/workspaces" />
+          <WorkspaceDetailView path="/workspaces/:id" />
+          <CloseProjectView path="/workspaces/:id/close" />
+          <InboxView path="/inbox" />
+        </Router>
+      </TooltipProvider>
     </LocationProvider>
   );
 }

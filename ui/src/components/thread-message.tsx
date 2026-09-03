@@ -1,4 +1,9 @@
-import { ChatMessage, ChatMessageCopyAction, ChatMessageForkAction } from './chat-message';
+import {
+  ChatMessage,
+  ChatMessageCopyAction,
+  ChatMessageForkAction,
+  ChatMessageAttachmentWarningAction,
+} from './chat-message';
 import { AssistantMessage } from './assistant-message';
 import { ToolCallMessage } from './tool-call-message';
 import { HitlPromptMessage } from './hitl-prompt-message';
@@ -31,12 +36,14 @@ export function ThreadMessageItem({
           mirrored
           showBG
           className="self-end"
+          attachment={message.attachment}
           actions={
             <>
               <ChatMessageCopyAction content={message.content} />
               {message.seq !== undefined && onFork && (
                 <ChatMessageForkAction onFork={() => onFork(message.seq!)} />
               )}
+              {message.attachment?.included === false && <ChatMessageAttachmentWarningAction />}
             </>
           }
         />

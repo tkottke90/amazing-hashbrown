@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { Check, Download, Hash, RotateCcw } from 'lucide-preact';
 import type { RefObject } from 'preact';
-import { ChatInput } from '@/components/chat-input';
+import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
@@ -32,6 +32,7 @@ export function IngestionChat({ chatInputRef }: Props) {
   const inputValue = useSignal('');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const copied = useSignal(false);
+  const stagedAttachment = useSignal<StagedAttachment | null>(null);
 
   function handleCopyThreadId() {
     void navigator.clipboard.writeText(wikiThreadId.value).then(() => {
@@ -61,7 +62,9 @@ export function IngestionChat({ chatInputRef }: Props) {
     const content = inputValue.value.trim();
     if (!content) return;
     inputValue.value = '';
-    void sendWikiMessage(content);
+    const attachmentId = stagedAttachment.value?.id;
+    stagedAttachment.value = null;
+    void sendWikiMessage(content, attachmentId);
   }
 
   const resolvedProvider =
@@ -158,6 +161,10 @@ export function IngestionChat({ chatInputRef }: Props) {
           activeProvider={resolvedProvider}
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}
+          threadId={wikiThreadId.value}
+          onAttachmentChange={(attachment) => {
+            stagedAttachment.value = attachment;
+          }}
         />
       </div>
     </div>
