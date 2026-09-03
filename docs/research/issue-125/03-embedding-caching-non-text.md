@@ -7,6 +7,7 @@ Research for [issue #125](https://github.com/tkottke90/amazing-hashbrown/issues/
 The premise in the issue: if a user attaches the same image to a conversation and the harness re-runs (retries, multi-turn follow-ups, etc.), does the system need to re-compute/re-embed that file every single time, or is there a standard caching layer that avoids that repeated cost?
 
 Two different things are easy to conflate here, and the research surfaced a real distinction:
+
 - **Avoiding re-sending/re-encoding raw bytes** (a payload/bandwidth optimization).
 - **Avoiding re-computing a model's internal embedding/encoder representation of the file** (a compute optimization, done inside an inference engine, not in a client harness).
 
@@ -18,7 +19,7 @@ Two different things are easy to conflate here, and the research surfaced a real
 
 1. **Context-management, not embedding caching.** LangChain's `deepagents` docs recommend that for long agent runs, non-text content (screenshots, charts, images) should be stored in a filesystem backend or external object store, with only a file path or URL passed through the conversation messages — not the raw bytes re-embedded into context on every turn. This is framed explicitly as **context-size / token-bloat management**, not as avoiding re-computation cost. An independent LangChain community forum thread gives the same advice. This solves "don't blow up your context window with repeated base64 blobs," which is a real and relevant problem for this repo's chat harness — but it is not embedding caching.
 
-2. **Upload-once-reference-many via provider Files APIs.** Both Anthropic and Gemini offer a Files API: upload a file once, get back a reference (`file_id` for Anthropic), and pass that reference in subsequent requests instead of re-sending/re-encoding the raw file each time. This avoids repeated base64 encoding and repeated payload transfer. **This is the closest thing to a real, vendor-documented answer to the spirit of the question** — but it's the provider avoiding re-*ingesting* your upload, not the harness avoiding re-*embedding* a vector representation itself. One narrower claim — that Anthropic explicitly frames this as being *for* avoiding re-processing cost across turns — did not survive verification (voted down 1-2); the Files API exists and works this way, but don't over-attribute the vendor's stated rationale.
+2. **Upload-once-reference-many via provider Files APIs.** Both Anthropic and Gemini offer a Files API: upload a file once, get back a reference (`file_id` for Anthropic), and pass that reference in subsequent requests instead of re-sending/re-encoding the raw file each time. This avoids repeated base64 encoding and repeated payload transfer. **This is the closest thing to a real, vendor-documented answer to the spirit of the question** — but it's the provider avoiding re-_ingesting_ your upload, not the harness avoiding re-_embedding_ a vector representation itself. One narrower claim — that Anthropic explicitly frames this as being _for_ avoiding re-processing cost across turns — did not survive verification (voted down 1-2); the Files API exists and works this way, but don't over-attribute the vendor's stated rationale.
 
 ### What was checked and refuted (i.e., don't repeat these as fact):
 
@@ -28,7 +29,7 @@ Two different things are easy to conflate here, and the research surfaced a real
 
 ## 3. How This Would Be Implemented "At Scale" — Honest Assessment
 
-There isn't a proven "at scale" implementation to point to for the actual question asked (harness-level embedding cache for repeated non-text input). What *is* proven at scale:
+There isn't a proven "at scale" implementation to point to for the actual question asked (harness-level embedding cache for repeated non-text input). What _is_ proven at scale:
 
 - **Files API reuse** (Anthropic, Gemini) is production, vendor-supported, and directly reduces repeated encode/transfer cost for a file reused across multiple turns or requests. If `amazing-hashbrown`'s harness re-sends the same attachment across turns in a thread, uploading once via the provider's Files API and storing the returned reference (alongside the attachment metadata) is the correct, supported pattern — not a custom embedding cache.
 - **External storage + reference passing** (deepagents' pattern) is the right fix for context-window bloat from repeated large attachments, independent of the Files API question.

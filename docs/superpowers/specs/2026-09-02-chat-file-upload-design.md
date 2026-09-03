@@ -197,7 +197,7 @@ attachment?: {
 };
 ```
 
-Two independent pieces of UI consume this, deliberately decoupled — one always shows *what* was attached, the other shows *whether the model got it*:
+Two independent pieces of UI consume this, deliberately decoupled — one always shows _what_ was attached, the other shows _whether the model got it_:
 
 1. **Attachment preview**, rendered inside the message body (`chat-message.tsx`'s `chat-message-body` region), regardless of `included`:
    - Image (`mimeType.startsWith('image/')`) → a boxed `<img>` thumbnail sourced from the existing `GET /api/v1/artifacts/:id` (the `web` WebP variant), constrained via CSS (e.g. `size-24 object-cover rounded-md`) — no new image-size variant needed.

@@ -166,7 +166,10 @@ describe('ChatInput — file attachment', () => {
     fireFileInputChange(input, file);
 
     await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
-    expect(global.fetch).toHaveBeenCalledWith('/api/v1/artifacts', expect.objectContaining({ method: 'POST' }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/artifacts',
+      expect.objectContaining({ method: 'POST' }),
+    );
     expect(onAttachmentChange).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'artifact-1', displayFilename: 'photo.png' }),
     );
@@ -236,7 +239,9 @@ describe('ChatInput — vision-capability warning badge', () => {
     global.fetch = originalFetch;
   });
 
-  function renderWithStagedImage(providers: Parameters<typeof ControlledChatInput>[0]['providers']) {
+  function renderWithStagedImage(
+    providers: Parameters<typeof ControlledChatInput>[0]['providers'],
+  ) {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -268,7 +273,9 @@ describe('ChatInput — vision-capability warning badge', () => {
     ]);
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /does not support image input/ })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('button', { name: /does not support image input/ }),
+      ).toBeInTheDocument(),
     );
   });
 
@@ -278,14 +285,18 @@ describe('ChatInput — vision-capability warning badge', () => {
     ]);
 
     await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /does not support image input/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /does not support image input/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the warning badge when no model is known for the provider (conservative default)', async () => {
     renderWithStagedImage([{ name: 'ollama', type: 'ollama', models: [] }]);
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /does not support image input/ })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('button', { name: /does not support image input/ }),
+      ).toBeInTheDocument(),
     );
   });
 });

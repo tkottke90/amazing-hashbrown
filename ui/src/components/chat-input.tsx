@@ -199,9 +199,8 @@ export function ChatInput({
   }
 
   const activeModelImageInput =
-    providers
-      ?.find((p) => p.name === activeProvider)
-      ?.models.find((m) => m.id === activeModel)?.imageInput ?? false;
+    providers?.find((p) => p.name === activeProvider)?.models.find((m) => m.id === activeModel)
+      ?.imageInput ?? false;
   const showVisionWarning = !!stagedAttachment.value?.requiresVision && !activeModelImageInput;
 
   // App-controlled open state for the "Provider" sub-menu, mirroring

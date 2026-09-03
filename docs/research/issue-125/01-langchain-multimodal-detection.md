@@ -33,6 +33,7 @@ if attachment.kind == "image" and not model.profile.get("image_inputs"):
 ```
 
 Given the beta status, treat `.profile` as a **hint with a fallback**, not gospel:
+
 1. Check `model.profile[<kind>_inputs]` first — cheap, no network call, and it's the same mechanism LangChain's own agents are moving to.
 2. If `.profile` is missing/empty for a model (older LangChain version, or a provider not yet in the models.dev dataset), fall back to a small provider-specific capability table we maintain ourselves (see the preprocessing research doc for the concrete per-provider constraints that table would need anyway).
 

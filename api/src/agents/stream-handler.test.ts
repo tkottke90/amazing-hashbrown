@@ -842,13 +842,7 @@ describe('agents/stream-handler', () => {
         requiresVision: true,
       });
 
-      const result = await resolveAttachmentForTurn(
-        id,
-        'look at this',
-        'p',
-        'm',
-        async () => true,
-      );
+      const result = await resolveAttachmentForTurn(id, 'look at this', 'p', 'm', async () => true);
 
       expect(result.llmContent).to.deep.equal([
         { type: 'text', text: 'look at this' },

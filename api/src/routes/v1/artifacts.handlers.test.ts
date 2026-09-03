@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
-import { bootArtifactStore, getArtifactMeta, storeArtifact } from '../../artifacts/artifact-store.js';
+import {
+  bootArtifactStore,
+  getArtifactMeta,
+  storeArtifact,
+} from '../../artifacts/artifact-store.js';
 import { uploadArtifactHandler, deleteArtifactHandler } from './artifacts.handlers.js';
 
 // A real, valid 1x1 transparent PNG — small enough to embed inline, but a

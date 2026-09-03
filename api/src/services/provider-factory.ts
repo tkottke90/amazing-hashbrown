@@ -213,7 +213,10 @@ export async function hasOllamaVisionCapability(
  * never populated speculatively. Not consulted for Ollama, which always
  * uses the live check above instead.
  */
-export const FALLBACK_VISION_CAPABILITIES: Record<ProviderConfig['type'], Record<string, boolean>> = {
+export const FALLBACK_VISION_CAPABILITIES: Record<
+  ProviderConfig['type'],
+  Record<string, boolean>
+> = {
   ollama: {},
   openai: {},
   anthropic: {},
@@ -246,7 +249,9 @@ export async function resolveVisionCapabilityFromConfig(
   try {
     const llm = createProviderFromConfig(providerConfig, modelId);
     return (
-      llm.profile?.imageInputs ?? FALLBACK_VISION_CAPABILITIES[providerConfig.type][modelId] ?? false
+      llm.profile?.imageInputs ??
+      FALLBACK_VISION_CAPABILITIES[providerConfig.type][modelId] ??
+      false
     );
   } catch {
     return false;

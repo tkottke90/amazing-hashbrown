@@ -21,22 +21,24 @@ Once we know a model accepts a given input modality (see doc 01), the raw upload
 LangChain Community ships dedicated parsers for turning non-text content into text before it ever reaches the model, when the goal is extraction rather than vision-model consumption:
 
 - **`TesseractBlobParser`** and **`RapidOCRBlobParser`** — pure OCR, no LLM call. Good for scanned text where you don't need/want to spend a vision-model call.
-- **`LLMImageBlobParser`** — a distinct code path: hands the image plus a prompt to a caller-supplied vision-capable model to summarize or extract text. This is what you use when you *do* want a multi-modal model in the loop (e.g. "describe this screenshot" rather than "OCR this scanned invoice").
+- **`LLMImageBlobParser`** — a distinct code path: hands the image plus a prompt to a caller-supplied vision-capable model to summarize or extract text. This is what you use when you _do_ want a multi-modal model in the loop (e.g. "describe this screenshot" rather than "OCR this scanned invoice").
 
 These matter for the "non-image files" case noted in the issue's Dev Notes (extracting text server-side and prepending it as context) — this is the existing LangChain-native mechanism for that, rather than something to build from scratch.
 
 ### Provider-specific hard constraints (these are the real gotchas)
 
 **Anthropic (Claude) — vision API:**
+
 - Accepts **JPEG, PNG, GIF, WebP only**. Anything else (e.g. BMP, TIFF, HEIC) must be converted first.
 - Animated GIFs are reduced to their **first frame only** — no animation support.
 - Exactly **three submission modes**: base64, remote URL, or a `file_id` from the Files API.
 - Hard limits: max **8000×8000px**, and a **10MB cap on the base64-encoded payload** — both of which mean the harness needs to resize/recompress oversized images before sending, not just reject them outright.
 
 **Google Gemini / Firebase AI Logic:**
+
 - Inline base64 images are accepted, but **base64 encoding itself inflates payload size** (~33% larger than raw bytes), and the **total request size is capped at 20MB** on the Firebase AI Logic surface.
 - The Files API is recommended instead for large files, or when the same file will be reused across multiple requests.
-- One claim we checked and **refuted**: Firebase does *not* auto-tile/auto-resize oversized images for you (a specific "auto-tiles images >384×384" claim failed adversarial verification 1-2). Don't rely on the platform to resize on your behalf on this surface — treat resizing as the harness's job unless a specific vendor doc says otherwise for the exact API you're calling.
+- One claim we checked and **refuted**: Firebase does _not_ auto-tile/auto-resize oversized images for you (a specific "auto-tiles images >384×384" claim failed adversarial verification 1-2). Don't rely on the platform to resize on your behalf on this surface — treat resizing as the harness's job unless a specific vendor doc says otherwise for the exact API you're calling.
 - Note: the raw Gemini Developer API (as opposed to Firebase AI Logic) may have a different, higher cap on a separate surface per more recent vendor announcements — the 20MB figure is specific to the Firebase AI Logic input path, not necessarily every Gemini entry point.
 
 ## 3. How This Is Implemented Successfully (At Scale)

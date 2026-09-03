@@ -14,10 +14,7 @@ import {
 } from './provider-factory.js';
 import type { ProviderConfig } from '../config/env.js';
 
-function stubOllamaClient(
-  capabilities: string[] | undefined,
-  fail = false,
-): Pick<Ollama, 'show'> {
+function stubOllamaClient(capabilities: string[] | undefined, fail = false): Pick<Ollama, 'show'> {
   return {
     show: async () => {
       if (fail) throw new Error('boom');
@@ -140,7 +137,10 @@ describe('services/provider-factory', () => {
     it('falls back to FALLBACK_VISION_CAPABILITIES for an unknown openai model', async () => {
       FALLBACK_VISION_CAPABILITIES.openai['my-custom-vision-model'] = true;
       try {
-        const result = await resolveVisionCapabilityFromConfig(openaiConfig, 'my-custom-vision-model');
+        const result = await resolveVisionCapabilityFromConfig(
+          openaiConfig,
+          'my-custom-vision-model',
+        );
         expect(result).to.equal(true);
       } finally {
         delete FALLBACK_VISION_CAPABILITIES.openai['my-custom-vision-model'];

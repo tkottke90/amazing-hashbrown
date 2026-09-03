@@ -164,7 +164,11 @@ describe('ChatMessage', () => {
         <ChatMessage
           message="see attached"
           sentAt={new Date()}
-          attachment={{ id: 'artifact-1', filename: 'data.xyz', mimeType: 'application/octet-stream' }}
+          attachment={{
+            id: 'artifact-1',
+            filename: 'data.xyz',
+            mimeType: 'application/octet-stream',
+          }}
         />,
       );
       const box = screen.getByText('XYZ');
@@ -184,9 +188,7 @@ describe('ChatMessage', () => {
           <ChatMessageAttachmentWarningAction />
         </TooltipProvider>,
       );
-      expect(
-        screen.getByRole('button', { name: 'Attachments Not Processed' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Attachments Not Processed' })).toBeInTheDocument();
     });
   });
 

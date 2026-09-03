@@ -573,7 +573,10 @@ export async function resolveAttachmentForTurn(
   content: string,
   providerName: string | undefined,
   modelId: string | undefined,
-  checkVision: (providerName: string | undefined, modelId: string) => Promise<boolean> = resolveVisionCapability,
+  checkVision: (
+    providerName: string | undefined,
+    modelId: string,
+  ) => Promise<boolean> = resolveVisionCapability,
 ): Promise<ResolvedAttachmentForTurn> {
   if (!attachmentId) return { llmContent: content, record: undefined };
 
