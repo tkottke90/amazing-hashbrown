@@ -21,7 +21,7 @@ import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-t
 import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
 import { bootSkillsManager } from '../api/src/services/skills-manager.js';
 import { askUserTool } from '../api/src/agents/tools/ask-user.tool.js';
-import { shellExecTool } from '../api/src/agents/tools/shell-exec.tool.js';
+import { makeShellExecTool } from '../api/src/agents/tools/shell-exec.tool.js';
 import { uploadImageTool } from '../api/src/agents/tools/upload-image.tool.js';
 import { wikiSearchTool } from '../api/src/agents/tools/wiki-search.tool.js';
 import { wikiReadPageTool } from '../api/src/agents/tools/wiki-read-page.tool.js';
@@ -50,7 +50,7 @@ const evalTools = [
   // Safe to bind here even though it can run real commands: tool-call and
   // tool-sequence scenarios only inspect response.tool_calls — the runner
   // never executes the bound tools (see invokeToolCallModel in runner.ts).
-  shellExecTool,
+  makeShellExecTool(),
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,

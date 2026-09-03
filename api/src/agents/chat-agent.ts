@@ -12,7 +12,7 @@ import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
-import { shellExecTool } from './tools/shell-exec.tool.js';
+import { makeShellExecTool } from './tools/shell-exec.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
 import { makeWikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
 import { makeWikiCreatePageTool } from './tools/wiki-create-page.tool.js';
@@ -155,9 +155,10 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 // semantics. Shared by buildChatAgent and buildWorkspaceChatAgent so both
 // agent flavors see the exact same tool set — MCP tools are appended
 // separately by loadMcpTools() since they're fetched, not static.
+// shell_exec is NOT here — it's built per-agent via makeShellExecTool() below
+// so workspace/task agents can bind it to that workspace's own directory.
 const STATIC_CHAT_TOOLS = [
   askUserTool,
-  shellExecTool,
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,
@@ -223,7 +224,13 @@ async function buildChatAgent(provider?: string, model?: string) {
   const systemPrompt = buildSystemPrompt(getAgentInstructions());
   const agent = createAgent({
     model: llm,
-    tools: [...STATIC_CHAT_TOOLS, ...buildGatedTools(), ...buildWikiWriteTools(), ...mcpTools],
+    tools: [
+      makeShellExecTool(),
+      ...STATIC_CHAT_TOOLS,
+      ...buildGatedTools(),
+      ...buildWikiWriteTools(),
+      ...mcpTools,
+    ],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
@@ -291,6 +298,7 @@ async function buildWorkspaceChatAgent(
   const agent = createAgent({
     model: llm,
     tools: [
+      makeShellExecTool(workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
       ...buildGatedTools(),
       ...buildWikiWriteTools(allowedWikiId),
@@ -422,6 +430,7 @@ export async function buildTaskAgent(
   const agent = createAgent({
     model: llm,
     tools: [
+      makeShellExecTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
       ...buildGatedTools(),
       ...buildWikiWriteTools(workspaceScope?.allowedWikiId),

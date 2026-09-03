@@ -28,54 +28,62 @@ const ShellExecSchema = z.object({
   threadId: z.string().optional().describe('Thread ID for session allowlist scoping'),
 });
 
-export const shellExecTool = tool(
-  async (input: z.infer<typeof ShellExecSchema>) => {
-    const { command, reason, threadId } = input;
-    const config = env.tools?.shell ?? ShellExecutorConfigSchema.parse({});
-    const sessionAllowlist = threadId ? getSessionPatterns(threadId) : [];
+// workingDirectory overrides the configured cwd — passed by workspace/task
+// agent builds so commands run inside that workspace's own directory
+// (workspace.location) instead of the global tools.shell.workingDirectory
+// default. Omitted for plain (non-workspace) chat, which has no directory
+// to bind to.
+export function makeShellExecTool(workingDirectory?: string) {
+  return tool(
+    async (input: z.infer<typeof ShellExecSchema>) => {
+      const { command, reason, threadId } = input;
+      const baseConfig = env.tools?.shell ?? ShellExecutorConfigSchema.parse({});
+      const config = workingDirectory ? { ...baseConfig, workingDirectory } : baseConfig;
+      const sessionAllowlist = threadId ? getSessionPatterns(threadId) : [];
 
-    const onApprovalRequired: ApprovalCallback = async (cmd, rsn) => {
-      // interrupt() suspends the graph. Returns the user's answer on resume.
-      const answer = interrupt({
-        kind: 'shell_approval',
-        command: cmd,
-        reason: rsn,
-      }) as string;
+      const onApprovalRequired: ApprovalCallback = async (cmd, rsn) => {
+        // interrupt() suspends the graph. Returns the user's answer on resume.
+        const answer = interrupt({
+          kind: 'shell_approval',
+          command: cmd,
+          reason: rsn,
+        }) as string;
 
-      if (answer === 'approved_remember' && threadId) {
-        appendSessionPattern(threadId, cmd);
-        return 'approved';
-      }
-
-      return answer === 'approved' || answer === 'approved_remember' ? 'approved' : 'denied';
-    };
-
-    const executor = new ShellExecutor(config, {
-      sessionAllowlist,
-      onApprovalRequired,
-      // fetched lazily so store is guaranteed to be initialised
-      auditWriter: (() => {
-        try {
-          return getShellAuditWriter();
-        } catch {
-          return undefined;
+        if (answer === 'approved_remember' && threadId) {
+          appendSessionPattern(threadId, cmd);
+          return 'approved';
         }
-      })(),
-    });
 
-    const result = await executor.execute(command, reason);
+        return answer === 'approved' || answer === 'approved_remember' ? 'approved' : 'denied';
+      };
 
-    const parts: string[] = [`exit ${result.exitCode}`];
-    if (result.stdout) parts.push(result.stdout);
-    if (result.stderr) parts.push(result.stderr);
-    return parts.join('\n');
-  },
-  {
-    name: 'shell_exec',
-    description:
-      'Execute a shell command in the configured working directory. ' +
-      'Commands that are not on the policy allowlist require user approval before running. ' +
-      'Always provide a clear reason so the user understands why the command is needed.',
-    schema: ShellExecSchema,
-  },
-);
+      const executor = new ShellExecutor(config, {
+        sessionAllowlist,
+        onApprovalRequired,
+        // fetched lazily so store is guaranteed to be initialised
+        auditWriter: (() => {
+          try {
+            return getShellAuditWriter();
+          } catch {
+            return undefined;
+          }
+        })(),
+      });
+
+      const result = await executor.execute(command, reason);
+
+      const parts: string[] = [`exit ${result.exitCode}`];
+      if (result.stdout) parts.push(result.stdout);
+      if (result.stderr) parts.push(result.stderr);
+      return parts.join('\n');
+    },
+    {
+      name: 'shell_exec',
+      description:
+        'Execute a shell command in the configured working directory. ' +
+        'Commands that are not on the policy allowlist require user approval before running. ' +
+        'Always provide a clear reason so the user understands why the command is needed.',
+      schema: ShellExecSchema,
+    },
+  );
+}
