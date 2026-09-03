@@ -45,14 +45,21 @@ describe('artifacts/artifact-classifier', () => {
     expect(result).to.deep.equal({ requiresVision: true, extractedText: null });
   });
 
-  it('classifies a text-bearing PDF as not requiring vision, extracting its text', async () => {
+  it('classifies a text-bearing PDF as not requiring vision, extracting its text', async function () {
+    // pdf-parse's first call in the process loads lazily and can take
+    // longer than mocha's 2000ms default, independent of this test's own
+    // work — bump the timeout rather than mocking the library out.
+    this.timeout(10_000);
     const pdf = buildMinimalPdf('BT /F1 24 Tf 10 100 Td (Hello World) Tj ET');
     const result = await classifyArtifact('application/pdf', pdf);
     expect(result.requiresVision).to.equal(false);
     expect(result.extractedText).to.equal('Hello World');
   });
 
-  it('classifies a scanned/no-text-layer PDF as requiring vision, with no extracted text', async () => {
+  it('classifies a scanned/no-text-layer PDF as requiring vision, with no extracted text', async function () {
+    // Same cold-start cost as above if this happens to run before the
+    // other PDF test.
+    this.timeout(10_000);
     const pdf = buildMinimalPdf(''); // empty content stream — no text objects at all
     const result = await classifyArtifact('application/pdf', pdf);
     expect(result).to.deep.equal({ requiresVision: true, extractedText: null });
