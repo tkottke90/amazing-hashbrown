@@ -15,7 +15,7 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
-import { contextWindowMiddleware, getCheckpointer } from './chat-agent.js';
+import { createContextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { env } from '../config/env.js';
@@ -59,7 +59,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
         env.agent?.recursionLimit ?? 100,
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
-      contextWindowMiddleware,
+      createContextWindowMiddleware(env.chat?.contextWindow),
     ],
   });
 

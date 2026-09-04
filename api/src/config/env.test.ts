@@ -1,8 +1,19 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { CostEntrySchema } from './env.js';
+import { CostEntrySchema, ContextWindowSchema } from './env.js';
 
 describe('config/env', () => {
+  describe('ContextWindowSchema', () => {
+    it('defaults all fields when given an empty object', () => {
+      const result = ContextWindowSchema.parse({});
+      expect(result).to.deep.equal({
+        enabled: true,
+        maxTokens: 32000,
+        safetyMarginPct: 0.85,
+      });
+    });
+  });
+
   describe('CostEntrySchema', () => {
     it('defaults all fields when given an empty object', () => {
       const result = CostEntrySchema.parse({});
