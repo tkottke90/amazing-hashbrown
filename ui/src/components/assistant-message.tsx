@@ -37,7 +37,8 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
   // doesn't make sense, so it never shows the Retry action even expanded.
   const showRetry = isError && !isSuperseded && !!onRetry;
   const showFork = canFork && !!onFork;
-  const hasMetrics = !isStreaming && (message.durationMs !== undefined || !!message.cost);
+  const hasMetrics =
+    !isStreaming && (message.durationMs !== undefined || !!message.cost || !!message.usage);
 
   // Collapsed by default for a superseded row. The repurposed "Show failed
   // attempts" toggle (showErrorMessages) expands every superseded row at
@@ -135,6 +136,12 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
             <span>{message.cost.tokensPerSecond.toFixed(1)} tok/s</span>
           )}
           {message.cost?.dollars != null && <span>${message.cost.dollars.toFixed(4)}</span>}
+          {message.usage && (
+            <span>
+              ({message.usage.inputTokens.toLocaleString()} in /{' '}
+              {message.usage.outputTokens.toLocaleString()} out)
+            </span>
+          )}
         </span>
       )}
 

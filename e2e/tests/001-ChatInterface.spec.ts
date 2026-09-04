@@ -177,6 +177,135 @@ export const ChatInterface: TestSuite = {
       },
     },
     {
+      action: 'Reload the page after a chat message that carries cost/duration/token metrics',
+      expectedOutcome:
+        'The metrics row (duration, tok/s, cost, and token breakdown) survives a full page reload — rendered from the persisted thread payload, not just the live streamed turn (see issue #131)',
+      tag: [TAGS.Smoke],
+      test: async ({ page }, testInfo) => {
+        // Configure defaults for checking later
+        const defaultProvider = 'openai';
+        const defaultModel = 'gpt-4o-mini';
+        const message = 'Say exactly: pong';
+
+        // Setup a route listener for the LLM Models API (/api/v1/providers) to return a predictable response
+        await mockProviders(page, defaultProvider, defaultModel);
+
+        // Setup a route listener for the SSE to mock the API response.
+        await page.route('**/api/v1/chat/**', async (route: Route) => {
+          const url = new URL(route.request().url());
+          if (!/\/api\/v1\/chat\/[^/]+$/.test(url.pathname)) {
+            // Not the plain send endpoint (e.g. /retry, /hitl) — pass through untouched.
+            await route.fallback();
+            return;
+          }
+
+          // Same pacing rationale as the "Send a chat message" step above —
+          // gives the loading state a moment to actually render.
+          await new Promise((resolve) => setTimeout(resolve, 300));
+
+          const events = [
+            { type: 'text_delta', messageId: 'mock-msg-1', delta: 'pong' },
+            {
+              type: 'usage_stats',
+              messageId: 'mock-msg-1',
+              inputTokens: 6,
+              outputTokens: 1,
+              tokensPerSecond: 42.5,
+              estimatedCostUsd: 0.0004,
+            },
+            { type: 'stream_done', durationMs: 842, assistantSeq: 2, userSeq: 1 },
+          ];
+
+          await route.fulfill({
+            contentType: 'text/event-stream',
+            body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+          });
+        });
+
+        // Goto the Chat Page
+        await page.goto('/');
+        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+
+        // Click the "New Conversation" button
+        await pauseForVideo(page, ChatInterface, testInfo);
+        await page.getByRole('button', { name: 'New conversation' }).click();
+        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+        const threadId = new URL(page.url()).pathname.split('/').pop();
+
+        // Focus on the chat input & type in a message
+        const chatInput = page.locator('[data-slot="textarea"]');
+        await chatInput.click();
+        await chatInput.fill(message);
+
+        // Press Send button
+        await pauseForVideo(page, ChatInterface, testInfo);
+        const sendButton = page.locator('button[aria-label="Send message"]');
+        await expect(sendButton).toBeEnabled();
+        await sendButton.click();
+
+        // Wait for the live turn to complete and show its metrics row —
+        // confirms the live path still works before we test the reload path.
+        const assistantMessage = page.locator('[data-testid="assistant-message"]');
+        await expect(assistantMessage.locator('.animate-bounce').first()).not.toBeVisible({
+          timeout: 10_000,
+        });
+        await expect(assistantMessage).toContainText('pong');
+        await expect(assistantMessage).toContainText('tok/s');
+
+        // Now mock the hydrate GET a fresh page load makes (use-thread.ts's
+        // hydrate()), returning the exact flat-sibling shape
+        // finalizeAssistant persists (durationMs/usage/cost alongside
+        // content/sentAt — see thread-message-writer.ts). Registered only
+        // now, after the live turn above, so the *first* hydrate on initial
+        // page load (an empty, freshly-created thread) is unaffected.
+        await page.route(`**/api/v1/threads/${threadId}`, async (route: Route) => {
+          if (route.request().method() !== 'GET') {
+            await route.fallback();
+            return;
+          }
+          await route.fulfill({
+            json: {
+              messages: [
+                {
+                  id: 'mock-user-1',
+                  kind: 'user',
+                  content: message,
+                  sentAt: '2026-09-04T12:00:00.000Z',
+                  seq: 1,
+                },
+                {
+                  id: 'mock-msg-1',
+                  kind: 'assistant',
+                  status: 'done',
+                  content: 'pong',
+                  sentAt: '2026-09-04T12:00:01.000Z',
+                  seq: 2,
+                  durationMs: 842,
+                  usage: { inputTokens: 6, outputTokens: 1 },
+                  cost: { tokensPerSecond: 42.5, dollars: 0.0004 },
+                },
+              ],
+            },
+          });
+        });
+
+        // A full page reload — the live SSE session is gone, so anything
+        // still showing must have come from the hydrate response above.
+        await page.reload();
+
+        const reloadedAssistantMessage = page.locator('[data-testid="assistant-message"]');
+        await expect(reloadedAssistantMessage).toContainText('pong');
+
+        // Verify duration, tok/s, cost, and the token breakdown all survived
+        // the reload, sourced purely from the persisted payload.
+        await pauseForVideo(page, ChatInterface, testInfo);
+        await expect(reloadedAssistantMessage).toContainText('0.8s');
+        await expect(reloadedAssistantMessage).toContainText('42.5 tok/s');
+        await expect(reloadedAssistantMessage).toContainText('$0.0004');
+        await expect(reloadedAssistantMessage).toContainText('(6 in / 1 out)');
+      },
+    },
+    {
       action: 'Submit a chat message which requires the agent use a tool',
       expectedOutcome:
         'The agents messages will show up in chronological order rather than grouped by type',

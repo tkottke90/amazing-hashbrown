@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
-import { createProvider } from '../services/provider-factory.js';
+import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import type { WorkspaceStore } from '../services/workspace-store.js';
 import {
@@ -293,11 +293,31 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
   const turnText = extractLatestTurnText(messages);
   if (!turnText.trim()) return;
 
+  // Resolves the real provider/model this pipeline's LLM calls will run
+  // against, so the trace below (and the aggregate usage/cost dashboard it
+  // feeds) records accurate identity instead of a blank model whenever the
+  // triggering thread relies on the app's default provider/model — see
+  // stream-handler.ts's equivalent resolve block. Skipped when a test
+  // supplies `params.llm` directly (same condition as the `llm` escape
+  // hatch below): resolveProviderConfig() throws when no providers are
+  // configured, which test env deliberately doesn't set up, matching
+  // provider-factory.test.ts's own documented "can't test the live env
+  // path" limitation. Production callers never set `params.llm`.
+  const { resolvedProvider, resolvedModel } = params.llm
+    ? { resolvedProvider: provider ?? env.defaultProvider, resolvedModel: model ?? '' }
+    : (() => {
+        const providerConfig = resolveProviderConfig(provider);
+        return {
+          resolvedProvider: providerConfig.name,
+          resolvedModel: model ?? providerConfig.defaultModel!,
+        };
+      })();
+
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'after-agent',
     // No systemPrompt: this pipeline runs 4 distinct prompts (summarize/
     // classify/extract/merge) within one trace, none of which is "a system

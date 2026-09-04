@@ -66,52 +66,6 @@ describe('ChatMessage', () => {
     });
   });
 
-  describe('cost section', () => {
-    it('renders tokens per second when provided', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} cost={{ tokensPerSecond: 12.3 }} />);
-      expect(screen.getByText('12.3 tok/s')).toBeInTheDocument();
-    });
-
-    it('renders dollar amount when provided', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} cost={{ dollars: 0.0042 }} />);
-      expect(screen.getByText('$0.0042')).toBeInTheDocument();
-    });
-
-    it('renders both cost fields together', () => {
-      render(
-        <ChatMessage
-          message="hi"
-          sentAt={new Date()}
-          cost={{ tokensPerSecond: 8.5, dollars: 0.001 }}
-        />,
-      );
-      expect(screen.getByText('8.5 tok/s')).toBeInTheDocument();
-      expect(screen.getByText('$0.0010')).toBeInTheDocument();
-    });
-
-    it('renders nothing in the cost area when cost is omitted', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} />);
-      expect(slot('chat-message-cost')).toBeEmptyDOMElement();
-    });
-  });
-
-  describe('timing section', () => {
-    it('shows milliseconds for durations under one second', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} duration={450} />);
-      expect(screen.getByText('450ms')).toBeInTheDocument();
-    });
-
-    it('shows seconds with one decimal for durations over one second', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} duration={2500} />);
-      expect(screen.getByText('2.5s')).toBeInTheDocument();
-    });
-
-    it('renders nothing in the timing section when duration is omitted', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} />);
-      expect(slot('chat-message-timing')).toBeEmptyDOMElement();
-    });
-  });
-
   describe('actions slot', () => {
     it('renders provided actions', () => {
       render(
@@ -203,17 +157,14 @@ describe('ChatMessage', () => {
       expect(slot('chat-message')).not.toHaveAttribute('data-mirrored');
     });
 
-    it('uses "actions timing cost" grid areas by default', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} />);
+    it('uses the same grid areas regardless of mirrored', () => {
+      const { rerender } = render(<ChatMessage message="hi" sentAt={new Date()} />);
       expect(slot('chat-message')).toHaveStyle({
-        gridTemplateAreas: '"time time time" "msg msg msg" "actions timing cost"',
+        gridTemplateAreas: '"time time time" "msg msg msg" "actions actions actions"',
       });
-    });
-
-    it('uses "cost timing actions" grid areas when mirrored', () => {
-      render(<ChatMessage message="hi" sentAt={new Date()} mirrored />);
+      rerender(<ChatMessage message="hi" sentAt={new Date()} mirrored />);
       expect(slot('chat-message')).toHaveStyle({
-        gridTemplateAreas: '"time time time" "msg msg msg" "cost timing actions"',
+        gridTemplateAreas: '"time time time" "msg msg msg" "actions actions actions"',
       });
     });
   });

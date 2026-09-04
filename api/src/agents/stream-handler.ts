@@ -25,6 +25,7 @@ import {
   recordWikiUpdate,
   recordResourceCard,
   type UserMessageAttachment,
+  type AssistantMetrics,
 } from './thread-message-writer.js';
 import { extractToolResultContent } from './tool-output.js';
 import {
@@ -33,7 +34,7 @@ import {
   getExtractedText,
   markArtifactReferenced,
 } from '../artifacts/artifact-store.js';
-import { resolveVisionCapability } from '../services/provider-factory.js';
+import { resolveVisionCapability, resolveProviderConfig } from '../services/provider-factory.js';
 
 // ---- SSE write helper ----
 
@@ -322,26 +323,21 @@ export async function finalizeTurn(
   // unchanged for them.
   taskId?: string,
 ): Promise<{ interrupted: boolean }> {
+  const durationMs = Date.now() - startedAt;
   const config = { configurable: { thread_id: threadId } };
   const state = await agent.graph.getState(config);
   const checkpointId = (state.config.configurable?.checkpoint_id as string | undefined) ?? null;
 
-  finalizeAssistant(
-    threadStore,
-    threadId,
-    msgId,
-    content,
-    thoughtContent,
-    turnSentAt,
-    checkpointId,
-  );
+  let metrics: AssistantMetrics | undefined;
 
   if (obsHandler) {
     const inputTokens = obsHandler.totalInputTokens;
     const outputTokens = obsHandler.totalOutputTokens;
-    const durationMs = obsHandler.turnDurationMs;
+    const obsDurationMs = obsHandler.turnDurationMs;
     const tps =
-      durationMs > 0 ? Math.round((outputTokens / (durationMs / 1000)) * 100) / 100 : undefined;
+      obsDurationMs > 0
+        ? Math.round((outputTokens / (obsDurationMs / 1000)) * 100) / 100
+        : undefined;
     const contextWindowLimit = env.chat.contextWindow?.maxTokens ?? 32000;
     const cwTokens =
       obsHandler.lastContextWindowInputTokens > 0
@@ -360,6 +356,19 @@ export async function finalizeTurn(
         (outputTokens / 1000) * rates.outputPer1kTokens
       : undefined;
 
+    metrics = {
+      durationMs,
+      usage: { inputTokens, outputTokens },
+      ...(tps !== undefined || estimatedCostUsd !== undefined
+        ? {
+            cost: {
+              ...(tps !== undefined ? { tokensPerSecond: tps } : {}),
+              ...(estimatedCostUsd !== undefined ? { dollars: estimatedCostUsd } : {}),
+            },
+          }
+        : {}),
+    };
+
     writeSseEvent(sink, {
       type: 'usage_stats',
       messageId: msgId,
@@ -372,6 +381,17 @@ export async function finalizeTurn(
       ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
     });
   }
+
+  finalizeAssistant(
+    threadStore,
+    threadId,
+    msgId,
+    content,
+    thoughtContent,
+    turnSentAt,
+    checkpointId,
+    metrics,
+  );
 
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
@@ -487,7 +507,7 @@ export async function finalizeTurn(
   } else {
     writeSseEvent(sink, {
       type: 'stream_done',
-      durationMs: Date.now() - startedAt,
+      durationMs,
       ...(assistantSeq !== null ? { assistantSeq } : {}),
       ...(userSeq !== null ? { userSeq } : {}),
     });
@@ -676,6 +696,9 @@ export async function streamChatToSse(
     }
 
     const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = { configurable: { thread_id: threadId } };
     const msgId = randomUUID();
     const turnSentAt = new Date().toISOString();
@@ -707,8 +730,8 @@ export async function streamChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'chat',
       systemPrompt,
     });
@@ -723,8 +746,8 @@ export async function streamChatToSse(
       threadId,
       msgId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     setActiveSseWriter(threadId, sink);
@@ -780,8 +803,8 @@ export async function streamChatToSse(
         assistantSeq,
         userSeq,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {
@@ -835,6 +858,9 @@ export async function resumeChatToSse(
     }
 
     const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = { configurable: { thread_id: threadId } };
     const msgId = randomUUID();
     const turnSentAt = new Date().toISOString();
@@ -858,8 +884,8 @@ export async function resumeChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'chat',
       systemPrompt,
     });
@@ -874,8 +900,8 @@ export async function resumeChatToSse(
       threadId,
       msgId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     setActiveSseWriter(threadId, sink);
@@ -925,8 +951,8 @@ export async function resumeChatToSse(
         assistantSeq,
         null,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {
@@ -982,6 +1008,9 @@ export async function retryChatToSse(
     }
 
     const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = { configurable: { thread_id: threadId } };
 
     const failedId = threadStore.resolveRetryTarget(threadId);
@@ -997,8 +1026,8 @@ export async function retryChatToSse(
       msgId,
       failedId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     const sink = makeLiveSseWriter(res, threadStore, threadId);
@@ -1008,8 +1037,8 @@ export async function retryChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'chat',
       systemPrompt,
     });
@@ -1066,8 +1095,8 @@ export async function retryChatToSse(
         assistantSeq,
         null,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {

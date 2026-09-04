@@ -21,7 +21,7 @@ import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
 import { getTaskScheduler } from '../services/task-scheduler.js';
 import { getWikiRegistry } from '../services/wiki.js';
-import { createProvider } from '../services/provider-factory.js';
+import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import {
   getWorkspaceStore,
   type Workspace,
@@ -132,6 +132,9 @@ export async function streamWorkspaceChatToSse(
       effectiveModel,
       allowedWikiId,
     );
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = {
       configurable: {
         thread_id: threadId,
@@ -149,8 +152,8 @@ export async function streamWorkspaceChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'workspace-chat',
       systemPrompt,
     });
@@ -165,8 +168,8 @@ export async function streamWorkspaceChatToSse(
       threadId,
       msgId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     setActiveSseWriter(threadId, sink);
@@ -218,8 +221,8 @@ export async function streamWorkspaceChatToSse(
         assistantSeq,
         userSeq,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
 
       await maybeSummarizeWorkspace(
@@ -227,9 +230,9 @@ export async function streamWorkspaceChatToSse(
         workspaceStore,
         threadStore,
         workspace,
-        createProvider(effectiveProvider, effectiveModel),
-        effectiveProvider,
-        effectiveModel,
+        createProvider(resolvedProvider, resolvedModel),
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {
@@ -300,6 +303,9 @@ export async function resumeWorkspaceChatToSse(
       effectiveModel,
       allowedWikiId,
     );
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = {
       configurable: {
         thread_id: threadId,
@@ -327,8 +333,8 @@ export async function resumeWorkspaceChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'workspace-chat',
       systemPrompt,
     });
@@ -343,8 +349,8 @@ export async function resumeWorkspaceChatToSse(
       threadId,
       msgId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     setActiveSseWriter(threadId, sink);
@@ -393,8 +399,8 @@ export async function resumeWorkspaceChatToSse(
         assistantSeq,
         null,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
 
       await maybeSummarizeWorkspace(
@@ -402,9 +408,9 @@ export async function resumeWorkspaceChatToSse(
         workspaceStore,
         threadStore,
         workspace,
-        createProvider(effectiveProvider, effectiveModel),
-        effectiveProvider,
-        effectiveModel,
+        createProvider(resolvedProvider, resolvedModel),
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {
@@ -473,6 +479,9 @@ export async function retryWorkspaceChatToSse(
       effectiveModel,
       allowedWikiId,
     );
+    const providerConfig = resolveProviderConfig(effectiveProvider);
+    const resolvedProvider = providerConfig.name;
+    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
     const config = {
       configurable: {
         thread_id: threadId,
@@ -493,8 +502,8 @@ export async function retryWorkspaceChatToSse(
       msgId,
       failedId,
       turnSentAt,
-      effectiveProvider,
-      effectiveModel,
+      resolvedProvider,
+      resolvedModel,
     );
 
     drainAndRecordWikiUpdates(sink, threadStore, threadId);
@@ -503,8 +512,8 @@ export async function retryWorkspaceChatToSse(
     const store = getObservabilityStore();
     const traceId = store.startTrace({
       threadId,
-      provider: effectiveProvider ?? env.defaultProvider,
-      model: effectiveModel ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'workspace-chat',
       systemPrompt,
     });
@@ -560,8 +569,8 @@ export async function retryWorkspaceChatToSse(
         assistantSeq,
         null,
         obsHandler,
-        effectiveProvider,
-        effectiveModel,
+        resolvedProvider,
+        resolvedModel,
       );
 
       await maybeSummarizeWorkspace(
@@ -569,9 +578,9 @@ export async function retryWorkspaceChatToSse(
         workspaceStore,
         threadStore,
         workspace,
-        createProvider(effectiveProvider, effectiveModel),
-        effectiveProvider,
-        effectiveModel,
+        createProvider(resolvedProvider, resolvedModel),
+        resolvedProvider,
+        resolvedModel,
       );
     } catch (err) {
       const {
