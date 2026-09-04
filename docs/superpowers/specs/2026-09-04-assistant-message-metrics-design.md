@@ -21,7 +21,9 @@ Two independent bugs currently break this:
 
 Both bugs are duplicated identically across all three interactive chat surfaces — main chat (`stream-handler.ts`), workspace chat (`workspace-chat-stream-handler.ts`), and wiki chat (`wiki-stream-handler.ts`) — which all render through the same shared `AssistantMessage` component via `use-thread.ts`. This design fixes all three.
 
-Automated task runs (`task-execution.ts`) deliberately show no metrics today (`obsHandler: undefined` passed to `finalizeTurn`) — that's unchanged by this design and tracked separately in [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132).
+**A third instance of bug 1 also undercounts the aggregate usage dashboard, not just per-message display.** `after-agent.ts`'s `runAfterAgentPipeline` (the background wiki summarize/classify/extract/write pipeline that fires after a chat turn completes) opens its own observability trace — `store.startTrace({ provider: provider ?? env.defaultProvider, model: model ?? '', source: 'after-agent', ... })` — independent of the triggering chat turn's trace, and attaches an `ObservabilityCallbackHandler` to its four LLM calls. Those calls generate real `observability_spans` rows that feed `v_usage` (the usage/cost dashboard fed by `lib/observability/cost-store.ts`). When the triggering thread relies on the app's default provider/model (`model` arrives `undefined` via `runtime.context?.model`), this trace's `model: model ?? ''` records an empty string, which can never match a configured cost rate in `v_usage`'s join — so AfterAgent's real, metered token spend is recorded in the dashboard at **$0**, not merely "not shown." This is fixed here too (§2), since it's the identical root cause already being fixed at the other three call sites, not a new capability.
+
+Automated task runs (`task-execution.ts`) deliberately show no metrics today (`obsHandler: undefined` passed to `finalizeTurn`) — that's unchanged by this design and tracked separately in [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132). Unlike the AfterAgent trace above, this is a genuine missing-capability gap (no trace at all), not a resolution bug in an existing one — hence the separate issue rather than folding it in here.
 
 A related finding during investigation turned out to be a non-issue: `CostEntry`'s `inputScale`/`outputScale` fields (`'1k'` | `'1M'`) carry no computational meaning — `inputPer1kTokens`/`outputPer1kTokens` are already normalized to a true per-1,000-token rate at settings-entry time (`ScaledCostInput`'s `displayToPer1k()`), confirmed by `config.yaml.example`'s GLM entry (`inputScale: 1M`, `inputPer1kTokens: 0.0014` — the correct per-1k equivalent of $1.40/M). The existing `/1000` math in `finalizeTurn` and in `lib/observability/cost-store.ts`'s `v_usage` view is already correct. No change needed there.
 
@@ -54,8 +56,21 @@ Affected call sites (all get the 3-line resolve block added):
 | `api/src/agents/stream-handler.ts` | `streamChatToSse`, `resumeChatToSse`, `retryChatToSse` |
 | `api/src/agents/workspace-chat-stream-handler.ts` | `streamWorkspaceChatToSse`, `resumeWorkspaceChatToSse`, `retryWorkspaceChatToSse` |
 | `api/src/agents/wiki-stream-handler.ts` | `streamWikiChatToSse`, `resumeWikiChatToSse`, `retryWikiChatToSse` |
+| `api/src/agents/after-agent.ts` | `runAfterAgentPipeline` |
 
 `task-execution.ts`'s `finalizeTurn` call is untouched (still passes `undefined, undefined, undefined` for `obsHandler`/provider/model — see [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132)).
+
+### `runAfterAgentPipeline`'s narrower fix
+
+Unlike the other three call sites, `runAfterAgentPipeline` isn't a visible chat turn — it has no assistant message row to update and no live SSE metrics event to emit. Only the trace-identity half of Fix 1 applies here, added right before its existing `store.startTrace(...)` call:
+
+```ts
+const providerConfig = resolveProviderConfig(provider);
+const resolvedProvider = providerConfig.name;
+const resolvedModel = model ?? providerConfig.defaultModel!;
+```
+
+with `resolvedProvider`/`resolvedModel` replacing `provider ?? env.defaultProvider`/`model ?? ''` in that `startTrace` call. This is entirely local to `after-agent.ts` — it does not touch how `provider`/`model` are read from `runtime.context` in `chat-agent.ts`'s `afterAgentMiddleware`, and does not touch the `context: { provider, model }` object built upstream in the three streaming handlers. It simply stops trusting a possibly-blank value for its own trace and resolves the real identity itself, the same way the other three call sites now do.
 
 ---
 
@@ -128,9 +143,9 @@ No behavior change for any real user-facing surface — this capability was neve
 
 ## 6. Out of Scope
 
-- **Task-run metrics** — tracked in [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132), depends on this design's persistence shape landing first.
+- **Task-run metrics** — tracked in [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132), depends on this design's persistence shape landing first. Genuinely missing capability (no trace, no metrics at all), not a resolution bug in an existing one — hence a separate issue rather than folding in here like the AfterAgent trace fix was.
 - **Cost-scale math** — investigated, confirmed not a bug (see §1). No change.
-- **AfterAgent's `context.model` nullish-vs-empty-string handling** — deliberately untouched (see §2).
+- **`context: { provider, model }`'s nullish-vs-empty-string handling and `chat-agent.ts`'s `afterAgentMiddleware` context read** — deliberately untouched (see §2). The AfterAgent trace fix above is local to `after-agent.ts` and doesn't touch this upstream contract.
 
 ---
 
@@ -138,6 +153,7 @@ No behavior change for any real user-facing surface — this capability was neve
 
 - `api/src/agents/stream-handler.test.ts` — extend `finalizeTurn` tests to assert the persisted `payload` now includes `durationMs`/`usage`/`cost` when `obsHandler` is supplied, and omits them when it isn't (task-run parity check).
 - New/extended unit coverage for `resolveProviderConfig` being exported and used to compute `resolvedProvider`/`resolvedModel`, including the case where no explicit provider/model was ever supplied (falls through to `env.defaultProvider` + that provider's `defaultModel`).
+- `after-agent.test.ts` — `runAfterAgentPipeline`'s `startTrace` call records the real resolved provider/model (not a blank string) when no explicit provider/model was supplied, so a configured cost rate for the default provider/model shows up in `v_usage` for AfterAgent-sourced spans.
 - `thread-message-writer.test.ts` (or equivalent) — `finalizeAssistant` with and without the new `metrics` param.
 - `ui/test/assistant-message.test.tsx` — new cases for the token-breakdown display, and for partial rendering when `cost` is absent but `usage`/`durationMs` are present.
 - `ui/test/chat-message.test.tsx` — removal of the deleted `cost section`/`timing section` tests; confirm remaining tests still pass with the simplified grid.
