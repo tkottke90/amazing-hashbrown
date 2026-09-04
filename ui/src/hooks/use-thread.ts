@@ -485,6 +485,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
                   tokensPerSecond: evt.tokensPerSecond,
                   dollars: evt.estimatedCostUsd,
                 },
+                usage: { inputTokens: evt.inputTokens, outputTokens: evt.outputTokens },
               }
             : m,
         );

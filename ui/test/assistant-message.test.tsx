@@ -52,6 +52,65 @@ describe('AssistantMessage — error rendering', () => {
   });
 });
 
+describe('AssistantMessage — metrics row', () => {
+  it('renders duration, tok/s, cost, and token breakdown together', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({
+          content: 'here you go',
+          durationMs: 2300,
+          cost: { tokensPerSecond: 14.2, dollars: 0.0031 },
+          usage: { inputTokens: 512, outputTokens: 128 },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('2.3s')).toBeInTheDocument();
+    expect(screen.getByText('14.2 tok/s')).toBeInTheDocument();
+    expect(screen.getByText('$0.0031')).toBeInTheDocument();
+    expect(screen.getByText('(512 in / 128 out)')).toBeInTheDocument();
+  });
+
+  it('renders token breakdown with thousands separators', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({
+          content: 'here you go',
+          durationMs: 2300,
+          usage: { inputTokens: 12345, outputTokens: 6789 },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('(12,345 in / 6,789 out)')).toBeInTheDocument();
+  });
+
+  it('renders duration and tokens without a dollar figure when no cost rate is configured', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({
+          content: 'here you go',
+          durationMs: 2300,
+          cost: { tokensPerSecond: 14.2 },
+          usage: { inputTokens: 512, outputTokens: 128 },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('2.3s')).toBeInTheDocument();
+    expect(screen.getByText('14.2 tok/s')).toBeInTheDocument();
+    expect(screen.getByText('(512 in / 128 out)')).toBeInTheDocument();
+    expect(screen.queryByText(/^\$/)).not.toBeInTheDocument();
+  });
+
+  it('omits the metrics row entirely for a message with no durationMs/cost/usage', () => {
+    render(<AssistantMessage message={baseMessage({ content: 'here you go' })} />);
+
+    expect(screen.queryByText(/tok\/s/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ in \/ /)).not.toBeInTheDocument();
+  });
+});
+
 describe('AssistantMessage — superseded (retried-over) rows', () => {
   it('renders collapsed by default, hiding its content', () => {
     render(

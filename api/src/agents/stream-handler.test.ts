@@ -300,6 +300,67 @@ describe('agents/stream-handler', () => {
       rmSync(dir, { recursive: true });
     });
 
+    it('persists durationMs/usage/cost onto the finalized row when obsHandler is provided', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t8', 'Hello');
+      recordAssistantStart(store, 't8', 'msg8', new Date().toISOString());
+      const { sink } = fakeSink();
+      const agent = stubAgent(null);
+      const startedAt = Date.now() - 500;
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't8',
+        'msg8',
+        startedAt,
+        'final content',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+        stubObsHandler({
+          totalInputTokens: 512,
+          totalOutputTokens: 128,
+          turnDurationMs: 2000,
+        }),
+      );
+      const persisted = store.getMessage('t8', 'msg8');
+      const payload = persisted!.payload as Record<string, unknown>;
+      expect(payload.durationMs).to.be.a('number');
+      expect(payload.durationMs as number).to.be.at.least(500);
+      expect(payload.usage).to.deep.equal({ inputTokens: 512, outputTokens: 128 });
+      expect(payload.cost).to.deep.equal({ tokensPerSecond: 64 }); // 128 tokens / 2s = 64 tok/s, no cost rate configured
+      rmSync(dir, { recursive: true });
+    });
+
+    it('omits durationMs/usage/cost from the persisted row when no obsHandler is provided (task-run parity)', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t9', 'Hello');
+      recordAssistantStart(store, 't9', 'msg9', new Date().toISOString());
+      const { sink } = fakeSink();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't9',
+        'msg9',
+        Date.now(),
+        'final content',
+        '',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const persisted = store.getMessage('t9', 'msg9');
+      const payload = persisted!.payload as Record<string, unknown>;
+      expect(payload.durationMs).to.equal(undefined);
+      expect(payload.usage).to.equal(undefined);
+      expect(payload.cost).to.equal(undefined);
+      rmSync(dir, { recursive: true });
+    });
+
     it('emits hitl_prompt with multiple_choice kind for recursion_limit_warning interrupt', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t7', 'Hello');

@@ -73,6 +73,12 @@ export function recordAssistantStart(
   });
 }
 
+export interface AssistantMetrics {
+  durationMs: number;
+  usage: { inputTokens: number; outputTokens: number };
+  cost?: { tokensPerSecond?: number; dollars?: number };
+}
+
 export function finalizeAssistant(
   store: ThreadStore,
   threadId: string,
@@ -81,12 +87,24 @@ export function finalizeAssistant(
   thoughtContent: string,
   sentAt: string,
   checkpointId: string | null,
+  metrics?: AssistantMetrics,
 ): void {
   safe(threadId, 'finalizeAssistant', () => {
     store.updateMessage(threadId, id, {
       status: 'done',
       ...(checkpointId ? { checkpointId } : {}),
-      payload: { content, ...(thoughtContent ? { thoughtContent } : {}), sentAt },
+      payload: {
+        content,
+        ...(thoughtContent ? { thoughtContent } : {}),
+        sentAt,
+        ...(metrics
+          ? {
+              durationMs: metrics.durationMs,
+              usage: metrics.usage,
+              ...(metrics.cost ? { cost: metrics.cost } : {}),
+            }
+          : {}),
+      },
     });
   });
 }

@@ -163,7 +163,7 @@ export async function listEmbeddingModels(provider: ProviderConfig): Promise<str
   return allModels;
 }
 
-function resolveProviderConfig(name?: string): ProviderConfig {
+export function resolveProviderConfig(name?: string): ProviderConfig {
   const providers = env.providers;
   if (providers.length === 0) {
     throw new Error('No providers configured. Add a providers[] block to config.yaml.');

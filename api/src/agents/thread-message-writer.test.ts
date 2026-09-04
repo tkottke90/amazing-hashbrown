@@ -156,6 +156,38 @@ describe('agents/thread-message-writer', () => {
       expect(msg.checkpointId).to.equal(null);
     });
 
+    it('finalizeAssistant merges durationMs/usage/cost flat into payload when metrics is provided', () => {
+      recordAssistantStart(store, 't1', 'a2b', '2026-07-18T00:00:00.000Z');
+      finalizeAssistant(store, 't1', 'a2b', 'final answer', '', '2026-07-18T00:00:00.000Z', null, {
+        durationMs: 2300,
+        usage: { inputTokens: 512, outputTokens: 128 },
+        cost: { tokensPerSecond: 14.2, dollars: 0.0031 },
+      });
+      const msg = store.getMessage('t1', 'a2b')!;
+      expect(msg.payload).to.deep.equal({
+        content: 'final answer',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        durationMs: 2300,
+        usage: { inputTokens: 512, outputTokens: 128 },
+        cost: { tokensPerSecond: 14.2, dollars: 0.0031 },
+      });
+    });
+
+    it('finalizeAssistant omits cost when metrics.cost is absent (no rate configured)', () => {
+      recordAssistantStart(store, 't1', 'a2c', '2026-07-18T00:00:00.000Z');
+      finalizeAssistant(store, 't1', 'a2c', 'final answer', '', '2026-07-18T00:00:00.000Z', null, {
+        durationMs: 2300,
+        usage: { inputTokens: 512, outputTokens: 128 },
+      });
+      const msg = store.getMessage('t1', 'a2c')!;
+      expect(msg.payload).to.deep.equal({
+        content: 'final answer',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        durationMs: 2300,
+        usage: { inputTokens: 512, outputTokens: 128 },
+      });
+    });
+
     it('failAssistant marks status: error and sweeps pending tool_call rows to interrupted', () => {
       recordAssistantStart(store, 't1', 'a3', '2026-07-18T00:00:00.000Z');
       recordToolCallStart(store, 't1', 'tc1', 'search', { q: 'x' });

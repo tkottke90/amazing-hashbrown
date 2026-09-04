@@ -19,11 +19,6 @@ function formatTime(date: Date): string {
   return date.toLocaleString();
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
 export interface ActionButtonProps {
   label: string;
   onClick: () => void;
@@ -120,11 +115,6 @@ export function ChatMessageSaveAction({
   );
 }
 
-export interface ChatMessageCost {
-  tokensPerSecond?: number;
-  dollars?: number;
-}
-
 export interface ChatMessageAttachment {
   id: string;
   filename: string;
@@ -136,9 +126,6 @@ export interface ChatMessageProps {
   sentAt: Date;
   /** Flips time alignment to right and reverses the bottom row order. */
   mirrored?: boolean;
-  cost?: ChatMessageCost;
-  /** Duration in milliseconds for automated messages. Omit for user messages (renders a spacer). */
-  duration?: number;
   actions?: ComponentChildren;
   /** Adds an elevated background and shadow to the message body. */
   showBG?: boolean;
@@ -198,21 +185,17 @@ function AttachmentPreview({ attachment }: { attachment: ChatMessageAttachment }
   );
 }
 
+const gridAreas = '"time time time" "msg msg msg" "actions actions actions"';
+
 export function ChatMessage({
   message,
   sentAt,
   mirrored = false,
-  cost,
-  duration,
   actions,
   showBG = false,
   className,
   attachment,
 }: ChatMessageProps) {
-  const gridAreas = mirrored
-    ? '"time time time" "msg msg msg" "cost timing actions"'
-    : '"time time time" "msg msg msg" "actions timing cost"';
-
   return (
     <div
       data-slot="chat-message"
@@ -235,31 +218,6 @@ export function ChatMessage({
       >
         {attachment && <AttachmentPreview attachment={attachment} />}
         <Markdown>{message}</Markdown>
-      </div>
-
-      <div
-        data-slot="chat-message-cost"
-        style={{ gridArea: 'cost' }}
-        className={cn(
-          metaClass,
-          'flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5',
-          mirrored ? 'items-start justify-start' : 'items-end justify-end',
-        )}
-      >
-        {cost?.tokensPerSecond != null && (
-          <span data-slot="chat-message-tps">{cost.tokensPerSecond.toFixed(1)} tok/s</span>
-        )}
-        {cost?.dollars != null && (
-          <span data-slot="chat-message-dollars">${cost.dollars.toFixed(4)}</span>
-        )}
-      </div>
-
-      <div
-        data-slot="chat-message-timing"
-        style={{ gridArea: 'timing' }}
-        className={cn(metaClass, 'justify-center')}
-      >
-        {duration != null ? formatDuration(duration) : null}
       </div>
 
       <div

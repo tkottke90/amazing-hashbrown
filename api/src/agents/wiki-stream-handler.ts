@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
+import { resolveProviderConfig } from '../services/provider-factory.js';
 import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import {
   writeSseEvent,
@@ -31,6 +32,9 @@ export async function streamWikiChatToSse(
   model?: string,
 ): Promise<void> {
   const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const providerConfig = resolveProviderConfig(provider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = model ?? providerConfig.defaultModel!;
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -43,8 +47,8 @@ export async function streamWikiChatToSse(
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
@@ -54,7 +58,14 @@ export async function streamWikiChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
 
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -107,8 +118,8 @@ export async function streamWikiChatToSse(
       assistantSeq,
       userSeq,
       obsHandler,
-      provider,
-      model,
+      resolvedProvider,
+      resolvedModel,
     );
   } catch (err) {
     const {
@@ -141,6 +152,9 @@ export async function resumeWikiChatToSse(
   model?: string,
 ): Promise<void> {
   const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const providerConfig = resolveProviderConfig(provider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = model ?? providerConfig.defaultModel!;
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -152,8 +166,8 @@ export async function resumeWikiChatToSse(
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
@@ -163,7 +177,14 @@ export async function resumeWikiChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
 
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -213,8 +234,8 @@ export async function resumeWikiChatToSse(
       assistantSeq,
       null,
       obsHandler,
-      provider,
-      model,
+      resolvedProvider,
+      resolvedModel,
     );
   } catch (err) {
     const {
@@ -245,6 +266,9 @@ export async function retryWikiChatToSse(
   model?: string,
 ): Promise<void> {
   const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const providerConfig = resolveProviderConfig(provider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = model ?? providerConfig.defaultModel!;
   const config = { configurable: { thread_id: threadId } };
   const threadStore = getThreadStore();
 
@@ -255,14 +279,22 @@ export async function retryWikiChatToSse(
 
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
-  const assistantSeq = recordRetryAttempt(threadStore, threadId, msgId, failedId, turnSentAt);
+  const assistantSeq = recordRetryAttempt(
+    threadStore,
+    threadId,
+    msgId,
+    failedId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
 
   const obsConfig = env.observability;
   const store = getObservabilityStore();
   const traceId = store.startTrace({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: model ?? '',
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
@@ -320,8 +352,8 @@ export async function retryWikiChatToSse(
       assistantSeq,
       null,
       obsHandler,
-      provider,
-      model,
+      resolvedProvider,
+      resolvedModel,
     );
   } catch (err) {
     const {
