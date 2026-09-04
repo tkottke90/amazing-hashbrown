@@ -1,9 +1,22 @@
 import { configureFromSchema } from '@tkottke90/logger';
-import { env } from './env.js';
+import { configManager, env } from './env.js';
 
 export const logger = configureFromSchema('amazing-hashbrown-api', {
   level: env.logLevel,
+  baseUrl: configManager.getConfigDir(),
   console: { enabled: true },
+  file: {
+    log: {
+      enabled: true,
+      level: 'info',
+      filename: 'app.jsonl'
+    },
+    error: {
+      enabled: true,
+      level: 'info',
+      filename: 'error.jsonl'
+    }
+  }
 });
 
 // The console transport JSON.stringify()s log metadata directly (see
