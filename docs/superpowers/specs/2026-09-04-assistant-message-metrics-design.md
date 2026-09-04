@@ -16,7 +16,7 @@ Assistant messages should show a metrics row in this format:
 
 Two independent bugs currently break this:
 
-1. **Cost never computes**, even with a rate configured. `effectiveProvider`/`effectiveModel` (computed in each streaming handler as `provider ?? threadMeta?.provider ?? undefined`, no further fallback) stay `undefined` whenever a thread relies on the app's default provider/model — the common case. The cost-lookup key (`` `${effectiveProvider}/${effectiveModel}` ``) then resolves to `null` regardless of whether a matching rate is configured, because the *real* resolved provider/model (computed internally by `provider-factory.ts`'s `createProviderFromConfig` via `model ?? config.defaultModel`) never gets reported back.
+1. **Cost never computes**, even with a rate configured. `effectiveProvider`/`effectiveModel` (computed in each streaming handler as `provider ?? threadMeta?.provider ?? undefined`, no further fallback) stay `undefined` whenever a thread relies on the app's default provider/model — the common case. The cost-lookup key (`` `${effectiveProvider}/${effectiveModel}` ``) then resolves to `null` regardless of whether a matching rate is configured, because the _real_ resolved provider/model (computed internally by `provider-factory.ts`'s `createProviderFromConfig` via `model ?? config.defaultModel`) never gets reported back.
 2. **No metrics survive reload.** `finalizeAssistant` (`api/src/agents/thread-message-writer.ts`) only ever persists `{ content, thoughtContent, sentAt }`. Duration/tokens/cost exist only in the live `usage_stats` SSE event and the client's in-memory signal.
 
 Both bugs are duplicated identically across all three interactive chat surfaces — main chat (`stream-handler.ts`), workspace chat (`workspace-chat-stream-handler.ts`), and wiki chat (`wiki-stream-handler.ts`) — which all render through the same shared `AssistantMessage` component via `use-thread.ts`. This design fixes all three.
@@ -31,7 +31,7 @@ A related finding during investigation turned out to be a non-issue: `CostEntry`
 
 ## 2. Fix 1 — Resolve the real provider/model once, use it everywhere
 
-`provider-factory.ts`'s private `resolveProviderConfig(name?)` already implements the exact fallback chain the real LLM call uses (`name ?? env.defaultProvider ?? providers[0].name`, then looks up the matching `ProviderConfig`). Exporting it lets every handler compute the *actual* resolved identity right after building the agent, instead of re-deriving an incomplete guess:
+`provider-factory.ts`'s private `resolveProviderConfig(name?)` already implements the exact fallback chain the real LLM call uses (`name ?? env.defaultProvider ?? providers[0].name`, then looks up the matching `ProviderConfig`). Exporting it lets every handler compute the _actual_ resolved identity right after building the agent, instead of re-deriving an incomplete guess:
 
 ```ts
 const providerConfig = resolveProviderConfig(effectiveProvider);
@@ -51,12 +51,12 @@ const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
 
 Affected call sites (all get the 3-line resolve block added):
 
-| File | Functions |
-|---|---|
-| `api/src/agents/stream-handler.ts` | `streamChatToSse`, `resumeChatToSse`, `retryChatToSse` |
+| File                                              | Functions                                                                         |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `api/src/agents/stream-handler.ts`                | `streamChatToSse`, `resumeChatToSse`, `retryChatToSse`                            |
 | `api/src/agents/workspace-chat-stream-handler.ts` | `streamWorkspaceChatToSse`, `resumeWorkspaceChatToSse`, `retryWorkspaceChatToSse` |
-| `api/src/agents/wiki-stream-handler.ts` | `streamWikiChatToSse`, `resumeWikiChatToSse`, `retryWikiChatToSse` |
-| `api/src/agents/after-agent.ts` | `runAfterAgentPipeline` |
+| `api/src/agents/wiki-stream-handler.ts`           | `streamWikiChatToSse`, `resumeWikiChatToSse`, `retryWikiChatToSse`                |
+| `api/src/agents/after-agent.ts`                   | `runAfterAgentPipeline`                                                           |
 
 `task-execution.ts`'s `finalizeTurn` call is untouched (still passes `undefined, undefined, undefined` for `obsHandler`/provider/model — see [#132](https://github.com/tkottke90/amazing-hashbrown/issues/132)).
 
@@ -76,7 +76,7 @@ with `resolvedProvider`/`resolvedModel` replacing `provider ?? env.defaultProvid
 
 ## 3. Fix 2 — Persist the metrics
 
-`finalizeTurn` already computes `durationMs`, `tokensPerSecond`, `inputTokens`, `outputTokens`, and `estimatedCostUsd` to build the live `usage_stats` SSE event — but only *after* it has already called `finalizeAssistant` to write the row. Reorder so the same numbers land in the DB in the same write:
+`finalizeTurn` already computes `durationMs`, `tokensPerSecond`, `inputTokens`, `outputTokens`, and `estimatedCostUsd` to build the live `usage_stats` SSE event — but only _after_ it has already called `finalizeAssistant` to write the row. Reorder so the same numbers land in the DB in the same write:
 
 - Compute `durationMs = Date.now() - startedAt` once, near the top of `finalizeTurn`, before `finalizeAssistant` is called. This value is then reused for the later `stream_done` SSE event too (previously computed a second time via a second `Date.now() - startedAt` call) — one source of truth instead of two independent timestamps.
 - `finalizeAssistant` (`thread-message-writer.ts`) gains a new optional 8th parameter:
@@ -95,10 +95,10 @@ export function finalizeAssistant(
     usage: { inputTokens: number; outputTokens: number };
     cost?: { tokensPerSecond?: number; dollars?: number };
   },
-): void
+): void;
 ```
 
-  merged into the same `payload` object it already writes. Purely additive: every existing call site (including the three `GraphRecursionError` fallback paths in each handler) omits the new param and is unaffected.
+merged into the same `payload` object it already writes. Purely additive: every existing call site (including the three `GraphRecursionError` fallback paths in each handler) omits the new param and is unaffected.
 
 - The `metrics` shape is written pre-formed to match the client's `AssistantThreadMessage` type exactly (see §4) — `toClientMessage` (`threads.handlers.ts`) spreads `payload` straight onto the client message with no transformation, so storing it pre-shaped means zero new mapping code on read.
 - `finalizeTurn` only builds and passes `metrics` when `obsHandler` is present — same guard already used for the live `usage_stats` event, so behavior for task runs (no `obsHandler`) is unchanged: no metrics computed, none persisted, matching today.

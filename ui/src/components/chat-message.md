@@ -16,14 +16,14 @@ Renders a single chat message in a three-row CSS grid: timestamp, body, and a me
 
 ### Props
 
-| Prop        | Type                | Default | Description                                                                                                                                                                   |
-| ----------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `message`   | `string`            | —       | The message content. Rendered as Markdown via the `Markdown` component.                                                                                                       |
-| `sentAt`    | `Date`              | —       | When the message was sent. Displayed as a relative time within 24 h ("just now", "5m ago", "3h ago") and as a full locale string for older messages.                          |
-| `mirrored`  | `boolean`           | `false` | Flips the actions row to the opposite edge. Use `true` for user messages (right-aligned context) and `false` for assistant messages.                                         |
-| `actions`   | `ComponentChildren` | —       | Action buttons rendered in the bottom-right (or bottom-left when mirrored). Compose with the exported action components.                                                      |
-| `showBG`    | `boolean`           | `false` | Wraps the message body in a card surface (`bg-card`, `shadow-md`, rounded corners). Useful for assistant messages to visually separate them from the page background.         |
-| `className` | `string`            | —       | Extra classes applied to the outer grid wrapper.                                                                                                                              |
+| Prop        | Type                | Default | Description                                                                                                                                                           |
+| ----------- | ------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `message`   | `string`            | —       | The message content. Rendered as Markdown via the `Markdown` component.                                                                                               |
+| `sentAt`    | `Date`              | —       | When the message was sent. Displayed as a relative time within 24 h ("just now", "5m ago", "3h ago") and as a full locale string for older messages.                  |
+| `mirrored`  | `boolean`           | `false` | Flips the actions row to the opposite edge. Use `true` for user messages (right-aligned context) and `false` for assistant messages.                                  |
+| `actions`   | `ComponentChildren` | —       | Action buttons rendered in the bottom-right (or bottom-left when mirrored). Compose with the exported action components.                                              |
+| `showBG`    | `boolean`           | `false` | Wraps the message body in a card surface (`bg-card`, `shadow-md`, rounded corners). Useful for assistant messages to visually separate them from the page background. |
+| `className` | `string`            | —       | Extra classes applied to the outer grid wrapper.                                                                                                                      |
 
 ### Grid layout
 
