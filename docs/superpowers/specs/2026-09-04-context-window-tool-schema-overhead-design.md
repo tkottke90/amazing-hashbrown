@@ -14,7 +14,7 @@ Root cause, confirmed by reading the installed `langchain`/`@langchain/langgraph
 
 - The middleware trims `state.messages` inside its `beforeModel` hook, whose token count comes from `estimateTokens` — a plain sum of `text.length / 4` over the message list (`chat-agent.ts:96-101`).
 - `beforeModel`'s signature (`(state, runtime) => ...`) has **no visibility into the bound tool list at all** — not in `state`, not in `runtime`. The agent binds 20+ tool schemas (`makeShellExecTool` + `STATIC_CHAT_TOOLS` + gated + wiki-write + MCP tools), none of which factor into the trim decision.
-- The real `inputTokens` reported in `usage_stats` (`observability-handler.ts:82-90`) comes straight from the provider's `usage_metadata.input_tokens` — which *does* include the tool-schema payload sent with the request.
+- The real `inputTokens` reported in `usage_stats` (`observability-handler.ts:82-90`) comes straight from the provider's `usage_metadata.input_tokens` — which _does_ include the tool-schema payload sent with the request.
 - The only middleware hook that sees the actual tool list is `wrapModelCall`, via `request.tools` — and that list is itself dynamic per turn: `skillGatedToolsMiddleware` (`skill-gated-tools.middleware.ts`) filters it in its own `wrapModelCall`, which runs earlier in the same `middleware: [...]` array and therefore wraps `contextWindowMiddleware` from the outside (LangChain composes the array outer-to-inner).
 
 So the trimmer was never checking the number that actually matters, and structurally couldn't from where it lived.
@@ -27,7 +27,7 @@ So the trimmer was never checking the number that actually matters, and structur
 
 `contextWindowMiddleware` keeps its existing `beforeModel` hook and gains a new `wrapModelCall` hook. Each has a distinct job:
 
-1. **`beforeModel` (unchanged)** — coarse, message-only trim against `cfg.maxTokens`, run before tools are even in the picture. Its role going forward is bounding what gets *persisted* to the SQLite checkpoint over a long-running thread — it returns `{ messages: trimmed }`, which prunes graph state, not just what's sent to the model this turn. It cannot enforce the real per-call budget because it structurally can't see tools; that's not a gap to close here, it's a different, legitimate concern (storage growth) that this hook was already handling correctly.
+1. **`beforeModel` (unchanged)** — coarse, message-only trim against `cfg.maxTokens`, run before tools are even in the picture. Its role going forward is bounding what gets _persisted_ to the SQLite checkpoint over a long-running thread — it returns `{ messages: trimmed }`, which prunes graph state, not just what's sent to the model this turn. It cannot enforce the real per-call budget because it structurally can't see tools; that's not a gap to close here, it's a different, legitimate concern (storage growth) that this hook was already handling correctly.
 2. **`wrapModelCall` (new)** — the actual enforcement point. This is the only hook with `request.tools` (already filtered by `skillGatedToolsMiddleware`, since that middleware's `wrapModelCall` wraps this one). It computes the real per-turn budget and re-trims `request.messages` before calling `handler()`. This trim is call-scoped only — it does not write back to graph state.
 
 ### `wrapModelCall` logic
