@@ -171,6 +171,12 @@ test.describe(
       const dialog = page.getByRole('dialog');
       await expect(dialog.getByText('echo line-two')).toBeVisible();
       await expect(dialog.getByText('echo line-three')).toBeVisible();
+
+      // toBeVisible() resolves before the Modal's 200ms fade/blur-in
+      // transition finishes, so the video would otherwise cut off mid
+      // transition — hold on the fully-settled dialog so a video viewer
+      // can actually see it.
+      await pauseBeforeAction(page, testInfo);
     });
   },
 );
