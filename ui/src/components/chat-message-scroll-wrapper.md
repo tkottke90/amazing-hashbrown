@@ -13,11 +13,11 @@ Wraps a chat message list and manages scroll behavior. On load it snaps instantl
 
 ### Props
 
-| Prop        | Type                | Default | Description                                                                                                 |
-| ----------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
-| `children`  | `ComponentChildren` | —       | The message list to render. Observed for size changes to trigger auto-scroll.                               |
-| `className` | `string`            | —       | Extra classes merged onto the outer scroll container. Use this to constrain height (`flex-1 min-h-0`, etc.) |
-| `forceScrollTrigger` | `number`   | —       | Optional incrementing counter. Bump it (e.g. on message submit) to force an immediate smooth scroll to the bottom, re-arming auto-follow even if the user was scrolled away. |
+| Prop                 | Type                | Default | Description                                                                                                                                                                  |
+| -------------------- | ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `children`           | `ComponentChildren` | —       | The message list to render. Observed for size changes to trigger auto-scroll.                                                                                                |
+| `className`          | `string`            | —       | Extra classes merged onto the outer scroll container. Use this to constrain height (`flex-1 min-h-0`, etc.)                                                                  |
+| `forceScrollTrigger` | `number`            | —       | Optional incrementing counter. Bump it (e.g. on message submit) to force an immediate smooth scroll to the bottom, re-arming auto-follow even if the user was scrolled away. |
 
 ### Basic usage
 

@@ -14,19 +14,22 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Scroll up into a long thread history, then send a new message',
-      expectedOutcome: 'The message pane snaps back to the bottom regardless of prior scroll position',
+      expectedOutcome:
+        'The message pane snaps back to the bottom regardless of prior scroll position',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Let the mocked streamed reply arrive',
-      expectedOutcome: 'The pane keeps following the reply and settles at the bottom once it completes',
+      expectedOutcome:
+        'The pane keeps following the reply and settles at the bottom once it completes',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Scroll away once the reply has finished',
-      expectedOutcome: 'The pane stays where the user scrolled it, rather than jumping back down on its own',
+      expectedOutcome:
+        'The pane stays where the user scrolled it, rather than jumping back down on its own',
       test: () => {},
     },
   ],
@@ -164,7 +167,9 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await page.getByRole('button', { name: 'Send message' }).click();
 
-      const userBubble = page.locator('[data-slot="chat-message"]').filter({ hasText: NEW_MESSAGE });
+      const userBubble = page
+        .locator('[data-slot="chat-message"]')
+        .filter({ hasText: NEW_MESSAGE });
       await expect(userBubble).toBeVisible();
 
       // Force-scroll on submit, then keep following as the mocked reply

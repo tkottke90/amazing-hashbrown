@@ -14,7 +14,7 @@ When a user submits a chat message, the message pane should unconditionally jump
 
 ## Problem
 
-`ChatMessageScrollWrapper` (`ui/src/components/chat-message-scroll-wrapper.tsx`) already implements "stick to bottom while near the bottom" via a bottom sentinel `IntersectionObserver` (`isNearBottomRef`) and a `ResizeObserver` that smooth-scrolls on content growth only when `isNearBottomRef.current` is `true`. Nothing about message *submission* is wired into this: if the user is scrolled up when they send a new message, `isNearBottomRef` stays `false`, so the new user bubble and the streaming reply that follows it can appear off-screen with no scroll to reveal them.
+`ChatMessageScrollWrapper` (`ui/src/components/chat-message-scroll-wrapper.tsx`) already implements "stick to bottom while near the bottom" via a bottom sentinel `IntersectionObserver` (`isNearBottomRef`) and a `ResizeObserver` that smooth-scrolls on content growth only when `isNearBottomRef.current` is `true`. Nothing about message _submission_ is wired into this: if the user is scrolled up when they send a new message, `isNearBottomRef` stays `false`, so the new user bubble and the streaming reply that follows it can appear off-screen with no scroll to reveal them.
 
 The wrapper is used identically in three places — `ui/src/pages/chat/index.tsx`, `ui/src/pages/workspaces/workspace-chat-tab.tsx`, `ui/src/pages/wiki/ingestion-chat.tsx` — each with its own `handleSend()` that calls a `sendMessage`-shaped function. All three render the same `ThreadMessage` union (`ui/src/types/thread-message.ts`) via `ThreadMessageItem`.
 
@@ -97,11 +97,11 @@ and pass `forceScrollTrigger={forceScrollTrigger.value}` to their `<ChatMessageS
 
 ## Error handling
 
-| Case | Behavior |
-| --- | --- |
-| Rapid re-submit while a reply is still streaming | Counter increments again; effect re-fires, re-arms sticking, re-issues `scrollTo` — browsers retarget an in-flight smooth scroll natively, no queuing needed |
-| `forceScrollTrigger` prop omitted by a future consumer | Effect runs once on mount, swallowed by the skip-first-run guard; no crash, no behavior change from today |
-| Container not yet mounted / unmounted mid-effect | Guarded by the same `if (!container) return` pattern already used elsewhere in this file |
+| Case                                                                 | Behavior                                                                                                                                                                                                |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rapid re-submit while a reply is still streaming                     | Counter increments again; effect re-fires, re-arms sticking, re-issues `scrollTo` — browsers retarget an in-flight smooth scroll natively, no queuing needed                                            |
+| `forceScrollTrigger` prop omitted by a future consumer               | Effect runs once on mount, swallowed by the skip-first-run guard; no crash, no behavior change from today                                                                                               |
+| Container not yet mounted / unmounted mid-effect                     | Guarded by the same `if (!container) return` pattern already used elsewhere in this file                                                                                                                |
 | User scrolls up during the forced smooth scroll, before it completes | Sentinel's `IntersectionObserver` flips `isNearBottomRef` back to `false` as soon as it detects the sentinel left the viewport — same race the existing code already tolerates, no special-casing added |
 
 ---
@@ -112,7 +112,7 @@ and pass `forceScrollTrigger={forceScrollTrigger.value}` to their `<ChatMessageS
 
 - Bumping `forceScrollTrigger` calls `scrollTo` with `{ top: scrollHeight, behavior: 'smooth' }`, even when the sentinel was not intersecting beforehand (user was scrolled up).
 - After a bump, a subsequent `ResizeObserver` growth event still triggers a follow-scroll — proves `isNearBottomRef` was re-armed synchronously, without waiting for the `IntersectionObserver` to separately report the sentinel visible.
-- Regression: once the sentinel reports not-intersecting again (user scrolled away), further content growth does *not* scroll — existing behavior, guarded against the new code path breaking it.
+- Regression: once the sentinel reports not-intersecting again (user scrolled away), further content growth does _not_ scroll — existing behavior, guarded against the new code path breaking it.
 - The initial mount effect is not double-triggered by the new trigger effect (`scrollTo` called exactly once on mount).
 
 Test approach: replace the no-op `IntersectionObserver`/`ResizeObserver` globals from `jest.setup.ts` with local capturing mocks so the test can manually fire the sentinel/resize callbacks, and stub `Element.prototype.scrollTo` to assert on call arguments (jsdom does not compute real scroll geometry).
