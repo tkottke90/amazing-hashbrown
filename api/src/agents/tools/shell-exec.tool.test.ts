@@ -13,9 +13,7 @@ describe('agents/tools/shell-exec', () => {
     });
 
     it('accepts a call with a non-empty reason', () => {
-      expect(() =>
-        ShellExecSchema.parse({ command: 'ls', reason: 'list files' }),
-      ).to.not.throw();
+      expect(() => ShellExecSchema.parse({ command: 'ls', reason: 'list files' })).to.not.throw();
     });
   });
 });

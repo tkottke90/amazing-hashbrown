@@ -9,14 +9,14 @@ export const logger = configureFromSchema('amazing-hashbrown-api', {
     log: {
       enabled: true,
       level: 'info',
-      filename: 'app.jsonl'
+      filename: 'app.jsonl',
     },
     error: {
       enabled: true,
       level: 'info',
-      filename: 'error.jsonl'
-    }
-  }
+      filename: 'error.jsonl',
+    },
+  },
 });
 
 // The console transport JSON.stringify()s log metadata directly (see

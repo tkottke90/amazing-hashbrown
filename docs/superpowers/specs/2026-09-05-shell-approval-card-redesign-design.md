@@ -126,7 +126,14 @@ error dump):
   standalone elsewhere in this app.
 
 ```tsx
-<Modal title="Command" trigger={<Button size="sm" variant="ghost">View command</Button>}>
+<Modal
+  title="Command"
+  trigger={
+    <Button size="sm" variant="ghost">
+      View command
+    </Button>
+  }
+>
   <CodeBlock className="mt-2 max-h-[60vh] overflow-y-auto whitespace-pre-wrap">
     {message.command}
   </CodeBlock>
