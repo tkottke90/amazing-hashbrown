@@ -24,6 +24,14 @@ const suite: TestSuite = {
       expectedOutcome: 'The HITL answer is submitted and the chat input re-enables',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'View a shell_approval prompt with a multi-line command and click "View command"',
+      expectedOutcome:
+        'The reason is shown prominently, only the first line of the command is previewed, ' +
+        'and clicking "View command" opens a dialog showing the full multi-line command',
+      test: () => {},
+    },
   ],
 };
 
@@ -51,7 +59,7 @@ const pendingShellPrompt = {
   promptId: 'prompt-1',
   question: 'Allow command: `ls -la`\n\nReason: List directory contents',
   promptKind: 'shell_approval',
-  command: 'ls -la',
+  command: 'echo line-one\necho line-two\necho line-three',
   reason: 'List directory contents',
 };
 
@@ -139,6 +147,30 @@ test.describe(
       await page.getByRole('button', { name: 'Approve', exact: true }).click();
 
       await expect(page.locator('[data-slot="textarea"]')).toBeEnabled({ timeout: 10_000 });
+    });
+
+    test('reason is shown prominently and View command opens the full command', async ({
+      page,
+    }, testInfo) => {
+      await mockApis(page);
+      await page.goto('/');
+
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Shell Approval Test' });
+      await row.click();
+
+      await expect(page.locator('[data-slot="textarea"]')).toBeDisabled({ timeout: 10_000 });
+
+      await expect(page.getByText('List directory contents', { exact: true })).toBeVisible();
+      await expect(page.getByText('echo line-one', { exact: true })).toBeVisible();
+
+      await pauseBeforeAction(page, testInfo);
+      await page.getByRole('button', { name: 'View command' }).click();
+
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText('echo line-two')).toBeVisible();
+      await expect(dialog.getByText('echo line-three')).toBeVisible();
     });
   },
 );

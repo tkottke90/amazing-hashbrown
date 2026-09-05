@@ -14,10 +14,22 @@ tall for a long or multi-line command. The agent-supplied `reason` — the
 part a user actually needs to make an approve/deny decision — is rendered
 second, small, and muted.
 
-Correction to the issue's premise: the issue states a `Dialog` component
-already exists at `ui/src/components/ui/dialog.tsx`. It does not. The only
-related primitive is `sheet.tsx`, a slide-in drawer built on the same Radix
-`Dialog` primitive. This design adds a real centered `Dialog` component.
+Correction to the issue's premise, and a correction to this design doc's
+first draft: the issue states a `Dialog` component already exists at
+`ui/src/components/ui/dialog.tsx`. That exact path is wrong — nothing
+lives there, only `sheet.tsx` (a slide-in drawer on Radix's `Dialog`
+primitive) does. But the issue's broader claim was right: this codebase
+already has a real, actively-used, documented modal system —
+`@tkottke90/preact-dialog` (workspace package at `lib/preact-dialog`,
+exporting `Modal`/`Dialog`/`Drawer`/`useDialog`), used across the app
+(settings modals, workspace drawers, wiki upload/domain forms) and
+specified in `ui/src/components/AGENTS.md`'s "Dialogs" section. An earlier
+version of this design missed that package (it only searched
+`ui/src/components/ui/`) and proposed building a brand-new Radix-based
+`Dialog` component mirroring `sheet.tsx`. That was unnecessary and would
+have introduced a second, inconsistent modal implementation alongside the
+existing one. This design reuses `Modal` from `@tkottke90/preact-dialog`
+instead.
 
 ## Goals
 
@@ -74,57 +86,64 @@ restructured to:
      `font-mono text-xs truncate` inside a `min-w-0 flex-1` container.
      CSS `truncate` (ellipsis) caps it to exactly one line regardless of
      how long that first line is — no JS truncation logic needed.
-   - A "View command" button (only rendered when `message.command` is set)
-     opens the new `Dialog` with the full raw command.
+   - A "View command" button, passed as the `trigger` prop of a `Modal`
+     (per the codebase's documented trigger-as-prop pattern — see below),
+     opens a dialog with the full raw command.
 3. Deny / Approve & remember / Approve buttons: unchanged, same row.
 
 Nothing in the card's own markup can grow past a fixed height based on
 command content — the overflow bug is closed structurally.
 
-## New `Dialog` component
+## Command viewer: reuse `Modal` + `CodeBlock`
 
-`ui/src/components/ui/dialog.tsx`, modeled directly on `sheet.tsx`:
+No new component is built. The full command is shown using two pieces that
+already exist and are already composed together elsewhere in this exact
+way (`ui/src/pages/wiki/upload-wiki-form.tsx` uses `CodeBlock` inside a
+`Modal` for command-like content, including a scrollable
+`max-h-40 overflow-y-auto whitespace-pre-wrap` override on a failed-upload
+error dump):
 
-- Same `Dialog` primitive from `radix-ui`, same `forwardRef` pattern
-  (preserving the comment on why — Preact/compat's `Presence` internals
-  need real refs, not plain function components), same conventions
-  (`data-slot`, `cn()`, `data-open`/`data-closed` animation classes).
-- Positioning differs from Sheet: centered modal
-  (`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl`)
-  instead of edge-anchored slide-in.
-- Exports mirror Sheet's naming: `Dialog`, `DialogTrigger`, `DialogClose`,
-  `DialogPortal`, `DialogOverlay`, `DialogContent`, `DialogHeader`,
-  `DialogFooter`, `DialogTitle`, `DialogDescription`.
-- **`DialogContent` caps at `max-h-[85vh]`, with the body region set to
-  `overflow-y-auto`.** This is the actual fix for the layout-blowout bug:
-  no matter how long the command, the dialog scrolls internally and the
-  page/chat layout is never affected.
-
-## Command viewer content
-
-Inside `DialogContent`, the full command is rendered by wrapping it in a
-fenced code block and passing it through the existing `Markdown` component:
+- **`Modal`** from `@tkottke90/preact-dialog` — the "trigger-as-prop"
+  dialog pattern documented in `ui/src/components/AGENTS.md`: the trigger
+  element is passed via the `trigger` prop (not rendered as a sibling),
+  and `Modal` clones it to attach the open handler. `Button` is already
+  built to support this (`ui/src/components/ui/button.tsx`'s `forwardRef`
+  wrapper exists specifically so it works as a `Dialog`/`Modal` trigger).
+  Native `<dialog>` under the hood, shown via `showModal()`.
+- **`CodeBlock`** from `ui/src/components/markdown.tsx` — used directly
+  with the raw command string as children (no `Markdown`/`ReactMarkdown`
+  wrapping, no fenced-code-block string building, no backtick-collision
+  risk), with a `className` override
+  (`max-h-[60vh] overflow-y-auto whitespace-pre-wrap`) that `cn()`
+  (tailwind-merge-backed) correctly resolves against `CodeBlock`'s own
+  default `overflow-hidden whitespace-pre-line`. This is the actual fix
+  for the layout-blowout bug: no matter how long the command, this element
+  scrolls internally and the page/chat layout is never affected. No
+  syntax highlighting in this mode (that only comes from
+  `rehype-highlight` in the full `Markdown` pipeline) — acceptable per the
+  issue's own fallback ask ("or at least monospace + line-wrapped +
+  scrollable"), and consistent with how `CodeBlock` is already used
+  standalone elsewhere in this app.
 
 ```tsx
-<Markdown>{`\`\`\`bash\n${message.command}\n\`\`\``}</Markdown>
+<Modal title="Command" trigger={<Button size="sm" variant="ghost">View command</Button>}>
+  <CodeBlock className="mt-2 max-h-[60vh] overflow-y-auto whitespace-pre-wrap">
+    {message.command}
+  </CodeBlock>
+</Modal>
 ```
-
-This reuses `Markdown`'s existing `CodeBlock` (highlight.js syntax
-highlighting, hover-activated copy button) instead of building a bespoke
-code viewer.
-
-Known, accepted limitation: a command containing a literal run of 3+
-backticks could break the Markdown fence. Vanishingly rare for shell
-commands; not worth engineering around for v1.
 
 ## Testing
 
-This codebase has no UI unit tests (`ui/src` is Playwright e2e only) and no
-existing tests for `shell-exec.tool.ts`.
+This codebase has no UI component unit tests (`ui/test/*.test.ts` covers
+hooks/pure functions via jest; component behavior is verified through
+Playwright e2e) and no existing tests for `shell-exec.tool.ts`.
 
-- Extend `e2e/tests/hitl-shell-approval.spec.ts` with a step asserting: the
+- Extend `e2e/tests/hitl-shell-approval.spec.ts` with a case asserting: the
   reason text is visible and prominent, the command preview shows only the
-  first line, and clicking "View command" opens the dialog with the full
+  first line, and clicking "View command" opens a dialog (`page.getByRole('dialog')`
+  — the same assertion pattern already used against this same `Modal`
+  component in `e2e/tests/settings-save-contracts.spec.ts`) with the full
   multi-line command visible.
 - Add a Mocha unit test for `ShellExecSchema` confirming a tool call
   omitting (or empty-stringing) `reason` fails validation.
@@ -134,5 +153,8 @@ existing tests for `shell-exec.tool.ts`.
 - Changing `ApprovalCallback`/`ShellExecutor` library-level typing.
 - A truncated inline preview beyond the single first line (no "show 3
   lines then fade" or similar — one line, CSS ellipsis, done).
-- Shell-specific syntax highlighting beyond what `rehype-highlight`'s
-  `bash` grammar already provides.
+- Syntax highlighting for the full command view. `CodeBlock` only gets
+  highlight.js coloring when fed through the `Markdown`/`rehype-highlight`
+  pipeline; used directly (as here, and as already done elsewhere in this
+  app) it's plain monospace text. Matches the issue's own accepted
+  fallback and existing codebase precedent — not pursued further.
