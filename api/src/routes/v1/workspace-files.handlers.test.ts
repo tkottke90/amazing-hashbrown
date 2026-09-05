@@ -82,6 +82,24 @@ describe('routes/v1/workspace-files.handlers', () => {
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
     });
+
+    it('returns category/oversize/content on file-node entries in the tree response', async () => {
+      const ws = makeWorkspace({ git: false });
+      writeFileSync(join(ws.location, 'photo.png'), 'x');
+      writeFileSync(join(ws.location, 'huge.txt'), Buffer.alloc(2 * 1024 * 1024 + 1, 'a'));
+
+      const result = await getFileTreeHandler(store, ws.id);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const byName = new Map(result.data.entries.map((n) => [n.name, n]));
+        expect(byName.get('photo.png')).to.include({
+          category: 'image',
+          oversize: false,
+          content: `/api/v1/workspaces/${ws.id}/files/photo.png/content`,
+        });
+        expect(byName.get('huge.txt')).to.include({ category: 'text', oversize: true });
+      }
+    });
   });
 
   describe('getFileContentHandler()', () => {
@@ -97,7 +115,7 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const result = await getFileContentHandler(store, ws.id, 'README.md');
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.equal('hello\n');
+      if (result.ok) expect(result.data).to.deep.equal({ kind: 'text', content: 'hello\n' });
     });
 
     it('resolves a nested multi-segment path', async () => {
@@ -107,7 +125,7 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const result = await getFileContentHandler(store, ws.id, 'scripts/run.sh');
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.equal('#!/bin/sh\n');
+      if (result.ok) expect(result.data).to.deep.equal({ kind: 'text', content: '#!/bin/sh\n' });
     });
 
     it('returns 400 for a "../../etc/passwd" traversal attempt', async () => {
@@ -145,6 +163,60 @@ describe('routes/v1/workspace-files.handlers', () => {
       const result = await getFileContentHandler(store, ws.id, 'bin.dat');
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(422);
+    });
+
+    it('returns raw bytes and Content-Type for an image file, with no 2MB cap', async () => {
+      const ws = makeWorkspace();
+      const bigImage = Buffer.alloc(2 * 1024 * 1024 + 1, 1);
+      writeFileSync(join(ws.location, 'photo.png'), bigImage);
+
+      const result = await getFileContentHandler(store, ws.id, 'photo.png');
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data).to.deep.equal({
+          kind: 'binary',
+          buffer: bigImage,
+          contentType: 'image/png',
+        });
+      }
+    });
+
+    it('returns the right Content-Type for an audio file', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'song.mp3'), Buffer.from([1, 2, 3]));
+
+      const result = await getFileContentHandler(store, ws.id, 'song.mp3');
+      expect(result.ok).to.equal(true);
+      if (result.ok && result.data.kind === 'binary') {
+        expect(result.data.contentType).to.equal('audio/mpeg');
+      }
+    });
+
+    it('returns the right Content-Type for a video file', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'clip.mp4'), Buffer.from([1, 2, 3]));
+
+      const result = await getFileContentHandler(store, ws.id, 'clip.mp4');
+      expect(result.ok).to.equal(true);
+      if (result.ok && result.data.kind === 'binary') {
+        expect(result.data.contentType).to.equal('video/mp4');
+      }
+    });
+
+    it('returns 422 for a known-unsupported extension regardless of file content', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'archive.zip'), 'this is plain text, not a real zip');
+
+      const result = await getFileContentHandler(store, ws.id, 'archive.zip');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(422);
+    });
+
+    it('returns 404 for a missing file with an unsupported extension', async () => {
+      const ws = makeWorkspace();
+      const result = await getFileContentHandler(store, ws.id, 'missing.zip');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
     });
   });
 
@@ -231,6 +303,17 @@ describe('routes/v1/workspace-files.handlers', () => {
       });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(500);
+    });
+
+    it('writes a media-extension file unchanged — PATCH is not classification-aware', async () => {
+      const ws = makeWorkspace();
+      const result = await patchFileContentHandler(store, ws.id, 'photo.png', {
+        content: 'not real png bytes, just text',
+      });
+      expect(result.ok).to.equal(true);
+      expect(readFileSync(join(ws.location, 'photo.png'), 'utf8')).to.equal(
+        'not real png bytes, just text',
+      );
     });
   });
 });

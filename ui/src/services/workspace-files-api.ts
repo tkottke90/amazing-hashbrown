@@ -4,6 +4,9 @@ export interface FileNode {
   type: 'file' | 'dir';
   children?: FileNode[]; // only on type: 'dir'
   gitStatus?: 'M' | 'A'; // only on type: 'file', only when the workspace has git enabled
+  category?: 'text' | 'image' | 'audio' | 'video' | 'unsupported'; // only on type: 'file'
+  oversize?: boolean; // only on type: 'file' — true only for category: 'text' over the size cap
+  content?: string; // only on type: 'file' — ready-to-use content URL
 }
 
 export interface FileTreeResponse {
@@ -22,13 +25,6 @@ export class FileFetchError extends Error {
     super(message);
     this.name = 'FileFetchError';
   }
-}
-
-function encodePath(relativePath: string): string {
-  return relativePath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -62,12 +58,12 @@ export async function fetchFileTree(workspaceId: string): Promise<FileTreeRespon
   return request<FileTreeResponse>(`/api/v1/workspaces/${workspaceId}/files`);
 }
 
-export async function fetchFileContent(workspaceId: string, path: string): Promise<string> {
-  return requestText(`/api/v1/workspaces/${workspaceId}/files/${encodePath(path)}`);
+export async function fetchFileContent(contentUrl: string): Promise<string> {
+  return requestText(contentUrl);
 }
 
-export async function saveFile(workspaceId: string, path: string, content: string): Promise<void> {
-  await request<{ ok: true }>(`/api/v1/workspaces/${workspaceId}/files/${encodePath(path)}`, {
+export async function saveFile(contentUrl: string, content: string): Promise<void> {
+  await request<{ ok: true }>(contentUrl, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
