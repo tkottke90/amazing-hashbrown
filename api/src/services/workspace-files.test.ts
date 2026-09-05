@@ -12,6 +12,8 @@ import {
   invalidateFileTreeCache,
   readFileGuarded,
   isContentTooLarge,
+  classifyFile,
+  getContentType,
 } from './workspace-files.js';
 
 function makeExecStub(impl?: (...args: Parameters<ExecFileFn>) => unknown) {
@@ -73,8 +75,27 @@ describe('services/workspace-files', () => {
 
       const bDir = tree.find((n) => n.name === 'b-dir')!;
       expect(bDir.children).to.deep.equal([
-        { name: 'inner.txt', path: 'b-dir/inner.txt', type: 'file' },
+        { name: 'inner.txt', path: 'b-dir/inner.txt', type: 'file', category: 'text', oversize: false },
       ]);
+    });
+
+    it('sets category/oversize on file nodes based on extension and size', async () => {
+      writeFileSync(join(dir, 'photo.png'), 'fake-png-bytes');
+      writeFileSync(join(dir, 'song.mp3'), 'fake-mp3-bytes');
+      writeFileSync(join(dir, 'clip.mp4'), 'fake-mp4-bytes');
+      writeFileSync(join(dir, 'archive.zip'), 'fake-zip-bytes');
+      writeFileSync(join(dir, 'notes.txt'), 'plain text');
+      writeFileSync(join(dir, 'huge.txt'), Buffer.alloc(2 * 1024 * 1024 + 1, 'a'));
+
+      const tree = await buildFileTree(dir);
+      const byName = new Map(tree.map((n) => [n.name, n]));
+
+      expect(byName.get('photo.png')).to.include({ category: 'image', oversize: false });
+      expect(byName.get('song.mp3')).to.include({ category: 'audio', oversize: false });
+      expect(byName.get('clip.mp4')).to.include({ category: 'video', oversize: false });
+      expect(byName.get('archive.zip')).to.include({ category: 'unsupported', oversize: false });
+      expect(byName.get('notes.txt')).to.include({ category: 'text', oversize: false });
+      expect(byName.get('huge.txt')).to.include({ category: 'text', oversize: true });
     });
 
     it('returns an empty array for an empty directory', async () => {
@@ -98,6 +119,54 @@ describe('services/workspace-files', () => {
         error = err as Error;
       }
       expect(error).to.not.equal(undefined);
+    });
+  });
+
+  describe('classifyFile()', () => {
+    it('classifies known image extensions', () => {
+      expect(classifyFile('photo.png')).to.equal('image');
+      expect(classifyFile('photo.jpg')).to.equal('image');
+      expect(classifyFile('photo.svg')).to.equal('image');
+    });
+
+    it('classifies known audio extensions', () => {
+      expect(classifyFile('song.mp3')).to.equal('audio');
+      expect(classifyFile('song.flac')).to.equal('audio');
+    });
+
+    it('classifies known video extensions', () => {
+      expect(classifyFile('clip.mp4')).to.equal('video');
+      expect(classifyFile('clip.webm')).to.equal('video');
+    });
+
+    it('classifies known-unsupported extensions', () => {
+      expect(classifyFile('archive.zip')).to.equal('unsupported');
+      expect(classifyFile('doc.pdf')).to.equal('unsupported');
+      expect(classifyFile('lib.so')).to.equal('unsupported');
+    });
+
+    it('defaults to text for an unknown extension', () => {
+      expect(classifyFile('main.rs')).to.equal('text');
+    });
+
+    it('defaults to text for a file with no extension', () => {
+      expect(classifyFile('Makefile')).to.equal('text');
+    });
+
+    it('is case-insensitive', () => {
+      expect(classifyFile('IMAGE.PNG')).to.equal('image');
+    });
+  });
+
+  describe('getContentType()', () => {
+    it('returns the mime type for a known image/audio/video extension', () => {
+      expect(getContentType('photo.png')).to.equal('image/png');
+      expect(getContentType('song.mp3')).to.equal('audio/mpeg');
+      expect(getContentType('clip.mp4')).to.equal('video/mp4');
+    });
+
+    it('falls back to application/octet-stream for an unmapped extension', () => {
+      expect(getContentType('archive.zip')).to.equal('application/octet-stream');
     });
   });
 
@@ -215,6 +284,21 @@ describe('services/workspace-files', () => {
       currentTime += 16_000; // beyond the 15s TTL
       await getFileTree(workspaceId, { location: dir, git: true }, stub);
       expect(calls.length).to.equal(4);
+    });
+
+    it('attaches a content URL to every file node, including nested/special-character paths', async () => {
+      mkdirSync(join(dir, 'sub dir'));
+      writeFileSync(join(dir, 'sub dir', 'a b.txt'), 'x');
+
+      const tree = await getFileTree(workspaceId, { location: dir, git: false });
+      expect(tree.entries.find((n) => n.name === 'a.txt')!.content).to.equal(
+        `/api/v1/workspaces/${workspaceId}/files/a.txt/content`,
+      );
+
+      const subDir = tree.entries.find((n) => n.name === 'sub dir')!;
+      expect(subDir.children!.find((n) => n.name === 'a b.txt')!.content).to.equal(
+        `/api/v1/workspaces/${workspaceId}/files/sub%20dir/a%20b.txt/content`,
+      );
     });
 
     it('does not shell out to git at all when workspace.git is false', async () => {

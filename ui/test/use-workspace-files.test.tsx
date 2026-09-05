@@ -12,9 +12,11 @@ jest.mock('@/services/workspace-files-api', () => {
 });
 
 import * as api from '@/services/workspace-files-api';
+import type { FileNode } from '@/services/workspace-files-api';
 import {
   openTabs,
   activeTabPath,
+  openFile,
   saveTab,
   discardTab,
   closeTab,
@@ -23,6 +25,21 @@ import {
 } from '@/hooks/use-workspace-files';
 
 const mockSaveFile = api.saveFile as jest.MockedFunction<typeof api.saveFile>;
+const mockFetchFileContent = api.fetchFileContent as jest.MockedFunction<
+  typeof api.fetchFileContent
+>;
+
+function makeNode(path: string, category: FileNode['category'], overrides: Partial<FileNode> = {}): FileNode {
+  return {
+    name: path.split('/').pop() ?? path,
+    path,
+    type: 'file',
+    category,
+    oversize: false,
+    content: `/api/v1/workspaces/ws-1/files/${path}/content`,
+    ...overrides,
+  };
+}
 
 // A minimal stand-in for EditorView shaped like the two members
 // use-workspace-files.ts actually calls: state.doc.toString() and
@@ -49,6 +66,8 @@ function makeTab(
   const mock = createMockView(content);
   const tab: OpenTab = {
     path,
+    contentUrl: `/api/v1/workspaces/ws-1/files/${path}/content`,
+    category: 'text',
     view: mock.view,
     savedContent: content,
     dirty: signal(false),
@@ -88,6 +107,90 @@ describe('use-workspace-files — dirty signal semantics', () => {
   });
 });
 
+describe('use-workspace-files — openFile', () => {
+  afterEach(() => {
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it("fetches content via node.content and pushes a 'text' tab", async () => {
+    const node = makeNode('a.ts', 'text');
+    mockFetchFileContent.mockResolvedValue('const a = 1;');
+
+    await openFile('ws-1', node);
+
+    expect(mockFetchFileContent).toHaveBeenCalledWith(node.content);
+    const tab = openTabs.value.find((t) => t.path === 'a.ts')!;
+    expect(tab.category).toBe('text');
+    expect(tab.contentUrl).toBe(node.content);
+    expect(tab.savedContent).toBe('const a = 1;');
+    expect(tab.unsupported).toBeUndefined();
+    expect(activeTabPath.value).toBe('a.ts');
+  });
+
+  it("opens an 'unsupported' node without calling fetchFileContent", async () => {
+    const node = makeNode('archive.zip', 'unsupported');
+
+    await openFile('ws-1', node);
+
+    expect(mockFetchFileContent).not.toHaveBeenCalled();
+    const tab = openTabs.value.find((t) => t.path === 'archive.zip')!;
+    expect(tab.category).toBe('unsupported');
+    expect(tab.unsupported).toBe(true);
+  });
+
+  it.each(['image', 'audio', 'video'] as const)(
+    'opens a %s node without calling fetchFileContent, carrying contentUrl+category',
+    async (category) => {
+      const node = makeNode(`file.${category}`, category);
+
+      await openFile('ws-1', node);
+
+      expect(mockFetchFileContent).not.toHaveBeenCalled();
+      const tab = openTabs.value.find((t) => t.path === node.path)!;
+      expect(tab.category).toBe(category);
+      expect(tab.contentUrl).toBe(node.content);
+      expect(tab.unsupported).toBeUndefined();
+    },
+  );
+
+  it('reuses an existing open tab by path without re-fetching', async () => {
+    const node = makeNode('a.ts', 'text');
+    mockFetchFileContent.mockResolvedValue('const a = 1;');
+    await openFile('ws-1', node);
+    mockFetchFileContent.mockClear();
+
+    await openFile('ws-1', node);
+
+    expect(mockFetchFileContent).not.toHaveBeenCalled();
+    expect(openTabs.value).toHaveLength(1);
+    expect(activeTabPath.value).toBe('a.ts');
+  });
+
+  it("falls back to an unsupported tab (category stays 'text') on a 422 from a node classified 'text'", async () => {
+    const node = makeNode('mislabeled.txt', 'text');
+    mockFetchFileContent.mockRejectedValue(new api.FileFetchError('cannot be displayed', 422));
+
+    await openFile('ws-1', node);
+
+    const tab = openTabs.value.find((t) => t.path === 'mislabeled.txt')!;
+    expect(tab.category).toBe('text');
+    expect(tab.unsupported).toBe(true);
+    expect(tab.error).toBeUndefined();
+  });
+
+  it('pushes an error tab (not unsupported) on a non-422 fetch failure', async () => {
+    const node = makeNode('a.ts', 'text');
+    mockFetchFileContent.mockRejectedValue(new Error('network error'));
+
+    await openFile('ws-1', node);
+
+    const tab = openTabs.value.find((t) => t.path === 'a.ts')!;
+    expect(tab.unsupported).toBeUndefined();
+    expect(tab.error).toBe('network error');
+  });
+});
+
 describe('use-workspace-files — saveTab', () => {
   afterEach(() => {
     resetWorkspaceFilesState();
@@ -105,7 +208,7 @@ describe('use-workspace-files — saveTab', () => {
 
     await saveTab('ws-1', 'a.ts');
 
-    expect(mockSaveFile).toHaveBeenCalledWith('ws-1', 'a.ts', 'const a = 2;');
+    expect(mockSaveFile).toHaveBeenCalledWith(tab.contentUrl, 'const a = 2;');
     const saved = openTabs.value.find((t) => t.path === 'a.ts')!;
     expect(saved.savedContent).toBe('const a = 2;');
     expect(saved.error).toBeUndefined();
@@ -129,6 +232,8 @@ describe('use-workspace-files — saveTab', () => {
   it('is a no-op for a tab with no live view (unsupported/error tabs)', async () => {
     const tab: OpenTab = {
       path: 'bin.dat',
+      contentUrl: '/api/v1/workspaces/ws-1/files/bin.dat/content',
+      category: 'unsupported',
       view: null,
       savedContent: '',
       dirty: signal(false),

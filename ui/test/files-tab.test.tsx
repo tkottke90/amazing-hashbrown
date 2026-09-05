@@ -19,10 +19,13 @@ import {
   resetWorkspaceFilesState,
   type OpenTab,
 } from '@/hooks/use-workspace-files';
+import { mediaMuted } from '@/hooks/use-media-mute';
 
 function makeTab(path: string, opts: Partial<OpenTab> = {}): OpenTab {
   return {
     path,
+    contentUrl: `/api/v1/workspaces/ws-1/files/${path}/content`,
+    category: 'text',
     view: null,
     savedContent: 'content',
     dirty: signal(false),
@@ -123,6 +126,104 @@ describe('FilesTab', () => {
 
       expect(global.confirm).toHaveBeenCalled();
       expect(openTabs.value).toHaveLength(1);
+    });
+  });
+
+  describe('EditorPanel media rendering', () => {
+    it('renders an <img> for an image tab', () => {
+      const tab = makeTab('photo.png', { category: 'image' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'photo.png';
+
+      renderFilesTab();
+
+      const img = screen.getByTestId('file-image');
+      expect(img).toHaveAttribute('src', tab.contentUrl);
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    });
+
+    it('renders an <audio> element for an audio tab', () => {
+      const tab = makeTab('song.mp3', { category: 'audio' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'song.mp3';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-audio')).toHaveAttribute('src', tab.contentUrl);
+    });
+
+    it('renders a <video> element for a video tab', () => {
+      const tab = makeTab('clip.mp4', { category: 'video' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'clip.mp4';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-video')).toHaveAttribute('src', tab.contentUrl);
+    });
+
+    it('still renders the CodeMirror Save/Discard row for a text tab', () => {
+      const tab = makeTab('a.ts', { category: 'text' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'a.ts';
+
+      renderFilesTab();
+
+      expect(screen.getByText('Save')).toBeInTheDocument();
+      expect(screen.getByText('Discard')).toBeInTheDocument();
+    });
+  });
+
+  describe('EditorPanel media mute toggle', () => {
+    afterEach(() => {
+      mediaMuted.value = false;
+      localStorage.clear();
+    });
+
+    it('is muted when the mute preference is on, even for the active tab', () => {
+      mediaMuted.value = true;
+      const tab = makeTab('clip.mp4', { category: 'video' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'clip.mp4';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-video')).toHaveProperty('muted', true);
+    });
+
+    it('is muted when the tab is not active, even with the preference off', () => {
+      mediaMuted.value = false;
+      const activeTab = makeTab('a.ts', { category: 'text' });
+      const videoTab = makeTab('clip.mp4', { category: 'video' });
+      openTabs.value = [activeTab, videoTab];
+      activeTabPath.value = 'a.ts';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-video')).toHaveProperty('muted', true);
+    });
+
+    it('is unmuted only when the preference is off and the tab is active', () => {
+      mediaMuted.value = false;
+      const tab = makeTab('clip.mp4', { category: 'video' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'clip.mp4';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-video')).toHaveProperty('muted', false);
+    });
+
+    it('clicking the mute toggle flips mediaMuted', () => {
+      mediaMuted.value = false;
+      const tab = makeTab('clip.mp4', { category: 'video' });
+      openTabs.value = [tab];
+      activeTabPath.value = 'clip.mp4';
+
+      renderFilesTab();
+
+      screen.getByTestId('media-mute-toggle').click();
+      expect(mediaMuted.value).toBe(true);
     });
   });
 });

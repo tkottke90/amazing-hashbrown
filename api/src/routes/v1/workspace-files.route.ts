@@ -21,8 +21,10 @@ workspaceFilesRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // Express is pinned to 4.19.0 (not 5) — a bare `*` wildcard, captured as
-// req.params[0], NOT the Express-5-only named `*path` notation.
-workspaceFilesRouter.get('/*', async (req: Request, res: Response) => {
+// req.params[0], NOT the Express-5-only named `*path` notation. `/*/content`
+// captures the full nested relative path before the literal "/content"
+// suffix (path-to-regexp@0.1.x's `*` is a greedy, slash-crossing capture).
+workspaceFilesRouter.get('/*/content', async (req: Request, res: Response) => {
   const relativePath = req.params[0] as string;
   const result = await getFileContentHandler(
     getWorkspaceStore(),
@@ -33,10 +35,15 @@ workspaceFilesRouter.get('/*', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
-  res.type('text/plain').send(result.data);
+  if (result.data.kind === 'text') {
+    res.type('text/plain').send(result.data.content);
+  } else {
+    res.setHeader('Content-Type', result.data.contentType);
+    res.send(result.data.buffer);
+  }
 });
 
-workspaceFilesRouter.patch('/*', async (req: Request, res: Response) => {
+workspaceFilesRouter.patch('/*/content', async (req: Request, res: Response) => {
   const relativePath = req.params[0] as string;
   const result = await patchFileContentHandler(
     getWorkspaceStore(),

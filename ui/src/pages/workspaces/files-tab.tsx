@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks';
-import { X } from 'lucide-preact';
+import { X, Volume2, VolumeX } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
   closeTab,
   type OpenTab,
 } from '@/hooks/use-workspace-files';
+import { mediaMuted, toggleMediaMuted } from '@/hooks/use-media-mute';
 
 // Its own subcomponent so a keystroke in one tab's editor (which flips only
 // that tab's `dirty` signal) re-renders just this button, not the whole tab
@@ -80,33 +81,87 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
     );
   }
 
-  return (
-    <div class="flex h-full flex-col">
-      <div class="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
-        <div class="flex items-center gap-2">
-          <Button size="xs" variant="outline" onClick={() => void saveTab(workspaceId, tab.path)}>
-            Save
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => discardTab(tab.path)}>
-            Discard
-          </Button>
+  switch (tab.category) {
+    case 'image':
+      return (
+        <div class="flex h-full items-center justify-center p-4">
+          <img
+            data-testid="file-image"
+            src={tab.contentUrl}
+            alt={tab.path}
+            class="max-h-full max-w-full object-contain"
+          />
         </div>
-        {tab.error && (
-          <span data-testid="file-editor-error" class="truncate text-xs text-destructive">
-            {tab.error}
-          </span>
-        )}
-      </div>
-      <div class="flex-1 min-h-0">
-        <CodeEditor
-          path={tab.path}
-          initialContent={tab.savedContent}
-          dirty={tab.dirty}
-          onReady={(view) => setTabView(tab.path, view)}
-        />
-      </div>
-    </div>
-  );
+      );
+
+    case 'audio':
+    case 'video': {
+      const muted = mediaMuted.value || activeTabPath.value !== tab.path;
+      return (
+        <div class="flex h-full flex-col">
+          <div class="flex items-center gap-2 border-b border-border px-2 py-1.5">
+            <Button
+              size="xs"
+              variant="outline"
+              data-testid="media-mute-toggle"
+              aria-label={mediaMuted.value ? 'Unmute media' : 'Mute media'}
+              onClick={toggleMediaMuted}
+            >
+              {mediaMuted.value ? <VolumeX class="size-3.5" /> : <Volume2 class="size-3.5" />}
+              {mediaMuted.value ? 'Unmute' : 'Mute'}
+            </Button>
+          </div>
+          <div class="flex flex-1 items-center justify-center p-4">
+            {tab.category === 'video' ? (
+              <video
+                data-testid="file-video"
+                src={tab.contentUrl}
+                controls
+                muted={muted}
+                class="max-h-full max-w-full"
+              />
+            ) : (
+              <audio data-testid="file-audio" src={tab.contentUrl} controls muted={muted} class="w-full" />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    case 'text':
+    default:
+      return (
+        <div class="flex h-full flex-col">
+          <div class="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+            <div class="flex items-center gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void saveTab(workspaceId, tab.path)}
+              >
+                Save
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => discardTab(tab.path)}>
+                Discard
+              </Button>
+            </div>
+            {tab.error && (
+              <span data-testid="file-editor-error" class="truncate text-xs text-destructive">
+                {tab.error}
+              </span>
+            )}
+          </div>
+          <div class="flex-1 min-h-0">
+            <CodeEditor
+              path={tab.path}
+              initialContent={tab.savedContent}
+              dirty={tab.dirty}
+              onReady={(view) => setTabView(tab.path, view)}
+            />
+          </div>
+        </div>
+      );
+  }
 }
 
 export function FilesTab({ workspaceId, git }: { workspaceId: string; git: boolean }) {

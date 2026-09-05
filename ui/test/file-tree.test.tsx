@@ -26,6 +26,8 @@ const treeWithFolder: FileTreeResponse = {
       ],
     },
     { name: 'README.md', path: 'README.md', type: 'file' },
+    { name: 'archive.zip', path: 'archive.zip', type: 'file', category: 'unsupported', oversize: false },
+    { name: 'huge.txt', path: 'huge.txt', type: 'file', category: 'text', oversize: true },
   ],
 };
 
@@ -77,6 +79,33 @@ describe('FileTree', () => {
 
     const readmeRow = screen.getByText('README.md').closest('button')!;
     expect(readmeRow).not.toHaveTextContent(/[MA]$/);
+  });
+
+  it("renders the unsupported badge with the expected title", () => {
+    fileTree.value = treeWithFolder;
+    renderTree();
+
+    const badge = screen.getByTestId('file-tree-unsupported');
+    expect(badge).toHaveAttribute('title', "Can't preview this file type");
+    expect(screen.getByText('archive.zip').closest('button')).toContainElement(badge);
+  });
+
+  it('renders the oversize badge with the expected title', () => {
+    fileTree.value = treeWithFolder;
+    renderTree();
+
+    const badge = screen.getByTestId('file-tree-oversize');
+    expect(badge).toHaveAttribute('title', 'File is too large to open');
+    expect(screen.getByText('huge.txt').closest('button')).toContainElement(badge);
+  });
+
+  it('renders neither badge on a plain text file', () => {
+    fileTree.value = treeWithFolder;
+    renderTree();
+
+    const readmeRow = screen.getByText('README.md').closest('button')!;
+    expect(readmeRow.querySelector('[data-testid="file-tree-unsupported"]')).toBeNull();
+    expect(readmeRow.querySelector('[data-testid="file-tree-oversize"]')).toBeNull();
   });
 
   it('shows an error state instead of the tree when fileTreeError is set', () => {

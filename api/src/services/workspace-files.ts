@@ -16,6 +16,9 @@ export interface FileNode {
   type: 'file' | 'dir';
   children?: FileNode[]; // only on type: 'dir'
   gitStatus?: 'M' | 'A'; // only on type: 'file', only when the workspace has git enabled
+  category?: 'text' | 'image' | 'audio' | 'video' | 'unsupported'; // only on type: 'file'
+  oversize?: boolean; // only on type: 'file' — true only for category: 'text' over the size cap
+  content?: string; // only on type: 'file' — ready-to-use content URL, set by attachContentUrls()
 }
 
 export interface FileTreeResult {
@@ -35,6 +38,87 @@ const CACHE_TTL_MS = 15_000;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const SNIFF_BYTES = 8 * 1024;
 const GIT_TIMEOUT_MS = 10_000;
+
+// Extension-based classification, decided at tree-walk time so the frontend
+// can show a warning badge (and pick a viewer) before ever fetching a file's
+// bytes. This is deliberately not content-sniffed — sniffing every file in
+// the workspace on every tree walk would be a real perf cost that grows with
+// workspace size. A mislabeled file (e.g. a binary blob named ".txt") gets no
+// advance warning here, but still fails gracefully via readFileGuarded's real
+// content-sniff at open/content-fetch time — classification only decides what
+// the tree shows in advance and how the content route treats a request, it
+// never skips the real guard on read.
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'flac']);
+const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'ogv']);
+const UNSUPPORTED_EXTENSIONS = new Set([
+  'pdf',
+  'zip',
+  'tar',
+  'gz',
+  '7z',
+  'rar',
+  'exe',
+  'dll',
+  'so',
+  'bin',
+  'dat',
+  'iso',
+  'class',
+  'jar',
+  'wasm',
+  'sqlite',
+  'db',
+  'woff',
+  'woff2',
+  'ttf',
+  'otf',
+  'eot',
+  'pyc',
+]);
+
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  flac: 'audio/flac',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  ogv: 'video/ogg',
+};
+
+// Same extension-extraction idiom already used by the frontend's
+// languageForPath (ui/src/pages/workspaces/code-editor.tsx) — a dotfile like
+// ".gitignore" extracts "gitignore" as its "extension", which is harmless
+// here since it isn't in any table and falls through to 'text'.
+function extensionOf(name: string): string {
+  return name.split('.').pop()?.toLowerCase() ?? '';
+}
+
+export function classifyFile(name: string): 'text' | 'image' | 'audio' | 'video' | 'unsupported' {
+  const ext = extensionOf(name);
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+  if (AUDIO_EXTENSIONS.has(ext)) return 'audio';
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+  if (UNSUPPORTED_EXTENSIONS.has(ext)) return 'unsupported';
+  return 'text';
+}
+
+// Only ever called once classifyFile has already confirmed image/audio/video
+// for the same name — the fallback is defensive, not a real code path.
+export function getContentType(name: string): string {
+  return CONTENT_TYPE_BY_EXTENSION[extensionOf(name)] ?? 'application/octet-stream';
+}
 
 // ---------------------------------------------------------------------------
 // Tree walker
@@ -63,7 +147,19 @@ async function walk(dirAbsPath: string, relPrefix: string): Promise<FileNode[]> 
       const children = await walk(path.join(dirAbsPath, dirent.name), relPath);
       nodes.push({ name: dirent.name, path: relPath, type: 'dir', children });
     } else if (dirent.isFile()) {
-      nodes.push({ name: dirent.name, path: relPath, type: 'file' });
+      // A stat() failure here (e.g. the file was deleted between readdir and
+      // this call) skips the entry, same precedent as the symlink-skip above
+      // — not surfaced as a tree-wide error.
+      let size: number;
+      try {
+        size = (await stat(path.join(dirAbsPath, dirent.name))).size;
+      } catch {
+        continue;
+      }
+
+      const category = classifyFile(dirent.name);
+      const oversize = category === 'text' && size > MAX_FILE_BYTES;
+      nodes.push({ name: dirent.name, path: relPath, type: 'file', category, oversize });
     }
   }
 
@@ -150,6 +246,25 @@ function applyGitStatuses(nodes: FileNode[], statuses: Map<string, 'M' | 'A'>): 
   }
 }
 
+// Attaches a ready-to-use content URL to every file node, so the frontend
+// never has to construct one itself — the server is the single source of
+// truth for this URL shape. Each path segment is encoded independently (a
+// path never contains a literal "/" within a segment, so this is equivalent
+// to encoding the whole relative path while keeping the separators intact).
+function attachContentUrls(nodes: FileNode[], workspaceId: string): void {
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      const encodedPath = node.path
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+      node.content = `/api/v1/workspaces/${workspaceId}/files/${encodedPath}/content`;
+    } else if (node.children) {
+      attachContentUrls(node.children, workspaceId);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cache
 // ---------------------------------------------------------------------------
@@ -178,6 +293,7 @@ export async function getFileTree(
   }
 
   const entries = await buildFileTree(workspace.location);
+  attachContentUrls(entries, workspaceId);
 
   let branch: string | null = null;
   if (workspace.git) {
