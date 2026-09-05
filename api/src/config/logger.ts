@@ -3,7 +3,7 @@ import { configManager, env } from './env.js';
 
 export const logger = configureFromSchema('amazing-hashbrown-api', {
   level: env.logLevel,
-  baseUrl: configManager.getConfigDir(),
+  baseUrl: configManager.getConfigDir('logs'),
   console: { enabled: true },
   file: {
     log: {
