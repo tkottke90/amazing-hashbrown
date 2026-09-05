@@ -31,10 +31,7 @@ function GitStatusBadge({ status }: { status: 'M' | 'A' }) {
   return (
     <span
       data-testid="file-tree-status"
-      class={cn(
-        'shrink-0 rounded px-1 text-[10px] font-semibold leading-4',
-        STATUS_CLASS[status],
-      )}
+      class={cn('shrink-0 rounded px-1 text-[10px] font-semibold leading-4', STATUS_CLASS[status])}
     >
       {STATUS_LABEL[status]}
     </span>

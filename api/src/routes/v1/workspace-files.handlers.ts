@@ -65,8 +65,7 @@ export async function getFileTreeHandler(
 }
 
 export type FileContentResult =
-  | { kind: 'text'; content: string }
-  | { kind: 'binary'; buffer: Buffer; contentType: string };
+  { kind: 'text'; content: string } | { kind: 'binary'; buffer: Buffer; contentType: string };
 
 export async function getFileContentHandler(
   store: WorkspaceStore,

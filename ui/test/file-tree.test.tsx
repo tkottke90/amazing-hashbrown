@@ -26,7 +26,13 @@ const treeWithFolder: FileTreeResponse = {
       ],
     },
     { name: 'README.md', path: 'README.md', type: 'file' },
-    { name: 'archive.zip', path: 'archive.zip', type: 'file', category: 'unsupported', oversize: false },
+    {
+      name: 'archive.zip',
+      path: 'archive.zip',
+      type: 'file',
+      category: 'unsupported',
+      oversize: false,
+    },
     { name: 'huge.txt', path: 'huge.txt', type: 'file', category: 'text', oversize: true },
   ],
 };
@@ -81,7 +87,7 @@ describe('FileTree', () => {
     expect(readmeRow).not.toHaveTextContent(/[MA]$/);
   });
 
-  it("renders the unsupported badge with the expected title", () => {
+  it('renders the unsupported badge with the expected title', () => {
     fileTree.value = treeWithFolder;
     renderTree();
 

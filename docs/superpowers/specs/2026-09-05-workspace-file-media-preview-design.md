@@ -66,7 +66,7 @@ export interface FileNode {
 - Known-unsupported (binary formats that can't be text-edited or previewed): `pdf`, `zip`, `tar`, `gz`, `7z`, `rar`, `exe`, `dll`, `so`, `bin`, `dat`, `iso`, `class`, `jar`, `wasm`, `sqlite`, `db`, `woff`, `woff2`, `ttf`, `otf`, `eot`, `pyc`
 - Anything else defaults to `'text'`
 
-This is a deliberate accuracy/perf tradeoff, confirmed during design: a mislabeled file (e.g. a binary blob saved with a `.txt` extension) gets no tree warning, but still fails gracefully into today's existing fallback when actually opened, because `readFileGuarded`'s real content-sniff is still the enforcement point at request time — classification only decides what the tree *shows in advance* and how the content route *treats a request*, it never skips the real guard on read. The alternative (sniffing every file's bytes during the tree walk for 100% accuracy) would mean reading part of every file in the workspace on every tree load — rejected as a real perf cost that grows with workspace size.
+This is a deliberate accuracy/perf tradeoff, confirmed during design: a mislabeled file (e.g. a binary blob saved with a `.txt` extension) gets no tree warning, but still fails gracefully into today's existing fallback when actually opened, because `readFileGuarded`'s real content-sniff is still the enforcement point at request time — classification only decides what the tree _shows in advance_ and how the content route _treats a request_, it never skips the real guard on read. The alternative (sniffing every file's bytes during the tree walk for 100% accuracy) would mean reading part of every file in the workspace on every tree load — rejected as a real perf cost that grows with workspace size.
 
 `oversize` requires a `size` per file, so the tree walker now `stat`s every file (previously only used `readdir`'s dirent type, no per-file stat). It's `true` only when `category === 'text'` and `size` exceeds the existing 2MB cap — media files are never flagged oversize, since no cap applies to them.
 
@@ -158,13 +158,13 @@ Audio/video in a background tab keeps playing if the user started it before swit
 
 ## Error handling
 
-| Case                                                                     | Behavior                                                                                          |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `stat()` fails for one file during the tree walk (e.g. deleted mid-walk) | That entry is skipped from the tree, same precedent as the existing symlink-skip — not a tree-wide error |
-| File classified `'unsupported'` clicked in the tree                      | Tab opens directly into the fallback message — no fetch attempted                                  |
-| File classified `'text'` but the real read finds binary content/too-large | Existing 422 → `tab.unsupported`/`tab.error` fallback, same as today                                |
-| Media file's bytes can't be decoded by the browser (bad codec, etc.)     | Native browser media-element error state — no custom handling, out of scope                        |
-| Save fails (disk error, permission denied)                               | Inline error near Save button; buffer and `dirty` state preserved — unchanged from today            |
+| Case                                                                      | Behavior                                                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `stat()` fails for one file during the tree walk (e.g. deleted mid-walk)  | That entry is skipped from the tree, same precedent as the existing symlink-skip — not a tree-wide error |
+| File classified `'unsupported'` clicked in the tree                       | Tab opens directly into the fallback message — no fetch attempted                                        |
+| File classified `'text'` but the real read finds binary content/too-large | Existing 422 → `tab.unsupported`/`tab.error` fallback, same as today                                     |
+| Media file's bytes can't be decoded by the browser (bad codec, etc.)      | Native browser media-element error state — no custom handling, out of scope                              |
+| Save fails (disk error, permission denied)                                | Inline error near Save button; buffer and `dirty` state preserved — unchanged from today                 |
 
 ---
 
@@ -186,13 +186,13 @@ Audio/video in a background tab keeps playing if the user started it before swit
 
 Extend the existing `e2e/tests/003-WorkspaceFileBrowser.spec.ts` suite (`@tkottke90/playwrite-test-runner` pattern already used there) rather than adding a new numbered suite — media preview is an extension of the same Files-tab flow that suite already covers, not a new feature area. New steps:
 
-| Action                                                        | Expected outcome                                                                 |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Click an image file in the tree                               | Tab opens showing an `<img>` with the file's content, not the CodeMirror editor  |
-| Click an audio or video file in the tree                       | Tab opens showing a native player with playback controls                        |
-| Click an unsupported-type file (e.g. a `.zip`)                 | Tree row shows the amber unsupported badge; tab opens directly into the fallback message |
-| Click an oversized text file                                   | Tree row shows the distinct oversize badge (different icon from the unsupported one) |
-| Toggle mute, then switch between two open media tabs           | Both tabs' media elements reflect the muted state; the inactive tab is always muted regardless of the toggle |
+| Action                                               | Expected outcome                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Click an image file in the tree                      | Tab opens showing an `<img>` with the file's content, not the CodeMirror editor                              |
+| Click an audio or video file in the tree             | Tab opens showing a native player with playback controls                                                     |
+| Click an unsupported-type file (e.g. a `.zip`)       | Tree row shows the amber unsupported badge; tab opens directly into the fallback message                     |
+| Click an oversized text file                         | Tree row shows the distinct oversize badge (different icon from the unsupported one)                         |
+| Toggle mute, then switch between two open media tabs | Both tabs' media elements reflect the muted state; the inactive tab is always muted regardless of the toggle |
 
 ---
 

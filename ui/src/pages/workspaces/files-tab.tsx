@@ -121,7 +121,13 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
                 class="max-h-full max-w-full"
               />
             ) : (
-              <audio data-testid="file-audio" src={tab.contentUrl} controls muted={muted} class="w-full" />
+              <audio
+                data-testid="file-audio"
+                src={tab.contentUrl}
+                controls
+                muted={muted}
+                class="w-full"
+              />
             )}
           </div>
         </div>

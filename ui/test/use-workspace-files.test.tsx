@@ -29,7 +29,11 @@ const mockFetchFileContent = api.fetchFileContent as jest.MockedFunction<
   typeof api.fetchFileContent
 >;
 
-function makeNode(path: string, category: FileNode['category'], overrides: Partial<FileNode> = {}): FileNode {
+function makeNode(
+  path: string,
+  category: FileNode['category'],
+  overrides: Partial<FileNode> = {},
+): FileNode {
   return {
     name: path.split('/').pop() ?? path,
     path,

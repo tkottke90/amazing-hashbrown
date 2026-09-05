@@ -81,7 +81,11 @@ export async function writeUnsupportedExtensionFile(
   location: string,
   relativePath: string,
 ): Promise<void> {
-  await writeFileDirect(location, relativePath, 'not a real archive — extension-only classification\n');
+  await writeFileDirect(
+    location,
+    relativePath,
+    'not a real archive — extension-only classification\n',
+  );
 }
 
 // Makes a file read-only so a subsequent Save through the app surfaces a

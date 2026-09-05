@@ -487,7 +487,7 @@ export const WorkspaceFileBrowser: TestSuite = {
     {
       action: 'Click the image file',
       expectedOutcome:
-        'The tab shows an <img> with the file\'s content instead of the CodeMirror editor',
+        "The tab shows an <img> with the file's content instead of the CodeMirror editor",
       test: async ({ page }, testInfo) => {
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await fileRow(page, 'image.png').click();

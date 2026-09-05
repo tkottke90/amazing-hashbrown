@@ -75,7 +75,13 @@ describe('services/workspace-files', () => {
 
       const bDir = tree.find((n) => n.name === 'b-dir')!;
       expect(bDir.children).to.deep.equal([
-        { name: 'inner.txt', path: 'b-dir/inner.txt', type: 'file', category: 'text', oversize: false },
+        {
+          name: 'inner.txt',
+          path: 'b-dir/inner.txt',
+          type: 'file',
+          category: 'text',
+          oversize: false,
+        },
       ]);
     });
 
