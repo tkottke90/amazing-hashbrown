@@ -1,13 +1,16 @@
 import { tool } from '@langchain/core/tools';
+import type { ServerTool, ClientTool } from '@langchain/core/tools';
 import { trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
+import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent, createMiddleware } from 'langchain';
+import { z } from 'zod';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { estimateTokens as estimateTokensForText } from '@tkottke90/llm-common-types/tokens';
 import { getAgentInstructions } from '../config/agent-instructions.js';
-import { env } from '../config/env.js';
+import { env, ContextWindowSchema } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
@@ -100,39 +103,129 @@ function estimateTokens(messages: BaseMessage[]): number {
   }, 0);
 }
 
-// Trims old messages from the LangGraph state before each agent turn so the
-// model never receives more tokens than the configured ceiling. Uses
-// trimMessages from @langchain/core with strategy:'last' (keep most-recent)
-// and startOn:'human' (never start mid-tool-call-result pair) to preserve
-// tool-call/tool-result pairing required by LangGraph.
-export const contextWindowMiddleware = createMiddleware({
-  name: 'ContextWindowMiddleware',
-  beforeModel: async (state) => {
-    const cfg = env.chat?.contextWindow;
-    // Enabled by default; only skip if explicitly set to false.
-    if (cfg?.enabled === false) return undefined;
+type ContextWindowConfig = z.infer<typeof ContextWindowSchema>;
 
-    const trimmer = trimMessages({
-      maxTokens: cfg?.maxTokens ?? 32000,
-      strategy: 'last',
-      tokenCounter: estimateTokens,
-      includeSystem: true,
-      allowPartial: false,
-      startOn: 'human',
-    });
+// A misconfigured ceiling (maxTokens too low for the bound tool set) must
+// never trim the message budget to zero/negative — trimMessages requires a
+// positive budget to preserve startOn:'human' tool-call/tool-result pairing.
+// Hitting this floor means the ceiling can't actually be honored for this
+// tool set; wrapModelCall logs a warning when it does (see below).
+const MIN_BUDGET_FLOOR = 2000;
 
-    const trimmed = await trimmer.invoke(state.messages as BaseMessage[]);
-    if (trimmed.length === state.messages.length) return undefined;
+// Sums each bound tool's real wire-format size: its JSON-schema form (via
+// @langchain/core's toJsonSchema — the same conversion LangChain uses when
+// binding tools to a provider request, so it works whether a tool's .schema
+// is a Zod instance, as every tool in this app's STATIC_CHAT_TOOLS/MCP sets
+// is, or already-JSON-Schema) plus its description. ServerTool entries
+// (opaque provider built-ins, unused in this app today) have no .schema and
+// are skipped rather than estimated. A per-tool failure (an unrepresentable
+// Zod branch, e.g.) falls back to name+description only rather than
+// breaking the whole estimate — this feeds a soft budget check, not
+// something that should be able to take down a live chat turn.
+// Exported for direct testing — same rationale as buildWikiWriteTools() below.
+export function estimateToolsTokens(tools: (ServerTool | ClientTool)[]): number {
+  return tools.reduce((sum, t) => {
+    const name = 'name' in t && typeof t.name === 'string' ? t.name : 'unknown';
+    const description =
+      'description' in t && typeof t.description === 'string' ? t.description : '';
 
-    logger.debug('contextWindow: trimmed message history', {
-      before: state.messages.length,
-      after: trimmed.length,
-      maxTokens: cfg?.maxTokens ?? 32000,
-    });
+    if (!('schema' in t) || !t.schema) return sum;
 
-    return { messages: trimmed };
-  },
-});
+    try {
+      const jsonSchema = toJsonSchema(t.schema, { unrepresentable: 'any' });
+      return sum + estimateTokensForText(JSON.stringify(jsonSchema) + description);
+    } catch (err) {
+      logger.warn('contextWindow: tool schema estimate failed, using name/description fallback', {
+        tool: name,
+        err: serializeError(err as Error),
+      });
+      return sum + estimateTokensForText(name + description);
+    }
+  }, 0);
+}
+
+// Two-stage trim, split by concern:
+//   - beforeModel (below) is coarse and message-only — it structurally
+//     cannot see the bound tool list (beforeModel's signature has no
+//     `tools` field at all), so its job is bounding what gets *persisted*
+//     to the SQLite checkpoint over a long thread, not the exact per-call
+//     request size.
+//   - wrapModelCall is the actual enforcement point: it's the only hook
+//     that receives request.tools (already filtered by
+//     skillGatedToolsMiddleware, which runs earlier in the middleware
+//     array and therefore wraps this one from the outside), so it can
+//     account for tool-schema overhead the beforeModel trim never saw.
+//     This trim is call-scoped only — it does not write back to graph
+//     state, unlike beforeModel's.
+// See docs/superpowers/specs/2026-09-04-context-window-tool-schema-overhead-design.md.
+export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
+  return createMiddleware({
+    name: 'ContextWindowMiddleware',
+    beforeModel: async (state) => {
+      // Enabled by default; only skip if explicitly set to false.
+      if (cfg?.enabled === false) return undefined;
+
+      const trimmer = trimMessages({
+        maxTokens: cfg?.maxTokens ?? 32000,
+        strategy: 'last',
+        tokenCounter: estimateTokens,
+        includeSystem: true,
+        allowPartial: false,
+        startOn: 'human',
+      });
+
+      const trimmed = await trimmer.invoke(state.messages as BaseMessage[]);
+      if (trimmed.length === state.messages.length) return undefined;
+
+      logger.debug('contextWindow: trimmed message history', {
+        before: state.messages.length,
+        after: trimmed.length,
+        maxTokens: cfg?.maxTokens ?? 32000,
+      });
+
+      return { messages: trimmed };
+    },
+    wrapModelCall: async (request, handler) => {
+      if (cfg?.enabled === false) return handler(request);
+
+      const toolsTokens = estimateToolsTokens(request.tools);
+      const systemTokens = estimateTokens([request.systemMessage]);
+      const ceiling = (cfg?.maxTokens ?? 32000) * (cfg?.safetyMarginPct ?? 0.85);
+      const budget = Math.max(ceiling - toolsTokens - systemTokens, MIN_BUDGET_FLOOR);
+
+      if (budget === MIN_BUDGET_FLOOR) {
+        logger.warn('contextWindow: tool/system overhead exceeds ceiling, budget floored', {
+          toolsTokens,
+          systemTokens,
+          ceiling,
+          floor: MIN_BUDGET_FLOOR,
+        });
+      }
+
+      const trimmer = trimMessages({
+        maxTokens: budget,
+        strategy: 'last',
+        tokenCounter: estimateTokens,
+        includeSystem: false, // system already counted separately above
+        allowPartial: false,
+        startOn: 'human',
+      });
+
+      const trimmed = await trimmer.invoke(request.messages as BaseMessage[]);
+      if (trimmed.length !== request.messages.length) {
+        logger.debug('contextWindow: trimmed at wrapModelCall (tool-schema-aware)', {
+          before: request.messages.length,
+          after: trimmed.length,
+          toolsTokens,
+          systemTokens,
+          budget,
+        });
+      }
+
+      return handler({ ...request, messages: trimmed });
+    },
+  });
+}
 
 const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
@@ -240,7 +333,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
-      contextWindowMiddleware,
+      createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
   });
@@ -313,7 +406,7 @@ async function buildWorkspaceChatAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
-      contextWindowMiddleware,
+      createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
   });
@@ -446,7 +539,7 @@ export async function buildTaskAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
-      contextWindowMiddleware,
+      createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
   });

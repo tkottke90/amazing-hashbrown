@@ -52,6 +52,11 @@ export const AfterAgentSchema = z.object({
 export const ContextWindowSchema = z.object({
   enabled: z.boolean().default(true),
   maxTokens: z.number().default(32000),
+  // Fraction of maxTokens the trimmer actually targets — absorbs the char/4
+  // estimator's systematic undercount on dense structured content (tool
+  // schemas) without a second, separately-tuned calibration knob. See
+  // docs/superpowers/specs/2026-09-04-context-window-tool-schema-overhead-design.md.
+  safetyMarginPct: z.number().default(0.85),
 });
 
 export const ConversationSearchSchema = z.object({
