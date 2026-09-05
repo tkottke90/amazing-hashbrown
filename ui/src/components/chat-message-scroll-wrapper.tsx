@@ -6,9 +6,16 @@ import { cn } from '@/lib/utils';
 interface ChatMessageScrollWrapperProps {
   children: ComponentChildren;
   className?: string;
+  // Bump this (e.g. on message submit) to force an immediate smooth scroll to
+  // the bottom and re-arm auto-follow, even if the user was scrolled away.
+  forceScrollTrigger?: number;
 }
 
-export function ChatMessageScrollWrapper({ children, className }: ChatMessageScrollWrapperProps) {
+export function ChatMessageScrollWrapper({
+  children,
+  className,
+  forceScrollTrigger,
+}: ChatMessageScrollWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -16,6 +23,9 @@ export function ChatMessageScrollWrapper({ children, className }: ChatMessageScr
   const isNearBottomRef = useRef(true);
   // Suppresses smooth-scroll during initial layout before the mount scroll settles
   const isInitializedRef = useRef(false);
+  // Skips the forceScrollTrigger effect's first run (mount) so it doesn't
+  // double-fire alongside the mount-scroll effect below
+  const hasSkippedInitialTriggerRef = useRef(true);
 
   // Instant scroll to bottom on mount
   useEffect(() => {
@@ -76,8 +86,27 @@ export function ChatMessageScrollWrapper({ children, className }: ChatMessageScr
     return () => observer.disconnect();
   }, []);
 
+  // Force an immediate scroll to bottom whenever the caller bumps
+  // forceScrollTrigger (e.g. on message submit), regardless of prior scroll
+  // position, and re-arm auto-follow so streamed content keeps sticking.
+  useEffect(() => {
+    if (hasSkippedInitialTriggerRef.current) {
+      hasSkippedInitialTriggerRef.current = false;
+      return;
+    }
+    const container = containerRef.current;
+    if (!container) return;
+
+    isNearBottomRef.current = true;
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  }, [forceScrollTrigger]);
+
   return (
-    <div ref={containerRef} className={cn('overflow-y-auto', className)}>
+    <div
+      ref={containerRef}
+      data-testid="chat-scroll-container"
+      className={cn('overflow-y-auto', className)}
+    >
       <div ref={contentRef}>{children}</div>
       {/* Sentinel sits outside contentRef so its position is unaffected by content
           padding/margin, giving a clean bottom-of-viewport signal */}

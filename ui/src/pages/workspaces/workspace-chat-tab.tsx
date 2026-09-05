@@ -14,6 +14,7 @@ import { randomUUID } from '@/lib/utils';
 export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   const inputValue = useSignal('');
   const stagedAttachment = useSignal<StagedAttachment | null>(null);
+  const forceScrollTrigger = useSignal(0);
   // Local, button-driven loading state for the on-demand summarize request —
   // distinct from thread.isSummarizing (SSE-driven, only fires for the
   // automatic in-turn path), so both trigger paths show the same disabled/
@@ -46,6 +47,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   function handleSend() {
     const content = inputValue.value.trim();
     if (!content) return;
+    forceScrollTrigger.value++;
     inputValue.value = '';
     const attachmentId = stagedAttachment.value?.id;
     stagedAttachment.value = null;
@@ -96,7 +98,10 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
           </div>
         )}
 
-        <ChatMessageScrollWrapper className="min-h-0 flex-1">
+        <ChatMessageScrollWrapper
+          className="min-h-0 flex-1"
+          forceScrollTrigger={forceScrollTrigger.value}
+        >
           <div class="flex flex-col gap-4 p-4 pb-2">
             {scrollMessages.map((msg) => (
               // onFork intentionally omitted — a workspace has one rolling
