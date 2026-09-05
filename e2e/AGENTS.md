@@ -203,6 +203,7 @@ implementation details that change without notice.
 | `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx` | The card's Open control, navigating to `/workspaces/:id`                                      |
 | `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`            | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
 | `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`            | Wrapper `<g>` around rendered node `<circle>` elements                                        |
+| `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`   |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

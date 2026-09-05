@@ -17,6 +17,7 @@ Wraps a chat message list and manages scroll behavior. On load it snaps instantl
 | ----------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
 | `children`  | `ComponentChildren` | —       | The message list to render. Observed for size changes to trigger auto-scroll.                               |
 | `className` | `string`            | —       | Extra classes merged onto the outer scroll container. Use this to constrain height (`flex-1 min-h-0`, etc.) |
+| `forceScrollTrigger` | `number`   | —       | Optional incrementing counter. Bump it (e.g. on message submit) to force an immediate smooth scroll to the bottom, re-arming auto-follow even if the user was scrolled away. |
 
 ### Basic usage
 
@@ -120,6 +121,10 @@ When a message's content grows (e.g. a streaming LLM response appending tokens) 
 ### While reading history — no scroll
 
 If the user scrolls up to read an older message, auto-scroll is suppressed. New content may still arrive at the bottom (streaming continues), but the viewport stays wherever the user left it. Auto-scroll resumes automatically the next time the user scrolls back to the bottom.
+
+### On submit — force back to bottom
+
+Passing an incrementing `forceScrollTrigger` value causes the container to smooth-scroll to the bottom on every change after the first (the initial mount value doesn't trigger a scroll). This also re-arms auto-follow immediately, so the next content growth — such as a streaming reply that follows a just-submitted message — continues to scroll, even if the user was scrolled up reading history when they submitted. If `forceScrollTrigger` is omitted, this behavior is inert.
 
 ---
 
