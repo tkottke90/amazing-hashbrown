@@ -19,11 +19,11 @@ function appendSessionPattern(threadId: string, pattern: string): void {
   _sessionPatterns.set(threadId, [...existing, pattern]);
 }
 
-const ShellExecSchema = z.object({
+export const ShellExecSchema = z.object({
   command: z.string().describe('The shell command to execute'),
   reason: z
     .string()
-    .optional()
+    .min(1, 'reason is required')
     .describe('Explain why this command is needed (shown to user if approval is required)'),
   threadId: z.string().optional().describe('Thread ID for session allowlist scoping'),
 });
