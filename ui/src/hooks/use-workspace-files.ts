@@ -7,6 +7,7 @@ import {
   saveFile,
   FileFetchError,
   type FileTreeResponse,
+  type FileNode,
 } from '@/services/workspace-files-api';
 
 export const fileTree = signal<FileTreeResponse | null>(null);
@@ -16,6 +17,8 @@ export const expandedFolders = signal<Set<string>>(new Set());
 
 export interface OpenTab {
   path: string;
+  contentUrl: string; // node.content — used for GET (text/media) and PATCH (text)
+  category: 'text' | 'image' | 'audio' | 'video' | 'unsupported';
   view: EditorView | null; // set once by CodeEditor's mount effect via setTabView
   savedContent: string;
   dirty: Signal<boolean>; // ONE signal per tab — never a shared array/object signal
@@ -55,27 +58,23 @@ export function toggleFolder(path: string): void {
   expandedFolders.value = next;
 }
 
-export async function openFile(workspaceId: string, path: string): Promise<void> {
-  const existing = openTabs.value.find((t) => t.path === path);
+export async function openFile(workspaceId: string, node: FileNode): Promise<void> {
+  const existing = openTabs.value.find((t) => t.path === node.path);
   if (existing) {
-    activeTabPath.value = path;
+    activeTabPath.value = node.path;
     return;
   }
 
-  try {
-    const content = await fetchFileContent(workspaceId, path);
-    const tab: OpenTab = {
-      path,
-      view: null,
-      savedContent: content,
-      dirty: signal(false),
-    };
-    openTabs.value = [...openTabs.value, tab];
-    activeTabPath.value = path;
-  } catch (err) {
-    if (err instanceof FileFetchError && err.status === 422) {
+  const { path, content: contentUrl, category } = node;
+
+  switch (category) {
+    case 'unsupported': {
+      // The tree already told us this file can't be previewed — no fetch
+      // attempt at all.
       const tab: OpenTab = {
         path,
+        contentUrl: contentUrl!,
+        category: 'unsupported',
         view: null,
         savedContent: '',
         dirty: signal(false),
@@ -85,16 +84,67 @@ export async function openFile(workspaceId: string, path: string): Promise<void>
       activeTabPath.value = path;
       return;
     }
+    case 'image':
+    case 'audio':
+    case 'video': {
+      // No fetch — the media element's src performs the GET natively.
+      const tab: OpenTab = {
+        path,
+        contentUrl: contentUrl!,
+        category,
+        view: null,
+        savedContent: '',
+        dirty: signal(false),
+      };
+      openTabs.value = [...openTabs.value, tab];
+      activeTabPath.value = path;
+      return;
+    }
+    case 'text':
+    default: {
+      try {
+        const content = await fetchFileContent(contentUrl!);
+        const tab: OpenTab = {
+          path,
+          contentUrl: contentUrl!,
+          category: 'text',
+          view: null,
+          savedContent: content,
+          dirty: signal(false),
+        };
+        openTabs.value = [...openTabs.value, tab];
+        activeTabPath.value = path;
+      } catch (err) {
+        if (err instanceof FileFetchError && err.status === 422) {
+          // The tree said 'text', but the real read disagrees (stale
+          // classification) — same fallback as a genuinely unsupported file.
+          const tab: OpenTab = {
+            path,
+            contentUrl: contentUrl!,
+            category: 'text',
+            view: null,
+            savedContent: '',
+            dirty: signal(false),
+            unsupported: true,
+          };
+          openTabs.value = [...openTabs.value, tab];
+          activeTabPath.value = path;
+          return;
+        }
 
-    const tab: OpenTab = {
-      path,
-      view: null,
-      savedContent: '',
-      dirty: signal(false),
-      error: err instanceof Error ? err.message : 'Failed to open file',
-    };
-    openTabs.value = [...openTabs.value, tab];
-    activeTabPath.value = path;
+        const tab: OpenTab = {
+          path,
+          contentUrl: contentUrl!,
+          category: 'text',
+          view: null,
+          savedContent: '',
+          dirty: signal(false),
+          error: err instanceof Error ? err.message : 'Failed to open file',
+        };
+        openTabs.value = [...openTabs.value, tab];
+        activeTabPath.value = path;
+      }
+    }
   }
 }
 
@@ -108,7 +158,7 @@ export async function saveTab(workspaceId: string, path: string): Promise<void> 
 
   const content = tab.view.state.doc.toString();
   try {
-    await saveFile(workspaceId, path, content);
+    await saveFile(tab.contentUrl, content);
     openTabs.value = openTabs.value.map((t) =>
       t.path === path ? { ...t, savedContent: content, error: undefined } : t,
     );

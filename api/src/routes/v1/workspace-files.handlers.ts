@@ -1,4 +1,5 @@
-import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import type { WorkspaceStore } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import { resolveFilePathUnderWorkspace } from '../../services/workspace-location.js';
@@ -7,6 +8,8 @@ import {
   readFileGuarded,
   isContentTooLarge,
   invalidateFileTreeCache,
+  classifyFile,
+  getContentType,
   type FileTreeResult,
 } from '../../services/workspace-files.js';
 import type { ExecFileFn } from '../../services/workspace-provision.js';
@@ -61,11 +64,15 @@ export async function getFileTreeHandler(
   }
 }
 
+export type FileContentResult =
+  | { kind: 'text'; content: string }
+  | { kind: 'binary'; buffer: Buffer; contentType: string };
+
 export async function getFileContentHandler(
   store: WorkspaceStore,
   workspaceId: string,
   relativePath: string,
-): Promise<HandlerResult<string>> {
+): Promise<HandlerResult<FileContentResult>> {
   const workspace = store.getWorkspace(workspaceId);
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
 
@@ -74,6 +81,35 @@ export async function getFileContentHandler(
     absPath = resolveFilePathUnderWorkspace(workspace.location, relativePath);
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  const fileName = path.basename(relativePath);
+  const category = classifyFile(fileName);
+
+  if (category === 'unsupported') {
+    // Existence check first, so a missing unsupported-extension file still
+    // 404s instead of 422ing.
+    try {
+      await stat(absPath);
+    } catch (err) {
+      if (isEnoent(err)) return notFound(`File "${relativePath}" not found`);
+      return badRequest(`Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return unprocessable(`File "${relativePath}" cannot be previewed`);
+  }
+
+  if (category === 'image' || category === 'audio' || category === 'video') {
+    // No size cap here — that's a text-editor constraint (loading a whole
+    // file into CodeMirror as a JS string), not one that applies to
+    // streaming bytes straight to a native <img>/<audio>/<video> element.
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(absPath);
+    } catch (err) {
+      if (isEnoent(err)) return notFound(`File "${relativePath}" not found`);
+      return badRequest(`Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return ok({ kind: 'binary', buffer, contentType: getContentType(fileName) });
   }
 
   let guarded;
@@ -92,7 +128,7 @@ export async function getFileContentHandler(
     );
   }
 
-  return ok(guarded.content);
+  return ok({ kind: 'text', content: guarded.content });
 }
 
 export async function patchFileContentHandler(

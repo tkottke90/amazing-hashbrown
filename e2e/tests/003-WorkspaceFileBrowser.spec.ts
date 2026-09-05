@@ -8,6 +8,10 @@ import {
   initGitRepo,
   commitAll,
   writeBinaryFile,
+  writeImageFile,
+  writeAudioFile,
+  writeVideoFile,
+  writeUnsupportedExtensionFile,
   makeReadOnly,
   removeWorkspaceDir,
 } from '../lib/workspace-files.js';
@@ -27,6 +31,10 @@ interface CreatedWorkspace {
 // this mirrors how 002-GitHubTrackerWorkflow.spec.ts threads state —
 // createdIssueUrl/createdIssueNumber — between its own steps).
 let editWorkspace: CreatedWorkspace | null = null;
+
+// Populated by the media-preview steps, read by the mute-toggle step that
+// reuses the same workspace/tabs.
+let mediaWorkspace: CreatedWorkspace | null = null;
 
 async function createWorkspace(
   page: Page,
@@ -77,7 +85,7 @@ export const WorkspaceFileBrowser: TestSuite = {
   id: 18,
   name: 'Workspace File Browser',
   purpose:
-    'Verify the Files tab end-to-end against a real filesystem and real git repos: tree loading with git status badges, expand/collapse persistence, error states for a missing directory and a non-git workspace, multi-tab open/edit/save/discard, the dirty-close confirm guard, binary-file blocking, a genuine disk-level save failure, and the tree refresh control.',
+    'Verify the Files tab end-to-end against a real filesystem and real git repos: tree loading with git status badges, expand/collapse persistence, error states for a missing directory and a non-git workspace, multi-tab open/edit/save/discard, the dirty-close confirm guard, binary-file blocking, a genuine disk-level save failure, the tree refresh control, and image/audio/video preview with its tree warning badges and mute toggle.',
   tag: [TAGS.UserWorkflow],
   recordVideo: true,
   steps: [
@@ -439,6 +447,134 @@ export const WorkspaceFileBrowser: TestSuite = {
           await refreshButton.click();
           await expect(gammaRow).toBeVisible({ timeout: 500 });
         }).toPass({ timeout: 20_000, intervals: [1000] });
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      tag: [TAGS.Smoke],
+      action:
+        'Open the Files tab on a workspace with one file of each media category plus an oversized text file',
+      expectedOutcome:
+        'The tree loads; the unsupported-extension file shows the amber unsupported badge, and the oversized text file shows the distinct oversize badge',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-media-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-media-${Date.now()}`,
+          git: false,
+        });
+
+        await writeImageFile(ws.location, 'image.png');
+        await writeAudioFile(ws.location, 'audio.mp3');
+        await writeVideoFile(ws.location, 'video.mp4');
+        await writeUnsupportedExtensionFile(ws.location, 'archive.zip');
+        await writeFileDirect(ws.location, 'huge.txt', 'a'.repeat(2 * 1024 * 1024 + 1));
+
+        mediaWorkspace = ws;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        await expect(
+          fileRow(page, 'archive.zip').locator('[data-testid="file-tree-unsupported"]'),
+        ).toBeVisible();
+        await expect(
+          fileRow(page, 'huge.txt').locator('[data-testid="file-tree-oversize"]'),
+        ).toBeVisible();
+      },
+    },
+    {
+      action: 'Click the image file',
+      expectedOutcome:
+        'The tab shows an <img> with the file\'s content instead of the CodeMirror editor',
+      test: async ({ page }, testInfo) => {
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'image.png').click();
+
+        await expect(fileTab(page, 'image.png')).toBeVisible();
+        const img = editorPane(page, 'image.png').getByTestId('file-image');
+        await expect(img).toBeVisible();
+        await expect(img).toHaveAttribute('src', /\/image\.png\/content$/);
+        await expect(editorPane(page, 'image.png').locator('.cm-content')).toHaveCount(0);
+      },
+    },
+    {
+      action: 'Click the audio file, then the video file',
+      expectedOutcome:
+        'Both open as native players with playback controls, and both tabs remain in the tab bar together',
+      test: async ({ page }, testInfo) => {
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'audio.mp3').click();
+        await expect(fileTab(page, 'audio.mp3')).toBeVisible();
+        const audio = editorPane(page, 'audio.mp3').getByTestId('file-audio');
+        await expect(audio).toBeVisible();
+        await expect(audio).toHaveAttribute('controls', '');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'video.mp4').click();
+        await expect(fileTab(page, 'video.mp4')).toBeVisible();
+        const video = editorPane(page, 'video.mp4').getByTestId('file-video');
+        await expect(video).toBeVisible();
+        await expect(video).toHaveAttribute('controls', '');
+
+        await expect(fileTab(page, 'audio.mp3')).toBeVisible();
+        await expect(fileTab(page, 'video.mp4')).toBeVisible();
+      },
+    },
+    {
+      action: 'Click the unsupported archive.zip file',
+      expectedOutcome: '"Can\'t display this file" is shown, same as any other unsupported file',
+      test: async ({ page }, testInfo) => {
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'archive.zip').click();
+
+        await expect(fileTab(page, 'archive.zip')).toBeVisible();
+        await expect(editorPane(page, 'archive.zip').getByTestId('file-unsupported')).toHaveText(
+          "Can't display this file.",
+        );
+        await expect(editorPane(page, 'archive.zip').locator('.cm-content')).toHaveCount(0);
+      },
+    },
+    {
+      action: 'Click the oversized huge.txt file',
+      expectedOutcome:
+        'Its tree row keeps showing the oversize badge, and opening it falls back to the same "Can\'t display this file" message — the badge only warns in advance, the real 422-too-large path is unchanged',
+      test: async ({ page }, testInfo) => {
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'huge.txt').click();
+
+        await expect(fileTab(page, 'huge.txt')).toBeVisible();
+        await expect(editorPane(page, 'huge.txt').getByTestId('file-unsupported')).toHaveText(
+          "Can't display this file.",
+        );
+        await expect(
+          fileRow(page, 'huge.txt').locator('[data-testid="file-tree-oversize"]'),
+        ).toBeVisible();
+      },
+    },
+    {
+      action: 'Toggle mute, then switch between the audio and video tabs',
+      expectedOutcome:
+        'Before toggling, only the inactive tab is muted; after toggling, both tabs report muted regardless of which is active',
+      test: async ({ page }, testInfo) => {
+        const ws = mediaWorkspace as CreatedWorkspace;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'video.mp4').click();
+        const video = editorPane(page, 'video.mp4').getByTestId('file-video');
+        const audio = editorPane(page, 'audio.mp3').getByTestId('file-audio');
+
+        // Preact sets `muted` as a live JS property, not a reflected HTML
+        // attribute — assert via the DOM property, not toHaveAttribute.
+        expect(await video.evaluate((el: HTMLMediaElement) => el.muted)).toBe(false);
+        expect(await audio.evaluate((el: HTMLMediaElement) => el.muted)).toBe(true);
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await editorPane(page, 'video.mp4').getByTestId('media-mute-toggle').click();
+
+        expect(await video.evaluate((el: HTMLMediaElement) => el.muted)).toBe(true);
+        expect(await audio.evaluate((el: HTMLMediaElement) => el.muted)).toBe(true);
 
         await page.request.delete(`/api/v1/workspaces/${ws.id}`);
       },

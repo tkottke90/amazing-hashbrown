@@ -1,4 +1,12 @@
-import { ChevronRight, ChevronDown, Folder, FileText, RefreshCw } from 'lucide-preact';
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FileText,
+  RefreshCw,
+  AlertTriangle,
+  FileWarning,
+} from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import type { FileNode } from '@/services/workspace-files-api';
@@ -24,12 +32,32 @@ function GitStatusBadge({ status }: { status: 'M' | 'A' }) {
     <span
       data-testid="file-tree-status"
       class={cn(
-        'ml-auto shrink-0 rounded px-1 text-[10px] font-semibold leading-4',
+        'shrink-0 rounded px-1 text-[10px] font-semibold leading-4',
         STATUS_CLASS[status],
       )}
     >
       {STATUS_LABEL[status]}
     </span>
+  );
+}
+
+function UnsupportedBadge() {
+  return (
+    <AlertTriangle
+      data-testid="file-tree-unsupported"
+      title="Can't preview this file type"
+      class="size-3.5 shrink-0 text-amber-600"
+    />
+  );
+}
+
+function OversizeBadge() {
+  return (
+    <FileWarning
+      data-testid="file-tree-oversize"
+      title="File is too large to open"
+      class="size-3.5 shrink-0 text-slate-500"
+    />
   );
 }
 
@@ -53,7 +81,7 @@ function FileTreeRow({
         data-path={node.path}
         class="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-sm hover:bg-muted"
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
-        onClick={() => (isDir ? toggleFolder(node.path) : void openFile(workspaceId, node.path))}
+        onClick={() => (isDir ? toggleFolder(node.path) : void openFile(workspaceId, node))}
       >
         {isDir ? (
           isExpanded ? (
@@ -70,7 +98,11 @@ function FileTreeRow({
           <FileText class="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <span class="truncate">{node.name}</span>
-        {node.gitStatus && <GitStatusBadge status={node.gitStatus} />}
+        <span class="ml-auto flex shrink-0 items-center gap-1">
+          {node.gitStatus && <GitStatusBadge status={node.gitStatus} />}
+          {node.category === 'unsupported' && <UnsupportedBadge />}
+          {node.oversize && <OversizeBadge />}
+        </span>
       </button>
 
       {isDir && isExpanded && node.children && (

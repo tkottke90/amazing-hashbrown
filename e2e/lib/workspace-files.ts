@@ -46,6 +46,44 @@ export async function writeBinaryFile(location: string, relativePath: string): P
   await writeFile(absPath, buffer);
 }
 
+// A real, decodable 1x1 transparent PNG — unlike writeBinaryFile above, this
+// must actually decode: a failed <img> decode can collapse the element's
+// intrinsic box in some browsers and break a Playwright visibility check.
+const MINIMAL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+export async function writeImageFile(location: string, relativePath: string): Promise<void> {
+  const absPath = path.join(location, relativePath);
+  await mkdir(path.dirname(absPath), { recursive: true });
+  await writeFile(absPath, Buffer.from(MINIMAL_PNG_BASE64, 'base64'));
+}
+
+// Native <audio controls>/<video controls> chrome mounts regardless of
+// decode success (only playback would fail), so these don't need to be
+// byte-perfect the way writeImageFile's PNG does — a few arbitrary bytes
+// under the right extension is enough to exercise the route/element wiring.
+export async function writeAudioFile(location: string, relativePath: string): Promise<void> {
+  const absPath = path.join(location, relativePath);
+  await mkdir(path.dirname(absPath), { recursive: true });
+  await writeFile(absPath, Buffer.from([0xff, 0xfb, 0x90, 0x00]));
+}
+
+export async function writeVideoFile(location: string, relativePath: string): Promise<void> {
+  const absPath = path.join(location, relativePath);
+  await mkdir(path.dirname(absPath), { recursive: true });
+  await writeFile(absPath, Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]));
+}
+
+// Classification is extension-only (workspace-files.ts's classifyFile) — the
+// content is irrelevant here, this exists purely for call-site clarity
+// alongside its image/audio/video siblings above.
+export async function writeUnsupportedExtensionFile(
+  location: string,
+  relativePath: string,
+): Promise<void> {
+  await writeFileDirect(location, relativePath, 'not a real archive — extension-only classification\n');
+}
+
 // Makes a file read-only so a subsequent Save through the app surfaces a
 // real disk-level write failure. chmod alone enforces this for a normal
 // user, but this suite (like the rest of this repo's dev/CI containers) runs
