@@ -74,7 +74,7 @@ describe('ProviderModelPicker — touch never schedules a hover-close (issue #13
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
   });
 
-  it('a touch pointerEnter still lets the model be opened and selected via click (Radix\'s own tap-to-open path)', () => {
+  it("a touch pointerEnter still lets the model be opened and selected via click (Radix's own tap-to-open path)", () => {
     const { onSelect } = renderPicker();
     openSubmenu(screen.getByText('openai'));
     fireEvent.click(screen.getByText('gpt-4o'));

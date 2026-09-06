@@ -66,12 +66,12 @@ Real/emulated Firefox and Safari mobile — the only way to positively confirm t
 
 ## 5. Files Changed
 
-| File | Change |
-| --- | --- |
+| File                                          | Change                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `ui/src/components/provider-model-picker.tsx` | Guard `onPointerEnter`/`onPointerLeave` handlers to no-op for non-mouse `pointerType` |
-| `ui/src/components/chat-input.tsx` | Same guard on the outer "Provider" `Sub`'s `onPointerEnter`/`onPointerLeave` handlers |
-| `ui/test/provider-model-picker.test.tsx` | Add touch-pointerType no-close test; keep mouse-pointerType close test |
-| `ui/test/chat-input.test.tsx` | Add equivalent touch-pointerType case if pointer-driven coverage exists there |
+| `ui/src/components/chat-input.tsx`            | Same guard on the outer "Provider" `Sub`'s `onPointerEnter`/`onPointerLeave` handlers |
+| `ui/test/provider-model-picker.test.tsx`      | Add touch-pointerType no-close test; keep mouse-pointerType close test                |
+| `ui/test/chat-input.test.tsx`                 | Add equivalent touch-pointerType case if pointer-driven coverage exists there         |
 
 ---
 
