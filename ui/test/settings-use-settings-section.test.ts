@@ -24,6 +24,7 @@ jest.mock('@/lib/toast', () => ({
 import { useSettingsSection } from '@/pages/settings/use-settings-section';
 import * as api from '@/services/settings-api';
 import { showToast } from '@/lib/toast';
+import { activeGuard } from '@/hooks/use-settings-guard';
 
 const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;
 const mockPatch = api.patchSettingsSection as jest.MockedFunction<typeof api.patchSettingsSection>;
@@ -40,6 +41,11 @@ describe('useSettingsSection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFetch.mockResolvedValue(INITIAL_DATA);
+    activeGuard.value = null;
+  });
+
+  afterEach(() => {
+    activeGuard.value = null;
   });
 
   it('fetches data on mount and populates form', async () => {
@@ -166,5 +172,45 @@ describe('useSettingsSection', () => {
 
     act(() => result.current.discard());
     expect(result.current.fieldErrors.value).toEqual({});
+  });
+
+  it('registers activeGuard on mount with isDirty false', async () => {
+    const { result } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+
+    expect(activeGuard.value).not.toBeNull();
+    expect(activeGuard.value?.isDirty).toBe(false);
+  });
+
+  it('updates activeGuard.isDirty when the form becomes dirty', async () => {
+    const { result } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+
+    act(() => result.current.setField('logLevel', 'debug'));
+
+    expect(activeGuard.value?.isDirty).toBe(true);
+  });
+
+  it("activeGuard.discard resets the hook's own form state", async () => {
+    const { result } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+
+    act(() => result.current.setField('logLevel', 'debug'));
+    expect(activeGuard.value?.isDirty).toBe(true);
+
+    act(() => activeGuard.value?.discard());
+
+    expect(result.current.form.value?.logLevel).toBe('info');
+    expect(result.current.isDirty.value).toBe(false);
+  });
+
+  it('clears activeGuard on unmount', async () => {
+    const { result, unmount } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+    expect(activeGuard.value).not.toBeNull();
+
+    unmount();
+
+    expect(activeGuard.value).toBeNull();
   });
 });

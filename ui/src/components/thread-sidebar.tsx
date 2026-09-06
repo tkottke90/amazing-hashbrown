@@ -42,6 +42,7 @@ import {
 } from '@/hooks/use-thread';
 import { queueState, refreshQueue } from '@/hooks/use-tasks';
 import { fetchTasks } from '@/services/tasks-api';
+import { confirmNavigateAway } from '@/hooks/use-settings-guard';
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -151,7 +152,10 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
     >
       <button
         type="button"
-        onClick={() => route(`/chat/${thread.id}`)}
+        onClick={() => {
+          if (!confirmNavigateAway()) return;
+          route(`/chat/${thread.id}`);
+        }}
         className="flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md px-2 py-1 text-left"
       >
         <span className="w-full truncate">{thread.title}</span>
@@ -248,6 +252,13 @@ function QueueWidget() {
   );
 }
 
+function guardAnchorClick(e: MouseEvent) {
+  if (!confirmNavigateAway()) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+
 export function ThreadSidebar() {
   const { url, route } = useLocation();
   const inboxCount = useSignal(0);
@@ -274,6 +285,7 @@ export function ThreadSidebar() {
         variant="outline"
         className="justify-start gap-2"
         onClick={() => {
+          if (!confirmNavigateAway()) return;
           const id = newThread();
           route(`/chat/${id}`);
         }}
@@ -296,6 +308,7 @@ export function ThreadSidebar() {
       <a
         href="/inbox"
         aria-label="Inbox"
+        onClick={guardAnchorClick}
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
           url === '/inbox'
@@ -314,6 +327,7 @@ export function ThreadSidebar() {
       <a
         href="/workspaces"
         aria-label="Workspaces"
+        onClick={guardAnchorClick}
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
           url.startsWith('/workspaces')
@@ -327,6 +341,7 @@ export function ThreadSidebar() {
       <a
         href="/wiki"
         aria-label="Wiki"
+        onClick={guardAnchorClick}
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
           url === '/wiki'
@@ -340,6 +355,7 @@ export function ThreadSidebar() {
       <a
         href="/settings"
         aria-label="Settings"
+        onClick={guardAnchorClick}
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
           url === '/settings'

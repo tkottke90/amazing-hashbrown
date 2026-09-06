@@ -6,6 +6,7 @@ import {
   SettingsValidationError,
 } from '@/services/settings-api';
 import { showToast } from '@/lib/toast';
+import { activeGuard } from '@/hooks/use-settings-guard';
 
 function setNestedPath(obj: Record<string, unknown>, dotPath: string, value: unknown): void {
   const parts = dotPath.split('.');
@@ -84,6 +85,13 @@ export function useSettingsSection<T extends object>(slug: string) {
     form.value = JSON.parse(JSON.stringify(data.value));
     fieldErrors.value = {};
   }
+
+  useEffect(() => {
+    activeGuard.value = { isDirty: isDirty.value, discard };
+    return () => {
+      activeGuard.value = null;
+    };
+  }, [isDirty.value]);
 
   return { data, form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard };
 }
