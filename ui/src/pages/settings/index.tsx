@@ -9,6 +9,7 @@ import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/se
 import { StoragePanel } from '@/pages/settings/storage-panel';
 import { ToolsPanel } from '@/pages/settings/tools-panel';
 import { WorkspacesPanel } from '@/pages/settings/workspaces-panel';
+import { confirmNavigateAway } from '@/hooks/use-settings-guard';
 import { useLocation } from 'preact-iso';
 
 function resolveSection(raw: string | undefined): SettingsSlug {
@@ -49,6 +50,7 @@ export function SettingsView(_props: { path?: string }) {
   const section = resolveSection(query.section as string | undefined);
 
   function handleNavigate(slug: SettingsSlug) {
+    if (!confirmNavigateAway()) return;
     route(`/settings?section=${slug}`);
   }
 

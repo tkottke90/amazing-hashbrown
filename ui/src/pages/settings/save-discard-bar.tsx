@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-preact';
+import { AlertCircle, Loader2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 
 interface SaveDiscardBarProps {
@@ -12,14 +12,20 @@ export function SaveDiscardBar({ isDirty, isSaving, onSave, onDiscard }: SaveDis
   if (!isDirty) return null;
 
   return (
-    <div class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-background px-6 py-3">
-      <Button variant="ghost" size="sm" onClick={onDiscard} disabled={isSaving}>
-        Discard
-      </Button>
-      <Button size="sm" onClick={onSave} disabled={isSaving}>
-        {isSaving && <Loader2 class="mr-2 size-3.5 animate-spin" />}
-        Save changes
-      </Button>
+    <div class="sticky bottom-0 flex items-center justify-between gap-2 border-t border-primary/30 bg-primary/10 px-6 py-3 shadow-[0_-4px_12px_-4px_rgb(0_0_0_/_0.15)]">
+      <div class="flex items-center gap-2 text-sm font-medium text-primary">
+        <AlertCircle class="size-4" />
+        Unsaved changes
+      </div>
+      <div class="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onDiscard} disabled={isSaving}>
+          Discard
+        </Button>
+        <Button size="sm" onClick={onSave} disabled={isSaving}>
+          {isSaving && <Loader2 class="mr-2 size-3.5 animate-spin" />}
+          Save changes
+        </Button>
+      </div>
     </div>
   );
 }

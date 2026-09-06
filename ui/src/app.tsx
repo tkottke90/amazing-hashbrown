@@ -4,6 +4,7 @@ import { useEffect } from 'preact/hooks';
 import { ToastContainer } from '@/components/toast-container';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { activeThreadId } from '@/hooks/use-thread';
+import { activeGuard } from '@/hooks/use-settings-guard';
 import { ChatRoot } from '@/pages/chat';
 import { SettingsView } from '@/pages/settings';
 import { WikiView } from '@/pages/wiki';
@@ -22,6 +23,17 @@ function RootRedirect(_props: { path?: string }) {
 }
 
 export function App() {
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      if (activeGuard.value?.isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
   return (
     <LocationProvider>
       <TooltipProvider>
