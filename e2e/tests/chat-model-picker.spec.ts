@@ -32,6 +32,14 @@ const suite: TestSuite = {
         'The menu stays open through the linger and the move, and the model chip shows the clicked model',
       test: () => {},
     },
+    {
+      tags: ['@smoke'],
+      action:
+        'On a mobile viewport, tap through "Add to message" -> "Provider" -> a provider -> a model',
+      expectedOutcome:
+        'Each level stays open long enough for a real tap, and the model chip shows the tapped model',
+      test: () => {},
+    },
   ],
 };
 
@@ -182,6 +190,60 @@ test.describe(
 
       await secondModel.click();
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o-mini');
+    });
+  },
+);
+
+test.describe(
+  '@smoke @user-workflow',
+  {
+    annotation: suiteAnnotations(suite),
+  },
+  () => {
+    // 420x874 mirrors a typical modern phone in portrait. hasTouch/isMobile
+    // are context-level options — they can't be toggled per-test, which is
+    // why this mobile variant lives in its own describe() rather than
+    // reusing the desktop block above.
+    test.use({ viewport: { width: 420, height: 874 }, hasTouch: true, isMobile: true });
+
+    test('touch: tapping through Add to message -> Provider -> a provider -> a model selects it', async ({
+      page,
+    }, testInfo) => {
+      await mockProvidersApi(page);
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.locator('button[aria-label="Add to message"]').tap();
+
+      const providerTrigger = page.getByRole('menuitem', { name: 'Provider' });
+      await expect(providerTrigger).toBeVisible();
+      await providerTrigger.tap();
+
+      const openaiTrigger = page.getByRole('menuitem', { name: 'openai', exact: true });
+      await expect(openaiTrigger).toBeVisible();
+
+      // A real finger needs a moment to lift off "Provider" and land on
+      // "openai" — long enough to expose the same premature-close race the
+      // mouse-hover regression test above guards against (issue #113), only
+      // this time via touch's pointerup/pointerleave sequence rather than a
+      // mouse move. Each submenu level here is opened/closed via
+      // onPointerEnter/onPointerLeave with a 200ms close-grace timer (see
+      // MODEL_SUBMENU_CLOSE_GRACE_MS in provider-model-picker.tsx) — touch
+      // doesn't hover, so a tap's pointerup fires pointerleave almost
+      // immediately, arming that timer against a finger that's slower than
+      // 200ms to reach the next level.
+      await page.waitForTimeout(250);
+      await expect(openaiTrigger).toBeVisible();
+      await openaiTrigger.tap();
+
+      const firstModel = page.getByRole('menuitemcheckbox', { name: 'gpt-4o', exact: true });
+      await expect(firstModel).toBeVisible();
+
+      await page.waitForTimeout(250);
+      await expect(firstModel).toBeVisible();
+      await firstModel.tap();
+
+      await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o');
     });
   },
 );
