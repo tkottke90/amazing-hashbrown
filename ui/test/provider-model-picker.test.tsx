@@ -17,6 +17,24 @@ function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
 }
 
+// jsdom has no native PointerEvent either, so `fireEvent.pointerEnter`/
+// `pointerLeave` silently drop the `pointerType` from their init object —
+// the event Preact's handler receives always has `pointerType: undefined`.
+// Preact itself falls back to registering onPointerEnter/onPointerLeave
+// under the un-lowercased event name (same fallback as onPointerDown
+// above), so building a plain Event under that literal name and attaching
+// `pointerType` directly is what actually reaches the handler with the
+// value this suite needs to exercise `whenMouse` (issue #130).
+function firePointerEvent(
+  element: Element,
+  type: 'PointerEnter' | 'PointerLeave',
+  pointerType: 'mouse' | 'touch',
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  fireEvent(element, event);
+}
+
 // Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
 // top-level DropdownMenuTrigger above — it opens on click, or on real
 // pointer hover (timing-dependent), or an ArrowRight keypress while
@@ -105,15 +123,15 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     const { onSelect } = renderPicker();
     const trigger = screen.getByText('openai');
 
-    fireEvent.pointerEnter(trigger);
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
     const content = screen.getByText('gpt-4o').closest('[data-slot="dropdown-menu-sub-content"]');
     expect(content).not.toBeNull();
 
-    fireEvent.pointerLeave(trigger);
+    firePointerEvent(trigger, 'PointerLeave', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS / 2);
     });
-    fireEvent.pointerEnter(content as Element);
+    firePointerEvent(content as Element, 'PointerEnter', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
     });
@@ -127,10 +145,10 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     renderPicker();
     const trigger = screen.getByText('openai');
 
-    fireEvent.pointerEnter(trigger);
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
 
-    fireEvent.pointerLeave(trigger);
+    firePointerEvent(trigger, 'PointerLeave', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS - 1);
     });
@@ -147,11 +165,11 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     const openaiTrigger = screen.getByText('openai');
     const ollamaTrigger = screen.getByText('ollama');
 
-    fireEvent.pointerEnter(openaiTrigger);
+    firePointerEvent(openaiTrigger, 'PointerEnter', 'mouse');
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
 
-    fireEvent.pointerLeave(openaiTrigger);
-    fireEvent.pointerEnter(ollamaTrigger);
+    firePointerEvent(openaiTrigger, 'PointerLeave', 'mouse');
+    firePointerEvent(ollamaTrigger, 'PointerEnter', 'mouse');
 
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
     expect(screen.getByText('llama3.2')).toBeInTheDocument();
@@ -161,5 +179,60 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     });
     expect(screen.getByText('llama3.2')).toBeInTheDocument();
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+  });
+});
+
+// Regression coverage for issue #130: touch has no real hover state, but our
+// own onPointerEnter/onPointerLeave handlers (added for #113 above) never
+// guarded against non-mouse pointer types the way Radix's own internal
+// pointer-hover handlers do (see provider-model-picker.tsx's `whenMouse`).
+// A touch tap's synthesized pointerleave was arming the same close timer
+// meant only for a real pointer moving away, racing the user's next tap.
+describe('ProviderModelPicker — touch never schedules a hover-close (issue #130)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('a touch pointerLeave on the trigger never schedules a close', () => {
+    renderPicker();
+    const trigger = screen.getByText('openai');
+
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+
+    firePointerEvent(trigger, 'PointerLeave', 'touch');
+    act(() => {
+      jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
+    });
+
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+  });
+
+  it('a touch pointerLeave on the content never schedules a close', () => {
+    renderPicker();
+    const trigger = screen.getByText('openai');
+
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
+    const content = screen.getByText('gpt-4o').closest('[data-slot="dropdown-menu-sub-content"]');
+    expect(content).not.toBeNull();
+
+    firePointerEvent(content as Element, 'PointerLeave', 'touch');
+    act(() => {
+      jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
+    });
+
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+  });
+
+  it("a touch user can still open the model list and select via tap/click (Radix's own click-to-open path)", () => {
+    const { onSelect } = renderPicker();
+    openSubmenu(screen.getByText('openai'));
+    fireEvent.click(screen.getByText('gpt-4o'));
+    expect(onSelect).toHaveBeenCalledWith('openai', 'gpt-4o');
   });
 });

@@ -241,6 +241,12 @@ test.describe(
 
       await page.waitForTimeout(250);
       await expect(firstModel).toBeVisible();
+
+      // Linger, matching the mouse test's "read the model list before
+      // tapping" scenario above — a real user's tap isn't instantaneous,
+      // and this is what actually caught the #113 regression for mouse.
+      await page.waitForTimeout(300);
+      await expect(firstModel).toBeVisible();
       await firstModel.tap();
 
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o');

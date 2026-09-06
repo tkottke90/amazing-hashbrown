@@ -43,6 +43,21 @@ export interface ProviderModelPickerProps {
 // reference the real value instead of duplicating the number.
 export const MODEL_SUBMENU_CLOSE_GRACE_MS = 200;
 
+// Mirrors Radix's own internal `whenMouse` guard on its pointer-hover
+// handlers (MenuItemImpl/MenuSubTrigger/MenuContentImpl in radix-ui's
+// menu.tsx) — hover-driven open/close state must never react to touch or
+// pen, only real mouse hover. Our own onPointerEnter/onPointerLeave below
+// never had this guard, which is the root cause of issue #130: a touch
+// tap's synthesized pointerleave was arming the close timer meant only for
+// a real pointer moving away.
+export function whenMouse<E extends { pointerType: string }>(
+  handler: (event: E) => void,
+): (event: E) => void {
+  return (event) => {
+    if (event.pointerType === 'mouse') handler(event);
+  };
+}
+
 // Provider -> model drill-down, shared by the chat input's model switcher
 // and the cost-rates Add-rate modal. Renders one DropdownMenuSub per
 // provider (nested inside whatever DropdownMenuContent/DropdownMenuSub the
@@ -152,16 +167,16 @@ export function ProviderModelPicker({
           >
             <DropdownMenuSubTrigger
               className={p.name === activeProvider ? 'font-semibold' : undefined}
-              onPointerEnter={() => openProviderNow(p.name)}
+              onPointerEnter={whenMouse(() => openProviderNow(p.name))}
               onFocus={() => keepOpenOnFocus(p.name)}
-              onPointerLeave={() => scheduleProviderClose(p.name)}
+              onPointerLeave={whenMouse(() => scheduleProviderClose(p.name))}
             >
               {p.name}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent
-              onPointerEnter={() => openProviderNow(p.name)}
+              onPointerEnter={whenMouse(() => openProviderNow(p.name))}
               onFocus={() => keepOpenOnFocus(p.name)}
-              onPointerLeave={() => scheduleProviderClose(p.name)}
+              onPointerLeave={whenMouse(() => scheduleProviderClose(p.name))}
             >
               {models.map((m) => (
                 <DropdownMenuCheckboxItem

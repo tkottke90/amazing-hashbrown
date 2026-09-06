@@ -29,6 +29,7 @@ import {
 import {
   ProviderModelPicker,
   MODEL_SUBMENU_CLOSE_GRACE_MS,
+  whenMouse,
 } from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
@@ -471,16 +472,16 @@ export function ChatInput({
                     }}
                   >
                     <DropdownMenuSubTrigger
-                      onPointerEnter={openProviderMenuNow}
+                      onPointerEnter={whenMouse(openProviderMenuNow)}
                       onFocus={keepProviderMenuOpenOnFocus}
-                      onPointerLeave={scheduleProviderMenuClose}
+                      onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
                       Provider
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent
-                      onPointerEnter={openProviderMenuNow}
+                      onPointerEnter={whenMouse(openProviderMenuNow)}
                       onFocus={keepProviderMenuOpenOnFocus}
-                      onPointerLeave={scheduleProviderMenuClose}
+                      onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
                       <ProviderModelPicker
                         providers={providers}
