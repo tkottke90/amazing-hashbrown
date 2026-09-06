@@ -191,7 +191,7 @@ describe('useSettingsSection', () => {
     expect(activeGuard.value?.isDirty).toBe(true);
   });
 
-  it('activeGuard.discard resets the hook\'s own form state', async () => {
+  it("activeGuard.discard resets the hook's own form state", async () => {
     const { result } = renderHook(() => useSettingsSection<TestData>('general'));
     await waitFor(() => expect(result.current.form.value).not.toBeNull());
 

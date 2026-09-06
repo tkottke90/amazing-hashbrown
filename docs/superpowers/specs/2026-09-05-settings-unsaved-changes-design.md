@@ -57,7 +57,7 @@ before closing a dirty file tab — just not here.
 - Background `bg-primary/10` (the same tint already used for "active" states
   elsewhere in Settings — e.g. `settings-nav.tsx`'s active item, the
   "Default" provider badge in `model-providers-panel.tsx`), `border-t
-  border-primary/30` instead of `bg-background border-border`.
+border-primary/30` instead of `bg-background border-border`.
 - An elevation shadow so the bar visually lifts off the page instead of
   blending into it: `shadow-[0_-4px_12px_-4px_rgb(0_0_0_/_0.15)]` (same
   shadow direction/style `Layout` already uses on its main panel edge).
