@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/preact';
+import { act, fireEvent, render, screen } from '@testing-library/preact';
+import { signal } from '@preact/signals';
 import { Dialog, useDialog } from '../src/Dialog';
 
 function getDialogEl(container: Element) {
@@ -111,5 +112,114 @@ describe('Dialog', () => {
 
     const inner = dialog.querySelector('div');
     expect(inner?.className).toContain('custom-inner');
+  });
+});
+
+// Coverage for the controlled `open` signal: previously declared on
+// DialogProps but never read anywhere in this component — a caller
+// opening the dialog as a side effect of something else entirely (no
+// visible trigger button of its own) had no way to drive it. See the
+// comments above the two `useEffect`s in Dialog.tsx for the sync design.
+describe('Dialog — controlled open signal', () => {
+  it('leaves the existing trigger-click behavior unchanged when `open` is omitted', () => {
+    const { container } = render(<Dialog trigger={<button>Launch</button>}>content</Dialog>);
+    const dialog = getDialogEl(container);
+    expect(dialog).not.toHaveAttribute('open');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch' }));
+
+    expect(dialog).toHaveAttribute('open');
+  });
+
+  it('renders no default trigger when `open` is provided and no trigger is given', () => {
+    const open = signal(false);
+    render(<Dialog open={open}>content</Dialog>);
+
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+  });
+
+  it('opens the dialog when open.value flips to true externally', () => {
+    const open = signal(false);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+    const dialog = getDialogEl(container);
+    expect(dialog).not.toHaveAttribute('open');
+
+    act(() => {
+      open.value = true;
+    });
+
+    expect(dialog).toHaveAttribute('open');
+  });
+
+  it('closes the dialog when open.value flips to false externally', () => {
+    const open = signal(true);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+    const dialog = getDialogEl(container);
+    expect(dialog).toHaveAttribute('open');
+
+    act(() => {
+      open.value = false;
+    });
+
+    expect(dialog).not.toHaveAttribute('open');
+  });
+
+  it('syncs open.value back to false when the dialog is dismissed natively (e.g. Escape)', () => {
+    const open = signal(true);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+    const dialog = getDialogEl(container);
+
+    // A real native dismissal (Escape) has already closed the dialog
+    // (removed the `open` attribute) by the time the `close` event fires —
+    // replicate that ordering here rather than merely dispatching the
+    // event, so this exercises the same post-close state the component's
+    // own listener actually observes.
+    act(() => {
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+    });
+
+    expect(open.value).toBe(false);
+  });
+
+  it('the X button still fires onCancel and syncs open.value back to false', () => {
+    const onCancel = jest.fn();
+    const open = signal(true);
+    const { container } = render(
+      <Dialog open={open} onCancel={onCancel}>
+        content
+      </Dialog>,
+    );
+    const dialog = getDialogEl(container);
+    const closeButton = dialog.querySelector('button') as HTMLButtonElement;
+
+    fireEvent.click(closeButton);
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(dialog).not.toHaveAttribute('open');
+    expect(open.value).toBe(false);
+  });
+
+  it("does not call close() again when reacting to the dialog's own native close event", () => {
+    const open = signal(true);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+    const dialog = getDialogEl(container);
+    const closeSpy = jest.fn();
+    const originalClose = dialog.close.bind(dialog);
+    dialog.close = (...args: Parameters<typeof originalClose>) => {
+      closeSpy();
+      originalClose(...args);
+    };
+
+    // Simulate the browser having already closed the dialog natively
+    // (Escape) without going through this component's own `.close()` —
+    // asserting the spy afterward proves the `open`-sync effect's
+    // `dialogEl.open` guard prevents a redundant second close() call.
+    act(() => {
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+    });
+
+    expect(closeSpy).not.toHaveBeenCalled();
   });
 });

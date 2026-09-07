@@ -1,13 +1,17 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { flushSync } from 'preact/compat';
+import { CheckIcon } from 'lucide-preact';
+import { BottomSheet } from '@tkottke90/preact-dialog';
 import {
   DropdownMenuCheckboxItem,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useIsMobileViewport } from '@/hooks/use-is-mobile-viewport';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
 export interface ProviderModelPickerProps {
@@ -33,6 +37,8 @@ export interface ProviderModelPickerProps {
    * elements into the (physically elsewhere) model list — even though the
    * user is still actively using the menu. Without being told "a child is
    * open," the wrapper has no way to know it shouldn't act on that leave.
+   * Desktop-only concept — the mobile bottom sheet below isn't a nested
+   * Sub, so it never needs to fire this.
    */
   onAnyOpenChange?: (isOpen: boolean) => void;
 }
@@ -58,15 +64,30 @@ export function whenMouse<E extends { pointerType: string }>(
   };
 }
 
+function visibleModels(p: ProviderInfo, isModelHidden?: ProviderModelPickerProps['isModelHidden']) {
+  return isModelHidden ? p.models.filter((m) => !isModelHidden(p.name, m.id)) : p.models;
+}
+
 // Provider -> model drill-down, shared by the chat input's model switcher
-// and the cost-rates Add-rate modal. Renders one DropdownMenuSub per
-// provider (nested inside whatever DropdownMenuContent/DropdownMenuSub the
-// caller already has open) containing a DropdownMenuCheckboxItem per model.
-// Does not render its own outer "Provider" trigger/wrapper — callers that
-// want one (e.g. chat-input.tsx, nesting this under an "Add to message"
-// menu) render it themselves around this component.
+// and the cost-rates Add-rate modal. Returns `items` — one DropdownMenuSub
+// (desktop) or DropdownMenuItem (mobile) per provider, meant to render
+// inside whatever DropdownMenuContent/DropdownMenuSub the caller already
+// has open — and `sheet`, a BottomSheet holding a tapped provider's models
+// on mobile.
 //
-// The per-provider Sub's open state is app-controlled rather than left to
+// This is a hook, not a component, because `sheet` must be rendered by the
+// caller as a SIBLING of their own <DropdownMenu>, not nested inside it:
+// Radix unmounts DropdownMenuContent/SubContent shortly after it closes,
+// and selecting a provider on mobile closes the whole menu tree — so a
+// BottomSheet rendered as part of `items` (i.e. still inside that closing
+// content) would be torn down before a user could ever use it. A portal
+// only changes DOM placement, not component lifecycle, so portaling alone
+// doesn't fix this — the sheet has to live outside the part of the tree
+// that unmounts. See docs referenced in chat-input.tsx/rate-modal.tsx for
+// how each caller wires `items`/`sheet` in.
+//
+// Desktop (>=640px): unchanged from before this hook existed. The
+// per-provider Sub's open state is app-controlled rather than left to
 // Radix's own hover/focus timing: when this is nested three levels deep
 // (as chat-input.tsx does), Radix's internal grace-area handling for
 // nested Sub components closes the sub-menu before the cursor or keyboard
@@ -75,7 +96,14 @@ export function whenMouse<E extends { pointerType: string }>(
 // grace-delay timer a real pointer-leave would, so a stray premature close
 // signal can still be cancelled by a subsequent re-entry. See
 // docs/superpowers/specs/2026-08-31-model-picker-submenu-fix-design.md.
-export function ProviderModelPicker({
+//
+// Mobile (<640px): a provider's model list no longer nests under it as a
+// second flyout — on a narrow viewport, long model names (e.g. GGUF quant
+// filenames) made that flyout overflow off-screen. Instead each provider
+// is a flat, tappable item; selecting one closes the whole menu (Radix's
+// default onSelect behavior) and opens the shared BottomSheet with that
+// provider's models. See docs/superpowers/specs/... for the full design.
+export function useProviderModelPicker({
   providers,
   activeProvider,
   activeModel,
@@ -83,6 +111,10 @@ export function ProviderModelPicker({
   isModelHidden,
   onAnyOpenChange,
 }: ProviderModelPickerProps) {
+  const isMobile = useIsMobileViewport();
+
+  // --- Desktop-only state, unchanged from before this was a hook ---
+
   // Which single provider's model list is open. One shared value rather
   // than one boolean per provider, so moving directly from one provider's
   // trigger to a sibling's trigger can never leave two open at once.
@@ -144,14 +176,31 @@ export function ProviderModelPicker({
 
   useEffect(() => () => cancelPendingClose(), []);
 
-  return (
+  // --- Mobile-only state ---
+  const sheetOpen = useSignal(false);
+  const sheetProviderName = useSignal<string | null>(null);
+
+  const items = (
     <>
       {providers.map((p) => {
-        const models = isModelHidden
-          ? p.models.filter((m) => !isModelHidden(p.name, m.id))
-          : p.models;
+        const models = visibleModels(p, isModelHidden);
 
         if (isModelHidden && models.length === 0) return null;
+
+        if (isMobile) {
+          return (
+            <DropdownMenuItem
+              key={p.name}
+              className={p.name === activeProvider ? 'font-semibold' : undefined}
+              onSelect={() => {
+                sheetProviderName.value = p.name;
+                sheetOpen.value = true;
+              }}
+            >
+              {p.name}
+            </DropdownMenuItem>
+          );
+        }
 
         return (
           <DropdownMenuSub
@@ -198,4 +247,51 @@ export function ProviderModelPicker({
       })}
     </>
   );
+
+  const sheetProvider = providers.find((p) => p.name === sheetProviderName.value);
+  const sheetModels = sheetProvider ? visibleModels(sheetProvider, isModelHidden) : [];
+
+  const sheet = (
+    <BottomSheet
+      open={sheetOpen}
+      className="max-h-[80vh]"
+      title={sheetProviderName.value ?? undefined}
+    >
+      <div
+        className="flex flex-col gap-1 overflow-y-auto"
+        data-slot="provider-model-picker-sheet-list"
+      >
+        {sheetModels.map((m) => {
+          const isChecked = m.id === activeModel && sheetProviderName.value === activeProvider;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              data-slot="provider-model-picker-sheet-item"
+              className="relative flex min-h-11 w-full cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => {
+                onSelect(sheetProviderName.value as string, m.id);
+                sheetOpen.value = false;
+              }}
+            >
+              {m.id}
+              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
+                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                </DropdownMenuLabel>
+              )}
+              <span
+                className="pointer-events-none absolute right-2 flex items-center justify-center"
+                data-slot="provider-model-picker-sheet-item-indicator"
+              >
+                {isChecked && <CheckIcon />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </BottomSheet>
+  );
+
+  return { items, sheet };
 }

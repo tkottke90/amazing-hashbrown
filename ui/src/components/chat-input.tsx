@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  ProviderModelPicker,
+  useProviderModelPicker,
   MODEL_SUBMENU_CLOSE_GRACE_MS,
   whenMouse,
 } from '@/components/provider-model-picker';
@@ -282,6 +282,14 @@ export function ChatInput({
 
   useEffect(() => () => cancelProviderMenuClose(), []);
 
+  const { items: providerModelItems, sheet: providerModelSheet } = useProviderModelPicker({
+    providers: providers ?? [],
+    activeProvider: activeProvider ?? undefined,
+    activeModel: activeModel ?? undefined,
+    onSelect: (provider, model) => onModelSelect?.(provider, model),
+    onAnyOpenChange: handleProviderModelMenuOpenChange,
+  });
+
   function selectSkill(skill: SkillInfo) {
     onValueChange(`${skill.slashCommand} `);
     menuOpen.value = false;
@@ -483,19 +491,14 @@ export function ChatInput({
                       onFocus={keepProviderMenuOpenOnFocus}
                       onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
-                      <ProviderModelPicker
-                        providers={providers}
-                        activeProvider={activeProvider ?? undefined}
-                        activeModel={activeModel ?? undefined}
-                        onSelect={(provider, model) => onModelSelect?.(provider, model)}
-                        onAnyOpenChange={handleProviderModelMenuOpenChange}
-                      />
+                      {providerModelItems}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {providerModelSheet}
           {activeModel && (
             <span
               data-slot="model-chip"

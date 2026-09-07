@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  ProviderModelPicker,
+  useProviderModelPicker,
   MODEL_SUBMENU_CLOSE_GRACE_MS,
   type ProviderModelPickerProps,
 } from '@/components/provider-model-picker';
@@ -51,22 +51,34 @@ function openSubmenu(element: HTMLElement) {
   fireEvent.keyDown(element, { key: 'ArrowRight' });
 }
 
+// useProviderModelPicker is a hook (it must be, so its `sheet` output can
+// be rendered outside the DropdownMenu that `items` lives inside — see the
+// comment in provider-model-picker.tsx) — this tiny host component is what
+// actually lets it be exercised by render().
+function PickerHost(props: ProviderModelPickerProps) {
+  const { items, sheet } = useProviderModelPicker(props);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>{items}</DropdownMenuContent>
+      </DropdownMenu>
+      {sheet}
+    </>
+  );
+}
+
 function renderPicker(props: Partial<ProviderModelPickerProps> = {}) {
   const onSelect = jest.fn();
   render(
-    <DropdownMenu>
-      <DropdownMenuTrigger>Open</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <ProviderModelPicker
-          providers={[
-            { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
-            { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
-          ]}
-          onSelect={onSelect}
-          {...props}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>,
+    <PickerHost
+      providers={[
+        { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
+        { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
+      ]}
+      onSelect={onSelect}
+      {...props}
+    />,
   );
   firePointerDown(screen.getByText('Open'));
   return { onSelect };
@@ -234,5 +246,82 @@ describe('ProviderModelPicker — touch never schedules a hover-close (issue #13
     openSubmenu(screen.getByText('openai'));
     fireEvent.click(screen.getByText('gpt-4o'));
     expect(onSelect).toHaveBeenCalledWith('openai', 'gpt-4o');
+  });
+});
+
+// Coverage for the mobile viewport pivot: on a narrow viewport, a
+// provider's model list no longer nests as a second Radix flyout (long
+// model names, e.g. GGUF filenames, overflowed off-screen there) — instead
+// each provider is a flat, tappable item, and selecting one opens a shared
+// BottomSheet with that provider's models.
+describe('ProviderModelPicker — mobile viewport (<640px)', () => {
+  beforeEach(() => {
+    jest.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true,
+      media: '(max-width: 639px)',
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    } as unknown as MediaQueryList);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('renders providers as flat items, not nested Subs', () => {
+    renderPicker();
+    expect(
+      screen.getByText('openai').closest('[data-slot="dropdown-menu-sub-trigger"]'),
+    ).toBeNull();
+    expect(screen.getByText('openai').closest('[data-slot="dropdown-menu-item"]')).not.toBeNull();
+  });
+
+  it('the sheet is not visible before any provider is tapped', () => {
+    renderPicker();
+    expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+  });
+
+  it("tapping a provider opens the bottom sheet listing that provider's models", () => {
+    renderPicker();
+    fireEvent.click(screen.getByText('openai'));
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
+    expect(screen.queryByText('llama3.2')).not.toBeInTheDocument();
+  });
+
+  it('tapping a model calls onSelect with provider+model and closes the sheet', () => {
+    const { onSelect } = renderPicker();
+    fireEvent.click(screen.getByText('openai'));
+    fireEvent.click(screen.getByText('gpt-4o-mini'));
+    expect(onSelect).toHaveBeenCalledWith('openai', 'gpt-4o-mini');
+    expect(screen.queryByText('gpt-4o-mini')).not.toBeInTheDocument();
+  });
+
+  it('respects isModelHidden for both the flat provider list and the sheet contents', () => {
+    renderPicker({
+      isModelHidden: (provider, modelId) => provider === 'openai' && modelId === 'gpt-4o',
+    });
+    fireEvent.click(screen.getByText('openai'));
+    expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
+  });
+
+  it('hides a provider entirely once every one of its models is hidden', () => {
+    renderPicker({ isModelHidden: (provider) => provider === 'ollama' });
+    expect(screen.queryByText('ollama')).not.toBeInTheDocument();
+    expect(screen.getByText('openai')).toBeInTheDocument();
+  });
+
+  it('marks the active model with a checkmark in the sheet', () => {
+    renderPicker({ activeProvider: 'openai', activeModel: 'gpt-4o' });
+    fireEvent.click(screen.getByText('openai'));
+    const row = screen
+      .getByText('gpt-4o')
+      .closest('[data-slot="provider-model-picker-sheet-item"]');
+    expect(row?.querySelector('svg')).not.toBeNull();
+    const otherRow = screen
+      .getByText('gpt-4o-mini')
+      .closest('[data-slot="provider-model-picker-sheet-item"]');
+    expect(otherRow?.querySelector('svg')).toBeNull();
   });
 });

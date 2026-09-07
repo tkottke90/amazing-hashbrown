@@ -457,4 +457,66 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     };
     expect(captured['cost-rates']).toEqual(expected);
   });
+
+  // The "Add rate" dropdown's provider/model picker was redesigned so a
+  // narrow viewport opens a BottomSheet (a second native <dialog>) instead
+  // of a nested Radix flyout — see the model-picker mobile design. Here that
+  // BottomSheet is a DOM descendant of RateModal's own already-open <dialog>
+  // (nested top-layer dialogs), a pattern with no other coverage in this
+  // suite: chat-model-picker.spec.ts only exercises the chat input's flow,
+  // which has no surrounding dialog.
+  test.describe('mobile viewport — Add rate model picker sheet', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('the model sheet opens nested inside the Add rate Modal and a tapped selection saves @user-workflow', async ({
+      page,
+    }, testInfo) => {
+      const captured = await mockSettingsApi(page);
+      await mockProvidersListApi(page, [
+        { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o-mini' }] },
+      ]);
+      await page.goto('/settings?section=cost-rates');
+      await page.waitForSelector('[data-slot="settings-nav-item"]');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByRole('button', { name: 'Add rate' }).first().tap();
+      // Resolves to RateModal's own <dialog> — always first in document
+      // order even once the BottomSheet's nested <dialog> also opens below,
+      // since a parent element always precedes its own descendants.
+      const modal = page.getByRole('dialog').first();
+      await modal.getByText('Select provider/model…').tap();
+      await page.getByRole('menuitem', { name: 'openai', exact: true }).tap();
+
+      const sheet = page.locator('dialog[open]').last();
+      await expect(sheet.getByText('gpt-4o-mini')).toBeVisible();
+      await sheet.getByText('gpt-4o-mini').tap();
+
+      // The BottomSheet's close is a 200ms opacity/slide transition (see
+      // BOTTOM_SHEET_CLASSNAME in lib/preact-dialog) driven by its `open`
+      // attribute alone — the dialog itself stays `display: block` even
+      // closed (so `toBeVisible()` can't detect the close), and selecting a
+      // model re-renders the form the fields below live in. Give both a
+      // moment to settle before filling, rather than racing Playwright's own
+      // actionability wait against them.
+      await page.waitForTimeout(300);
+
+      await modal.getByLabel('Input cost').fill('0.01');
+      await modal.getByLabel('Output cost').fill('0.03');
+      await modal.getByRole('button', { name: 'Add rate' }).tap();
+
+      await save(page);
+
+      const expected: CostRatesSettings = {
+        costs: {
+          'openai/gpt-4o-mini': {
+            inputPer1kTokens: 0.01,
+            inputScale: '1k',
+            outputPer1kTokens: 0.03,
+            outputScale: '1k',
+          },
+        },
+      };
+      expect(captured['cost-rates']).toEqual(expected);
+    });
+  });
 });

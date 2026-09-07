@@ -1,9 +1,9 @@
 import { Signal, useSignal } from '@preact/signals';
 import { X as XIcon } from 'lucide-preact';
 import { cloneElement, ComponentChildren, createContext, type JSX } from 'preact';
-import { useContext, useRef } from 'preact/hooks';
+import { useContext, useEffect, useRef } from 'preact/hooks';
 import { cn } from './cn';
-import { useHtmlElementListeners } from './eventListeners';
+import { registerEvent, useHtmlElementListeners } from './eventListeners';
 
 const X = XIcon;
 
@@ -43,6 +43,7 @@ export function Dialog({
   trigger,
   disableClose,
   title,
+  open,
   onCancel,
   onClose,
   onOpen,
@@ -50,12 +51,54 @@ export function Dialog({
   const modalValue = useSignal<string | undefined>();
   const modalRef = useRef<HTMLDialogElement>(null);
 
+  // Controlled-open sync: a caller driving `open` (e.g. a dialog with no
+  // visible trigger of its own, opened as a side effect of something else
+  // entirely) gets it imperatively applied to the native <dialog> here.
+  // Reading `open?.value` in the render body is what subscribes this
+  // component to the signal — the same implicit-subscription mechanism
+  // `modalValue.value` above already relies on. Guarded on `dialogEl.open`
+  // so this never calls `showModal()`/`close()` redundantly (calling
+  // `showModal()` on an already-open dialog throws).
+  const openValue = open?.value;
+  useEffect(() => {
+    if (open === undefined) return;
+    const dialogEl = modalRef.current;
+    if (!dialogEl) return;
+    if (openValue && !dialogEl.open) {
+      dialogEl.showModal();
+    } else if (!openValue && dialogEl.open) {
+      dialogEl.close();
+    }
+  }, [open, openValue]);
+
+  // Native 'close' -> sync back to `open.value`. Fires on Escape, on this
+  // component's own X-button path (cancelModal -> closeModal -> .close()),
+  // and on useDialog().close() — none of which otherwise notify a caller
+  // driving `open`. The guard against a redundant same-value write also
+  // prevents this from ever looping with the effect above.
+  useEffect(() => {
+    const dialogEl = modalRef.current;
+    if (!dialogEl || !open) return;
+    return registerEvent(dialogEl, 'close', () => {
+      if (open.value !== false) {
+        open.value = false;
+      }
+    });
+  }, [open]);
+
   const triggerRef = useHtmlElementListeners(
     [['click', () => openModal(modalRef.current, onOpen)]],
     [trigger],
   );
 
-  const triggerElement = cloneElement(trigger ?? <button>Open</button>, { ref: triggerRef });
+  // A caller driving the dialog entirely via `open` has no visible trigger
+  // of its own — only fall back to the default "Open" button when the
+  // caller hasn't opted into controlled mode at all.
+  const triggerElement = trigger
+    ? cloneElement(trigger, { ref: triggerRef })
+    : open
+      ? null
+      : cloneElement(<button>Open</button>, { ref: triggerRef });
 
   return (
     <DialogContext.Provider

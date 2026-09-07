@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ProviderModelPicker } from '@/components/provider-model-picker';
+import { useProviderModelPicker } from '@/components/provider-model-picker';
 import { ScaledCostInput } from '@/components/ui/scaled-cost-input';
 import type { Scale } from '@/components/ui/scale-toggle';
 import { fetchProviders, providers } from '@/hooks/use-providers';
@@ -62,6 +62,14 @@ function RateForm({ mode, initial, costs, onSave }: RateFormProps) {
   const outputPer1k = useSignal(initial?.entry.outputPer1kTokens ?? 0);
   const outputScale = useSignal<Scale>(initial?.entry.outputScale ?? '1k');
 
+  const { items: providerModelItems, sheet: providerModelSheet } = useProviderModelPicker({
+    providers: providers.value,
+    onSelect: (provider, model) => {
+      modelKey.value = `${provider}/${model}`;
+    },
+    isModelHidden: (provider, model) => `${provider}/${model}` in costs,
+  });
+
   function handleSubmit(e: Event) {
     e.preventDefault();
     if (!modelKey.value) return;
@@ -91,17 +99,10 @@ function RateForm({ mode, initial, costs, onSave }: RateFormProps) {
             >
               {modelKey.value || 'Select provider/model…'}
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <ProviderModelPicker
-                providers={providers.value}
-                onSelect={(provider, model) => {
-                  modelKey.value = `${provider}/${model}`;
-                }}
-                isModelHidden={(provider, model) => `${provider}/${model}` in costs}
-              />
-            </DropdownMenuContent>
+            <DropdownMenuContent align="start">{providerModelItems}</DropdownMenuContent>
           </DropdownMenu>
         )}
+        {providerModelSheet}
       </div>
 
       <ScaledCostInput
