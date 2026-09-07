@@ -43,6 +43,26 @@ Add a small `whenMouse`-style guard, mirroring Radix's own internal helper, and 
 
 ---
 
+### 3a. Addendum — the `whenMouse` fix was real but incomplete; the actual blocker was a second, deeper bug
+
+After the `whenMouse` fix above shipped in [PR #147](https://github.com/tkottke90/amazing-hashbrown/pull/147), the PR's own e2e mobile-tap test still failed — deterministically, in both this sandbox and real CI, not a flake. The `whenMouse` fix is correct and necessary, but it only addresses the self-inflicted hover-timer bug; a second, unrelated bug in `ui/src/components/ui/dropdown-menu.tsx` was the actual reason tapping a provider still failed to open its model list.
+
+**A dead end first:** the initial hypothesis was that the app's persistent mobile floating "+" action button (`ui/src/components/layout.tsx`, `fixed ... z-40`) visually overlapped the "openai" row in the flyout and intercepted the tap. This was **wrong** — verified directly with `document.elementFromPoint()` at the exact tap coordinates, which correctly resolved to the `openai` menuitem, not the FAB (its `z-50` class already wins the stacking comparison). The FAB was never involved.
+
+**The real root cause**, found by tracing the actual DOM mutation sequence around a tap on a provider trigger: `pointerdown` on "openai" (a `SubTrigger` two portal-levels deep — inside "Provider"'s portaled content, itself inside the root "Add to message" `DropdownMenuContent`) immediately flips the **root** `DropdownMenuContent`'s `data-state` to `closed`, before the tap's `click`/select ever fires. This is Radix's own `DismissableLayer` "is this pointerdown outside my content?" detection misfiring — and it is **not touch-specific**: the identical trace reproduces for a cold mouse click on "openai" with no prior hover. Mouse users never hit it in practice only because hovering "openai" already auto-opens its model list (via the `whenMouse`-gated hover handlers) before any click occurs, so a mouse user's click always lands on a _model_, never on the intermediate provider trigger itself. Touch has no hover, so a tap on a provider is always this exact, previously-unexercised path.
+
+Root-caused to `DropdownMenuSubContent`'s own Portal wrapping. Radix's `MenuSubContent` does **not** portal by default — deliberately: its dismissable-layer branch/outside-click detection is built around `SubContent` staying a real DOM descendant of its parent content, not just a logical (React-tree) one. This codebase's `dropdown-menu.tsx` wraps `SubContent` in an unconditional `<Portal container={portalContainer}>` — added in `4bfd9e3` (`docs/superpowers/specs/2026-08-30-cost-modal-picker-design.md`) specifically so `rate-modal.tsx`'s native `<dialog>`-hosted picker isn't rendered invisible behind the dialog's top-layer. For `chat-input.tsx`'s case (no dialog open), `portalContainer` is `undefined`, so `<Portal container={undefined}>` still portals — to Radix's own default, `document.body`. That's the bug: even portaling to `document.body` (not just into a dialog) moves `SubContent` out of the real DOM position Radix's branch detection depends on, at exactly the 3-level nesting depth `chat-input.tsx` uses.
+
+**Fix:** `DropdownMenuSubContent` now only wraps in a `<Portal>` when a dialog is actually open (`portalContainer` is truthy); otherwise it renders un-portaled, matching Radix's own default. `rate-modal.tsx` keeps working exactly as before (a dialog is always open there, so the condition is always true in that caller). `chat-input.tsx`'s case now renders un-portaled, and the root `DismissableLayer` correctly recognizes taps on nested provider/model items as inside its own content.
+
+**A second-order effect, not a regression:** removing the extra portal also means the model sub-menu, when it opens via `ArrowRight`, now auto-focuses its first item immediately — matching Radix's own standard (un-portaled) behavior and typical native menu conventions. Previously (portaled), that auto-focus didn't reliably land in time, so an extra explicit `ArrowDown` was needed to reach the first item — the existing keyboard e2e test's fixed keystroke script encoded that extra step. That script now needs one fewer `ArrowDown` per nesting level; this is a keystroke-count change for the test, not a capability regression — every item remains reachable and selectable by keyboard, with one less required press.
+
+Verified: with this fix, the previously-always-failing mobile-tap e2e test now passes (Chromium touch emulation), all existing keyboard/mouse e2e tests pass (after the keystroke-count update above), `rate-modal.tsx`'s own dialog-hosted picker unit test still passes unmodified, and new unit coverage in `ui/test/dropdown-menu-portal.test.tsx` directly encodes both halves of the conditional (portals into a dialog; renders un-portaled, as a real descendant of the root content, otherwise).
+
+This does **not** replace section 3's `whenMouse` fix — both are required. `whenMouse` stops our own code from scheduling a premature close; this addendum stops Radix's own dismissable layer from closing the whole tree on the tap that should have opened a nested item in the first place.
+
+---
+
 ## 4. Testing Plan
 
 ### Unit tests (`ui/test/provider-model-picker.test.tsx`, extend existing suite)
@@ -54,9 +74,14 @@ Add a small `whenMouse`-style guard, mirroring Radix's own internal helper, and 
 
 If `ui/test/chat-input.test.tsx` has pointer-driven open/close coverage for the outer "Provider" `Sub`, mirror the same touch-pointerType case there for `scheduleProviderMenuClose`.
 
+### `dropdown-menu.tsx` tests (`ui/test/dropdown-menu-portal.test.tsx`, extended for 3a)
+
+- Sub-content still portals into an open `<dialog>` (the `rate-modal.tsx` case) — regression guard.
+- Sub-content renders un-portaled, as a real DOM descendant of the root content, when no dialog is open (the `chat-input.tsx` case) — directly encodes the 3a fix.
+
 ### E2E (`e2e/tests/chat-model-picker.spec.ts`)
 
-No new spec file needed. Playwright's `tap()` dispatches real `pointerType: 'touch'` events under Chromium, so the existing mobile `describe` block (touch: tap through Add to message → Provider → a provider → a model) becomes a genuine regression guard for this fix, even though it cannot reproduce the original Firefox/Safari-only race (tracked separately in #145).
+No new spec file needed. Playwright's `tap()` dispatches real `pointerType: 'touch'` events under Chromium, so the existing mobile `describe` block (touch: tap through Add to message → Provider → a provider → a model) becomes a genuine regression guard for this fix — and, after the 3a fix, actually passes rather than merely running. It still cannot reproduce the original Firefox/Safari-only race (tracked separately in #145). The keyboard-only test's keystroke script was updated (one fewer `ArrowDown` per level) to match the auto-focus-on-open behavior described in 3a.
 
 ### Manual testing
 
@@ -66,12 +91,15 @@ Real/emulated Firefox and Safari mobile — the only way to positively confirm t
 
 ## 5. Files Changed
 
-| File                                          | Change                                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `ui/src/components/provider-model-picker.tsx` | Guard `onPointerEnter`/`onPointerLeave` handlers to no-op for non-mouse `pointerType` |
-| `ui/src/components/chat-input.tsx`            | Same guard on the outer "Provider" `Sub`'s `onPointerEnter`/`onPointerLeave` handlers |
-| `ui/test/provider-model-picker.test.tsx`      | Add touch-pointerType no-close test; keep mouse-pointerType close test                |
-| `ui/test/chat-input.test.tsx`                 | Add equivalent touch-pointerType case if pointer-driven coverage exists there         |
+| File                                          | Change                                                                                  |
+| --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `ui/src/components/provider-model-picker.tsx` | Guard `onPointerEnter`/`onPointerLeave` handlers to no-op for non-mouse `pointerType`   |
+| `ui/src/components/chat-input.tsx`            | Same guard on the outer "Provider" `Sub`'s `onPointerEnter`/`onPointerLeave` handlers   |
+| `ui/test/provider-model-picker.test.tsx`      | Add touch-pointerType no-close test; keep mouse-pointerType close test                  |
+| `ui/test/chat-input.test.tsx`                 | Add equivalent touch-pointerType case if pointer-driven coverage exists there           |
+| `ui/src/components/ui/dropdown-menu.tsx`      | (3a) `DropdownMenuSubContent` only portals when a dialog is open; un-portaled otherwise |
+| `ui/test/dropdown-menu-portal.test.tsx`       | (3a) Add sub-content portal/no-portal coverage                                          |
+| `e2e/tests/chat-model-picker.spec.ts`         | (3a) Fix keyboard test's keystroke count for the new auto-focus-on-open behavior        |
 
 ---
 
@@ -79,6 +107,7 @@ Real/emulated Firefox and Safari mobile — the only way to positively confirm t
 
 - Re-adding a toggle-to-close-on-second-tap affordance for an already-open provider — pre-existing Radix behavior, not what #130 reports.
 - Adding Firefox/WebKit projects to `e2e/playwright.config.ts` — tracked as [#145](https://github.com/tkottke90/amazing-hashbrown/issues/145).
-- Any change to `rate-modal.tsx` — it reuses `ProviderModelPicker` directly and benefits from this fix automatically.
+- Any change to `rate-modal.tsx` itself — it reuses `ProviderModelPicker` directly and benefits from the 3a `dropdown-menu.tsx` fix automatically, since its own dialog-open case is unaffected (still portals, per its own unit test).
 - Pen/stylus-specific handling — treated identically to touch (any non-`'mouse'` `pointerType`); no evidence it needs separate treatment.
 - Upgrading the `radix-ui` package version — no confirmed upstream fix exists for this class of issue.
+- Preserving the pre-3a "extra `ArrowDown` needed after opening a Sub" keyboard quirk — that was a side effect of the portaling bug, not an intentional design choice, and the corrected auto-focus-on-open behavior matches standard menu UX.
