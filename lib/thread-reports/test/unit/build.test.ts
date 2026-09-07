@@ -337,7 +337,9 @@ describe('build/buildThreadReport', () => {
     });
 
     expect(result).to.not.equal(null);
-    const traceEvent = result!.timeline.find((e) => e.kind === 'trace' && e.trace.traceId === traceId);
+    const traceEvent = result!.timeline.find(
+      (e) => e.kind === 'trace' && e.trace.traceId === traceId,
+    );
     expect(traceEvent).to.not.equal(undefined);
     expect(traceEvent!.kind === 'trace' && traceEvent.trace.error).to.equal(
       'Context size has been exceeded',
@@ -376,7 +378,7 @@ describe('build/buildThreadReport', () => {
     expect(result!.stats.failureCount).to.equal(1);
   });
 
-  it('carries a failed assistant message\'s persisted error through to ThreadReportData', () => {
+  it("carries a failed assistant message's persisted error through to ThreadReportData", () => {
     const threadId = 't-assistant-error';
     const thread = makeThread({
       id: threadId,

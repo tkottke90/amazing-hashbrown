@@ -247,7 +247,15 @@ export async function streamWorkspaceChatToSse(
         return;
       }
       turnError = errorMessageOf(err);
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
       store.endTrace(traceId, {
@@ -427,7 +435,15 @@ export async function resumeWorkspaceChatToSse(
         return;
       }
       turnError = errorMessageOf(err);
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
       store.endTrace(traceId, {
@@ -599,7 +615,15 @@ export async function retryWorkspaceChatToSse(
         return;
       }
       turnError = errorMessageOf(err);
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
       store.endTrace(traceId, {
