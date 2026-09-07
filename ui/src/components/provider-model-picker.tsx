@@ -258,7 +258,7 @@ export function useProviderModelPicker({
       title={sheetProviderName.value ?? undefined}
     >
       <div
-        className="flex flex-col gap-1 overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
         data-slot="provider-model-picker-sheet-list"
       >
         {sheetModels.map((m) => {
