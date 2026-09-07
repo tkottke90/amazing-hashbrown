@@ -70,6 +70,14 @@ export const TraceRecordSchema = z.object({
   // classify/extract/merge) within one trace, none of which is "a system
   // prompt" in this sense.
   systemPrompt: z.string().nullable(),
+  // Why this trace's run ultimately failed, if it did — set when the agent
+  // run throws (e.g. the provider errors out mid-stream). Complements
+  // SpanRecordSchema's per-span `error`: a span-level error only exists if
+  // some LLM/tool call was actually dispatched, so this is what covers a
+  // run that fails before any span exists at all (the same "zero-span
+  // trace" concern `source` above was introduced to handle). Null for a
+  // trace that hasn't failed, and for historical rows predating this field.
+  error: z.string().nullable(),
 });
 
 // TraceSummary — metrics only; no content fields.

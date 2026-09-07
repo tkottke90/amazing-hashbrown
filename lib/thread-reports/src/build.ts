@@ -233,7 +233,12 @@ export function buildThreadReport(
   const timeline: TimelineEvent[] = [];
 
   for (const trace of traces) {
-    failureCount += trace.spans.filter((s) => s.error !== null).length;
+    // A trace-level error (the graph run failed before/without any span of
+    // its own recording the reason) counts as one failure — but only when
+    // no span already accounts for it, so a trace whose span DID capture the
+    // same failure isn't double-counted.
+    const spanErrorCount = trace.spans.filter((s) => s.error !== null).length;
+    failureCount += spanErrorCount > 0 ? spanErrorCount : trace.error ? 1 : 0;
 
     if (isAfterAgentTrace(trace)) {
       const spanNames = new Set(trace.spans.map((s) => s.name));

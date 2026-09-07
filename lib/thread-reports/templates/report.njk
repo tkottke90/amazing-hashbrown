@@ -66,6 +66,9 @@
           {% endif %}
           <span class="trace-meta">{{ event.trace.provider }}/{{ event.trace.model }} &middot; {{ event.trace.totalTokens }} tokens</span>
         </div>
+        {% if event.trace.error %}
+          <div class="span-error-text">Turn failed: {{ event.trace.error }}</div>
+        {% endif %}
         {% if event.trace.systemPrompt %}
           <details class="span-row">
             <summary>
@@ -152,7 +155,11 @@
         {% endif %}
         <div class="msg-bubble">
           {% if message.status == 'error' %}
-            Something went wrong.
+            {% if message.payload.error %}
+              Something went wrong: {{ message.payload.error }}
+            {% else %}
+              Something went wrong.
+            {% endif %}
           {% else %}
             {{ message.payload.content | markdown }}
           {% endif %}

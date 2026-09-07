@@ -119,6 +119,10 @@ export function failAssistant(
   partialContent: string,
   sentAt: string,
   partialThought?: string,
+  // The real reason the turn failed (e.g. "Context size has been
+  // exceeded"), so the Thread Report can show it instead of a bare generic
+  // "Something went wrong" — see thread-reports' AssistantPayload/report.njk.
+  errorMessage?: string,
 ): void {
   safe(threadId, 'failAssistant', () => {
     store.updateMessage(threadId, id, {
@@ -127,6 +131,7 @@ export function failAssistant(
         content: partialContent,
         ...(partialThought ? { thoughtContent: partialThought } : {}),
         sentAt,
+        ...(errorMessage ? { error: errorMessage } : {}),
       },
     });
     store.interruptPendingToolCalls(threadId);

@@ -81,7 +81,10 @@ describe('render/renderThreadReportHtml', () => {
     expect(html).to.include('<code>user</code> wiki');
   });
 
-  function traceFixture(systemPrompt: string | null): ThreadReportData {
+  function traceFixture(
+    systemPrompt: string | null,
+    overrides: { error?: string | null } = {},
+  ): ThreadReportData {
     const data = fixture();
     data.timeline = [
       {
@@ -98,6 +101,7 @@ describe('render/renderThreadReportHtml', () => {
           totalTokens: 60,
           totalCostEstimate: null,
           systemPrompt,
+          error: overrides.error ?? null,
           spans: [],
         },
       },
@@ -115,5 +119,52 @@ describe('render/renderThreadReportHtml', () => {
   it('omits the System Prompt block when trace.systemPrompt is null', async () => {
     const html = await renderThreadReportHtml(traceFixture(null));
     expect(html).to.not.include('System Prompt');
+  });
+
+  it('renders a trace-level failure banner when trace.error is set', async () => {
+    const html = await renderThreadReportHtml(
+      traceFixture(null, { error: 'Context size has been exceeded' }),
+    );
+    expect(html).to.include('Turn failed:');
+    expect(html).to.include('Context size has been exceeded');
+  });
+
+  it('omits the trace-level failure banner when trace.error is null', async () => {
+    const html = await renderThreadReportHtml(traceFixture(null));
+    expect(html).to.not.include('Turn failed:');
+  });
+
+  function assistantErrorFixture(payloadError?: string): ThreadReportData {
+    const data = fixture();
+    data.thread.messages.push({
+      id: 'a2',
+      threadId: 'thread-abc-123',
+      seq: 3,
+      kind: 'assistant',
+      status: 'error',
+      retryOf: null,
+      checkpointId: null,
+      payload: {
+        content: '',
+        sentAt: '2026-07-18T10:00:02.000Z',
+        ...(payloadError ? { error: payloadError } : {}),
+      },
+      createdAt: '2026-07-18T10:00:02.000Z',
+      updatedAt: '2026-07-18T10:00:02.000Z',
+    });
+    return data;
+  }
+
+  it('shows the real error detail on a failed assistant message when payload.error is set', async () => {
+    const html = await renderThreadReportHtml(
+      assistantErrorFixture('Context size has been exceeded'),
+    );
+    expect(html).to.include('Something went wrong: Context size has been exceeded');
+  });
+
+  it('falls back to the bare generic message on a failed assistant message with no payload.error', async () => {
+    const html = await renderThreadReportHtml(assistantErrorFixture());
+    expect(html).to.include('Something went wrong.');
+    expect(html).to.not.include('Something went wrong:');
   });
 });

@@ -15,6 +15,7 @@ import {
   finalizeTurn,
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
+  errorMessageOf,
 } from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
@@ -173,6 +174,7 @@ export async function streamWorkspaceChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(
         { messages: [{ role: 'human', content }] },
@@ -203,10 +205,6 @@ export async function streamWorkspaceChatToSse(
         effectiveProvider,
         effectiveModel,
       );
-
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
 
       await finalizeTurn(
         sink,
@@ -248,9 +246,14 @@ export async function streamWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {
@@ -354,6 +357,7 @@ export async function resumeWorkspaceChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(new Command({ resume: answer }), {
         ...config,
@@ -381,10 +385,6 @@ export async function resumeWorkspaceChatToSse(
         effectiveProvider,
         effectiveModel,
       );
-
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
 
       await finalizeTurn(
         sink,
@@ -426,9 +426,14 @@ export async function resumeWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {
@@ -524,6 +529,7 @@ export async function retryWorkspaceChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(null, {
         ...config,
@@ -551,10 +557,6 @@ export async function retryWorkspaceChatToSse(
         effectiveProvider,
         effectiveModel,
       );
-
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
 
       await finalizeTurn(
         sink,
@@ -596,9 +598,14 @@ export async function retryWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought, turnError);
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {
