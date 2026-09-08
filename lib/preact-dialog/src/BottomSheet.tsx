@@ -21,7 +21,11 @@ const BOTTOM_SHEET_CLASSNAME = `
 // Slide-up entrance/exit + frosted-glass blur for the inner wrapper. See
 // the comment in Dialog.tsx for why these must live here and not on the
 // <dialog> element itself: it slides in from fully off-screen below.
-const BOTTOM_SHEET_CONTENT_CLASSNAME = `backdrop-blur-sm translate-y-full transition-transform transition-discrete duration-200 ease-out [dialog[open]_&]:translate-y-0`;
+const BOTTOM_SHEET_CONTENT_CLASSNAME = `
+  backdrop-blur-sm h-full
+  translate-y-full transition-transform transition-discrete 
+  duration-200 ease-out [dialog[open]_&]:translate-y-0
+`;
 
 /**
  * A bottom sheet is primarily a mobile & tablet pattern that slides up from the bottom of

@@ -255,7 +255,7 @@ export function useProviderModelPicker({
     <BottomSheet
       open={sheetOpen}
       className="max-h-[80vh] max-w-full h-[80vh] overflow-hidden"
-      contentClassName="gap-4"
+      contentClassName="gap-4 h-full"
       title={sheetProviderName.value ?? undefined}
     >
       <div
