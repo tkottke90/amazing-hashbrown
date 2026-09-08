@@ -160,19 +160,26 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('restricts the skip-straight-to-search permission to an outright single-domain match', () => {
-      const result = buildSystemPrompt();
-      expect(result).to.include('wiki_search always searches across every domain at once');
-      expect(result).to.include('wiki_orient\non that domain is what actually confines you to it');
-    });
-
-    it('gives a concrete, countable test for multi-candidate vs. single-match, independent of self-resolution', () => {
+    it('tells the agent to pass a resolved wikiId straight into wiki_search regardless of how the domain was resolved', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "if wiki_locate's result named more than one domain, that's the\nmulti-candidate case, even after you've worked out which one actually applies",
+        'wiki_search takes an optional wikiId to scope it to a single domain',
       );
       expect(result).to.include(
-        "Figuring out the right answer yourself doesn't\nturn a multi-candidate result into a single-match one.",
+        'whether it came from a single outright wiki_locate match, from\nnarrowing a multi-candidate wiki_locate result yourself using the routing notes, or from a domain already\nestablished earlier in the conversation',
+      );
+      expect(result).to.include(
+        'Only omit wikiId when you\nactually want to search across every domain at once',
+      );
+    });
+
+    it('gives a worked example of going straight to scoped wiki_search instead of wiki_orient first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient\nfirst.',
+      );
+      expect(result).to.include(
+        "wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already\ndoes, so inserting it here is a wasted round-trip",
       );
     });
 

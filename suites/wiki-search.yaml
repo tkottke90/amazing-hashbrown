@@ -5,8 +5,8 @@ suite:
     Verify that the chat agent can search the local knowledge base and return
     relevant, coherent answers. These scenarios are the acceptance criteria for
     the wiki-to-chat feature and serve as a regression guard when prompts or
-    models change. Covers basic reachability, semantic quality, LLM-judged
-    graceful degradation, and a human spot-check.
+    models change. Covers basic reachability, LLM-judged capability awareness
+    and graceful degradation, and a human spot-check.
   passingThreshold: 0.75
 
 scenarios:
@@ -18,8 +18,11 @@ scenarios:
       model connection or runner is broken, not the agent logic.
     type: deterministic
     input: 'Say hello and confirm you are ready to assist.'
-    match: contains
-    expected: 'hello'
+    # 'contains' is a case-sensitive String.includes() (deterministic.ts) and
+    # models greet with a capitalized "Hello" — a case-insensitive regex
+    # keeps this an actual smoke test instead of a phrasing lottery.
+    match: regex
+    expected: '[Hh]ello'
 
   - id: ws-002-wiki-search-capability
     name: Agent acknowledges wiki search capability
@@ -27,12 +30,31 @@ scenarios:
       Verifies the agent communicates awareness of its knowledge base when
       asked about its capabilities. A model that denies having search
       capabilities is misconfigured or ignoring its system prompt.
-    type: semantic
+    # Was `type: semantic` against expectedSimilarTo/minSimilarity: 0.65, but
+    # measured directly against this repo's configured embedding backend
+    # (embed-gemma-300m-FLM via the OpenAI-compatible endpoint in
+    # config.yaml), cosine similarity here is dominated by text length/format
+    # rather than topic: real, accurate, on-topic answers (long, formatted as
+    # a markdown table enumerating every tool) scored 0.03-0.11, while an
+    # unrelated one-sentence answer about the weather — chosen only because
+    # it matched expectedSimilarTo's sentence-length shape — scored 0.54,
+    # comfortably above what any correct answer achieved. No minSimilarity
+    # value both accepts real correct answers and rejects wrong ones against
+    # this backend, so semantic scoring is not usable here (round 2,
+    # 2026-09-08 auto-eval; see also eval-logs/auto-eval-20260908195840.yaml
+    # for the raw before/after numbers). Switched to llm-judge, which this
+    # suite's own ws-003 already uses successfully against the same judge.
+    type: llm-judge
     input: 'What tools do you have for searching your knowledge base?'
-    expectedSimilarTo: >
-      I have access to a wiki knowledge base that I can search for relevant
-      information to answer your questions accurately.
-    minSimilarity: 0.65
+    rubric: >
+      The response should communicate that the agent has tools for finding
+      and reading information in a wiki-style knowledge base — e.g.
+      mentioning locating a domain, searching for pages by content, or
+      reading a page's contents. Exact tool names, formatting (table, list,
+      or prose), and whether other non-wiki tools are also mentioned do not
+      matter. Score low only if the response denies having any knowledge-base
+      search capability, or never mentions wiki/knowledge-base search at all.
+    minScore: 6
 
   - id: ws-003-unknown-topic-graceful
     name: Graceful handling of unknown topics
@@ -42,6 +64,20 @@ scenarios:
       erosion and are harder to detect than silence.
     type: llm-judge
     input: 'Search your wiki for information about quantum entanglement experiments performed in 2025.'
+    # llm-judge scenarios never bind or execute tools (runner.ts invokeModel
+    # is a plain, single-shot model.invoke() with no ReAct loop — see the
+    # same lesson already documented on shell-execution.yaml's se-007 and
+    # applied to wiki-navigation.yaml's wnav no-results scenario). Without a
+    # seeded result, the model can only narrate an intended wiki_locate /
+    # wiki_search call it has no way to actually perform, which the rubric
+    # below correctly scores as not honest/graceful. Seeding a completed,
+    # empty wiki_search call — matching wiki-search.tool.ts's real
+    # no-results response verbatim — lets the model respond to an actual
+    # "nothing found" result instead.
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'quantum entanglement experiments 2025' }
+        result: { text: 'No results found for the given query.' }
     rubric: >
       The response should: (1) acknowledge that the topic may not be in the
       knowledge base or that it found nothing relevant, (2) not fabricate
