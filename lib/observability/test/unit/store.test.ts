@@ -96,6 +96,22 @@ describe('ObservabilityStore', () => {
       assert.equal(summary.totalTokens, 200);
       assert.equal(summary.totalCostEstimate, 0.0042);
     });
+
+    it('round-trips a non-null error via findById and getTrace', () => {
+      const traceId = store.startTrace({ provider: 'anthropic', model: 'claude-3-5' });
+      store.endTrace(traceId, { totalTokens: 50, error: 'Context size has been exceeded' });
+      const summary = store.findById(traceId);
+      const trace = store.getTrace(traceId);
+      assert.equal(summary?.error, 'Context size has been exceeded');
+      assert.equal(trace?.error, 'Context size has been exceeded');
+    });
+
+    it('reads back null when error is omitted', () => {
+      const traceId = store.startTrace({ provider: 'anthropic', model: 'claude-3-5' });
+      store.endTrace(traceId, { totalTokens: 50 });
+      const summary = store.findById(traceId);
+      assert.equal(summary?.error, null);
+    });
   });
 
   describe('saveSpans / getTrace', () => {

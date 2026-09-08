@@ -180,10 +180,47 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
   }
 
   override async handleChainEnd(): Promise<void> {
+    this.flushCompleted();
+  }
+
+  // Fires instead of handleChainEnd when the graph run throws (e.g. the
+  // provider errors out mid-stream) — the base class's handleChainError is a
+  // no-op, so without this override every span already captured in
+  // `completed` (including an errored llm-call span from handleLLMError
+  // above) would be silently dropped instead of reaching saveSpans().
+  override async handleChainError(err: Error): Promise<void> {
+    this.flushPendingAsFailed(err);
+    this.flushCompleted();
+  }
+
+  private flushCompleted(): void {
     if (this.completed.length > 0) {
       this.store.saveSpans(this.completed);
       this.completed.length = 0;
     }
+  }
+
+  // Any span still in `pending` when the whole chain/graph fails never got
+  // its own handleLLMEnd/handleLLMError/handleToolEnd/handleToolError — it
+  // was cut off mid-flight (e.g. a tool call in progress when the run was
+  // torn down). Synthesize a terminal, errored span for each so it still
+  // shows up in the Thread Report instead of silently vanishing.
+  private flushPendingAsFailed(err: Error): void {
+    if (this.pending.size === 0) return;
+    const endedAt = new Date().toISOString();
+    for (const span of this.pending.values()) {
+      this.completed.push({
+        ...(span as SpanRecord),
+        endedAt,
+        latencyMs: new Date(endedAt).getTime() - new Date(span.startedAt!).getTime(),
+        inputTokens: span.inputTokens ?? null,
+        outputTokens: span.outputTokens ?? null,
+        outputPreview: null,
+        inputPreview: span.inputPreview ?? null,
+        error: `turn failed before this span completed: ${err.message}`,
+      });
+    }
+    this.pending.clear();
   }
 
   private preview(text: string): string | null {

@@ -9,6 +9,7 @@ import {
   pipeEvents,
   finalizeTurn,
   extractPartialAssistantState,
+  errorMessageOf,
 } from './stream-handler.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
@@ -71,6 +72,7 @@ export async function streamWikiChatToSse(
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
   setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(
       { messages: [{ role: 'human', content }] },
@@ -100,10 +102,6 @@ export async function streamWikiChatToSse(
       provider,
       model,
     );
-
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
 
     await finalizeTurn(
       sink,
@@ -135,9 +133,22 @@ export async function streamWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+    turnError = errorMessageOf(err);
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+    );
     throw err;
   } finally {
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
     clearActiveSseWriter(threadId);
   }
 }
@@ -190,6 +201,7 @@ export async function resumeWikiChatToSse(
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
   setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
       ...config,
@@ -216,10 +228,6 @@ export async function resumeWikiChatToSse(
       provider,
       model,
     );
-
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
 
     await finalizeTurn(
       sink,
@@ -251,9 +259,22 @@ export async function resumeWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+    turnError = errorMessageOf(err);
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+    );
     throw err;
   } finally {
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
     clearActiveSseWriter(threadId);
   }
 }
@@ -308,6 +329,7 @@ export async function retryWikiChatToSse(
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
   setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(null, {
       ...config,
@@ -334,10 +356,6 @@ export async function retryWikiChatToSse(
       provider,
       model,
     );
-
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
 
     await finalizeTurn(
       sink,
@@ -369,9 +387,22 @@ export async function retryWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+    turnError = errorMessageOf(err);
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+    );
     throw err;
   } finally {
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
     clearActiveSseWriter(threadId);
   }
 }

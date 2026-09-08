@@ -38,6 +38,9 @@ export interface StartTraceParams {
 export interface EndTraceParams {
   totalTokens: number;
   totalCostEstimate?: number;
+  // Why the trace's run ultimately failed, if it did — see the version-9
+  // migration's comment. Omitted/undefined and null both mean "no error".
+  error?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +61,7 @@ const RawTraceSummarySchema = z
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
     system_prompt: z.string().nullable(),
+    error: z.string().nullable(),
     // COUNT() returns 0 for empty sets; SUM() returns null for empty sets.
     span_count: z.number(),
     llm_call_count: z
@@ -81,6 +85,7 @@ const RawTraceSummarySchema = z
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
     systemPrompt: row.system_prompt,
+    error: row.error,
     spanCount: row.span_count,
     llmCallCount: row.llm_call_count,
     toolCallCount: row.tool_call_count,
@@ -100,6 +105,7 @@ const RawTraceRecordSchema = z
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
     system_prompt: z.string().nullable(),
+    error: z.string().nullable(),
   })
   .transform((row) => ({
     traceId: row.trace_id,
@@ -113,6 +119,7 @@ const RawTraceRecordSchema = z
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
     systemPrompt: row.system_prompt,
+    error: row.error,
   }));
 
 // Used by getTrace() for the spans array.
@@ -213,6 +220,18 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE observability_traces ADD COLUMN system_prompt TEXT;
     `,
   },
+  {
+    // Records why a trace's graph run failed, for the case span-level
+    // errors can't cover — a run that throws before any span exists (the
+    // same "zero-span trace" concern version 5's `source` column exists to
+    // handle, there for attribution rather than failure reason). NULL for
+    // successful traces and for all pre-existing rows (historical debris
+    // from before this column existed — left as NULL, not backfilled).
+    version: 9,
+    sql: `
+      ALTER TABLE observability_traces ADD COLUMN error TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -260,10 +279,16 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
     this.db
       .prepare(
         `UPDATE observability_traces
-         SET ended_at = ?, total_tokens = ?, total_cost_estimate = ?
+         SET ended_at = ?, total_tokens = ?, total_cost_estimate = ?, error = ?
          WHERE trace_id = ?`,
       )
-      .run(new Date().toISOString(), params.totalTokens, params.totalCostEstimate ?? null, traceId);
+      .run(
+        new Date().toISOString(),
+        params.totalTokens,
+        params.totalCostEstimate ?? null,
+        params.error ?? null,
+        traceId,
+      );
   }
 
   // Persists a batch of spans in a single transaction. Called by the

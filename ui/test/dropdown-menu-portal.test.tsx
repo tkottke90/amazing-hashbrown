@@ -3,6 +3,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -60,5 +63,57 @@ describe('DropdownMenu dialog portal', () => {
     const item = screen.getByText('Item');
     expect(document.body.contains(item)).toBe(true);
     expect(document.querySelector('dialog')).toBeNull();
+  });
+});
+
+// Regression coverage for issue #130's real root cause: DropdownMenuSubContent
+// used to portal unconditionally (even to plain document.body when no dialog
+// was open), which broke Radix's own dismissable-layer "is this pointerdown
+// outside?" detection for the chat input's 3-level-deep "Provider -> provider
+// -> model" drill-down — see docs/superpowers/specs/
+// 2026-09-06-model-picker-touch-close-fix-design.md. SubContent now only
+// portals when a dialog is actually open (rate-modal.tsx's case); otherwise
+// it renders un-portaled, matching Radix's own default.
+describe('DropdownMenu sub-content portal', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function renderWithSub() {
+    render(
+      <DropdownMenu>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Provider</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem>Model</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+    firePointerDown(screen.getByText('Open'));
+    fireEvent.click(screen.getByText('Provider'));
+  }
+
+  it('portals sub-content into an open <dialog>', () => {
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    document.body.appendChild(dialog);
+
+    renderWithSub();
+
+    const item = screen.getByText('Model');
+    expect(dialog.contains(item)).toBe(true);
+  });
+
+  it('renders sub-content un-portaled (a real descendant of the root content) when no dialog is open', () => {
+    renderWithSub();
+
+    const rootContent = document.querySelector('[data-slot="dropdown-menu-content"]');
+    expect(rootContent).not.toBeNull();
+    const item = screen.getByText('Model');
+    expect(rootContent?.contains(item)).toBe(true);
   });
 });

@@ -195,5 +195,57 @@ describe('agents/observability-handler', () => {
       await handler.handleLLMEnd(result2, 'run-2');
       expect(handler.lastContextWindowInputTokens).to.equal(200);
     });
+
+    it('handleChainError flushes spans already in the completed buffer', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMEnd(llmResult, 'run-1');
+      await handler.handleChainError(new Error('boom'));
+
+      expect(calls).to.have.length(1);
+      expect(calls[0].map((s) => s.spanId)).to.deep.equal(['run-1']);
+    });
+
+    it('handleChainError synthesizes and flushes a still-pending span', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      // No matching handleLLMEnd/handleLLMError — the span is cut off mid-flight.
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleChainError(new Error('Context size has been exceeded'));
+
+      expect(calls).to.have.length(1);
+      expect(calls[0]).to.have.length(1);
+      expect(calls[0][0].error).to.include('Context size has been exceeded');
+      expect(calls[0][0].endedAt).to.be.a('string');
+      expect(calls[0][0].latencyMs).to.be.at.least(0);
+    });
+
+    it('handleChainError flushes a completed-error span and a synthesized pending span together, without overwriting the original error message', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleLLMStart({ id: ['ChatOllama'] } as Serialized, [], 'run-1');
+      await handler.handleLLMError(new Error('provider unreachable'), 'run-1');
+
+      await handler.handleToolStart({ id: ['wiki_search'] } as Serialized, '{}', 'run-2');
+      await handler.handleChainError(new Error('turn aborted'));
+
+      expect(calls).to.have.length(1);
+      const bySpanId = new Map(calls[0].map((s) => [s.spanId, s]));
+      expect(bySpanId.get('run-1')?.error).to.equal('provider unreachable');
+      expect(bySpanId.get('run-2')?.error).to.include('turn aborted');
+    });
+
+    it('handleChainError is a no-op when nothing is pending or completed', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleChainError(new Error('boom'));
+
+      expect(calls).to.have.length(0);
+    });
   });
 });

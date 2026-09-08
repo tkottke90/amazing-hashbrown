@@ -325,6 +325,86 @@ describe('build/buildThreadReport', () => {
     expect(result!.stats.failureCount).to.equal(1);
   });
 
+  it('surfaces a trace-level error and counts it as a failure when the trace has zero spans', () => {
+    const threadId = 't-trace-error-no-spans';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.endTrace(traceId, { totalTokens: 0, error: 'Context size has been exceeded' });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result).to.not.equal(null);
+    const traceEvent = result!.timeline.find(
+      (e) => e.kind === 'trace' && e.trace.traceId === traceId,
+    );
+    expect(traceEvent).to.not.equal(undefined);
+    expect(traceEvent!.kind === 'trace' && traceEvent.trace.error).to.equal(
+      'Context size has been exceeded',
+    );
+    expect(result!.stats.failureCount).to.equal(1);
+  });
+
+  it('does not double-count failureCount when a trace-level error accompanies an already-counted span error', () => {
+    const threadId = 't-trace-error-with-span';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-trace-error-with-span',
+        traceId,
+        parentSpanId: null,
+        type: 'llm-call',
+        name: 'llama3.2',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:00.500Z',
+        latencyMs: 500,
+        inputTokens: 10,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'Context size has been exceeded',
+      },
+    ]);
+    store.endTrace(traceId, { totalTokens: 10, error: 'Context size has been exceeded' });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.failureCount).to.equal(1);
+  });
+
+  it("carries a failed assistant message's persisted error through to ThreadReportData", () => {
+    const threadId = 't-assistant-error';
+    const thread = makeThread({
+      id: threadId,
+      messages: [
+        makeMessage({ id: 'u1', seq: 1, kind: 'user', payload: { content: 'hi', sentAt: '' } }),
+        makeMessage({
+          id: 'a1',
+          seq: 2,
+          kind: 'assistant',
+          status: 'error',
+          payload: { content: '', sentAt: '', error: 'Context size has been exceeded' },
+        }),
+      ],
+    });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result).to.not.equal(null);
+    const assistantMessage = result!.thread.messages.find((m) => m.id === 'a1');
+    expect((assistantMessage!.payload as { error?: string }).error).to.equal(
+      'Context size has been exceeded',
+    );
+  });
+
   it('interleaves wiki_update messages into the timeline in chronological order', () => {
     const threadId = 't3';
     const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });

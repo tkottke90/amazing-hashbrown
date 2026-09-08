@@ -166,6 +166,12 @@ export function extractPartialAssistantState(
   return { segmentId: fallbackMsgId, content: '', thoughtContent: '' };
 }
 
+// Shared by every SSE-handler catch block that needs the raw failure text
+// for endTrace()/failAssistant() — err is `unknown` in a catch clause.
+export function errorMessageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 // Exported for direct testing — the highest-risk piece of this module (does
 // accumulation + tool-call bookkeeping wire correctly to the persistence
 // layer) without needing a live LLM through the full getChatAgent() chain.
@@ -751,6 +757,7 @@ export async function streamChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(
         { messages: [{ role: 'human', content: llmContent }] },
@@ -786,10 +793,6 @@ export async function streamChatToSse(
         effectiveModel,
       );
 
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
-
       await finalizeTurn(
         sink,
         threadStore,
@@ -820,9 +823,22 @@ export async function streamChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {
@@ -905,6 +921,7 @@ export async function resumeChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(new Command({ resume: answer }), {
         ...config,
@@ -933,10 +950,6 @@ export async function resumeChatToSse(
         effectiveProvider,
         effectiveModel,
       );
-
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
 
       await finalizeTurn(
         sink,
@@ -968,9 +981,22 @@ export async function resumeChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {
@@ -1049,6 +1075,7 @@ export async function retryChatToSse(
     );
 
     setActiveSseWriter(threadId, sink);
+    let turnError: string | null = null;
     try {
       const eventStream = agent.streamEvents(null, {
         ...config,
@@ -1077,10 +1104,6 @@ export async function retryChatToSse(
         effectiveProvider,
         effectiveModel,
       );
-
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
 
       await finalizeTurn(
         sink,
@@ -1112,9 +1135,22 @@ export async function retryChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought);
+      turnError = errorMessageOf(err);
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        turnError,
+      );
       throw err;
     } finally {
+      store.endTrace(traceId, {
+        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+        error: turnError,
+      });
       clearActiveSseWriter(threadId);
     }
   } finally {

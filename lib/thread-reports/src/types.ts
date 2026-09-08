@@ -69,6 +69,11 @@ export interface AssistantPayload {
   content: string;
   thoughtContent?: string;
   sentAt: string;
+  // The real failure reason for a status:'error' row (e.g. "Context size has
+  // been exceeded") — see api/src/agents/thread-message-writer.ts's
+  // failAssistant. Absent on rows written before this field existed, and on
+  // any non-error row.
+  error?: string;
 }
 
 export interface ToolCallPayload {
