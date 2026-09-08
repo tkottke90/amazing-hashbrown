@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Router } from 'express';
-import type { GraphNode, GraphEdge } from '@tkottke90/llm-wiki';
+import type { GraphNode, GraphEdge, WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 import {
   streamWikiChatToSse,
@@ -46,40 +46,62 @@ wikiRouter.get('/domains', async (_req, res) => {
   }
 });
 
+export interface MergedWikiGraph {
+  nodes: (GraphNode & { domainId: string })[];
+  edges: (GraphEdge & { domainId: string })[];
+}
+
+/**
+ * Builds the merged, cross-wiki-aware graph across every registered domain.
+ * Exported (rather than inlined in the route handler) so tests can exercise
+ * it directly against a real, temp-dir-backed WikiRegistry — this repo has
+ * no mocking library and getWikiRegistry() is a hard singleton with no seam
+ * of its own, so an injectable registry parameter is the way to keep this
+ * testable off real disk/state (same pattern as wiki-upload.route.ts's
+ * processUpload()).
+ */
+export async function buildMergedGraph(injectedRegistry?: WikiRegistry): Promise<MergedWikiGraph> {
+  const registry = injectedRegistry ?? (await getWikiRegistry());
+  const domains = registry.list();
+
+  const mergedNodes: (GraphNode & { domainId: string })[] = [];
+  const rawEdges: (GraphEdge & { domainId: string })[] = [];
+  const METADATA_TYPES = new Set(['index', 'log', 'source']);
+
+  for (const domain of domains) {
+    try {
+      const wiki = await registry.load(domain.id);
+      const graph = await wiki.buildGraph({ registry });
+
+      for (const node of graph.nodes) {
+        if (!METADATA_TYPES.has(node.type)) {
+          mergedNodes.push({ ...node, domainId: domain.id });
+        }
+      }
+      for (const edge of graph.edges) {
+        rawEdges.push({ ...edge, domainId: domain.id });
+      }
+    } catch {
+      // Skip domains that fail to load — don't let one broken domain fail the whole graph
+    }
+  }
+
+  // Filtered against the ids collected across every domain (not just the one
+  // that produced the edge) — a cross-wiki edge's target node was pushed
+  // into mergedNodes while a *different* domain was being processed, so this
+  // check can only run after every domain has been walked.
+  const allowedNodeIds = new Set(mergedNodes.map((n) => n.id));
+  const mergedEdges = rawEdges.filter(
+    (e) => allowedNodeIds.has(e.source) && allowedNodeIds.has(e.target),
+  );
+
+  return { nodes: mergedNodes, edges: mergedEdges };
+}
+
 // GET /api/v1/wiki/graph
 wikiRouter.get('/graph', async (_req, res) => {
   try {
-    const registry = await getWikiRegistry();
-    const domains = registry.list();
-
-    const mergedNodes: (GraphNode & { domainId: string })[] = [];
-    const mergedEdges: (GraphEdge & { domainId: string })[] = [];
-    const METADATA_TYPES = new Set(['index', 'log', 'source']);
-
-    for (const domain of domains) {
-      try {
-        const wiki = await registry.load(domain.id);
-        const graph = await wiki.buildGraph();
-
-        const allowedNodeIds = new Set<string>();
-        for (const node of graph.nodes) {
-          if (!METADATA_TYPES.has(node.type)) {
-            mergedNodes.push({ ...node, domainId: domain.id });
-            allowedNodeIds.add(node.id);
-          }
-        }
-
-        for (const edge of graph.edges) {
-          if (allowedNodeIds.has(edge.source) && allowedNodeIds.has(edge.target)) {
-            mergedEdges.push({ ...edge, domainId: domain.id });
-          }
-        }
-      } catch {
-        // Skip domains that fail to load — don't let one broken domain fail the whole graph
-      }
-    }
-
-    res.json({ nodes: mergedNodes, edges: mergedEdges });
+    res.json(await buildMergedGraph());
   } catch (err) {
     res.status(503).json({ error: 'Wiki registry unavailable', detail: String(err) });
   }

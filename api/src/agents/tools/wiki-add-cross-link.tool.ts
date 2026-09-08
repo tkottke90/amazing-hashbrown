@@ -7,11 +7,17 @@ import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace
 import { isWikiDomainArchived, wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiAddCrossLinkSchema = z.object({
-  wikiId: z.string().describe('Wiki domain ID the pages belong to.'),
+  wikiId: z.string().describe('Wiki domain ID that fromPage belongs to.'),
   fromPage: z
     .string()
-    .describe('Path of the page to add the link from, relative to the wiki root.'),
-  toPage: z.string().describe('Path or slug of the page to link to.'),
+    .describe('Path of the page to add the link from, relative to its wiki root.'),
+  toPage: z
+    .string()
+    .describe(
+      'Path or slug of the page to link to, relative to its wiki root. ' +
+        "To link to a page in a DIFFERENT wiki, prefix with that wiki's id " +
+        "and a colon, e.g. 'other-wiki-id:entities/foo' — use wiki_locate to find valid wiki ids.",
+    ),
 });
 
 // Test-only escape hatch, same pattern as wiki-write.ts's `registry` param —

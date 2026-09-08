@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { LlmWiki } from '../src/index.js';
+import { LlmWiki, createWikiRegistry } from '../src/index.js';
 
 async function tmpWikiPath(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-wiki-'));
@@ -211,7 +211,7 @@ describe('LlmWiki.buildGraph', () => {
     });
     const graph = await wiki.buildGraph();
     expect(graph.nodes).to.have.length(1);
-    expect(graph.nodes[0].id).to.equal('entities/alpha');
+    expect(graph.nodes[0].id).to.equal('wiki:entities/alpha');
     expect(graph.nodes[0].title).to.equal('Alpha');
     expect(graph.nodes[0].type).to.equal('entity');
     expect(graph.edges).to.have.length(0);
@@ -236,8 +236,12 @@ describe('LlmWiki.buildGraph', () => {
     const graph = await wiki.buildGraph();
     expect(graph.nodes).to.have.length(2);
     const refs = graph.edges.filter((e) => e.type === 'references');
-    expect(refs.some((e) => e.source === 'entities/a' && e.target === 'entities/b')).to.equal(true);
-    expect(refs.some((e) => e.source === 'entities/b' && e.target === 'entities/a')).to.equal(true);
+    expect(
+      refs.some((e) => e.source === 'wiki:entities/a' && e.target === 'wiki:entities/b'),
+    ).to.equal(true);
+    expect(
+      refs.some((e) => e.source === 'wiki:entities/b' && e.target === 'wiki:entities/a'),
+    ).to.equal(true);
   });
 
   it('does not emit edges for unresolvable wikilinks', async () => {
@@ -270,7 +274,9 @@ describe('LlmWiki.buildGraph', () => {
       body: '[[a]] [[c]]',
     });
     const graph = await wiki.buildGraph();
-    const aToB = graph.edges.filter((e) => e.source === 'entities/a' && e.target === 'entities/b');
+    const aToB = graph.edges.filter(
+      (e) => e.source === 'wiki:entities/a' && e.target === 'wiki:entities/b',
+    );
     expect(aToB).to.have.length(1);
   });
 
@@ -294,7 +300,7 @@ describe('LlmWiki.buildGraph', () => {
     const graph = await wiki.buildGraph();
     const contradicts = graph.edges.filter((e) => e.type === 'contradicts');
     expect(
-      contradicts.some((e) => e.source === 'concepts/a' && e.target === 'entities/b'),
+      contradicts.some((e) => e.source === 'wiki:concepts/a' && e.target === 'wiki:entities/b'),
     ).to.equal(true);
   });
 
@@ -318,7 +324,7 @@ describe('LlmWiki.buildGraph', () => {
     const graph = await wiki.buildGraph();
     const contradicts = graph.edges.filter((e) => e.type === 'contradicts');
     expect(
-      contradicts.some((e) => e.source === 'concepts/a' && e.target === 'entities/b'),
+      contradicts.some((e) => e.source === 'wiki:concepts/a' && e.target === 'wiki:entities/b'),
     ).to.equal(true);
   });
 
@@ -360,13 +366,15 @@ describe('LlmWiki.buildGraph', () => {
       body: '[[b]] [[c]]',
     });
     const graph = await wiki.buildGraph({ includeSources: true });
-    expect(graph.nodes.some((n) => n.id === 'raw/articles/x' && n.type === 'source')).to.equal(
+    expect(graph.nodes.some((n) => n.id === 'wiki:raw/articles/x' && n.type === 'source')).to.equal(
       true,
     );
     expect(
       graph.edges.some(
         (e) =>
-          e.source === 'entities/a' && e.target === 'raw/articles/x' && e.type === 'derived_from',
+          e.source === 'wiki:entities/a' &&
+          e.target === 'wiki:raw/articles/x' &&
+          e.type === 'derived_from',
       ),
     ).to.equal(true);
   });
@@ -388,7 +396,7 @@ describe('LlmWiki.buildGraph', () => {
       body: '[[a]] [[c]]',
     });
     const graph = await wiki.buildGraph({ includeSources: true });
-    const sourceNodes = graph.nodes.filter((n) => n.id === 'raw/articles/shared');
+    const sourceNodes = graph.nodes.filter((n) => n.id === 'wiki:raw/articles/shared');
     expect(sourceNodes).to.have.length(1);
     const derivedEdges = graph.edges.filter((e) => e.type === 'derived_from');
     expect(derivedEdges).to.have.length(2);
@@ -406,7 +414,7 @@ describe('LlmWiki.buildGraph', () => {
       contested: true,
     });
     const graph = await wiki.buildGraph();
-    const node = graph.nodes.find((n) => n.id === 'entities/a');
+    const node = graph.nodes.find((n) => n.id === 'wiki:entities/a');
     expect(node?.confidence).to.equal('low');
     expect(node?.contested).to.equal(true);
   });
@@ -421,9 +429,116 @@ describe('LlmWiki.buildGraph', () => {
       body: '[[b]] [[c]]',
     });
     const graph = await wiki.buildGraph();
-    const node = graph.nodes.find((n) => n.id === 'entities/a');
+    const node = graph.nodes.find((n) => n.id === 'wiki:entities/a');
     expect(node?.confidence).to.equal(undefined);
     expect(node?.contested).to.equal(undefined);
+  });
+});
+
+describe('LlmWiki.buildGraph cross-wiki references', () => {
+  async function tmpRegistryRoot(): Promise<string> {
+    return fs.mkdtemp(path.join(os.tmpdir(), 'wiki-root-'));
+  }
+
+  it('leaves an external reference unresolved when no registry is supplied', async () => {
+    const wiki = await newWiki();
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: ['host'],
+      sources: [],
+      body: 'See [[other-wiki:entities/target]]',
+    });
+    const graph = await wiki.buildGraph();
+    expect(graph.edges).to.have.length(0);
+  });
+
+  it('resolves a cross-wiki wikilink into a namespaced references edge when a registry is supplied', async () => {
+    const registry = await createWikiRegistry({ wikiRoot: await tmpRegistryRoot() });
+    const source = await registry.create({ id: 'source-wiki', domain: 'x' });
+    const target = await registry.create({ id: 'other-wiki', domain: 'y' });
+    await target.commitPage({
+      type: 'entity',
+      title: 'Target',
+      tags: [],
+      sources: [],
+      body: 'no links',
+    });
+    await source.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'See [[other-wiki:entities/target]]',
+    });
+    const graph = await source.buildGraph({ registry });
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.source === 'source-wiki:entities/a' &&
+          e.target === 'other-wiki:entities/target' &&
+          e.type === 'references',
+      ),
+    ).to.equal(true);
+  });
+
+  it('does not emit an edge when the referenced wiki does not exist', async () => {
+    const registry = await createWikiRegistry({ wikiRoot: await tmpRegistryRoot() });
+    const source = await registry.create({ id: 'source-wiki', domain: 'x' });
+    await source.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'See [[nonexistent-wiki:entities/target]]',
+    });
+    const graph = await source.buildGraph({ registry });
+    expect(graph.edges).to.have.length(0);
+  });
+
+  it('does not emit an edge when the referenced page does not exist in the target wiki', async () => {
+    const registry = await createWikiRegistry({ wikiRoot: await tmpRegistryRoot() });
+    const source = await registry.create({ id: 'source-wiki', domain: 'x' });
+    await registry.create({ id: 'other-wiki', domain: 'y' });
+    await source.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'See [[other-wiki:entities/nonexistent]]',
+    });
+    const graph = await source.buildGraph({ registry });
+    expect(graph.edges).to.have.length(0);
+  });
+
+  it('resolves a cross-wiki contradictions entry into a namespaced contradicts edge', async () => {
+    const registry = await createWikiRegistry({ wikiRoot: await tmpRegistryRoot() });
+    const source = await registry.create({ id: 'source-wiki', domain: 'x' });
+    const target = await registry.create({ id: 'other-wiki', domain: 'y' });
+    await target.commitPage({
+      type: 'entity',
+      title: 'Target',
+      tags: [],
+      sources: [],
+      body: 'no links',
+    });
+    await source.commitPage({
+      type: 'concept',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'no links',
+      contradictions: ['other-wiki:entities/target'],
+    });
+    const graph = await source.buildGraph({ registry });
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.source === 'source-wiki:concepts/a' &&
+          e.target === 'other-wiki:entities/target' &&
+          e.type === 'contradicts',
+      ),
+    ).to.equal(true);
   });
 });
 

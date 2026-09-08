@@ -269,4 +269,69 @@ describe('WikiRegistry', () => {
     expect(sync.length).to.equal(1);
     expect(sync[0]?.message).to.contain('stray');
   });
+
+  it('sets wikiId to the registered id even when the on-disk path differs from it', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    const created = await registry.create({
+      id: 'homelab',
+      domain: 'infrastructure',
+      path: 'custom-dir',
+    });
+    expect(created.wikiId).to.equal('homelab');
+
+    const loaded = await registry.load('homelab');
+    expect(loaded.wikiId).to.equal('homelab');
+  });
+
+  it('lint() populates externalPages so cross-wiki references validate correctly', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    const homelab = await registry.create({ id: 'homelab', domain: 'infrastructure' });
+    const other = await registry.create({ id: 'other', domain: 'other-domain' });
+    await other.commitPage({
+      type: 'entity',
+      title: 'Target',
+      tags: [],
+      sources: [],
+      body: 'no links',
+    });
+    await homelab.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'Real: [[other:entities/target]]. Missing: [[other:entities/nonexistent]].',
+    });
+
+    const report = await registry.lint('homelab');
+    const crossWikiFindings = report.checks.filter((c) => c.check === 'cross_wiki_links');
+    expect(crossWikiFindings).to.have.length(1);
+    expect(crossWikiFindings[0]?.message).to.contain('entities/nonexistent');
+  });
+
+  it('lint() validates cross-wiki references against archived wikis too', async () => {
+    const root = await tmpRoot();
+    const registry = await createWikiRegistry({ wikiRoot: root });
+    const homelab = await registry.create({ id: 'homelab', domain: 'infrastructure' });
+    const other = await registry.create({ id: 'archived-other', domain: 'other-domain' });
+    await other.commitPage({
+      type: 'entity',
+      title: 'Target',
+      tags: [],
+      sources: [],
+      body: 'no links',
+    });
+    await registry.archive('archived-other');
+    await homelab.commitPage({
+      type: 'entity',
+      title: 'A',
+      tags: [],
+      sources: [],
+      body: 'See [[archived-other:entities/target]].',
+    });
+
+    const report = await registry.lint('homelab');
+    expect(report.checks.filter((c) => c.check === 'cross_wiki_links')).to.have.length(0);
+  });
 });

@@ -98,4 +98,52 @@ describe('lint/runLint', () => {
     expect(withData.checks).to.have.length(1);
     expect(withData.checks[0]?.message).to.contain('stray');
   });
+
+  it('does not flag broken_links for a syntactically valid cross-wiki reference', () => {
+    const pages = [page('entities/a.md', goodFm, 'See [[other-wiki:entities/b]]')];
+    const report = runLint(baseContext(pages), { only: ['broken_links'] });
+    expect(report.checks).to.have.length(0);
+  });
+
+  it('skips cross_wiki_links entirely when no externalPages are provided', () => {
+    const pages = [page('entities/a.md', goodFm, 'See [[other-wiki:entities/b]]')];
+    const report = runLint(baseContext(pages), { only: ['cross_wiki_links'] });
+    expect(report.checks).to.have.length(0);
+  });
+
+  it('flags a cross-wiki reference to an unknown wiki', () => {
+    const pages = [page('entities/a.md', goodFm, 'See [[other-wiki:entities/b]]')];
+    const ctx = baseContext(pages, { externalPages: new Map() });
+    const report = runLint(ctx, { only: ['cross_wiki_links'] });
+    expect(report.checks).to.have.length(1);
+    expect(report.checks[0]?.message).to.contain('unknown wiki "other-wiki"');
+  });
+
+  it('flags a cross-wiki reference to an unknown page in a known wiki', () => {
+    const pages = [page('entities/a.md', goodFm, 'See [[other-wiki:entities/b]]')];
+    const ctx = baseContext(pages, {
+      externalPages: new Map([['other-wiki', ['entities/c.md']]]),
+    });
+    const report = runLint(ctx, { only: ['cross_wiki_links'] });
+    expect(report.checks).to.have.length(1);
+    expect(report.checks[0]?.message).to.contain('does not exist in wiki "other-wiki"');
+  });
+
+  it('does not flag a valid cross-wiki reference', () => {
+    const pages = [page('entities/a.md', goodFm, 'See [[other-wiki:entities/b]]')];
+    const ctx = baseContext(pages, {
+      externalPages: new Map([['other-wiki', ['entities/b.md']]]),
+    });
+    const report = runLint(ctx, { only: ['cross_wiki_links'] });
+    expect(report.checks).to.have.length(0);
+  });
+
+  it('flags a cross-wiki contradictions entry that does not resolve', () => {
+    const pages = [
+      page('entities/a.md', { ...goodFm, contradictions: ['other-wiki:entities/b'] }, 'body'),
+    ];
+    const ctx = baseContext(pages, { externalPages: new Map([['other-wiki', []]]) });
+    const report = runLint(ctx, { only: ['cross_wiki_links'] });
+    expect(report.checks).to.have.length(1);
+  });
 });

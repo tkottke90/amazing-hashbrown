@@ -19,6 +19,7 @@ const CHECK_FNS: Record<LintCheckId, (ctx: LintContext) => LintFinding[]> = {
   quality: checks.checkQuality,
   contradictions: checks.checkContradictions,
   registry_sync: checks.checkRegistrySync,
+  cross_wiki_links: checks.checkCrossWikiLinks,
 };
 
 export const ALL_CHECKS = Object.keys(CHECK_FNS) as LintCheckId[];

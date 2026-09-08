@@ -126,6 +126,7 @@ export class WikiRegistry {
     return LlmWiki.load(this.resolvePath(entry), {
       logger: this.logger,
       embeddingProvider: this.embeddingProvider,
+      wikiId: id,
     });
   }
 
@@ -151,6 +152,7 @@ export class WikiRegistry {
       metadata: input.metadata,
       logger: this.logger,
       embeddingProvider: this.embeddingProvider,
+      wikiId: input.id,
     });
 
     await this.register(input.id, {
@@ -241,12 +243,14 @@ export class WikiRegistry {
 
   // ── Health ──────────────────────────────────────────────────────────────────
 
-  /** Lint a wiki, injecting registry data so registry_sync can run. */
+  /** Lint a wiki, injecting registry data so registry_sync and
+   *  cross_wiki_links can run. */
   async lint(id: string): Promise<LintReport> {
     const wiki = await this.load(id);
     return wiki.lint({
       wikiIds: this.data.wikis.map((w) => w.id),
       onDiskDirs: await this.onDiskWikiDirs(),
+      externalPages: await this.externalPages(id),
     });
   }
 
@@ -260,6 +264,26 @@ export class WikiRegistry {
 
   private resolvePath(entry: WikiEntry): string {
     return path.isAbsolute(entry.path) ? entry.path : path.join(this.wikiRoot, entry.path);
+  }
+
+  /** Other registered wikis' page paths, keyed by wiki id — used to validate
+   *  cross-wiki references during lint. Includes archived wikis (a
+   *  cross-wiki reference to an archived wiki's page is still real —
+   *  `buildGraph()`'s own resolution doesn't check archived status either).
+   *  A wiki that fails to load is skipped rather than failing the whole
+   *  lint run. */
+  private async externalPages(excludeId: string): Promise<Map<string, string[]>> {
+    const pages = new Map<string, string[]>();
+    for (const entry of this.list(true)) {
+      if (entry.id === excludeId) continue;
+      const other = await this.load(entry.id).catch(() => null);
+      if (!other) continue;
+      pages.set(
+        entry.id,
+        (await other.listPages()).map((p) => p.filename),
+      );
+    }
+    return pages;
   }
 
   /** Directory names directly under wikiRoot that contain a SCHEMA.md. */
