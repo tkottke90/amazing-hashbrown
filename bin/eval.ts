@@ -126,6 +126,17 @@ const embeddings = env.embeddings.enabled
       model: env.embeddings.model,
       configuration: { baseURL: env.embeddings.baseUrl },
       apiKey: process.env.OPENAI_API_KEY || 'not-needed-for-local-server',
+      // The underlying openai SDK defaults embeddings requests to
+      // encoding_format: "base64" regardless of any langchain option, but
+      // this repo's local embedding server (embed-gemma-300m-FLM) silently
+      // ignores that field and returns plain floats anyway. langchain then
+      // tries to base64-decode the plain-float JSON array it got back,
+      // producing a wrong-length, all-zero vector — every `semantic`-type
+      // scenario scores similarity 0 regardless of actual output quality.
+      // Forcing "float" makes the request match what this server actually
+      // returns. Confirmed via a raw request/response test against the
+      // configured baseUrl before this fix.
+      encodingFormat: 'float',
     })
   : undefined;
 
