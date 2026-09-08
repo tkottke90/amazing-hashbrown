@@ -83,20 +83,6 @@ export const webFetchTool = tool(
         sections.push({ name: 'key concepts', content: keyConcepts });
       }
 
-      // Instructions to search contents using RLM
-      sections.push({
-        name: 'to search contents:',
-        content: [
-          `rlm_query({`,
-          `  question: <question>,`,
-          `  corpus: {`,
-          `    threadId: "${threadId}",`,
-          `    toolKey:  "${toolKey}"`,
-          `  }`,
-          `})`,
-        ].join('\n'),
-      });
-
       // Instructions to ingest into wiki
       sections.push({ name: 'to ingest into wiki:', content: wikiInstruction });
 
