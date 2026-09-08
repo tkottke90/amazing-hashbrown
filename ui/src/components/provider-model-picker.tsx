@@ -254,7 +254,7 @@ export function useProviderModelPicker({
   const sheet = (
     <BottomSheet
       open={sheetOpen}
-      className="max-h-[80vh]"
+      className="max-h-[80vh] max-w-full overflow-hidden"
       title={sheetProviderName.value ?? undefined}
     >
       <div
