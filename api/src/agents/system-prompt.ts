@@ -560,6 +560,36 @@ confirmation already answered that.`;
 //    Added the missing inline-corpus example right where the direct-write
 //    instruction already lives. Re-check local's wfetch-003 next round; if
 //    it still misses in a new third shape, that's the plateau signature.
+// 9. Auto-eval round 1 of the new suites/get-tool-key.yaml (2026-09-07),
+//    the first run since get_tool_key itself shipped. Ornith and Lemonade
+//    each failed one of the five scenarios; local and a new Digital Ocean
+//    provider passed all five, so per the §5 cross-check these read as
+//    two separate model-specific gaps rather than a shared prompt problem
+//    — but both had a plausible, fixable wording cause, so both got one:
+//    (a) GTK-004a (Ornith): asked to save a stub whose ingest block still
+//    carried the literal `<page title>` placeholder, Ornith called
+//    get_tool_key first, reasoning "I need to get the full title from the
+//    offloaded content first." Nothing here said the placeholder was the
+//    model's own job to fill in from the summary — Lemonade, local, and
+//    Digital Ocean all inferred a title correctly without being told to,
+//    so this was a real gap, not a shared ambiguity. Added a paragraph
+//    right after the ingest-block instruction naming the placeholder as a
+//    naming task, not a retrieval one.
+//    (b) GTK-001 (Lemonade): given a plain offloaded stub with no ingest
+//    block at all, asked for a quoted detail, Lemonade's own reasoning
+//    claimed the stub "includes an explicit block with a threadId and
+//    toolKey for ingesting the full content into the wiki" — a block that
+//    was never in that scenario's seed — and called wiki_create_page
+//    instead of get_tool_key. This looks like the model pattern-matching
+//    the stub format itself onto the ingest-block shape rather than
+//    checking whether that literal heading was actually present; the
+//    other three models read the same stub correctly. Added a contrastive
+//    paragraph stating plainly that a stub without that literal heading
+//    never carries the instruction, regardless of what similar stubs look
+//    like elsewhere, and that a request for more detail than the summary
+//    gives always resolves through get_tool_key. Re-check both scenarios
+//    against Ornith and Lemonade next round; if either misses again in the
+//    same shape, that's the plateau signature for that model.
 const WEB_FETCH_SECTION = `web_fetch retrieves a URL's content — the page text, metadata, links, and outline.
 
 When the user asks you to save, add, or ingest a URL into the wiki, call web_fetch first, before any
@@ -616,6 +646,28 @@ and toolKey values verbatim from the stub. Do not call wiki_locate first — the
 contains enough context; call wiki_locate only if wikiId is genuinely unknown. Do not ask for
 confirmation — the stub instruction is the decision. The corpus reference tells the tool where to
 fetch the full body; you do not need to read or summarise the full text yourself.
+
+The block's own title field is usually a placeholder — <page title> — for you to fill in, not a
+value already decided. Pick a short, descriptive title straight from the stub's summary and key
+concepts; needing a title is never a reason to call get_tool_key first, even when the summary feels
+too brief to name it confidently. That placeholder is an invitation to name the page from what
+you already have, not a missing prerequisite that requires fetching the full text.
+
+That reference is for the wiki path specifically — do not resolve it yourself first with
+get_tool_key just to hand the text to wiki_create_page as corpus.raw; pass the
+corpus:{threadId, toolKey} reference straight through instead. Reach for get_tool_key when you
+need the offloaded text for anything else — answering a question in more detail than the stub's
+summary gives you, quoting a passage, or working with the full document yourself. Call it with the
+same threadId and toolKey shown in the stub, copied verbatim. get_tool_key only works with a real
+key from an actual stub already in this conversation — never invent a threadId or toolKey to try
+it speculatively; if there's no stub, the content you have is already everything there is.
+
+A stub without that literal "to ingest into wiki:" heading never carries the instruction above,
+no matter how similar it looks to one that does — check the stub's own text for that heading
+before acting on it, rather than assuming it based on other stubs you've seen in this conversation
+or in these instructions. A plain stub (summary and key concepts only) paired with a request for
+more than the summary gives — the exact wording, a specific detail, the full document — is a
+get_tool_key case, not a reason to invent an ingest block that was never actually there.
 
 This only applies when wiki_create_page is actually available to you right now. If it isn't in
 your current toolset — write access can be scoped or withheld per wiki — don't try to act on the
