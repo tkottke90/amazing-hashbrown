@@ -29,6 +29,26 @@ export function pageStem(relPath: string): string {
 }
 
 /**
+ * Split a normalized link target into a cross-wiki reference, when it has
+ * one. Expects `target` to already have alias/`.md` stripped (i.e. the
+ * output of {@link normalizeLink}) — the colon split happens on top of that,
+ * not before it, so `other-wiki:entities/foo|Label` and
+ * `other-wiki:entities/foo.md` both parse the same way.
+ *
+ * A target with no colon, or an empty wiki id before the colon, is not an
+ * external reference (returns `null`) — no real page path contains a colon,
+ * and an empty wiki id is degenerate input rather than a real reference.
+ */
+export function parseExternalRef(target: string): { wikiId: string; pagePath: string } | null {
+  const idx = target.indexOf(':');
+  if (idx <= 0) return null;
+  const wikiId = target.slice(0, idx);
+  const pagePath = target.slice(idx + 1);
+  if (!pagePath) return null;
+  return { wikiId, pagePath };
+}
+
+/**
  * Resolve a normalized link target against a set of page paths, trying a full
  * stem match (`entities/foo`) first, then a basename match (`foo`).
  * Returns the matching page path, or null.

@@ -148,7 +148,8 @@ export type LintCheckId =
   | 'stale'
   | 'quality'
   | 'contradictions'
-  | 'registry_sync';
+  | 'registry_sync'
+  | 'cross_wiki_links';
 
 export type LintSeverity = 'error' | 'warn' | 'info';
 
@@ -172,7 +173,7 @@ export type GraphNodeType = PageType | 'source';
 
 /** A vertex in the wiki graph. */
 export interface GraphNode {
-  /** pageStem(relPath), e.g. "entities/large-language-model" */
+  /** `${wikiId}:${pageStem(relPath)}`, e.g. "homelab:entities/large-language-model" */
   id: string;
   title: string;
   type: GraphNodeType;
