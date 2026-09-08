@@ -73,9 +73,11 @@ export function ToolCallMessage({ message, className }: ToolCallMessageProps) {
                 Output
               </p>
               <pre className="overflow-hidden rounded bg-muted/40 px-2 py-1.5 text-xs font-mono whitespace-pre-line break-all">
-                {typeof message.outputs === 'string'
-                  ? message.outputs
-                  : JSON.stringify(message.outputs, null, 2)}
+                <code>
+                  {typeof message.outputs === 'string'
+                    ? message.outputs
+                    : JSON.stringify(message.outputs, null, 2)}
+                </code>
               </pre>
             </div>
           )}
