@@ -173,6 +173,16 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('gives a worked example of going straight to scoped wiki_search instead of wiki_orient first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient\nfirst.',
+      );
+      expect(result).to.include(
+        "wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already\ndoes, so inserting it here is a wasted round-trip",
+      );
+    });
+
     it('scopes the single-match skip to concrete queries — overview questions take wiki_orient', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

@@ -399,6 +399,29 @@
 // (or wiki_orient) the same way regardless of how the domain was resolved.
 // Re-run wnav-009 (rewritten to expect a scoped wiki_search call — see
 // suites/wiki-navigation.yaml) next round to confirm the ceiling is closed.
+//
+// Sixteenth entry, first auto-eval round against the fifteenth entry's
+// wording (2026-09-08, local/Lemonade/Ornith/Digital Ocean, judge local).
+// Confirmed the ceiling closed for ornith: wnav-009 passed (15/15, no
+// failures at all) after nine-plus consecutive collapses pre-fix. local
+// and Digital Ocean also passed wnav-009 and the new wnav-013 (single-match
+// scoped search, same issue #155 addition) cleanly. Lemonade failed both,
+// in a new shape distinct from ornith's old collapse: calledTools:
+// [wiki_orient] on each, with reasoning that correctly identified the
+// resolved domain ("the wikiId confirms... 'user'") but then inserted a
+// wiki_orient call anyway before searching — old wiki_orient-first habit,
+// not the multi-candidate-collapse shape this section's abstract wikiId
+// paragraph was written to fix. Per interpreting-results.md §3, an abstract
+// rule ("no separate confinement step required") had no worked example to
+// anchor to; added one contrasting wnav-009's narrowed-tie phrasing and
+// wnav-013's single-match phrasing, both landing on wiki_search directly,
+// with an explicit reason wiki_orient is redundant here. wnav-004 also
+// failed for Lemonade again, in the exact prose-instead-of-ask_user shape
+// the eleventh entry already confirmed as a ceiling — left alone, not
+// re-chased. Re-run Lemonade against wnav-009/wnav-013 next round to check
+// the new example lands; if it reproduces in the same wiki_orient-first
+// shape with wording unchanged, that's evidence of a second Lemonade-
+// specific ceiling, not a remaining wording gap.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -439,6 +462,14 @@ established earlier in the conversation. There's no separate confinement step re
 which candidate applies is a decision you make from wiki_locate's own result text, then apply directly by
 passing that wikiId to whichever call — wiki_search or wiki_orient — comes next. Only omit wikiId when you
 actually want to search across every domain at once.
+
+For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient
+first. "What have I told you I prefer for my morning routine?" after wiki_locate narrows a "user" vs. "self"
+tie to "user" via its routing notes, or "What programming languages do I use most at work?" after
+wiki_locate returns "user" as a single outright match — both go straight to wiki_search({ wikiId: 'user',
+query: ... }). wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already
+does, so inserting it here is a wasted round-trip, not a cautious extra step — save wiki_orient for when the
+user is actually asking for an overview, covered next.
 
 The single-match skip also assumes you have something concrete to search for. wiki_search answers
 "which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
