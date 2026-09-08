@@ -82,6 +82,8 @@ export const webFetchTool = tool(
       if (keyConcepts) {
         sections.push({ name: 'key concepts', content: keyConcepts });
       }
+
+      // Instructions to ingest into wiki
       sections.push({ name: 'to ingest into wiki:', content: wikiInstruction });
 
       return toolStub(

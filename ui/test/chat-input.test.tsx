@@ -1,7 +1,9 @@
 import { useState } from 'preact/hooks';
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { act } from 'preact/test-utils';
 
 import { ChatInput, ChatInputChip } from '@/components/chat-input';
+import { MODEL_SUBMENU_CLOSE_GRACE_MS } from '@/components/provider-model-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
@@ -26,6 +28,24 @@ function openSubmenu(element: HTMLElement) {
   element.focus();
   fireEvent.click(element);
   fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
+
+// jsdom has no native PointerEvent, so `fireEvent.pointerEnter`/
+// `pointerLeave` silently drop the `pointerType` from their init object —
+// the event Preact's handler receives always has `pointerType: undefined`.
+// Preact falls back to registering onPointerEnter/onPointerLeave under the
+// un-lowercased event name (same fallback as onPointerDown above), so
+// building a plain Event under that literal name and attaching
+// `pointerType` directly is what actually reaches the handler with the
+// value this suite needs to exercise `whenMouse` (issue #130).
+function firePointerEvent(
+  element: Element,
+  type: 'PointerEnter' | 'PointerLeave',
+  pointerType: 'mouse' | 'touch',
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  fireEvent(element, event);
 }
 
 // @testing-library/preact's fireEvent.change/fireEvent.input wrappers never
@@ -133,6 +153,42 @@ describe('ChatInput', () => {
 
     expect(screen.getByText('openai')).toBeInTheDocument();
     expect(screen.getByText('ollama')).toBeInTheDocument();
+  });
+});
+
+// Regression coverage for issue #130: the outer "Provider" sub-menu mirrors
+// ProviderModelPicker's own app-controlled open state (see that component's
+// own #130 tests) and had the same gap — its onPointerEnter/onPointerLeave
+// handlers never guarded against non-mouse pointer types, so a touch tap's
+// synthesized pointerleave could arm a premature close here too.
+describe('ChatInput — Provider sub-menu touch never schedules a hover-close (issue #130)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('a touch pointerLeave on the outer Provider trigger never schedules a close', () => {
+    render(
+      <ControlledChatInput
+        providers={[{ name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }] }]}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    const providerTrigger = screen.getByText('Provider');
+
+    firePointerEvent(providerTrigger, 'PointerEnter', 'mouse');
+    expect(screen.getByText('openai')).toBeInTheDocument();
+
+    firePointerEvent(providerTrigger, 'PointerLeave', 'touch');
+    act(() => {
+      jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
+    });
+
+    expect(screen.getByText('openai')).toBeInTheDocument();
   });
 });
 

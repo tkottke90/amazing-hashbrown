@@ -35,9 +35,17 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action:
-        'On a mobile viewport, tap through "Add to message" -> "Provider" -> a provider -> a model',
+        'On a mobile viewport, tap through "Add to message" -> "Provider" -> a provider, then tap a model in the resulting bottom sheet',
       expectedOutcome:
-        'Each level stays open long enough for a real tap, and the model chip shows the tapped model',
+        "The provider tap stays open long enough for a real tap, the sheet opens with that provider's models, and the model chip shows the tapped model",
+      test: () => {},
+    },
+    {
+      tags: ['@smoke'],
+      action:
+        'On a mobile viewport, open the model sheet for a provider with a long, unbroken model name (e.g. a GGUF filename)',
+      expectedOutcome:
+        'The model row and the sheet panel itself both stay within the viewport bounds instead of overflowing off-screen, and tapping the long-named model still updates the chip',
       test: () => {},
     },
   ],
@@ -60,9 +68,30 @@ const MOCK_PROVIDERS = {
   defaultProvider: 'openai',
 };
 
-async function mockProvidersApi(page: import('@playwright/test').Page) {
+// A separate fixture (rather than a third entry on MOCK_PROVIDERS) for the
+// long-model-name overflow test below: the keyboard tests' ArrowDown counts
+// depend on the exact provider list length (Radix's roving focus clamps at
+// the last item rather than wrapping), so widening the shared fixture would
+// silently change which provider a fixed number of ArrowDown presses lands
+// on elsewhere in this file.
+const MOCK_PROVIDERS_WITH_LONG_MODEL_NAME = {
+  providers: [
+    ...MOCK_PROVIDERS.providers,
+    {
+      name: 'local-gguf',
+      type: 'openai-compatible',
+      models: [{ id: 'Meta-Llama-3.1-70B-Instruct-Q4_K_M-00001-of-00002.gguf' }],
+    },
+  ],
+  defaultProvider: 'openai',
+};
+
+async function mockProvidersApi(
+  page: import('@playwright/test').Page,
+  providers: typeof MOCK_PROVIDERS | typeof MOCK_PROVIDERS_WITH_LONG_MODEL_NAME = MOCK_PROVIDERS,
+) {
   await page.route('**/api/v1/providers', async (route: Route) => {
-    await route.fulfill({ json: MOCK_PROVIDERS });
+    await route.fulfill({ json: providers });
   });
 }
 
@@ -204,7 +233,7 @@ test.describe(
     // reusing the desktop block above.
     test.use({ viewport: { width: 420, height: 874 }, hasTouch: true, isMobile: true });
 
-    test('touch: tapping through Add to message -> Provider -> a provider -> a model selects it', async ({
+    test('touch: tapping through Add to message -> Provider -> a provider opens a bottom sheet, and tapping a model there selects it', async ({
       page,
     }, testInfo) => {
       await mockProvidersApi(page);
@@ -217,31 +246,85 @@ test.describe(
       await expect(providerTrigger).toBeVisible();
       await providerTrigger.tap();
 
-      const openaiTrigger = page.getByRole('menuitem', { name: 'openai', exact: true });
-      await expect(openaiTrigger).toBeVisible();
+      // On a mobile viewport, a provider is a flat tappable item (not a
+      // nested flyout trigger) — the model list it used to open as a
+      // second-level flyout overflowed the viewport when model names were
+      // long (see the long-name test below), so tapping a provider here
+      // closes the whole "Add to message" menu and opens a BottomSheet
+      // with that provider's models instead.
+      const openaiItem = page.getByRole('menuitem', { name: 'openai', exact: true });
+      await expect(openaiItem).toBeVisible();
 
       // A real finger needs a moment to lift off "Provider" and land on
       // "openai" — long enough to expose the same premature-close race the
       // mouse-hover regression test above guards against (issue #113), only
       // this time via touch's pointerup/pointerleave sequence rather than a
-      // mouse move. Each submenu level here is opened/closed via
-      // onPointerEnter/onPointerLeave with a 200ms close-grace timer (see
-      // MODEL_SUBMENU_CLOSE_GRACE_MS in provider-model-picker.tsx) — touch
-      // doesn't hover, so a tap's pointerup fires pointerleave almost
-      // immediately, arming that timer against a finger that's slower than
-      // 200ms to reach the next level.
+      // mouse move.
       await page.waitForTimeout(250);
-      await expect(openaiTrigger).toBeVisible();
-      await openaiTrigger.tap();
+      await expect(openaiItem).toBeVisible();
+      await openaiItem.tap();
 
-      const firstModel = page.getByRole('menuitemcheckbox', { name: 'gpt-4o', exact: true });
+      const firstModel = page.getByRole('button', { name: 'gpt-4o', exact: true });
+      await expect(firstModel).toBeVisible();
+      await expect(providerTrigger).not.toBeVisible();
+
+      await page.waitForTimeout(250);
       await expect(firstModel).toBeVisible();
 
-      await page.waitForTimeout(250);
+      // Linger, matching the mouse test's "read the model list before
+      // tapping" scenario above — a real user's tap isn't instantaneous,
+      // and this is what actually caught the #113 regression for mouse.
+      await page.waitForTimeout(300);
       await expect(firstModel).toBeVisible();
       await firstModel.tap();
 
       await expect(page.locator('[data-slot="model-chip"]')).toHaveText('gpt-4o');
+    });
+
+    // Regression coverage: the nested flyout this bottom sheet replaced
+    // overflowed the viewport when a model's name was a long, unbroken
+    // string (e.g. a real GGUF quant filename) — Radix positions a
+    // SubContent flyout relative to its trigger without reflowing long
+    // text, so on a narrow viewport it rendered partially off-screen and
+    // became unusable. The BottomSheet is full-width and wraps/scrolls
+    // instead, so this asserts the sheet and its long-named row both stay
+    // within the viewport, and the flow is still fully usable.
+    test('touch: a long, unbroken model name does not overflow the viewport and stays tappable', async ({
+      page,
+    }, testInfo) => {
+      await mockProvidersApi(page, MOCK_PROVIDERS_WITH_LONG_MODEL_NAME);
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.locator('button[aria-label="Add to message"]').tap();
+      await page.getByRole('menuitem', { name: 'Provider' }).tap();
+
+      const providerItem = page.getByRole('menuitem', { name: 'local-gguf', exact: true });
+      await expect(providerItem).toBeVisible();
+      await providerItem.tap();
+
+      const longModelName = 'Meta-Llama-3.1-70B-Instruct-Q4_K_M-00001-of-00002.gguf';
+      const longModel = page.getByRole('button', { name: longModelName, exact: true });
+      await expect(longModel).toBeVisible();
+
+      const viewport = page.viewportSize();
+      if (!viewport) throw new Error('missing viewport size');
+
+      const modelBox = await longModel.boundingBox();
+      if (!modelBox) throw new Error('missing bounding box for long model row');
+      expect(modelBox.x).toBeGreaterThanOrEqual(0);
+      expect(modelBox.x + modelBox.width).toBeLessThanOrEqual(viewport.width);
+
+      const sheetPanel = page.locator('dialog[open]').last();
+      const sheetBox = await sheetPanel.boundingBox();
+      if (!sheetBox) throw new Error('missing bounding box for sheet panel');
+      expect(sheetBox.x).toBeGreaterThanOrEqual(0);
+      expect(sheetBox.x + sheetBox.width).toBeLessThanOrEqual(viewport.width);
+      // Capped at 80vh — a couple of pixels of slack for sub-pixel rounding.
+      expect(sheetBox.height).toBeLessThanOrEqual(viewport.height * 0.8 + 2);
+
+      await longModel.tap();
+      await expect(page.locator('[data-slot="model-chip"]')).toHaveText(longModelName);
     });
   },
 );

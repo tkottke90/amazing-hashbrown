@@ -27,8 +27,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  ProviderModelPicker,
+  useProviderModelPicker,
   MODEL_SUBMENU_CLOSE_GRACE_MS,
+  whenMouse,
 } from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
 
@@ -281,6 +282,14 @@ export function ChatInput({
 
   useEffect(() => () => cancelProviderMenuClose(), []);
 
+  const { items: providerModelItems, sheet: providerModelSheet } = useProviderModelPicker({
+    providers: providers ?? [],
+    activeProvider: activeProvider ?? undefined,
+    activeModel: activeModel ?? undefined,
+    onSelect: (provider, model) => onModelSelect?.(provider, model),
+    onAnyOpenChange: handleProviderModelMenuOpenChange,
+  });
+
   function selectSkill(skill: SkillInfo) {
     onValueChange(`${skill.slashCommand} `);
     menuOpen.value = false;
@@ -471,30 +480,25 @@ export function ChatInput({
                     }}
                   >
                     <DropdownMenuSubTrigger
-                      onPointerEnter={openProviderMenuNow}
+                      onPointerEnter={whenMouse(openProviderMenuNow)}
                       onFocus={keepProviderMenuOpenOnFocus}
-                      onPointerLeave={scheduleProviderMenuClose}
+                      onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
                       Provider
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent
-                      onPointerEnter={openProviderMenuNow}
+                      onPointerEnter={whenMouse(openProviderMenuNow)}
                       onFocus={keepProviderMenuOpenOnFocus}
-                      onPointerLeave={scheduleProviderMenuClose}
+                      onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
-                      <ProviderModelPicker
-                        providers={providers}
-                        activeProvider={activeProvider ?? undefined}
-                        activeModel={activeModel ?? undefined}
-                        onSelect={(provider, model) => onModelSelect?.(provider, model)}
-                        onAnyOpenChange={handleProviderModelMenuOpenChange}
-                      />
+                      {providerModelItems}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {providerModelSheet}
           {activeModel && (
             <span
               data-slot="model-chip"

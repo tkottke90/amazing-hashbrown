@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  ProviderModelPicker,
+  useProviderModelPicker,
   MODEL_SUBMENU_CLOSE_GRACE_MS,
   type ProviderModelPickerProps,
 } from '@/components/provider-model-picker';
@@ -15,6 +15,24 @@ import {
 // helper, needed to open Radix's pointerdown-driven dropdown/submenu.
 function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
+}
+
+// jsdom has no native PointerEvent either, so `fireEvent.pointerEnter`/
+// `pointerLeave` silently drop the `pointerType` from their init object —
+// the event Preact's handler receives always has `pointerType: undefined`.
+// Preact itself falls back to registering onPointerEnter/onPointerLeave
+// under the un-lowercased event name (same fallback as onPointerDown
+// above), so building a plain Event under that literal name and attaching
+// `pointerType` directly is what actually reaches the handler with the
+// value this suite needs to exercise `whenMouse` (issue #130).
+function firePointerEvent(
+  element: Element,
+  type: 'PointerEnter' | 'PointerLeave',
+  pointerType: 'mouse' | 'touch',
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  fireEvent(element, event);
 }
 
 // Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
@@ -33,22 +51,34 @@ function openSubmenu(element: HTMLElement) {
   fireEvent.keyDown(element, { key: 'ArrowRight' });
 }
 
+// useProviderModelPicker is a hook (it must be, so its `sheet` output can
+// be rendered outside the DropdownMenu that `items` lives inside — see the
+// comment in provider-model-picker.tsx) — this tiny host component is what
+// actually lets it be exercised by render().
+function PickerHost(props: ProviderModelPickerProps) {
+  const { items, sheet } = useProviderModelPicker(props);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>{items}</DropdownMenuContent>
+      </DropdownMenu>
+      {sheet}
+    </>
+  );
+}
+
 function renderPicker(props: Partial<ProviderModelPickerProps> = {}) {
   const onSelect = jest.fn();
   render(
-    <DropdownMenu>
-      <DropdownMenuTrigger>Open</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <ProviderModelPicker
-          providers={[
-            { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
-            { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
-          ]}
-          onSelect={onSelect}
-          {...props}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>,
+    <PickerHost
+      providers={[
+        { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
+        { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
+      ]}
+      onSelect={onSelect}
+      {...props}
+    />,
   );
   firePointerDown(screen.getByText('Open'));
   return { onSelect };
@@ -105,15 +135,15 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     const { onSelect } = renderPicker();
     const trigger = screen.getByText('openai');
 
-    fireEvent.pointerEnter(trigger);
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
     const content = screen.getByText('gpt-4o').closest('[data-slot="dropdown-menu-sub-content"]');
     expect(content).not.toBeNull();
 
-    fireEvent.pointerLeave(trigger);
+    firePointerEvent(trigger, 'PointerLeave', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS / 2);
     });
-    fireEvent.pointerEnter(content as Element);
+    firePointerEvent(content as Element, 'PointerEnter', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
     });
@@ -127,10 +157,10 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     renderPicker();
     const trigger = screen.getByText('openai');
 
-    fireEvent.pointerEnter(trigger);
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
 
-    fireEvent.pointerLeave(trigger);
+    firePointerEvent(trigger, 'PointerLeave', 'mouse');
     act(() => {
       jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS - 1);
     });
@@ -147,11 +177,11 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     const openaiTrigger = screen.getByText('openai');
     const ollamaTrigger = screen.getByText('ollama');
 
-    fireEvent.pointerEnter(openaiTrigger);
+    firePointerEvent(openaiTrigger, 'PointerEnter', 'mouse');
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
 
-    fireEvent.pointerLeave(openaiTrigger);
-    fireEvent.pointerEnter(ollamaTrigger);
+    firePointerEvent(openaiTrigger, 'PointerLeave', 'mouse');
+    firePointerEvent(ollamaTrigger, 'PointerEnter', 'mouse');
 
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
     expect(screen.getByText('llama3.2')).toBeInTheDocument();
@@ -161,5 +191,137 @@ describe('ProviderModelPicker — hover-open grace window (issue #113)', () => {
     });
     expect(screen.getByText('llama3.2')).toBeInTheDocument();
     expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+  });
+});
+
+// Regression coverage for issue #130: touch has no real hover state, but our
+// own onPointerEnter/onPointerLeave handlers (added for #113 above) never
+// guarded against non-mouse pointer types the way Radix's own internal
+// pointer-hover handlers do (see provider-model-picker.tsx's `whenMouse`).
+// A touch tap's synthesized pointerleave was arming the same close timer
+// meant only for a real pointer moving away, racing the user's next tap.
+describe('ProviderModelPicker — touch never schedules a hover-close (issue #130)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('a touch pointerLeave on the trigger never schedules a close', () => {
+    renderPicker();
+    const trigger = screen.getByText('openai');
+
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+
+    firePointerEvent(trigger, 'PointerLeave', 'touch');
+    act(() => {
+      jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
+    });
+
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+  });
+
+  it('a touch pointerLeave on the content never schedules a close', () => {
+    renderPicker();
+    const trigger = screen.getByText('openai');
+
+    firePointerEvent(trigger, 'PointerEnter', 'mouse');
+    const content = screen.getByText('gpt-4o').closest('[data-slot="dropdown-menu-sub-content"]');
+    expect(content).not.toBeNull();
+
+    firePointerEvent(content as Element, 'PointerLeave', 'touch');
+    act(() => {
+      jest.advanceTimersByTime(MODEL_SUBMENU_CLOSE_GRACE_MS * 5);
+    });
+
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+  });
+
+  it("a touch user can still open the model list and select via tap/click (Radix's own click-to-open path)", () => {
+    const { onSelect } = renderPicker();
+    openSubmenu(screen.getByText('openai'));
+    fireEvent.click(screen.getByText('gpt-4o'));
+    expect(onSelect).toHaveBeenCalledWith('openai', 'gpt-4o');
+  });
+});
+
+// Coverage for the mobile viewport pivot: on a narrow viewport, a
+// provider's model list no longer nests as a second Radix flyout (long
+// model names, e.g. GGUF filenames, overflowed off-screen there) — instead
+// each provider is a flat, tappable item, and selecting one opens a shared
+// BottomSheet with that provider's models.
+describe('ProviderModelPicker — mobile viewport (<640px)', () => {
+  beforeEach(() => {
+    jest.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true,
+      media: '(max-width: 639px)',
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    } as unknown as MediaQueryList);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('renders providers as flat items, not nested Subs', () => {
+    renderPicker();
+    expect(
+      screen.getByText('openai').closest('[data-slot="dropdown-menu-sub-trigger"]'),
+    ).toBeNull();
+    expect(screen.getByText('openai').closest('[data-slot="dropdown-menu-item"]')).not.toBeNull();
+  });
+
+  it('the sheet is not visible before any provider is tapped', () => {
+    renderPicker();
+    expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+  });
+
+  it("tapping a provider opens the bottom sheet listing that provider's models", () => {
+    renderPicker();
+    fireEvent.click(screen.getByText('openai'));
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
+    expect(screen.queryByText('llama3.2')).not.toBeInTheDocument();
+  });
+
+  it('tapping a model calls onSelect with provider+model and closes the sheet', () => {
+    const { onSelect } = renderPicker();
+    fireEvent.click(screen.getByText('openai'));
+    fireEvent.click(screen.getByText('gpt-4o-mini'));
+    expect(onSelect).toHaveBeenCalledWith('openai', 'gpt-4o-mini');
+    expect(screen.queryByText('gpt-4o-mini')).not.toBeInTheDocument();
+  });
+
+  it('respects isModelHidden for both the flat provider list and the sheet contents', () => {
+    renderPicker({
+      isModelHidden: (provider, modelId) => provider === 'openai' && modelId === 'gpt-4o',
+    });
+    fireEvent.click(screen.getByText('openai'));
+    expect(screen.queryByText('gpt-4o')).not.toBeInTheDocument();
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
+  });
+
+  it('hides a provider entirely once every one of its models is hidden', () => {
+    renderPicker({ isModelHidden: (provider) => provider === 'ollama' });
+    expect(screen.queryByText('ollama')).not.toBeInTheDocument();
+    expect(screen.getByText('openai')).toBeInTheDocument();
+  });
+
+  it('marks the active model with a checkmark in the sheet', () => {
+    renderPicker({ activeProvider: 'openai', activeModel: 'gpt-4o' });
+    fireEvent.click(screen.getByText('openai'));
+    const row = screen
+      .getByText('gpt-4o')
+      .closest('[data-slot="provider-model-picker-sheet-item"]');
+    expect(row?.querySelector('svg')).not.toBeNull();
+    const otherRow = screen
+      .getByText('gpt-4o-mini')
+      .closest('[data-slot="provider-model-picker-sheet-item"]');
+    expect(otherRow?.querySelector('svg')).toBeNull();
   });
 });
