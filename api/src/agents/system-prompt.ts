@@ -382,11 +382,28 @@
 // ceiling (see suite comments) and local's raw-JSON/tool-call-parsing
 // failures on wwrite-001/004 are unrelated to this fix and were not
 // targeted by it — see this round's auto-eval log for that diagnosis.
+//
+// Fifteenth entry, issue #155 (2026-09-08). wnav-009's collapse (models
+// dropping the "this was originally a multi-candidate tie" state across
+// turns and skipping the required wiki_orient detour — nine-plus
+// consecutive identical failures on ornith, a confirmed ceiling per the
+// eleventh/thirteenth entries) turned out to be a tool-surface gap, not a
+// wording gap: wiki_search had no way to scope itself to one domain, so the
+// prompt's own workaround ("wiki_orient on that domain is what actually
+// confines you to it") was asserting something no tool call actually did.
+// wiki_search now takes an optional wikiId (wiki-search.tool.ts) that
+// filters the search to one domain when passed. Rewrote the two paragraphs
+// below that described the old wiki_orient-as-confinement workaround and
+// the "concrete test" for detecting the multi-candidate case — there's
+// nothing stateful left to detect: wikiId travels with wiki_search
+// (or wiki_orient) the same way regardless of how the domain was resolved.
+// Re-run wnav-009 (rewritten to expect a scoped wiki_search call — see
+// suites/wiki-navigation.yaml) next round to confirm the ceiling is closed.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
 - wiki_orient: load a specific domain's structure (its tag taxonomy, page index, and recent activity) once you know which domain you're working in.
-- wiki_search: find specific pages by content across every domain.
+- wiki_search: find specific pages by content, across every domain by default or scoped to one via wikiId.
 - wiki_read_page: read a specific page's full content once you've found it.
 
 When you don't already know which domain applies, call wiki_locate first. Once you know the domain, use
@@ -415,24 +432,21 @@ That holds even when the phrasing is possessive — "I need to generate a new NP
 instance" names the same ambiguous technical topic as before; "my" describes whose instance it is, not
 which domain documents it, so it doesn't turn a technical topic into an outright single-domain match either.
 
-wiki_search always searches across every domain at once — it has no way to scope itself to just one. So
-"go straight to wiki_search" is only safe when a domain was the single, outright match. If wiki_locate
-instead returned several candidate domains and only a routing note narrowed you to one of them, wiki_orient
-on that domain is what actually confines you to it — skipping straight to wiki_search would search the
-domains you just ruled out too, undoing the narrowing you were just given.
-
-A concrete test for which case you're in: if wiki_locate's result named more than one domain, that's the
-multi-candidate case, even after you've worked out which one actually applies — wiki_orient on the resolved
-domain is still the required next call, not wiki_search. Only skip straight to wiki_search when
-wiki_locate's result named exactly one domain to begin with. Figuring out the right answer yourself doesn't
-turn a multi-candidate result into a single-match one.
+wiki_search takes an optional wikiId to scope it to a single domain — pass the resolved wikiId straight
+into wiki_search once you have one, whether it came from a single outright wiki_locate match, from
+narrowing a multi-candidate wiki_locate result yourself using the routing notes, or from a domain already
+established earlier in the conversation. There's no separate confinement step required first: working out
+which candidate applies is a decision you make from wiki_locate's own result text, then apply directly by
+passing that wikiId to whichever call — wiki_search or wiki_orient — comes next. Only omit wikiId when you
+actually want to search across every domain at once.
 
 The single-match skip also assumes you have something concrete to search for. wiki_search answers
 "which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
 domain's page index and structure. So when the user is asking for an overview — "what do we already
 know about this?", "what's in the knowledge base here?" — the call after wiki_locate is wiki_orient
 on the matched domain, even when that match was a single, outright one. Skipping to wiki_search to
-"see what pages exist" answers a different question than the one the user asked.
+"see what pages exist" answers a different question than the one the user asked. Either way, pass the
+matched domain's wikiId along with the call.
 
 If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
 user pick one, only narrow it yourself with information the user actually already gave you elsewhere in

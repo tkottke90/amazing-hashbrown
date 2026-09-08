@@ -240,19 +240,24 @@ scenarios:
       - path: query
         match: exists
 
-  - id: wnav-009-scoped-orient-follows-routing-hints
-    name: Agent orients only into the domain routing hints actually point to
+  - id: wnav-009-scoped-search-follows-routing-hints
+    name: Agent searches only the domain routing hints actually point to
     purpose: >
       Given wiki_locate surfaces both "user" and "self" as candidate domains
       but the routing notes cleanly attribute the question to only one of
-      them, confirms wiki_orient's wikiId is constrained to that domain —
-      guards against orienting into an irrelevant domain (self) for a
-      question routing hints say belongs only to another (user). Motivated
-      by a real thread transcript where the agent, asked a purely
-      user-directed question, additionally oriented into "self" (the
-      agent's own identity/reflection domain) and then confusingly wrote
-      that domain's empty state into the reply as if it were relevant to
-      the user.
+      them, confirms wiki_search's wikiId is constrained to that domain —
+      guards against searching an irrelevant domain (self) for a question
+      routing hints say belongs only to another (user). Motivated by a real
+      thread transcript where the agent, asked a purely user-directed
+      question, additionally oriented into "self" (the agent's own
+      identity/reflection domain) and then confusingly wrote that domain's
+      empty state into the reply as if it were relevant to the user.
+      Originally asserted wiki_orient as the required next call — the only
+      way to confine a multi-candidate resolution to one domain before
+      wiki_search itself gained a wikiId parameter (issue #155). This is a
+      concrete factual question ("what have I told you"), not an overview
+      request, so once the tie is narrowed the correct next call is a
+      scoped wiki_search, not a wiki_orient detour.
     type: tool-sequence
     input: 'What have I told you I prefer for my morning routine?'
     priorTurns:
@@ -267,11 +272,13 @@ scenarios:
             principles, decisions, mistakes, and growth. This question is
             about the user's own stated preference, which only the
             "user" routing note covers.
-    tool: wiki_orient
+    tool: wiki_search
     argChecks:
       - path: wikiId
         match: oneOf
         value: ['user']
+      - path: query
+        match: exists
 
   - id: wnav-010-procedural-question-triggers-locate
     name: Agent checks the wiki for a stored how-to before answering from general knowledge
@@ -410,3 +417,30 @@ scenarios:
       - path: wikiId
         match: equals
         value: user
+
+  - id: wnav-013-single-match-scoped-search
+    name: Agent passes the resolved wikiId straight into wiki_search
+    purpose: >
+      Given wiki_locate returns a single outright match and the user asks a
+      concrete factual question (not an overview), confirms the agent calls
+      wiki_search directly with that domain's wikiId rather than either
+      detouring through wiki_orient first or searching unscoped across
+      every domain. This is the primary capability issue #155 adds —
+      wiki_search gaining a wikiId parameter — as opposed to wnav-009, which
+      only covers the narrower multi-candidate tie-break edge case.
+    type: tool-sequence
+    input: 'What programming languages do I use most at work?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'programming languages used at work' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+    tool: wiki_search
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: query
+        match: exists
