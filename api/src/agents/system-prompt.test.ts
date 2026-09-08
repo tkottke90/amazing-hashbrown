@@ -266,14 +266,12 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('treats an ingest block\'s placeholder title as the model\'s own naming job, not a reason to resolve get_tool_key first', () => {
+    it("treats an ingest block's placeholder title as the model's own naming job, not a reason to resolve get_tool_key first", () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
         "The block's own title field is usually a placeholder — <page title> — for you to fill in, not a\nvalue already decided.",
       );
-      expect(result).to.include(
-        'needing a title is never a reason to call get_tool_key first',
-      );
+      expect(result).to.include('needing a title is never a reason to call get_tool_key first');
     });
 
     it('rules out inferring an ingest block from a stub that never had one', () => {

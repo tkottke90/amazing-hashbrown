@@ -8,9 +8,7 @@ const GetToolKeySchema = z.object({
     .describe(
       'threadId from an actual compact stub already in this conversation, copied verbatim. Do not invent one.',
     ),
-  toolKey: z
-    .string()
-    .describe('toolKey from that same stub, copied verbatim. Do not invent one.'),
+  toolKey: z.string().describe('toolKey from that same stub, copied verbatim. Do not invent one.'),
 });
 
 export const getToolKeyTool = tool(
@@ -29,7 +27,7 @@ export const getToolKeyTool = tool(
     description:
       'Read back content that was offloaded to the KV store by an earlier tool call (currently only ' +
       'web_fetch, when its result was too large to return inline) because you need the actual text for ' +
-      "something other than saving it to the wiki — answering a question in detail, quoting, or " +
+      'something other than saving it to the wiki — answering a question in detail, quoting, or ' +
       "summarizing beyond the stub's own summary. Requires a real threadId and toolKey copied verbatim " +
       "from that stub's frontmatter (the block starting '── CONTENT OFFLOADED ──'). Do not fabricate " +
       'these values — if there is no stub with a real toolKey in this conversation, there is nothing to ' +

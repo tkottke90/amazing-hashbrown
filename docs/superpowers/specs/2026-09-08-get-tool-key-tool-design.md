@@ -48,10 +48,10 @@ A plain `tool()` export (no factory/closure — unlike `wiki_create_page`, there
 const GetToolKeySchema = z.object({
   threadId: z
     .string()
-    .describe('threadId from an actual compact stub already in this conversation, copied verbatim. Do not invent one.'),
-  toolKey: z
-    .string()
-    .describe('toolKey from that same stub, copied verbatim. Do not invent one.'),
+    .describe(
+      'threadId from an actual compact stub already in this conversation, copied verbatim. Do not invent one.',
+    ),
+  toolKey: z.string().describe('toolKey from that same stub, copied verbatim. Do not invent one.'),
 });
 
 export const getToolKeyTool = tool(
@@ -70,7 +70,7 @@ export const getToolKeyTool = tool(
     description:
       'Read back content that was offloaded to the KV store by an earlier tool call (currently only ' +
       'web_fetch, when its result was too large to return inline) because you need the actual text for ' +
-      "something other than saving it to the wiki — answering a question in detail, quoting, or " +
+      'something other than saving it to the wiki — answering a question in detail, quoting, or ' +
       "summarizing beyond the stub's own summary. Requires a real threadId and toolKey copied verbatim " +
       "from that stub's frontmatter (the block starting '── CONTENT OFFLOADED ──'). Do not fabricate " +
       'these values — if there is no stub with a real toolKey in this conversation, there is nothing to ' +
@@ -103,12 +103,12 @@ This is a wording draft, not final copy — per this codebase's established prac
 
 New, dedicated suite — same precedent as `instruction-sensitivity.yaml` being its own file for stub/corpus-reference dynamics, rather than folding into `web-fetch.yaml`. Modeled on that suite's `priorTurns` stub-seeding pattern and the `tool-sequence` executor (which scores only the model's next single response against seeded history — see `lib/evaluations/src/executors/tool-sequence.ts`).
 
-| id | type | Seeds | Input | Assertion | Purpose |
-| --- | --- | --- | --- | --- | --- |
-| **GTK-001-basic-read** | tool-call | A plain research stub (no "to ingest into wiki" block) | A question needing the full text, not just the stub's summary | `get_tool_key` called with `threadId`/`toolKey` matching the seeded stub | Confirms the tool is reachable and the model copies the key correctly |
-| **GTK-002-coordination-answer** | llm-judge | The stub, plus a seeded `get_tool_key` result carrying the full article text | A question only answerable from detail not present in the stub's summary | Judge scores the answer for reflecting the full text | Confirms the fetch → stub → resolve → answer chain actually composes |
-| **GTK-003-no-fabricated-key** | tool-sequence (negated) | A plain, **non-offloaded** `web_fetch` result (content returned inline, no stub, no key ever issued) | A request phrased to invite fabricating a key (e.g. "get me the full raw text via the tool key") | `!get_tool_key` | Guards against inventing a threadId/toolKey when none was ever issued — mirrors the exact fabrication failure mode already documented in this file's `wfetch-003` auto-eval history for `corpus` |
-| **GTK-004-prefers-direct-corpus** | tool-sequence (paired) | A stub with a "to ingest into wiki" block | "Save that to the wiki" | One scenario asserts `wiki_create_page` is called (like `instruction-sensitivity.yaml`'s E-11); a paired scenario on the same seeded turn asserts `!get_tool_key` | Proves the anti-pattern guidance holds — no wasted round-trip through `get_tool_key` before handing the reference to `wiki_create_page` |
+| id                                | type                    | Seeds                                                                                                | Input                                                                                            | Assertion                                                                                                                                                         | Purpose                                                                                                                                                                                          |
+| --------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **GTK-001-basic-read**            | tool-call               | A plain research stub (no "to ingest into wiki" block)                                               | A question needing the full text, not just the stub's summary                                    | `get_tool_key` called with `threadId`/`toolKey` matching the seeded stub                                                                                          | Confirms the tool is reachable and the model copies the key correctly                                                                                                                            |
+| **GTK-002-coordination-answer**   | llm-judge               | The stub, plus a seeded `get_tool_key` result carrying the full article text                         | A question only answerable from detail not present in the stub's summary                         | Judge scores the answer for reflecting the full text                                                                                                              | Confirms the fetch → stub → resolve → answer chain actually composes                                                                                                                             |
+| **GTK-003-no-fabricated-key**     | tool-sequence (negated) | A plain, **non-offloaded** `web_fetch` result (content returned inline, no stub, no key ever issued) | A request phrased to invite fabricating a key (e.g. "get me the full raw text via the tool key") | `!get_tool_key`                                                                                                                                                   | Guards against inventing a threadId/toolKey when none was ever issued — mirrors the exact fabrication failure mode already documented in this file's `wfetch-003` auto-eval history for `corpus` |
+| **GTK-004-prefers-direct-corpus** | tool-sequence (paired)  | A stub with a "to ingest into wiki" block                                                            | "Save that to the wiki"                                                                          | One scenario asserts `wiki_create_page` is called (like `instruction-sensitivity.yaml`'s E-11); a paired scenario on the same seeded turn asserts `!get_tool_key` | Proves the anti-pattern guidance holds — no wasted round-trip through `get_tool_key` before handing the reference to `wiki_create_page`                                                          |
 
 `passingThreshold`: 0.8, consistent with the mid-range already used across `web-fetch.yaml` (0.85) and `instruction-sensitivity.yaml` (0.75).
 
