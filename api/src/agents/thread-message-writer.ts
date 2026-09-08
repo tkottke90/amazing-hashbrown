@@ -1,5 +1,6 @@
 import type { ThreadStore } from '../services/thread-store.js';
 import { logger, serializeError } from '../config/logger.js';
+import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 
 // The actual "what to write" logic behind persisting a live chat turn to
 // thread_messages, extracted from stream-handler.ts so it's testable
@@ -123,6 +124,10 @@ export function failAssistant(
   // exceeded"), so the Thread Report can show it instead of a bare generic
   // "Something went wrong" — see thread-reports' AssistantPayload/report.njk.
   errorMessage?: string,
+  // The classified category for errorMessage (see error-classification.ts)
+  // — lets the chat UI render category-specific copy instead of the raw
+  // message. Absent for an unclassified/pre-existing failure.
+  errorCategory?: ChatErrorCategory,
 ): void {
   safe(threadId, 'failAssistant', () => {
     store.updateMessage(threadId, id, {
@@ -132,6 +137,7 @@ export function failAssistant(
         ...(partialThought ? { thoughtContent: partialThought } : {}),
         sentAt,
         ...(errorMessage ? { error: errorMessage } : {}),
+        ...(errorCategory ? { errorCategory } : {}),
       },
     });
     store.interruptPendingToolCalls(threadId);

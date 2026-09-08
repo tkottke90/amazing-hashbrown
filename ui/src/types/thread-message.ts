@@ -1,4 +1,4 @@
-import type { HitlKind } from '@tkottke90/llm-common-types/chat';
+import type { HitlKind, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 
 export type AssistantStatus = 'streaming' | 'done' | 'error';
 export type ToolCallStatus = 'pending' | 'done' | 'interrupted';
@@ -44,6 +44,13 @@ export type ThreadMessage =
       // use-thread.ts's retryTurn and the API's thread-store.ts). Rendered
       // collapsed by default rather than hidden — see assistant-message.tsx.
       superseded?: boolean;
+      // The raw provider failure text and its classified category (see
+      // api's error-classification.ts), present only on a status: 'error'
+      // row. Absent for a pre-classification persisted row or an
+      // unclassifiable failure — chat-error-detail.tsx falls back to a
+      // generic message in that case.
+      error?: string;
+      errorCategory?: ChatErrorCategory;
     }
   | {
       kind: 'tool_call';

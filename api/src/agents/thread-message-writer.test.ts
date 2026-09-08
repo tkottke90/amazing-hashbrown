@@ -223,6 +223,68 @@ describe('agents/thread-message-writer', () => {
         sentAt: '2026-07-18T00:00:00.000Z',
       });
     });
+
+    it('failAssistant persists errorMessage when given, omits it when not', () => {
+      recordAssistantStart(store, 't1', 'a3d', '2026-07-18T00:00:00.000Z');
+      failAssistant(
+        store,
+        't1',
+        'a3d',
+        'partial content',
+        '2026-07-18T00:00:00.000Z',
+        undefined,
+        'the provider is out of credit',
+      );
+      const withError = store.getMessage('t1', 'a3d')!;
+      expect(withError.payload).to.deep.equal({
+        content: 'partial content',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        error: 'the provider is out of credit',
+      });
+
+      recordAssistantStart(store, 't1', 'a3e', '2026-07-18T00:00:00.000Z');
+      failAssistant(store, 't1', 'a3e', 'partial content', '2026-07-18T00:00:00.000Z');
+      const withoutError = store.getMessage('t1', 'a3e')!;
+      expect(Object.prototype.hasOwnProperty.call(withoutError.payload ?? {}, 'error')).to.equal(
+        false,
+      );
+    });
+
+    it('failAssistant persists errorCategory when given, omits it when not', () => {
+      recordAssistantStart(store, 't1', 'a3f', '2026-07-18T00:00:00.000Z');
+      failAssistant(
+        store,
+        't1',
+        'a3f',
+        'partial content',
+        '2026-07-18T00:00:00.000Z',
+        undefined,
+        'the provider is out of credit',
+        'billing',
+      );
+      const withCategory = store.getMessage('t1', 'a3f')!;
+      expect(withCategory.payload).to.deep.equal({
+        content: 'partial content',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        error: 'the provider is out of credit',
+        errorCategory: 'billing',
+      });
+
+      recordAssistantStart(store, 't1', 'a3g', '2026-07-18T00:00:00.000Z');
+      failAssistant(
+        store,
+        't1',
+        'a3g',
+        'partial content',
+        '2026-07-18T00:00:00.000Z',
+        undefined,
+        'the provider is out of credit',
+      );
+      const withoutCategory = store.getMessage('t1', 'a3g')!;
+      expect(
+        Object.prototype.hasOwnProperty.call(withoutCategory.payload ?? {}, 'errorCategory'),
+      ).to.equal(false);
+    });
   });
 
   describe('recordRetryAttempt', () => {

@@ -7,6 +7,7 @@ import {
   resumeWikiChatToSse,
   retryWikiChatToSse,
   writeSseEvent,
+  ClassifiedTurnError,
 } from '../../agents/wiki-stream-handler.js';
 import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
@@ -227,7 +228,12 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
     await streamWikiChatToSse(res, threadId, content.trim(), startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki chat stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     req.logger.info('Wiki ingestion inference completed', { threadId });
     res.end();
@@ -256,7 +262,12 @@ wikiRouter.post('/chat/:threadId/hitl', async (req, res) => {
     await resumeWikiChatToSse(res, threadId, promptId, answer, startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki HITL resume error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }
@@ -287,7 +298,12 @@ wikiRouter.post('/chat/:threadId/retry', async (req, res) => {
     await retryWikiChatToSse(res, threadId, startedAt, provider, model);
   } catch (err) {
     req.logger.error('Wiki retry stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }

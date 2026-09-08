@@ -10,7 +10,7 @@
 
 Whenever a chat turn fails, the UI shows the same hardcoded text — "Something went wrong. Please try again." — regardless of cause. A provider billing/insufficient-funds error, an invalid API key, a context-length-exceeded error, or a content-policy rejection will all fail again on retry, but the user has no way to tell that apart from a genuinely transient failure.
 
-A codebase audit found the backend already captures the raw failure text (`errorMessageOf(err)` → `thread_messages.payload.error`, via `failAssistant`) and sends it on the `stream_error` SSE event — but the frontend currently **discards it entirely**: `use-thread.ts`'s `stream_error` handler only sets `status: 'error'` and never reads `evt.error`. There is no classification of *what kind* of error occurred anywhere in the stack today — just an unused raw string.
+A codebase audit found the backend already captures the raw failure text (`errorMessageOf(err)` → `thread_messages.payload.error`, via `failAssistant`) and sends it on the `stream_error` SSE event — but the frontend currently **discards it entirely**: `use-thread.ts`'s `stream_error` handler only sets `status: 'error'` and never reads `evt.error`. There is no classification of _what kind_ of error occurred anywhere in the stack today — just an unused raw string.
 
 Goal: classify a failed turn's error into a small set of user-facing categories (auth, billing, rate limit, context length, content policy, provider unavailable, network, unknown), persist and stream that classification alongside the existing raw message, and have the chat UI render category-specific copy (with the raw provider text available as expandable detail) instead of the generic fallback — on every chat surface, live and after reload. The retry action stays available in all cases; it no longer implies retrying will help.
 
@@ -50,22 +50,22 @@ type ChatErrorCategory =
   | 'unknown';
 ```
 
-`content_policy` is included even though the issue's Expected-Behavior bullet list only names the other six as a *minimum* — the issue's own Description cites a content-policy rejection as a motivating example of a non-retryable failure, so it gets the same treatment.
+`content_policy` is included even though the issue's Expected-Behavior bullet list only names the other six as a _minimum_ — the issue's own Description cites a content-policy rejection as a motivating example of a non-retryable failure, so it gets the same treatment.
 
 `unknown` is the fallback for anything unrecognized (including pre-existing persisted rows from before this change, which have no `errorCategory` at all) — it renders exactly today's generic text, so nothing regresses for old data.
 
 ### Category → user-facing copy
 
-| Category | Message |
-|---|---|
-| `auth` | "Authentication failed — check that your API key for this provider is valid." |
-| `billing` | "This provider account is out of credit or has a billing issue. Retrying won't help until that's resolved." |
-| `rate_limit` | "The provider is rate-limiting requests. Wait a bit before retrying." |
+| Category         | Message                                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| `auth`           | "Authentication failed — check that your API key for this provider is valid."                               |
+| `billing`        | "This provider account is out of credit or has a billing issue. Retrying won't help until that's resolved." |
+| `rate_limit`     | "The provider is rate-limiting requests. Wait a bit before retrying."                                       |
 | `context_length` | "This conversation is too long for the model's context window. Try starting a new thread or shortening it." |
-| `content_policy` | "The provider declined this request for policy reasons. Rephrasing may help; retrying as-is won't." |
-| `unavailable` | "The model or provider is temporarily unavailable. This is usually transient — retrying may work." |
-| `network` | "Couldn't reach the provider — check your connection." |
-| `unknown` | "Something went wrong. Please try again." |
+| `content_policy` | "The provider declined this request for policy reasons. Rephrasing may help; retrying as-is won't."         |
+| `unavailable`    | "The model or provider is temporarily unavailable. This is usually transient — retrying may work."          |
+| `network`        | "Couldn't reach the provider — check your connection."                                                      |
+| `unknown`        | "Something went wrong. Please try again."                                                                   |
 
 When a raw provider message is available, it's shown underneath the category sentence behind a "Show details" toggle, never in place of it.
 
@@ -77,36 +77,36 @@ Checked in order; first match wins; anything unmatched falls to `unknown`.
 
 **Anthropic** (`@anthropic-ai/sdk` errors via `@langchain/anthropic`):
 
-| Signal | Category |
-|---|---|
-| `status === 401` | `auth` |
-| `status === 400` and message matches `/credit balance\|insufficient/i` | `billing` |
+| Signal                                                                                        | Category         |
+| --------------------------------------------------------------------------------------------- | ---------------- |
+| `status === 401`                                                                              | `auth`           |
+| `status === 400` and message matches `/credit balance\|insufficient/i`                        | `billing`        |
 | `status === 400` and message matches `/prompt is too long\|maximum context\|context length/i` | `context_length` |
-| `status === 400` and message indicates a content-policy rejection | `content_policy` |
-| `status === 429` | `rate_limit` |
-| `status === 529` (overloaded) or `status >= 500` | `unavailable` |
-| anything else | `unknown` |
+| `status === 400` and message indicates a content-policy rejection                             | `content_policy` |
+| `status === 429`                                                                              | `rate_limit`     |
+| `status === 529` (overloaded) or `status >= 500`                                              | `unavailable`    |
+| anything else                                                                                 | `unknown`        |
 
 **OpenAI** (`openai` SDK errors via `@langchain/openai`):
 
-| Signal | Category |
-|---|---|
-| `status === 401` | `auth` |
-| `status === 429` and `error.code === 'insufficient_quota'` | `billing` |
-| `status === 429` (otherwise) | `rate_limit` |
-| `status === 400` and `error.code === 'context_length_exceeded'` | `context_length` |
+| Signal                                                           | Category         |
+| ---------------------------------------------------------------- | ---------------- |
+| `status === 401`                                                 | `auth`           |
+| `status === 429` and `error.code === 'insufficient_quota'`       | `billing`        |
+| `status === 429` (otherwise)                                     | `rate_limit`     |
+| `status === 400` and `error.code === 'context_length_exceeded'`  | `context_length` |
 | `status === 400` and `error.code === 'content_policy_violation'` | `content_policy` |
-| `status >= 500` | `unavailable` |
-| anything else | `unknown` |
+| `status >= 500`                                                  | `unavailable`    |
+| anything else                                                    | `unknown`        |
 
 **Ollama** (`@langchain/ollama`, local HTTP server): auth/billing/rate-limit don't apply.
 
-| Signal | Category |
-|---|---|
-| connection refused/timeout | `network` (via shared check) |
-| "model not found" response | `unavailable` |
-| empty response: `content === ''`, `thoughtContent === ''`, and no tool call (including `ask_user`) occurred during the turn | `context_length` (see §4) |
-| anything else | `unknown` |
+| Signal                                                                                                                      | Category                     |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| connection refused/timeout                                                                                                  | `network` (via shared check) |
+| "model not found" response                                                                                                  | `unavailable`                |
+| empty response: `content === ''`, `thoughtContent === ''`, and no tool call (including `ask_user`) occurred during the turn | `context_length` (see §4)    |
+| anything else                                                                                                               | `unknown`                    |
 
 Exact message substrings/error-class checks will be pinned against the real `@anthropic-ai/sdk`/`openai` types during implementation (dependencies aren't installed in this design pass); tests will construct real SDK error instances rather than hand-rolled objects, per this repo's external-boundary testing convention.
 
@@ -119,7 +119,10 @@ Exact message substrings/error-class checks will be pinned against the real `@an
 New `api/src/agents/error-classification.ts`:
 
 ```ts
-function classifyChatError(err: unknown, provider?: string): { category: ChatErrorCategory; message: string };
+function classifyChatError(
+  err: unknown,
+  provider?: string,
+): { category: ChatErrorCategory; message: string };
 ```
 
 Dispatches by `provider` to `classifyAnthropicError` / `classifyOpenAIError` / `classifyOllamaError`, each matching that SDK's real error shape (status + nested `error.type`/`error.code` + message substrings where there's no dedicated code). A shared network-error check runs first regardless of provider. Never throws — any unrecognized shape (including non-`Error` thrown values) resolves to `{ category: 'unknown', message: String(err) }`.
@@ -130,7 +133,7 @@ All four surfaces (`stream-handler.ts`, `workspace-chat-stream-handler.ts`, `wik
 
 ### 4c. Getting the category to the live SSE stream
 
-Today, the turn's own `catch` block calls `failAssistant` then `throw err`; it's the *outer* route handler (`chat.route.ts`, `workspace-chat.route.ts`, `wiki.route.ts`) that actually emits the `stream_error` SSE event, via `String(err)` — one level removed from where classification happens and where `resolvedProvider` is known. Rather than re-derive the provider at the route layer, the inner catch rethrows a small `ClassifiedTurnError extends Error` (same pattern this file already uses for `PipeEventsError`) carrying `{ message, category }`, computed once. The outer route catch reads `.category` off it (falling back to `'unknown'` for any other thrown shape) and includes it on the SSE event.
+Today, the turn's own `catch` block calls `failAssistant` then `throw err`; it's the _outer_ route handler (`chat.route.ts`, `workspace-chat.route.ts`, `wiki.route.ts`) that actually emits the `stream_error` SSE event, via `String(err)` — one level removed from where classification happens and where `resolvedProvider` is known. Rather than re-derive the provider at the route layer, the inner catch rethrows a small `ClassifiedTurnError extends Error` (same pattern this file already uses for `PipeEventsError`) carrying `{ message, category }`, computed once. The outer route catch reads `.category` off it (falling back to `'unknown'` for any other thrown shape) and includes it on the SSE event.
 
 ### 4d. Shared type contract
 
@@ -198,4 +201,4 @@ This is a best-effort heuristic, not a certainty — documented as such, not tre
 
 - Thread Report (`lib/thread-reports`) rendering `errorCategory` alongside the existing raw `error` text — natural follow-up, not required here.
 - Any provider beyond Anthropic/OpenAI/Ollama.
-- Changing what retry *does* per category (e.g. disabling it for `auth`/`billing`) — the issue explicitly keeps retry available in all cases.
+- Changing what retry _does_ per category (e.g. disabling it for `auth`/`billing`) — the issue explicitly keeps retry available in all cases.

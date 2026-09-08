@@ -1,6 +1,18 @@
 import { z } from 'zod';
 import { HitlKindSchema } from './hitl.js';
 
+export const ChatErrorCategorySchema = z.enum([
+  'auth',
+  'billing',
+  'rate_limit',
+  'context_length',
+  'content_policy',
+  'unavailable',
+  'network',
+  'unknown',
+]);
+export type ChatErrorCategory = z.infer<typeof ChatErrorCategorySchema>;
+
 // `seq` is the persisted display-order value from `thread_messages.seq` (see
 // docs/Design/2026-07-18-persistent-conversation-memory-design.md). It is
 // optional here because it is only known once the corresponding row has been
@@ -94,6 +106,11 @@ const StreamDoneSchema = z.object({
 const StreamErrorSchema = z.object({
   type: z.literal('stream_error'),
   error: z.string(),
+  // Present when the failure could be mapped to one of the classified
+  // categories (see api/src/agents/error-classification.ts) — absent for an
+  // unclassified/pre-existing failure, in which case the UI falls back to a
+  // generic message.
+  errorCategory: ChatErrorCategorySchema.optional(),
 });
 
 const WikiUpdatedSchema = z.object({

@@ -9,8 +9,9 @@ import {
   pipeEvents,
   finalizeTurn,
   extractPartialAssistantState,
-  errorMessageOf,
+  ClassifiedTurnError,
 } from './stream-handler.js';
+import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
@@ -92,6 +93,7 @@ export async function streamWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
+      hadToolCall,
     } = await pipeEvents(
       sink,
       msgId,
@@ -112,6 +114,7 @@ export async function streamWikiChatToSse(
       startedAt,
       finalContent,
       thoughtContent,
+      hadToolCall,
       turnSentAt,
       assistantSeq,
       userSeq,
@@ -133,7 +136,8 @@ export async function streamWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    turnError = errorMessageOf(err);
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
     failAssistant(
       threadStore,
       threadId,
@@ -142,8 +146,9 @@ export async function streamWikiChatToSse(
       turnSentAt,
       partialThought,
       turnError,
+      classified.category,
     );
-    throw err;
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -218,6 +223,7 @@ export async function resumeWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
+      hadToolCall,
     } = await pipeEvents(
       sink,
       msgId,
@@ -238,6 +244,7 @@ export async function resumeWikiChatToSse(
       startedAt,
       finalContent,
       thoughtContent,
+      hadToolCall,
       turnSentAt,
       assistantSeq,
       null,
@@ -259,7 +266,8 @@ export async function resumeWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    turnError = errorMessageOf(err);
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
     failAssistant(
       threadStore,
       threadId,
@@ -268,8 +276,9 @@ export async function resumeWikiChatToSse(
       turnSentAt,
       partialThought,
       turnError,
+      classified.category,
     );
-    throw err;
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -346,6 +355,7 @@ export async function retryWikiChatToSse(
       content: finalContent,
       thoughtContent,
       finalSegmentId,
+      hadToolCall,
     } = await pipeEvents(
       sink,
       msgId,
@@ -366,6 +376,7 @@ export async function retryWikiChatToSse(
       startedAt,
       finalContent,
       thoughtContent,
+      hadToolCall,
       turnSentAt,
       assistantSeq,
       null,
@@ -387,7 +398,8 @@ export async function retryWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    turnError = errorMessageOf(err);
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
     failAssistant(
       threadStore,
       threadId,
@@ -396,8 +408,9 @@ export async function retryWikiChatToSse(
       turnSentAt,
       partialThought,
       turnError,
+      classified.category,
     );
-    throw err;
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
     store.endTrace(traceId, {
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -407,4 +420,4 @@ export async function retryWikiChatToSse(
   }
 }
 
-export { writeSseEvent };
+export { writeSseEvent, ClassifiedTurnError };

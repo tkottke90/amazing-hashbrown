@@ -15,8 +15,9 @@ import {
   finalizeTurn,
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
-  errorMessageOf,
+  ClassifiedTurnError,
 } from './stream-handler.js';
+import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
@@ -195,6 +196,7 @@ export async function streamWorkspaceChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -215,6 +217,7 @@ export async function streamWorkspaceChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         userSeq,
@@ -246,7 +249,8 @@ export async function streamWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -255,8 +259,9 @@ export async function streamWorkspaceChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -383,6 +388,7 @@ export async function resumeWorkspaceChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -403,6 +409,7 @@ export async function resumeWorkspaceChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         null,
@@ -434,7 +441,8 @@ export async function resumeWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -443,8 +451,9 @@ export async function resumeWorkspaceChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -563,6 +572,7 @@ export async function retryWorkspaceChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -583,6 +593,7 @@ export async function retryWorkspaceChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         null,
@@ -614,7 +625,8 @@ export async function retryWorkspaceChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -623,8 +635,9 @@ export async function retryWorkspaceChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
