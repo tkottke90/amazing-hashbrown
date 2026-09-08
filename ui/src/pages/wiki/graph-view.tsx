@@ -6,7 +6,13 @@ import * as d3Zoom from 'd3-zoom';
 import * as d3Drag from 'd3-drag';
 import type { D3ZoomEvent } from 'd3-zoom';
 import { graphData, enabledDomainIds, domains, loadPage } from '@/pages/wiki/use-wiki';
-import { buildGraphData, type D3Node, type D3Edge } from './build-graph-data';
+import {
+  buildGraphData,
+  computeDomainAnchors,
+  nodeRadius,
+  type D3Node,
+  type D3Edge,
+} from './build-graph-data';
 import { getDomainColor } from './domain-filter';
 
 // ---- Hover card ----
@@ -21,8 +27,17 @@ interface Props {
   onOpenInEditor: (domainId: string, filename: string) => void;
 }
 
-const NODE_RADIUS_MIN = 6;
-const NODE_RADIUS_MAX = 20;
+/** The `${wikiId}:${pageStem}` prefix an edge endpoint's id carries — read
+ * off the raw string id, since this is only ever evaluated before
+ * forceLink mutates source/target into node object references. */
+function endpointWikiId(endpoint: D3Edge['source']): string {
+  const id = typeof endpoint === 'string' ? endpoint : (endpoint as D3Node).id;
+  return id.split(':')[0] ?? id;
+}
+
+function isCrossWikiEdge(d: D3Edge): boolean {
+  return endpointWikiId(d.source) !== endpointWikiId(d.target);
+}
 
 export function GraphView({ onOpenInEditor }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -66,11 +81,21 @@ export function GraphView({ onOpenInEditor }: Props) {
     const width = svg.clientWidth || 800;
     const height = svg.clientHeight || 600;
 
+    // One anchor point per visible domain, arranged on a circle — a single
+    // enabled domain anchors at the canvas center (matching the old global
+    // forceCenter), so single-wiki views render unchanged.
+    const anchors = computeDomainAnchors(
+      domainList.filter((d) => enabled.has(d.id)).map((d) => d.id),
+      width,
+      height,
+    );
+
     // Arrow markers
     const defs = sel.append('defs');
     const markers = [
       { id: 'arrow-ref', color: '#94a3b8' },
       { id: 'arrow-con', color: '#ef4444' },
+      { id: 'arrow-cross', color: '#0ea5e9' },
     ];
     for (const { id, color } of markers) {
       defs
@@ -107,12 +132,16 @@ export function GraphView({ onOpenInEditor }: Props) {
       .data(visibleEdges)
       .enter()
       .append('line')
-      .attr('stroke', (d: D3Edge) => (d.type === 'contradicts' ? '#ef4444' : '#94a3b8'))
+      .attr('stroke', (d: D3Edge) => {
+        if (isCrossWikiEdge(d)) return '#0ea5e9';
+        return d.type === 'contradicts' ? '#ef4444' : '#94a3b8';
+      })
       .attr('stroke-width', 1.5)
       .attr('stroke-dasharray', (d: D3Edge) => (d.type === 'contradicts' ? '4 3' : 'none'))
-      .attr('marker-end', (d: D3Edge) =>
-        d.type === 'contradicts' ? 'url(#arrow-con)' : 'url(#arrow-ref)',
-      );
+      .attr('marker-end', (d: D3Edge) => {
+        if (isCrossWikiEdge(d)) return 'url(#arrow-cross)';
+        return d.type === 'contradicts' ? 'url(#arrow-con)' : 'url(#arrow-ref)';
+      });
 
     // Nodes
     const nodeSel = g
@@ -123,10 +152,7 @@ export function GraphView({ onOpenInEditor }: Props) {
       .data(nodes)
       .enter()
       .append('circle')
-      .attr('r', (d: D3Node) => {
-        const t = (d.edgeCount ?? 0) / maxEdges;
-        return NODE_RADIUS_MIN + t * (NODE_RADIUS_MAX - NODE_RADIUS_MIN);
-      })
+      .attr('r', (d: D3Node) => nodeRadius(d.edgeCount ?? 0, maxEdges))
       .attr('fill', (d: D3Node) => {
         const idx = domainColorIndex.get(d.domainId) ?? 0;
         return getDomainColor(idx);
@@ -179,7 +205,18 @@ export function GraphView({ onOpenInEditor }: Props) {
           .distance(80),
       )
       .force('charge', d3Force.forceManyBody<D3Node>().strength(-200))
-      .force('center', d3Force.forceCenter<D3Node>(width / 2, height / 2))
+      .force(
+        'collide',
+        d3Force.forceCollide<D3Node>((d) => nodeRadius(d.edgeCount ?? 0, maxEdges) + 2),
+      )
+      .force(
+        'x',
+        d3Force.forceX<D3Node>((d) => anchors.get(d.domainId)?.x ?? width / 2).strength(0.08),
+      )
+      .force(
+        'y',
+        d3Force.forceY<D3Node>((d) => anchors.get(d.domainId)?.y ?? height / 2).strength(0.08),
+      )
       .on('tick', () => {
         linkSel
           .attr('x1', (d: D3Edge) => (d.source as D3Node).x ?? 0)
@@ -240,7 +277,10 @@ export function GraphView({ onOpenInEditor }: Props) {
             onClick={() => {
               cancelClose();
               hoveredNode.value = null;
-              onOpenInEditor(hovered.node.domainId, hovered.node.id);
+              onOpenInEditor(
+                hovered.node.domainId,
+                hovered.node.id.slice(hovered.node.domainId.length + 1),
+              );
             }}
           >
             Open in editor

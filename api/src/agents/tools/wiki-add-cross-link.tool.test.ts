@@ -131,6 +131,28 @@ describe('agents/tools/wiki-add-cross-link', () => {
     );
   });
 
+  it('writes a wikiId:pagePath toPage through unchanged for a cross-wiki reference', async () => {
+    const wiki = await registry.load('test-wiki');
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'F',
+      tags: [],
+      sources: [],
+      body: 'Page F. [[dns]]',
+    });
+
+    const tool = makeWikiAddCrossLinkTool('test-wiki', registry, store);
+    const result = await tool.invoke({
+      wikiId: 'test-wiki',
+      fromPage: 'entities/f.md',
+      toPage: 'other-wiki:entities/b.md',
+    });
+    expect(result).to.contain('Added cross-link');
+
+    const page = await wiki.readPage('entities/f.md');
+    expect(page.content).to.contain('[[other-wiki:entities/b]]');
+  });
+
   it('rejects an archived domain before adding the link', async () => {
     const tool = makeWikiAddCrossLinkTool(undefined, registry, store);
     const result = await tool.invoke({

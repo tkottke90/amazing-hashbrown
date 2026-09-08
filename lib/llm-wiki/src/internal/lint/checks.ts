@@ -5,7 +5,14 @@
  */
 
 import type { LintFinding } from '../../types.js';
-import { extractWikilinks, resolveLinkTarget, pageStem, pageBasename } from '../wikilinks.js';
+import {
+  extractWikilinks,
+  normalizeLink,
+  parseExternalRef,
+  resolveLinkTarget,
+  pageStem,
+  pageBasename,
+} from '../wikilinks.js';
 import { missingRequired } from '../frontmatter.js';
 
 /** A content page, preloaded for linting. */
@@ -39,6 +46,9 @@ export interface LintContext {
   registryWikiIds?: string[];
   /** Wiki directory names found on disk under the wiki root. */
   onDiskWikiDirs?: string[];
+  /** Other registered wikis' page paths, keyed by wiki id — present only
+   *  when linting through WikiRegistry. Used by checkCrossWikiLinks. */
+  externalPages?: Map<string, string[]>;
 }
 
 const LOG_ROTATION_LIMIT = 500;
@@ -78,6 +88,11 @@ export function checkBrokenLinks(ctx: LintContext): LintFinding[] {
   const findings: LintFinding[] = [];
   for (const page of ctx.pages) {
     for (const link of extractWikilinks(page.content)) {
+      // A wikiId:pagePath reference is validated by checkCrossWikiLinks
+      // instead — it will never resolve against this wiki's own page list
+      // (no real page path contains a colon), so flagging it here would
+      // mark every syntactically valid cross-wiki reference as broken.
+      if (parseExternalRef(normalizeLink(link))) continue;
       if (!resolveLinkTarget(link, paths)) {
         findings.push({
           check: 'broken_links',
@@ -88,6 +103,55 @@ export function checkBrokenLinks(ctx: LintContext): LintFinding[] {
       }
     }
   }
+  return findings;
+}
+
+/** Validates `[[wikiId:pagePath]]` references (in body wikilinks and the
+ *  `contradictions` frontmatter field) against other registered wikis' page
+ *  lists. Only runs when linted through WikiRegistry — without
+ *  `ctx.externalPages` there is nothing to validate against, so this
+ *  silently reports no findings rather than flagging every external
+ *  reference as broken. */
+export function checkCrossWikiLinks(ctx: LintContext): LintFinding[] {
+  if (!ctx.externalPages) return [];
+  const externalPages = ctx.externalPages;
+  const findings: LintFinding[] = [];
+
+  const checkRef = (page: LintPage, raw: string): void => {
+    const ext = parseExternalRef(normalizeLink(raw));
+    if (!ext) return;
+    const pages = externalPages.get(ext.wikiId);
+    if (!pages) {
+      findings.push({
+        check: 'cross_wiki_links',
+        severity: 'error',
+        page: page.relPath,
+        message: `Reference [[${raw}]] points to unknown wiki "${ext.wikiId}".`,
+      });
+      return;
+    }
+    if (!resolveLinkTarget(ext.pagePath, pages)) {
+      findings.push({
+        check: 'cross_wiki_links',
+        severity: 'error',
+        page: page.relPath,
+        message: `Reference [[${raw}]] points to a page that does not exist in wiki "${ext.wikiId}".`,
+      });
+    }
+  };
+
+  for (const page of ctx.pages) {
+    for (const link of extractWikilinks(page.content)) {
+      checkRef(page, link);
+    }
+    const contradictions = Array.isArray(page.frontmatter.contradictions)
+      ? page.frontmatter.contradictions
+      : [];
+    for (const slug of contradictions) {
+      checkRef(page, String(slug));
+    }
+  }
+
   return findings;
 }
 

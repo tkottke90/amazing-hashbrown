@@ -40,8 +40,10 @@ import {
 import { sha256Body, extractBody } from './internal/sha.js';
 import {
   extractWikilinks,
+  normalizeLink,
   outboundLinkCount,
   pageStem,
+  parseExternalRef,
   resolveLinkTarget,
 } from './internal/wikilinks.js';
 import {
@@ -53,6 +55,7 @@ import {
 import { schemaTemplate, indexTemplate, logTemplate } from './internal/templates.js';
 import { EmbeddingIndex, cosineSimilarity } from './internal/embedding-index.js';
 import { bm25Score } from './internal/bm25.js';
+import type { WikiRegistry } from './registry.js';
 
 const noopLogger: Logger = {
   debug() {},
@@ -83,11 +86,19 @@ export interface CreateOptions {
   metadata?: Record<string, string>;
   logger?: Logger;
   embeddingProvider?: EmbeddingAdapter;
+  /** Identity used to namespace this wiki's graph node/edge ids
+   * (`${wikiId}:${pageStem}`). Defaults to the basename of `path` when
+   * omitted — WikiRegistry always passes its own registered id explicitly. */
+  wikiId?: string;
 }
 
 export interface LoadOptions {
   logger?: Logger;
   embeddingProvider?: EmbeddingAdapter;
+  /** Identity used to namespace this wiki's graph node/edge ids
+   * (`${wikiId}:${pageStem}`). Defaults to the basename of `wikiPath` when
+   * omitted — WikiRegistry always passes its own registered id explicitly. */
+  wikiId?: string;
 }
 
 export interface SaveRawOptions {
@@ -112,6 +123,10 @@ export interface IngestPrepInput {
 export interface BuildGraphOptions {
   /** When true, raw source files become nodes and derived_from edges are included. Default false. */
   includeSources?: boolean;
+  /** When supplied, external `[[wikiId:pagePath]]` references resolve into
+   *  real cross-wiki edges via a lookup through this registry. Omitted:
+   *  external references are left unresolved (no edge, no throw). */
+  registry?: WikiRegistry;
 }
 
 export class LlmWiki {
@@ -122,6 +137,7 @@ export class LlmWiki {
 
   private constructor(
     readonly basePath: string,
+    readonly wikiId: string,
     taxonomy: Set<string>,
     logger: Logger,
     embeddingProvider?: EmbeddingAdapter,
@@ -155,7 +171,11 @@ export class LlmWiki {
     await writeIfAbsent(path.join(base, LOG_FILE), logTemplate(ctx));
 
     logger.info(`Created wiki at ${base}`);
-    return LlmWiki.load(base, { logger, embeddingProvider: opts.embeddingProvider });
+    return LlmWiki.load(base, {
+      logger,
+      embeddingProvider: opts.embeddingProvider,
+      wikiId: opts.wikiId,
+    });
   }
 
   /** Load an existing wiki, parsing its SCHEMA.md tag taxonomy into memory. */
@@ -163,7 +183,8 @@ export class LlmWiki {
     const logger = opts.logger ?? noopLogger;
     const base = path.resolve(wikiPath);
     const schema = await readFileOr(path.join(base, SCHEMA_FILE), '');
-    return new LlmWiki(base, fm.parseTaxonomy(schema), logger, opts.embeddingProvider);
+    const wikiId = opts.wikiId ?? path.basename(base);
+    return new LlmWiki(base, wikiId, fm.parseTaxonomy(schema), logger, opts.embeddingProvider);
   }
 
   // ── Read / orient ───────────────────────────────────────────────────────────
@@ -402,8 +423,24 @@ export class LlmWiki {
       }
     };
 
+    // Resolves a wikilink/contradiction slug that may carry a `wikiId:`
+    // prefix into a namespaced target id, looking the target wiki up through
+    // `opts.registry` when supplied. Returns null when the target doesn't
+    // resolve (unknown wiki, unknown page, or no registry to check against).
+    const resolveExternal = async (target: {
+      wikiId: string;
+      pagePath: string;
+    }): Promise<string | null> => {
+      if (!opts.registry) return null;
+      const targetWiki = await opts.registry.load(target.wikiId).catch(() => null);
+      if (!targetWiki) return null;
+      const targetPaths = (await targetWiki.listPages()).map((p) => p.filename);
+      const resolved = resolveLinkTarget(target.pagePath, targetPaths);
+      return resolved ? `${target.wikiId}:${pageStem(resolved)}` : null;
+    };
+
     for (const page of pages) {
-      const id = pageStem(page.filename);
+      const id = `${this.wikiId}:${pageStem(page.filename)}`;
       const node: GraphNode = {
         id,
         title: page.title,
@@ -415,22 +452,34 @@ export class LlmWiki {
       nodes.push(node);
 
       for (const link of extractWikilinks(page.content)) {
+        const ext = parseExternalRef(normalizeLink(link));
+        if (ext) {
+          const resolved = await resolveExternal(ext);
+          if (resolved) addEdge(id, resolved, 'references');
+          continue;
+        }
         const resolved = resolveLinkTarget(link, allPaths);
         if (resolved && resolved !== page.filename) {
-          addEdge(id, pageStem(resolved), 'references');
+          addEdge(id, `${this.wikiId}:${pageStem(resolved)}`, 'references');
         }
       }
 
       for (const slug of page.frontmatter.contradictions ?? []) {
+        const ext = parseExternalRef(normalizeLink(String(slug)));
+        if (ext) {
+          const resolved = await resolveExternal(ext);
+          if (resolved) addEdge(id, resolved, 'contradicts');
+          continue;
+        }
         const resolved = resolveLinkTarget(String(slug), allPaths);
         if (resolved && resolved !== page.filename) {
-          addEdge(id, pageStem(resolved), 'contradicts');
+          addEdge(id, `${this.wikiId}:${pageStem(resolved)}`, 'contradicts');
         }
       }
 
       if (opts.includeSources) {
         for (const sourcePath of page.frontmatter.sources.filter(Boolean)) {
-          const sourceId = pageStem(sourcePath);
+          const sourceId = `${this.wikiId}:${pageStem(sourcePath)}`;
           if (!sourceNodeMap.has(sourceId)) {
             const basename = sourcePath.split('/').pop()?.replace(/\.md$/i, '') ?? sourceId;
             sourceNodeMap.set(sourceId, {
@@ -648,7 +697,11 @@ export class LlmWiki {
   }
 
   /** Run all applicable lint checks and return a structured report. */
-  async lint(registry?: { wikiIds: string[]; onDiskDirs: string[] }): Promise<LintReport> {
+  async lint(registry?: {
+    wikiIds: string[];
+    onDiskDirs: string[];
+    externalPages?: Map<string, string[]>;
+  }): Promise<LintReport> {
     const ctx = await this.buildLintContext(registry);
     return runLint(ctx);
   }
@@ -801,6 +854,7 @@ export class LlmWiki {
   private async buildLintContext(registry?: {
     wikiIds: string[];
     onDiskDirs: string[];
+    externalPages?: Map<string, string[]>;
   }): Promise<LintContext> {
     const paths = await this.listContentPaths();
     const pages: LintPage[] = [];
@@ -830,6 +884,7 @@ export class LlmWiki {
       today: isoToday(),
       registryWikiIds: registry?.wikiIds,
       onDiskWikiDirs: registry?.onDiskDirs,
+      externalPages: registry?.externalPages,
     };
   }
 

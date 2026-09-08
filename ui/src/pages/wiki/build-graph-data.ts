@@ -9,6 +9,43 @@ export interface D3Node extends SimulationNodeDatum, GraphNode {
 
 export type D3Edge = SimulationLinkDatum<D3Node> & GraphEdge;
 
+// Node radius scales linearly with edgeCount, from a minimum size for
+// unconnected nodes up to a maximum for the most-connected node in the
+// visible graph.
+export const NODE_RADIUS_MIN = 6;
+export const NODE_RADIUS_MAX = 20;
+
+/** Visual radius for a node with `edgeCount` edges, given the graph's max
+ * edge count. Shared by the node's rendered circle and forceCollide's
+ * collision radius so the two can never drift apart. */
+export function nodeRadius(edgeCount: number, maxEdges: number): number {
+  const t = edgeCount / maxEdges;
+  return NODE_RADIUS_MIN + t * (NODE_RADIUS_MAX - NODE_RADIUS_MIN);
+}
+
+/**
+ * Anchor point per enabled wiki/domain, arranged on a circle so each wiki's
+ * cluster settles around a distinct point instead of every node sharing one
+ * global center. A single domain anchors at the canvas center — the same
+ * point the old global forceCenter used — so single-wiki views are visually
+ * unchanged.
+ */
+export function computeDomainAnchors(
+  domainIds: string[],
+  width: number,
+  height: number,
+): Map<string, { x: number; y: number }> {
+  const anchors = new Map<string, { x: number; y: number }>();
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = domainIds.length > 1 ? Math.min(width, height) * 0.3 : 0;
+  domainIds.forEach((id, i) => {
+    const angle = (2 * Math.PI * i) / domainIds.length;
+    anchors.set(id, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+  });
+  return anchors;
+}
+
 /**
  * Turns raw wiki graph data into what the D3 force simulation consumes:
  * nodes/edges filtered to the enabled domains, with per-node edge counts for
