@@ -22,6 +22,7 @@ import {
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
 } from './stream-handler.js';
+import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext } from './chat-agent.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
 import {
@@ -215,7 +216,7 @@ export async function executeTask(
       completeTaskBox.current = result;
     });
 
-    const { content, thoughtContent, finalSegmentId } = await pipeEvents(
+    const { content, thoughtContent, finalSegmentId, hadToolCall } = await pipeEvents(
       sink,
       msgId,
       tapped,
@@ -232,11 +233,16 @@ export async function executeTask(
       startedAt,
       content,
       thoughtContent,
+      hadToolCall,
       turnSentAt,
       assistantSeq,
       null,
       undefined,
-      undefined,
+      // Task runs always use the default provider (see this file's own
+      // agent.streamEvents context above) — passing it through here is what
+      // lets finalizeTurn's Ollama empty-response check apply to task runs
+      // too, not just interactive chat turns.
+      env.defaultProvider,
       undefined,
       task.id,
     );
@@ -301,6 +307,7 @@ export async function executeTask(
             null,
           );
         } else {
+          const classified = classifyChatError(err, env.defaultProvider);
           failAssistant(
             threadStore,
             threadId,
@@ -308,6 +315,8 @@ export async function executeTask(
             partialState.content,
             turnSentAt,
             partialState.thoughtContent,
+            classified.message,
+            classified.category,
           );
         }
       }

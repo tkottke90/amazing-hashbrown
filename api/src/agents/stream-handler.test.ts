@@ -12,6 +12,7 @@ import {
   finalizeTurn,
   makeLiveSseWriter,
   PipeEventsError,
+  ClassifiedTurnError,
   extractPartialAssistantState,
   drainAndRecordWikiUpdates,
   resolveAttachmentForTurn,
@@ -154,6 +155,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -181,6 +183,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -214,6 +217,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -242,6 +246,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -267,6 +272,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -292,6 +298,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -316,6 +323,7 @@ describe('agents/stream-handler', () => {
         startedAt,
         'final content',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -349,6 +357,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         'final content',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -382,6 +391,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -420,6 +430,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -451,6 +462,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -482,6 +494,7 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
@@ -508,11 +521,146 @@ describe('agents/stream-handler', () => {
         Date.now(),
         '',
         '',
+        false,
         new Date().toISOString(),
         null,
         null,
       );
       expect(result.interrupted).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('treats an empty Ollama response with no tool call as a context_length failure, not a normal completion', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t12', 'Hello');
+      recordAssistantStart(store, 't12', 'msg12', new Date().toISOString());
+      const { sink, events } = fakeSink();
+      const agent = stubAgent(null);
+      const result = await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't12',
+        'msg12',
+        Date.now(),
+        '',
+        '',
+        false,
+        new Date().toISOString(),
+        null,
+        null,
+        undefined,
+        'ollama',
+      );
+
+      expect(result.interrupted).to.equal(false);
+      const persisted = store.getMessage('t12', 'msg12')!;
+      expect(persisted.status).to.equal('error');
+      const payload = persisted.payload as Record<string, unknown>;
+      expect(payload.errorCategory).to.equal('context_length');
+      expect(typeof payload.error).to.equal('string');
+
+      const emitted = events();
+      const errorEvent = emitted.find((e) => e.type === 'stream_error');
+      expect(errorEvent?.errorCategory).to.equal('context_length');
+      expect(emitted.some((e) => e.type === 'stream_done')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('does not treat an empty Ollama response as a failure when a tool call happened', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t13', 'Hello');
+      recordAssistantStart(store, 't13', 'msg13', new Date().toISOString());
+      const { sink, events } = fakeSink();
+      const agent = stubAgent(null);
+      const result = await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't13',
+        'msg13',
+        Date.now(),
+        '',
+        '',
+        true,
+        new Date().toISOString(),
+        null,
+        null,
+        undefined,
+        'ollama',
+      );
+
+      expect(result.interrupted).to.equal(false);
+      const persisted = store.getMessage('t13', 'msg13')!;
+      expect(persisted.status).to.equal('done');
+      const emitted = events();
+      expect(emitted.some((e) => e.type === 'stream_done')).to.equal(true);
+      expect(emitted.some((e) => e.type === 'stream_error')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('does not apply the empty-response heuristic to a non-Ollama provider', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t14', 'Hello');
+      recordAssistantStart(store, 't14', 'msg14', new Date().toISOString());
+      const { sink, events } = fakeSink();
+      const agent = stubAgent(null);
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't14',
+        'msg14',
+        Date.now(),
+        '',
+        '',
+        false,
+        new Date().toISOString(),
+        null,
+        null,
+        undefined,
+        'anthropic',
+      );
+
+      const persisted = store.getMessage('t14', 'msg14')!;
+      expect(persisted.status).to.equal('done');
+      expect(events().some((e) => e.type === 'stream_done')).to.equal(true);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('does not apply the empty-response heuristic when there is a real interrupt (e.g. recursion_limit_warning)', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t15', 'Hello');
+      const { sink, events } = fakeSink();
+      const agent = stubAgent({
+        kind: 'recursion_limit_warning',
+        question: 'Continue?',
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        stepsUsed: 75,
+        recursionLimit: 100,
+      });
+      const result = await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't15',
+        'msg15',
+        Date.now(),
+        '',
+        '',
+        false,
+        new Date().toISOString(),
+        null,
+        null,
+        undefined,
+        'ollama',
+      );
+
+      expect(result.interrupted).to.equal(true);
+      const emitted = events();
+      expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(true);
+      expect(emitted.some((e) => e.type === 'stream_error')).to.equal(false);
       rmSync(dir, { recursive: true });
     });
   });
@@ -675,6 +823,37 @@ describe('agents/stream-handler', () => {
       expect(store.getMessage('t1', 'tc-ask')).to.equal(null);
     });
 
+    it('reports hadToolCall: true when an ask_user tool call fires, even though it records nothing', async () => {
+      const { sink } = fakeSink();
+      const result = await pipeEvents(
+        sink,
+        'msg4b',
+        eventsFrom([
+          { event: 'on_tool_start', name: 'ask_user', run_id: 'tc-ask-b', data: { input: {} } },
+          { event: 'on_tool_end', name: 'ask_user', run_id: 'tc-ask-b', data: { output: 'yes' } },
+        ]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      expect(result.hadToolCall).to.equal(true);
+    });
+
+    it('reports hadToolCall: false when no tool call happened during the turn', async () => {
+      const { sink } = fakeSink();
+      const result = await pipeEvents(
+        sink,
+        'msg4c',
+        eventsFrom([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hi' } } }]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      expect(result.hadToolCall).to.equal(false);
+    });
+
     it('emits and accumulates a final trailing delta on stream end (drainBuffer)', async () => {
       const { sink, events } = fakeSink();
       // The safe-margin buffering logic holds back the tail of a chunk in case
@@ -800,6 +979,16 @@ describe('agents/stream-handler', () => {
     it('extractPartialAssistantState falls back to the given id and empty content for a non-PipeEventsError', () => {
       const recovered = extractPartialAssistantState(new Error('unrelated'), 'msg8');
       expect(recovered).to.deep.equal({ segmentId: 'msg8', content: '', thoughtContent: '' });
+    });
+  });
+
+  describe('ClassifiedTurnError', () => {
+    it('carries the category and message it was constructed with', () => {
+      const err = new ClassifiedTurnError('rate limited', 'rate_limit');
+      expect(err).to.be.instanceOf(Error);
+      expect(err.name).to.equal('ClassifiedTurnError');
+      expect(err.message).to.equal('rate limited');
+      expect(err.category).to.equal('rate_limit');
     });
   });
 

@@ -50,6 +50,89 @@ describe('AssistantMessage — error rendering', () => {
     fireEvent.click(retryButton);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  it('shows a Retry action regardless of errorCategory — its presence never implies retrying will help', () => {
+    const onRetry = jest.fn();
+    render(
+      <AssistantMessage
+        message={baseMessage({ status: 'error', content: '', errorCategory: 'billing' })}
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  const CATEGORY_COPY: Record<string, string> = {
+    auth: 'Authentication failed — check that your API key for this provider is valid.',
+    billing:
+      "This provider account is out of credit or has a billing issue. Retrying won't help until that's resolved.",
+    rate_limit: 'The provider is rate-limiting requests. Wait a bit before retrying.',
+    context_length:
+      "This conversation is too long for the model's context window. Try starting a new thread or shortening it.",
+    content_policy:
+      "The provider declined this request for policy reasons. Rephrasing may help; retrying as-is won't.",
+    unavailable:
+      'The model or provider is temporarily unavailable. This is usually transient — retrying may work.',
+    network: "Couldn't reach the provider — check your connection.",
+  };
+
+  for (const [category, copy] of Object.entries(CATEGORY_COPY)) {
+    it(`renders the ${category} category's own copy instead of the generic message`, () => {
+      render(
+        <AssistantMessage
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          message={baseMessage({ status: 'error', content: '', errorCategory: category as any })}
+        />,
+      );
+
+      expect(screen.getByText(copy)).toBeInTheDocument();
+      expect(screen.queryByText('Something went wrong. Please try again.')).not.toBeInTheDocument();
+    });
+  }
+
+  it('renders the generic message for an explicit "unknown" category, same as no category at all', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({ status: 'error', content: '', errorCategory: 'unknown' })}
+      />,
+    );
+
+    expect(screen.getByText('Something went wrong. Please try again.')).toBeInTheDocument();
+  });
+
+  it('hides the raw provider detail behind a "Show details" toggle', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({
+          status: 'error',
+          content: '',
+          errorCategory: 'billing',
+          error: 'insufficient credit balance for account acct_123',
+        })}
+      />,
+    );
+
+    expect(
+      screen.queryByText('insufficient credit balance for account acct_123'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Show details'));
+
+    expect(
+      screen.getByText('insufficient credit balance for account acct_123'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no "Show details" toggle when a category is set but no raw detail is available', () => {
+    render(
+      <AssistantMessage
+        message={baseMessage({ status: 'error', content: '', errorCategory: 'network' })}
+      />,
+    );
+
+    expect(screen.queryByText('Show details')).not.toBeInTheDocument();
+  });
 });
 
 describe('AssistantMessage — metrics row', () => {

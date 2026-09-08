@@ -254,6 +254,27 @@ describe('agents/task-execution', () => {
     expect(task.status).to.equal('failed');
   });
 
+  it('persists a classified errorCategory/error on the failed assistant row when the agent stream throws', async () => {
+    const entry = makeGlobalEntry();
+    const agent = fakeThrowingAgent([
+      { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
+    ]);
+
+    await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+    const task = store.getTask(entry.task.id)!;
+    const messages = threadStore.getThreadMessages(task.threadId!);
+    const assistantRow = messages.find((m) => m.kind === 'assistant' && m.status === 'error');
+    expect(assistantRow, 'expected a failed assistant row').to.not.equal(undefined);
+    const payload = assistantRow!.payload as Record<string, unknown>;
+    // The thrown error ("simulated stream failure") has no structured
+    // status/type/code for classifyChatError to key off, so it resolves to
+    // 'unknown' — this asserts the classification pipeline actually ran
+    // (env.defaultProvider was passed through), not any specific category.
+    expect(payload.error).to.equal('simulated stream failure');
+    expect(payload.errorCategory).to.equal('unknown');
+  });
+
   it('mints and persists a dedicated "task" thread for a global task on first run', async () => {
     const entry = makeGlobalEntry('Global with no thread yet');
     expect(entry.task.threadId).to.equal(null);

@@ -3,7 +3,8 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import type { MessageContent } from '@langchain/core/messages';
 import { logger, serializeError } from '../config/logger.js';
-import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
+import type { ChatSSEEvent, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import { classifyChatError } from './error-classification.js';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
 import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
@@ -149,6 +150,21 @@ export class PipeEventsError extends Error {
   }
 }
 
+// Thrown from a turn's own catch block (in place of the raw provider error)
+// once its failure has been classified — carries the classification so the
+// outer route-layer catch (which only ever sees `unknown` at that point)
+// can put `errorCategory` on the live `stream_error` SSE event without
+// re-deriving the provider/classification itself. See error-classification.ts.
+export class ClassifiedTurnError extends Error {
+  readonly category: ChatErrorCategory;
+
+  constructor(message: string, category: ChatErrorCategory) {
+    super(message);
+    this.name = 'ClassifiedTurnError';
+    this.category = category;
+  }
+}
+
 // Recovers whatever partial assistant content/segment id was in flight when
 // pipeEvents threw, falling back to the turn's original message id and empty
 // content for any other error shape (e.g. thrown before pipeEvents ran).
@@ -185,7 +201,12 @@ export async function pipeEvents(
   sentAt: string,
   provider?: string | null,
   model?: string | null,
-): Promise<{ content: string; thoughtContent: string; finalSegmentId: string }> {
+): Promise<{
+  content: string;
+  thoughtContent: string;
+  finalSegmentId: string;
+  hadToolCall: boolean;
+}> {
   const parse: ParseState = { inThought: false, buf: '', content: '', thought: '' };
   // updateMessage() replaces payload wholesale rather than merging, so
   // finalizeToolCall needs the original toolName/inputs back — tracked here
@@ -194,6 +215,12 @@ export async function pipeEvents(
     string,
     { toolName: string; inputs: Record<string, unknown> }
   >();
+  // Whether any tool call (including ask_user, excluded from the recording
+  // below) fired during this turn — lets finalizeTurn tell "the model
+  // legitimately said nothing because it only called a tool/asked the user
+  // something" apart from a genuinely empty response. See finalizeTurn's
+  // Ollama empty-response check.
+  let hadToolCall = false;
 
   // Mirrors use-thread.ts's `_toolCallPendingSinceLastText` client-side
   // continuation logic: once a tool call starts, the next real text opens a
@@ -239,6 +266,7 @@ export async function pipeEvents(
         }
 
         case 'on_tool_start': {
+          hadToolCall = true;
           if (evt.name !== 'ask_user') {
             const toolCallId = evt.run_id as string;
             const toolName = evt.name as string;
@@ -292,6 +320,7 @@ export async function pipeEvents(
     content: parse.content,
     thoughtContent: parse.thought,
     finalSegmentId: currentSegmentId,
+    hadToolCall,
   };
 }
 
@@ -311,6 +340,11 @@ export async function finalizeTurn(
   startedAt: number,
   content: string,
   thoughtContent: string,
+  // Whether pipeEvents observed any tool call during this turn — see its
+  // own hadToolCall comment. Used below to tell a legitimately empty
+  // response (the model only called a tool/asked the user something) apart
+  // from Ollama silently returning nothing on context overflow.
+  hadToolCall: boolean,
   turnSentAt: string,
   assistantSeq: number | null,
   userSeq: number | null,
@@ -511,6 +545,39 @@ export async function finalizeTurn(
     }
     return { interrupted: true };
   } else {
+    // Ollama can silently truncate/return nothing when the context window is
+    // exceeded, rather than throwing — this heuristic re-routes that case
+    // into the same failure path a thrown error takes. Scoped to Ollama and
+    // to a truly empty turn (no tool call, including ask_user, and no
+    // thought content either) so a legitimate tool-only or thinking-only
+    // turn is never misclassified. See
+    // docs/superpowers/specs/2026-09-08-chat-error-classification-design.md §4e.
+    if (
+      effectiveProvider === 'ollama' &&
+      content.trim() === '' &&
+      thoughtContent.trim() === '' &&
+      !hadToolCall
+    ) {
+      const emptyResponseMessage =
+        'Ollama returned an empty response — this usually happens when the context window was exceeded.';
+      failAssistant(
+        threadStore,
+        threadId,
+        msgId,
+        content,
+        turnSentAt,
+        undefined,
+        emptyResponseMessage,
+        'context_length',
+      );
+      writeSseEvent(sink, {
+        type: 'stream_error',
+        error: emptyResponseMessage,
+        errorCategory: 'context_length',
+      });
+      return { interrupted: false };
+    }
+
     writeSseEvent(sink, {
       type: 'stream_done',
       durationMs,
@@ -782,6 +849,7 @@ export async function streamChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -802,6 +870,7 @@ export async function streamChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         userSeq,
@@ -823,7 +892,8 @@ export async function streamChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -832,8 +902,9 @@ export async function streamChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -940,6 +1011,7 @@ export async function resumeChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -960,6 +1032,7 @@ export async function resumeChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         null,
@@ -981,7 +1054,8 @@ export async function resumeChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -990,8 +1064,9 @@ export async function resumeChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
@@ -1094,6 +1169,7 @@ export async function retryChatToSse(
         content: finalContent,
         thoughtContent,
         finalSegmentId,
+        hadToolCall,
       } = await pipeEvents(
         sink,
         msgId,
@@ -1114,6 +1190,7 @@ export async function retryChatToSse(
         startedAt,
         finalContent,
         thoughtContent,
+        hadToolCall,
         turnSentAt,
         assistantSeq,
         null,
@@ -1135,7 +1212,8 @@ export async function retryChatToSse(
         writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
         return;
       }
-      turnError = errorMessageOf(err);
+      const classified = classifyChatError(err, resolvedProvider);
+      turnError = classified.message;
       failAssistant(
         threadStore,
         threadId,
@@ -1144,8 +1222,9 @@ export async function retryChatToSse(
         turnSentAt,
         partialThought,
         turnError,
+        classified.category,
       );
-      throw err;
+      throw new ClassifiedTurnError(classified.message, classified.category);
     } finally {
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,

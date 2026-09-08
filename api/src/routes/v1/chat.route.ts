@@ -4,6 +4,7 @@ import {
   resumeChatToSse,
   retryChatToSse,
   writeSseEvent,
+  ClassifiedTurnError,
 } from '../../agents/stream-handler.js';
 import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
@@ -58,7 +59,12 @@ chatRouter.post('/:threadId', async (req, res) => {
     );
   } catch (err) {
     req.logger.error('Chat stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     req.logger.info(`Inference completed for thread`, { threadId });
     res.end();
@@ -87,7 +93,12 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
     await resumeChatToSse(res, threadId, promptId, answer, startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('HITL resume error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }
@@ -118,7 +129,12 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
     await retryChatToSse(res, threadId, startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('Retry stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }

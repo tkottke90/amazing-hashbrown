@@ -2,6 +2,7 @@ import { useSignal } from '@preact/signals';
 import { RotateCcw, ChevronRight, ChevronDown, AlertTriangle } from 'lucide-preact';
 import { Markdown } from './markdown';
 import { ThoughtBlock } from './thought-block';
+import { ChatErrorDetail } from './chat-error-detail';
 import { ActionButton, ChatMessageForkAction } from './chat-message';
 import { cn } from '@/lib/utils';
 import { showErrorMessages } from '@/hooks/use-thread';
@@ -119,7 +120,7 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
               )}
             </>
           ) : (
-            <span>Something went wrong. Please try again.</span>
+            <ChatErrorDetail category={message.errorCategory} detail={message.error} />
           )}
         </div>
       </div>

@@ -5,7 +5,7 @@ import {
   resumeWorkspaceChatToSse,
   retryWorkspaceChatToSse,
 } from '../../agents/workspace-chat-stream-handler.js';
-import { writeSseEvent } from '../../agents/stream-handler.js';
+import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
 import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
 import { resolveHitlPrompt } from '../../agents/thread-message-writer.js';
@@ -105,7 +105,12 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
     );
   } catch (err) {
     req.logger.error('Workspace chat stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }
@@ -151,7 +156,12 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
       res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
     } catch (err) {
       req.logger.error('Workspace chat HITL task re-enqueue error', { err: serializeError(err) });
-      writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+      const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+      writeSseEvent(toSink(res), {
+        type: 'stream_error',
+        error: String(err),
+        ...(errorCategory ? { errorCategory } : {}),
+      });
     } finally {
       res.end();
     }
@@ -174,7 +184,12 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
     );
   } catch (err) {
     req.logger.error('Workspace chat HITL resume error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }
@@ -202,7 +217,12 @@ workspaceChatRouter.post('/:threadId/retry', async (req: Request, res: Response)
     await retryWorkspaceChatToSse(res, workspace, threadId, startedAt, provider, model, afterAgent);
   } catch (err) {
     req.logger.error('Workspace chat retry stream error', { err: serializeError(err) });
-    writeSseEvent(toSink(res), { type: 'stream_error', error: String(err) });
+    const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    writeSseEvent(toSink(res), {
+      type: 'stream_error',
+      error: String(err),
+      ...(errorCategory ? { errorCategory } : {}),
+    });
   } finally {
     res.end();
   }

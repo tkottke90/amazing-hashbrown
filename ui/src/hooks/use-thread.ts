@@ -512,7 +512,9 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
 
       case 'stream_error':
         messages.value = messages.value.map((m) =>
-          m.kind === 'assistant' && m.id === _currentAssistantId ? { ...m, status: 'error' } : m,
+          m.kind === 'assistant' && m.id === _currentAssistantId
+            ? { ...m, status: 'error', error: evt.error, errorCategory: evt.errorCategory }
+            : m,
         );
         batch(() => {
           isStreaming.value = false;
@@ -583,7 +585,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       );
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err) });
+        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
       }
     } finally {
       _abortController = null;
@@ -627,7 +629,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       );
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err) });
+        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
       }
     } finally {
       _abortController = null;
@@ -678,7 +680,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       );
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err) });
+        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
       }
     } finally {
       _abortController = null;
