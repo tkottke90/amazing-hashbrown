@@ -156,6 +156,7 @@ export class WikiRegistry {
     });
 
     await this.register(input.id, {
+      path: relPath,
       domain: input.domain,
       tags: input.tags,
       routingNotes: input.routingNotes,
@@ -165,16 +166,20 @@ export class WikiRegistry {
 
   /**
    * Register an already-existing on-disk wiki directory in registry.json.
-   * Reads the domain from the directory's SCHEMA.md automatically.
+   * Reads the domain from the directory's SCHEMA.md automatically. `path`
+   * defaults to `id` (the on-disk convention for a directory registered by
+   * itself, outside of `create()`) — pass it explicitly when the wiki lives
+   * somewhere else, as `create()` does for a `CreateWikiInput.path` override.
    */
   async register(
     id: string,
-    opts?: { domain?: string; tags?: string[]; routingNotes?: string[] },
+    opts?: { path?: string; domain?: string; tags?: string[]; routingNotes?: string[] },
   ): Promise<void> {
     if (this.data.wikis.some((w) => w.id === id)) {
       throw new Error(`Wiki id already registered: ${id}`);
     }
-    const wikiDir = path.join(this.wikiRoot, id);
+    const relPath = opts?.path ?? id;
+    const wikiDir = path.isAbsolute(relPath) ? relPath : path.join(this.wikiRoot, relPath);
     try {
       await fs.access(path.join(wikiDir, SCHEMA_FILE));
     } catch {
@@ -189,7 +194,7 @@ export class WikiRegistry {
       /* fall back to empty string */
     }
     const domain = opts?.domain ?? parsedDomain;
-    this.data.wikis.push({ id, path: id, domain, tags: opts?.tags ?? [], status: 'active' });
+    this.data.wikis.push({ id, path: relPath, domain, tags: opts?.tags ?? [], status: 'active' });
     if (opts?.routingNotes?.length) this.data.routingNotes.push(...opts.routingNotes);
     await this.persist();
   }
