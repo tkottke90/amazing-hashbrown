@@ -1,0 +1,208 @@
+suite:
+  id: get-tool-key
+  name: Get Tool Key (KV Read-Side Tool)
+  purpose: >
+    Verifies the agent calls get_tool_key to resolve a compact stub's KV reference when it needs
+    the full offloaded text for something other than wiki ingestion, that it never fabricates a
+    threadId/toolKey when no stub was ever issued, and that it prefers handing the KV reference
+    straight to wiki_create_page over resolving it itself first when the goal is to save the
+    content to the wiki.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: GTK-001-basic-read
+    name: Agent calls get_tool_key to read back offloaded content it needs directly
+    purpose: >
+      Seeds a web_fetch result that offloaded to a compact stub (research context, no
+      "to ingest into wiki" block), then asks a question that needs detail beyond the stub's own
+      summary. Checks the agent resolves the KV reference itself via get_tool_key, copying the
+      threadId/toolKey verbatim from the stub.
+    type: tool-sequence
+    input: 'I need the exact wording from that migration case study section — can you get me the full text?'
+    priorTurns:
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            chars:    18,432
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals,
+            consensus protocols (Paxos, Raft), and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+    tool: get_tool_key
+    argChecks:
+      - path: threadId
+        match: equals
+        value: 'f50450ee-582d-49b3-9bb2'
+      - path: toolKey
+        match: equals
+        value: 'kv_7f3a9b2c'
+
+  - id: GTK-002-coordination-answer
+    name: Agent answers from the resolved full text, not just the stub summary
+    purpose: >
+      Seeds the same offloaded stub plus a completed get_tool_key call returning the full article
+      text, then asks a question only answerable from a detail buried in the full text (not
+      present in the stub's own summary). Checks the fetch -> stub -> resolve -> answer chain
+      actually composes into a grounded answer. Uses llm-judge since the exact phrasing is not
+      deterministic.
+    type: llm-judge
+    input: 'According to that guide, which specific consensus protocol does it recommend for a 5-node cluster favoring availability over strict consistency?'
+    priorTurns:
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            chars:    18,432
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals,
+            consensus protocols (Paxos, Raft), and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+      - tool: get_tool_key
+        args:
+          threadId: 'f50450ee-582d-49b3-9bb2'
+          toolKey: 'kv_7f3a9b2c'
+        result:
+          text: |
+            ## Content
+            Distributed systems guide. CAP theorem states a partitioned system can only
+            guarantee two of consistency, availability, and partition tolerance.
+            Raft is recommended for small clusters (3-5 nodes) prioritizing consistency.
+            For availability-favoring deployments on a 5-node cluster, the guide recommends a
+            leaderless gossip-based protocol instead of Raft or Paxos, citing lower coordination
+            overhead under partition.
+    rubric: >
+      The response must reference the leaderless gossip-based protocol recommendation for an
+      availability-favoring 5-node cluster, drawn from the resolved full text. Score at least 8/10
+      if that specific recommendation is clearly stated. Score no higher than 3/10 if the agent
+      answers with Raft or Paxos instead (the general-case recommendation from the stub's own
+      summary, not this specific scenario), fabricates a different protocol, or says it doesn't know.
+    minScore: 8
+
+  - id: GTK-003-no-fabricated-key
+    name: Agent does not fabricate a threadId/toolKey when no stub was ever issued
+    purpose: >
+      Seeds a plain, non-offloaded web_fetch result (small content, returned inline — no stub, no
+      KV key ever issued), then asks for "the full raw text via the tool key" in a way that
+      invites fabricating a threadId/toolKey pair. get_tool_key requires a real key from an actual
+      stub; there is no stub here, so the agent must not call it. Mirrors the exact fabrication
+      failure mode already documented in web-fetch.yaml's wfetch-003 auto-eval history for
+      wiki_create_page's corpus reference.
+    type: tool-sequence
+    input: 'Can you use the tool key to pull the full raw text of what you just fetched?'
+    priorTurns:
+      - tool: web_fetch
+        args:
+          url: 'https://docs.example.com/concepts/vector-databases'
+        result:
+          text: |
+            ## Content
+            Vector databases store high-dimensional embeddings and support
+            approximate nearest-neighbour (ANN) search. Common choices include
+            Qdrant, Weaviate, and Chroma.
+
+            ## Metadata
+            title: "Vector Databases — Concepts"
+            description: "An overview of vector database systems and their role in RAG."
+    tool: '!get_tool_key'
+
+  - id: GTK-004a-prefers-wiki-create-page
+    name: Agent saves offloaded content via wiki_create_page's corpus reference, not get_tool_key first
+    purpose: >
+      Seeds an offloaded stub carrying a "to ingest into wiki" block, then asks the agent to save
+      it. Confirms the direct-write instruction still drives wiki_create_page (mirrors
+      instruction-sensitivity.yaml's E-11) even now that get_tool_key exists as an alternative.
+    type: tool-sequence
+    input: 'Great — save that to the wiki, please.'
+    priorTurns:
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            chars:    18,432
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals,
+            consensus protocols (Paxos, Raft), and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+            ─ to ingest into wiki: ─────────────────
+              wiki_create_page({
+                title:  <title>,
+                corpus: {
+                  threadId: "f50450ee-582d-49b3-9bb2",
+                  toolKey:  "kv_7f3a9b2c"
+                }
+              })
+      - tool: wiki_locate
+        args:
+          context: 'distributed systems concepts'
+        result:
+          text: 'Best match: "engineering" (domain: engineering, score 15).'
+    tool: wiki_create_page
+    argChecks:
+      - path: corpus.threadId
+        match: equals
+        value: 'f50450ee-582d-49b3-9bb2'
+      - path: corpus.toolKey
+        match: equals
+        value: 'kv_7f3a9b2c'
+
+  - id: GTK-004b-no-get-tool-key-first
+    name: Agent does not round-trip through get_tool_key before wiki_create_page
+    purpose: >
+      Same seed and input as GTK-004a — asserts the agent's response does not call get_tool_key.
+      Proves the anti-pattern guidance holds: no wasted round-trip resolving the KV reference
+      itself just to hand it back to wiki_create_page as corpus.raw.
+    type: tool-sequence
+    input: 'Great — save that to the wiki, please.'
+    priorTurns:
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            chars:    18,432
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals,
+            consensus protocols (Paxos, Raft), and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+            ─ to ingest into wiki: ─────────────────
+              wiki_create_page({
+                title:  <title>,
+                corpus: {
+                  threadId: "f50450ee-582d-49b3-9bb2",
+                  toolKey:  "kv_7f3a9b2c"
+                }
+              })
+      - tool: wiki_locate
+        args:
+          context: 'distributed systems concepts'
+        result:
+          text: 'Best match: "engineering" (domain: engineering, score 15).'
+    tool: '!get_tool_key'

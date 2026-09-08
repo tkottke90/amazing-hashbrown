@@ -617,6 +617,15 @@ contains enough context; call wiki_locate only if wikiId is genuinely unknown. D
 confirmation — the stub instruction is the decision. The corpus reference tells the tool where to
 fetch the full body; you do not need to read or summarise the full text yourself.
 
+That reference is for the wiki path specifically — do not resolve it yourself first with
+get_tool_key just to hand the text to wiki_create_page as corpus.raw; pass the
+corpus:{threadId, toolKey} reference straight through instead. Reach for get_tool_key when you
+need the offloaded text for anything else — answering a question in more detail than the stub's
+summary gives you, quoting a passage, or working with the full document yourself. Call it with the
+same threadId and toolKey shown in the stub, copied verbatim. get_tool_key only works with a real
+key from an actual stub already in this conversation — never invent a threadId or toolKey to try
+it speculatively; if there's no stub, the content you have is already everything there is.
+
 This only applies when wiki_create_page is actually available to you right now. If it isn't in
 your current toolset — write access can be scoped or withheld per wiki — don't try to act on the
 block anyway: not by calling it under a guessed title, and not by asking the user for missing

@@ -31,6 +31,7 @@ import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { searchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
+import { getToolKeyTool } from './tools/get-tool-key.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
@@ -260,6 +261,7 @@ const STATIC_CHAT_TOOLS = [
   wikiLintTool,
   wikiRegisterDomainTool,
   webFetchTool,
+  getToolKeyTool,
   rlmQueryTool,
   searchSkillsTool,
   searchConversationTool,

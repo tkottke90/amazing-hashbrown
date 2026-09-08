@@ -34,6 +34,7 @@ import { makeWikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross
 import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
+import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
@@ -68,6 +69,7 @@ const evalTools = [
   makeWikiRebaselineSourceTool(),
   wikiRegisterDomainTool,
   webFetchTool,
+  getToolKeyTool,
   // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware).
   // create-workspace-project.yaml now exercises that real gating directly
   // via each scenario's `gatedSkill` field (see runner.ts and
