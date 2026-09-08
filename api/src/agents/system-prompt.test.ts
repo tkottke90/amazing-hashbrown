@@ -266,6 +266,26 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('treats an ingest block\'s placeholder title as the model\'s own naming job, not a reason to resolve get_tool_key first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "The block's own title field is usually a placeholder — <page title> — for you to fill in, not a\nvalue already decided.",
+      );
+      expect(result).to.include(
+        'needing a title is never a reason to call get_tool_key first',
+      );
+    });
+
+    it('rules out inferring an ingest block from a stub that never had one', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'A stub without that literal "to ingest into wiki:" heading never carries the instruction above',
+      );
+      expect(result).to.include(
+        'is a\nget_tool_key case, not a reason to invent an ingest block that was never actually there.',
+      );
+    });
+
     // Rewritten after the RLM section's third tightening (ADR-001): the
     // truncate: false re-read workflow no longer exists — a truncated wiki
     // page is now a structure problem, and rlm_query is prohibited on wiki
