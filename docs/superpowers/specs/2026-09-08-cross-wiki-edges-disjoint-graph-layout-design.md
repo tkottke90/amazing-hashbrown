@@ -171,11 +171,23 @@ domainList.forEach((d, i) => {
 
 const simulation = d3Force
   .forceSimulation<D3Node>(nodes)
-  .force('link', d3Force.forceLink<D3Node, D3Edge>(visibleEdges).id((d) => d.id).distance(80))
+  .force(
+    'link',
+    d3Force
+      .forceLink<D3Node, D3Edge>(visibleEdges)
+      .id((d) => d.id)
+      .distance(80),
+  )
   .force('charge', d3Force.forceManyBody<D3Node>().strength(-200))
-  .force('collide', d3Force.forceCollide<D3Node>((d) => radiusFor(d, maxEdges) + 2))
+  .force(
+    'collide',
+    d3Force.forceCollide<D3Node>((d) => radiusFor(d, maxEdges) + 2),
+  )
   .force('x', d3Force.forceX<D3Node>((d) => anchors.get(d.domainId)?.x ?? width / 2).strength(0.08))
-  .force('y', d3Force.forceY<D3Node>((d) => anchors.get(d.domainId)?.y ?? height / 2).strength(0.08));
+  .force(
+    'y',
+    d3Force.forceY<D3Node>((d) => anchors.get(d.domainId)?.y ?? height / 2).strength(0.08),
+  );
 ```
 
 This directly fixes the reported drag-drift bug: the anchor force is always present and always pulls back toward the domain's anchor, so repeated dragging can no longer accumulate unbounded cluster separation the way unopposed `forceManyBody` + a mean-only `forceCenter` did.
@@ -201,7 +213,9 @@ Only the tool's description changes, to document the syntax:
 ```ts
 const WikiAddCrossLinkSchema = z.object({
   wikiId: z.string().describe('Wiki domain ID that fromPage belongs to.'),
-  fromPage: z.string().describe('Path of the page to add the link from, relative to its wiki root.'),
+  fromPage: z
+    .string()
+    .describe('Path of the page to add the link from, relative to its wiki root.'),
   toPage: z
     .string()
     .describe(
@@ -253,23 +267,23 @@ const WikiAddCrossLinkSchema = z.object({
 
 ## 11. Files Changed
 
-| File | Change |
-| --- | --- |
-| `lib/llm-wiki/src/internal/wikilinks.ts` | Add `parseExternalRef`; `resolveLinkTarget` callers route external refs through registry-aware resolution |
-| `lib/llm-wiki/src/llm-wiki.ts` | `LlmWiki` stores `wikiId`; `LoadOptions`/`CreateOptions` gain `wikiId?`; `buildGraph()` gains `registry?` option, namespaces `GraphNode.id`, resolves external wikilinks and cross-wiki `contradictions` |
-| `lib/llm-wiki/src/registry.ts` | `load()`/`create()` pass own id as `wikiId`; `lint()` populates `externalPages` |
-| `lib/llm-wiki/src/internal/lint/checks.ts` | New `checkCrossWikiLinks` |
-| `lib/llm-wiki/src/internal/lint/index.ts` | Register `checkCrossWikiLinks` in `runLint()` |
-| `lib/llm-wiki/src/types.ts` | `LintCheckId` gains `'cross_wiki_links'`; `LintContext`-adjacent types gain `externalPages` |
-| `api/src/routes/v1/wiki.route.ts` | `/graph` passes `registry` into `buildGraph()` |
-| `api/src/agents/tools/wiki-add-cross-link.tool.ts` | Schema description updates only |
-| `ui/src/pages/wiki/graph-view.tsx` | Per-domain anchor `forceX`/`forceY` replacing `forceCenter`; `forceCollide`; cross-wiki edge styling; "Open in editor" id-stripping fix |
-| `ui/src/pages/wiki/build-graph-data.ts` | Anchor-point helper extracted for testability (if not colocated in `graph-view.tsx`) |
-| `lib/llm-wiki/test/*.test.ts` | Coverage per §10 |
-| `api/src/routes/v1/wiki.route.test.ts` (new) | Coverage per §10 |
-| `api/src/agents/tools/wiki-add-cross-link.tool.test.ts` | Coverage per §10 |
-| `ui/test/wiki-build-graph-data.test.ts` | Updated fixtures + cross-wiki edge coverage |
-| `TODO_LIST.md` | Mark item complete per repo convention, once implemented |
+| File                                                    | Change                                                                                                                                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/llm-wiki/src/internal/wikilinks.ts`                | Add `parseExternalRef`; `resolveLinkTarget` callers route external refs through registry-aware resolution                                                                                                |
+| `lib/llm-wiki/src/llm-wiki.ts`                          | `LlmWiki` stores `wikiId`; `LoadOptions`/`CreateOptions` gain `wikiId?`; `buildGraph()` gains `registry?` option, namespaces `GraphNode.id`, resolves external wikilinks and cross-wiki `contradictions` |
+| `lib/llm-wiki/src/registry.ts`                          | `load()`/`create()` pass own id as `wikiId`; `lint()` populates `externalPages`                                                                                                                          |
+| `lib/llm-wiki/src/internal/lint/checks.ts`              | New `checkCrossWikiLinks`                                                                                                                                                                                |
+| `lib/llm-wiki/src/internal/lint/index.ts`               | Register `checkCrossWikiLinks` in `runLint()`                                                                                                                                                            |
+| `lib/llm-wiki/src/types.ts`                             | `LintCheckId` gains `'cross_wiki_links'`; `LintContext`-adjacent types gain `externalPages`                                                                                                              |
+| `api/src/routes/v1/wiki.route.ts`                       | `/graph` passes `registry` into `buildGraph()`                                                                                                                                                           |
+| `api/src/agents/tools/wiki-add-cross-link.tool.ts`      | Schema description updates only                                                                                                                                                                          |
+| `ui/src/pages/wiki/graph-view.tsx`                      | Per-domain anchor `forceX`/`forceY` replacing `forceCenter`; `forceCollide`; cross-wiki edge styling; "Open in editor" id-stripping fix                                                                  |
+| `ui/src/pages/wiki/build-graph-data.ts`                 | Anchor-point helper extracted for testability (if not colocated in `graph-view.tsx`)                                                                                                                     |
+| `lib/llm-wiki/test/*.test.ts`                           | Coverage per §10                                                                                                                                                                                         |
+| `api/src/routes/v1/wiki.route.test.ts` (new)            | Coverage per §10                                                                                                                                                                                         |
+| `api/src/agents/tools/wiki-add-cross-link.tool.test.ts` | Coverage per §10                                                                                                                                                                                         |
+| `ui/test/wiki-build-graph-data.test.ts`                 | Updated fixtures + cross-wiki edge coverage                                                                                                                                                              |
+| `TODO_LIST.md`                                          | Mark item complete per repo convention, once implemented                                                                                                                                                 |
 
 ---
 
