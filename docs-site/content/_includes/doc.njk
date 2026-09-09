@@ -1,0 +1,30 @@
+{% extends "base.njk" %}
+{% block body %}
+<header class="border-b border-border px-6 py-4">
+  <a href="{{ '/' | url }}" class="font-heading text-lg font-semibold text-foreground">amazing-hashbrown docs</a>
+</header>
+<div class="flex">
+  <nav class="w-64 shrink-0 border-r border-border px-4 py-6">
+    {% for section in collections.docsBySection %}
+    <div class="mb-6">
+      <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{{ section.name }}</h2>
+      <ul>
+        {% for docPage in section.pages %}
+        <li>
+          <a
+            href="{{ docPage.url | url }}"
+            class="block rounded px-2 py-1 text-sm {% if docPage.url == page.url %}bg-accent text-accent-foreground{% else %}text-foreground{% endif %}"
+          >
+            {{ docPage.data.title }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </nav>
+  <main class="prose max-w-none flex-1 px-8 py-6">
+    {{ content | safe }}
+  </main>
+</div>
+{% endblock %}

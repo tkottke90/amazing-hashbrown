@@ -1,0 +1,20 @@
+{
+  "name": "docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"tailwindcss -i ./src/tailwind.css -o ./content/css/site.css --watch\" \"eleventy --serve\"",
+    "build": "tailwindcss -i ./src/tailwind.css -o ./content/css/site.css --minify && eleventy"
+  },
+  "dependencies": {
+    "@11ty/eleventy": "3.1.6",
+    "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "@tailwindcss/typography": "0.5.20",
+    "concurrently": "10.0.5",
+    "tailwindcss": "4.3.3"
+  }
+}

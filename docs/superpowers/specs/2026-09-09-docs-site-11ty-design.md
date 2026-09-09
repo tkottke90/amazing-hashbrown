@@ -3,6 +3,8 @@
 **Date:** 2026-09-09
 **Status:** Approved
 
+_Amended 2026-09-09: GitHub Pages deploy workflow moved in-scope (see "GitHub Pages Deploy Workflow" below)._
+
 ---
 
 ## Overview
@@ -22,7 +24,6 @@ The project needs user-facing documentation before it can be shared publicly. Th
 - Migrating existing `docs/App-Docs/*.md` content into the site (kept as internal/dev-facing docs for now).
 - Real content for the front page (stays blank).
 - Site search.
-- The actual GitHub Pages deploy workflow (`.github/workflows/...`).
 - Dark mode toggle.
 
 ---
@@ -40,7 +41,15 @@ The project needs user-facing documentation before it can be shared publicly. Th
 
 ### GitHub Pages readiness
 
-11ty's `pathPrefix` config option is set (via env var or config) so generated links resolve correctly when the site is served from `https://<user>.github.io/amazing-hashbrown/` in the future. No Actions workflow is written yet — this is just making sure the 11ty config and templates use 11ty's URL-building helpers (`url` filter) rather than hardcoded absolute paths, so adding the workflow later is a non-breaking change.
+11ty's `pathPrefix` config is read from the `ELEVENTY_PATH_PREFIX` environment variable (defaulting to `/` for local dev/build), so generated links resolve correctly when the site is served from `https://<user>.github.io/amazing-hashbrown/`. Templates use 11ty's `url` filter rather than hardcoded absolute paths, so the deploy workflow can set the prefix without touching template source.
+
+### GitHub Pages Deploy Workflow
+
+- New workflow: `.github/workflows/deploy-docs.yml`, triggered **only** by `workflow_dispatch` (manual) — no `pull_request` or `push` trigger, since this is an early-stage docs site not ready for auto-publish on every merge.
+- **Prerequisite (one-time, manual, cannot be done via code):** repo Settings → Pages → Source must be set to "GitHub Actions" before the workflow's `deploy` job can succeed.
+- The build step runs `npm run build --workspace docs-site` only — the docs site has no runtime dependency on `api`/`ui`/`lib` build outputs, so the workflow does not run the monorepo's full `build` or `build:libs` scripts.
+- Deploy artifact path is `docs-site/_site` (the 11ty build output directory), uploaded via `actions/upload-pages-artifact` and published via `actions/deploy-pages`, following GitHub's standard build/deploy job split with `permissions` scoped to the `deploy` job only (`pages: write`, `id-token: write`).
+- `ELEVENTY_PATH_PREFIX` is set at build time from `actions/configure-pages`'s `base_path` output, so the deployed site's links resolve correctly without hardcoding the repo name in source.
 
 ---
 
@@ -84,7 +93,7 @@ Located in `docs-site/content/_includes/`.
 
 ## Styling
 
-- Tailwind v4, built via the standalone `@tailwindcss/cli` (11ty has no bundler of its own, unlike the `ui` workspace's Vite setup, so the CLI is the natural fit) watching `content/**/*.njk` and `content/**/*.md` for class usage. Output compiles to a CSS file 11ty passes through untouched (e.g. `content/_includes/css/site.css` → `_site/css/site.css`).
+- Tailwind v4, built via the standalone `@tailwindcss/cli` (11ty has no bundler of its own, unlike the `ui` workspace's Vite setup, so the CLI is the natural fit). Input file is `docs-site/src/tailwind.css` (Tailwind's automatic content detection scans `docs-site/content/**` for class usage since both live under the same workspace root); output compiles to `docs-site/content/css/site.css`, which 11ty passthrough-copies untouched to `_site/css/site.css`. The generated CSS file is gitignored, not committed.
 - `docs-site` defines its own `@theme` block, porting **only** the color tokens needed (the `blue-*` and `night-shadz-*` scales, plus the semantic tokens built from them) from `ui/src/style.css`. This is a one-time copy, not a shared import — `ui`'s stylesheet also pulls in shadcn/Radix/component tokens the docs site has no use for. A future palette change in `ui` will need to be manually ported here too; that tradeoff is accepted for simplicity.
 - Markdown prose is styled with `@tailwindcss/typography`'s `prose` class on the doc-page content region, matching how the main UI already renders long-form markdown (chat messages) — avoids hand-styling every heading/paragraph/list/code element.
 - Code blocks are highlighted at build time via `@11ty/eleventy-plugin-syntaxhighlight` (Prism-based, no client-side JS), since docs content is expected to include YAML/TypeScript snippets.
@@ -103,6 +112,5 @@ Located in `docs-site/content/_includes/`.
 
 - Migrate or link `docs/App-Docs/*.md` content into `docs-site/content/docs/`.
 - Front-page real content.
-- GitHub Pages Actions workflow.
 - Site search.
 - Dark mode.
