@@ -291,6 +291,9 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
           type: 'openai',
           baseUrl: 'https://api.openai.com/v1',
           defaultModel: 'gpt-4o',
+          // provider-modal.tsx always includes this in its submit payload
+          // now (issue #159) — defaults to 1 when the field is left as-is.
+          maxConcurrency: 1,
         },
       ],
       defaultProvider: '',
