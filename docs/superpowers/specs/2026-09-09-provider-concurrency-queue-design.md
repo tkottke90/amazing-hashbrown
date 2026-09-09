@@ -32,9 +32,9 @@ Meanwhile, there is **no concurrency control at all** at the provider level. Not
 **Out of scope:**
 
 - Removing `TaskScheduler`'s global run-guard — that's [task-queue-serialization-design.md](./2026-09-09-task-queue-serialization-design.md).
-- Anything about *what* a request is (task vs. sub-agent vs. chat) beyond its sync/async classification — that's the callers' job.
+- Anything about _what_ a request is (task vs. sub-agent vs. chat) beyond its sync/async classification — that's the callers' job.
 - Persistence/resume of queue state across a restart — explicitly not needed (see Design §4).
-- Preempting an in-flight request. You cannot cancel a request already sent to llama.cpp mid-generation; priority only governs which *queued* request is dispatched next, never interrupts one already running.
+- Preempting an in-flight request. You cannot cancel a request already sent to llama.cpp mid-generation; priority only governs which _queued_ request is dispatched next, never interrupts one already running.
 
 ---
 

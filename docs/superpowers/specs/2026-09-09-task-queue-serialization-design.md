@@ -17,6 +17,7 @@ Let multiple tasks run concurrently — bounded by provider capacity (see the pr
 `TaskScheduler` currently enforces exactly one `task_queue` entry `running` in the whole application (`getRunningEntry()` guard, `task-scheduler.ts:129`; `dequeueNext()`, `workspace-store.ts:1027`, is a single global `WHERE status='pending' ORDER BY position LIMIT 1` query with no scoping). On top of that, every interactive chat turn calls `pause()`, which demotes any currently-running task back to `pending`/`paused` and blocks the scheduler until 30s after the chat goes idle (`CHAT_IDLE_RESUME_MS`, `task-scheduler.ts:7`) — call sites in `stream-handler.ts:759/936/1100` and `workspace-chat-stream-handler.ts:97/288/478`.
 
 This conflates two unrelated concerns:
+
 1. **Provider capacity** — solved properly by the provider-queue design; this global pause was a blunt workaround for its absence.
 2. **Workspace mutation safety** — a task's tool calls (file writes, git operations) are not safe to run concurrently against the same workspace. This is real and must be preserved.
 
@@ -90,7 +91,7 @@ Remove entirely: `TaskScheduler.pause()`, `scheduleResume()`, `resume()`, the `r
 
 The `queue_status` SSE event (driven by `isPaused()`) goes with it — there is no longer a global paused/not-paused state to report. `isPaused()` itself is removed; nothing else in the codebase should depend on it after this change (confirm via a repo-wide reference check during implementation, not assumed here).
 
-Chat turns no longer touch the scheduler at all. The only thing that still guards a task and a live chat turn from colliding is the per-thread mutex in `active-sse-writer.ts` (§ Scope, above) — unchanged, and now the *sole* mechanism protecting that specific correctness case, rather than one of two overlapping mechanisms.
+Chat turns no longer touch the scheduler at all. The only thing that still guards a task and a live chat turn from colliding is the per-thread mutex in `active-sse-writer.ts` (§ Scope, above) — unchanged, and now the _sole_ mechanism protecting that specific correctness case, rather than one of two overlapping mechanisms.
 
 ### 5. Crash recovery — unaffected, still correct
 

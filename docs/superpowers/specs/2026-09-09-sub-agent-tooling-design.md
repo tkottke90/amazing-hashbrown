@@ -57,12 +57,12 @@ ALTER TABLE tasks ADD COLUMN dispatch_group_id TEXT;
 ALTER TABLE tasks ADD COLUMN role TEXT;
 ```
 
-| column | meaning |
-|---|---|
-| `origin` | `'user'` (existing behavior, default) or `'agent'` (spawned by `spawn_sub_agent`). |
-| `parentThreadId` | thread to deliver the completion notification turn into. Null for `origin='user'`. |
-| `dispatchGroupId` | shared by every sub-agent task spawned from one `spawn_sub_agent` call, so completions can count still-pending siblings. Null for `origin='user'`. |
-| `role` | the sub-agent role name (`researcher`, etc.) — resolves to a fixed provider/model + tool list from config. Never sent to or chosen by the calling LLM. |
+| column            | meaning                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `origin`          | `'user'` (existing behavior, default) or `'agent'` (spawned by `spawn_sub_agent`).                                                                     |
+| `parentThreadId`  | thread to deliver the completion notification turn into. Null for `origin='user'`.                                                                     |
+| `dispatchGroupId` | shared by every sub-agent task spawned from one `spawn_sub_agent` call, so completions can count still-pending siblings. Null for `origin='user'`.     |
+| `role`            | the sub-agent role name (`researcher`, etc.) — resolves to a fixed provider/model + tool list from config. Never sent to or chosen by the calling LLM. |
 
 `origin: 'agent'` rows are excluded from the per-scope "one in-progress task" check added by the task-queue-serialization design — see that design's §1 (scope key). They can still carry a `workspaceId` (for read-only workspace context) without contending for that workspace's mutation slot.
 
@@ -96,7 +96,7 @@ This intentionally delivers **one turn per completion**, not a batched turn comb
 
 ### 6. Transcript status marker (the "interrupt" UX)
 
-Extend the existing `recordTaskRunMarker()` (`task-execution.ts`, currently writes a `task_run_marker` message into the *running* task's own thread) to also write into `parentThreadId` for `origin: 'agent'` runs:
+Extend the existing `recordTaskRunMarker()` (`task-execution.ts`, currently writes a `task_run_marker` message into the _running_ task's own thread) to also write into `parentThreadId` for `origin: 'agent'` runs:
 
 - On dispatch: "Sub-agent [role] started."
 - On each completion: "Sub-agent [role] finished — N still running" or "— all done," carrying the same `remainingCount` from §5.
