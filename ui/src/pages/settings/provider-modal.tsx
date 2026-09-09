@@ -21,6 +21,10 @@ export interface ProviderConfig {
   baseUrl?: string;
   apiKey?: string;
   defaultModel?: string;
+  // Concurrent request slots the provider-queue gate allows for this
+  // provider — -1 = unlimited (bypasses the gate). Undefined/unset defaults
+  // to 1 server-side (see ProviderSchema in api/src/config/env.ts).
+  maxConcurrency?: number;
 }
 
 interface ProviderModalProps {
@@ -66,6 +70,7 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
   const baseUrl = useSignal(initial?.baseUrl ?? '');
   const apiKey = useSignal(initial?.apiKey ?? '');
   const defaultModel = useSignal(initial?.defaultModel ?? '');
+  const maxConcurrency = useSignal(initial?.maxConcurrency?.toString() ?? '1');
 
   const models = useSignal<string[]>([]);
   const modelsLoading = useSignal(false);
@@ -108,6 +113,7 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
       baseUrl: baseUrl.value.trim() || undefined,
       apiKey: apiKey.value || undefined,
       defaultModel: defaultModel.value.trim() || undefined,
+      maxConcurrency: Number(maxConcurrency.value) || 1,
     });
     close();
   }
@@ -208,6 +214,20 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
           </Button>
         </div>
         <p class="empty:hidden text-xs text-destructive">{modelsError.value}</p>
+      </div>
+
+      <div class="space-y-1.5">
+        <Label htmlFor="provider-maxConcurrency">Max concurrent requests</Label>
+        <Input
+          id="provider-maxConcurrency"
+          type="number"
+          value={maxConcurrency.value}
+          onInput={(e) => (maxConcurrency.value = (e.target as HTMLInputElement).value)}
+        />
+        <p class="mt-1 text-xs text-muted-foreground">
+          How many requests may run against this provider at once. Local inference engines (e.g.
+          Ollama) typically only handle 1 well. Use -1 for unlimited.
+        </p>
       </div>
 
       <div class="flex justify-end gap-2">

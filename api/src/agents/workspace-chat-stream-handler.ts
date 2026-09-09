@@ -24,6 +24,7 @@ import { getThreadStore } from '../services/thread-store.js';
 import { getTaskScheduler } from '../services/task-scheduler.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
+import { getProviderQueue } from '../services/provider-queue.js';
 import {
   getWorkspaceStore,
   type Workspace,
@@ -177,35 +178,45 @@ export async function streamWorkspaceChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(
-        { messages: [{ role: 'human', content }] },
-        {
-          ...config,
-          version: 'v2',
-          callbacks: [obsHandler],
-          context: {
-            provider: effectiveProvider ?? env.defaultProvider,
-            model: effectiveModel,
-            afterAgentEnabled: afterAgent,
-          },
-          recursionLimit: env.agent?.recursionLimit ?? 100,
-        },
-      );
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(
+            { messages: [{ role: 'human', content }] },
+            {
+              ...config,
+              version: 'v2',
+              callbacks: [obsHandler],
+              context: {
+                provider: effectiveProvider ?? env.defaultProvider,
+                model: effectiveModel,
+                afterAgentEnabled: afterAgent,
+              },
+              recursionLimit: env.agent?.recursionLimit ?? 100,
+            },
+          );
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(
@@ -372,32 +383,42 @@ export async function resumeWorkspaceChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-        ...config,
-        version: 'v2',
-        recursionLimit: env.agent?.recursionLimit ?? 100,
-        callbacks: [obsHandler],
-        context: {
-          provider: effectiveProvider ?? env.defaultProvider,
-          model: effectiveModel,
-          afterAgentEnabled: afterAgent,
-        },
-      });
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+          });
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(
@@ -556,32 +577,42 @@ export async function retryWorkspaceChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(null, {
-        ...config,
-        version: 'v2',
-        recursionLimit: env.agent?.recursionLimit ?? 100,
-        callbacks: [obsHandler],
-        context: {
-          provider: effectiveProvider ?? env.defaultProvider,
-          model: effectiveModel,
-          afterAgentEnabled: afterAgent,
-        },
-      });
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(null, {
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+          });
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(

@@ -84,6 +84,12 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
           </div>
         )}
 
+        {thread.isWaitingForProvider.value && (
+          <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+            Waiting for {thread.waitingProviderName.value} to have capacity…
+          </div>
+        )}
+
         {thread.summaryPath.value && (
           <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
             Earlier messages were summarised —{' '}

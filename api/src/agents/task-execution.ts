@@ -24,6 +24,7 @@ import {
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext } from './chat-agent.js';
+import { getProviderQueue } from '../services/provider-queue.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
 import {
   recordAssistantStart,
@@ -201,29 +202,38 @@ export async function executeTask(
     // can't see the reassignment happening inside tapCompleteTask's callback,
     // so a bare variable would narrow to `null` at the check below.
     const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
-    const rawStream = agent.streamEvents(input, {
-      ...config,
-      version: 'v2',
-      recursionLimit: env.agent?.recursionLimit ?? 100,
-      signal: controller.signal,
-      context: {
-        provider: env.defaultProvider,
-        model: undefined,
-        afterAgentEnabled: undefined,
-      },
-    });
-    const tapped = tapCompleteTask(rawStream, (result) => {
-      completeTaskBox.current = result;
-    });
 
-    const { content, thoughtContent, finalSegmentId, hadToolCall } = await pipeEvents(
-      sink,
-      msgId,
-      tapped,
-      threadStore,
-      threadId,
-      turnSentAt,
-    );
+    // Local consts — msgId/turnSentAt are outer `let`s just assigned above,
+    // but TS can't carry that narrowing into an async closure passed to
+    // withSlot() (it could in principle run after a later reassignment), so
+    // it widens both back to `string | undefined` inside the closure.
+    const resolvedMsgId = msgId;
+    const resolvedTurnSentAt = turnSentAt;
+
+    const { content, thoughtContent, finalSegmentId, hadToolCall } =
+      await getProviderQueue().withSlot(
+        env.defaultProvider,
+        'async',
+        async () => {
+          const rawStream = agent.streamEvents(input, {
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            signal: controller.signal,
+            context: {
+              provider: env.defaultProvider,
+              model: undefined,
+              afterAgentEnabled: undefined,
+            },
+          });
+          const tapped = tapCompleteTask(rawStream, (result) => {
+            completeTaskBox.current = result;
+          });
+
+          return pipeEvents(sink, resolvedMsgId, tapped, threadStore, threadId, resolvedTurnSentAt);
+        },
+        { signal: controller.signal },
+      );
     const { interrupted } = await finalizeTurn(
       sink,
       threadStore,

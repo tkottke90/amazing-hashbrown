@@ -86,6 +86,12 @@ export function ThreadView() {
         </div>
       )}
 
+      {thread.isWaitingForProvider.value && (
+        <div class="border-t border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+          Waiting for {thread.waitingProviderName.value} to have capacity…
+        </div>
+      )}
+
       <div class="border-t border-border p-4">
         <ChatInput
           value={inputValue.value}

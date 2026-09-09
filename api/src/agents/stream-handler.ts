@@ -36,6 +36,7 @@ import {
   markArtifactReferenced,
 } from '../artifacts/artifact-store.js';
 import { resolveVisionCapability, resolveProviderConfig } from '../services/provider-factory.js';
+import { getProviderQueue } from '../services/provider-queue.js';
 
 // ---- SSE write helper ----
 
@@ -826,39 +827,49 @@ export async function streamChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(
-        { messages: [{ role: 'human', content: llmContent }] },
-        {
-          ...config,
-          version: 'v2',
-          callbacks: [obsHandler],
-          context: {
-            provider: effectiveProvider ?? env.defaultProvider,
-            // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
-            // model stays undefined — AfterAgent reads this straight into
-            // createProvider(provider, model), where `'' ?? config.defaultModel`
-            // would resolve to '' (not nullish) instead of the provider default.
-            model: effectiveModel,
-            afterAgentEnabled: afterAgent,
-          },
-          recursionLimit: env.agent?.recursionLimit ?? 100,
-        },
-      );
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(
+            { messages: [{ role: 'human', content: llmContent }] },
+            {
+              ...config,
+              version: 'v2',
+              callbacks: [obsHandler],
+              context: {
+                provider: effectiveProvider ?? env.defaultProvider,
+                // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
+                // model stays undefined — AfterAgent reads this straight into
+                // createProvider(provider, model), where `'' ?? config.defaultModel`
+                // would resolve to '' (not nullish) instead of the provider default.
+                model: effectiveModel,
+                afterAgentEnabled: afterAgent,
+              },
+              recursionLimit: env.agent?.recursionLimit ?? 100,
+            },
+          );
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(
@@ -994,33 +1005,43 @@ export async function resumeChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-        ...config,
-        version: 'v2',
-        recursionLimit: env.agent?.recursionLimit ?? 100,
-        callbacks: [obsHandler],
-        context: {
-          provider: effectiveProvider ?? env.defaultProvider,
-          // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-          model: effectiveModel,
-          afterAgentEnabled: afterAgent,
-        },
-      });
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+          });
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(
@@ -1152,33 +1173,43 @@ export async function retryChatToSse(
     setActiveSseWriter(threadId, sink);
     let turnError: string | null = null;
     try {
-      const eventStream = agent.streamEvents(null, {
-        ...config,
-        version: 'v2',
-        recursionLimit: env.agent?.recursionLimit ?? 100,
-        callbacks: [obsHandler],
-        context: {
-          provider: effectiveProvider ?? env.defaultProvider,
-          // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-          model: effectiveModel,
-          afterAgentEnabled: afterAgent,
-        },
-      });
-
       const {
         content: finalContent,
         thoughtContent,
         finalSegmentId,
         hadToolCall,
-      } = await pipeEvents(
-        sink,
-        msgId,
-        eventStream,
-        threadStore,
-        threadId,
-        turnSentAt,
-        effectiveProvider,
-        effectiveModel,
+      } = await getProviderQueue().withSlot(
+        resolvedProvider,
+        'sync',
+        async () => {
+          const eventStream = agent.streamEvents(null, {
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+          });
+
+          return pipeEvents(
+            sink,
+            msgId,
+            eventStream,
+            threadStore,
+            threadId,
+            turnSentAt,
+            effectiveProvider,
+            effectiveModel,
+          );
+        },
+        {
+          onWaitChange: (waiting) =>
+            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        },
       );
 
       await finalizeTurn(
