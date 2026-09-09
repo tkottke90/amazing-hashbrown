@@ -27,6 +27,7 @@ Meanwhile, there is **no concurrency control at all** at the provider level. Not
 - A per-provider request gate: N concurrent slots (config-driven, default 1), `-1` for unlimited.
 - Two priority lanes per provider — sync (interactive chat) and async (task/sub-agent) — sync always dispatched ahead of async when both are waiting.
 - An SSE signal so a sync request waiting on a full provider shows the user "waiting for provider capacity," not a silent hang or a false "generating" state.
+- Adding the config field to the Settings page's provider add/edit form, so it's actually reachable without hand-editing `config.yaml`.
 
 **Out of scope:**
 
@@ -114,6 +115,10 @@ export const ProviderSchema = z.object({
 ```
 
 Defaults to `1` — every existing config, unmodified, keeps today's de-facto single-flight behavior for that provider.
+
+### 8. Settings UI
+
+`ui/src/pages/settings/provider-modal.tsx` is the add/edit form backing `model-providers-panel.tsx` (fields today: `baseUrl`, `apiKey`, `defaultModel`, per `provider-modal.tsx:21-23/66-68`) — needs a new `maxConcurrency` numeric field wired the same way (a `useSignal`, included in the payload built at submit, `provider-modal.tsx:108-110`). `-1` needs to be explained in the UI (e.g. helper text: "-1 = unlimited") rather than left to guesswork, since it's a magic value. `providers-api.ts`/`use-providers.ts` need their client-side `ProviderConfig`-shaped types extended to match the new server-side schema field from §7.
 
 ---
 
