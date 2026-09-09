@@ -121,6 +121,15 @@ export interface Task {
   // resumes the paused LangGraph checkpoint via Command({ resume }) — a
   // fresh message cannot unblock an interrupt().
   resumeAnswer: string | null;
+  // 'agent' rows were spawned by the spawn_sub_agent tool — see
+  // docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md. They're
+  // excluded from dequeueNext()/getRunningEntry()'s per-scope accounting and
+  // deliver a completion-notification turn into parentThreadId instead of
+  // (only) mirroring task_queue's own status.
+  origin: 'user' | 'agent';
+  parentThreadId: string | null;
+  dispatchGroupId: string | null;
+  role: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +147,10 @@ export interface NewTaskInput {
   trackerType?: string | null;
   trackerId?: string | null;
   plan?: PlanStep[] | null;
+  origin?: 'user' | 'agent';
+  parentThreadId?: string | null;
+  dispatchGroupId?: string | null;
+  role?: string | null;
 }
 
 export interface PatchTaskInput {
@@ -229,6 +242,10 @@ interface RawTaskRow {
   plan: string | null;
   thread_id: string | null;
   resume_answer: string | null;
+  origin: 'user' | 'agent';
+  parent_thread_id: string | null;
+  dispatch_group_id: string | null;
+  role: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -304,6 +321,10 @@ function mapTask(row: RawTaskRow): Task {
     plan: row.plan ? (JSON.parse(row.plan) as PlanStep[]) : null,
     threadId: row.thread_id,
     resumeAnswer: row.resume_answer,
+    origin: row.origin,
+    parentThreadId: row.parent_thread_id,
+    dispatchGroupId: row.dispatch_group_id,
+    role: row.role,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -461,6 +482,20 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE task_queue ADD COLUMN paused_at TEXT;
     `,
   },
+  {
+    version: 27,
+    // No REFERENCES threads(id) on parent_thread_id — same reasoning as
+    // version 23/24 above. origin distinguishes an ordinary user-created
+    // task from one spawned by the spawn_sub_agent tool; parent_thread_id/
+    // dispatch_group_id/role are only ever set together, all null for
+    // origin='user'. See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md.
+    sql: `
+      ALTER TABLE tasks ADD COLUMN origin TEXT NOT NULL DEFAULT 'user';
+      ALTER TABLE tasks ADD COLUMN parent_thread_id TEXT;
+      ALTER TABLE tasks ADD COLUMN dispatch_group_id TEXT;
+      ALTER TABLE tasks ADD COLUMN role TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -472,10 +507,26 @@ const MIGRATIONS: DbMigration[] = [
 const MAX_QUEUE_RECOVERY_ATTEMPTS = 1;
 
 export class WorkspaceStore extends BaseStore {
+  // Origin='agent' rows recoverRunningQueueEntries() marks failed after
+  // exhausting retries, collected here rather than notified immediately.
+  // recoverRunningQueueEntries() runs synchronously from the constructor —
+  // before bootWorkspaceStore() has even assigned the module-level _store
+  // singleton, let alone before initChatAgent() sets up the checkpointer a
+  // completion notification's agent build needs. Boot wiring (index.ts)
+  // drains this once the full boot sequence completes and delivers each via
+  // deliverSubAgentCompletion() — see docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §7.
+  private _pendingSubAgentCrashNotifications: Task[] = [];
+
   constructor(db: SqliteDatabase) {
     super(db);
     this.runMigrations(MIGRATIONS);
     this.recoverRunningQueueEntries();
+  }
+
+  drainPendingSubAgentCrashNotifications(): Task[] {
+    const pending = this._pendingSubAgentCrashNotifications;
+    this._pendingSubAgentCrashNotifications = [];
+    return pending;
   }
 
   // On server start, any queue entry stuck in `running` (from a crash) is
@@ -485,8 +536,14 @@ export class WorkspaceStore extends BaseStore {
   // back to the user instead of retried forever.
   private recoverRunningQueueEntries(): void {
     const stuck = this.db
-      .prepare(`SELECT id, task_id, recovery_attempts FROM task_queue WHERE status = 'running'`)
-      .all() as { id: string; task_id: string; recovery_attempts: number }[];
+      .prepare(
+        `SELECT task_queue.id AS id, task_queue.task_id AS task_id,
+                task_queue.recovery_attempts AS recovery_attempts, tasks.origin AS origin
+         FROM task_queue
+         JOIN tasks ON tasks.id = task_queue.task_id
+         WHERE task_queue.status = 'running'`,
+      )
+      .all() as { id: string; task_id: string; recovery_attempts: number; origin: 'user' | 'agent' }[];
 
     const now = new Date().toISOString();
     const retry = this.db.prepare(
@@ -498,14 +555,27 @@ export class WorkspaceStore extends BaseStore {
     const mirrorReady = this.db.prepare(
       `UPDATE tasks SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'running'`,
     );
+    // origin='user': hand back to the human via /hitl-style escalation —
+    // there's no one else to resolve it. origin='agent' has no human on the
+    // other end, so it's just marked failed and queued for the
+    // spawn_sub_agent completion-notification flow instead (see
+    // drainPendingSubAgentCrashNotifications() above).
     const mirrorEscalate = this.db.prepare(
       `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ? AND status = 'running'`,
+    );
+    const mirrorFail = this.db.prepare(
+      `UPDATE tasks SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'running'`,
     );
 
     for (const row of stuck) {
       if (row.recovery_attempts < MAX_QUEUE_RECOVERY_ATTEMPTS) {
         retry.run(row.id);
         mirrorReady.run(now, row.task_id);
+      } else if (row.origin === 'agent') {
+        giveUp.run(now, row.id);
+        mirrorFail.run(now, row.task_id);
+        const task = this.getTask(row.task_id);
+        if (task) this._pendingSubAgentCrashNotifications.push(task);
       } else {
         giveUp.run(now, row.id);
         mirrorEscalate.run(now, row.task_id);
@@ -526,6 +596,14 @@ export class WorkspaceStore extends BaseStore {
 
   getWorkspace(id: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get(id) as
+      RawWorkspaceRow | undefined;
+    return row ? mapWorkspace(row) : null;
+  }
+
+  // Used to resolve a sub-agent completion notification's parent agent when
+  // the parent thread is type='workspace-chat' — see task-execution.ts.
+  getWorkspaceByThreadId(threadId: string): Workspace | null {
+    const row = this.db.prepare(`SELECT * FROM workspaces WHERE thread_id = ?`).get(threadId) as
       RawWorkspaceRow | undefined;
     return row ? mapWorkspace(row) : null;
   }
@@ -866,6 +944,16 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapTask(row) : null;
   }
 
+  // A global (workspaceId=null) task's own dedicated thread, minted lazily
+  // on its first run — see task-execution.ts. Used to resolve a sub-agent
+  // completion notification's parent agent when the parent thread is
+  // type='task'.
+  getTaskByThreadId(threadId: string): Task | null {
+    const row = this.db.prepare(`SELECT * FROM tasks WHERE thread_id = ?`).get(threadId) as
+      RawTaskRow | undefined;
+    return row ? mapTask(row) : null;
+  }
+
   findTaskByWebhookToken(token: string): Task | null {
     const row = this.db
       .prepare(
@@ -884,8 +972,8 @@ export class WorkspaceStore extends BaseStore {
     this.db
       .prepare(
         `INSERT INTO tasks
-           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, parent_thread_id, dispatch_group_id, role, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -901,6 +989,10 @@ export class WorkspaceStore extends BaseStore {
         input.trackerType ?? null,
         input.trackerId ?? null,
         input.plan ? JSON.stringify(input.plan) : null,
+        input.origin ?? 'user',
+        input.parentThreadId ?? null,
+        input.dispatchGroupId ?? null,
+        input.role ?? null,
         now,
         now,
       );
@@ -1024,6 +1116,56 @@ export class WorkspaceStore extends BaseStore {
     return mapQueueEntry(row);
   }
 
+  // Creates one origin='agent' task row (spawn_sub_agent's dispatch unit)
+  // and enqueues it in a single transaction. dispatchGroupId is minted by
+  // the caller (the spawn_sub_agent tool), not here — it's shared across
+  // every sibling spawned from one same-turn batch of tool calls, and this
+  // method only ever creates one row per call. Mirrors the status='ready'/
+  // assigned_to='agent' shape patchTaskHandler's R14 rule uses for ordinary
+  // tasks, since dequeueNext() itself only looks at task_queue rows, not
+  // tasks.status, but the task list/UI still expects a coherent status.
+  createSubAgentTask(input: {
+    role: string;
+    goal: string;
+    parentThreadId: string;
+    dispatchGroupId: string;
+    workspaceId?: string | null;
+  }): Task {
+    return this.db.transaction(() => {
+      const task = this.createTask({
+        workspaceId: input.workspaceId ?? null,
+        title: input.goal,
+        origin: 'agent',
+        parentThreadId: input.parentThreadId,
+        dispatchGroupId: input.dispatchGroupId,
+        role: input.role,
+      });
+      this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+      this.enqueueTask(task.id);
+      return this.getTask(task.id)!;
+    })();
+  }
+
+  // All origin='agent' rows sharing dispatchGroupId whose task_queue entry
+  // hasn't reached a terminal state yet — used to compute remainingCount for
+  // a completion-notification turn (see task-execution.ts's
+  // deliverSubAgentCompletion()). A task with no queue row yet (impossible
+  // in practice — createSubAgentTask() always enqueues immediately) would
+  // not count as pending, which is fine: it can't happen.
+  countPendingSiblings(dispatchGroupId: string, excludingTaskId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n
+         FROM tasks
+         JOIN task_queue ON task_queue.task_id = tasks.id
+         WHERE tasks.dispatch_group_id = ?
+           AND tasks.id != ?
+           AND task_queue.status IN ('pending', 'running', 'paused')`,
+      )
+      .get(dispatchGroupId, excludingTaskId) as { n: number };
+    return row.n;
+  }
+
   // Scope-aware: scans pending entries in position order and dispatches the
   // first one whose scope (COALESCE(tasks.workspace_id, 'inbox')) has no
   // running entry yet — not necessarily the globally-oldest entry. Lets an
@@ -1033,15 +1175,17 @@ export class WorkspaceStore extends BaseStore {
   dequeueNext(): (TaskQueueEntry & { task: Task }) | null {
     const pending = this.db
       .prepare(
-        `SELECT task_queue.*, tasks.workspace_id AS task_workspace_id
+        `SELECT task_queue.*, tasks.workspace_id AS task_workspace_id, tasks.origin AS task_origin
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
          WHERE task_queue.status = 'pending'
          ORDER BY task_queue.position ASC`,
       )
-      .all() as (RawQueueRow & { task_workspace_id: string | null })[];
+      .all() as (RawQueueRow & { task_workspace_id: string | null; task_origin: 'user' | 'agent' })[];
     if (pending.length === 0) return null;
 
+    // origin='agent' (spawn_sub_agent) rows never occupy or contend for a
+    // scope slot — see docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
     const runningScopes = new Set(
       (
         this.db
@@ -1049,13 +1193,15 @@ export class WorkspaceStore extends BaseStore {
             `SELECT COALESCE(tasks.workspace_id, 'inbox') AS scope
              FROM task_queue
              JOIN tasks ON tasks.id = task_queue.task_id
-             WHERE task_queue.status = 'running'`,
+             WHERE task_queue.status = 'running' AND tasks.origin != 'agent'`,
           )
           .all() as { scope: string }[]
       ).map((r) => r.scope),
     );
 
-    const row = pending.find((r) => !runningScopes.has(r.task_workspace_id ?? 'inbox'));
+    const row = pending.find(
+      (r) => r.task_origin === 'agent' || !runningScopes.has(r.task_workspace_id ?? 'inbox'),
+    );
     if (!row) return null;
 
     const now = new Date().toISOString();
@@ -1127,13 +1273,16 @@ export class WorkspaceStore extends BaseStore {
   }
 
   // scope is COALESCE(workspace_id, 'inbox') — see dequeueNext()'s comment.
+  // origin='agent' rows are excluded, same as dequeueNext()'s runningScopes
+  // query — they never occupy a scope's one-running-task slot.
   getRunningEntry(scope: string): (TaskQueueEntry & { task: Task }) | null {
     const row = this.db
       .prepare(
         `SELECT task_queue.*
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
-         WHERE task_queue.status = 'running' AND COALESCE(tasks.workspace_id, 'inbox') = ?
+         WHERE task_queue.status = 'running' AND tasks.origin != 'agent'
+           AND COALESCE(tasks.workspace_id, 'inbox') = ?
          LIMIT 1`,
       )
       .get(scope) as RawQueueRow | undefined;

@@ -11,6 +11,7 @@ import {
   buildTaskContextBlock,
   estimateToolsTokens,
   createContextWindowMiddleware,
+  SUB_AGENT_TOOLS,
 } from './chat-agent.js';
 import { logger } from '../config/logger.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
@@ -207,6 +208,57 @@ describe('agents/chat-agent', () => {
     it('omits an outcome line when absent', () => {
       const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
       expect(block).to.not.include('Outcome to reach:');
+    });
+
+    it('omits the ask_user instruction and states no one is available when hasAskUser is false (sub-agent runs — issue #161)', () => {
+      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null }, false);
+      expect(block).to.include('complete_task');
+      expect(block).to.not.include('ask_user');
+      expect(block).to.include('No one is available');
+    });
+
+    it('still includes the ask_user instruction by default (ordinary task runs, regression)', () => {
+      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
+      expect(block).to.include('ask_user');
+    });
+  });
+
+  describe('SUB_AGENT_TOOLS (issue #161 — read-only allowlist for spawn_sub_agent runs)', () => {
+    const toolNames = SUB_AGENT_TOOLS.map((t) => t.name);
+
+    it('excludes ask_user, shell_exec, spawn_sub_agent, and every mutating built-in tool', () => {
+      const excluded = [
+        'ask_user',
+        'shell_exec',
+        'spawn_sub_agent',
+        'upload_image',
+        'wiki_create_page',
+        'wiki_update_page',
+        'wiki_add_cross_link',
+        'wiki_rebaseline_source',
+        'wiki_register_domain',
+        'create_workspace',
+        'create_project',
+        'complete_task',
+      ];
+      for (const name of excluded) {
+        expect(toolNames, `expected SUB_AGENT_TOOLS to exclude ${name}`).to.not.include(name);
+      }
+    });
+
+    it('includes the expected read-only tools', () => {
+      expect(toolNames).to.have.members([
+        'wiki_search',
+        'wiki_read_page',
+        'wiki_locate',
+        'wiki_orient',
+        'wiki_lint',
+        'web_fetch',
+        'get_tool_key',
+        'rlm_query',
+        'search_skills',
+        'search_conversation',
+      ]);
     });
   });
 

@@ -4,6 +4,7 @@ import { Command } from '@langchain/langgraph';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
+import { drainPendingTurns } from './pending-thread-turns.js';
 import {
   writeSseEvent,
   pipeEvents,
@@ -155,6 +156,7 @@ export async function streamWikiChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -285,6 +287,7 @@ export async function resumeWikiChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -417,6 +420,7 @@ export async function retryWikiChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 

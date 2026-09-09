@@ -6,7 +6,7 @@ import { bootShellAudit, getShellAuditWriter } from './services/shell-audit.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
 import { bootThreadStore } from './services/thread-store.js';
-import { bootWorkspaceStore } from './services/workspace-store.js';
+import { bootWorkspaceStore, getWorkspaceStore } from './services/workspace-store.js';
 import { bootTrackerRegistry } from './services/tracker-registry.js';
 import { bootTaskScheduler } from './services/task-scheduler.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
@@ -16,6 +16,7 @@ import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
 import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
 import { executeTask } from './agents/task-execution.js';
+import { deliverSubAgentCompletion } from './agents/sub-agent-notification.js';
 import { env } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ShellExecutor, ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
@@ -75,6 +76,20 @@ const taskExecutor = process.env['E2E_NOOP_TASK_EXECUTOR']
 
 bootTaskScheduler(taskExecutor);
 app.logger.info('Task scheduler started');
+
+// Any origin='agent' task the constructor's crash-recovery pass gave up on
+// (see WorkspaceStore.recoverRunningQueueEntries()) is delivered now,
+// deliberately deferred until here rather than fired from inside the
+// constructor — that runs synchronously during bootWorkspaceStore(), before
+// getWorkspaceStore()'s own singleton is assigned and before initChatAgent()
+// has set up the checkpointer a completion notification's agent build needs.
+for (const task of getWorkspaceStore().drainPendingSubAgentCrashNotifications()) {
+  deliverSubAgentCompletion(task, 'failed', 'Recovered after crash — exceeded retry attempts.').catch(
+    (err: unknown) => {
+      app.logger.error('sub-agent crash-recovery notification failed', { taskId: task.id, err });
+    },
+  );
+}
 
 app.start();
 

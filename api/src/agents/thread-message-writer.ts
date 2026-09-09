@@ -316,3 +316,30 @@ export function recordTaskRunMarker(
     }).seq;
   });
 }
+
+// A spawn_sub_agent dispatch/completion marker, written into the PARENT
+// thread (unlike recordTaskRunMarker above, which brackets a task run in its
+// own thread) — the "interrupt" UX called for by
+// docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §6. A
+// distinct message kind (not task_run_marker) because the payload shape
+// genuinely differs: role/remainingCount here vs taskTitle/outcome there.
+export function recordSubAgentMarker(
+  store: ThreadStore,
+  parentThreadId: string,
+  id: string,
+  payload: {
+    taskId: string;
+    role: string;
+    phase: 'dispatch' | 'completion';
+    outcome?: 'done' | 'failed' | 'cancelled';
+    remainingCount?: number;
+  },
+): number | null {
+  return safe(parentThreadId, 'recordSubAgentMarker', () => {
+    return store.insertMessage(parentThreadId, {
+      id,
+      kind: 'sub_agent_marker',
+      payload,
+    }).seq;
+  });
+}

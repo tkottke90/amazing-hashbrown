@@ -250,6 +250,29 @@ rlm:
 # agent:
 #   recursionLimit: 100
 #   recursionWarnThreshold: 0.75
+#   subAgentRecursionLimit: 25
+
+# ---------------------------------------------------------------------------
+# Sub-Agent Roles
+#
+# Optional. Named "roles" the spawn_sub_agent tool can dispatch to — each key
+# is a role name the calling agent passes as spawn_sub_agent's `role`
+# argument. provider/model are resolved here, server-side, at dispatch time;
+# the calling model never supplies or chooses them itself (overspend/infra
+# guard). See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md.
+#
+# provider:     name of a provider in providers[] to use for this role's LLM
+#               calls. Defaults to defaultProvider when omitted.
+# model:        model name override for this role. Defaults to the
+#               provider's defaultModel when omitted.
+# systemPrompt: extra instructions layered into the sub-agent's system
+#               prompt alongside its goal for this run.
+# ---------------------------------------------------------------------------
+# roles:
+#   researcher:
+#     provider: local
+#     model: llama3
+#     systemPrompt: You research a narrow question and report findings concisely.
 
 # ---------------------------------------------------------------------------
 # Shell Execution Tool

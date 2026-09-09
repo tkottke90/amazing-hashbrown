@@ -32,6 +32,8 @@ import {
   failAssistant,
   recordTaskRunMarker,
 } from './thread-message-writer.js';
+import { deliverSubAgentCompletion } from './sub-agent-notification.js';
+import { drainPendingTurns } from './pending-thread-turns.js';
 
 export type QueueEntryWithTask = TaskQueueEntry & { task: Task };
 
@@ -131,6 +133,9 @@ export async function executeTask(
       err: serializeError(err),
     });
     store.completeQueueEntry(entry.id, 'failed');
+    if (task.origin === 'agent') {
+      await deliverSubAgentCompletion(task, 'failed', 'Failed to resolve an execution thread.');
+    }
     clearTaskAbort(entry.id);
     return;
   }
@@ -260,7 +265,20 @@ export async function executeTask(
     if (completeTaskBox.current) {
       finalOutcome = completeTaskBox.current.outcome;
       store.completeQueueEntry(entry.id, completeTaskBox.current.outcome);
+      if (task.origin === 'agent') {
+        await deliverSubAgentCompletion(
+          task,
+          completeTaskBox.current.outcome,
+          completeTaskBox.current.summary,
+        );
+      }
     } else if (interrupted) {
+      // Unreachable for origin='agent' rows in practice — a sub-agent's
+      // tool list never includes ask_user (see buildSubAgentAgent), so it
+      // has no way to trigger a LangGraph interrupt(). Left as ordinary
+      // task behavior rather than special-cased, since there is no
+      // sub-agent-flavored notion of "waiting" to deliver a notification
+      // about.
       finalOutcome = 'waiting_on_user';
       // completeQueueEntry() mirrors its outcome onto tasks.status too — it
       // must run BEFORE patchTask here, or it would clobber waiting_on_user
@@ -274,6 +292,13 @@ export async function executeTask(
       // the task stuck in 'running'.
       finalOutcome = 'failed';
       store.completeQueueEntry(entry.id, 'failed');
+      if (task.origin === 'agent') {
+        await deliverSubAgentCompletion(
+          task,
+          'failed',
+          'Stopped without completing the task (ran out of steps or produced no final action).',
+        );
+      }
     }
   } catch (err) {
     // Distinguish "this catch fired because a Cancel/Pause/Take-over
@@ -294,6 +319,13 @@ export async function executeTask(
       logger.info('task-execution: run cancelled', { taskId: task.id });
       finalOutcome = 'cancelled';
       store.completeQueueEntry(entry.id, 'cancelled');
+      // A cancelled sub-agent still counts as a completion for its siblings'
+      // remainingCount — nothing else would ever clear it (design's Out-of-
+      // scope note only says there's no new *cancellation UX*, not that a
+      // cancelled origin='agent' row skips notification entirely).
+      if (task.origin === 'agent') {
+        await deliverSubAgentCompletion(task, 'cancelled');
+      }
     } else if (intent === 'pause') {
       logger.info('task-execution: run paused', { taskId: task.id });
       finalOutcome = 'blocked';
@@ -331,6 +363,9 @@ export async function executeTask(
         }
       }
       store.completeQueueEntry(entry.id, 'failed');
+      if (task.origin === 'agent') {
+        await deliverSubAgentCompletion(task, 'failed', (err as Error)?.message ?? 'Run failed.');
+      }
     }
 
     // For an aborted run (any of the three intents), the streaming
@@ -358,6 +393,7 @@ export async function executeTask(
       finalOutcome,
     );
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
     clearTaskAbort(entry.id);
   }
 }
