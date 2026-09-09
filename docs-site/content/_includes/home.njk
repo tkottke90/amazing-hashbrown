@@ -1,2 +1,67 @@
 {% extends "base.njk" %}
-{% block body %}{% endblock %}
+{# landing.njk — context: { nav, hero, features, footer } (front matter on content/index.md), site (content/_data/site.js) #}
+
+{% set btnBase = "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" %}
+{% set btnVariants = {
+  default: "bg-primary text-primary-foreground hover:bg-primary/90",
+  outline: "border border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground"
+} %}
+{% set btnSizes = {
+  sm: "h-8 px-3 text-sm",
+  lg: "h-11 px-6 text-base"
+} %}
+{% set cardClasses = "flex flex-col gap-2 rounded-xl border border-border bg-background p-6" %}
+
+{% macro button(label, href=none, variant="default", size="sm") %}
+{% set classes = btnBase + " " + btnVariants[variant] + " " + btnSizes[size] %}
+{% if href %}
+<a data-slot="button" data-variant="{{ variant }}" data-size="{{ size }}" href="{{ href | url }}" class="{{ classes }}">{{ label }}</a>
+{% else %}
+<button data-slot="button" data-variant="{{ variant }}" data-size="{{ size }}" class="{{ classes }}">{{ label }}</button>
+{% endif %}
+{% endmacro %}
+
+{% macro card(tag, title, body) %}
+<div data-slot="card" class="{{ cardClasses }}">
+  <span class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{{ tag }}</span>
+  <h3 class="text-lg font-semibold text-foreground">{{ title }}</h3>
+  <p class="text-sm text-muted-foreground">{{ body }}</p>
+</div>
+{% endmacro %}
+
+{% block body %}
+<header class="flex items-center justify-between border-b border-border px-6 py-4">
+  <span class="text-lg font-semibold text-foreground">{{ site.name }}</span>
+  <nav class="flex items-center gap-6 text-sm text-muted-foreground">
+    {% for item in nav %}<a href="{{ item.href | url }}" class="hover:text-foreground">{{ item.label }}</a>{% endfor %}
+  </nav>
+  {{ button("Docs", hero.primaryHref, "default", "sm") }}
+</header>
+
+<section class="mx-auto flex max-w-2xl flex-col items-center gap-6 px-6 py-24 text-center">
+  <span class="rounded-full border border-border px-3 py-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{{ hero.eyebrow }}</span>
+  <h1 class="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">{{ hero.headline }}</h1>
+  <p class="text-lg text-muted-foreground">{{ hero.subhead }}</p>
+
+  <div class="flex w-full max-w-md items-center justify-between gap-3 rounded-md border border-border bg-accent px-4 py-2.5 font-mono text-sm text-foreground">
+    <code class="overflow-x-auto whitespace-nowrap">{{ hero.installCmd }}</code>
+    <button type="button" data-copy="{{ hero.installCmd }}" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.copy)" class="{{ btnBase }} {{ btnVariants.outline }} {{ btnSizes.sm }} shrink-0">Copy</button>
+  </div>
+
+  <div class="flex flex-wrap items-center justify-center gap-3">
+    {{ button(hero.primaryCta, hero.primaryHref, "default", "lg") }}
+    {{ button(hero.secondaryCta, hero.secondaryHref, "outline", "lg") }}
+  </div>
+</section>
+
+<section class="mx-auto grid max-w-5xl gap-6 px-6 py-16 sm:grid-cols-3">
+  {% for f in features %}{{ card(f.tag, f.title, f.body) }}{% endfor %}
+</section>
+
+<footer class="flex flex-col items-center justify-between gap-4 border-t border-border px-6 py-8 text-sm text-muted-foreground sm:flex-row">
+  <nav class="flex items-center gap-6">
+    {% for link in footer.links %}<a href="{{ link.href | url }}" class="hover:text-foreground">{{ link.label }}</a>{% endfor %}
+  </nav>
+  <span>© {{ site.year }} {{ site.name }}</span>
+</footer>
+{% endblock %}
