@@ -10,6 +10,8 @@ export default tseslint.config(
       '**/build/**',
       '**/node_modules/**',
       '**/coverage/**',
+      'docs-site/_site/**',
+      'docs-site/content/css/**',
       '.agents/**',
       'ds-bundle/**',
       'ds-bundle-css/**',
@@ -23,6 +25,14 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    files: ['docs-site/.eleventy.js'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+      },
     },
   },
 );

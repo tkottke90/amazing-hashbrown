@@ -11,3 +11,10 @@ ds-bundle/
 ds-bundle-css/
 # Design documents — not hand-authored source
 docs/Design/
+
+# 11ty docs site build output and generated CSS
+docs-site/_site/
+docs-site/content/css/
+
+# Nunjucks templates — no Prettier parser configured for this repo
+*.njk
