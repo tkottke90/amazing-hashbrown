@@ -199,6 +199,12 @@ export interface ThreadInstance {
   isPaused: Signal<boolean>;
   isSummarizing: Signal<boolean>;
   summaryPath: Signal<string | null>;
+  // Set while a sync (interactive) turn is queued behind a provider's
+  // maxConcurrency gate — see provider_wait in handleEvent below. Always
+  // false again by the time stream_done/stream_error land, since the gate
+  // is released before the outbound call's response finishes streaming.
+  isWaitingForProvider: Signal<boolean>;
+  waitingProviderName: Signal<string | null>;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
   sendMessage: (content: string, attachmentId?: string) => Promise<void>;
@@ -253,6 +259,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const isPaused = signal(false);
   const isSummarizing = signal(false);
   const summaryPath = signal<string | null>(null);
+  const isWaitingForProvider = signal(false);
+  const waitingProviderName = signal<string | null>(null);
 
   let _currentAssistantId: string | null = null;
   let _currentUserId: string | null = null;
@@ -468,6 +476,11 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         isPaused.value = evt.paused;
         break;
 
+      case 'provider_wait':
+        isWaitingForProvider.value = evt.waiting;
+        waitingProviderName.value = evt.waiting ? evt.provider : null;
+        break;
+
       case 'summarizing_start':
         isSummarizing.value = true;
         break;
@@ -500,6 +513,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         applyTurnSeq(evt.assistantSeq, evt.userSeq);
         batch(() => {
           isStreaming.value = false;
+          isWaitingForProvider.value = false;
+          waitingProviderName.value = null;
           _currentAssistantId = null;
           _currentUserId = null;
         });
@@ -518,6 +533,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         );
         batch(() => {
           isStreaming.value = false;
+          isWaitingForProvider.value = false;
+          waitingProviderName.value = null;
           _currentAssistantId = null;
           _currentUserId = null;
         });
@@ -697,6 +714,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       _currentAssistantId = null;
     }
     isStreaming.value = false;
+    isWaitingForProvider.value = false;
+    waitingProviderName.value = null;
   }
 
   return {
@@ -708,6 +727,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     isPaused,
     isSummarizing,
     summaryPath,
+    isWaitingForProvider,
+    waitingProviderName,
     setThreadModel,
     hydrate,
     sendMessage,

@@ -148,6 +148,12 @@ const QueueStatusSchema = z.object({
   paused: z.boolean(),
 });
 
+const ProviderWaitSchema = z.object({
+  type: z.literal('provider_wait'),
+  provider: z.string(),
+  waiting: z.boolean(),
+});
+
 const SummarizingStartSchema = z.object({
   type: z.literal('summarizing_start'),
 });
@@ -188,6 +194,7 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   QueueStatusSchema,
   SummarizingStartSchema,
   SummarizingEndSchema,
+  ProviderWaitSchema,
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;

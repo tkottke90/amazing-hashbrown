@@ -23,6 +23,13 @@ export const ProviderSchema = z.object({
   apiKey: z.string().optional(),
   defaultModel: z.string().optional(),
   models: z.array(ModelPricingSchema).optional(),
+  // -1 = unlimited (bypasses the provider-queue gate entirely). Optional
+  // rather than z.default(1) — a schema default would make this a required
+  // key on the inferred ProviderConfig output type, breaking every existing
+  // object literal built without it (provider-factory.test.ts,
+  // providers.route.ts). Consumers (provider-queue.ts) fall back to 1
+  // themselves, same pattern as defaultModel/apiKey above.
+  maxConcurrency: z.number().int().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
