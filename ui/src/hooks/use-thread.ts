@@ -194,9 +194,8 @@ export interface ThreadInstance {
   pendingHitlId: Signal<string | null>;
   activeThreadModel: Signal<{ provider: string; model: string } | null>;
   // Populated only for a workspace-chat instance — the global chat instance
-  // simply never receives queue_status/summarizing_start/summarizing_end
-  // events, since only the workspace-chat backend route emits them.
-  isPaused: Signal<boolean>;
+  // simply never receives summarizing_start/summarizing_end events, since
+  // only the workspace-chat backend route emits them.
   isSummarizing: Signal<boolean>;
   summaryPath: Signal<string | null>;
   // Set while a sync (interactive) turn is queued behind a provider's
@@ -256,7 +255,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const isStreaming = signal(false);
   const pendingHitlId = signal<string | null>(null);
   const activeThreadModel = signal<{ provider: string; model: string } | null>(null);
-  const isPaused = signal(false);
   const isSummarizing = signal(false);
   const summaryPath = signal<string | null>(null);
   const isWaitingForProvider = signal(false);
@@ -470,10 +468,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             seq: evt.seq,
           },
         ];
-        break;
-
-      case 'queue_status':
-        isPaused.value = evt.paused;
         break;
 
       case 'provider_wait':
@@ -724,7 +718,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     isStreaming,
     pendingHitlId,
     activeThreadModel,
-    isPaused,
     isSummarizing,
     summaryPath,
     isWaitingForProvider,

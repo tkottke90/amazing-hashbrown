@@ -143,11 +143,6 @@ const ResourceCreatedSchema = z.object({
   seq: z.number().optional(),
 });
 
-const QueueStatusSchema = z.object({
-  type: z.literal('queue_status'),
-  paused: z.boolean(),
-});
-
 const ProviderWaitSchema = z.object({
   type: z.literal('provider_wait'),
   provider: z.string(),
@@ -191,7 +186,6 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
   WikiDomainCreatedSchema,
   ResourceCreatedSchema,
   UsageStatsSchema,
-  QueueStatusSchema,
   SummarizingStartSchema,
   SummarizingEndSchema,
   ProviderWaitSchema,

@@ -1,13 +1,12 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
-import { IDLE_RESUME_MS, getQueue } from '../lib/scheduler.js';
 
 const suite: TestSuite = {
   id: 9,
   name: 'Turn Retry',
   description:
-    'Verifies a failed turn renders an error state with a Retry action, retry starts a new bubble while collapsing the failed one (issue #65) rather than hiding it, the retry pauses/auto-resumes the background task queue (issue #68), and the collapsed attempt survives a reload with the expand-all toggle controlling its default state',
+    'Verifies a failed turn renders an error state with a Retry action, retry starts a new bubble while collapsing the failed one (issue #65) rather than hiding it, and the collapsed attempt survives a reload with the expand-all toggle controlling its default state',
   purpose: 'Ensure turn failures are visible and recoverable instead of silently vanishing',
   tags: ['@user-workflow', '@llm'],
   steps: [
@@ -21,7 +20,7 @@ const suite: TestSuite = {
       tags: ['@user-workflow', '@llm'],
       action: 'Click Retry',
       expectedOutcome:
-        "The failed bubble collapses to a click-to-expand row and a new bubble streams the successful retry below it; the task queue pauses when Retry is clicked and auto-resumes after the idle delay — retryChatToSse has the same pause()/scheduleResume() wiring as a plain send, exercised here with a real retryable turn (task-queue-widget.spec.ts covers plain send and HITL resume without needing a live LLM; retry's route rejects outright when there's no retryable turn, so it can only be exercised end-to-end here)",
+        'The failed bubble collapses to a click-to-expand row and a new bubble streams the successful retry below it',
       test: () => {},
     },
     {
@@ -57,7 +56,6 @@ test.describe(
   () => {
     test('failed send shows an error bubble with Retry, and retry recovers', async ({
       page,
-      request,
     }, testInfo) => {
       await page.goto('/');
       await forceNextSendToFail(page);
@@ -78,16 +76,6 @@ test.describe(
       // forceNextSendToFail, so it hits the real (working) default provider.
       await pauseBeforeAction(page, testInfo);
       await retryBtn.click();
-
-      // retryChatToSse pauses the background task queue exactly like a plain
-      // send (issue #68) — this is the one place that's exercisable, since
-      // POST /retry's own route handler rejects outright (400, before ever
-      // calling retryChatToSse/pause()) when there's no genuine retryable
-      // turn to point at, and producing one needs a real failed model call —
-      // see task-queue-widget.spec.ts for plain-send and HITL-resume
-      // coverage of the same pause()/scheduleResume() wiring without a live
-      // LLM.
-      await expect.poll(async () => (await getQueue(request)).paused, { timeout: 5000 }).toBe(true);
 
       // The failed bubble collapses immediately (live, no reload needed) —
       // it is not silently discarded (issue #65's error-content-loss half).
@@ -111,12 +99,6 @@ test.describe(
       await collapsedRow.click();
       await expect(page.getByText('Something went wrong. Please try again.')).toBeVisible();
       await expect(page.locator('button[aria-label="Retry"]')).toHaveCount(0);
-
-      // Auto-resumes on its own after the idle delay, same as any other chat
-      // entry point.
-      await expect
-        .poll(async () => (await getQueue(request)).paused, { timeout: IDLE_RESUME_MS + 5000 })
-        .toBe(false);
     });
 
     test('a collapsed failed attempt survives reload, and the expand-all toggle controls its default state', async ({

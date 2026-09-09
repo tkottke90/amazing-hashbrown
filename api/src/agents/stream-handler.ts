@@ -10,7 +10,6 @@ import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './acti
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
-import { getTaskScheduler } from '../services/task-scheduler.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { drainPendingWikiUpdates } from './after-agent.js';
 import {
@@ -751,183 +750,169 @@ export async function streamChatToSse(
   afterAgent?: boolean,
   attachmentId?: string,
 ): Promise<void> {
-  // A chat message just came in — pause the task scheduler immediately so
-  // background task work doesn't compete with this turn (issue #68). The
-  // whole body runs inside a try/finally from here down so scheduleResume()
-  // fires no matter where this fails — including getChatAgent() below,
-  // which throws synchronously-ish on a misconfigured/unreachable provider,
-  // well before the inner try/finally that used to be the only guard.
-  getTaskScheduler().pause();
+  const threadStore = getThreadStore();
+  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = { configurable: { thread_id: threadId } };
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+  const sink = makeLiveSseWriter(res, threadStore, threadId);
+
+  const { llmContent, record: attachmentRecord } = await resolveAttachmentForTurn(
+    attachmentId,
+    content,
+    effectiveProvider,
+    effectiveModel,
+  );
+
+  const userSeq = recordUserMessage(
+    threadStore,
+    threadId,
+    randomUUID(),
+    content,
+    turnSentAt,
+    attachmentRecord,
+  );
+  // Regardless of whether the attachment ended up included or excluded —
+  // an excluded attachment was still resolved by this send, not
+  // abandoned, so it must not be swept by the orphaned-upload GC.
+  if (attachmentRecord) await markArtifactReferenced(attachmentRecord.id);
+
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
-    const threadStore = getThreadStore();
-    threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(
+          { messages: [{ role: 'human', content: llmContent }] },
+          {
+            ...config,
+            version: 'v2',
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
+              // model stays undefined — AfterAgent reads this straight into
+              // createProvider(provider, model), where `'' ?? config.defaultModel`
+              // would resolve to '' (not nullish) instead of the provider default.
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+          },
+        );
 
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
-
-    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = { configurable: { thread_id: threadId } };
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-    const sink = makeLiveSseWriter(res, threadStore, threadId);
-
-    const { llmContent, record: attachmentRecord } = await resolveAttachmentForTurn(
-      attachmentId,
-      content,
-      effectiveProvider,
-      effectiveModel,
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
+      },
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
     );
 
-    const userSeq = recordUserMessage(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      randomUUID(),
-      content,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
-      attachmentRecord,
-    );
-    // Regardless of whether the attachment ended up included or excluded —
-    // an excluded attachment was still resolved by this send, not
-    // abandoned, so it must not be swept by the orphaned-upload GC.
-    if (attachmentRecord) await markArtifactReferenced(attachmentRecord.id);
-
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
-      threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'chat',
-      systemPrompt,
-    });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
-    );
-
-    const assistantSeq = recordAssistantStart(
-      threadStore,
-      threadId,
-      msgId,
-      turnSentAt,
+      assistantSeq,
+      userSeq,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
-
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(
-            { messages: [{ role: 'human', content: llmContent }] },
-            {
-              ...config,
-              version: 'v2',
-              callbacks: [obsHandler],
-              context: {
-                provider: effectiveProvider ?? env.defaultProvider,
-                // Left as `effectiveModel` (not `effectiveModel ?? ''`) so an unset
-                // model stays undefined — AfterAgent reads this straight into
-                // createProvider(provider, model), where `'' ?? config.defaultModel`
-                // would resolve to '' (not nullish) instead of the provider default.
-                model: effectiveModel,
-                afterAgentEnabled: afterAgent,
-              },
-              recursionLimit: env.agent?.recursionLimit ?? 100,
-            },
-          );
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        userSeq,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    // Response fully sent (or the turn failed outright) — arm the 30s idle
-    // timer. A message arriving before it fires calls pause() again, which
-    // clears and effectively resets it.
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -941,162 +926,154 @@ export async function resumeChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  // See streamChatToSse's comment: the whole body runs inside a
-  // try/finally from here down so scheduleResume() fires no matter where
-  // this fails (including getChatAgent() below).
-  getTaskScheduler().pause();
+  const threadStore = getThreadStore();
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = { configurable: { thread_id: threadId } };
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+  const sink = makeLiveSseWriter(res, threadStore, threadId);
+
   try {
-    const threadStore = getThreadStore();
-
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
-
-    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = { configurable: { thread_id: threadId } };
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-    const sink = makeLiveSseWriter(res, threadStore, threadId);
-
-    try {
-      resolveHitlPrompt(threadStore, threadId, promptId, answer);
-    } catch (err) {
-      logger.error('resumeChatToSse: failed to resolve HITL prompt', {
-        threadId,
-        promptId,
-        err: serializeError(err),
-      });
-      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
-      return;
-    }
-
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
+    resolveHitlPrompt(threadStore, threadId, promptId, answer);
+  } catch (err) {
+    logger.error('resumeChatToSse: failed to resolve HITL prompt', {
       threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'chat',
-      systemPrompt,
+      promptId,
+      err: serializeError(err),
     });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
+    writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
+    return;
+  }
+
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
+  try {
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+          ...config,
+          version: 'v2',
+          recursionLimit: env.agent?.recursionLimit ?? 100,
+          callbacks: [obsHandler],
+          context: {
+            provider: effectiveProvider ?? env.defaultProvider,
+            // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+            model: effectiveModel,
+            afterAgentEnabled: afterAgent,
+          },
+        });
+
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
+      },
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
     );
 
-    const assistantSeq = recordAssistantStart(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      msgId,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
+      assistantSeq,
+      null,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
-
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-            ...config,
-            version: 'v2',
-            recursionLimit: env.agent?.recursionLimit ?? 100,
-            callbacks: [obsHandler],
-            context: {
-              provider: effectiveProvider ?? env.defaultProvider,
-              // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-              model: effectiveModel,
-              afterAgentEnabled: afterAgent,
-            },
-          });
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        null,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -1115,155 +1092,147 @@ export async function retryChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  // See streamChatToSse's comment: the whole body runs inside a
-  // try/finally from here down so scheduleResume() fires no matter where
-  // this fails (including getChatAgent() below).
-  getTaskScheduler().pause();
+  const threadStore = getThreadStore();
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = { configurable: { thread_id: threadId } };
+
+  const failedId = threadStore.resolveRetryTarget(threadId);
+  if (!failedId) {
+    throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
+  }
+
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+  const assistantSeq = recordRetryAttempt(
+    threadStore,
+    threadId,
+    msgId,
+    failedId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  const sink = makeLiveSseWriter(res, threadStore, threadId);
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
-    const threadStore = getThreadStore();
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(null, {
+          ...config,
+          version: 'v2',
+          recursionLimit: env.agent?.recursionLimit ?? 100,
+          callbacks: [obsHandler],
+          context: {
+            provider: effectiveProvider ?? env.defaultProvider,
+            // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
+            model: effectiveModel,
+            afterAgentEnabled: afterAgent,
+          },
+        });
 
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
+      },
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
+    );
 
-    const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = { configurable: { thread_id: threadId } };
-
-    const failedId = threadStore.resolveRetryTarget(threadId);
-    if (!failedId) {
-      throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
-    }
-
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-    const assistantSeq = recordRetryAttempt(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      msgId,
-      failedId,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
+      assistantSeq,
+      null,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
-
-    const sink = makeLiveSseWriter(res, threadStore, threadId);
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
-      threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'chat',
-      systemPrompt,
-    });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
-    );
-
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(null, {
-            ...config,
-            version: 'v2',
-            recursionLimit: env.agent?.recursionLimit ?? 100,
-            callbacks: [obsHandler],
-            context: {
-              provider: effectiveProvider ?? env.defaultProvider,
-              // See streamChatToSse's comment — must stay `effectiveModel`, not `effectiveModel ?? ''`.
-              model: effectiveModel,
-              afterAgentEnabled: afterAgent,
-            },
-          });
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        null,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }
