@@ -153,14 +153,14 @@ export function deleteTaskHandler(
   return ok({ deleted: true });
 }
 
-export function getQueueHandler(store: WorkspaceStore, paused: boolean) {
+export function getQueueHandler(store: WorkspaceStore) {
   const queue = store.listQueue();
-  const running = store.getRunningEntry();
+  const running = store.getRunningEntries();
   const queueWithTasks = queue.map((entry) => ({
     ...entry,
     task: store.getTask(entry.taskId) ?? null,
   }));
-  return ok({ queue: queueWithTasks, running: running ?? null, paused });
+  return ok({ queue: queueWithTasks, running });
 }
 
 export function enqueueTaskHandler(
@@ -189,7 +189,7 @@ export function cancelTaskHandler(
   }
 
   if (task.status === 'running') {
-    const running = store.getRunningEntry();
+    const running = store.getRunningEntry(task.workspaceId ?? 'inbox');
     if (!running || running.taskId !== taskId) {
       return conflict('Task is not currently running');
     }
@@ -227,7 +227,7 @@ export function pauseTaskHandler(
   if (task.status !== 'running') {
     return conflict(`Task is ${task.status}, cannot pause`);
   }
-  const running = store.getRunningEntry();
+  const running = store.getRunningEntry(task.workspaceId ?? 'inbox');
   if (!running || running.taskId !== taskId) {
     return conflict('Task is not currently running');
   }
@@ -256,7 +256,7 @@ export function takeOverTaskHandler(
   const updated = store.patchTask(taskId, { status: 'pending', assignedTo: 'user' })!;
 
   if (task.status === 'running') {
-    const running = store.getRunningEntry();
+    const running = store.getRunningEntry(task.workspaceId ?? 'inbox');
     if (running && running.taskId === taskId) {
       const abortEntry = getTaskAbort(running.id);
       if (abortEntry) {

@@ -1024,10 +1024,38 @@ export class WorkspaceStore extends BaseStore {
     return mapQueueEntry(row);
   }
 
+  // Scope-aware: scans pending entries in position order and dispatches the
+  // first one whose scope (COALESCE(tasks.workspace_id, 'inbox')) has no
+  // running entry yet — not necessarily the globally-oldest entry. Lets an
+  // Inbox task and a workspace task (or two unrelated workspaces) run
+  // concurrently instead of enforcing one global "running" slot. See
+  // docs/superpowers/specs/2026-09-09-task-queue-serialization-design.md.
   dequeueNext(): (TaskQueueEntry & { task: Task }) | null {
-    const row = this.db
-      .prepare(`SELECT * FROM task_queue WHERE status = 'pending' ORDER BY position ASC LIMIT 1`)
-      .get() as RawQueueRow | undefined;
+    const pending = this.db
+      .prepare(
+        `SELECT task_queue.*, tasks.workspace_id AS task_workspace_id
+         FROM task_queue
+         JOIN tasks ON tasks.id = task_queue.task_id
+         WHERE task_queue.status = 'pending'
+         ORDER BY task_queue.position ASC`,
+      )
+      .all() as (RawQueueRow & { task_workspace_id: string | null })[];
+    if (pending.length === 0) return null;
+
+    const runningScopes = new Set(
+      (
+        this.db
+          .prepare(
+            `SELECT COALESCE(tasks.workspace_id, 'inbox') AS scope
+             FROM task_queue
+             JOIN tasks ON tasks.id = task_queue.task_id
+             WHERE task_queue.status = 'running'`,
+          )
+          .all() as { scope: string }[]
+      ).map((r) => r.scope),
+    );
+
+    const row = pending.find((r) => !runningScopes.has(r.task_workspace_id ?? 'inbox'));
     if (!row) return null;
 
     const now = new Date().toISOString();
@@ -1059,21 +1087,9 @@ export class WorkspaceStore extends BaseStore {
     }
   }
 
-  // Chat-turn auto-pause (task-scheduler.ts's pause()) — always tagged
-  // 'chat' so resume() can tell it apart from a user-initiated parkQueueEntry
-  // pause and never auto-resume the latter.
-  pauseQueueEntry(id: string): void {
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        `UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`,
-      )
-      .run(now, id);
-  }
-
-  // User-initiated Pause: parks the row (same 'paused' status the chat-pause
-  // path uses) but tagged 'user' so the chat-idle auto-resume never touches
-  // it, and additionally parks the task itself at 'blocked'.
+  // User-initiated Pause: parks the row (status 'paused', tagged
+  // pause_reason 'user') and additionally parks the task itself at
+  // 'blocked'.
   parkQueueEntry(id: string): void {
     const now = new Date().toISOString();
     this.db
@@ -1101,22 +1117,43 @@ export class WorkspaceStore extends BaseStore {
       .run(now, id);
   }
 
-  // Reused for both the chat-resume path and the new user-Resume path.
-  // Deliberately leaves pause_reason/paused_at in place (not cleared) so
-  // task-execution.ts can still see pausedAt on the next dequeue and send a
-  // continuation-flavored kickoff message instead of a fresh-start one.
+  // Used by the user-Resume path (task-drawer's Resume button, via
+  // patchTaskHandler's blocked -> ready branch). Deliberately leaves
+  // pause_reason/paused_at in place (not cleared) so task-execution.ts can
+  // still see pausedAt on the next dequeue and send a continuation-flavored
+  // kickoff message instead of a fresh-start one.
   resumePausedEntry(id: string): void {
     this.db.prepare(`UPDATE task_queue SET status = 'pending' WHERE id = ?`).run(id);
   }
 
-  getRunningEntry(): (TaskQueueEntry & { task: Task }) | null {
+  // scope is COALESCE(workspace_id, 'inbox') — see dequeueNext()'s comment.
+  getRunningEntry(scope: string): (TaskQueueEntry & { task: Task }) | null {
     const row = this.db
-      .prepare(`SELECT * FROM task_queue WHERE status = 'running' LIMIT 1`)
-      .get() as RawQueueRow | undefined;
+      .prepare(
+        `SELECT task_queue.*
+         FROM task_queue
+         JOIN tasks ON tasks.id = task_queue.task_id
+         WHERE task_queue.status = 'running' AND COALESCE(tasks.workspace_id, 'inbox') = ?
+         LIMIT 1`,
+      )
+      .get(scope) as RawQueueRow | undefined;
     if (!row) return null;
     const task = this.getTask(row.task_id);
     if (!task) return null;
     return { ...mapQueueEntry(row), task };
+  }
+
+  // All currently-running entries across every scope — used to report
+  // "what's running" to the API/SSE layer now that more than one task can be
+  // running at once (one per scope), unlike the single-slot getRunningEntry.
+  getRunningEntries(): (TaskQueueEntry & { task: Task })[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM task_queue WHERE status = 'running' ORDER BY position ASC`)
+      .all() as RawQueueRow[];
+    return rows.flatMap((row) => {
+      const task = this.getTask(row.task_id);
+      return task ? [{ ...mapQueueEntry(row), task }] : [];
+    });
   }
 }
 

@@ -1,11 +1,6 @@
 import { getWorkspaceStore, type Task, type TaskQueueEntry } from './workspace-store.js';
 import { logger } from '../config/logger.js';
 
-// Overridable so e2e tests don't have to wait 30 real seconds per pause/resume
-// assertion — playwright.config.ts sets CHAT_IDLE_RESUME_MS to a few seconds
-// for the e2e webServer. Unset in dev/prod, where it stays 30s.
-const CHAT_IDLE_RESUME_MS = Number(process.env['CHAT_IDLE_RESUME_MS']) || 30_000;
-
 // Broadcast callback registered by stream-handler so the scheduler can emit
 // queue update events into all active SSE connections without importing the
 // full stream-handler tree (which would create a circular dependency).
@@ -27,13 +22,11 @@ export function registerQueueBroadcast(fn: BroadcastFn): void {
 export type TaskExecutor = (entry: TaskQueueEntry & { task: Task }) => Promise<void>;
 
 // Event-driven, not polling: the scheduler only does work in response to a
-// signal that something may have changed — a task was enqueued, the running
-// task finished, or the scheduler resumed from a chat pause. See issue #68:
+// signal that something may have changed — a task was enqueued, or a
+// running task finished. See issue #68:
 //   Task dequeued => Task executed => Task completed => New Task? == No  => Idle
 //                                                                  == Yes => Continue
 export class TaskScheduler {
-  private paused = false;
-  private resumeTimer: ReturnType<typeof setTimeout> | null = null;
   private executor: TaskExecutor | null;
 
   constructor(executor?: TaskExecutor) {
@@ -46,99 +39,41 @@ export class TaskScheduler {
     this.wake();
   }
 
-  stop(): void {
-    if (this.resumeTimer) {
-      clearTimeout(this.resumeTimer);
-      this.resumeTimer = null;
-    }
-  }
-
-  // Pauses the queue for an active chat turn. If a task is currently
-  // running it is put back to `paused` (re-queued as pending on resume)
-  // rather than left running underneath the chat turn; if the scheduler
-  // was already idle this just sets the flag.
-  pause(): void {
-    this.paused = true;
-    if (this.resumeTimer) {
-      clearTimeout(this.resumeTimer);
-      this.resumeTimer = null;
-    }
-    const store = getWorkspaceStore();
-    const running = store.getRunningEntry();
-    if (running) {
-      store.pauseQueueEntry(running.id);
-    }
-    this.wake();
-  }
-
-  // Arms (or re-arms) the 30s idle timer. Called after each chat response
-  // is sent; a new chat message before the timer fires calls pause() again,
-  // which clears and effectively resets it.
-  scheduleResume(): void {
-    if (this.resumeTimer) clearTimeout(this.resumeTimer);
-    this.resumeTimer = setTimeout(() => {
-      this.resume();
-    }, CHAT_IDLE_RESUME_MS);
-  }
-
-  resume(): void {
-    this.paused = false;
-    if (this.resumeTimer) {
-      clearTimeout(this.resumeTimer);
-      this.resumeTimer = null;
-    }
-    const store = getWorkspaceStore();
-    // Only auto-resume a chat-idle pause — a user-initiated Pause
-    // (pauseReason 'user', via parkQueueEntry) must never be silently
-    // resumed just because an unrelated chat turn ended elsewhere.
-    const pausedEntry = store
-      .listQueue()
-      .find((e) => e.status === 'paused' && e.pauseReason === 'chat');
-    if (pausedEntry) {
-      store.resumePausedEntry(pausedEntry.id);
-    }
-    // Pick up the next pending task immediately if there is one; if the
-    // queue was empty this is a no-op and the scheduler just stays idle.
-    this.wake();
-  }
-
-  isPaused(): boolean {
-    return this.paused;
-  }
-
   // Entry point for "something may have changed, check if there's work to
-  // do now". Safe to call any time: it's a no-op while paused (beyond
-  // broadcasting the current state), and a no-op while a task is already
-  // running. Call this whenever new work becomes available — a task is
-  // enqueued, a running task completes, or the scheduler resumes.
+  // do now". Safe to call any time: it's a no-op while no scope has
+  // eligible pending work. Call this whenever new work becomes available —
+  // a task is enqueued, or a running task completes.
   wake(): void {
-    if (!this.paused) {
-      try {
-        this.tick();
-      } catch (err: unknown) {
-        logger.warn('Task scheduler tick error', { err: String(err) });
-      }
+    try {
+      this.tick();
+    } catch (err: unknown) {
+      logger.warn('Task scheduler tick error', { err: String(err) });
     }
     this.emitQueueUpdate();
   }
 
+  // Dequeues and dispatches every currently-eligible task, not just one —
+  // dequeueNext() only ever claims a single scope per call (each call marks
+  // that scope's entry 'running', making it ineligible for the next call),
+  // so draining every scope with pending work in one tick requires looping
+  // until dequeueNext() finds nothing left to dispatch. This is what lets
+  // e.g. an Inbox task and a workspace task both reach 'running' from one
+  // wake() — see dequeueNext()'s own comment in workspace-store.ts.
   private tick(): void {
     const store = getWorkspaceStore();
 
-    // Don't start a new item if one is already running
-    if (store.getRunningEntry()) return;
-
-    const next = store.dequeueNext();
-    if (!next) return;
-
-    logger.info('Task scheduler: starting task', { taskId: next.taskId, queueId: next.id });
-    if (!this.executor) {
-      logger.warn('Task scheduler: no executor registered — task left running', {
-        taskId: next.taskId,
-      });
-      return;
+    let next = store.dequeueNext();
+    while (next) {
+      logger.info('Task scheduler: starting task', { taskId: next.taskId, queueId: next.id });
+      if (!this.executor) {
+        logger.warn('Task scheduler: no executor registered — task left running', {
+          taskId: next.taskId,
+        });
+        return;
+      }
+      void this.runTask(next);
+      next = store.dequeueNext();
     }
-    void this.runTask(next);
   }
 
   // Fire-and-forget from tick()'s point of view — tick() itself stays
@@ -163,8 +98,8 @@ export class TaskScheduler {
     if (!_broadcast) return;
     const store = getWorkspaceStore();
     const queue = store.listQueue();
-    const running = store.getRunningEntry();
-    const payload = { queue, running: running ?? null, paused: this.paused };
+    const running = store.getRunningEntries();
+    const payload = { queue, running };
     _broadcast(JSON.stringify({ type: 'task_queue_update', data: payload }));
   }
 }

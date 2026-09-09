@@ -78,12 +78,6 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
   return (
     <div class="p-4 size-full" data-id="chat_boundary">
       <div class="flex flex-col overflow-hidden rounded-xl border border-border size-full">
-        {thread.isPaused.value && (
-          <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-            Task queue paused while this chat is active
-          </div>
-        )}
-
         {thread.isWaitingForProvider.value && (
           <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
             Waiting for {thread.waitingProviderName.value} to have capacity…

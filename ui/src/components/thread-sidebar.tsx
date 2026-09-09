@@ -219,13 +219,9 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
 }
 
 function QueueWidget() {
-  const { running, paused, queue } = queueState.value;
+  const { running, queue } = queueState.value;
   const pending = queue.filter((e) => e.status === 'pending').length;
-  // While paused, a task that was running gets re-queued with status
-  // 'paused' rather than staying in `running` — surface it as the current
-  // task so the widget doesn't blank out mid-pause.
-  const pausedEntry = queue.find((e) => e.status === 'paused');
-  const currentTask = running?.task ?? pausedEntry?.task ?? queue[0]?.task ?? null;
+  const currentTask = running[0]?.task ?? queue[0]?.task ?? null;
 
   if (!currentTask && pending === 0) return null;
 
@@ -235,7 +231,7 @@ function QueueWidget() {
       class="border border-border rounded-[10px] p-[10px_12px] bg-card mb-1"
     >
       <div class="flex items-center gap-1.5 mb-1">
-        <Circle class={cn('size-[7px] fill-current', paused ? 'text-amber-500' : 'text-primary')} />
+        <Circle class="size-[7px] fill-current text-primary" />
         <span class="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">
           Queue
         </span>
@@ -244,9 +240,7 @@ function QueueWidget() {
         {currentTask?.title ?? '—'}
       </div>
       <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
-        {paused
-          ? 'Paused — chat active · resumes 30 s after last response'
-          : `running · ${pending} pending`}
+        {running.length > 1 ? `${running.length} running · ${pending} pending` : `running · ${pending} pending`}
       </div>
     </div>
   );

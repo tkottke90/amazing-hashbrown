@@ -14,9 +14,7 @@ import { TaskScheduler } from './task-scheduler.js';
 
 // Flushes enough microtask turns for a chain of `await this.executor(...)` →
 // `catch`/`finally` → `this.wake()` → (possibly) another dispatch to settle,
-// without a real timer or a mocking library — the repo's established
-// approach (see scheduleResume()'s timer-spy below) is a hand-rolled seam,
-// not a library, so this mirrors that.
+// without a real timer or a mocking library.
 function flushMicrotasks(times = 4): Promise<void> {
   return times <= 0 ? Promise.resolve() : Promise.resolve().then(() => flushMicrotasks(times - 1));
 }
@@ -42,189 +40,54 @@ describe('services/task-scheduler', () => {
   });
 
   afterEach(() => {
-    scheduler.stop();
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function makeQueuedTask(title: string) {
-    const task = store.createTask({ title });
+  function makeQueuedTask(title: string, workspaceId?: string | null) {
+    const task = store.createTask({ title, workspaceId });
     return store.enqueueTask(task.id);
   }
 
   describe('start() / wake()', () => {
     it('picks up work already queued at boot, without polling', () => {
       makeQueuedTask('Boot-time task');
-      expect(store.getRunningEntry()).to.equal(null);
+      expect(store.getRunningEntry('inbox')).to.equal(null);
 
       scheduler.start();
 
-      const running = store.getRunningEntry();
+      const running = store.getRunningEntry('inbox');
       expect(running).to.not.equal(null);
       expect(running!.task.title).to.equal('Boot-time task');
     });
 
     it('is a no-op when the queue is empty', () => {
       scheduler.start();
-      expect(store.getRunningEntry()).to.equal(null);
-      expect(scheduler.isPaused()).to.equal(false);
+      expect(store.getRunningEntry('inbox')).to.equal(null);
     });
 
-    it('does not start a second task while one is already running', () => {
+    it('does not start a second task in the same scope while one is already running', () => {
       const first = makeQueuedTask('First');
       makeQueuedTask('Second');
       scheduler.wake();
-      expect(store.getRunningEntry()!.id).to.equal(first.id);
+      expect(store.getRunningEntry('inbox')!.id).to.equal(first.id);
 
       scheduler.wake();
-      expect(store.getRunningEntry()!.id).to.equal(first.id);
-    });
-  });
-
-  describe('pause()', () => {
-    it('leaves an idle scheduler idle — no spurious task starts', () => {
-      makeQueuedTask('Not started yet');
-      scheduler.pause();
-
-      expect(scheduler.isPaused()).to.equal(true);
-      expect(store.getRunningEntry()).to.equal(null);
-      // Still sitting pending, untouched.
-      expect(store.listQueue().find((e) => e.status === 'pending')).to.not.equal(undefined);
+      expect(store.getRunningEntry('inbox')!.id).to.equal(first.id);
     });
 
-    it('re-queues a running task as paused rather than starting the next one', () => {
-      const first = makeQueuedTask('Running');
-      makeQueuedTask('Waiting');
+    it('dispatches tasks in different scopes concurrently from a single wake()', () => {
+      const inboxTask = makeQueuedTask('Inbox task');
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const workspaceTask = makeQueuedTask('Workspace task', workspace.id);
+
       scheduler.wake();
-      expect(store.getRunningEntry()!.id).to.equal(first.id);
 
-      scheduler.pause();
-
-      expect(scheduler.isPaused()).to.equal(true);
-      expect(store.getRunningEntry()).to.equal(null);
-      const entries = store.listQueue();
-      expect(entries.find((e) => e.id === first.id)!.status).to.equal('paused');
-      expect(entries.find((e) => e.status === 'pending')).to.not.equal(undefined);
-    });
-
-    it('does not dequeue new work enqueued while paused', () => {
-      scheduler.pause();
-      makeQueuedTask('Enqueued during pause');
-      scheduler.wake();
-      expect(store.getRunningEntry()).to.equal(null);
-    });
-  });
-
-  describe('resume()', () => {
-    it('returns an idle scheduler to idle — no spurious task start', () => {
-      scheduler.pause();
-      expect(scheduler.isPaused()).to.equal(true);
-
-      scheduler.resume();
-
-      expect(scheduler.isPaused()).to.equal(false);
-      expect(store.getRunningEntry()).to.equal(null);
-    });
-
-    it('immediately picks the next task back up when work was pending', () => {
-      const first = makeQueuedTask('Running');
-      makeQueuedTask('Waiting');
-      scheduler.wake();
-      scheduler.pause();
-      expect(store.getRunningEntry()).to.equal(null);
-
-      scheduler.resume();
-
-      expect(scheduler.isPaused()).to.equal(false);
-      const running = store.getRunningEntry();
-      expect(running).to.not.equal(null);
-      // The entry that was running before the pause is re-queued at the
-      // front of the line, so it's the one that resumes first.
-      expect(running!.id).to.equal(first.id);
-    });
-
-    it('picks up a task enqueued only while paused', () => {
-      scheduler.pause();
-      const queued = makeQueuedTask('Enqueued during pause');
-
-      scheduler.resume();
-
-      const running = store.getRunningEntry();
-      expect(running).to.not.equal(null);
-      expect(running!.id).to.equal(queued.id);
-    });
-
-    it('never auto-resumes a user-initiated pause (pauseReason "user")', () => {
-      const first = makeQueuedTask('Running');
-      scheduler.wake();
-      const running = store.getRunningEntry()!;
-      // Simulates a user-initiated Pause action, distinct from the
-      // scheduler's own chat-idle pauseQueueEntry() call.
-      store.parkQueueEntry(running.id);
-
-      scheduler.resume();
-
-      expect(store.getRunningEntry()).to.equal(null);
-      const entry = store.listQueue().find((e) => e.id === first.id)!;
-      expect(entry.status).to.equal('paused');
-      expect(entry.pauseReason).to.equal('user');
-    });
-
-    it('still auto-resumes a chat-idle pause (pauseReason "chat")', () => {
-      const first = makeQueuedTask('Running');
-      scheduler.wake();
-      scheduler.pause(); // uses pauseQueueEntry() internally -> pauseReason 'chat'
-
-      scheduler.resume();
-
-      const running = store.getRunningEntry();
-      expect(running).to.not.equal(null);
-      expect(running!.id).to.equal(first.id);
-    });
-  });
-
-  describe('isPaused()', () => {
-    it('reflects pause/resume transitions', () => {
-      expect(scheduler.isPaused()).to.equal(false);
-      scheduler.pause();
-      expect(scheduler.isPaused()).to.equal(true);
-      scheduler.resume();
-      expect(scheduler.isPaused()).to.equal(false);
-    });
-  });
-
-  describe('scheduleResume()', () => {
-    it('arms a timer that is cleared by a subsequent pause() (timer reset on new activity)', () => {
-      const originalSetTimeout = globalThis.setTimeout;
-      const originalClearTimeout = globalThis.clearTimeout;
-      let scheduledCount = 0;
-      let clearedCount = 0;
-      // Lightweight timer spy — no sinon in this repo's toolchain, and a
-      // real 30s wait is too slow for a unit test. We only need to confirm
-      // scheduleResume() re-arms (and pause()/resume() clear) the timer,
-      // not exercise the real delay.
-      globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-        scheduledCount++;
-        return originalSetTimeout(fn, ms);
-      }) as typeof setTimeout;
-      globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => {
-        clearedCount++;
-        return originalClearTimeout(id);
-      }) as typeof clearTimeout;
-
-      try {
-        scheduler.scheduleResume();
-        expect(scheduledCount).to.equal(1);
-
-        // A second chat message before the timer fires resets it.
-        scheduler.pause();
-        expect(clearedCount).to.equal(1);
-        scheduler.scheduleResume();
-        expect(scheduledCount).to.equal(2);
-      } finally {
-        globalThis.setTimeout = originalSetTimeout;
-        globalThis.clearTimeout = originalClearTimeout;
-        scheduler.stop();
-      }
+      const runningInbox = store.getRunningEntry('inbox');
+      const runningWorkspace = store.getRunningEntry(workspace.id);
+      expect(runningInbox).to.not.equal(null);
+      expect(runningInbox!.id).to.equal(inboxTask.id);
+      expect(runningWorkspace).to.not.equal(null);
+      expect(runningWorkspace!.id).to.equal(workspaceTask.id);
     });
   });
 
@@ -249,7 +112,6 @@ describe('services/task-scheduler', () => {
       // completeQueueEntry) must not dispatch again.
       s.wake();
       expect(calls).to.have.length(1);
-      s.stop();
     });
 
     it('does not stop subsequent ticks when the executor rejects', async () => {
@@ -271,7 +133,6 @@ describe('services/task-scheduler', () => {
       await flushMicrotasks();
 
       expect(calls).to.equal(2);
-      s.stop();
     });
 
     it('leaves the entry running (and logs) rather than throwing when no executor is registered', () => {
@@ -279,8 +140,7 @@ describe('services/task-scheduler', () => {
       makeQueuedTask('No executor');
 
       expect(() => s.wake()).to.not.throw();
-      expect(store.getRunningEntry()).to.not.equal(null);
-      s.stop();
+      expect(store.getRunningEntry('inbox')).to.not.equal(null);
     });
   });
 });

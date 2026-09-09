@@ -21,7 +21,6 @@ import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
-import { getTaskScheduler } from '../services/task-scheduler.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
@@ -91,197 +90,186 @@ export async function streamWorkspaceChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  // Same pause/resume discipline as streamChatToSse (issue #68) — a
-  // workspace-chat turn pauses the background task queue exactly like a
-  // global-chat turn does. wiki-stream-handler.ts does NOT do this; this
-  // must be copied from stream-handler.ts directly.
-  getTaskScheduler().pause();
-  try {
-    const workspaceStore = getWorkspaceStore();
-    const threadStore = getThreadStore();
-    const sink: SseWriter = (event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
+  const workspaceStore = getWorkspaceStore();
+  const threadStore = getThreadStore();
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
 
-    // An automated task run currently owns this exact thread (task-execution.ts
-    // registers itself the same way a chat turn does) — reject rather than
-    // race a second agent.streamEvents() invocation against the same
-    // LangGraph checkpoint. Interrupting the task run itself is #86's job.
-    if (getActiveSseWriter(threadId)) {
-      writeSseEvent(sink, {
-        type: 'stream_error',
-        error: 'This workspace has a task running — try again in a moment.',
-      });
-      return;
-    }
-
-    threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'workspace-chat');
-
-    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
-
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
-
-    const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
-    const workspaceContext = await buildWorkspaceContext(workspace);
-    const { agent, systemPrompt } = await getWorkspaceChatAgent(
-      workspace.id,
-      workspaceContext,
-      effectiveProvider,
-      effectiveModel,
-      allowedWikiId,
-    );
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = {
-      configurable: {
-        thread_id: threadId,
-        workspaceId: workspace.id,
-      },
-    };
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-
-    const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
-
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
-      threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'workspace-chat',
-      systemPrompt,
+  // An automated task run currently owns this exact thread (task-execution.ts
+  // registers itself the same way a chat turn does) — reject rather than
+  // race a second agent.streamEvents() invocation against the same
+  // LangGraph checkpoint. Interrupting the task run itself is #86's job.
+  if (getActiveSseWriter(threadId)) {
+    writeSseEvent(sink, {
+      type: 'stream_error',
+      error: 'This workspace has a task running — try again in a moment.',
     });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
+    return;
+  }
+
+  threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'workspace-chat');
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
+  const workspaceContext = await buildWorkspaceContext(workspace);
+  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+    workspace.id,
+    workspaceContext,
+    effectiveProvider,
+    effectiveModel,
+    allowedWikiId,
+  );
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = {
+    configurable: {
+      thread_id: threadId,
+      workspaceId: workspace.id,
+    },
+  };
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+
+  const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
+
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'workspace-chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
+  try {
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(
+          { messages: [{ role: 'human', content }] },
+          {
+            ...config,
+            version: 'v2',
+            callbacks: [obsHandler],
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+          },
+        );
+
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
+      },
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
     );
 
-    const assistantSeq = recordAssistantStart(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      msgId,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
+      assistantSeq,
+      userSeq,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
 
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(
-            { messages: [{ role: 'human', content }] },
-            {
-              ...config,
-              version: 'v2',
-              callbacks: [obsHandler],
-              context: {
-                provider: effectiveProvider ?? env.defaultProvider,
-                model: effectiveModel,
-                afterAgentEnabled: afterAgent,
-              },
-              recursionLimit: env.agent?.recursionLimit ?? 100,
-            },
-          );
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        userSeq,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-
-      await maybeSummarizeWorkspace(
-        sink,
-        workspaceStore,
-        threadStore,
-        workspace,
-        createProvider(resolvedProvider, resolvedModel),
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+    await maybeSummarizeWorkspace(
+      sink,
+      workspaceStore,
+      threadStore,
+      workspace,
+      createProvider(resolvedProvider, resolvedModel),
+      resolvedProvider,
+      resolvedModel,
+    );
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -296,194 +284,187 @@ export async function resumeWorkspaceChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  getTaskScheduler().pause();
-  try {
-    const workspaceStore = getWorkspaceStore();
-    const threadStore = getThreadStore();
-    const sink: SseWriter = (event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
+  const workspaceStore = getWorkspaceStore();
+  const threadStore = getThreadStore();
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
 
-    if (getActiveSseWriter(threadId)) {
-      writeSseEvent(sink, {
-        type: 'stream_error',
-        error: 'This workspace has a task running — try again in a moment.',
-      });
-      return;
-    }
-
-    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
-
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
-
-    const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
-    const workspaceContext = await buildWorkspaceContext(workspace);
-    const { agent, systemPrompt } = await getWorkspaceChatAgent(
-      workspace.id,
-      workspaceContext,
-      effectiveProvider,
-      effectiveModel,
-      allowedWikiId,
-    );
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = {
-      configurable: {
-        thread_id: threadId,
-        workspaceId: workspace.id,
-      },
-    };
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-
-    try {
-      resolveHitlPrompt(threadStore, threadId, promptId, answer);
-    } catch (err) {
-      logger.error('resumeWorkspaceChatToSse: failed to resolve HITL prompt', {
-        threadId,
-        promptId,
-        err: serializeError(err),
-      });
-      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
-      return;
-    }
-
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
-      threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'workspace-chat',
-      systemPrompt,
+  if (getActiveSseWriter(threadId)) {
+    writeSseEvent(sink, {
+      type: 'stream_error',
+      error: 'This workspace has a task running — try again in a moment.',
     });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
+    return;
+  }
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
+  const workspaceContext = await buildWorkspaceContext(workspace);
+  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+    workspace.id,
+    workspaceContext,
+    effectiveProvider,
+    effectiveModel,
+    allowedWikiId,
+  );
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = {
+    configurable: {
+      thread_id: threadId,
+      workspaceId: workspace.id,
+    },
+  };
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+
+  try {
+    resolveHitlPrompt(threadStore, threadId, promptId, answer);
+  } catch (err) {
+    logger.error('resumeWorkspaceChatToSse: failed to resolve HITL prompt', {
+      threadId,
+      promptId,
+      err: serializeError(err),
+    });
+    writeSseEvent(sink, { type: 'stream_error', error: 'Failed to record HITL answer' });
+    return;
+  }
+
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'workspace-chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  const assistantSeq = recordAssistantStart(
+    threadStore,
+    threadId,
+    msgId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
+  try {
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(new Command({ resume: answer }), {
+          ...config,
+          version: 'v2',
+          recursionLimit: env.agent?.recursionLimit ?? 100,
+          callbacks: [obsHandler],
+          context: {
+            provider: effectiveProvider ?? env.defaultProvider,
+            model: effectiveModel,
+            afterAgentEnabled: afterAgent,
+          },
+        });
+
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
+      },
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
     );
 
-    const assistantSeq = recordAssistantStart(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      msgId,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
+      assistantSeq,
+      null,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
 
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-            ...config,
-            version: 'v2',
-            recursionLimit: env.agent?.recursionLimit ?? 100,
-            callbacks: [obsHandler],
-            context: {
-              provider: effectiveProvider ?? env.defaultProvider,
-              model: effectiveModel,
-              afterAgentEnabled: afterAgent,
-            },
-          });
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        null,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-
-      await maybeSummarizeWorkspace(
-        sink,
-        workspaceStore,
-        threadStore,
-        workspace,
-        createProvider(resolvedProvider, resolvedModel),
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+    await maybeSummarizeWorkspace(
+      sink,
+      workspaceStore,
+      threadStore,
+      workspace,
+      createProvider(resolvedProvider, resolvedModel),
+      resolvedProvider,
+      resolvedModel,
+    );
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }
 
@@ -496,187 +477,180 @@ export async function retryWorkspaceChatToSse(
   model?: string,
   afterAgent?: boolean,
 ): Promise<void> {
-  getTaskScheduler().pause();
+  const workspaceStore = getWorkspaceStore();
+  const threadStore = getThreadStore();
+  const sink: SseWriter = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+
+  if (getActiveSseWriter(threadId)) {
+    writeSseEvent(sink, {
+      type: 'stream_error',
+      error: 'This workspace has a task running — try again in a moment.',
+    });
+    return;
+  }
+
+  const threadMeta = threadStore.getThreadMeta(threadId);
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+  if (provider !== undefined || model !== undefined) {
+    threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
+  }
+
+  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
+  const workspaceContext = await buildWorkspaceContext(workspace);
+  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+    workspace.id,
+    workspaceContext,
+    effectiveProvider,
+    effectiveModel,
+    allowedWikiId,
+  );
+  const providerConfig = resolveProviderConfig(effectiveProvider);
+  const resolvedProvider = providerConfig.name;
+  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const config = {
+    configurable: {
+      thread_id: threadId,
+      workspaceId: workspace.id,
+    },
+  };
+
+  const failedId = threadStore.resolveRetryTarget(threadId);
+  if (!failedId) {
+    throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
+  }
+
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+  const assistantSeq = recordRetryAttempt(
+    threadStore,
+    threadId,
+    msgId,
+    failedId,
+    turnSentAt,
+    resolvedProvider,
+    resolvedModel,
+  );
+
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
+
+  const obsConfig = env.observability;
+  const store = getObservabilityStore();
+  const traceId = store.startTrace({
+    threadId,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    source: 'workspace-chat',
+    systemPrompt,
+  });
+  const obsHandler = new ObservabilityCallbackHandler(
+    traceId,
+    store,
+    obsConfig.spanOutputPreviewChars,
+  );
+
+  setActiveSseWriter(threadId, sink);
+  let turnError: string | null = null;
   try {
-    const workspaceStore = getWorkspaceStore();
-    const threadStore = getThreadStore();
-    const sink: SseWriter = (event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
+    const {
+      content: finalContent,
+      thoughtContent,
+      finalSegmentId,
+      hadToolCall,
+    } = await getProviderQueue().withSlot(
+      resolvedProvider,
+      'sync',
+      async () => {
+        const eventStream = agent.streamEvents(null, {
+          ...config,
+          version: 'v2',
+          recursionLimit: env.agent?.recursionLimit ?? 100,
+          callbacks: [obsHandler],
+          context: {
+            provider: effectiveProvider ?? env.defaultProvider,
+            model: effectiveModel,
+            afterAgentEnabled: afterAgent,
+          },
+        });
 
-    if (getActiveSseWriter(threadId)) {
-      writeSseEvent(sink, {
-        type: 'stream_error',
-        error: 'This workspace has a task running — try again in a moment.',
-      });
-      return;
-    }
-
-    writeSseEvent(sink, { type: 'queue_status', paused: getTaskScheduler().isPaused() });
-
-    const threadMeta = threadStore.getThreadMeta(threadId);
-    const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
-    const effectiveModel = model ?? threadMeta?.model ?? undefined;
-    if (provider !== undefined || model !== undefined) {
-      threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
-    }
-
-    const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
-    const workspaceContext = await buildWorkspaceContext(workspace);
-    const { agent, systemPrompt } = await getWorkspaceChatAgent(
-      workspace.id,
-      workspaceContext,
-      effectiveProvider,
-      effectiveModel,
-      allowedWikiId,
-    );
-    const providerConfig = resolveProviderConfig(effectiveProvider);
-    const resolvedProvider = providerConfig.name;
-    const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
-    const config = {
-      configurable: {
-        thread_id: threadId,
-        workspaceId: workspace.id,
+        return pipeEvents(
+          sink,
+          msgId,
+          eventStream,
+          threadStore,
+          threadId,
+          turnSentAt,
+          effectiveProvider,
+          effectiveModel,
+        );
       },
-    };
+      {
+        onWaitChange: (waiting) =>
+          writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+      },
+    );
 
-    const failedId = threadStore.resolveRetryTarget(threadId);
-    if (!failedId) {
-      throw new Error(`Thread "${threadId}" has no retryable (failed) turn`);
-    }
-
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-    const assistantSeq = recordRetryAttempt(
+    await finalizeTurn(
+      sink,
       threadStore,
+      agent,
       threadId,
-      msgId,
-      failedId,
+      finalSegmentId,
+      startedAt,
+      finalContent,
+      thoughtContent,
+      hadToolCall,
       turnSentAt,
+      assistantSeq,
+      null,
+      obsHandler,
       resolvedProvider,
       resolvedModel,
     );
 
-    drainAndRecordWikiUpdates(sink, threadStore, threadId);
-
-    const obsConfig = env.observability;
-    const store = getObservabilityStore();
-    const traceId = store.startTrace({
-      threadId,
-      provider: resolvedProvider,
-      model: resolvedModel,
-      source: 'workspace-chat',
-      systemPrompt,
-    });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      store,
-      obsConfig.spanOutputPreviewChars,
+    await maybeSummarizeWorkspace(
+      sink,
+      workspaceStore,
+      threadStore,
+      workspace,
+      createProvider(resolvedProvider, resolvedModel),
+      resolvedProvider,
+      resolvedModel,
     );
-
-    setActiveSseWriter(threadId, sink);
-    let turnError: string | null = null;
-    try {
-      const {
-        content: finalContent,
-        thoughtContent,
-        finalSegmentId,
-        hadToolCall,
-      } = await getProviderQueue().withSlot(
-        resolvedProvider,
-        'sync',
-        async () => {
-          const eventStream = agent.streamEvents(null, {
-            ...config,
-            version: 'v2',
-            recursionLimit: env.agent?.recursionLimit ?? 100,
-            callbacks: [obsHandler],
-            context: {
-              provider: effectiveProvider ?? env.defaultProvider,
-              model: effectiveModel,
-              afterAgentEnabled: afterAgent,
-            },
-          });
-
-          return pipeEvents(
-            sink,
-            msgId,
-            eventStream,
-            threadStore,
-            threadId,
-            turnSentAt,
-            effectiveProvider,
-            effectiveModel,
-          );
-        },
-        {
-          onWaitChange: (waiting) =>
-            writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
-        },
-      );
-
-      await finalizeTurn(
-        sink,
-        threadStore,
-        agent,
-        threadId,
-        finalSegmentId,
-        startedAt,
-        finalContent,
-        thoughtContent,
-        hadToolCall,
-        turnSentAt,
-        assistantSeq,
-        null,
-        obsHandler,
-        resolvedProvider,
-        resolvedModel,
-      );
-
-      await maybeSummarizeWorkspace(
-        sink,
-        workspaceStore,
-        threadStore,
-        workspace,
-        createProvider(resolvedProvider, resolvedModel),
-        resolvedProvider,
-        resolvedModel,
-      );
-    } catch (err) {
-      const {
-        segmentId,
-        content: partialContent,
-        thoughtContent: partialThought,
-      } = extractPartialAssistantState(err, msgId);
-      if ((err as Error).name === 'GraphRecursionError') {
-        const msg =
-          'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
-        finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
-        writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-        writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
-        return;
-      }
-      const classified = classifyChatError(err, resolvedProvider);
-      turnError = classified.message;
-      failAssistant(
-        threadStore,
-        threadId,
-        segmentId,
-        partialContent,
-        turnSentAt,
-        partialThought,
-        turnError,
-        classified.category,
-      );
-      throw new ClassifiedTurnError(classified.message, classified.category);
-    } finally {
-      store.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-        error: turnError,
-      });
-      clearActiveSseWriter(threadId);
+  } catch (err) {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if ((err as Error).name === 'GraphRecursionError') {
+      const msg =
+        'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
+      finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
+      writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
+      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      return;
     }
+    const classified = classifyChatError(err, resolvedProvider);
+    turnError = classified.message;
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      turnError,
+      classified.category,
+    );
+    throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    getTaskScheduler().scheduleResume();
+    store.endTrace(traceId, {
+      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
+      error: turnError,
+    });
+    clearActiveSseWriter(threadId);
   }
 }

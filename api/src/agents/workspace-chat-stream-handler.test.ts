@@ -8,7 +8,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { bootThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, bootWorkspaceStore, type Workspace } from '../services/workspace-store.js';
-import { bootTaskScheduler, type TaskScheduler } from '../services/task-scheduler.js';
+import { bootTaskScheduler } from '../services/task-scheduler.js';
 import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
 import {
   streamWorkspaceChatToSse,
@@ -40,7 +40,6 @@ describe('agents/workspace-chat-stream-handler — concurrency guard', () => {
   let workspaceStore: WorkspaceStore;
   let workspace: Workspace;
   let threadId: string;
-  let scheduler: TaskScheduler;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'workspace-chat-stream-guard-test-'));
@@ -48,7 +47,7 @@ describe('agents/workspace-chat-stream-handler — concurrency guard', () => {
     workspaceStore = new WorkspaceStore(db);
     bootWorkspaceStore(db);
     bootThreadStore(db);
-    scheduler = bootTaskScheduler();
+    bootTaskScheduler();
 
     threadId = randomUUID();
     workspace = workspaceStore.createWorkspace({ name: 'W', location: '/tmp/w' });
@@ -59,10 +58,6 @@ describe('agents/workspace-chat-stream-handler — concurrency guard', () => {
   });
 
   afterEach(() => {
-    // Each guarded call still arms scheduleResume()'s idle timer in its
-    // finally block — stop() clears it so the timer doesn't outlive this
-    // test (and the temp DB it would otherwise fire against later).
-    scheduler.stop();
     clearActiveSseWriter(threadId);
     rmSync(dir, { recursive: true, force: true });
   });

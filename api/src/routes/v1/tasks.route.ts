@@ -23,7 +23,7 @@ export const tasksRouter = Router();
 
 // GET /queue must be registered before /:id so it isn't matched as an id param
 tasksRouter.get('/queue', (_req: Request, res: Response) => {
-  const result = getQueueHandler(getWorkspaceStore(), getTaskScheduler().isPaused());
+  const result = getQueueHandler(getWorkspaceStore());
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

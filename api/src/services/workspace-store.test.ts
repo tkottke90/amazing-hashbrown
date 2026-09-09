@@ -64,14 +64,16 @@ describe('services/workspace-store', () => {
       const pausedTask = store.createTask({ title: 'paused', assignedTo: 'agent' });
       store.enqueueTask(pausedTask.id);
       const pausedEntry = store.dequeueNext()!;
-      store.pauseQueueEntry(pausedEntry.id);
+      store.parkQueueEntry(pausedEntry.id);
 
       const restarted = new WorkspaceStore(db);
 
       expect(restarted.getTask(doneTask.id)!.status).to.equal('done');
       expect(restarted.listQueue().find((e) => e.taskId === doneTask.id)).to.equal(undefined);
 
-      expect(restarted.getTask(pausedTask.id)!.status).to.equal('running');
+      // parkQueueEntry parks the task at 'blocked' — recovery must leave a
+      // non-'running' queue row (and its task) alone.
+      expect(restarted.getTask(pausedTask.id)!.status).to.equal('blocked');
       const stillPaused = restarted.listQueue().find((e) => e.taskId === pausedTask.id)!;
       expect(stillPaused.status).to.equal('paused');
     });
@@ -319,19 +321,7 @@ describe('services/workspace-store', () => {
       expect(store.getTask(entry.taskId)!.status).to.equal('cancelled');
     });
 
-    it('pauseQueueEntry (chat-pause) stamps reason "chat", distinct from parkQueueEntry', () => {
-      const entry = makeRunningEntry();
-      store.pauseQueueEntry(entry.id);
-
-      const row = store.listQueue().find((e) => e.id === entry.id)!;
-      expect(row.status).to.equal('paused');
-      expect(row.pauseReason).to.equal('chat');
-      expect(row.pausedAt).to.not.equal(null);
-      // Unlike parkQueueEntry, the chat-pause path never touches tasks.status.
-      expect(store.getTask(entry.taskId)!.status).to.equal('running');
-    });
-
-    it('resumePausedEntry un-pauses either kind of pause and leaves pauseReason/pausedAt intact', () => {
+    it('resumePausedEntry un-pauses a parked row and leaves pauseReason/pausedAt intact', () => {
       const entry = makeRunningEntry();
       store.parkQueueEntry(entry.id);
       store.resumePausedEntry(entry.id);
@@ -373,6 +363,70 @@ describe('services/workspace-store', () => {
     it('returns null when no workspace matches', () => {
       store.createWorkspace({ name: 'My Workspace', location: '/tmp/w' });
       expect(store.findWorkspaceByName('Someone Else')).to.equal(null);
+    });
+  });
+
+  describe('scope-aware queue (per-workspace/per-Inbox "one running" — issue #160)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-scope-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeQueuedTask(title: string, workspaceId?: string | null) {
+      const task = store.createTask({ title, workspaceId, assignedTo: 'agent' });
+      return store.enqueueTask(task.id);
+    }
+
+    it('dequeueNext() skips a scope with a running entry and dispatches the next eligible one instead', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const inboxFirst = makeQueuedTask('Inbox first');
+      const workspaceTask = makeQueuedTask('Workspace task', workspace.id);
+      makeQueuedTask('Inbox second');
+
+      const first = store.dequeueNext()!;
+      expect(first.id).to.equal(inboxFirst.id);
+
+      // Inbox scope is now busy — the next dequeue must skip "Inbox second"
+      // (position-wise the next pending row) and dispatch the workspace
+      // task instead, since its scope is free.
+      const second = store.dequeueNext()!;
+      expect(second.id).to.equal(workspaceTask.id);
+
+      // Both scopes are now busy — nothing left to dispatch.
+      expect(store.dequeueNext()).to.equal(null);
+    });
+
+    it('getRunningEntry(scope) returns null for an unrelated scope even while another scope has a running entry', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const inboxEntry = makeQueuedTask('Inbox task');
+      store.dequeueNext();
+
+      expect(store.getRunningEntry('inbox')!.id).to.equal(inboxEntry.id);
+      expect(store.getRunningEntry(workspace.id)).to.equal(null);
+    });
+
+    it('getRunningEntries() reports every currently-running entry across all scopes', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      makeQueuedTask('Inbox task');
+      makeQueuedTask('Workspace task', workspace.id);
+
+      store.dequeueNext();
+      store.dequeueNext();
+
+      const running = store.getRunningEntries();
+      expect(running).to.have.length(2);
+      expect(running.map((r) => r.task.title).sort()).to.deep.equal([
+        'Inbox task',
+        'Workspace task',
+      ]);
     });
   });
 });
