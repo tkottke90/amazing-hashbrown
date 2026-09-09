@@ -240,7 +240,9 @@ function QueueWidget() {
         {currentTask?.title ?? '—'}
       </div>
       <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
-        {running.length > 1 ? `${running.length} running · ${pending} pending` : `running · ${pending} pending`}
+        {running.length > 1
+          ? `${running.length} running · ${pending} pending`
+          : `running · ${pending} pending`}
       </div>
     </div>
   );

@@ -76,11 +76,19 @@ describe('services/task-scheduler', () => {
     });
 
     it('dispatches tasks in different scopes concurrently from a single wake()', () => {
+      // Needs a registered executor: tick()'s dequeue loop only proceeds
+      // past the first eligible scope when there's an executor to hand the
+      // work to (see tick()'s `if (!this.executor)` branch) — without one it
+      // deliberately stops after a single dequeue, same as before this
+      // change. A never-resolving fake mirrors the noop task executor used
+      // in production/e2e for exactly this "stays running" shape.
+      const fakeExecutor = () => new Promise<void>(() => {});
+      const s = new TaskScheduler(fakeExecutor);
       const inboxTask = makeQueuedTask('Inbox task');
       const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
       const workspaceTask = makeQueuedTask('Workspace task', workspace.id);
 
-      scheduler.wake();
+      s.wake();
 
       const runningInbox = store.getRunningEntry('inbox');
       const runningWorkspace = store.getRunningEntry(workspace.id);
