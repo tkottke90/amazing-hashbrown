@@ -415,4 +415,120 @@ describe('agents/task-execution', () => {
       expect(input.messages[0].content).to.include('Begin work on this task now');
     });
   });
+
+  describe("sub-agent completion notification (origin='agent' — issue #161)", () => {
+    // No provider is configured in this test environment, so
+    // deliverSubAgentCompletion()'s attempt to actually build the parent's
+    // agent and run a notification turn fails harmlessly inside its own
+    // try/catch (never throws — see sub-agent-notification.ts) — these
+    // tests assert on the synchronous, provider-independent part of that
+    // flow: the sub_agent_marker written into the parent thread before the
+    // agent build is even attempted.
+    function makeSubAgentEntry(
+      opts: {
+        role?: string;
+        goal?: string;
+        parentThreadId?: string;
+        dispatchGroupId?: string;
+      } = {},
+    ): QueueEntryWithTask {
+      const parentThreadId = opts.parentThreadId ?? 'parent-thread-1';
+      threadStore.upsertThreadOnFirstMessage(parentThreadId, 'Parent', 'chat');
+      store.createSubAgentTask({
+        role: opts.role ?? 'researcher',
+        goal: opts.goal ?? 'Find something',
+        parentThreadId,
+        dispatchGroupId: opts.dispatchGroupId ?? 'group-1',
+      });
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    function completionMarkers(parentThreadId: string) {
+      return threadStore
+        .getThreadMessages(parentThreadId)
+        .filter(
+          (m) =>
+            m.kind === 'sub_agent_marker' &&
+            (m.payload as Record<string, unknown>).phase === 'completion',
+        );
+    }
+
+    it('writes a completion sub_agent_marker into the parent thread when complete_task fires', async () => {
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-a', dispatchGroupId: 'group-a' });
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      const markers = completionMarkers('parent-a');
+      expect(markers).to.have.length(1);
+      const payload = markers[0]!.payload as Record<string, unknown>;
+      expect(payload.taskId).to.equal(entry.task.id);
+      expect(payload.role).to.equal('researcher');
+      expect(payload.outcome).to.equal('done');
+      expect(payload.remainingCount).to.equal(0);
+    });
+
+    it('computes remainingCount against a still-pending sibling sharing dispatchGroupId', async () => {
+      const first = makeSubAgentEntry({ parentThreadId: 'parent-b', dispatchGroupId: 'group-b' });
+      // A sibling created after — sharing the same dispatchGroupId/parent —
+      // stays queued (never dequeued), simulating it still being in flight.
+      store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sibling goal',
+        parentThreadId: 'parent-b',
+        dispatchGroupId: 'group-b',
+      });
+
+      await executeTask(first, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const markers = completionMarkers('parent-b');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).remainingCount).to.equal(1);
+    });
+
+    it('delivers a failed-outcome notification when the agent stops without calling complete_task', async () => {
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-c', dispatchGroupId: 'group-c' });
+      const agent = fakeAgent([
+        { event: 'on_chat_model_stream', data: { chunk: { content: 'Still thinking...' } } },
+      ]);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      const markers = completionMarkers('parent-c');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
+    });
+
+    it('delivers a cancelled-outcome notification when the abort registry shows a "cancel" intent', async () => {
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-d', dispatchGroupId: 'group-d' });
+      const agent = fakeAbortingAgent(entry.id, 'cancel', [
+        { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
+      ]);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('cancelled');
+      const markers = completionMarkers('parent-d');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('cancelled');
+    });
+
+    it("does not write a sub_agent_marker for an ordinary origin='user' task", async () => {
+      const entry = makeGlobalEntry('Ordinary task');
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      const markers = threadStore
+        .getThreadMessages(task.threadId!)
+        .filter((m) => m.kind === 'sub_agent_marker');
+      expect(markers).to.have.length(0);
+    });
+  });
 });

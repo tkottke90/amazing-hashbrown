@@ -9,6 +9,7 @@ import {
   getActiveSseWriter,
   type SseWriter,
 } from './active-sse-writer.js';
+import { drainPendingTurns } from './pending-thread-turns.js';
 import {
   writeSseEvent,
   pipeEvents,
@@ -270,6 +271,7 @@ export async function streamWorkspaceChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -465,6 +467,7 @@ export async function resumeWorkspaceChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -652,5 +655,6 @@ export async function retryWorkspaceChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }

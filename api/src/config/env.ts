@@ -100,9 +100,27 @@ export const RLMConfigSchema = z.object({
 
 export type RLMConfig = z.infer<typeof RLMConfigSchema>;
 
+// A named sub-agent "role" (spawn_sub_agent tool) — a fixed provider/model
+// resolved server-side at dispatch time, never a parameter the calling model
+// supplies. See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
+export const RoleSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  systemPrompt: z.string().optional(),
+});
+
+export const RolesConfigSchema = z.record(z.string(), RoleSchema).default({});
+
+export type RoleConfig = z.infer<typeof RoleSchema>;
+
 export const AgentSchema = z.object({
   recursionLimit: z.number().int().positive().default(100),
   recursionWarnThreshold: z.number().min(0.1).max(0.99).default(0.75),
+  // A sub-agent run gets a much smaller hard ceiling than an interactive/task
+  // agent — it has no soft-interrupt recursion-guard middleware (that uses
+  // interrupt(), which would suspend a graph nothing is watching to resume),
+  // so this is its only backstop against runaway looping.
+  subAgentRecursionLimit: z.number().int().positive().default(25),
 });
 
 export type AgentConfig = z.infer<typeof AgentSchema>;
@@ -175,6 +193,7 @@ const AppConfigSchema = z.object({
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema.optional(),
   workspaces: WorkspacesSchema.optional(),
+  roles: RolesConfigSchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -317,6 +336,17 @@ export const env = {
         'costs',
         z.record(z.string(), CostEntrySchema),
       ) as Record<string, CostEntry>;
+    } catch {
+      return {};
+    }
+  },
+  get roles(): Record<string, RoleConfig> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('roles', RolesConfigSchema) as Record<
+        string,
+        RoleConfig
+      >;
     } catch {
       return {};
     }

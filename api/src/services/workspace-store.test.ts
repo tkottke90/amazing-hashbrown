@@ -429,4 +429,159 @@ describe('services/workspace-store', () => {
       ]);
     });
   });
+
+  describe("sub-agent tooling columns and helpers (origin='agent' — issue #161, migration 27)", () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-subagent-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("defaults an ordinary task to origin='user' with null parent/dispatch/role columns", () => {
+      const task = store.createTask({ title: 'ordinary' });
+      expect(task.origin).to.equal('user');
+      expect(task.parentThreadId).to.equal(null);
+      expect(task.dispatchGroupId).to.equal(null);
+      expect(task.role).to.equal(null);
+    });
+
+    it("createSubAgentTask() creates an origin='agent' row, ready/assigned to agent, and enqueues it", () => {
+      const task = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'Find the answer',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+
+      expect(task.origin).to.equal('agent');
+      expect(task.title).to.equal('Find the answer');
+      expect(task.parentThreadId).to.equal('parent-thread-1');
+      expect(task.dispatchGroupId).to.equal('group-1');
+      expect(task.role).to.equal('researcher');
+      expect(task.status).to.equal('ready');
+      expect(task.assignedTo).to.equal('agent');
+
+      const entry = store.listQueue().find((e) => e.taskId === task.id);
+      expect(entry).to.not.equal(undefined);
+      expect(entry!.status).to.equal('pending');
+    });
+
+    it("dequeueNext() dispatches an origin='agent' row even while its own scope has a running entry", () => {
+      // A regular Inbox task occupies the Inbox scope...
+      const inboxTask = store.createTask({ title: 'inbox', assignedTo: 'agent' });
+      store.patchTask(inboxTask.id, { status: 'ready' });
+      store.enqueueTask(inboxTask.id);
+      const runningInbox = store.dequeueNext()!;
+      expect(runningInbox.taskId).to.equal(inboxTask.id);
+
+      // ...but a sub-agent task (also workspaceId=null -> 'inbox' scope) must
+      // still dequeue immediately, unblocked by the scope accounting that
+      // gates ordinary tasks — see docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
+      const subAgentTask = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sub-agent goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+
+      const dispatched = store.dequeueNext()!;
+      expect(dispatched).to.not.equal(null);
+      expect(dispatched.taskId).to.equal(subAgentTask.id);
+    });
+
+    it("getRunningEntry(scope) excludes a running origin='agent' row from scope accounting", () => {
+      const subAgentTask = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sub-agent goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+      const entry = store.dequeueNext()!;
+      expect(entry.taskId).to.equal(subAgentTask.id);
+
+      // Even though the sub-agent's own queue row is 'running', the Inbox
+      // scope must still read as free.
+      expect(store.getRunningEntry('inbox')).to.equal(null);
+      // getRunningEntries() (no scope filter, used for "what's running" UI)
+      // still reports it.
+      expect(store.getRunningEntries().map((e) => e.taskId)).to.include(subAgentTask.id);
+    });
+
+    it('countPendingSiblings() counts non-terminal siblings sharing dispatchGroupId, excluding the given task and terminal ones', () => {
+      const a = store.createSubAgentTask({
+        role: 'r',
+        goal: 'a',
+        parentThreadId: 'p',
+        dispatchGroupId: 'group-x',
+      });
+      const b = store.createSubAgentTask({
+        role: 'r',
+        goal: 'b',
+        parentThreadId: 'p',
+        dispatchGroupId: 'group-x',
+      });
+      const c = store.createSubAgentTask({
+        role: 'r',
+        goal: 'c',
+        parentThreadId: 'p',
+        dispatchGroupId: 'group-x',
+      });
+
+      // All three still pending.
+      expect(store.countPendingSiblings('group-x', a.id)).to.equal(2);
+
+      // Complete b — only c remains pending alongside a.
+      const bEntry = store.listQueue().find((e) => e.taskId === b.id)!;
+      store.completeQueueEntry(bEntry.id, 'done');
+      expect(store.countPendingSiblings('group-x', a.id)).to.equal(1);
+
+      // Complete c too — none remain.
+      const cEntry = store.listQueue().find((e) => e.taskId === c.id)!;
+      store.completeQueueEntry(cEntry.id, 'failed');
+      expect(store.countPendingSiblings('group-x', a.id)).to.equal(0);
+
+      // A task from a different dispatch group never counts.
+      store.createSubAgentTask({
+        role: 'r',
+        goal: 'unrelated',
+        parentThreadId: 'p',
+        dispatchGroupId: 'group-y',
+      });
+      expect(store.countPendingSiblings('group-x', a.id)).to.equal(0);
+    });
+
+    it("recoverRunningQueueEntries() marks an exhausted origin='agent' row failed (not waiting_on_user) and queues it for notification", () => {
+      const task = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sub-agent goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+      store.dequeueNext(); // -> 'running'
+
+      const afterFirstCrash = new WorkspaceStore(db); // 1st restart: retried
+      expect(afterFirstCrash.getTask(task.id)!.status).to.equal('ready');
+      expect(afterFirstCrash.drainPendingSubAgentCrashNotifications()).to.deep.equal([]);
+
+      afterFirstCrash.dequeueNext(); // 2nd run -> 'running' again
+      const afterSecondCrash = new WorkspaceStore(db); // 2nd restart: give up
+
+      const recovered = afterSecondCrash.getTask(task.id)!;
+      expect(recovered.status).to.equal('failed');
+      expect(recovered.assignedTo).to.equal('agent'); // unlike origin='user', never escalated to 'user'
+
+      const pending = afterSecondCrash.drainPendingSubAgentCrashNotifications();
+      expect(pending.map((t) => t.id)).to.deep.equal([task.id]);
+      // Draining is destructive — a second call returns nothing left.
+      expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.deep.equal([]);
+    });
+  });
 });

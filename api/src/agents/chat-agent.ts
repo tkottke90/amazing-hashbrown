@@ -11,6 +11,7 @@ import type { SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { estimateTokens as estimateTokensForText } from '@tkottke90/llm-common-types/tokens';
 import { getAgentInstructions } from '../config/agent-instructions.js';
 import { env, ContextWindowSchema } from '../config/env.js';
+import type { RoleConfig } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
@@ -41,6 +42,7 @@ import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
+import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import type { Task } from '../services/workspace-store.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
@@ -251,6 +253,11 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 // separately by loadMcpTools() since they're fetched, not static.
 // shell_exec is NOT here — it's built per-agent via makeShellExecTool() below
 // so workspace/task agents can bind it to that workspace's own directory.
+// spawn_sub_agent is included here too — every flavor built from this array
+// (interactive chat, workspace chat, and buildTaskAgent below) may delegate
+// to a sub-agent. buildSubAgentAgent() deliberately does NOT spread this
+// array (it builds its own SUB_AGENT_TOOLS allowlist instead), which is what
+// structurally blocks a sub-agent from nesting another spawn_sub_agent call.
 const STATIC_CHAT_TOOLS = [
   askUserTool,
   uploadImageTool,
@@ -260,6 +267,31 @@ const STATIC_CHAT_TOOLS = [
   wikiOrientTool,
   wikiLintTool,
   wikiRegisterDomainTool,
+  webFetchTool,
+  getToolKeyTool,
+  rlmQueryTool,
+  searchSkillsTool,
+  searchConversationTool,
+  spawnSubAgentTool,
+];
+
+// The sub-agent's own read-only allowlist — an explicit list, not
+// STATIC_CHAT_TOOLS filtered down, so a future mutating addition to
+// STATIC_CHAT_TOOLS (or wikiRegisterDomainTool, which is already mutating
+// and already in STATIC_CHAT_TOOLS above) can never leak into a sub-agent
+// run by accident. No ask_user (interrupt()-based — would suspend a graph
+// nothing is watching to resume), no shell_exec/write tools, no MCP tools,
+// no spawn_sub_agent itself. See
+// docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
+// Exported for direct testing (same rationale as buildWikiWriteTools()
+// above) — buildSubAgentAgent() itself calls createProvider()/createAgent(),
+// which needs a real provider config to exercise end-to-end.
+export const SUB_AGENT_TOOLS = [
+  wikiSearchTool,
+  wikiReadPageTool,
+  wikiLocateTool,
+  wikiOrientTool,
+  wikiLintTool,
   webFetchTool,
   getToolKeyTool,
   rlmQueryTool,
@@ -484,16 +516,22 @@ interface TaskContext {
 
 // Exported for direct testing (see buildWikiWriteTools() above for the same
 // rationale) — buildTaskAgent() itself calls createProvider()/createAgent(),
-// which needs a real provider config to exercise end-to-end.
-export function buildTaskContextBlock(ctx: TaskContext): string {
+// which needs a real provider config to exercise end-to-end. hasAskUser is
+// false for buildSubAgentAgent below — a sub-agent's tool list never
+// includes ask_user, so telling it to call one would be actively wrong.
+export function buildTaskContextBlock(ctx: TaskContext, hasAskUser = true): string {
   const lines = [`You are running an automated task: "${ctx.title}".`];
   if (ctx.description) lines.push(`Description: ${ctx.description}`);
   if (ctx.outcome) lines.push(`Outcome to reach: ${ctx.outcome}`);
   lines.push(
     '',
     'When the outcome has been met, or you cannot proceed further, call complete_task with ' +
-      'outcome ("done" or "failed") and a summary. If you need information only the user can ' +
-      'provide, call ask_user — the run will pause and resume once they answer.',
+      'outcome ("done" or "failed") and a summary.' +
+      (hasAskUser
+        ? ' If you need information only the user can provide, call ask_user — the run will ' +
+          'pause and resume once they answer.'
+        : ' No one is available to answer questions during this run — do your best with the ' +
+          'information you have and report what you could not determine in your summary.'),
   );
   return lines.join('\n');
 }
@@ -544,6 +582,68 @@ export async function buildTaskAgent(
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
+  });
+
+  return { agent, systemPrompt };
+}
+
+// ---------------------------------------------------------------------------
+// Sub-agent agent — a spawn_sub_agent dispatch's own agent run. Built fresh
+// per run (never cached), same rationale as buildTaskAgent above: its
+// complete_task tool and system prompt are specific to one task. Unlike
+// buildTaskAgent it:
+//   - never calls loadMcpTools() — MCP tools are not fetched at all, not
+//     filtered out afterward (design §3: "never invoked").
+//   - never binds makeShellExecTool()/buildGatedTools()/buildWikiWriteTools()
+//     — every one of those is mutating.
+//   - uses SUB_AGENT_TOOLS (an explicit read-only allowlist) instead of
+//     STATIC_CHAT_TOOLS, so it never sees spawn_sub_agent itself (blocks
+//     nesting by construction) or ask_user (no HITL — see
+//     buildTaskContextBlock's hasAskUser=false above).
+//   - omits createRecursionGuardMiddleware (also interrupt()-based) and the
+//     skill-gating middlewares (the only tools they gate — create-workspace/
+//     create-project — aren't in this tool list at all). Its only recursion
+//     backstop is the smaller hard env.agent.subAgentRecursionLimit ceiling
+//     passed at the agent.streamEvents() call site in task-execution.ts.
+// See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
+// ---------------------------------------------------------------------------
+// Return type deliberately not annotated as ChatAgent — that alias is
+// pinned to buildChatAgent's exact 5-entry middleware tuple, and this
+// builder's middleware array is a different (shorter) tuple, so
+// createAgent()'s overload resolution produces a structurally different
+// (but compatible) type here. Consumers needing an agent type only rely on
+// stream-handler.ts's looser structural AgentWithGraph interface.
+export async function buildSubAgentAgent(
+  task: Task,
+  roleConfig: RoleConfig,
+  workspaceScope?: TaskWorkspaceScope,
+) {
+  const llm = createProvider(roleConfig.provider, roleConfig.model);
+
+  const taskBlock = buildTaskContextBlock(
+    { title: task.title, description: task.description, outcome: task.outcome },
+    false,
+  );
+  const baseBlock = workspaceScope
+    ? `${buildWorkspaceContextBlock(workspaceScope.workspaceContext)}\n\n${taskBlock}`
+    : taskBlock;
+  const contextBlock = roleConfig.systemPrompt
+    ? `${baseBlock}\n\n${roleConfig.systemPrompt}`
+    : baseBlock;
+  const systemPrompt = buildSystemPrompt(getAgentInstructions(), contextBlock);
+
+  const agent = createAgent({
+    model: llm,
+    // makeCompleteTaskTool(task.id) listed before the ...SUB_AGENT_TOOLS
+    // spread deliberately — createAgent's overloaded, const-generic tools
+    // param fails TS's overload resolution when a single element trails a
+    // spread here (though the identical pattern is fine elsewhere in this
+    // file with more/longer spreads around it); order has no runtime effect
+    // either way.
+    tools: [makeCompleteTaskTool(task.id), ...SUB_AGENT_TOOLS],
+    systemPrompt,
+    checkpointer: getCheckpointer(),
+    middleware: [createContextWindowMiddleware(env.chat?.contextWindow), afterAgentMiddleware],
   });
 
   return { agent, systemPrompt };

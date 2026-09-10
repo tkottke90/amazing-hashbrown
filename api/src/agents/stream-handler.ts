@@ -7,6 +7,7 @@ import type { ChatSSEEvent, ChatErrorCategory } from '@tkottke90/llm-common-type
 import { classifyChatError } from './error-classification.js';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
 import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
+import { drainPendingTurns } from './pending-thread-turns.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
@@ -913,6 +914,7 @@ export async function streamChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -1074,6 +1076,7 @@ export async function resumeChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
 
@@ -1234,5 +1237,6 @@ export async function retryChatToSse(
       error: turnError,
     });
     clearActiveSseWriter(threadId);
+    drainPendingTurns(threadId);
   }
 }
