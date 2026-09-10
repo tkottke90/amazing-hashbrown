@@ -8,11 +8,9 @@ nav:
     href: https://github.com/tkottke90/amazing-hashbrown
 hero:
   eyebrow: Open Source · Local-First
-  headline: Give your local LLM a memory it can read — and write.
+  headline: Give your AI Agent a Home
   subhead: >-
-    amazing-hashbrown pairs a ReAct chat agent with an on-disk knowledge base,
-    so it can search, learn from, and write back to a structured wiki — all
-    running on your own machine against a local inference backend like Ollama.
+    Amazing Hashbrown is a local-first, open-source AI Harness built with local LLMs in mind. Focusing on extracting knowledge from its work and your conversations.  All managed in a local, markdown-driven knowledge base.  Amazing Hashbrown is designed to be a simple, yet powerful framework for building AI Agents that can learn and grow over time.
   installCmd: curl -fsSL https://raw.githubusercontent.com/tkottke90/amazing-hashbrown/main/scripts/install.sh | sh
   primaryCta: Get Started
   primaryHref: /docs/getting-started/
@@ -22,16 +20,15 @@ features:
   - tag: 01 · Wiki
     title: LLM Wiki
     body: >-
-      Knowledge lives in an on-disk knowledge base the agent searches and
-      reads on demand, instead of being pre-loaded into the system prompt.
+      Knowledge lives in an on-disk, markdown driven knowledge base the agent searches and
+      reads on demand.
   - tag: 02 · RLM
     title: Retrieval Loop Model
-    body: Long documents are queried iteratively rather than stuffed into context wholesale.
+    body: Read large volumes of information without your agent forgetting what it read.
   - tag: 03 · Tools
     title: Skill-Gated Tools
     body: >-
-      Tools for a specific, less-common capability are only exposed to the
-      model once the matching skill is invoked.
+      The Agent knows about tools as they are needed rather than all that are available.
 footer:
   links:
     - label: Getting Started
