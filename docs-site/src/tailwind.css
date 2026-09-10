@@ -56,6 +56,13 @@
   --color-primary-foreground: var(--color-blue-950);
 }
 
+html, body {
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 body {
-  @apply bg-background text-foreground;
+  @apply bg-background text-foreground grid-rows-[65px_1fr] grid;
 }
