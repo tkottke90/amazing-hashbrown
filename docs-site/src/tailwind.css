@@ -2,6 +2,8 @@
 
 @plugin '@tailwindcss/typography';
 
+@custom-variant dark (&:is(.dark *));
+
 /* Color tokens ported from ui/src/style.css — copy-once, not shared across workspaces. */
 @theme {
   --color-blue-50: #f3f2ff;
@@ -36,6 +38,22 @@
   --color-accent-foreground: oklch(0.205 0 0);
   --color-primary: var(--color-blue-600);
   --color-primary-foreground: var(--color-blue-50);
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-accent: oklch(0.269 0 0);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-primary: var(--color-blue-400);
+  --color-primary-foreground: var(--color-blue-950);
 }
 
 body {
