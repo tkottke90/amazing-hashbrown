@@ -416,7 +416,7 @@ describe('agents/task-execution', () => {
     });
   });
 
-  describe('sub-agent completion notification (origin=\'agent\' — issue #161)', () => {
+  describe("sub-agent completion notification (origin='agent' — issue #161)", () => {
     // No provider is configured in this test environment, so
     // deliverSubAgentCompletion()'s attempt to actually build the parent's
     // agent and run a notification turn fails harmlessly inside its own
@@ -424,12 +424,14 @@ describe('agents/task-execution', () => {
     // tests assert on the synchronous, provider-independent part of that
     // flow: the sub_agent_marker written into the parent thread before the
     // agent build is even attempted.
-    function makeSubAgentEntry(opts: {
-      role?: string;
-      goal?: string;
-      parentThreadId?: string;
-      dispatchGroupId?: string;
-    } = {}): QueueEntryWithTask {
+    function makeSubAgentEntry(
+      opts: {
+        role?: string;
+        goal?: string;
+        parentThreadId?: string;
+        dispatchGroupId?: string;
+      } = {},
+    ): QueueEntryWithTask {
       const parentThreadId = opts.parentThreadId ?? 'parent-thread-1';
       threadStore.upsertThreadOnFirstMessage(parentThreadId, 'Parent', 'chat');
       store.createSubAgentTask({
@@ -444,7 +446,11 @@ describe('agents/task-execution', () => {
     function completionMarkers(parentThreadId: string) {
       return threadStore
         .getThreadMessages(parentThreadId)
-        .filter((m) => m.kind === 'sub_agent_marker' && (m.payload as Record<string, unknown>).phase === 'completion');
+        .filter(
+          (m) =>
+            m.kind === 'sub_agent_marker' &&
+            (m.payload as Record<string, unknown>).phase === 'completion',
+        );
     }
 
     it('writes a completion sub_agent_marker into the parent thread when complete_task fires', async () => {
@@ -512,7 +518,7 @@ describe('agents/task-execution', () => {
       expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('cancelled');
     });
 
-    it('does not write a sub_agent_marker for an ordinary origin=\'user\' task', async () => {
+    it("does not write a sub_agent_marker for an ordinary origin='user' task", async () => {
       const entry = makeGlobalEntry('Ordinary task');
       await executeTask(entry, {
         buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),

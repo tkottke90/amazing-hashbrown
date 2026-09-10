@@ -63,7 +63,7 @@ describe('agents/tools/spawn-sub-agent', () => {
     expect(String(result)).to.include('researcher');
   });
 
-  it('dispatches immediately: creates an origin=\'agent\' task, wakes the scheduler, and returns the dispatched id/role', async () => {
+  it("dispatches immediately: creates an origin='agent' task, wakes the scheduler, and returns the dispatched id/role", async () => {
     const result = await spawnSubAgentTool.invoke(
       { role: 'researcher', goal: 'Find the answer' },
       invokeConfig(),

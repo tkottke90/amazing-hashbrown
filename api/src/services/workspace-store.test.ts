@@ -430,7 +430,7 @@ describe('services/workspace-store', () => {
     });
   });
 
-  describe('sub-agent tooling columns and helpers (origin=\'agent\' — issue #161, migration 27)', () => {
+  describe("sub-agent tooling columns and helpers (origin='agent' — issue #161, migration 27)", () => {
     let db: ReturnType<typeof openDatabase>;
     let store: WorkspaceStore;
     let dir: string;
@@ -445,7 +445,7 @@ describe('services/workspace-store', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    it('defaults an ordinary task to origin=\'user\' with null parent/dispatch/role columns', () => {
+    it("defaults an ordinary task to origin='user' with null parent/dispatch/role columns", () => {
       const task = store.createTask({ title: 'ordinary' });
       expect(task.origin).to.equal('user');
       expect(task.parentThreadId).to.equal(null);
@@ -453,7 +453,7 @@ describe('services/workspace-store', () => {
       expect(task.role).to.equal(null);
     });
 
-    it('createSubAgentTask() creates an origin=\'agent\' row, ready/assigned to agent, and enqueues it', () => {
+    it("createSubAgentTask() creates an origin='agent' row, ready/assigned to agent, and enqueues it", () => {
       const task = store.createSubAgentTask({
         role: 'researcher',
         goal: 'Find the answer',
@@ -474,7 +474,7 @@ describe('services/workspace-store', () => {
       expect(entry!.status).to.equal('pending');
     });
 
-    it('dequeueNext() dispatches an origin=\'agent\' row even while its own scope has a running entry', () => {
+    it("dequeueNext() dispatches an origin='agent' row even while its own scope has a running entry", () => {
       // A regular Inbox task occupies the Inbox scope...
       const inboxTask = store.createTask({ title: 'inbox', assignedTo: 'agent' });
       store.patchTask(inboxTask.id, { status: 'ready' });
@@ -497,7 +497,7 @@ describe('services/workspace-store', () => {
       expect(dispatched.taskId).to.equal(subAgentTask.id);
     });
 
-    it('getRunningEntry(scope) excludes a running origin=\'agent\' row from scope accounting', () => {
+    it("getRunningEntry(scope) excludes a running origin='agent' row from scope accounting", () => {
       const subAgentTask = store.createSubAgentTask({
         role: 'researcher',
         goal: 'sub-agent goal',
@@ -558,7 +558,7 @@ describe('services/workspace-store', () => {
       expect(store.countPendingSiblings('group-x', a.id)).to.equal(0);
     });
 
-    it('recoverRunningQueueEntries() marks an exhausted origin=\'agent\' row failed (not waiting_on_user) and queues it for notification', () => {
+    it("recoverRunningQueueEntries() marks an exhausted origin='agent' row failed (not waiting_on_user) and queues it for notification", () => {
       const task = store.createSubAgentTask({
         role: 'researcher',
         goal: 'sub-agent goal',

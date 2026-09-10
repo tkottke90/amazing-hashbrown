@@ -613,7 +613,11 @@ export async function buildTaskAgent(
 // createAgent()'s overload resolution produces a structurally different
 // (but compatible) type here. Consumers needing an agent type only rely on
 // stream-handler.ts's looser structural AgentWithGraph interface.
-export async function buildSubAgentAgent(task: Task, roleConfig: RoleConfig, workspaceScope?: TaskWorkspaceScope) {
+export async function buildSubAgentAgent(
+  task: Task,
+  roleConfig: RoleConfig,
+  workspaceScope?: TaskWorkspaceScope,
+) {
   const llm = createProvider(roleConfig.provider, roleConfig.model);
 
   const taskBlock = buildTaskContextBlock(

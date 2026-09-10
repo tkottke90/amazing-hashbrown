@@ -543,7 +543,12 @@ export class WorkspaceStore extends BaseStore {
          JOIN tasks ON tasks.id = task_queue.task_id
          WHERE task_queue.status = 'running'`,
       )
-      .all() as { id: string; task_id: string; recovery_attempts: number; origin: 'user' | 'agent' }[];
+      .all() as {
+      id: string;
+      task_id: string;
+      recovery_attempts: number;
+      origin: 'user' | 'agent';
+    }[];
 
     const now = new Date().toISOString();
     const retry = this.db.prepare(
@@ -1181,7 +1186,10 @@ export class WorkspaceStore extends BaseStore {
          WHERE task_queue.status = 'pending'
          ORDER BY task_queue.position ASC`,
       )
-      .all() as (RawQueueRow & { task_workspace_id: string | null; task_origin: 'user' | 'agent' })[];
+      .all() as (RawQueueRow & {
+      task_workspace_id: string | null;
+      task_origin: 'user' | 'agent';
+    })[];
     if (pending.length === 0) return null;
 
     // origin='agent' (spawn_sub_agent) rows never occupy or contend for a
