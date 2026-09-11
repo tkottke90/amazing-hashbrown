@@ -39,7 +39,12 @@ export function SkillEvalsTab({ skillName }: { skillName: string }) {
   }
 
   function updateAssertions(index: number, text: string) {
-    updateCase(index, { assertions: text.split('\n').map((l) => l.trim()).filter(Boolean) });
+    updateCase(index, {
+      assertions: text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean),
+    });
   }
 
   async function handleSave() {

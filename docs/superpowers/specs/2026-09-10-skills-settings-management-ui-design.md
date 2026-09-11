@@ -42,7 +42,7 @@ autocomplete (`ui/src/components/chat-input.tsx`).
 - Running a skill's `scripts/*.js`/`*.py` files from the UI
   (`SkillsManager.runScript`/`runPythonScript`) — those are agent-invoked
   at chat time, not something a settings admin needs to trigger manually.
-- Skill *source* provenance (e.g. distinguishing skills installed via
+- Skill _source_ provenance (e.g. distinguishing skills installed via
   `skills-lock.json` from locally-created ones). `skills-lock.json` is not
   currently read by the API at all (only by whatever installs skills before
   boot); nothing in this design changes that. All skills are treated
@@ -62,18 +62,18 @@ the contract `chat-input.tsx`'s autocomplete depends on.
 New routes added to the same router, all backed directly by the
 `skillsManager` singleton (`api/src/services/skills-manager.ts`):
 
-| Method | Path | Manager call | Notes |
-|---|---|---|---|
-| GET | `/api/v1/skills?all=true` | `list()` | New query flag, additive — omitted/false preserves today's enabled-only behavior for existing callers. Admin list view uses `all=true`. |
-| GET | `/api/v1/skills/:name` | `load()` | Full `Skill`: frontmatter, body, `scripts`/`references` basename→path maps. |
-| POST | `/api/v1/skills` | `create(input)` | Body: `CreateSkillInput`. 409 on duplicate name (manager already throws on this — route maps to 409). 400 on invalid name (manager's `NAME_RE`/length checks — route maps to 400). |
-| PATCH | `/api/v1/skills/:name` | `edit(name, changes)` | Body: `EditSkillInput` (`description`, `body`, `license`, `compatibility`, `allowedTools`, `metadata`, `enabled`). 404 if skill doesn't exist. |
-| DELETE | `/api/v1/skills/:name` | `delete(name)` | **409 if `name` is in `GATED_SKILL_REGISTRATIONS`** (`api/src/agents/gated-skill-registrations.ts`), checked before calling into the manager — this is a real integrity guard, not just a UI nicety, so it's enforced server-side. |
-| GET | `/api/v1/skills/:name/files/:dir/:basename` | `readFile(name, dir, basename)` | `dir` restricted to `scripts` \| `references` (validated, 400 otherwise). |
-| PUT | `/api/v1/skills/:name/files/:dir/:basename` | `writeFile(name, dir, basename, content)` | Creates or overwrites. |
-| DELETE | `/api/v1/skills/:name/files/:dir/:basename` | `deleteFile(name, dir, basename)` | |
-| GET | `/api/v1/skills/:name/evals` | `loadEvals(name)` | Returns `{ skill_name: name, evals: [] }` instead of propagating the manager's "no evals found" error, so the frontend always has a valid (possibly empty) suite to render. |
-| PUT | `/api/v1/skills/:name/evals` | `saveEvals(name, suite)` | Body: `EvalSuite`. |
+| Method | Path                                        | Manager call                              | Notes                                                                                                                                                                                                                              |
+| ------ | ------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/skills?all=true`                   | `list()`                                  | New query flag, additive — omitted/false preserves today's enabled-only behavior for existing callers. Admin list view uses `all=true`.                                                                                            |
+| GET    | `/api/v1/skills/:name`                      | `load()`                                  | Full `Skill`: frontmatter, body, `scripts`/`references` basename→path maps.                                                                                                                                                        |
+| POST   | `/api/v1/skills`                            | `create(input)`                           | Body: `CreateSkillInput`. 409 on duplicate name (manager already throws on this — route maps to 409). 400 on invalid name (manager's `NAME_RE`/length checks — route maps to 400).                                                 |
+| PATCH  | `/api/v1/skills/:name`                      | `edit(name, changes)`                     | Body: `EditSkillInput` (`description`, `body`, `license`, `compatibility`, `allowedTools`, `metadata`, `enabled`). 404 if skill doesn't exist.                                                                                     |
+| DELETE | `/api/v1/skills/:name`                      | `delete(name)`                            | **409 if `name` is in `GATED_SKILL_REGISTRATIONS`** (`api/src/agents/gated-skill-registrations.ts`), checked before calling into the manager — this is a real integrity guard, not just a UI nicety, so it's enforced server-side. |
+| GET    | `/api/v1/skills/:name/files/:dir/:basename` | `readFile(name, dir, basename)`           | `dir` restricted to `scripts` \| `references` (validated, 400 otherwise).                                                                                                                                                          |
+| PUT    | `/api/v1/skills/:name/files/:dir/:basename` | `writeFile(name, dir, basename, content)` | Creates or overwrites.                                                                                                                                                                                                             |
+| DELETE | `/api/v1/skills/:name/files/:dir/:basename` | `deleteFile(name, dir, basename)`         |                                                                                                                                                                                                                                    |
+| GET    | `/api/v1/skills/:name/evals`                | `loadEvals(name)`                         | Returns `{ skill_name: name, evals: [] }` instead of propagating the manager's "no evals found" error, so the frontend always has a valid (possibly empty) suite to render.                                                        |
+| PUT    | `/api/v1/skills/:name/evals`                | `saveEvals(name, suite)`                  | Body: `EvalSuite`.                                                                                                                                                                                                                 |
 
 All routes follow the existing router's error-handling shape (try/catch →
 appropriate status + `{ error, detail }`, matching the current `GET /`

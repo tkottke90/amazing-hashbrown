@@ -35,12 +35,8 @@ export function SkillsList() {
       </div>
 
       <div class="flex-1 overflow-y-auto">
-        {skillListLoading.value && (
-          <p class="p-3 text-sm text-muted-foreground">Loading…</p>
-        )}
-        {skillListError.value && (
-          <p class="p-3 text-sm text-destructive">{skillListError.value}</p>
-        )}
+        {skillListLoading.value && <p class="p-3 text-sm text-muted-foreground">Loading…</p>}
+        {skillListError.value && <p class="p-3 text-sm text-destructive">{skillListError.value}</p>}
         {!skillListLoading.value && skillList.value?.length === 0 && (
           <p class="p-3 text-sm text-muted-foreground">No skills yet.</p>
         )}

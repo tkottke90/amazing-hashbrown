@@ -146,10 +146,10 @@ export async function createSkillHandler(
 ): Promise<HandlerResult<Skill>> {
   const parsed = CreateSkillSchema.safeParse(body);
   if (!parsed.success) {
-    return invalid('Validation failed', parsed.error.flatten().fieldErrors as Record<
-      string,
-      string[]
-    >);
+    return invalid(
+      'Validation failed',
+      parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    );
   }
   try {
     return ok(await manager.create(parsed.data as CreateSkillInput));
@@ -166,10 +166,10 @@ export async function editSkillHandler(
   if (!skillExists(manager, name)) return notFound(`Skill "${name}" not found`);
   const parsed = EditSkillSchema.safeParse(body);
   if (!parsed.success) {
-    return invalid('Validation failed', parsed.error.flatten().fieldErrors as Record<
-      string,
-      string[]
-    >);
+    return invalid(
+      'Validation failed',
+      parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    );
   }
   try {
     return ok(await manager.edit(name, parsed.data as EditSkillInput));
@@ -279,10 +279,10 @@ export async function saveSkillEvalsHandler(
   if (!skillExists(manager, name)) return notFound(`Skill "${name}" not found`);
   const parsed = EvalSuiteSchema.safeParse(body);
   if (!parsed.success) {
-    return invalid('Validation failed', parsed.error.flatten().fieldErrors as Record<
-      string,
-      string[]
-    >);
+    return invalid(
+      'Validation failed',
+      parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    );
   }
   try {
     await manager.saveEvals(name, parsed.data as EvalSuite);

@@ -21,9 +21,10 @@ export const skillsRouter = Router();
 const GATED_NAMES = GATED_SKILL_REGISTRATIONS.map((r) => r.skillCommand);
 
 function sendFailure(res: Response, failure: HandlerFailure): void {
-  res
-    .status(failure.status)
-    .json({ error: failure.error, ...(failure.fieldErrors ? { fieldErrors: failure.fieldErrors } : {}) });
+  res.status(failure.status).json({
+    error: failure.error,
+    ...(failure.fieldErrors ? { fieldErrors: failure.fieldErrors } : {}),
+  });
 }
 
 skillsRouter.get('/', (req: Request, res: Response) => {

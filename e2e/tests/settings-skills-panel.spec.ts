@@ -38,7 +38,8 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Toggle enabled off for the gated create-workspace skill',
-      expectedOutcome: 'A confirmation dialog names the create_workspace tool; accepting fires the PATCH, dismissing reverts the switch',
+      expectedOutcome:
+        'A confirmation dialog names the create_workspace tool; accepting fires the PATCH, dismissing reverts the switch',
       test: () => {},
     },
     {
@@ -56,7 +57,8 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: "Select the gated create-workspace skill's Details tab",
-      expectedOutcome: 'Delete button is disabled and clicking it triggers no dialog or network call',
+      expectedOutcome:
+        'Delete button is disabled and clicking it triggers no dialog or network call',
       test: () => {},
     },
   ],
@@ -122,7 +124,8 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
         if (q) {
           list = list.filter(
             (s) =>
-              s.name.toLowerCase().includes(q) || s.frontmatter.description.toLowerCase().includes(q),
+              s.name.toLowerCase().includes(q) ||
+              s.frontmatter.description.toLowerCase().includes(q),
           );
         }
         await route.fulfill({ json: { skills: list.map(toSummary) } });
@@ -165,8 +168,10 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
         if (typeof body.description === 'string') skill.frontmatter.description = body.description;
         if (typeof body.body === 'string') skill.body = body.body;
         if (typeof body.license === 'string') skill.frontmatter.license = body.license;
-        if (typeof body.compatibility === 'string') skill.frontmatter.compatibility = body.compatibility;
-        if (typeof body.allowedTools === 'string') skill.frontmatter['allowed-tools'] = body.allowedTools;
+        if (typeof body.compatibility === 'string')
+          skill.frontmatter.compatibility = body.compatibility;
+        if (typeof body.allowedTools === 'string')
+          skill.frontmatter['allowed-tools'] = body.allowedTools;
         if (typeof body.enabled === 'boolean') skill.enabled = body.enabled;
         await route.fulfill({ json: skill });
         return;

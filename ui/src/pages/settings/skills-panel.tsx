@@ -193,7 +193,10 @@ export function SkillsPanel() {
                 />
               )}
               {activeTab.value === 'evals' && (
-                <SkillEvalsTab key={selectedSkill.value.name} skillName={selectedSkill.value.name} />
+                <SkillEvalsTab
+                  key={selectedSkill.value.name}
+                  skillName={selectedSkill.value.name}
+                />
               )}
             </div>
           </div>

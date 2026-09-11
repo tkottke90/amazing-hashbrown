@@ -217,13 +217,9 @@ describe('skills.handlers', () => {
     }
 
     it('writes then reads a file, then deletes it', async () => {
-      const writeResult = await writeSkillFileHandler(
-        manager,
-        'file-owner',
-        'scripts',
-        'run.js',
-        { content: 'console.log(1);' },
-      );
+      const writeResult = await writeSkillFileHandler(manager, 'file-owner', 'scripts', 'run.js', {
+        content: 'console.log(1);',
+      });
       expect(writeResult.ok).to.equal(true);
 
       const readResult = await readSkillFileHandler(manager, 'file-owner', 'scripts', 'run.js');
@@ -264,7 +260,9 @@ describe('skills.handlers', () => {
     });
 
     it('400s save for a malformed body', async () => {
-      const result = await saveSkillEvalsHandler(manager, 'eval-owner', { skill_name: 'eval-owner' });
+      const result = await saveSkillEvalsHandler(manager, 'eval-owner', {
+        skill_name: 'eval-owner',
+      });
       expect(result.ok).to.equal(false);
       if (result.ok) return;
       expect(result.status).to.equal(400);

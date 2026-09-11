@@ -85,9 +85,7 @@ export function SkillFilesTab({ skillName, dir, files }: SkillFilesTabProps) {
           </Button>
         </div>
         <div class="flex-1 overflow-y-auto">
-          {basenames.length === 0 && (
-            <p class="p-3 text-sm text-muted-foreground">No files yet.</p>
-          )}
+          {basenames.length === 0 && <p class="p-3 text-sm text-muted-foreground">No files yet.</p>}
           <ul class="divide-y divide-border">
             {basenames.map((basename) => (
               <li key={basename} class="flex items-center justify-between gap-1 px-2 py-1.5">
@@ -120,9 +118,7 @@ export function SkillFilesTab({ skillName, dir, files }: SkillFilesTabProps) {
         ) : (
           <>
             <div class="flex items-center justify-between gap-2 border-b border-border p-2">
-              <span class="truncate text-sm font-medium text-foreground">
-                {openBasename.value}
-              </span>
+              <span class="truncate text-sm font-medium text-foreground">{openBasename.value}</span>
               <Button
                 type="button"
                 size="sm"
