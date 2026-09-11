@@ -3,6 +3,7 @@ title: Overview
 section: Overview
 order: 1
 layout: doc.njk
+permalink: /docs/overview/
 ---
 
 ## Overview
@@ -36,6 +37,15 @@ The result is a harness that scales down to small local models without falling o
 **Skills.** Slash-command-gated capabilities — store a step-by-step process in a markdown file, then provide that when you need the agent to follow that process. Capture _mechanical work_ as scripts the agent will call from the command line, and provide _cognitive work_ as a set of instructions the agent will follow in its reasoning. See [Skills](/docs/skills/) for more.
 
 **Observability.** Every LLM call, token count, and tool invocation is recorded locally, so you can see exactly what the agent did and why — useful both for debugging a misbehaving local model and for building trust in a system you're running yourself.
+
+### Look and feel
+
+The interface follows your system's light/dark preference by default, and you can override it with the toggle in the app's header — the choice is remembered between sessions.
+
+<figure class="flex flex-col items-center text-center">
+  <img src="{{ '/assets/dark-mode-toggle.png' | url }}" alt="The header's theme toggle button, showing the sun icon that indicates dark mode is currently active.">
+  <figcaption>The theme toggle in the header, switched to dark mode.</figcaption>
+</figure>
 
 ### Where to go next
 

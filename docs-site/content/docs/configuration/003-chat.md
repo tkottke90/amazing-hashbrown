@@ -53,3 +53,12 @@ Registers a tool the agent can call to search further back in a thread than the 
 ### `workspaceSummary`
 
 For workspace chat threads specifically: once `messageThreshold` messages have passed since the last summary, the next turn automatically triggers a fresh one. The "Summarize" button in the Chat tab bypasses the threshold and always runs on demand.
+
+### Switching model mid-thread
+
+The chat input's "+" menu has a "Provider" item — hovering (or, on mobile, tapping) it drills into the configured providers, and hovering a provider drills into that provider's available models. Selecting a model switches the active thread to it immediately; per-model pricing shows alongside models that have `inputPricePerM`/`outputPricePerM` configured.
+
+<figure class="flex flex-col items-center text-center">
+  <img src="{{ '/assets/model-picker-dropdown.png' | url }}" alt="The chat input's model picker drilled down to the local provider, listing its available models with the active model checked">
+  <figcaption>Example: switching models from the chat input</figcaption>
+</figure>

@@ -12,8 +12,10 @@ LLM Wiki was a concept created by _Andrej karpathy_ ([Original Gist](https://gis
 
 ### LLM Wiki and Amazing Hashbrown
 
-Having use the LLM Wiki myself, I found it's ability to not only collect and organize information, but also the compounding effect of the wiki to be a powerful and sustainable tool at scale. We added a _routing element_ (a.k.a. multiple sibling wikis) to the LLM Wiki pattern and realized that it could be a powerful core component of an AI Harness.
+_Amazing Hashbrown_ uses the LLM Wiki pattern as the core memory component.  It is well known that LLMs struggle with context (especially in long conversations).  LLM Wiki was chosen because it provides the following benefits:
 
-As such, LLM Wikis became the core memory and knowledge base component of Amazing Hashbrown. The LLM Wiki pattern is used to build the knowledge base for each workspace, and the routing element allows for multiple wikis to be used in parallel, each with their own knowledge base.
+- All content is curated - All information is managed by the Agent and the Agent has instructions to constantly reflect on not only the information but it's impact to the wiki as a whole.
+- All data is plain text - No proprietary formats or database that requires special tools to access the raw data.  Everything is stored in JSON or Markdown format.
 
-![Wiki graph view]({{ '/images/wiki-graph-view.png' | url }})
+
+

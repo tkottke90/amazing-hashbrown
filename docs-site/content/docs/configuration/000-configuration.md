@@ -55,6 +55,11 @@ defaultProvider: local
 
 You can list more than one — a local Ollama model alongside OpenAI or Anthropic, for example — and switch between them per conversation from the model picker in the UI.
 
+<figure class="flex flex-col items-center text-center">
+  <img src="{{ '/assets/settings-model-providers.png' | url }}" alt="The Model providers panel in Settings, listing four configured providers — local (Ollama), Lemonade (OpenAI, marked Default), Ornith (OpenAI), and Digital Ocean (OpenAI) — each with its model name and an Edit action.">
+  <figcaption>The Model providers panel in Settings, showing the same <code>providers</code> list from <code>config.yaml</code>.</figcaption>
+</figure>
+
 ### What else you can configure
 
 The rest of the file groups roughly by feature. You won't need to touch most of it right away — each one has its own page with the full option list and examples:

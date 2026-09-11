@@ -9,11 +9,13 @@ layout: doc.njk
 
 The LLM Wiki isn't one feature with a single obvious first step — it's a platform-level building block that can back the main chat agent's memory, a workspace's project knowledge, or a domain you build by hand for something else entirely. With that many possibilities, the fastest way to understand what it actually does isn't to read about wikis first. It's to have one ordinary conversation with the agent, then go look at what happened.
 
-Ask it something, tell it something about yourself or what you're working on — nothing special. When the turn finishes, open the Wiki view. There's a good chance a page already exists that wasn't there before. Nobody asked for that page to be written: the [chat interface](/docs/llm-wiki/004-wiki-chat/) has a built-in reflection step, **AfterAgent**, that runs after every reply and decides on its own whether anything in the conversation was worth keeping. Once you've seen that happen once, everything else the wiki does is a variation on the same idea — content arriving either quietly on your behalf, or explicitly because someone asked for it. For the full picture of when AfterAgent decides to write and how to tune it, see [AfterAgent configuration](/docs/configuration/001-afteragent/).
+Ask it something, tell it something about yourself or what you're working on.  Tell it you want to build something or keep track of something.
+
+ When the turn finishes, open the Wiki view. There's a good chance a page already exists that wasn't there before. Nobody asked for that page to be written: the [chat interface](/docs/llm-wiki/004-wiki-chat/) has a built-in reflection step (**AfterAgent**) that runs after every reply and decides on its own whether anything in the conversation was worth keeping. Once you've seen that happen once, everything else the wiki does is a variation on the same idea — content arriving either quietly on your behalf, or explicitly because someone asked for it. For the full picture of when AfterAgent decides to write and how to tune it, see [AfterAgent configuration](/docs/configuration/001-afteragent/).
 
 ### Default Wikis
 
-Two wikis exist from the moment the app starts, before you create anything yourself:
+To get the application off the ground, two wikis exist from the moment the app starts, before you create anything yourself:
 
 - **`user`** — facts about you: preferences, personal context, anything the agent has picked up about who it's talking to.
 - **`self`** — the agent's own knowledge about itself: its reasoning, decisions, mistakes, and how its behavior has changed over time.

@@ -1,4 +1,6 @@
 import syntaxHighlight from '@11ty/eleventy-plugin-syntaxhighlight';
+import markdownIt from 'markdown-it';
+import markdownItAdmon from 'markdown-it-admon';
 
 function slugifyHeading(text) {
   return text
@@ -19,6 +21,17 @@ export default function (eleventyConfig) {
   eleventyConfig.addPlugin(syntaxHighlight);
   eleventyConfig.addPassthroughCopy('content/css');
   eleventyConfig.addPassthroughCopy('content/images');
+  eleventyConfig.addPassthroughCopy('content/assets');
+
+  // MkDocs-style admonitions (!!! note "Title" ... ). markdown-it-admon only
+  // strips a title's quotes when they wrap an empty string, so quoted titles
+  // are unquoted here before the block parser sees them.
+  const markdownLibrary = markdownIt({ html: true }).use(markdownItAdmon);
+  markdownLibrary.core.ruler.before('block', 'admonition-title-quotes', (state) => {
+    state.src = state.src.replace(/^(!{3,}\s+\S+\s+)"(.*)"\s*$/gm, '$1$2');
+    return true;
+  });
+  eleventyConfig.setLibrary('md', markdownLibrary);
 
   // Adds ids to h2/h3 headings in rendered doc content and returns a
   // table-of-contents array alongside the annotated html, so doc.njk can
