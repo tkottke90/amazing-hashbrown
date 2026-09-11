@@ -26,8 +26,14 @@ export const selectedSkillName = signal<string | null>(null);
 export const selectedSkill = signal<SkillDetail | null>(null);
 export const selectedSkillLoading = signal(false);
 
-// true -> main content area shows the create form instead of a selected skill
+// true -> the drawer shows the create form instead of a selected skill
 export const creatingSkill = signal(false);
+
+// Drives SkillDrawer's controlled `open` prop (a Signal<boolean>, per
+// @tkottke90/preact-dialog's Dialog) — set true by selectSkill/
+// startCreateSkill, and synced back to false by the drawer itself on any
+// close path (X button, Escape, or our own closeDrawer()).
+export const drawerOpen = signal(false);
 
 export async function loadSkills(): Promise<void> {
   skillListLoading.value = true;
@@ -44,6 +50,7 @@ export async function loadSkills(): Promise<void> {
 export async function selectSkill(name: string): Promise<void> {
   creatingSkill.value = false;
   selectedSkillName.value = name;
+  drawerOpen.value = true;
   selectedSkillLoading.value = true;
   try {
     selectedSkill.value = await fetchSkill(name);
@@ -59,10 +66,17 @@ export function startCreateSkill(): void {
   selectedSkillName.value = null;
   selectedSkill.value = null;
   creatingSkill.value = true;
+  drawerOpen.value = true;
 }
 
-export function cancelCreateSkill(): void {
+// Closes the drawer and clears selection/create state. Called both
+// explicitly (Cancel button) and by SkillDrawer's own effect watching
+// drawerOpen flip to false via any other close path (X button, Escape).
+export function closeDrawer(): void {
+  drawerOpen.value = false;
   creatingSkill.value = false;
+  selectedSkillName.value = null;
+  selectedSkill.value = null;
 }
 
 export async function createSkillAction(input: CreateSkillInput): Promise<boolean> {
@@ -118,8 +132,7 @@ export async function deleteSkillAction(name: string): Promise<boolean> {
     await deleteSkill(name);
     showToast('success', `Skill "${name}" deleted`);
     if (selectedSkillName.value === name) {
-      selectedSkillName.value = null;
-      selectedSkill.value = null;
+      closeDrawer();
     }
     await loadSkills();
     return true;
@@ -146,7 +159,9 @@ export async function saveSkillFileAction(
   try {
     await saveSkillFile(name, dir, basename, content);
     showToast('success', `Saved ${basename}`);
-    await refreshSelectedSkill(name);
+    // Also refreshes the aside list so its Scripts/Refs badge picks up the
+    // new file without waiting for the next full panel reload.
+    await Promise.all([refreshSelectedSkill(name), loadSkills()]);
     return true;
   } catch (err) {
     showToast('error', err instanceof Error ? err.message : 'Failed to save file');
@@ -162,7 +177,7 @@ export async function deleteSkillFileAction(
   try {
     await deleteSkillFile(name, dir, basename);
     showToast('success', `Deleted ${basename}`);
-    await refreshSelectedSkill(name);
+    await Promise.all([refreshSelectedSkill(name), loadSkills()]);
     return true;
   } catch (err) {
     showToast('error', err instanceof Error ? err.message : 'Failed to delete file');
@@ -183,6 +198,8 @@ export async function saveEvalsAction(name: string, suite: EvalSuite): Promise<b
   try {
     await saveSkillEvals(name, suite);
     showToast('success', 'Evals saved');
+    // Refreshes the aside list so its Evals badge picks up the change.
+    await loadSkills();
     return true;
   } catch (err) {
     showToast('error', err instanceof Error ? err.message : 'Failed to save evals');
@@ -200,4 +217,5 @@ export function resetSkillsPanelState(): void {
   selectedSkill.value = null;
   selectedSkillLoading.value = false;
   creatingSkill.value = false;
+  drawerOpen.value = false;
 }

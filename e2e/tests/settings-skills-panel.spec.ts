@@ -6,21 +6,21 @@ const suite: TestSuite = {
   id: 27,
   name: 'Settings skills panel',
   description:
-    'Verifies the Skills settings tab: listing, create/edit/delete, enable/disable with the gated-skill guard, script/reference file management, and eval case editing — all against a mocked skills API',
+    'Verifies the Skills settings tab: listing with presence badges, create/edit/delete via a right-hand drawer, enable/disable buttons with the gated-skill guard, script/reference file management, and eval case editing — all against a mocked skills API',
   purpose:
-    'Ensure the Skills management UI (issue #116) wires up its full CRUD flow correctly without a live backend',
+    'Ensure the Skills management UI (issue #116, drawer-based revision) wires up its full CRUD flow correctly without a live backend',
   tags: ['@smoke', '@user-workflow'],
   steps: [
     {
       tags: ['@smoke'],
       action: 'Navigate to the Skills settings tab',
-      expectedOutcome: 'Seeded skills are listed in the aside',
+      expectedOutcome: 'Seeded skills are listed, each with Edit/Enabled buttons and badges',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'Create a new skill via the form',
-      expectedOutcome: 'The new skill appears selected with its Details tab open',
+      action: 'Create a new skill via the drawer',
+      expectedOutcome: 'The drawer opens in create mode, then switches to showing the new skill',
       test: () => {},
     },
     {
@@ -31,34 +31,41 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Toggle enabled for a non-gated skill',
+      action: 'Click the Enabled/Disabled button for a non-gated skill',
       expectedOutcome: 'PATCH fires immediately with no confirmation dialog',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'Toggle enabled off for the gated create-workspace skill',
+      action: 'Click Enabled for the gated create-workspace skill',
       expectedOutcome:
-        'A confirmation dialog names the create_workspace tool; accepting fires the PATCH, dismissing reverts the switch',
+        'A confirmation dialog names the create_workspace tool; accepting fires the PATCH, dismissing leaves it Enabled',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'Add, edit, and delete a script file',
+      action: 'Add, edit, and delete a script file inside the drawer',
       expectedOutcome: 'PUT/DELETE requests fire correctly with a confirmation on delete',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Add and remove an eval case, then save',
-      expectedOutcome: 'PUT /:name/evals body reflects the edited case list',
+      expectedOutcome:
+        'PUT /:name/evals body reflects the edited case list, warning banner visible',
       test: () => {},
     },
     {
       tags: ['@smoke'],
-      action: "Select the gated create-workspace skill's Details tab",
+      action: "Open the gated create-workspace skill's drawer",
       expectedOutcome:
         'Delete button is disabled and clicking it triggers no dialog or network call',
+      test: () => {},
+    },
+    {
+      tags: ['@smoke'],
+      action: 'Add a script file to a skill, then close and reopen the drawer',
+      expectedOutcome: 'The Scripts badge for that skill switches from off to on styling',
       test: () => {},
     },
   ],
@@ -73,8 +80,6 @@ interface FakeSkill {
     name: string;
     description: string;
     license?: string;
-    compatibility?: string;
-    metadata?: Record<string, string>;
     'allowed-tools'?: string;
   };
   body: string;
@@ -95,19 +100,26 @@ function makeSkill(name: string, description: string, enabled = true): FakeSkill
   };
 }
 
-function toSummary(s: FakeSkill) {
-  return {
-    name: s.name,
-    description: s.frontmatter.description,
-    slashCommand: s.slashCommand,
-    enabled: s.enabled,
-    largeDesc: false,
-  };
-}
-
 async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
   const skills = new Map(seed.map((s) => [s.name, s]));
   const evalsBySkill = new Map<string, { skill_name: string; evals: unknown[] }>();
+
+  function toSummary(s: FakeSkill, withBadges: boolean) {
+    const base = {
+      name: s.name,
+      description: s.frontmatter.description,
+      slashCommand: s.slashCommand,
+      enabled: s.enabled,
+      largeDesc: false,
+    };
+    if (!withBadges) return base;
+    return {
+      ...base,
+      hasScripts: Object.keys(s.scripts).length > 0,
+      hasReferences: Object.keys(s.references).length > 0,
+      hasEvals: (evalsBySkill.get(s.name)?.evals.length ?? 0) > 0,
+    };
+  }
 
   await page.route('**/api/v1/skills**', async (route) => {
     const req = route.request();
@@ -128,15 +140,11 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
               s.frontmatter.description.toLowerCase().includes(q),
           );
         }
-        await route.fulfill({ json: { skills: list.map(toSummary) } });
+        await route.fulfill({ json: { skills: list.map((s) => toSummary(s, all)) } });
         return;
       }
       if (method === 'POST') {
-        const body = req.postDataJSON() as {
-          name: string;
-          description: string;
-          body?: string;
-        };
+        const body = req.postDataJSON() as { name: string; description: string; body?: string };
         const skill = makeSkill(body.name, body.description);
         skill.body = body.body ?? '';
         skills.set(skill.name, skill);
@@ -168,8 +176,6 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
         if (typeof body.description === 'string') skill.frontmatter.description = body.description;
         if (typeof body.body === 'string') skill.body = body.body;
         if (typeof body.license === 'string') skill.frontmatter.license = body.license;
-        if (typeof body.compatibility === 'string')
-          skill.frontmatter.compatibility = body.compatibility;
         if (typeof body.allowedTools === 'string')
           skill.frontmatter['allowed-tools'] = body.allowedTools;
         if (typeof body.enabled === 'boolean') skill.enabled = body.enabled;
@@ -245,24 +251,34 @@ const SEED = () => [
   makeSkill('brainstorming', 'Turn ideas into designs.'),
 ];
 
+function skillRow(page: Page, name: string) {
+  return page.locator('[data-slot="skill-row"]', { hasText: name });
+}
+
 test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, () => {
-  test('Lists seeded skills in the aside @smoke', async ({ page }, testInfo) => {
+  test('Lists seeded skills with Edit/Enabled buttons and badges @smoke', async ({
+    page,
+  }, testInfo) => {
     await mockSkillsApi(page, SEED());
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    await expect(page.getByText('create-workspace', { exact: true })).toBeVisible();
-    await expect(page.getByText('create-project', { exact: true })).toBeVisible();
-    await expect(page.getByText('brainstorming', { exact: true })).toBeVisible();
+    for (const name of ['create-workspace', 'create-project', 'brainstorming']) {
+      const row = skillRow(page, name);
+      await expect(row).toBeVisible();
+      await expect(row.getByRole('button', { name: 'Edit' })).toBeVisible();
+      await expect(row.getByRole('button', { name: 'Enabled' })).toBeVisible();
+    }
   });
 
-  test('Creates a new skill via the form @user-workflow', async ({ page }, testInfo) => {
+  test('Creates a new skill via the drawer @user-workflow', async ({ page }, testInfo) => {
     await mockSkillsApi(page, SEED());
     await page.goto('/settings?section=skills');
-    await page.getByText('create-workspace', { exact: true }).waitFor();
+    await skillRow(page, 'create-workspace').waitFor();
     await pauseBeforeAction(page, testInfo);
 
     await page.getByRole('button', { name: '+ New skill' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByLabel('Name').fill('my-new-skill');
     await page.getByLabel('Description').fill('A brand new skill');
     await page.getByRole('button', { name: 'Create skill' }).click();
@@ -276,7 +292,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByText('brainstorming', { exact: true }).click();
+    await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
     await page.getByLabel('Description').fill('Updated description');
 
     const patchRequest = page.waitForRequest(
@@ -290,20 +306,21 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await expect(page.getByRole('alert')).toContainText('saved');
   });
 
-  test('Toggles enabled for a non-gated skill with no dialog @user-workflow', async ({
+  test('Clicking Enabled for a non-gated skill toggles it with no dialog @user-workflow', async ({
     page,
   }, testInfo) => {
     await mockSkillsApi(page, SEED());
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    const row = page.locator('[data-slot="skill-row"]', { hasText: 'brainstorming' });
+    const row = skillRow(page, 'brainstorming');
     const patchRequest = page.waitForRequest(
       (req) => req.url().includes('/api/v1/skills/brainstorming') && req.method() === 'PATCH',
     );
-    await row.getByRole('switch').click();
+    await row.getByRole('button', { name: 'Enabled' }).click();
     const request = await patchRequest;
     expect((request.postDataJSON() as { enabled?: boolean }).enabled).toBe(false);
+    await expect(row.getByRole('button', { name: 'Disabled' })).toBeVisible();
   });
 
   test('Disabling the gated create-workspace skill asks for confirmation @user-workflow', async ({
@@ -313,32 +330,34 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    const row = page.locator('[data-slot="skill-row"]', { hasText: 'create-workspace' });
+    const row = skillRow(page, 'create-workspace');
 
     let dialogMessage = '';
     page.once('dialog', (d) => {
       dialogMessage = d.message();
       d.dismiss();
     });
-    await row.getByRole('switch').click();
+    await row.getByRole('button', { name: 'Enabled' }).click();
     expect(dialogMessage).toContain('create_workspace');
-    await expect(row.getByRole('switch')).toBeChecked();
+    await expect(row.getByRole('button', { name: 'Enabled' })).toBeVisible();
 
     const patchRequest = page.waitForRequest(
       (req) => req.url().includes('/api/v1/skills/create-workspace') && req.method() === 'PATCH',
     );
     page.once('dialog', (d) => d.accept());
-    await row.getByRole('switch').click();
+    await row.getByRole('button', { name: 'Enabled' }).click();
     await patchRequest;
-    await expect(row.getByRole('switch')).not.toBeChecked();
+    await expect(row.getByRole('button', { name: 'Disabled' })).toBeVisible();
   });
 
-  test('Adds, edits, and deletes a script file @user-workflow', async ({ page }, testInfo) => {
+  test('Adds, edits, and deletes a script file inside the drawer @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockSkillsApi(page, SEED());
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByText('brainstorming', { exact: true }).click();
+    await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
     await page.getByRole('button', { name: 'Scripts' }).click();
 
     await page.getByPlaceholder('filename.js').fill('run.js');
@@ -363,13 +382,17 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await deleteRequest;
   });
 
-  test('Adds and removes an eval case, saves @user-workflow', async ({ page }, testInfo) => {
+  test('Adds and removes an eval case, saves, and shows the not-implemented warning @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockSkillsApi(page, SEED());
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByText('brainstorming', { exact: true }).click();
+    await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
     await page.getByRole('button', { name: 'Evals' }).click();
+
+    await expect(page.getByText(/implemented yet/i)).toBeVisible();
 
     await page.getByRole('button', { name: '+ Add case' }).click();
     await page.getByLabel('Prompt').fill('Do the thing');
@@ -392,7 +415,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await page.goto('/settings?section=skills');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByText('create-workspace', { exact: true }).click();
+    await skillRow(page, 'create-workspace').getByRole('button', { name: 'Edit' }).click();
 
     let dialogFired = false;
     page.on('dialog', () => {
@@ -411,5 +434,33 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
 
     expect(dialogFired).toBe(false);
     expect(deleteCalled).toBe(false);
+  });
+
+  test('Scripts badge switches from off to on after adding a script file @smoke', async ({
+    page,
+  }, testInfo) => {
+    await mockSkillsApi(page, SEED());
+    await page.goto('/settings?section=skills');
+    await pauseBeforeAction(page, testInfo);
+
+    const row = skillRow(page, 'brainstorming');
+    const scriptsBadge = row.getByText('Scripts', { exact: true });
+    await expect(scriptsBadge).toHaveClass(/opacity-50/);
+
+    await row.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'Scripts' }).click();
+    await page.getByPlaceholder('filename.js').fill('run.js');
+    await page.getByRole('button', { name: 'Add' }).click();
+    const putRequest = page.waitForRequest(
+      (req) =>
+        req.url().includes('/api/v1/skills/brainstorming/files/scripts/run.js') &&
+        req.method() === 'PUT',
+    );
+    await page.getByRole('button', { name: 'Save' }).click();
+    await putRequest;
+
+    // The aside list refreshes as soon as the save resolves — no need to
+    // close the drawer first.
+    await expect(scriptsBadge).not.toHaveClass(/opacity-50/);
   });
 });

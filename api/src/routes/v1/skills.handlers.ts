@@ -120,12 +120,49 @@ function isSafeBasename(basename: string): boolean {
 
 // ---- Handlers -------------------------------------------------------------
 
-export function searchSkillsHandler(
+export interface SkillListItemWithBadges extends SkillSummary {
+  hasScripts?: boolean;
+  hasReferences?: boolean;
+  hasEvals?: boolean;
+}
+
+// hasEvals reuses the same "no evals yet" detection as getSkillEvalsHandler
+// rather than reading the manager's on-disk layout directly.
+async function hasEvals(manager: SkillsManager, name: string): Promise<boolean> {
+  try {
+    const suite = await manager.loadEvals(name);
+    return suite.evals.length > 0;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('No evals found for skill')) return false;
+    throw err;
+  }
+}
+
+async function withBadges(
+  manager: SkillsManager,
+  summary: SkillSummary,
+): Promise<SkillListItemWithBadges> {
+  const skill = await manager.load(summary.name);
+  return {
+    ...summary,
+    hasScripts: Object.keys(skill.scripts).length > 0,
+    hasReferences: Object.keys(skill.references).length > 0,
+    hasEvals: await hasEvals(manager, summary.name),
+  };
+}
+
+export async function searchSkillsHandler(
   manager: SkillsManager,
   q?: string,
   all?: boolean,
-): HandlerResult<{ skills: SkillSummary[] }> {
-  return ok({ skills: all ? manager.list() : manager.search(q) });
+): Promise<HandlerResult<{ skills: SkillListItemWithBadges[] }>> {
+  if (!all) return ok({ skills: manager.search(q) });
+  // Badge presence is only computed for the admin (all=true) listing — the
+  // plain q= path backs the chat slash-command autocomplete, hit on every
+  // keystroke, and shouldn't pay for the extra per-skill I/O.
+  const skills = await Promise.all(manager.list().map((s) => withBadges(manager, s)));
+  return ok({ skills });
 }
 
 export async function getSkillHandler(

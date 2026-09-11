@@ -45,8 +45,8 @@ describe('skills.handlers', () => {
       await manager.edit('disabled-skill', { enabled: false });
     });
 
-    it('excludes disabled skills by default', () => {
-      const result = searchSkillsHandler(manager, undefined, false);
+    it('excludes disabled skills by default', async () => {
+      const result = await searchSkillsHandler(manager, undefined, false);
       expect(result.ok).to.equal(true);
       if (!result.ok) return;
       const names = result.data.skills.map((s) => s.name);
@@ -54,8 +54,8 @@ describe('skills.handlers', () => {
       expect(names).to.not.include('disabled-skill');
     });
 
-    it('includes disabled skills when all=true', () => {
-      const result = searchSkillsHandler(manager, undefined, true);
+    it('includes disabled skills when all=true', async () => {
+      const result = await searchSkillsHandler(manager, undefined, true);
       expect(result.ok).to.equal(true);
       if (!result.ok) return;
       const names = result.data.skills.map((s) => s.name);
@@ -63,11 +63,43 @@ describe('skills.handlers', () => {
       expect(names).to.include('disabled-skill');
     });
 
-    it('filters by keyword', () => {
-      const result = searchSkillsHandler(manager, 'enabled-skill', false);
+    it('filters by keyword', async () => {
+      const result = await searchSkillsHandler(manager, 'enabled-skill', false);
       expect(result.ok).to.equal(true);
       if (!result.ok) return;
       expect(result.data.skills.map((s) => s.name)).to.deep.equal(['enabled-skill']);
+    });
+
+    it('omits badge flags on the plain (non-admin) search response', async () => {
+      const result = await searchSkillsHandler(manager, undefined, false);
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      const skill = result.data.skills.find((s) => s.name === 'enabled-skill');
+      expect(skill?.hasScripts).to.equal(undefined);
+      expect(skill?.hasReferences).to.equal(undefined);
+      expect(skill?.hasEvals).to.equal(undefined);
+    });
+
+    it('computes hasScripts/hasReferences/hasEvals on the admin (all=true) response', async () => {
+      await manager.writeFile('enabled-skill', 'scripts', 'run.js', 'console.log(1);');
+      await manager.saveEvals('enabled-skill', {
+        skill_name: 'enabled-skill',
+        evals: [{ id: 1, prompt: 'p', expected_output: 'e' }],
+      });
+
+      const result = await searchSkillsHandler(manager, undefined, true);
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+
+      const withData = result.data.skills.find((s) => s.name === 'enabled-skill');
+      expect(withData?.hasScripts).to.equal(true);
+      expect(withData?.hasReferences).to.equal(false);
+      expect(withData?.hasEvals).to.equal(true);
+
+      const withoutData = result.data.skills.find((s) => s.name === 'disabled-skill');
+      expect(withoutData?.hasScripts).to.equal(false);
+      expect(withoutData?.hasReferences).to.equal(false);
+      expect(withoutData?.hasEvals).to.equal(false);
     });
   });
 

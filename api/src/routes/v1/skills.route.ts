@@ -27,10 +27,10 @@ function sendFailure(res: Response, failure: HandlerFailure): void {
   });
 }
 
-skillsRouter.get('/', (req: Request, res: Response) => {
+skillsRouter.get('/', async (req: Request, res: Response) => {
   const q = (req.query.q as string | undefined)?.trim();
   const all = req.query.all === 'true';
-  const result = searchSkillsHandler(skillsManager, q, all);
+  const result = await searchSkillsHandler(skillsManager, q, all);
   if (!result.ok) {
     sendFailure(res, result);
     return;

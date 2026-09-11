@@ -1,12 +1,9 @@
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import {
   skillList,
   skillListLoading,
   skillListError,
-  selectedSkillName,
-  creatingSkill,
   selectSkill,
   startCreateSkill,
   toggleSkillEnabled,
@@ -24,9 +21,25 @@ function handleToggle(name: string, next: boolean) {
   void toggleSkillEnabled(name, next);
 }
 
+function Badge({ label, on }: { label: string; on?: boolean }) {
+  return (
+    <span
+      class={cn(
+        'rounded border px-1.5 py-0.5 text-[10px]',
+        on
+          ? 'border-primary/30 bg-primary/10 text-primary'
+          : 'border-border text-muted-foreground opacity-50',
+      )}
+      title={`${label}: ${on ? 'has files' : 'none'}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function SkillsList() {
   return (
-    <div class="flex w-64 shrink-0 flex-col border-r border-border">
+    <div class="flex flex-1 flex-col">
       <div class="flex items-center justify-between gap-2 border-b border-border p-3">
         <span class="text-sm font-medium text-foreground">Skills</span>
         <Button type="button" size="sm" variant="outline" onClick={startCreateSkill}>
@@ -42,23 +55,14 @@ export function SkillsList() {
         )}
         <ul class="divide-y divide-border">
           {(skillList.value ?? []).map((skill) => {
-            const isActive = !creatingSkill.value && selectedSkillName.value === skill.name;
             const isGated = GATED_SKILL_NAMES.includes(skill.name);
             return (
               <li
                 key={skill.name}
                 data-slot="skill-row"
-                data-active={isActive ? 'true' : 'false'}
-                class={cn(
-                  'flex items-start gap-2 px-3 py-2 transition-colors',
-                  isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent',
-                )}
+                class="flex flex-wrap items-center gap-3 px-3 py-2.5 sm:flex-nowrap"
               >
-                <button
-                  type="button"
-                  onClick={() => void selectSkill(skill.name)}
-                  class="flex min-w-0 flex-1 flex-col gap-1 text-left"
-                >
+                <div class="flex min-w-0 flex-1 flex-col gap-1">
                   <span class="flex min-w-0 items-center gap-1.5">
                     <span class="truncate text-sm font-medium text-foreground">{skill.name}</span>
                     {isGated && (
@@ -71,13 +75,32 @@ export function SkillsList() {
                     )}
                   </span>
                   <span class="truncate text-xs text-muted-foreground">{skill.description}</span>
-                </button>
-                <Switch
-                  size="sm"
-                  class="mt-0.5 shrink-0"
-                  checked={skill.enabled}
-                  onCheckedChange={(checked: boolean) => handleToggle(skill.name, checked)}
-                />
+                </div>
+
+                <div class="flex shrink-0 items-center gap-1">
+                  <Badge label="Scripts" on={skill.hasScripts} />
+                  <Badge label="Refs" on={skill.hasReferences} />
+                  <Badge label="Evals" on={skill.hasEvals} />
+                </div>
+
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void selectSkill(skill.name)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={skill.enabled ? 'outline' : 'ghost'}
+                    onClick={() => handleToggle(skill.name, !skill.enabled)}
+                  >
+                    {skill.enabled ? 'Enabled' : 'Disabled'}
+                  </Button>
+                </div>
               </li>
             );
           })}

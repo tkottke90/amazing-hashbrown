@@ -14,8 +14,11 @@ import { GATED_SKILL_NAMES } from './skill-gated-names';
 export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
   const description = useSignal(skill.frontmatter.description);
   const license = useSignal(skill.frontmatter.license ?? '');
-  const compatibility = useSignal(skill.frontmatter.compatibility ?? '');
-  const allowedTools = useSignal(skill.frontmatter['allowed-tools'] ?? '');
+  // TODO: Allowed tools needs to become a dropdown over the system's actual
+  // tool set, but the system doesn't yet reconcile/expose that list here.
+  // Field disabled below until that design lands — see skill-gated-names.ts
+  // for the one place tool names currently show up in this app.
+  // const allowedTools = useSignal(skill.frontmatter['allowed-tools'] ?? '');
   const bodyDirty = useSignal(false);
   const saving = useSignal(false);
   const bodyViewRef = useRef<EditorView | null>(null);
@@ -28,8 +31,6 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
       await saveSkillDetails(skill.name, {
         description: description.value,
         license: license.value || undefined,
-        compatibility: compatibility.value || undefined,
-        allowedTools: allowedTools.value || undefined,
         body: bodyViewRef.current?.state.doc.toString() ?? skill.body,
       });
       bodyDirty.value = false;
@@ -69,14 +70,9 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
               onInput={(e) => (license.value = (e.target as HTMLInputElement).value)}
             />
           </div>
-          <div class="space-y-1.5">
-            <Label htmlFor="skill-compatibility">Compatibility</Label>
-            <Input
-              id="skill-compatibility"
-              value={compatibility.value}
-              onInput={(e) => (compatibility.value = (e.target as HTMLInputElement).value)}
-            />
-          </div>
+          {/* TODO: Allowed tools should be a dropdown over the system's
+              reconciled tool set once that exists — see the TODO above the
+              (currently unused) allowedTools signal.
           <div class="space-y-1.5">
             <Label htmlFor="skill-allowed-tools">Allowed tools</Label>
             <Input
@@ -85,6 +81,7 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
               onInput={(e) => (allowedTools.value = (e.target as HTMLInputElement).value)}
             />
           </div>
+          */}
         </FormLayout>
 
         <div class="space-y-1.5">

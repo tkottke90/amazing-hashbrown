@@ -9,6 +9,11 @@ export interface SkillListItem {
   slashCommand: string;
   enabled: boolean;
   largeDesc: boolean;
+  // Only populated on the admin (`all=true`) listing — absent on the plain
+  // `q=` search response used by the chat slash-command autocomplete.
+  hasScripts?: boolean;
+  hasReferences?: boolean;
+  hasEvals?: boolean;
 }
 
 export interface SkillFrontmatter {
