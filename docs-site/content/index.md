@@ -3,7 +3,7 @@ title: amazing-hashbrown
 layout: home.njk
 nav:
   - label: Docs
-    href: /docs/getting-started/
+    href: /docs/quick-start/
   - label: GitHub
     href: https://github.com/tkottke90/amazing-hashbrown
 hero:
@@ -13,7 +13,7 @@ hero:
     Amazing Hashbrown is a local-first, open-source AI Harness built with local LLMs in mind. Focusing on extracting knowledge from its work and your conversations.  All managed in a local, markdown-driven knowledge base.  Amazing Hashbrown is designed to be a simple, yet powerful framework for building AI Agents that can learn and grow over time.
   installCmd: curl -fsSL https://raw.githubusercontent.com/tkottke90/amazing-hashbrown/main/scripts/install.sh | sh
   primaryCta: Get Started
-  primaryHref: /docs/getting-started/
+  primaryHref: /docs/quick-start/
   secondaryCta: View on GitHub
   secondaryHref: https://github.com/tkottke90/amazing-hashbrown
 features:
@@ -32,7 +32,7 @@ features:
 footer:
   links:
     - label: Getting Started
-      href: /docs/getting-started/
+      href: /docs/quick-start/
     - label: GitHub
       href: https://github.com/tkottke90/amazing-hashbrown
 ---

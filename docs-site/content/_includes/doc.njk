@@ -42,8 +42,31 @@
     </div>
     {% endfor %}
   </nav>
-  <main class="prose dark:prose-invert max-w-none flex-1 px-8 py-6 h-full overflow-y-auto">
-    {{ content | safe }}
+  {% set docBody = content | withToc %}
+  <main class="flex flex-1 gap-8 px-8 py-6 h-full overflow-hidden">
+    <article class="prose dark:prose-invert min-w-0 flex-1 grow h-full overflow-y-auto pr-8 max-w-[80ch]">
+      {{ docBody.html | safe }}
+      {% include "legal-footer.njk" %}
+    </article>
+    {% if docBody.toc.length %}
+    <aside class="hidden w-56 shrink-0 xl:block">
+      <nav aria-label="On this page" class="sticky top-0 h-full overflow-y-auto text-sm">
+        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</h2>
+        <ul class="space-y-1 border-l border-border">
+          {% for heading in docBody.toc %}
+          <li>
+            <a
+              href="#{{ heading.id }}"
+              class="block border-l-2 border-transparent py-1 text-muted-foreground hover:border-foreground hover:text-foreground {% if heading.level == 3 %}pl-6{% else %}pl-3{% endif %}"
+            >
+              {{ heading.text }}
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </nav>
+    </aside>
+    {% endif %}
   </main>
 </div>
 <script>

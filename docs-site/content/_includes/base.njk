@@ -13,9 +13,47 @@
       })();
     </script>
     <title>{{ title }}</title>
+    <link rel="canonical" href="{{ legal.siteUrl }}{{ page.url | url }}" />
+    <link rel="license" href="{{ legal.licenseUrl }}" />
+    <meta name="author" content="{{ legal.author }}" />
+    <meta name="dcterms.rights" content="{{ legal.license }}" />
+    <meta property="og:title" content="{{ title }}" />
+    <meta property="og:site_name" content="{{ site.name }}" />
+    <meta property="og:url" content="{{ legal.siteUrl }}{{ page.url | url }}" />
+    {% if datePublished %}
+    <meta property="article:published_time" content="{{ datePublished }}" />
+    {% endif %}
     <link rel="stylesheet" href="{{ '/css/site.css' | url }}" />
   </head>
   <body>
     {% block body %}{% endblock %}
+    <script>
+      (function () {
+        document.addEventListener('click', function (e) {
+          var button = e.target.closest('[data-copy-button]');
+          if (!button) return;
+
+          var block = button.closest('[data-code-block]');
+          var codeEl = block && block.querySelector('code, pre');
+          if (!codeEl || !navigator.clipboard) return;
+
+          navigator.clipboard.writeText(codeEl.textContent).then(function () {
+            var copyIcon = button.querySelector('[data-copy-icon]');
+            var checkIcon = button.querySelector('[data-check-icon]');
+            var label = button.querySelector('[data-copy-label]');
+            if (copyIcon) copyIcon.classList.add('hidden');
+            if (checkIcon) checkIcon.classList.remove('hidden');
+            if (label) label.textContent = 'Copied';
+
+            clearTimeout(button._copyResetTimer);
+            button._copyResetTimer = setTimeout(function () {
+              if (copyIcon) copyIcon.classList.remove('hidden');
+              if (checkIcon) checkIcon.classList.add('hidden');
+              if (label) label.textContent = 'Copy';
+            }, 1500);
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

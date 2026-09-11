@@ -64,6 +64,9 @@
   <nav class="flex items-center gap-6">
     {% for link in footer.links %}<a href="{{ link.href | url }}" class="hover:text-foreground">{{ link.label }}</a>{% endfor %}
   </nav>
-  <span>© {{ site.year }} {{ site.name }}</span>
+  <span>
+    © {{ site.year }} {{ site.name }} · Licensed under
+    <a href="{{ legal.licenseUrl }}" class="hover:text-foreground">{{ legal.license }}</a>
+  </span>
 </footer>
 {% endblock %}

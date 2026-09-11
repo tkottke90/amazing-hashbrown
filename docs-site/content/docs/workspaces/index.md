@@ -1,11 +1,11 @@
 ---
-title: Introduction
+title: Overview
 section: Workspaces
 order: 1
 layout: doc.njk
 ---
 
-# Configuration
+## Workspaces
 
 This is a placeholder page used to validate the documentation library layout —
 sidebar sections, ordering within a section, and current-page highlighting.
