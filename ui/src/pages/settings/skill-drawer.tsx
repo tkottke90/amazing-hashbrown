@@ -207,7 +207,7 @@ export function SkillDrawer() {
     <Drawer
       open={drawerOpen}
       title={creatingSkill.value ? 'New skill' : (selectedSkill.value?.name ?? 'Skill')}
-      className="!w-[90vw] !rounded-none !border-0 !bg-background !p-0 border-l border-border sm:!w-[720px] sm:!max-w-[90vw]"
+      className="w-[90vw]! rounded-none! border-0! bg-background! p-0! border-l border-border sm:w-9/12! sm:max-w-[90vw]!"
     >
       {creatingSkill.value ? <CreateSkillForm /> : <EditSkillView />}
     </Drawer>
