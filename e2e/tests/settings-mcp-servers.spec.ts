@@ -118,10 +118,11 @@ test.describe('Settings MCP servers', { annotation: suiteAnnotations(suite) }, (
     await addDialog.getByLabel('Command').fill('node');
     await addDialog.locator('button[type="submit"]', { hasText: 'Add server' }).click();
 
-    await expect(page.getByText('weather')).toBeVisible();
-    // Precise attribute selector, not getByText('stdio'): the new row's own
-    // (still-mounted-but-closed) Edit modal and the Add modal's Select both
-    // also display "stdio" as their default transport value.
+    // Precise attribute selectors, not getByText: the success toast ('MCP
+    // server "weather" added') also contains the name, and the new row's
+    // own (still-mounted-but-closed) Edit modal and the Add modal's Select
+    // both also display "stdio" as their default transport value.
+    await expect(page.locator('[data-slot="mcp-server-row-name"]')).toHaveText('weather');
     await expect(page.locator('[data-slot="mcp-server-row-transport"]')).toHaveText('stdio');
   });
 
