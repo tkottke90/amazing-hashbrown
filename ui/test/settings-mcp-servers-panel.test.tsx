@@ -39,18 +39,22 @@ describe('McpServersPanel', () => {
   });
 
   it('renders a row for each configured server with its transport badge', async () => {
-    render(<McpServersPanel />);
+    const { container } = render(<McpServersPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
     expect(screen.getByText('weather')).toBeInTheDocument();
-    expect(screen.getByText('stdio')).toBeInTheDocument();
+    // A precise attribute selector rather than text matching: the mocked
+    // Dialog always renders both the Add-server and this row's Edit-server
+    // modal forms too, and their Transport selects also default to
+    // displaying the text "stdio".
+    expect(container.querySelector('[data-slot="mcp-server-row-transport"]')).toHaveTextContent(
+      'stdio',
+    );
   });
 
   it('shows empty state when no servers are configured', async () => {
     mockFetch.mockResolvedValue([]);
     render(<McpServersPanel />);
-    await waitFor(() =>
-      expect(screen.getByText(/No MCP servers configured/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/No MCP servers configured/)).toBeInTheDocument());
   });
 
   it('starts each row as "Not checked"', async () => {
@@ -69,9 +73,7 @@ describe('McpServersPanel', () => {
     const toggle = screen.getByRole('switch', { name: 'Enable weather' });
     fireEvent.click(toggle);
 
-    await waitFor(() =>
-      expect(mockPatch).toHaveBeenCalledWith('weather', { enabled: false }),
-    );
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('weather', { enabled: false }));
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -93,9 +95,7 @@ describe('McpServersPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Check' }));
 
-    await waitFor(() =>
-      expect(screen.getByText(/Error: connection refused/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/Error: connection refused/)).toBeInTheDocument());
   });
 
   it('Remove asks for confirmation before deleting', async () => {

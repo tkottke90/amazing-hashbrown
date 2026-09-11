@@ -166,10 +166,10 @@ describe('routes/v1/mcp-servers.handlers', () => {
 
   describe('testNewMcpServerHandler()', () => {
     it('returns 200 with tool data when the probe succeeds', async () => {
-      const result = await testNewMcpServerHandler(
-        { command: 'node', args: [] },
-        async () => ({ toolCount: 2, toolNames: ['a', 'b'] }),
-      );
+      const result = await testNewMcpServerHandler({ command: 'node', args: [] }, async () => ({
+        toolCount: 2,
+        toolNames: ['a', 'b'],
+      }));
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data).to.deep.equal({ toolCount: 2, toolNames: ['a', 'b'] });
     });

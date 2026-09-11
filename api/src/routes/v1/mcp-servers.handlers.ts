@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { testMcpConnection } from '@tkottke90/tools-manager';
-import type {
-  ToolsManager,
-  McpServerConfig,
-  McpStdioConfig,
-  McpHttpConfig,
-} from '@tkottke90/tools-manager';
+import type { ToolsManager, McpServerConfig } from '@tkottke90/tools-manager';
 import { MASK } from './settings.handlers.js';
 
 // ---- HandlerResult (mirrors workspaces.handlers.ts) ---------------------------
@@ -115,8 +110,17 @@ function mapSecretRecord(
   return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, transform(k, v)]));
 }
 
+// `McpStdioConfig & McpHttpConfig` collapses to `never` (their `transport`
+// fields have disjoint literal types), so reading env/headers off either
+// shape needs its own small permissive type instead of intersecting the
+// two real branded interfaces.
+interface McpSecretFields {
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
 function maskConfigSecrets(config: McpServerConfig): McpServerConfig {
-  const c = config as McpStdioConfig & McpHttpConfig;
+  const c = config as McpSecretFields;
   return {
     ...config,
     ...(c.env !== undefined ? { env: mapSecretRecord(c.env, (_k, v) => maskValue(v)) } : {}),
@@ -127,7 +131,7 @@ function maskConfigSecrets(config: McpServerConfig): McpServerConfig {
 }
 
 function unmaskConfigSecrets(draft: McpServerPatch, stored: McpServerConfig): McpServerPatch {
-  const s = stored as McpStdioConfig & McpHttpConfig;
+  const s = stored as McpSecretFields;
   const result: McpServerPatch = { ...draft };
   if (draft.env !== undefined) {
     result.env = mapSecretRecord(draft.env, (k, v) => unmaskValue(v, s.env?.[k]));

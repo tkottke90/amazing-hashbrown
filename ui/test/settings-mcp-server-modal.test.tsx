@@ -32,8 +32,11 @@ describe('McpServerModal', () => {
     render(<McpServerModal mode="add" onSave={jest.fn()} trigger={OPEN_TRIGGER} />);
     // Radix Select is a listbox, not a native <select> — open it, then pick
     // the option, rather than firing a `change` event on the trigger.
+    // getByRole('option', ...) rather than getByText: Radix also renders a
+    // visually-hidden native <select> for form integration, whose <option>
+    // has the same text but is excluded from the accessibility tree.
     fireEvent.click(screen.getByLabelText('Transport'));
-    fireEvent.click(await screen.findByText('http'));
+    fireEvent.click(await screen.findByRole('option', { name: 'http' }));
     expect(screen.getByLabelText('URL')).toBeInTheDocument();
     expect(screen.queryByLabelText('Command')).not.toBeInTheDocument();
   });
@@ -62,9 +65,7 @@ describe('McpServerModal', () => {
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'node' } });
     fireEvent.click(screen.getByRole('button', { name: /Test connection/ }));
 
-    await waitFor(() =>
-      expect(screen.getByText('Connected — found 2 tools.')).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Connected — found 2 tools.')).toBeInTheDocument());
     expect(mockTestNew).toHaveBeenCalled();
   });
 
@@ -90,7 +91,9 @@ describe('McpServerModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Test connection/ }));
 
-    await waitFor(() => expect(mockTestExisting).toHaveBeenCalledWith('weather', expect.anything()));
+    await waitFor(() =>
+      expect(mockTestExisting).toHaveBeenCalledWith('weather', expect.anything()),
+    );
     expect(mockTestNew).not.toHaveBeenCalled();
   });
 

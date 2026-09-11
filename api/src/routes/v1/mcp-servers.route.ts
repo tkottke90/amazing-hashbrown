@@ -44,11 +44,7 @@ mcpServersRouter.post('/test', async (req: Request, res: Response) => {
 });
 
 mcpServersRouter.patch('/:name', async (req: Request, res: Response) => {
-  const result = await patchMcpServerHandler(
-    toolsManager,
-    req.params['name'] as string,
-    req.body,
-  );
+  const result = await patchMcpServerHandler(toolsManager, req.params['name'] as string, req.body);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

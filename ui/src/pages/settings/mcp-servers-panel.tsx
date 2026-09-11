@@ -138,7 +138,10 @@ export function McpServersPanel() {
                           <span data-slot="mcp-server-row-name" class="text-sm font-medium">
                             {server.name}
                           </span>
-                          <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
+                          <span
+                            data-slot="mcp-server-row-transport"
+                            class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground"
+                          >
                             {server.config.transport ?? 'stdio'}
                           </span>
                         </div>

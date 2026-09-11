@@ -99,14 +99,14 @@ Nothing from a test is persisted; it's purely a read-through connection probe.
 
 New route pair mounted at `/api/v1/mcp-servers`, following the `workspaces.route.ts`/`workspaces.handlers.ts` shape: thin Express routes delegate to handlers returning a `HandlerResult`/`HandlerFailure` (reusing the existing type from `threads.handlers.ts`), routes map that to status/JSON.
 
-| Method | Path | Body | Behavior |
-|---|---|---|---|
-| `GET` | `/` | — | `{ name, config }[]` from `toolsManager.listMcpServers()`, secrets masked |
-| `POST` | `/` | `{ name: string, config: McpServerConfig }` | `addMcpServer`; 400 on invalid shape (missing `name`/`command`/`url`, invalid `transport`); 409 if `name` already exists |
-| `PATCH` | `/:name` | `Partial<McpServerConfig>` | Runs `unmaskMcpSecrets(body, stored)`, then `editMcpServer`; 404 if `name` doesn't exist. Also used for the enable/disable toggle (`{ enabled: false }`) |
-| `DELETE` | `/:name` | — | `removeMcpServer`; 404 if `name` doesn't exist |
-| `POST` | `/test` | full draft `McpServerConfig` (plaintext) | Calls `testMcpConnection` directly; used by the Add modal |
-| `POST` | `/:name/test` | full draft `McpServerConfig` (may contain masked placeholders) | 404 if `name` doesn't exist; otherwise `unmaskMcpSecrets(body, stored)` then `testMcpConnection`; used by the Edit modal and the per-row "Check" button |
+| Method   | Path          | Body                                                           | Behavior                                                                                                                                                 |
+| -------- | ------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/`           | —                                                              | `{ name, config }[]` from `toolsManager.listMcpServers()`, secrets masked                                                                                |
+| `POST`   | `/`           | `{ name: string, config: McpServerConfig }`                    | `addMcpServer`; 400 on invalid shape (missing `name`/`command`/`url`, invalid `transport`); 409 if `name` already exists                                 |
+| `PATCH`  | `/:name`      | `Partial<McpServerConfig>`                                     | Runs `unmaskMcpSecrets(body, stored)`, then `editMcpServer`; 404 if `name` doesn't exist. Also used for the enable/disable toggle (`{ enabled: false }`) |
+| `DELETE` | `/:name`      | —                                                              | `removeMcpServer`; 404 if `name` doesn't exist                                                                                                           |
+| `POST`   | `/test`       | full draft `McpServerConfig` (plaintext)                       | Calls `testMcpConnection` directly; used by the Add modal                                                                                                |
+| `POST`   | `/:name/test` | full draft `McpServerConfig` (may contain masked placeholders) | 404 if `name` doesn't exist; otherwise `unmaskMcpSecrets(body, stored)` then `testMcpConnection`; used by the Edit modal and the per-row "Check" button  |
 
 **Test endpoints never return an HTTP error for a failed connection.** `POST /test` and `POST /:name/test` return `200 { ok: true, toolCount, toolNames }` or `200 { ok: false, error }` — "the target server is unreachable" is an expected, common outcome of a check the user is deliberately running, not a malformed-request or server bug. A 4xx/5xx from these routes is reserved for an actually bad request (unknown `:name`, malformed body).
 

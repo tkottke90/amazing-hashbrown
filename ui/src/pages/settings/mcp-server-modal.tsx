@@ -20,8 +20,6 @@ import {
   testExistingMcpServer,
   type McpServer,
   type McpServerConfig,
-  type McpStdioConfig,
-  type McpHttpConfig,
 } from '@/services/mcp-servers-api';
 import type { JSX } from 'preact';
 
@@ -85,11 +83,23 @@ type TestState =
 function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps) {
   const { close } = useDialog();
 
-  // Permissive cast (mirrors the same superset-cast used server-side in
-  // mcp-servers.handlers.ts) rather than `in`-narrowing per field below —
-  // this is only reading initial values to seed the form, not something
-  // that needs to stay a strict discriminated union.
-  const initialConfig = initial?.config as (McpStdioConfig & McpHttpConfig) | undefined;
+  // Permissive read-only shape for seeding the form from either transport's
+  // config. `McpStdioConfig & McpHttpConfig` collapses to `never` (their
+  // `transport` fields have disjoint literal types), so this is a
+  // hand-written union-of-fields type instead of an actual intersection.
+  const initialConfig = initial?.config as
+    | {
+        enabled?: boolean;
+        command?: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+        restart?: { enabled?: boolean };
+        url?: string;
+        headers?: Record<string, string>;
+        reconnect?: { enabled?: boolean };
+      }
+    | undefined;
 
   const name = useSignal(initial?.name ?? '');
   const transport = useSignal<Transport>(transportOf(initial?.config));
@@ -188,10 +198,7 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
 
       <div class="space-y-1.5">
         <Label htmlFor="mcp-server-transport">Transport</Label>
-        <Select
-          value={transport.value}
-          onValueChange={(v) => (transport.value = v as Transport)}
-        >
+        <Select value={transport.value} onValueChange={(v) => (transport.value = v as Transport)}>
           <SelectTrigger id="mcp-server-transport">
             <SelectValue />
           </SelectTrigger>
