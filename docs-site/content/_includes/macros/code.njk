@@ -1,0 +1,24 @@
+{% macro code(language="", content="") %}
+{% set snippet = content if content else caller() %}
+<div class="code-block not-prose my-4 overflow-hidden rounded-lg border border-border" data-code-block>
+  <div class="flex items-center justify-between bg-accent/40 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+    <span>{{ language }}</span>
+    <button
+      type="button"
+      class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      aria-label="Copy code to clipboard"
+      data-copy-button
+    >
+      <svg data-copy-icon width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+      <svg data-check-icon class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      <span data-copy-label>Copy</span>
+    </button>
+  </div>
+  <pre class="m-0 overflow-x-auto p-4 text-sm{% if language %} language-{{ language }}{% endif %}"><code{% if language %} class="language-{{ language }}"{% endif %}>{{ snippet | trim }}</code></pre>
+</div>
+{% endmacro %}
