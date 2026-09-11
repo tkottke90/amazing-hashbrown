@@ -6,6 +6,7 @@ import { GeneralPanel } from '@/pages/settings/general-panel';
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
 import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
+import { SkillsPanel } from '@/pages/settings/skills-panel';
 import { StoragePanel } from '@/pages/settings/storage-panel';
 import { ToolsPanel } from '@/pages/settings/tools-panel';
 import { WorkspacesPanel } from '@/pages/settings/workspaces-panel';
@@ -38,7 +39,7 @@ function ActivePanel({ section }: { section: SettingsSlug }) {
     case 'mcp-servers':
       return <PlaceholderPanel title="MCP Servers" />;
     case 'skills':
-      return <PlaceholderPanel title="Skills" />;
+      return <SkillsPanel />;
     default:
       return <GeneralPanel />;
   }
