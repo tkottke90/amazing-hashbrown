@@ -74,12 +74,6 @@ const suite: TestSuite = {
     },
     {
       tags: ['@smoke'],
-      action: 'Load MCP Servers section',
-      expectedOutcome: '"Management UI coming soon." placeholder renders',
-      test: () => {},
-    },
-    {
-      tags: ['@smoke'],
       action: 'Load Skills section',
       expectedOutcome: '"Management UI coming soon." placeholder renders',
       test: () => {},
@@ -131,7 +125,6 @@ const STUBS: StubMap = {
       },
     },
   },
-  'mcp-servers': {},
   skills: {},
 };
 
@@ -353,14 +346,6 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
   });
 
   // ---- Placeholders ------------------------------------------------------
-
-  test('MCP Servers renders "coming soon" placeholder @smoke', async ({ page }, testInfo) => {
-    await mockSettingsApi(page);
-    await page.goto('/settings?section=mcp-servers');
-    await pauseBeforeAction(page, testInfo);
-    await expect(page.locator('p', { hasText: 'MCP Servers' })).toBeVisible();
-    await expect(page.getByText('Management UI coming soon.')).toBeVisible();
-  });
 
   test('Skills renders "coming soon" placeholder @smoke', async ({ page }, testInfo) => {
     await mockSettingsApi(page);

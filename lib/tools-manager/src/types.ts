@@ -13,6 +13,7 @@ export interface RegisteredTool {
 
 export interface McpStdioConfig {
   transport?: 'stdio';
+  enabled?: boolean;
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -22,6 +23,7 @@ export interface McpStdioConfig {
 
 export interface McpHttpConfig {
   transport: 'http' | 'sse';
+  enabled?: boolean;
   url: string;
   headers?: Record<string, string>;
   reconnect?: { enabled?: boolean; maxAttempts?: number; delayMs?: number };

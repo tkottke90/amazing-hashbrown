@@ -3,6 +3,7 @@ import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
 import { CostRatesPanel } from '@/pages/settings/cost-rates-panel';
 import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
 import { GeneralPanel } from '@/pages/settings/general-panel';
+import { McpServersPanel } from '@/pages/settings/mcp-servers-panel';
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
 import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
@@ -36,7 +37,7 @@ function ActivePanel({ section }: { section: SettingsSlug }) {
     case 'cost-rates':
       return <CostRatesPanel />;
     case 'mcp-servers':
-      return <PlaceholderPanel title="MCP Servers" />;
+      return <McpServersPanel />;
     case 'skills':
       return <PlaceholderPanel title="Skills" />;
     default:

@@ -313,5 +313,24 @@ describe('ToolsManager', () => {
         expect(manager.listMcpServers()).to.have.key('snap');
       });
     });
+
+    describe('enabled flag', () => {
+      it('persists enabled: false through add and list untouched', async () => {
+        await manager.addMcpServer('disabled-srv', {
+          command: 'node',
+          args: [],
+          enabled: false,
+        });
+        const servers = manager.listMcpServers();
+        expect((servers['disabled-srv'] as McpStdioConfig).enabled).to.equal(false);
+      });
+
+      it('persists an enabled: false toggle through edit', async () => {
+        await manager.addMcpServer('toggle-srv', { command: 'node', args: [] });
+        await manager.editMcpServer('toggle-srv', { enabled: false });
+        const servers = manager.listMcpServers();
+        expect((servers['toggle-srv'] as McpStdioConfig).enabled).to.equal(false);
+      });
+    });
   });
 });

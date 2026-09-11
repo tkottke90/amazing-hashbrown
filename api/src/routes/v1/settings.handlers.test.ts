@@ -170,12 +170,6 @@ describe('routes/v1/settings.handlers', () => {
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
-    it('returns { ok: true, data: {} } for mcp-servers [unit]', () => {
-      const result = getSettingsSectionHandler('mcp-servers', makeEnv(), makeConfig(tmpDir));
-      expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.deep.equal({});
-    });
-
     it('returns { ok: true, data: {} } for skills [unit]', () => {
       const result = getSettingsSectionHandler('skills', makeEnv(), makeConfig(tmpDir));
       expect(result.ok).to.equal(true);
@@ -322,27 +316,6 @@ describe('routes/v1/settings.handlers', () => {
       } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'unknown',
-        {},
-        makeConfig(tmpDir),
-        makeEnv(),
-        loadAgentInstructions,
-        invalidateChatAgent,
-        seedProviderCosts,
-        reloadTrackerRegistry,
-      );
-      expect(result.ok).to.equal(false);
-      if (!result.ok) expect(result.status).to.equal(404);
-    });
-
-    it('returns 404 for mcp-servers PATCH [unit]', async () => {
-      const {
-        loadAgentInstructions,
-        invalidateChatAgent,
-        seedProviderCosts,
-        reloadTrackerRegistry,
-      } = makeSideEffects();
-      const result = await patchSettingsSectionHandler(
-        'mcp-servers',
         {},
         makeConfig(tmpDir),
         makeEnv(),
