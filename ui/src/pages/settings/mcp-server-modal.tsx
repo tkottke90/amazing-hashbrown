@@ -83,6 +83,16 @@ type TestState =
 function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps) {
   const { close } = useDialog();
 
+  // Dialog children stay mounted at all times regardless of open state (see
+  // provider-modal.tsx's comment on the same pattern) — so with one Add
+  // modal plus one Edit modal per row, every McpServerForm instance is
+  // simultaneously present in the DOM. A static id here would duplicate
+  // across instances and break <label for> association (the browser
+  // resolves a duplicate id to a single element, silently detaching every
+  // other same-id label from its real input). Suffix every id with an
+  // instance-unique key instead.
+  const instanceKey = mode === 'edit' && initial ? `edit-${initial.name}` : 'add';
+
   // Permissive read-only shape for seeding the form from either transport's
   // config. `McpStdioConfig & McpHttpConfig` collapses to `never` (their
   // `transport` fields have disjoint literal types), so this is a
@@ -186,9 +196,9 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
   return (
     <form onSubmit={handleSubmit} class="mt-4 flex flex-col gap-4">
       <div class="space-y-1.5">
-        <Label htmlFor="mcp-server-name">Name</Label>
+        <Label htmlFor={`mcp-server-name-${instanceKey}`}>Name</Label>
         <Input
-          id="mcp-server-name"
+          id={`mcp-server-name-${instanceKey}`}
           value={name.value}
           onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
           disabled={mode === 'edit'}
@@ -197,9 +207,9 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
       </div>
 
       <div class="space-y-1.5">
-        <Label htmlFor="mcp-server-transport">Transport</Label>
+        <Label htmlFor={`mcp-server-transport-${instanceKey}`}>Transport</Label>
         <Select value={transport.value} onValueChange={(v) => (transport.value = v as Transport)}>
-          <SelectTrigger id="mcp-server-transport">
+          <SelectTrigger id={`mcp-server-transport-${instanceKey}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -218,27 +228,27 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
       {transport.value === 'stdio' ? (
         <>
           <div class="space-y-1.5">
-            <Label htmlFor="mcp-server-command">Command</Label>
+            <Label htmlFor={`mcp-server-command-${instanceKey}`}>Command</Label>
             <Input
-              id="mcp-server-command"
+              id={`mcp-server-command-${instanceKey}`}
               value={command.value}
               onInput={(e) => (command.value = (e.target as HTMLInputElement).value)}
               required
             />
           </div>
           <div class="space-y-1.5">
-            <Label htmlFor="mcp-server-args">Arguments (one per line)</Label>
+            <Label htmlFor={`mcp-server-args-${instanceKey}`}>Arguments (one per line)</Label>
             <Textarea
-              id="mcp-server-args"
+              id={`mcp-server-args-${instanceKey}`}
               rows={3}
               value={args.value}
               onInput={(e) => (args.value = (e.target as HTMLTextAreaElement).value)}
             />
           </div>
           <div class="space-y-1.5">
-            <Label htmlFor="mcp-server-cwd">Working directory</Label>
+            <Label htmlFor={`mcp-server-cwd-${instanceKey}`}>Working directory</Label>
             <Input
-              id="mcp-server-cwd"
+              id={`mcp-server-cwd-${instanceKey}`}
               value={cwd.value}
               onInput={(e) => (cwd.value = (e.target as HTMLInputElement).value)}
             />
@@ -265,9 +275,9 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
       ) : (
         <>
           <div class="space-y-1.5">
-            <Label htmlFor="mcp-server-url">URL</Label>
+            <Label htmlFor={`mcp-server-url-${instanceKey}`}>URL</Label>
             <Input
-              id="mcp-server-url"
+              id={`mcp-server-url-${instanceKey}`}
               value={url.value}
               onInput={(e) => (url.value = (e.target as HTMLInputElement).value)}
               placeholder="https://example.com/mcp"

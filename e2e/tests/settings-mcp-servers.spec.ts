@@ -106,17 +106,23 @@ test.describe('Settings MCP servers', { annotation: suiteAnnotations(suite) }, (
     await page.goto('/settings?section=mcp-servers');
     await pauseBeforeAction(page, testInfo);
 
-    // The Modal renders a native <dialog>; scope queries to it once open so
-    // the form's own "Add server" submit button isn't confused with the
-    // panel's trigger button of the same name.
-    await page.getByRole('button', { name: 'Add server' }).click();
+    // The modal's own children stay mounted (opacity-0, not display:none)
+    // even while closed, for the open/close fade transition — so the
+    // trigger and the form's identically-labeled "Add server" submit
+    // button both exist in the DOM at once. Disambiguate by `type`
+    // (trigger is type="button", submit is type="submit") rather than by
+    // scoping to `dialog[open]`, which only helps once the dialog is open.
+    await page.locator('button[type="button"]', { hasText: 'Add server' }).click();
     const addDialog = page.locator('dialog[open]');
     await addDialog.getByLabel('Name').fill('weather');
     await addDialog.getByLabel('Command').fill('node');
-    await addDialog.getByRole('button', { name: 'Add server' }).click();
+    await addDialog.locator('button[type="submit"]', { hasText: 'Add server' }).click();
 
     await expect(page.getByText('weather')).toBeVisible();
-    await expect(page.getByText('stdio')).toBeVisible();
+    // Precise attribute selector, not getByText('stdio'): the new row's own
+    // (still-mounted-but-closed) Edit modal and the Add modal's Select both
+    // also display "stdio" as their default transport value.
+    await expect(page.locator('[data-slot="mcp-server-row-transport"]')).toHaveText('stdio');
   });
 
   test('Toggle enabled sends a PATCH with the new value @user-workflow', async ({
@@ -158,7 +164,11 @@ test.describe('Settings MCP servers', { annotation: suiteAnnotations(suite) }, (
     await pauseBeforeAction(page, testInfo);
 
     await page.getByRole('button', { name: 'Edit' }).click();
-    await page.getByLabel('Command').fill('python3');
+    // Scoped to the open dialog: the Add-server modal's own (now
+    // uniquely-id'd but still simultaneously mounted) Command field would
+    // otherwise make this an ambiguous match too.
+    const editDialog = page.locator('dialog[open]');
+    await editDialog.getByLabel('Command').fill('python3');
     const [patchRequest] = await Promise.all([
       page.waitForRequest(
         (req) => req.url().includes('/api/v1/mcp-servers/weather') && req.method() === 'PATCH',
