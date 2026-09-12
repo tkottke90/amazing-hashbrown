@@ -14,7 +14,7 @@ Convert the MCP server Add/Edit modal into a side Drawer (matching the pattern t
 
 ## Problem
 
-`McpServerModal` (`ui/src/pages/settings/mcp-server-modal.tsx`) currently renders as a centered `Modal`. Its only feedback about a server's actual capabilities is a one-line "Connected — found N tools." string produced by the existing "Test connection" button — the user never sees *which* tools, and never sees resources at all, even though the backend's `testMcpConnection` primitive (`lib/tools-manager/src/internal/mcp-client.ts`) already connects to the server and could report far more.
+`McpServerModal` (`ui/src/pages/settings/mcp-server-modal.tsx`) currently renders as a centered `Modal`. Its only feedback about a server's actual capabilities is a one-line "Connected — found N tools." string produced by the existing "Test connection" button — the user never sees _which_ tools, and never sees resources at all, even though the backend's `testMcpConnection` primitive (`lib/tools-manager/src/internal/mcp-client.ts`) already connects to the server and could report far more.
 
 Separately, the Skills settings tab (`ui/src/pages/settings/skill-drawer.tsx`, merged via #168) established a `Drawer`-based edit/create pattern for this Settings page that the MCP servers tab doesn't yet follow, making the two management UIs inconsistent.
 
@@ -89,7 +89,7 @@ This replaces the current `testState`-driven inline paragraph entirely — `test
 
 ### 4. Interaction — when the probe runs
 
-- **Edit mode**: a `useEffect` keyed on the same `openedAt` (`openCount.value`) signal already used to reset transient state runs the probe automatically on open, using `testExistingMcpServer(initial.name, buildConfig())` — i.e. the currently-saved config as seeded into the form, unmasked server-side exactly as "Check"/"Test connection" already do. This is a deliberate, narrow exception to the existing "no auto-connect on page load" principle: opening Edit on one specific, already-configured server is itself a targeted user action, not a passive side effect of viewing Settings — the principle it revisits was about not spinning up every configured server just from opening the settings *page*, which still holds (the list view still never auto-connects).
+- **Edit mode**: a `useEffect` keyed on the same `openedAt` (`openCount.value`) signal already used to reset transient state runs the probe automatically on open, using `testExistingMcpServer(initial.name, buildConfig())` — i.e. the currently-saved config as seeded into the form, unmasked server-side exactly as "Check"/"Test connection" already do. This is a deliberate, narrow exception to the existing "no auto-connect on page load" principle: opening Edit on one specific, already-configured server is itself a targeted user action, not a passive side effect of viewing Settings — the principle it revisits was about not spinning up every configured server just from opening the settings _page_, which still holds (the list view still never auto-connects).
 - **Add mode**: no auto-fetch — nothing is saved yet, so there's nothing meaningful to connect to until the user has filled in fields. Capabilities starts and stays `idle` until the first manual Test connection.
 - **Test connection button** (both modes, present today): re-runs the probe against the form's live values, including unsaved edits — identical semantics to today, just populating `McpCapabilitiesPanel` instead of a one-line message.
 
