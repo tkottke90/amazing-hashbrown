@@ -78,7 +78,6 @@ const STUBS: StubMap = {
     tools: undefined,
   },
   'cost-rates': { costs: {} },
-  'mcp-servers': {},
   skills: {},
 };
 

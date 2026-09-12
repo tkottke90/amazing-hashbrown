@@ -324,11 +324,6 @@ const SLUG_MAP: Record<string, SlugDef> = {
     },
   },
 
-  'mcp-servers': {
-    get: () => ({}),
-    readOnly: true,
-  },
-
   skills: {
     get: () => ({}),
     readOnly: true,

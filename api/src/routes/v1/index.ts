@@ -14,6 +14,7 @@ import { projectsRouter } from './projects.route.js';
 import { tasksRouter } from './tasks.route.js';
 import { trackersRouter } from './trackers.route.js';
 import { triggersRouter } from './triggers.route.js';
+import { mcpServersRouter } from './mcp-servers.route.js';
 
 export const v1Router = Router();
 
@@ -32,3 +33,4 @@ v1Router.use('/projects', projectsRouter);
 v1Router.use('/tasks', tasksRouter);
 v1Router.use('/trackers', trackersRouter);
 v1Router.use('/triggers', triggersRouter);
+v1Router.use('/mcp-servers', mcpServersRouter);
