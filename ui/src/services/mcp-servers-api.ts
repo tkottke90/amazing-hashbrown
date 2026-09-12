@@ -26,10 +26,15 @@ export interface McpServer {
   config: McpServerConfig;
 }
 
-export interface TestConnectionResult {
-  toolCount: number;
-  toolNames: string[];
+// Standalone mirror of @tkottke90/tools-manager's McpCapabilities shape,
+// same rationale as the config types above.
+export interface McpCapabilities {
+  tools: { name: string; description: string }[];
+  resources: { uri: string; name: string; description?: string; mimeType?: string }[];
+  resourceTemplates: { uriTemplate: string; name: string; description?: string }[];
 }
+
+export type TestConnectionResult = McpCapabilities;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -85,16 +90,21 @@ async function runConnectionTest(
 
   const payload = (await res.json().catch(() => ({}))) as {
     ok?: boolean;
-    toolCount?: number;
-    toolNames?: string[];
+    tools?: McpCapabilities['tools'];
+    resources?: McpCapabilities['resources'];
+    resourceTemplates?: McpCapabilities['resourceTemplates'];
     error?: string;
   };
 
-  if (!res.ok || !payload.ok || payload.toolCount == null) {
+  if (!res.ok || !payload.ok || payload.tools == null) {
     throw new Error(payload.error ?? `Test failed: ${res.status}`);
   }
 
-  return { toolCount: payload.toolCount, toolNames: payload.toolNames ?? [] };
+  return {
+    tools: payload.tools,
+    resources: payload.resources ?? [],
+    resourceTemplates: payload.resourceTemplates ?? [],
+  };
 }
 
 export async function testNewMcpServer(config: McpServerConfig): Promise<TestConnectionResult> {

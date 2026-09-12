@@ -22,20 +22,34 @@ export function buildMcpClient(config: McpConfigFile): MultiServerMCPClient | nu
   return new MultiServerMCPClient(enabledServers as unknown as Record<string, Connection>);
 }
 
+export interface McpCapabilities {
+  tools: { name: string; description: string }[];
+  resources: { uri: string; name: string; description?: string; mimeType?: string }[];
+  resourceTemplates: { uriTemplate: string; name: string; description?: string }[];
+}
+
+const TEST_SERVER_NAME = '__test__';
+
 // Probes a single server config for reachability without touching the live
 // client — used both to test an unsaved draft and to re-check an existing
 // server on demand. Deliberately doesn't go through buildMcpClient, since
 // that filters out enabled:false servers and a disabled draft must still be
 // testable before the user turns it on.
-export async function testMcpConnection(
-  config: McpServerConfig,
-): Promise<{ toolCount: number; toolNames: string[] }> {
+export async function testMcpConnection(config: McpServerConfig): Promise<McpCapabilities> {
   const client = new MultiServerMCPClient({
-    __test__: config,
+    [TEST_SERVER_NAME]: config,
   } as unknown as Record<string, Connection>);
   try {
     const tools = await fetchMcpTools(client);
-    return { toolCount: tools.length, toolNames: tools.map((t) => t.name) };
+    const [resourcesByServer, resourceTemplatesByServer] = await Promise.all([
+      client.listResources(TEST_SERVER_NAME),
+      client.listResourceTemplates(TEST_SERVER_NAME),
+    ]);
+    return {
+      tools: tools.map((t) => ({ name: t.name, description: t.description })),
+      resources: resourcesByServer[TEST_SERVER_NAME] ?? [],
+      resourceTemplates: resourceTemplatesByServer[TEST_SERVER_NAME] ?? [],
+    };
   } finally {
     await client.close();
   }

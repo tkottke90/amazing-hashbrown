@@ -1,5 +1,6 @@
 export { ToolsManager } from './tools-manager.js';
 export { testMcpConnection } from './internal/mcp-client.js';
+export type { McpCapabilities } from './internal/mcp-client.js';
 export type {
   RegisteredTool,
   McpServerConfig,

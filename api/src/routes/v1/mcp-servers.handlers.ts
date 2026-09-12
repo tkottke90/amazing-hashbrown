@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { testMcpConnection } from '@tkottke90/tools-manager';
-import type { ToolsManager, McpServerConfig } from '@tkottke90/tools-manager';
+import type { ToolsManager, McpServerConfig, McpCapabilities } from '@tkottke90/tools-manager';
 import { MASK } from './settings.handlers.js';
 
 // ---- HandlerResult (mirrors workspaces.handlers.ts) ---------------------------
@@ -203,10 +203,7 @@ export async function deleteMcpServerHandler(
   return ok({ deleted: true });
 }
 
-export interface TestConnectionData {
-  toolCount: number;
-  toolNames: string[];
-}
+export type TestConnectionData = McpCapabilities;
 
 // testFn is injectable (defaulting to the real testMcpConnection) purely so
 // tests can exercise the 200/502 branching without spawning a real MCP

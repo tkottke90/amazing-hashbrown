@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useTitle } from '@/hooks/use-title';
 import { showToast } from '@/lib/toast';
-import { McpServerModal } from './mcp-server-modal';
+import { McpServerDrawer } from './mcp-server-drawer';
 import {
   fetchMcpServers,
   createMcpServer,
@@ -59,7 +59,7 @@ export function McpServersPanel() {
       const result = await testExistingMcpServer(server.name, server.config);
       checkStatus.value = {
         ...checkStatus.value,
-        [server.name]: { status: 'success', toolCount: result.toolCount },
+        [server.name]: { status: 'success', toolCount: result.tools.length },
       };
     } catch (err) {
       checkStatus.value = {
@@ -108,7 +108,7 @@ export function McpServersPanel() {
         <Card>
           <CardHeader class="flex flex-row items-center justify-between">
             <CardTitle>MCP Servers</CardTitle>
-            <McpServerModal
+            <McpServerDrawer
               mode="add"
               onSave={handleSaveAdd}
               trigger={
@@ -163,7 +163,7 @@ export function McpServersPanel() {
                             )}
                             Check
                           </Button>
-                          <McpServerModal
+                          <McpServerDrawer
                             mode="edit"
                             initial={server}
                             onSave={handleSaveEdit}

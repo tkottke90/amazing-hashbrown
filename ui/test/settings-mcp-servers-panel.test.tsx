@@ -78,7 +78,15 @@ describe('McpServersPanel', () => {
   });
 
   it('Check cycles the status badge through checking to connected', async () => {
-    mockTestExisting.mockResolvedValue({ toolCount: 3, toolNames: ['a', 'b', 'c'] });
+    mockTestExisting.mockResolvedValue({
+      tools: [
+        { name: 'a', description: '' },
+        { name: 'b', description: '' },
+        { name: 'c', description: '' },
+      ],
+      resources: [],
+      resourceTemplates: [],
+    });
     render(<McpServersPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 

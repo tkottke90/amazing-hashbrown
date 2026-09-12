@@ -165,13 +165,18 @@ describe('routes/v1/mcp-servers.handlers', () => {
   });
 
   describe('testNewMcpServerHandler()', () => {
-    it('returns 200 with tool data when the probe succeeds', async () => {
-      const result = await testNewMcpServerHandler({ command: 'node', args: [] }, async () => ({
-        toolCount: 2,
-        toolNames: ['a', 'b'],
-      }));
+    it('returns 200 with capabilities data when the probe succeeds', async () => {
+      const capabilities = {
+        tools: [{ name: 'a', description: 'tool a' }],
+        resources: [{ uri: 'file:///x', name: 'x' }],
+        resourceTemplates: [],
+      };
+      const result = await testNewMcpServerHandler(
+        { command: 'node', args: [] },
+        async () => capabilities,
+      );
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.deep.equal({ toolCount: 2, toolNames: ['a', 'b'] });
+      if (result.ok) expect(result.data).to.deep.equal(capabilities);
     });
 
     it('returns 502 when the probe fails', async () => {
@@ -187,8 +192,9 @@ describe('routes/v1/mcp-servers.handlers', () => {
 
     it('returns 400 for an invalid draft config', async () => {
       const result = await testNewMcpServerHandler({ args: [] }, async () => ({
-        toolCount: 0,
-        toolNames: [],
+        tools: [],
+        resources: [],
+        resourceTemplates: [],
       }));
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
@@ -200,7 +206,7 @@ describe('routes/v1/mcp-servers.handlers', () => {
       let called = false;
       const result = await testExistingMcpServerHandler(manager, 'ghost', {}, async () => {
         called = true;
-        return { toolCount: 0, toolNames: [] };
+        return { tools: [], resources: [], resourceTemplates: [] };
       });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -220,7 +226,11 @@ describe('routes/v1/mcp-servers.handlers', () => {
         { env: { API_KEY: MASK } },
         async (config) => {
           seenValue = (config as McpStdioConfig).env?.['API_KEY'];
-          return { toolCount: 1, toolNames: ['x'] };
+          return {
+            tools: [{ name: 'x', description: 'tool x' }],
+            resources: [],
+            resourceTemplates: [],
+          };
         },
       );
       expect(result.ok).to.equal(true);

@@ -13,7 +13,7 @@ const suite: TestSuite = {
   steps: [
     {
       tags: ['@user-workflow'],
-      action: 'Add a stdio MCP server via the Add server modal',
+      action: 'Add a stdio MCP server via the Add server drawer',
       expectedOutcome: 'The new server appears in the list with its transport badge',
       test: () => {},
     },
@@ -31,8 +31,9 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Edit a server’s command',
-      expectedOutcome: 'PATCH is sent with the updated command and the row reflects it',
+      action: 'Open the Edit drawer and edit a server’s command',
+      expectedOutcome:
+        'The drawer auto-fetches and lists the server’s tools/resources; PATCH is sent with the updated command and the row reflects it',
       test: () => {},
     },
     {
@@ -48,6 +49,15 @@ interface StubServer {
   name: string;
   config: Record<string, unknown>;
 }
+
+const CAPABILITIES = {
+  tools: [
+    { name: 'alpha', description: 'The alpha tool' },
+    { name: 'beta', description: 'The beta tool' },
+  ],
+  resources: [{ uri: 'file:///readme.md', name: 'readme' }],
+  resourceTemplates: [],
+};
 
 // No real MCP server exists in CI, so every /api/v1/mcp-servers request is
 // mocked (not just the connection-test endpoints) — this keeps the test
@@ -72,12 +82,12 @@ async function mockMcpServersApi(page: Page, initial: StubServer[] = []) {
       return route.fulfill({ status: 201, json: { name: body.name, config: body.config } });
     }
     if (pathname === `${BASE}/test` && method === 'POST') {
-      return route.fulfill({ json: { ok: true, toolCount: 2, toolNames: ['alpha', 'beta'] } });
+      return route.fulfill({ json: { ok: true, ...CAPABILITIES } });
     }
 
     const nameTestMatch = pathname.match(new RegExp(`^${BASE}/([^/]+)/test$`));
     if (nameTestMatch && method === 'POST') {
-      return route.fulfill({ json: { ok: true, toolCount: 2, toolNames: ['alpha', 'beta'] } });
+      return route.fulfill({ json: { ok: true, ...CAPABILITIES } });
     }
 
     const nameMatch = pathname.match(new RegExp(`^${BASE}/([^/]+)$`));
@@ -106,8 +116,8 @@ test.describe('Settings MCP servers', { annotation: suiteAnnotations(suite) }, (
     await page.goto('/settings?section=mcp-servers');
     await pauseBeforeAction(page, testInfo);
 
-    // The modal's own children stay mounted (opacity-0, not display:none)
-    // even while closed, for the open/close fade transition — so the
+    // The drawer's own children stay mounted (opacity-0, not display:none)
+    // even while closed, for the open/close slide transition — so the
     // trigger and the form's identically-labeled "Add server" submit
     // button both exist in the DOM at once. Disambiguate by `type`
     // (trigger is type="button", submit is type="submit") rather than by
@@ -165,10 +175,16 @@ test.describe('Settings MCP servers', { annotation: suiteAnnotations(suite) }, (
     await pauseBeforeAction(page, testInfo);
 
     await page.getByRole('button', { name: 'Edit' }).click();
-    // Scoped to the open dialog: the Add-server modal's own (now
+    // Scoped to the open dialog: the Add-server drawer's own (now
     // uniquely-id'd but still simultaneously mounted) Command field would
     // otherwise make this an ambiguous match too.
     const editDialog = page.locator('dialog[open]');
+    // Opening Edit renders a side Drawer (inset-y-0), not a centered Modal
+    // (inset-0) — and auto-fetches this server's capabilities, listing its
+    // tools/resources without a manual "Test connection" click.
+    await expect(editDialog).toHaveClass(/inset-y-0/);
+    await expect(editDialog.getByText('alpha', { exact: true })).toBeVisible();
+    await expect(editDialog.getByText('readme', { exact: true })).toBeVisible();
     await editDialog.getByLabel('Command').fill('python3');
     const [patchRequest] = await Promise.all([
       page.waitForRequest(
