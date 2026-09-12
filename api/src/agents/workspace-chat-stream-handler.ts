@@ -82,6 +82,7 @@ async function loadWorkspaceSummaries(
   if (files.length === 0) return { latestSummary: null, olderSummaries: [] };
 
   const latestFile = files[files.length - 1];
+  if (!latestFile) return { latestSummary: null, olderSummaries: [] }; // unreachable, satisfies TS
   let latestSummary: string | null = null;
   try {
     latestSummary = await readFile(path.join(dir, latestFile), 'utf8');

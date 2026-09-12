@@ -40,7 +40,7 @@ This call is wrapped in the same try/catch `maybeSummarizeWorkspace` already use
 
 `createContextWindowMiddleware` gains a shared helper, used by both its `beforeModel` and `wrapModelCall` hooks instead of each calling `trimMessages` directly:
 
-```ts
+```
 function boundaryAwareTrim(
   messages: BaseMessage[],
   maxTokens: number,

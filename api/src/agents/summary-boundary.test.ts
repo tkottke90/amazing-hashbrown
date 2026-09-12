@@ -36,7 +36,7 @@ describe('agents/summary-boundary', () => {
 
     it('does not set an id, so LangGraph appends rather than replaces on repeat calls', () => {
       const marker = createSummaryBoundaryMessage('.hashbrown/summaries/x.md');
-      expect(marker.id).to.be.undefined;
+      expect(marker.id).to.equal(undefined);
     });
 
     it('keeps the summaryPath recoverable from additional_kwargs', () => {

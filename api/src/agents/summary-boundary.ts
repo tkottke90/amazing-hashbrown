@@ -24,7 +24,8 @@ export function isSummaryBoundary(message: BaseMessage): boolean {
 
 function findLastIndex(messages: BaseMessage[], pred: (m: BaseMessage) => boolean): number {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (pred(messages[i])) return i;
+    const m = messages[i];
+    if (m && pred(m)) return i;
   }
   return -1;
 }
