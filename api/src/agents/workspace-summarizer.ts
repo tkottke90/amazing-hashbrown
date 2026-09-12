@@ -9,8 +9,9 @@ import { getObservabilityStore } from '../services/observability.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import type { Workspace, WorkspaceStore } from '../services/workspace-store.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
-import { invalidateWorkspaceChatAgent } from './chat-agent.js';
+import { invalidateWorkspaceChatAgent, type ChatAgent } from './chat-agent.js';
 import { writeSseEvent } from './stream-handler.js';
+import { createSummaryBoundaryMessage } from './summary-boundary.js';
 
 // Keep this in sync with suites/workspace-summary.yaml's scenario `input`
 // fields — the eval suite tests this exact prompt template.
@@ -43,6 +44,7 @@ export async function maybeSummarizeWorkspace(
   store: WorkspaceStore,
   threadStore: ThreadStore,
   workspace: Workspace,
+  agent: ChatAgent,
   model: BaseChatModel,
   provider: string | undefined,
   modelName: string | undefined,
@@ -131,6 +133,27 @@ export async function maybeSummarizeWorkspace(
       summaryPath: summaryRelPath,
       lastSummarizedMessageId: summaryMessageId,
     });
+
+    // Append a lightweight boundary marker to the thread's checkpoint state
+    // (not a normal turn — no invoke()/streamEvents() runs here) so
+    // boundaryAwareTrim (summary-boundary.ts) can recognize "a summary
+    // happened here" on future turns. Isolated in its own try/catch: this
+    // is an optimization only — the summary file and thread-store row above
+    // have already succeeded, so a failure here must not undo or fail the
+    // summarize the user asked for, only skip the trim-boundary benefit for
+    // this one summarize event.
+    try {
+      await agent.graph.updateState(
+        { configurable: { thread_id: workspace.threadId } },
+        { messages: [createSummaryBoundaryMessage(summaryRelPath)] },
+      );
+    } catch (err) {
+      logger.warn('workspace-summarizer: failed to record checkpoint boundary marker', {
+        workspaceId: workspace.id,
+        err: serializeError(err),
+      });
+    }
+
     // The system prompt's context block now includes this summary — drop
     // the cached agent so the next turn picks it up.
     invalidateWorkspaceChatAgent(workspace.id);

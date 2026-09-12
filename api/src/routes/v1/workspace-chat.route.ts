@@ -4,11 +4,14 @@ import {
   streamWorkspaceChatToSse,
   resumeWorkspaceChatToSse,
   retryWorkspaceChatToSse,
+  buildWorkspaceContext,
+  resolveAllowedWikiId,
 } from '../../agents/workspace-chat-stream-handler.js';
 import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
 import type { SseWriter } from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
 import { resolveHitlPrompt } from '../../agents/thread-message-writer.js';
+import { getWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getThreadStore } from '../../services/thread-store.js';
@@ -244,11 +247,22 @@ workspaceChatRouter.post('/:threadId/summarize', async (req: Request, res: Respo
   const effectiveModel = model ?? threadMeta?.model ?? undefined;
 
   try {
+    const workspaceContext = await buildWorkspaceContext(workspace);
+    const allowedWikiId = resolveAllowedWikiId(getWorkspaceStore(), workspace.id);
+    const { agent } = await getWorkspaceChatAgent(
+      workspace.id,
+      workspaceContext,
+      effectiveProvider,
+      effectiveModel,
+      allowedWikiId,
+    );
+
     await maybeSummarizeWorkspace(
       undefined,
       getWorkspaceStore(),
       threadStore,
       workspace,
+      agent,
       createProvider(effectiveProvider, effectiveModel),
       effectiveProvider,
       effectiveModel,
