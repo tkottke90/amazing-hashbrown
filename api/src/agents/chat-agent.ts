@@ -39,6 +39,9 @@ import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js'
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
+import { toolAccessMiddleware } from './tool-access.middleware.js';
+import { syncMcpToolStatus } from './mcp-tool-status.js';
+import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
@@ -322,6 +325,13 @@ async function loadMcpTools() {
     logger.warn('MCP initialization failed — MCP tools will be unavailable', { err: message });
   });
 
+  // Write-through into tool_settings BEFORE this function returns, so any
+  // MCP tool bound below already has a row by the time toolAccessMiddleware
+  // runs on this same agent's first turn — otherwise a freshly-discovered
+  // tool with no row yet would look "not effective" and get filtered out
+  // entirely until an unrelated refresh happened to run first.
+  syncMcpToolStatus(toolsManager, getToolSettingsStore());
+
   const mcpTools = toolsManager
     .list()
     .filter((t) => t.source === 'mcp')
@@ -359,6 +369,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
@@ -451,6 +462,7 @@ async function buildWorkspaceChatAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
@@ -590,6 +602,7 @@ export async function buildTaskAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],

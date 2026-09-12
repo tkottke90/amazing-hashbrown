@@ -131,6 +131,7 @@ test.describe(
       // navigating this way, for real, collapsed the whole menu.
       await pressKey(page, 'Enter'); // open "Add to message"
       await pressKey(page, 'ArrowDown'); // -> "Add file"
+      await pressKey(page, 'ArrowDown'); // -> "Edit tools" (issue #171)
       await pressKey(page, 'ArrowDown'); // -> "Provider"
       await pressKey(page, 'ArrowRight'); // open Provider submenu, auto-focuses "openai"
       await pressKey(page, 'ArrowRight'); // open openai's model list, auto-focuses "gpt-4o"
@@ -151,6 +152,7 @@ test.describe(
 
       await pressKey(page, 'Enter');
       await pressKey(page, 'ArrowDown'); // -> "Add file"
+      await pressKey(page, 'ArrowDown'); // -> "Edit tools" (issue #171)
       await pressKey(page, 'ArrowDown'); // -> "Provider"
       await pressKey(page, 'ArrowRight');
       await pressKey(page, 'ArrowDown'); // -> "openai"

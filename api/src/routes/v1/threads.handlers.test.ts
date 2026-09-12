@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import Database from 'better-sqlite3';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
@@ -10,6 +10,8 @@ import { emptyCheckpoint } from '@langchain/langgraph-checkpoint';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { HumanMessage } from '@langchain/core/messages';
 import { ThreadStore } from '../../services/thread-store.js';
+import { ToolSettingsStore } from '../../services/tool-settings-store.js';
+import type { CatalogEntry } from '../../agents/tool-catalog.js';
 import { bootObservability } from '../../services/observability.js';
 import { runAfterAgentPipeline } from '../../agents/after-agent.js';
 import {
@@ -19,6 +21,9 @@ import {
   deleteThreadHandler,
   forkThreadHandler,
   getAfterAgentStatusHandler,
+  getThreadToolsHandler,
+  putThreadToolsHandler,
+  deleteThreadToolsHandler,
 } from './threads.handlers.js';
 
 // Minimal fake satisfying the .withStructuredOutput().withRetry().invoke()
@@ -64,6 +69,45 @@ function makeStore(): { store: ThreadStore; dir: string } {
   const db = openDatabase(join(dir, 'test.db'));
   const store = new ThreadStore(db);
   return { store, dir };
+}
+
+const TOOLS_TEST_CATALOG: CatalogEntry[] = [
+  {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'shell_exec',
+    name: 'Shell Exec',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'wiki_search',
+    name: 'Wiki Search',
+    description: 'd',
+    category: 'wiki',
+    alwaysOn: true,
+  },
+];
+
+// Per-thread tool endpoints need both stores sharing one db connection —
+// unlike makeStore() above, which only ever needed ThreadStore.
+function makeToolsStores(): {
+  store: ThreadStore;
+  toolSettingsStore: ToolSettingsStore;
+  dir: string;
+} {
+  const dir = mkdtempSync(join(tmpdir(), 'threads-handlers-tools-test-'));
+  const db = openDatabase(join(dir, 'test.db'));
+  const store = new ThreadStore(db);
+  const toolSettingsStore = new ToolSettingsStore(db);
+  toolSettingsStore.seedCatalogDefaults(TOOLS_TEST_CATALOG);
+  return { store, toolSettingsStore, dir };
 }
 
 describe('routes/v1/threads.handlers', () => {
@@ -323,6 +367,108 @@ describe('routes/v1/threads.handlers', () => {
       const result = getAfterAgentStatusHandler(store, 't1');
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data).to.deep.equal({ status: 'idle' });
+    });
+  });
+
+  describe('per-thread tool management (issue #171)', () => {
+    let store: ThreadStore;
+    let toolSettingsStore: ToolSettingsStore;
+    let dir: string;
+
+    beforeEach(() => {
+      ({ store, toolSettingsStore, dir } = makeToolsStores());
+      store.upsertThreadOnFirstMessage('t1', 'hi');
+    });
+
+    afterEach(() => {
+      store.close();
+      toolSettingsStore.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    describe('getThreadToolsHandler', () => {
+      it('404s for an unknown thread', () => {
+        const result = getThreadToolsHandler(store, toolSettingsStore, 'no-such-thread');
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('a non-customized thread reflects live global defaults', () => {
+        toolSettingsStore.patch('shell_exec', { defaultInclude: false });
+        const result = getThreadToolsHandler(store, toolSettingsStore, 't1');
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect(result.data.customized).to.equal(false);
+          const byId = new Map(result.data.tools.map((t) => [t.toolId, t]));
+          expect(byId.get('web_fetch')!.selected).to.equal(true);
+          expect(byId.get('shell_exec')!.selected).to.equal(false);
+          expect(byId.get('wiki_search')!.selected).to.equal(true);
+        }
+      });
+    });
+
+    describe('putThreadToolsHandler', () => {
+      it('400s if a toolId is not currently globally enabled', () => {
+        toolSettingsStore.patch('shell_exec', { enabled: false });
+        const result = putThreadToolsHandler(store, toolSettingsStore, 't1', {
+          toolIds: ['shell_exec'],
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('400s on a malformed body', () => {
+        const result = putThreadToolsHandler(store, toolSettingsStore, 't1', { toolIds: 'nope' });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('404s for an unknown thread', () => {
+        const result = putThreadToolsHandler(store, toolSettingsStore, 'no-such-thread', {
+          toolIds: [],
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('persists the exact submitted set and marks the thread customized', () => {
+        const result = putThreadToolsHandler(store, toolSettingsStore, 't1', {
+          toolIds: ['web_fetch'],
+        });
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect(result.data.customized).to.equal(true);
+          const byId = new Map(result.data.tools.map((t) => [t.toolId, t]));
+          expect(byId.get('web_fetch')!.selected).to.equal(true);
+          expect(byId.get('shell_exec')!.selected).to.equal(false);
+        }
+        expect(store.getThreadMeta('t1')!.toolsCustomizedAt).to.not.equal(null);
+      });
+
+      it('a wiki tool shows selected even when omitted from the submitted set', () => {
+        const result = putThreadToolsHandler(store, toolSettingsStore, 't1', { toolIds: [] });
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          const byId = new Map(result.data.tools.map((t) => [t.toolId, t]));
+          expect(byId.get('wiki_search')!.selected).to.equal(true);
+        }
+      });
+    });
+
+    describe('deleteThreadToolsHandler', () => {
+      it('404s for an unknown thread', () => {
+        const result = deleteThreadToolsHandler(store, toolSettingsStore, 'no-such-thread');
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('reverts a customized thread to tracking live global defaults', () => {
+        putThreadToolsHandler(store, toolSettingsStore, 't1', { toolIds: ['web_fetch'] });
+        const result = deleteThreadToolsHandler(store, toolSettingsStore, 't1');
+        expect(result.ok).to.equal(true);
+        if (result.ok) expect(result.data.customized).to.equal(false);
+        expect(store.getThreadMeta('t1')!.toolsCustomizedAt).to.equal(null);
+      });
     });
   });
 });

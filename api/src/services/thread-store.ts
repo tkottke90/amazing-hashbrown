@@ -20,6 +20,12 @@ export interface ThreadSummary {
   type: ThreadType;
   provider: string | null;
   model: string | null;
+  // NULL = this thread has never customized its tool selection — its
+  // effective tool set tracks global defaults live. Non-null = the
+  // thread_tools table (tool-settings-store.ts) holds an explicit snapshot
+  // for this thread, even if that snapshot is empty. See
+  // docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §3.
+  toolsCustomizedAt: string | null;
 }
 
 export interface ThreadMessageRecord {
@@ -74,6 +80,7 @@ interface RawThreadRow {
   type: ThreadType;
   provider: string | null;
   model: string | null;
+  tools_customized_at: string | null;
 }
 
 interface RawMessageRow {
@@ -106,6 +113,7 @@ function mapThreadRow(row: RawThreadRow): ThreadSummary {
     type: row.type,
     provider: row.provider,
     model: row.model,
+    toolsCustomizedAt: row.tools_customized_at,
   };
 }
 
@@ -134,8 +142,11 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // 1=observability, 2=cost-store, 3=evaluations, 4=threads, 5=observability,
 // 6=evaluations (judge_calibrations), 7=observability, 8=evaluations,
 // 9=(free), 10-12=threads (type column), 13-16=threads (provider/model columns),
-// 17=shell_audit_log (workspace-store.ts). Versions 18-23 are claimed by
+// 17=shell_audit_log (workspace-store.ts). Versions 18-27 are claimed by
 // WorkspaceStore (see workspace-store.ts's own comment for the breakdown).
+// 28=ToolSettingsStore (tool_settings/thread_tools tables, tool-settings-store.ts).
+// 29=threads (tools_customized_at column, for Per-Thread/Global Tool
+// Management — issue #171).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -213,6 +224,14 @@ const MIGRATIONS: DbMigration[] = [
   {
     version: 16,
     sql: `ALTER TABLE thread_messages ADD COLUMN model TEXT`,
+  },
+  {
+    version: 29,
+    // Nullable, no backfill needed — NULL means "this thread has never been
+    // customized, use global tool defaults" (see tool-settings-store.ts's
+    // getEffectiveToolIds()), a real and permanent state, not a placeholder
+    // pending a default value.
+    sql: `ALTER TABLE threads ADD COLUMN tools_customized_at TEXT`,
   },
 ];
 
@@ -529,6 +548,23 @@ export class ThreadStore extends BaseStore {
     this.db
       .prepare(`UPDATE threads SET provider = ?, model = ?, updated_at = ? WHERE id = ?`)
       .run(provider, model, new Date().toISOString(), threadId);
+  }
+
+  // Marks a thread as having an explicit tool-selection snapshot (see
+  // ToolSettingsStore.setThreadTools, which writes the actual thread_tools
+  // rows — the two calls are made together by the PUT /threads/:id/tools
+  // handler, never independently). Does not bump updated_at: a tool-config
+  // change isn't conversation activity and shouldn't reorder the thread list.
+  markThreadToolsCustomized(threadId: string): void {
+    this.db
+      .prepare(`UPDATE threads SET tools_customized_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), threadId);
+  }
+
+  // Reverts a thread to tracking global tool defaults live. Paired with
+  // ToolSettingsStore.resetThreadTools, which clears the thread_tools rows.
+  resetThreadToolsCustomization(threadId: string): void {
+    this.db.prepare(`UPDATE threads SET tools_customized_at = NULL WHERE id = ?`).run(threadId);
   }
 }
 

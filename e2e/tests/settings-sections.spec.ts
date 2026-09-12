@@ -309,7 +309,11 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await mockSettingsApi(page);
     await page.goto('/settings?section=tools');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('Web fetch')).toBeVisible();
+    // exact: true — issue #171's Tool Access section adds its own "Web
+    // Fetch" catalog row above this card, and getByText's default matching
+    // is case-insensitive, so the bare card-title text would otherwise
+    // ambiguously match both.
+    await expect(page.getByText('Web fetch', { exact: true })).toBeVisible();
     await expect(page.getByText('Retrieval loop model')).toBeVisible();
     await expect(page.getByText('Shell execution')).toBeVisible();
     await expect(page.getByLabel('Allowlist (one glob per line)')).toHaveValue('**/*.txt');
