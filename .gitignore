@@ -181,4 +181,5 @@ eval-logs/
 temp.sh
 
 # Brainstorming visual companion mockups
-.superpowers/
+.superpowers/-e .hashbrown
+.local
