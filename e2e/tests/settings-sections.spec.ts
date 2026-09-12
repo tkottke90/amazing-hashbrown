@@ -72,12 +72,6 @@ const suite: TestSuite = {
       expectedOutcome: 'Empty state renders with Add rate prompt',
       test: () => {},
     },
-    {
-      tags: ['@smoke'],
-      action: 'Load MCP Servers section',
-      expectedOutcome: '"Management UI coming soon." placeholder renders',
-      test: () => {},
-    },
   ],
 };
 
@@ -347,14 +341,8 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
 
   // ---- Placeholders ------------------------------------------------------
 
-  test('MCP Servers renders "coming soon" placeholder @smoke', async ({ page }, testInfo) => {
-    await mockSettingsApi(page);
-    await page.goto('/settings?section=mcp-servers');
-    await pauseBeforeAction(page, testInfo);
-    await expect(page.locator('p', { hasText: 'MCP Servers' })).toBeVisible();
-    await expect(page.getByText('Management UI coming soon.')).toBeVisible();
-  });
-
+  // MCP Servers no longer shows a placeholder — see settings-mcp-servers.spec.ts
+  // for coverage of the real management UI (issue #117).
   // Skills no longer shows a placeholder — see settings-skills-panel.spec.ts
   // for coverage of the real management UI (issue #116).
 

@@ -5,7 +5,6 @@ import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
 import { GeneralPanel } from '@/pages/settings/general-panel';
 import { McpServersPanel } from '@/pages/settings/mcp-servers-panel';
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
-import { PlaceholderPanel } from '@/pages/settings/placeholder-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
 import { SkillsPanel } from '@/pages/settings/skills-panel';
 import { StoragePanel } from '@/pages/settings/storage-panel';
