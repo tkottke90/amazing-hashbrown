@@ -40,7 +40,7 @@ This call is wrapped in the same try/catch `maybeSummarizeWorkspace` already use
 
 `createContextWindowMiddleware` gains a shared helper, used by both its `beforeModel` and `wrapModelCall` hooks instead of each calling `trimMessages` directly:
 
-```
+```ts
 function boundaryAwareTrim(
   messages: BaseMessage[],
   maxTokens: number,
@@ -101,7 +101,7 @@ This is scoped to workspace chat only — Thread chat and Wiki chat have no `.ha
 
 ### 2.4 Explicitly out of scope
 
-- **The chat UI's display behavior.** The `afterMessageId` cursor that hides messages at/before the last summary from the chat transcript (`workspace-chat.route.ts`'s `GET /:threadId`, `workspace-chat-tab.tsx`'s "Earlier messages were summarised" banner) is unchanged. This design is about what the *model* sees, not what the *user* sees in the transcript.
+- **The chat UI's display behavior.** The `afterMessageId` cursor that hides messages at/before the last summary from the chat transcript (`workspace-chat.route.ts`'s `GET /:threadId`, `workspace-chat-tab.tsx`'s "Earlier messages were summarised" banner) is unchanged. This design is about what the _model_ sees, not what the _user_ sees in the transcript.
 - **Resetting or compacting the checkpointer.** The checkpointer keeps 100% of raw history forever, exactly as today. The boundary marker is additive metadata for the trimmer, not a replacement for anything.
 - **Adding Summarise to Thread or Wiki chat.** Only the shared middleware and message-tagging convention are made summary-aware; nothing here adds a Summarise button anywhere but workspace chat.
 
