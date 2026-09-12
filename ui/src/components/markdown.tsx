@@ -70,6 +70,21 @@ function MarkdownImg(props: Record<string, unknown>) {
   return <img src={src} alt={alt} loading="lazy" className="rounded-md" />;
 }
 
+// ---- link override: opens external http(s) links in a new tab ----
+
+const EXTERNAL_HREF_RE = /^https?:\/\//i;
+
+export function MarkdownLink(props: preact.JSX.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const isExternal = EXTERNAL_HREF_RE.test(String(props.href ?? ''));
+  return (
+    <a
+      {...props}
+      target={isExternal ? '_blank' : undefined}
+      rel={isExternal ? 'noopener noreferrer' : undefined}
+    />
+  );
+}
+
 // ---- public ----
 
 export interface MarkdownProps {
@@ -86,6 +101,7 @@ export function Markdown({ children, className }: MarkdownProps) {
         components={{
           pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
           img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
+          a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
         }}
       >
         {children}
