@@ -71,6 +71,10 @@ plain text block — no highlighting, no language label
 ```
 ````
 
+## Links
+
+Absolute `http://`/`https://` links open in a new tab (`target="_blank" rel="noopener noreferrer"`) so clicking a link in a chat message or wiki page doesn't navigate the current tab away from the app. Relative links (e.g. in-app wiki navigation links), `mailto:`, `tel:`, and anchor (`#...`) links are left unchanged — same tab, no `rel`.
+
 ## Themes
 
 Syntax highlighting uses the [github](https://highlightjs.org/) highlight.js theme in light mode and a matching github-dark palette in dark mode. The theme switches automatically with the `.dark` class — no extra configuration needed.
