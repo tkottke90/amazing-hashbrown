@@ -131,8 +131,7 @@ export class ToolSettingsStore extends BaseStore {
 
   getToolSetting(toolId: string): ToolSettingRow | null {
     const row = this.db.prepare(`SELECT * FROM tool_settings WHERE tool_id = ?`).get(toolId) as
-      | RawToolSettingRow
-      | undefined;
+      RawToolSettingRow | undefined;
     return row ? mapRow(row) : null;
   }
 
