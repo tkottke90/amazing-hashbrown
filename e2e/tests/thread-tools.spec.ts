@@ -116,10 +116,9 @@ async function mockThreadToolsApi(page: Page) {
 }
 
 test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) }, () => {
-  test('opens from the + menu and lists tools by category @user-workflow', async (
-    { page },
-    testInfo,
-  ) => {
+  test('opens from the + menu and lists tools by category @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockThreadToolsApi(page);
     await page.goto('/');
     await pauseBeforeAction(page, testInfo);
@@ -134,10 +133,9 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await expect(drawer.getByText('Always on')).toBeVisible();
   });
 
-  test('a globally-disabled tool is greyed out and unselectable @user-workflow', async (
-    { page },
-    testInfo,
-  ) => {
+  test('a globally-disabled tool is greyed out and unselectable @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockThreadToolsApi(page);
     await page.goto('/');
     await pauseBeforeAction(page, testInfo);
@@ -161,9 +159,7 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await page.getByLabel('Include Shell Exec').check();
 
     const [putRequest] = await Promise.all([
-      page.waitForRequest(
-        (req) => req.url().includes('/tools') && req.method() === 'PUT',
-      ),
+      page.waitForRequest((req) => req.url().includes('/tools') && req.method() === 'PUT'),
       page.getByRole('button', { name: 'Save' }).click(),
     ]);
     const body = putRequest.postDataJSON() as { toolIds: string[] };
@@ -179,9 +175,7 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await page.getByRole('menuitem', { name: 'Edit tools' }).click();
 
     const [deleteRequest] = await Promise.all([
-      page.waitForRequest(
-        (req) => req.url().includes('/tools') && req.method() === 'DELETE',
-      ),
+      page.waitForRequest((req) => req.url().includes('/tools') && req.method() === 'DELETE'),
       page.getByRole('button', { name: 'Reset to defaults' }).click(),
     ]);
     expect(deleteRequest.method()).toBe('DELETE');

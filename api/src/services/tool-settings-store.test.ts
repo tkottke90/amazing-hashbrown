@@ -9,9 +9,27 @@ import { ThreadStore } from './thread-store.js';
 import type { CatalogEntry } from '../agents/tool-catalog.js';
 
 const CATALOG: CatalogEntry[] = [
-  { toolId: 'web_fetch', name: 'Web Fetch', description: 'd', category: 'built-in', alwaysOn: false },
-  { toolId: 'shell_exec', name: 'Shell Exec', description: 'd', category: 'built-in', alwaysOn: false },
-  { toolId: 'wiki_search', name: 'Wiki Search', description: 'd', category: 'wiki', alwaysOn: true },
+  {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'shell_exec',
+    name: 'Shell Exec',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'wiki_search',
+    name: 'Wiki Search',
+    description: 'd',
+    category: 'wiki',
+    alwaysOn: true,
+  },
   {
     toolId: 'create_workspace',
     name: 'Create Workspace',
@@ -150,7 +168,13 @@ describe('services/tool-settings-store', () => {
   describe('recordMcpDiscoveryResult()', () => {
     it('inserts new rows for a connected server and marks them connected', () => {
       store.recordMcpDiscoveryResult(
-        [{ name: 'pushover_send', description: 'send a pushover notification', mcpServer: 'pushover' }],
+        [
+          {
+            name: 'pushover_send',
+            description: 'send a pushover notification',
+            mcpServer: 'pushover',
+          },
+        ],
         new Map([['pushover', 'connected']]),
       );
       const row = store.getToolSetting('pushover_send')!;
@@ -160,9 +184,15 @@ describe('services/tool-settings-store', () => {
       expect(row.lastSeenAt).to.not.equal(null);
     });
 
-    it('marks an unreachable server\'s existing tools unreachable without touching lastSeenAt', async () => {
+    it("marks an unreachable server's existing tools unreachable without touching lastSeenAt", async () => {
       store.recordMcpDiscoveryResult(
-        [{ name: 'pushover_send', description: 'send a pushover notification', mcpServer: 'pushover' }],
+        [
+          {
+            name: 'pushover_send',
+            description: 'send a pushover notification',
+            mcpServer: 'pushover',
+          },
+        ],
         new Map([['pushover', 'connected']]),
       );
       const seenAt = store.getToolSetting('pushover_send')!.lastSeenAt;
@@ -180,9 +210,15 @@ describe('services/tool-settings-store', () => {
   });
 
   describe('deleteMcpServerRows()', () => {
-    it('deletes the server\'s tool_settings rows and cascades to thread_tools', () => {
+    it("deletes the server's tool_settings rows and cascades to thread_tools", () => {
       store.recordMcpDiscoveryResult(
-        [{ name: 'pushover_send', description: 'send a pushover notification', mcpServer: 'pushover' }],
+        [
+          {
+            name: 'pushover_send',
+            description: 'send a pushover notification',
+            mcpServer: 'pushover',
+          },
+        ],
         new Map([['pushover', 'connected']]),
       );
       store.setThreadTools('thread-1', ['pushover_send']);

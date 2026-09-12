@@ -1,5 +1,9 @@
 import { createMiddleware } from 'langchain';
-import { resolveEffectiveToolIds, ALWAYS_ON_TOOL_IDS, SKILL_GATED_TOOL_IDS } from './tool-access.js';
+import {
+  resolveEffectiveToolIds,
+  ALWAYS_ON_TOOL_IDS,
+  SKILL_GATED_TOOL_IDS,
+} from './tool-access.js';
 import { logger, serializeError } from '../config/logger.js';
 
 // Per-thread/global tool enable-disable enforcement (issue #171). Reads the

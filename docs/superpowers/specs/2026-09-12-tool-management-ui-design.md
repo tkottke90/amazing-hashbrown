@@ -14,7 +14,7 @@ Give users control over which tools the Agent can use: a global master list (Set
 
 ## Problem
 
-Tool availability today is entirely hardcoded. `buildChatAgent()` (`api/src/agents/chat-agent.ts`) assembles the LLM's tool list as a flat, unconditional array: `STATIC_CHAT_TOOLS` (built-ins: `askUser`, `uploadImage`, wiki reads, `webFetch`, `getToolKey`, `rlmQuery`, `searchSkills`, `searchConversation`, `spawnSubAgent`), `buildGatedTools()` (skill-gated), `buildWikiWriteTools()`, `makeShellExecTool()`, and `loadMcpTools()`. None of these has an on/off switch, globally or per-thread — the only exception is each MCP *server's* own `enabled` flag (`mcp-servers-panel.tsx`, PR #167), which is all-or-nothing for every tool that server exposes.
+Tool availability today is entirely hardcoded. `buildChatAgent()` (`api/src/agents/chat-agent.ts`) assembles the LLM's tool list as a flat, unconditional array: `STATIC_CHAT_TOOLS` (built-ins: `askUser`, `uploadImage`, wiki reads, `webFetch`, `getToolKey`, `rlmQuery`, `searchSkills`, `searchConversation`, `spawnSubAgent`), `buildGatedTools()` (skill-gated), `buildWikiWriteTools()`, `makeShellExecTool()`, and `loadMcpTools()`. None of these has an on/off switch, globally or per-thread — the only exception is each MCP _server's_ own `enabled` flag (`mcp-servers-panel.tsx`, PR #167), which is all-or-nothing for every tool that server exposes.
 
 This causes the concrete problem in the issue: a tool like Pushover can be sitting there, configured and reachable, with no way to make it available to a given conversation when it's actually needed.
 
@@ -58,8 +58,8 @@ interface CatalogEntry {
   name: string;
   description: string;
   category: 'built-in' | 'wiki' | 'skill-gated';
-  alwaysOn: boolean;           // true only for wiki tools
-  skillCommand?: string;        // set for skill-gated entries, matches GATED_SKILL_REGISTRATIONS
+  alwaysOn: boolean; // true only for wiki tools
+  skillCommand?: string; // set for skill-gated entries, matches GATED_SKILL_REGISTRATIONS
 }
 ```
 
@@ -118,19 +118,19 @@ New route pair, following the `mcp-servers.route.ts`/`mcp-servers.handlers.ts` s
 
 **`api/src/routes/v1/tool-settings.route.ts` + `tool-settings.handlers.ts`** — global:
 
-| Method  | Path                      | Body                             | Behavior |
-|---------|---------------------------|-----------------------------------|----------|
-| `GET`   | `/api/v1/tool-settings`   | —                                 | Full merged master list: every catalog entry + every `tool_settings` row of category `mcp`. Each item: `{toolId, name, description, category, enabled, defaultInclude, mcpServer?, lastStatus?, lastSeenAt?}`. Reads cached status only — no live discovery triggered. |
-| `PATCH` | `/api/v1/tool-settings/:toolId` | `{enabled?, defaultInclude?}` | 400 if `toolId`'s category is `wiki` (cannot disable) or `skill-gated` (read-only, no runtime effect — rejected rather than silently accepted). 404 if unknown `toolId`. |
-| `POST`  | `/api/v1/tool-settings/refresh` | —                            | Triggers a live MCP discovery pass (same call as a chat turn's `loadMcpTools()`), updating `last_status`/`last_seen_at` for all MCP tools, then returns the refreshed list. Explicit user action only (the "Refresh" button), never automatic. |
+| Method  | Path                            | Body                          | Behavior                                                                                                                                                                                                                                                               |
+| ------- | ------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/v1/tool-settings`         | —                             | Full merged master list: every catalog entry + every `tool_settings` row of category `mcp`. Each item: `{toolId, name, description, category, enabled, defaultInclude, mcpServer?, lastStatus?, lastSeenAt?}`. Reads cached status only — no live discovery triggered. |
+| `PATCH` | `/api/v1/tool-settings/:toolId` | `{enabled?, defaultInclude?}` | 400 if `toolId`'s category is `wiki` (cannot disable) or `skill-gated` (read-only, no runtime effect — rejected rather than silently accepted). 404 if unknown `toolId`.                                                                                               |
+| `POST`  | `/api/v1/tool-settings/refresh` | —                             | Triggers a live MCP discovery pass (same call as a chat turn's `loadMcpTools()`), updating `last_status`/`last_seen_at` for all MCP tools, then returns the refreshed list. Explicit user action only (the "Refresh" button), never automatic.                         |
 
 **Extend `api/src/routes/v1/threads.route.ts` + `threads.handlers.ts`** — per-thread:
 
-| Method   | Path                              | Body                  | Behavior |
-|----------|------------------------------------|-----------------------|----------|
-| `GET`    | `/api/v1/threads/:id/tools`        | —                     | `{customized: boolean, tools: [...same shape as global, plus `selected: boolean`]}`, computed via the effective-set logic in §3. |
-| `PUT`    | `/api/v1/threads/:id/tools`        | `{toolIds: string[]}` | The full resulting set (not a diff). Sets `tools_customized_at = now()`, replaces `thread_tools` rows. Server force-includes all `alwaysOn` tools regardless of what's sent. 400 if any `toolId` is not currently globally `enabled` (rejected, not silently dropped) or unknown. |
-| `DELETE` | `/api/v1/threads/:id/tools`        | —                     | Reset to defaults: clears `tools_customized_at` to `NULL` and deletes the thread's `thread_tools` rows. |
+| Method   | Path                        | Body                  | Behavior                                                                                                                                                                                                                                                                          |
+| -------- | --------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/v1/threads/:id/tools` | —                     | `{customized: boolean, tools: [...same shape as global, plus `selected: boolean`]}`, computed via the effective-set logic in §3.                                                                                                                                                  |
+| `PUT`    | `/api/v1/threads/:id/tools` | `{toolIds: string[]}` | The full resulting set (not a diff). Sets `tools_customized_at = now()`, replaces `thread_tools` rows. Server force-includes all `alwaysOn` tools regardless of what's sent. 400 if any `toolId` is not currently globally `enabled` (rejected, not silently dropped) or unknown. |
+| `DELETE` | `/api/v1/threads/:id/tools` | —                     | Reset to defaults: clears `tools_customized_at` to `NULL` and deletes the thread's `thread_tools` rows.                                                                                                                                                                           |
 
 ### 6. Enforcement — `chat-agent.ts`
 
@@ -179,4 +179,4 @@ Extends `ui/src/pages/settings/tools-panel.tsx` with a new "Tool Access" section
 
 ## Evaluations
 
-Not applicable in the EDD sense (`AGENTS.md` §Evaluation-Driven Development) — this changes *which* tools are mechanically present in a given turn's tool array, not the model's reasoning or behavior given a fixed tool set. There's no new or changed system-prompt content and no new expected model behavior to validate against real model output; the correctness surface here is entirely deterministic filtering logic, covered by the unit/integration tests above.
+Not applicable in the EDD sense (`AGENTS.md` §Evaluation-Driven Development) — this changes _which_ tools are mechanically present in a given turn's tool array, not the model's reasoning or behavior given a fixed tool set. There's no new or changed system-prompt content and no new expected model behavior to validate against real model output; the correctness surface here is entirely deterministic filtering logic, covered by the unit/integration tests above.

@@ -11,7 +11,7 @@ import {
   saveThreadTools,
   resetThreadToolsToDefaults,
 } from '@/hooks/use-thread-tools';
-import type { ThreadToolItem } from '@/services/tool-settings-api';
+import type { ThreadToolItem, ThreadToolsResponse } from '@/services/tool-settings-api';
 
 // Per-thread "Edit Tools" drawer, opened from the chat window's `+` menu
 // (chat-input.tsx). Same grouped layout as the Settings > Tools page's
@@ -62,18 +62,26 @@ function ThreadToolRow({
 
 function ThreadToolsBody() {
   const checkedIds = useSignal<Set<string>>(new Set());
-
-  useEffect(() => {
-    const data = threadToolsData.value;
-    if (data) {
-      checkedIds.value = new Set(
-        data.tools
-          .filter((t) => t.category === 'built-in' || t.category === 'mcp')
-          .filter((t) => t.selected)
-          .map((t) => t.toolId),
-      );
-    }
-  }, [threadToolsData.value]);
+  // Tracks which threadToolsData object checkedIds was last derived from —
+  // NOT a useEffect: an effect's callback is deferred to after commit (a
+  // later tick/animation frame in Preact's hooks scheduler), which leaves a
+  // real window where a checkbox click can land between "data rendered" and
+  // "effect actually ran", and the effect then overwrites the click's
+  // result when it finally fires. Deriving synchronously during render, on
+  // the same tick the new data object shows up, closes that window
+  // entirely. Guarded by object-identity so this doesn't re-derive (and
+  // wipe in-progress edits) on every render — only when threadToolsData
+  // actually changes to a new object (a fresh load, save, or reset).
+  const syncedFor = useSignal<ThreadToolsResponse | null>(null);
+  if (threadToolsData.value && syncedFor.value !== threadToolsData.value) {
+    checkedIds.value = new Set(
+      threadToolsData.value.tools
+        .filter((t) => t.category === 'built-in' || t.category === 'mcp')
+        .filter((t) => t.selected)
+        .map((t) => t.toolId),
+    );
+    syncedFor.value = threadToolsData.value;
+  }
 
   if (threadToolsLoading.value || !threadToolsData.value) {
     return <div class="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -155,10 +163,21 @@ function ThreadToolsBody() {
       </div>
 
       <div class="flex items-center justify-between gap-2 border-t border-border p-4">
-        <Button type="button" variant="outline" size="sm" onClick={() => void handleReset()} disabled={threadToolsSaving.value}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void handleReset()}
+          disabled={threadToolsSaving.value}
+        >
           Reset to defaults
         </Button>
-        <Button type="button" size="sm" onClick={() => void handleSave()} disabled={threadToolsSaving.value}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void handleSave()}
+          disabled={threadToolsSaving.value}
+        >
           Save
         </Button>
       </div>

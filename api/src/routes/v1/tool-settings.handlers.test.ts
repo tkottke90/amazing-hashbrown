@@ -14,8 +14,20 @@ import {
 } from './tool-settings.handlers.js';
 
 const CATALOG: CatalogEntry[] = [
-  { toolId: 'web_fetch', name: 'Web Fetch', description: 'd', category: 'built-in', alwaysOn: false },
-  { toolId: 'wiki_search', name: 'Wiki Search', description: 'd', category: 'wiki', alwaysOn: true },
+  {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'wiki_search',
+    name: 'Wiki Search',
+    description: 'd',
+    category: 'wiki',
+    alwaysOn: true,
+  },
 ];
 
 // Same private-field stubbing seam Phase 1's tools-manager.test.ts uses —
@@ -54,7 +66,8 @@ describe('routes/v1/tool-settings.handlers', () => {
     it('returns every seeded tool', () => {
       const result = listToolSettingsHandler(store);
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data.map((t) => t.toolId)).to.include.members(['web_fetch', 'wiki_search']);
+      if (result.ok)
+        expect(result.data.map((t) => t.toolId)).to.include.members(['web_fetch', 'wiki_search']);
     });
   });
 
@@ -102,7 +115,8 @@ describe('routes/v1/tool-settings.handlers', () => {
     it('returns the current list unchanged when no MCP servers are configured', async () => {
       const result = await refreshToolSettingsHandler(manager, store);
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data.map((t) => t.toolId)).to.deep.equal(['web_fetch', 'wiki_search']);
+      if (result.ok)
+        expect(result.data.map((t) => t.toolId)).to.deep.equal(['web_fetch', 'wiki_search']);
     });
 
     it('writes a newly discovered MCP tool into the store', async () => {

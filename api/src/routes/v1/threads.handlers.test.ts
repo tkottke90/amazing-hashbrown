@@ -72,14 +72,36 @@ function makeStore(): { store: ThreadStore; dir: string } {
 }
 
 const TOOLS_TEST_CATALOG: CatalogEntry[] = [
-  { toolId: 'web_fetch', name: 'Web Fetch', description: 'd', category: 'built-in', alwaysOn: false },
-  { toolId: 'shell_exec', name: 'Shell Exec', description: 'd', category: 'built-in', alwaysOn: false },
-  { toolId: 'wiki_search', name: 'Wiki Search', description: 'd', category: 'wiki', alwaysOn: true },
+  {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'shell_exec',
+    name: 'Shell Exec',
+    description: 'd',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'wiki_search',
+    name: 'Wiki Search',
+    description: 'd',
+    category: 'wiki',
+    alwaysOn: true,
+  },
 ];
 
 // Per-thread tool endpoints need both stores sharing one db connection —
 // unlike makeStore() above, which only ever needed ThreadStore.
-function makeToolsStores(): { store: ThreadStore; toolSettingsStore: ToolSettingsStore; dir: string } {
+function makeToolsStores(): {
+  store: ThreadStore;
+  toolSettingsStore: ToolSettingsStore;
+  dir: string;
+} {
   const dir = mkdtempSync(join(tmpdir(), 'threads-handlers-tools-test-'));
   const db = openDatabase(join(dir, 'test.db'));
   const store = new ThreadStore(db);

@@ -96,9 +96,7 @@ describe('ToolAccessSection', () => {
 
     fireEvent.click(screen.getByRole('switch', { name: 'Enable Web Fetch' }));
 
-    await waitFor(() =>
-      expect(mockPatch).toHaveBeenCalledWith('web_fetch', { enabled: false }),
-    );
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('web_fetch', { enabled: false }));
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 

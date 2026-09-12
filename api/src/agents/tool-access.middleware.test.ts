@@ -81,7 +81,7 @@ describe('agents/tool-access.middleware', () => {
     expect(seen).to.deep.equal(['shell_exec']);
   });
 
-  it('does not bleed one thread\'s customization into another thread on the same middleware instance', async () => {
+  it("does not bleed one thread's customization into another thread on the same middleware instance", async () => {
     getToolSettingsStore().setThreadTools('t1', ['shell_exec']);
     getThreadStore().markThreadToolsCustomized('t1');
     // t2 was never customized — it must still see live global defaults,

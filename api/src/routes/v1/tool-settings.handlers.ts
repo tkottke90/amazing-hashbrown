@@ -40,7 +40,9 @@ const PatchToolSettingSchema = z
 
 export type ToolSettingItem = ToolSettingRow;
 
-export function listToolSettingsHandler(store: ToolSettingsStore): HandlerResult<ToolSettingItem[]> {
+export function listToolSettingsHandler(
+  store: ToolSettingsStore,
+): HandlerResult<ToolSettingItem[]> {
   return ok(store.list());
 }
 

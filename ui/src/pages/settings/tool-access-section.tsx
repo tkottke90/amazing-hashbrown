@@ -81,9 +81,7 @@ function ToolRow({ tool, onToggleEnabled, onToggleDefault, readOnlyNote }: ToolR
                   type="checkbox"
                   checked={tool.defaultInclude}
                   disabled={!tool.enabled}
-                  onChange={(e) =>
-                    onToggleDefault?.(tool, (e.target as HTMLInputElement).checked)
-                  }
+                  onChange={(e) => onToggleDefault?.(tool, (e.target as HTMLInputElement).checked)}
                 />
                 Default
               </label>
@@ -255,7 +253,13 @@ export function ToolAccessSection() {
         <div>
           <div class="mb-1 flex items-center justify-between">
             <h3 class="text-sm font-medium text-muted-foreground">MCP</h3>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void handleRefresh()} disabled={refreshing.value}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing.value}
+            >
               {refreshing.value && <Loader2 class="size-3.5 animate-spin" />}
               Refresh
             </Button>
