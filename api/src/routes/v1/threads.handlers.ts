@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
@@ -6,6 +7,8 @@ import type {
   ThreadStore,
   ThreadSummary,
 } from '../../services/thread-store.js';
+import type { ToolSettingsStore, ToolSettingRow } from '../../services/tool-settings-store.js';
+import { ALWAYS_ON_TOOL_IDS } from '../../agents/tool-access.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
 import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
 import { getObservabilityStore } from '../../services/observability.js';
@@ -276,4 +279,100 @@ export async function generateThreadReportHandler(
   if (!data) return notFound(`Thread "${threadId}" not found`);
   const html = await renderThreadReportHtml(data);
   return ok({ html });
+}
+
+// ---------------------------------------------------------------------------
+// Per-thread tool management (issue #171)
+// ---------------------------------------------------------------------------
+//
+// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §5
+
+export interface ThreadToolItem extends ToolSettingRow {
+  selected: boolean;
+}
+
+export interface ThreadToolsResponse {
+  customized: boolean;
+  tools: ThreadToolItem[];
+}
+
+// Mirrors agents/tool-access.ts's resolveEffectiveToolIds() logic, but takes
+// an explicit ToolSettingsStore instead of the getToolSettingsStore()
+// singleton that helper reads — this file's handlers are plain functions
+// over explicit store arguments (see the module doc comment above), so a
+// Mocha test can construct its own throwaway stores without also having to
+// boot the app's global singletons. Small, deliberate duplication over
+// coupling this file's testability to a different module's singleton.
+function computeThreadTools(
+  toolSettingsStore: ToolSettingsStore,
+  thread: ThreadSummary,
+): ThreadToolsResponse {
+  const customized = thread.toolsCustomizedAt != null;
+  const baseIds = customized
+    ? toolSettingsStore.getThreadToolIds(thread.id)
+    : toolSettingsStore.getGlobalDefaultToolIds();
+  const effectiveIds = new Set([...baseIds, ...ALWAYS_ON_TOOL_IDS]);
+  const tools = toolSettingsStore
+    .list()
+    .map((tool) => ({ ...tool, selected: effectiveIds.has(tool.toolId) }));
+  return { customized, tools };
+}
+
+export function getThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+  return ok(computeThreadTools(toolSettingsStore, thread));
+}
+
+const PutThreadToolsSchema = z.object({ toolIds: z.array(z.string()) });
+
+// The submitted set IS the full resulting selection, not a diff (design §3:
+// "snapshots the outcome" — starting from defaults and disabling one tool
+// persists every other currently-default tool, minus that one). Always-on
+// tools are never required in the body and are never written into
+// thread_tools even if sent — computeThreadTools()'s read-time union
+// already guarantees their availability regardless of what's persisted, so
+// storing them too would just be redundant noise in the table.
+export function putThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+  body: unknown,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+
+  const parsed = PutThreadToolsSchema.safeParse(body);
+  if (!parsed.success) {
+    return invalid(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+
+  const globallyEnabled = toolSettingsStore.getGloballyEnabledToolIds();
+  const notEnabled = parsed.data.toolIds.filter((toolId) => !globallyEnabled.has(toolId));
+  if (notEnabled.length > 0) {
+    return invalid(`Not currently enabled globally: ${notEnabled.join(', ')}`);
+  }
+
+  toolSettingsStore.setThreadTools(threadId, parsed.data.toolIds);
+  store.markThreadToolsCustomized(threadId);
+
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!));
+}
+
+export function deleteThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+
+  toolSettingsStore.resetThreadTools(threadId);
+  store.resetThreadToolsCustomization(threadId);
+
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!));
 }

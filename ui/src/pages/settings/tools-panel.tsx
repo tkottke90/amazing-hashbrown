@@ -17,6 +17,7 @@ import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { FormLayout } from '@/components/form-layout';
+import { ToolAccessSection } from './tool-access-section';
 
 interface ShellConfig {
   workingDirectory?: string;
@@ -71,6 +72,8 @@ export function ToolsPanel() {
   return (
     <div class="flex min-h-full flex-col">
       <div class="flex-1 space-y-6 p-6">
+        <ToolAccessSection />
+
         <Card>
           <CardHeader>
             <CardTitle>Web fetch</CardTitle>

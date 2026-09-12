@@ -12,14 +12,22 @@ interface LangChainTool {
   invoke(args: Record<string, unknown>): Promise<unknown>;
 }
 
-export function buildMcpClient(config: McpConfigFile): MultiServerMCPClient | null {
-  const enabledServers = Object.fromEntries(
-    Object.entries(config.mcpServers).filter(([, server]) => server.enabled !== false),
-  );
-  if (Object.keys(enabledServers).length === 0) return null;
-  // Cast required: our McpServerConfig is a superset of Connection with slightly
-  // different field optionality (e.g. transport is optional in our type, required in library)
-  return new MultiServerMCPClient(enabledServers as unknown as Record<string, Connection>);
+// One MultiServerMCPClient per enabled server, rather than a single client
+// covering all of them — this is the isolation boundary that lets one
+// unreachable server fail without taking every other server's tools down
+// with it (see fetchAllMcpTools below, the actual per-server fetch/catch).
+export function buildMcpClient(config: McpConfigFile): Map<string, MultiServerMCPClient> {
+  const clients = new Map<string, MultiServerMCPClient>();
+  for (const [name, server] of Object.entries(config.mcpServers)) {
+    if (server.enabled === false) continue;
+    // Cast required: our McpServerConfig is a superset of Connection with slightly
+    // different field optionality (e.g. transport is optional in our type, required in library)
+    clients.set(
+      name,
+      new MultiServerMCPClient({ [name]: server } as unknown as Record<string, Connection>),
+    );
+  }
+  return clients;
 }
 
 export interface McpCapabilities {
@@ -66,6 +74,29 @@ export async function fetchMcpTools(client: MultiServerMCPClient): Promise<Regis
     }
   }
   return result;
+}
+
+export type McpServerStatus = 'connected' | 'unreachable';
+
+// Fetches every server's tools independently, so one server's connection
+// failure can't prevent another, healthy server's tools from loading. A
+// failing server contributes zero tools and is recorded as 'unreachable' in
+// the returned statuses map rather than throwing — the caller (ToolsManager)
+// decides what, if anything, to log.
+export async function fetchAllMcpTools(
+  clients: Map<string, MultiServerMCPClient>,
+): Promise<{ tools: RegisteredTool[]; statuses: Map<string, McpServerStatus> }> {
+  const tools: RegisteredTool[] = [];
+  const statuses = new Map<string, McpServerStatus>();
+  for (const [serverName, client] of clients) {
+    try {
+      tools.push(...(await fetchMcpTools(client)));
+      statuses.set(serverName, 'connected');
+    } catch {
+      statuses.set(serverName, 'unreachable');
+    }
+  }
+  return { tools, statuses };
 }
 
 function fromLangChain(tool: LangChainTool, serverName: string): RegisteredTool {

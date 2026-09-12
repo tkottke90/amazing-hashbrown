@@ -32,6 +32,8 @@ import {
   whenMouse,
 } from '@/components/provider-model-picker';
 import type { ProviderInfo } from '@/hooks/use-providers';
+import { openThreadToolsDrawer } from '@/hooks/use-thread-tools';
+import { ThreadToolsDrawer } from '@/components/thread-tools-drawer';
 
 export type StagedAttachment = UploadedArtifact;
 
@@ -466,6 +468,14 @@ export function ChatInput({
               >
                 Add file
               </DropdownMenuItem>
+              {threadId && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void openThreadToolsDrawer(threadId)}>
+                    Edit tools
+                  </DropdownMenuItem>
+                </>
+              )}
               {providers && providers.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
@@ -541,6 +551,7 @@ export function ChatInput({
           </Button>
         </div>
       </div>
+      <ThreadToolsDrawer />
     </div>
   );
 }

@@ -17,6 +17,20 @@ jest.mock('@/services/settings-api', () => {
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
+// ToolsPanel now also mounts <ToolAccessSection />, which fetches its own
+// data independently of useSettingsSection('tools') above — mocked here
+// purely so this file's existing tests (which only care about the
+// webFetch/RLM/shell form) aren't left waiting on real, unmocked network
+// calls. tool-access-section.test.tsx covers this section's own behavior.
+jest.mock('@/services/tool-settings-api', () => ({
+  fetchToolSettings: jest.fn().mockResolvedValue([]),
+  patchToolSetting: jest.fn(),
+  refreshToolSettings: jest.fn(),
+}));
+jest.mock('@/services/skills-manage-api', () => ({
+  fetchAllSkills: jest.fn().mockResolvedValue([]),
+}));
+
 import { ToolsPanel } from '@/pages/settings/tools-panel';
 import * as api from '@/services/settings-api';
 
