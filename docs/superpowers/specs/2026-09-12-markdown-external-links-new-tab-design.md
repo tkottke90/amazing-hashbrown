@@ -83,12 +83,12 @@ No error handling is needed — this is synchronous rendering logic with no fail
 
 ## 6. Files Changed (expected)
 
-| File | Change |
-| --- | --- |
-| `ui/src/components/markdown.tsx` | Add `MarkdownLink` override; register `a` in the `components` map |
-| `ui/src/components/markdown.md` | Document the new-tab-for-external-links behavior |
-| Markdown component tests | New cases per Testing Plan above |
-| `ui/test/__mocks__/react-markdown.tsx` / `ui/test/__mocks__/markdown.tsx` | Updated only if needed to exercise the new `a` override |
+| File                                                                      | Change                                                            |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `ui/src/components/markdown.tsx`                                          | Add `MarkdownLink` override; register `a` in the `components` map |
+| `ui/src/components/markdown.md`                                           | Document the new-tab-for-external-links behavior                  |
+| Markdown component tests                                                  | New cases per Testing Plan above                                  |
+| `ui/test/__mocks__/react-markdown.tsx` / `ui/test/__mocks__/markdown.tsx` | Updated only if needed to exercise the new `a` override           |
 
 ---
 

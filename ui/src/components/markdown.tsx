@@ -74,7 +74,7 @@ function MarkdownImg(props: Record<string, unknown>) {
 
 const EXTERNAL_HREF_RE = /^https?:\/\//i;
 
-export function MarkdownLink(props: preact.JSX.HTMLAttributes<HTMLAnchorElement>) {
+export function MarkdownLink(props: preact.JSX.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const isExternal = EXTERNAL_HREF_RE.test(String(props.href ?? ''));
   return (
     <a
