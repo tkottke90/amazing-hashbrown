@@ -4,14 +4,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after, beforeEach } from 'mocha';
 import { expect } from 'chai';
+import Database from 'better-sqlite3';
+import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
+import { createAgent } from 'langchain';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { FakeListChatModel } from '@langchain/core/utils/testing';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
+import { logger } from '../config/logger.js';
 import { ThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootObservability } from '../services/observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
+import { isSummaryBoundary } from './summary-boundary.js';
+
+// Monkey-patches one logger method to record calls while forwarding to the
+// real implementation — mirrors the identical helper in chat-agent.test.ts.
+function captureLogCalls(method: 'warn') {
+  const spy = logger as unknown as Record<string, (msg: string, meta?: unknown) => void>;
+  const original = spy[method].bind(logger);
+  const calls: Array<{ message: string; meta: unknown }> = [];
+  spy[method] = (message: string, meta?: unknown) => {
+    calls.push({ message, meta });
+    original(message, meta);
+  };
+  return {
+    calls,
+    restore: () => {
+      spy[method] = original;
+    },
+  };
+}
 
 class ThrowingChatModel extends BaseChatModel {
   _llmType() {
@@ -54,6 +77,14 @@ describe('agents/workspace-summarizer', () => {
   let threadStore: ThreadStore;
   let workspaceStore: WorkspaceStore;
   let workspace: Workspace;
+  // A real createAgent()+SqliteSaver pair (thread-fork.test.ts's established
+  // pattern for exercising real LangGraph checkpoint state in tests). The
+  // model is never invoked in these tests — only agent.graph.updateState()/
+  // getState() are exercised — so a bare FakeListChatModel is fine to share
+  // across every test/thread_id in this suite.
+  let checkpointDb: Database.Database;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let agent: any;
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'workspace-summarizer-test-'));
@@ -63,10 +94,19 @@ describe('agents/workspace-summarizer', () => {
     workspaceStore = new WorkspaceStore(workspaceDb);
     const obsDb = openDatabase(join(dir, 'observability.db'));
     bootObservability(obsDb);
+
+    checkpointDb = new Database(join(dir, 'checkpoints.db'));
+    const checkpointer = new SqliteSaver(checkpointDb);
+    agent = createAgent({
+      model: new FakeListChatModel({ responses: ['unused'] }),
+      tools: [],
+      checkpointer,
+    });
   });
 
   after(() => {
     threadStore.close();
+    checkpointDb.close();
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -87,6 +127,7 @@ describe('agents/workspace-summarizer', () => {
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       model,
       undefined,
       undefined,
@@ -107,6 +148,7 @@ describe('agents/workspace-summarizer', () => {
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       model,
       'local',
       'fake-model',
@@ -141,6 +183,66 @@ describe('agents/workspace-summarizer', () => {
     );
   });
 
+  it('records a boundary marker message in the checkpoint after a successful summarize', async () => {
+    seedConversationalMessages(threadStore, workspace.threadId!, 40);
+    const model = new FakeListChatModel({ responses: ['# Summary'] });
+
+    await maybeSummarizeWorkspace(
+      undefined,
+      workspaceStore,
+      threadStore,
+      workspace,
+      agent,
+      model,
+      undefined,
+      undefined,
+    );
+
+    const reloaded = workspaceStore.getWorkspace(workspace.id)!;
+    const state = await agent.graph.getState({
+      configurable: { thread_id: workspace.threadId },
+    });
+    const lastMessage = state.values.messages[state.values.messages.length - 1];
+    expect(isSummaryBoundary(lastMessage)).to.equal(true);
+    const tag = lastMessage.additional_kwargs['hashbrown'] as { summaryPath?: string };
+    expect(tag.summaryPath).to.equal(reloaded.summaryPath);
+  });
+
+  it('still succeeds (file + thread-store row written) even if the checkpoint boundary write fails', async () => {
+    seedConversationalMessages(threadStore, workspace.threadId!, 40);
+    const model = new FakeListChatModel({ responses: ['# Summary'] });
+    const failingAgent = {
+      graph: {
+        updateState: async () => {
+          throw new Error('checkpoint write boom');
+        },
+      },
+    };
+
+    const log = captureLogCalls('warn');
+    try {
+      await maybeSummarizeWorkspace(
+        undefined,
+        workspaceStore,
+        threadStore,
+        workspace,
+        failingAgent,
+        model,
+        undefined,
+        undefined,
+      );
+
+      const reloaded = workspaceStore.getWorkspace(workspace.id)!;
+      expect(reloaded.summaryPath).to.not.equal(null);
+      expect(reloaded.lastSummarizedMessageId).to.not.equal(null);
+      expect(log.calls.some((c) => c.message.includes('checkpoint boundary marker'))).to.equal(
+        true,
+      );
+    } finally {
+      log.restore();
+    }
+  });
+
   it('force:true summarizes even below the threshold', async () => {
     seedConversationalMessages(threadStore, workspace.threadId!, 2);
     const model = new FakeListChatModel({ responses: ['# Summary'] });
@@ -150,6 +252,7 @@ describe('agents/workspace-summarizer', () => {
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       model,
       undefined,
       undefined,
@@ -169,6 +272,7 @@ describe('agents/workspace-summarizer', () => {
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       model,
       undefined,
       undefined,
@@ -189,6 +293,7 @@ describe('agents/workspace-summarizer', () => {
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       model,
       undefined,
       undefined,
@@ -214,6 +319,7 @@ describe('agents/workspace-summarizer', () => {
         workspaceStore,
         threadStore,
         workspace,
+        agent,
         model,
         undefined,
         undefined,

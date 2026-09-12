@@ -1,6 +1,5 @@
 import { tool } from '@langchain/core/tools';
 import type { ServerTool, ClientTool } from '@langchain/core/tools';
-import { trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
@@ -35,6 +34,7 @@ import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getToolKeyTool } from './tools/get-tool-key.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
+import { boundaryAwareTrim } from './summary-boundary.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
@@ -168,16 +168,12 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
       // Enabled by default; only skip if explicitly set to false.
       if (cfg?.enabled === false) return undefined;
 
-      const trimmer = trimMessages({
-        maxTokens: cfg?.maxTokens ?? 32000,
-        strategy: 'last',
-        tokenCounter: estimateTokens,
-        includeSystem: true,
-        allowPartial: false,
-        startOn: 'human',
-      });
-
-      const trimmed = await trimmer.invoke(state.messages as BaseMessage[]);
+      const trimmed = await boundaryAwareTrim(
+        state.messages as BaseMessage[],
+        cfg?.maxTokens ?? 32000,
+        estimateTokens,
+        true,
+      );
       if (trimmed.length === state.messages.length) return undefined;
 
       logger.debug('contextWindow: trimmed message history', {
@@ -205,16 +201,12 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
         });
       }
 
-      const trimmer = trimMessages({
-        maxTokens: budget,
-        strategy: 'last',
-        tokenCounter: estimateTokens,
-        includeSystem: false, // system already counted separately above
-        allowPartial: false,
-        startOn: 'human',
-      });
-
-      const trimmed = await trimmer.invoke(request.messages as BaseMessage[]);
+      const trimmed = await boundaryAwareTrim(
+        request.messages as BaseMessage[],
+        budget,
+        estimateTokens,
+        false, // system already counted separately above
+      );
       if (trimmed.length !== request.messages.length) {
         logger.debug('contextWindow: trimmed at wrapModelCall (tool-schema-aware)', {
           before: request.messages.length,
@@ -390,6 +382,15 @@ export interface WorkspaceChatContext {
   // Resolved wiki domain name (not the raw id) for the workspace's bound
   // wiki, or null when the workspace has none configured.
   wikiDomain: string | null;
+  // Full content of the most recent .hashbrown/summaries/*.md file, or null
+  // if the workspace has never been summarized. See workspace-summarizer.ts.
+  latestSummary: string | null;
+  // Older summary files, oldest first — surfaced as a manifest rather than
+  // inlined in full so steady-state system-prompt cost stays flat regardless
+  // of how many summaries a long-running workspace accumulates. The agent
+  // can read any of these via its bound shell-exec tool if it decides the
+  // older context is relevant.
+  olderSummaries: { path: string; timestamp: string }[];
 }
 
 function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
@@ -405,6 +406,16 @@ function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
   }
   if (ctx.systemPrompt?.trim()) {
     lines.push('', ctx.systemPrompt.trim());
+  }
+  if (ctx.latestSummary?.trim()) {
+    lines.push('', '## Prior work summary', ctx.latestSummary.trim());
+  }
+  if (ctx.olderSummaries.length > 0) {
+    lines.push(
+      '',
+      '## Earlier summaries (read via shell if needed)',
+      ...ctx.olderSummaries.map((s) => `- ${s.path} (generated ${s.timestamp})`),
+    );
   }
   return lines.join('\n');
 }

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
@@ -55,6 +57,50 @@ export function resolveAllowedWikiId(
   return store.getWorkspace(workspaceId)?.wikiId ?? undefined;
 }
 
+// Reads .hashbrown/summaries/ under the workspace's location: the most
+// recent file's full content, plus older files reduced to a manifest
+// (path + filename-derived timestamp) so steady-state cost doesn't grow
+// with how many summaries a long-running workspace accumulates. Never
+// throws — a missing directory (the common case: never summarized) or an
+// unreadable file just means no summary context for this turn.
+async function loadWorkspaceSummaries(
+  workspace: Workspace,
+): Promise<Pick<WorkspaceChatContext, 'latestSummary' | 'olderSummaries'>> {
+  const dir = path.join(workspace.location, '.hashbrown', 'summaries');
+  let files: string[];
+  try {
+    files = (await readdir(dir)).filter((f) => f.endsWith('.md')).sort();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('workspace-chat: failed to list summaries directory', {
+        workspaceId: workspace.id,
+        err: serializeError(err),
+      });
+    }
+    return { latestSummary: null, olderSummaries: [] };
+  }
+  if (files.length === 0) return { latestSummary: null, olderSummaries: [] };
+
+  const latestFile = files[files.length - 1];
+  if (!latestFile) return { latestSummary: null, olderSummaries: [] }; // unreachable, satisfies TS
+  let latestSummary: string | null = null;
+  try {
+    latestSummary = await readFile(path.join(dir, latestFile), 'utf8');
+  } catch (err) {
+    logger.warn('workspace-chat: failed to read latest summary file', {
+      workspaceId: workspace.id,
+      err: serializeError(err),
+    });
+  }
+
+  const olderSummaries = files.slice(0, -1).map((f) => ({
+    path: path.join('.hashbrown', 'summaries', f),
+    timestamp: f.replace(/\.md$/, ''), // filename is already a sortable, readable timestamp
+  }));
+
+  return { latestSummary, olderSummaries };
+}
+
 // Exported so task-execution.ts (automated task runs) can build the same
 // workspace-context block a workspace-chat turn uses, without duplicating
 // the wiki-domain lookup logic.
@@ -72,12 +118,15 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
       });
     }
   }
+  const { latestSummary, olderSummaries } = await loadWorkspaceSummaries(workspace);
   return {
     name: workspace.name,
     goal: workspace.goal,
     location: workspace.location,
     systemPrompt: workspace.systemPrompt,
     wikiDomain,
+    latestSummary,
+    olderSummaries,
   };
 }
 
@@ -234,6 +283,7 @@ export async function streamWorkspaceChatToSse(
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       createProvider(resolvedProvider, resolvedModel),
       resolvedProvider,
       resolvedModel,
@@ -430,6 +480,7 @@ export async function resumeWorkspaceChatToSse(
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       createProvider(resolvedProvider, resolvedModel),
       resolvedProvider,
       resolvedModel,
@@ -618,6 +669,7 @@ export async function retryWorkspaceChatToSse(
       workspaceStore,
       threadStore,
       workspace,
+      agent,
       createProvider(resolvedProvider, resolvedModel),
       resolvedProvider,
       resolvedModel,
