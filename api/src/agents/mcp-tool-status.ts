@@ -9,8 +9,9 @@
 //     toolsManager.refreshMcpTools() first (bypassing that cache) and then
 //     this, since a refresh is an explicit ask for a live check.
 //
-// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §2
+// design: docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §2
 
+import { slugifyServerName, mcpDisplayId } from '@tkottke90/tools-manager';
 import type { ToolsManager } from '@tkottke90/tools-manager';
 import type { ToolSettingsStore } from '../services/tool-settings-store.js';
 
@@ -24,7 +25,12 @@ export function syncMcpToolStatus(manager: ToolsManager, store: ToolSettingsStor
   const mcpTools = manager
     .list()
     .filter((t) => t.source === 'mcp')
-    .map((t) => ({ name: t.name, description: t.description, mcpServer: t.mcpServer! }));
+    .map((t) => ({
+      toolId: mcpDisplayId(slugifyServerName(t.mcpServer!), t.name),
+      name: t.name,
+      description: t.description,
+      mcpServer: t.mcpServer!,
+    }));
 
   store.recordMcpDiscoveryResult(mcpTools, statuses);
 }

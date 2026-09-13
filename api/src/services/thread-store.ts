@@ -147,6 +147,8 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // 28=ToolSettingsStore (tool_settings/thread_tools tables, tool-settings-store.ts).
 // 29=threads (tools_customized_at column, for Per-Thread/Global Tool
 // Management — issue #171).
+// 30=ToolSettingsStore (drops tool_settings.enabled/default_include —
+// moved to config.yaml, tool-settings-store.ts).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).

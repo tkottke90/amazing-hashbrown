@@ -364,6 +364,8 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 28=ToolSettingsStore (tool_settings/thread_tools tables, tool-settings-store.ts).
 // 29=threads (tools_customized_at column). 28-29 are for Per-Thread/Global
 // Tool Management — issue #171 — see thread-store.ts's own comment.
+// 30=ToolSettingsStore (drops tool_settings.enabled/default_include —
+// moved to config.yaml, for the 2026-09-13 tool settings redesign).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,

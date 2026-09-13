@@ -3,8 +3,6 @@ import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
-import { ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
-import type { ShellExecutorConfig } from '@tkottke90/shell-executor';
 
 loadDotenv();
 
@@ -150,9 +148,34 @@ export const WebFetchConfigSchema = z.object({
   respectRobotsTxt: z.boolean().default(true),
 });
 
-export const ToolsConfigSchema = z.object({
-  shell: ShellExecutorConfigSchema.optional(),
+// Per-tool config.yaml entry — flat `tools.<toolId>` map (issue #171/#63/#154
+// redesign; docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md
+// §3). Every tool (built-in, wiki, skill-gated, mcp) can have an entry here;
+// most won't. Generic fields cover the enable/default-include/description/
+// instructions state every tool shares; the catchall carries the handful of
+// tool-specific extra fields (web_fetch's timeoutMs/respectRobotsTxt,
+// rlm_query's provider/model/maxIterations/truncateThreshold, shell_exec's
+// allowlist/denylist) without a rigid nested schema — each is validated
+// against its own typed schema only where it's actually written
+// (tool-settings.handlers.ts), not here.
+export const ToolDefaultIncludeSchema = z.object({
+  chat: z.boolean().optional(),
+  subAgent: z.boolean().optional(),
+  autonomous: z.boolean().optional(),
 });
+
+export const ToolEntrySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    defaultInclude: ToolDefaultIncludeSchema.optional(),
+    description: z.string().optional(),
+    instructions: z.string().optional(),
+  })
+  .catchall(z.unknown());
+
+export type ToolEntry = z.infer<typeof ToolEntrySchema>;
+
+export const ToolsConfigSchema = z.record(z.string(), ToolEntrySchema).default({});
 
 export const GithubTrackerSchema = z.object({
   token: z.string().optional(),
@@ -186,12 +209,10 @@ const AppConfigSchema = z.object({
   afterAgent: AfterAgentSchema.optional(),
   chat: ChatSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
-  webFetch: WebFetchConfigSchema.optional(),
-  rlm: RLMConfigSchema.optional(),
   agent: AgentSchema.optional(),
   artifactGc: ArtifactGcSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
-  tools: ToolsConfigSchema.optional(),
+  tools: ToolsConfigSchema,
   workspaces: WorkspacesSchema.optional(),
   roles: RolesConfigSchema.optional(),
 });
@@ -295,12 +316,19 @@ export const env = {
       return EmbeddingsSchema.parse({});
     }
   },
+  // web_fetch/rlm_query's config now lives at tools.web_fetch/tools.rlm_query
+  // (closes issue #63 — no longer top-level, co-located with every other
+  // tool's config) — these two getters keep the same narrow, convenient
+  // shape their one-each call sites (web-fetch.ts, wiki-read-page.tool.ts,
+  // rlm-query.tool.ts) already use, just repointed to the new location.
   get webFetch(): z.infer<typeof WebFetchConfigSchema> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('webFetch', WebFetchConfigSchema) as z.infer<
-        typeof WebFetchConfigSchema
+      const tools = (configManager as any).getSection('tools', ToolsConfigSchema) as Record<
+        string,
+        ToolEntry
       >;
+      return WebFetchConfigSchema.parse(tools['web_fetch'] ?? {});
     } catch {
       return WebFetchConfigSchema.parse({});
     }
@@ -308,7 +336,11 @@ export const env = {
   get rlm(): RLMConfig {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('rlm', RLMConfigSchema) as RLMConfig;
+      const tools = (configManager as any).getSection('tools', ToolsConfigSchema) as Record<
+        string,
+        ToolEntry
+      >;
+      return RLMConfigSchema.parse(tools['rlm_query'] ?? {});
     } catch {
       return RLMConfigSchema.parse({});
     }
@@ -351,14 +383,21 @@ export const env = {
       return {};
     }
   },
-  get tools(): { shell?: ShellExecutorConfig } | undefined {
+  // Raw per-tool config map, keyed by toolId — the resolver
+  // (api/src/agents/tool-config.ts) is the only place that should read
+  // arbitrary toolId entries out of this; other call sites needing one
+  // specific tool's config (shell, web fetch, rlm) go through a narrower
+  // convenience getter instead (see webFetch/rlm above, and shell_exec's
+  // own read at its two call sites).
+  get tools(): Record<string, ToolEntry> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('tools', ToolsConfigSchema) as {
-        shell?: ShellExecutorConfig;
-      };
+      return (configManager as any).getSection('tools', ToolsConfigSchema) as Record<
+        string,
+        ToolEntry
+      >;
     } catch {
-      return undefined;
+      return {};
     }
   },
   get workspaces(): z.infer<typeof WorkspacesSchema> {

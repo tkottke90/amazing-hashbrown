@@ -82,80 +82,55 @@ describe('services/tool-settings-store', () => {
         rmSync(sharedDir, { recursive: true, force: true });
       }
     });
+
+    it('a fresh tool_settings table has no enabled/default_include columns (moved to config.yaml)', () => {
+      const columns = (
+        db.prepare(`PRAGMA table_info(tool_settings)`).all() as { name: string }[]
+      ).map((c) => c.name);
+      expect(columns).to.not.include('enabled');
+      expect(columns).to.not.include('default_include');
+    });
   });
 
   describe('seedCatalogDefaults()', () => {
-    it('seeds every catalog entry with enabled/defaultInclude true', () => {
+    it('seeds an identity row for every catalog entry', () => {
       store.seedCatalogDefaults(CATALOG);
       const rows = store.list();
       expect(rows).to.have.length(4);
-      for (const row of rows) {
-        expect(row.enabled).to.equal(true);
-        expect(row.defaultInclude).to.equal(true);
-      }
+      expect(rows.map((r) => r.toolId).sort()).to.deep.equal([
+        'create_workspace',
+        'shell_exec',
+        'web_fetch',
+        'wiki_search',
+      ]);
     });
 
-    it('is idempotent — re-seeding does not duplicate rows or overwrite a customized one', () => {
+    it('is idempotent — re-seeding does not duplicate or overwrite an existing row', () => {
       store.seedCatalogDefaults(CATALOG);
-      store.patch('web_fetch', { enabled: false });
+      const before = store.getToolSetting('web_fetch')!;
       store.seedCatalogDefaults(CATALOG);
       const rows = store.list();
       expect(rows).to.have.length(4);
-      expect(store.getToolSetting('web_fetch')!.enabled).to.equal(false);
+      expect(store.getToolSetting('web_fetch')).to.deep.equal(before);
     });
   });
 
-  describe('patch()', () => {
+  describe('per-thread selection', () => {
     beforeEach(() => store.seedCatalogDefaults(CATALOG));
-
-    it('updates enabled/defaultInclude for a built-in tool', () => {
-      const result = store.patch('web_fetch', { enabled: false, defaultInclude: false });
-      expect(result).to.not.equal('not-found').and.to.not.equal('not-patchable');
-      const row = store.getToolSetting('web_fetch')!;
-      expect(row.enabled).to.equal(false);
-      expect(row.defaultInclude).to.equal(false);
-    });
-
-    it('rejects a wiki tool', () => {
-      expect(store.patch('wiki_search', { enabled: false })).to.equal('not-patchable');
-      expect(store.getToolSetting('wiki_search')!.enabled).to.equal(true);
-    });
-
-    it('rejects a skill-gated tool', () => {
-      expect(store.patch('create_workspace', { enabled: false })).to.equal('not-patchable');
-    });
-
-    it('returns not-found for an unknown toolId', () => {
-      expect(store.patch('nonexistent', { enabled: false })).to.equal('not-found');
-    });
-  });
-
-  describe('effective-set queries', () => {
-    beforeEach(() => store.seedCatalogDefaults(CATALOG));
-
-    it('getGlobalDefaultToolIds() reflects enabled+defaultInclude tools', () => {
-      store.patch('shell_exec', { defaultInclude: false });
-      const ids = store.getGlobalDefaultToolIds();
-      expect(ids.has('web_fetch')).to.equal(true);
-      expect(ids.has('shell_exec')).to.equal(false);
-    });
-
-    it('getGloballyEnabledToolIds() reflects enabled regardless of defaultInclude', () => {
-      store.patch('shell_exec', { enabled: false, defaultInclude: false });
-      const ids = store.getGloballyEnabledToolIds();
-      expect(ids.has('shell_exec')).to.equal(false);
-      expect(ids.has('web_fetch')).to.equal(true);
-    });
 
     it('setThreadTools()/getThreadToolIds() round-trip', () => {
       store.setThreadTools('thread-1', ['web_fetch']);
       expect([...store.getThreadToolIds('thread-1')]).to.deep.equal(['web_fetch']);
     });
 
-    it('getThreadToolIds() excludes a tool that was globally disabled after being selected', () => {
+    it('getThreadToolIds() returns the raw stored snapshot — enabled-filtering is a caller concern now', () => {
       store.setThreadTools('thread-1', ['web_fetch', 'shell_exec']);
-      store.patch('shell_exec', { enabled: false });
-      expect([...store.getThreadToolIds('thread-1')]).to.deep.equal(['web_fetch']);
+      // No SQL-level enabled filter anymore (that column moved to
+      // config.yaml) — both selections come back regardless.
+      expect([...store.getThreadToolIds('thread-1')].sort()).to.deep.equal([
+        'shell_exec',
+        'web_fetch',
+      ]);
     });
 
     it('resetThreadTools() clears the snapshot', () => {
@@ -170,6 +145,7 @@ describe('services/tool-settings-store', () => {
       store.recordMcpDiscoveryResult(
         [
           {
+            toolId: 'pushover:pushover_send',
             name: 'pushover_send',
             description: 'send a pushover notification',
             mcpServer: 'pushover',
@@ -177,8 +153,9 @@ describe('services/tool-settings-store', () => {
         ],
         new Map([['pushover', 'connected']]),
       );
-      const row = store.getToolSetting('pushover_send')!;
+      const row = store.getToolSetting('pushover:pushover_send')!;
       expect(row.category).to.equal('mcp');
+      expect(row.name).to.equal('pushover_send');
       expect(row.mcpServer).to.equal('pushover');
       expect(row.lastStatus).to.equal('connected');
       expect(row.lastSeenAt).to.not.equal(null);
@@ -188,6 +165,7 @@ describe('services/tool-settings-store', () => {
       store.recordMcpDiscoveryResult(
         [
           {
+            toolId: 'pushover:pushover_send',
             name: 'pushover_send',
             description: 'send a pushover notification',
             mcpServer: 'pushover',
@@ -195,10 +173,10 @@ describe('services/tool-settings-store', () => {
         ],
         new Map([['pushover', 'connected']]),
       );
-      const seenAt = store.getToolSetting('pushover_send')!.lastSeenAt;
+      const seenAt = store.getToolSetting('pushover:pushover_send')!.lastSeenAt;
       await new Promise((r) => setTimeout(r, 5));
       store.recordMcpDiscoveryResult([], new Map([['pushover', 'unreachable']]));
-      const row = store.getToolSetting('pushover_send')!;
+      const row = store.getToolSetting('pushover:pushover_send')!;
       expect(row.lastStatus).to.equal('unreachable');
       expect(row.lastSeenAt).to.equal(seenAt);
     });
@@ -214,6 +192,7 @@ describe('services/tool-settings-store', () => {
       store.recordMcpDiscoveryResult(
         [
           {
+            toolId: 'pushover:pushover_send',
             name: 'pushover_send',
             description: 'send a pushover notification',
             mcpServer: 'pushover',
@@ -221,9 +200,9 @@ describe('services/tool-settings-store', () => {
         ],
         new Map([['pushover', 'connected']]),
       );
-      store.setThreadTools('thread-1', ['pushover_send']);
+      store.setThreadTools('thread-1', ['pushover:pushover_send']);
       store.deleteMcpServerRows('pushover');
-      expect(store.getToolSetting('pushover_send')).to.equal(null);
+      expect(store.getToolSetting('pushover:pushover_send')).to.equal(null);
       // Assert directly on the underlying table, not just via the
       // join-based getThreadToolIds() — that getter would read empty
       // either way once tool_settings is gone, so it can't by itself prove

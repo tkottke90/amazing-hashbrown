@@ -9,13 +9,16 @@ import type { CatalogEntry } from '../agents/tool-catalog.js';
 export type ToolSettingCategory = 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
 export type McpToolStatus = 'connected' | 'unreachable';
 
+// Pure identity/discovery cache — enabled/defaultInclude/description-override/
+// instructions all moved to config.yaml (tools.<toolId>, see
+// api/src/agents/tool-config.ts) as of the 2026-09-13 redesign. This table's
+// job now is just: which tools exist, and (for MCP tools) their as-discovered
+// name/description and connection status.
 export interface ToolSettingRow {
   toolId: string;
   name: string;
   description: string;
   category: ToolSettingCategory;
-  enabled: boolean;
-  defaultInclude: boolean;
   mcpServer: string | null;
   lastSeenAt: string | null;
   lastStatus: McpToolStatus | null;
@@ -27,15 +30,11 @@ interface RawToolSettingRow {
   name: string;
   description: string;
   category: ToolSettingCategory;
-  enabled: number;
-  default_include: number;
   mcp_server: string | null;
   last_seen_at: string | null;
   last_status: McpToolStatus | null;
   updated_at: string;
 }
-
-export type PatchToolSettingResult = 'not-found' | 'not-patchable' | ToolSettingRow;
 
 function mapRow(row: RawToolSettingRow): ToolSettingRow {
   return {
@@ -43,8 +42,6 @@ function mapRow(row: RawToolSettingRow): ToolSettingRow {
     name: row.name,
     description: row.description,
     category: row.category,
-    enabled: row.enabled === 1,
-    defaultInclude: row.default_include === 1,
     mcpServer: row.mcp_server,
     lastSeenAt: row.last_seen_at,
     lastStatus: row.last_status,
@@ -58,9 +55,9 @@ function mapRow(row: RawToolSettingRow): ToolSettingRow {
 
 // Version numbers must be unique across ALL stores sharing this database —
 // see thread-store.ts's own comment for the full running tally. This store
-// claims version 28 (threads.tools_customized_at, the companion column this
-// feature also needs, is claimed separately as version 29 in
-// thread-store.ts — it belongs to the threads table, not this store).
+// claims versions 28 (original tables) and 30 (drops enabled/default_include —
+// moved to config.yaml, see api/src/agents/tool-config.ts). Version 29
+// (threads.tools_customized_at) belongs to thread-store.ts, not this store.
 const MIGRATIONS: DbMigration[] = [
   {
     version: 28,
@@ -85,6 +82,26 @@ const MIGRATIONS: DbMigration[] = [
       );
     `,
   },
+  {
+    // enabled/default_include now live in config.yaml (tools.<toolId>) —
+    // this table is a pure MCP-discovery cache from here on. Also truncates
+    // every existing MCP row outright: their primary key shape changes from
+    // bare tool name to the server-qualified display id
+    // (<serverSlug>:<toolName>, see @tkottke90/tools-manager's
+    // mcpDisplayId), so an in-place rename isn't meaningful — the next
+    // discovery/refresh repopulates them under the new id. This cascades
+    // (ON DELETE CASCADE) to any thread_tools rows selecting those old-id
+    // MCP tools specifically; a previously-customized thread's other
+    // selections and its tools_customized_at flag are untouched. Built-in/
+    // wiki/skill-gated rows are unaffected (their id never had a
+    // bare-vs-qualified distinction).
+    version: 30,
+    sql: `
+      DELETE FROM tool_settings WHERE category = 'mcp';
+      ALTER TABLE tool_settings DROP COLUMN enabled;
+      ALTER TABLE tool_settings DROP COLUMN default_include;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -101,18 +118,20 @@ export class ToolSettingsStore extends BaseStore {
   // Global settings
   // -------------------------------------------------------------------------
 
-  // Insert-if-missing for every catalog tool (built-in/wiki/skill-gated) —
-  // never overwrites an existing row, so a tool a user has already toggled
-  // (or an already-customized thread's snapshot) survives a re-seed on every
-  // boot, including after a code change adds a brand-new catalog entry.
-  // MCP tools are NOT seeded here — they only get a row once actually
-  // discovered, via recordMcpDiscoveryResult().
+  // Insert-if-missing identity row for every catalog tool (built-in/wiki/
+  // skill-gated) — never overwrites an existing row. Still needed even
+  // though enabled/defaultInclude moved to config.yaml: thread_tools.tool_id
+  // has an ON DELETE CASCADE FK to this table, and a customized thread can
+  // select a built-in tool, not just an MCP one — dropping catalog rows
+  // entirely would break that FK for every non-MCP selection. MCP tools are
+  // NOT seeded here — they only get a row once actually discovered, via
+  // recordMcpDiscoveryResult().
   seedCatalogDefaults(catalog: CatalogEntry[]): void {
     const now = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO tool_settings
-         (tool_id, name, description, category, enabled, default_include, mcp_server, last_seen_at, last_status, updated_at)
-       VALUES (?, ?, ?, ?, 1, 1, NULL, NULL, NULL, ?)`,
+         (tool_id, name, description, category, mcp_server, last_seen_at, last_status, updated_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?)`,
     );
     const seedAll = this.db.transaction((entries: CatalogEntry[]) => {
       for (const entry of entries) {
@@ -135,29 +154,6 @@ export class ToolSettingsStore extends BaseStore {
     return row ? mapRow(row) : null;
   }
 
-  // 'not-found' for an unknown toolId, 'not-patchable' for a wiki or
-  // skill-gated tool (wiki can never be disabled; skill-gated is read-only —
-  // its real availability is governed entirely by skill-gated-tools.middleware.ts,
-  // not this table). The route handler maps these to 404/400 respectively.
-  patch(
-    toolId: string,
-    changes: { enabled?: boolean; defaultInclude?: boolean },
-  ): PatchToolSettingResult {
-    const existing = this.getToolSetting(toolId);
-    if (!existing) return 'not-found';
-    if (existing.category === 'wiki' || existing.category === 'skill-gated') {
-      return 'not-patchable';
-    }
-    const enabled = changes.enabled ?? existing.enabled;
-    const defaultInclude = changes.defaultInclude ?? existing.defaultInclude;
-    this.db
-      .prepare(
-        `UPDATE tool_settings SET enabled = ?, default_include = ?, updated_at = ? WHERE tool_id = ?`,
-      )
-      .run(enabled ? 1 : 0, defaultInclude ? 1 : 0, new Date().toISOString(), toolId);
-    return this.getToolSetting(toolId)!;
-  }
-
   // -------------------------------------------------------------------------
   // MCP discovery write-through
   // -------------------------------------------------------------------------
@@ -170,15 +166,18 @@ export class ToolSettingsStore extends BaseStore {
   // reports zero tools or is unreachable, so a user's enabled/defaultInclude
   // choice and the tool's identity in the master list both survive the
   // server going down (design §2/§Known limitations).
+  // toolId is precomputed by the caller (mcp-tool-status.ts, via
+  // @tkottke90/tools-manager's mcpDisplayId) — this store just persists
+  // whatever identity it's given; naming-scheme logic doesn't belong here.
   recordMcpDiscoveryResult(
-    tools: { name: string; description: string; mcpServer: string }[],
+    tools: { toolId: string; name: string; description: string; mcpServer: string }[],
     statuses: Map<string, McpToolStatus>,
   ): void {
     const now = new Date().toISOString();
     const insertIfMissing = this.db.prepare(
       `INSERT OR IGNORE INTO tool_settings
-         (tool_id, name, description, category, enabled, default_include, mcp_server, last_seen_at, last_status, updated_at)
-       VALUES (?, ?, ?, 'mcp', 1, 1, ?, ?, 'connected', ?)`,
+         (tool_id, name, description, category, mcp_server, last_seen_at, last_status, updated_at)
+       VALUES (?, ?, ?, 'mcp', ?, ?, 'connected', ?)`,
     );
     // last_seen_at is only ever bumped on success, never blanket-overwritten —
     // it must keep reading "the last time this tool was actually reachable",
@@ -196,7 +195,14 @@ export class ToolSettingsStore extends BaseStore {
       for (const [serverName, status] of statuses) {
         if (status === 'connected') {
           for (const tool of tools.filter((t) => t.mcpServer === serverName)) {
-            insertIfMissing.run(tool.name, tool.name, tool.description, tool.mcpServer, now, now);
+            insertIfMissing.run(
+              tool.toolId,
+              tool.name,
+              tool.description,
+              tool.mcpServer,
+              now,
+              now,
+            );
           }
           markConnected.run(now, now, serverName);
         } else {
@@ -215,44 +221,20 @@ export class ToolSettingsStore extends BaseStore {
   }
 
   // -------------------------------------------------------------------------
-  // Per-thread effective set
+  // Per-thread selection
   // -------------------------------------------------------------------------
 
-  // Every currently-enabled, default-included tool. This is the effective
-  // set for any thread that has never been customized (threads.tools_customized_at
-  // IS NULL) — callers union this with the catalog's alwaysOn tool ids
-  // themselves (this store has no dependency on tool-catalog.ts's alwaysOn
-  // semantics, only on the enabled/default_include flags it seeds).
-  getGlobalDefaultToolIds(): Set<string> {
-    const rows = this.db
-      .prepare(`SELECT tool_id FROM tool_settings WHERE enabled = 1 AND default_include = 1`)
-      .all() as { tool_id: string }[];
-    return new Set(rows.map((r) => r.tool_id));
-  }
-
-  // Every currently-enabled tool, regardless of default_include — used to
-  // validate a thread's PUT payload (design §5: "400 if any toolId is not
-  // currently globally enabled").
-  getGloballyEnabledToolIds(): Set<string> {
-    const rows = this.db.prepare(`SELECT tool_id FROM tool_settings WHERE enabled = 1`).all() as {
-      tool_id: string;
-    }[];
-    return new Set(rows.map((r) => r.tool_id));
-  }
-
-  // A customized thread's exact snapshot, filtered to tools still globally
-  // enabled (a tool disabled globally after the snapshot was taken silently
-  // drops out here, per design §3 — "global disabled makes it unavailable
-  // in all threads"). Meaningless (and not called) for a non-customized
-  // thread — see getGlobalDefaultToolIds() for that case.
+  // A customized thread's raw exact snapshot — unfiltered by "still globally
+  // enabled" at this layer, since "enabled" now lives in config.yaml, not
+  // this table. Callers (tool-config.ts's consumers) intersect this with
+  // getGloballyEnabledToolIds() themselves — a tool disabled globally after
+  // the snapshot was taken must still silently drop out (design §3: "global
+  // disabled makes it unavailable in all threads"), just computed one layer
+  // up now. Meaningless (and not called) for a non-customized thread — see
+  // tool-config.ts's getGlobalDefaultToolIds() for that case.
   getThreadToolIds(threadId: string): Set<string> {
     const rows = this.db
-      .prepare(
-        `SELECT tt.tool_id AS tool_id
-         FROM thread_tools tt
-         JOIN tool_settings ts ON ts.tool_id = tt.tool_id
-         WHERE tt.thread_id = ? AND ts.enabled = 1`,
-      )
+      .prepare(`SELECT tool_id FROM thread_tools WHERE thread_id = ?`)
       .all(threadId) as { tool_id: string }[];
     return new Set(rows.map((r) => r.tool_id));
   }

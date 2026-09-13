@@ -55,7 +55,7 @@ startArtifactGc();
 app.logger.info('Artifact GC started');
 await bootSkillsManager();
 app.logger.info('Skills manager booted');
-const shellConfig = env.tools?.shell ?? ShellExecutorConfigSchema.parse({});
+const shellConfig = ShellExecutorConfigSchema.parse(env.tools['shell_exec'] ?? {});
 const trustedExecutor = new ShellExecutor(shellConfig, {
   trustAll: true,
   auditWriter: getShellAuditWriter(),
