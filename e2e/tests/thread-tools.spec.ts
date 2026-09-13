@@ -6,7 +6,7 @@ const suite: TestSuite = {
   id: 28,
   name: 'Chat Edit Tools drawer',
   description:
-    'Verifies the per-thread "Edit Tools" drawer reachable from the chat window + menu: viewing, toggling, saving, and resetting a thread\'s tool selection',
+    'Verifies the per-thread "Edit Tools" drawer reachable from the chat window + menu: viewing Built-in/Assigned/Available sections, adding/removing, and saving a thread\'s tool selection',
   purpose:
     'Ensure users can control which tools are available to a given conversation (issue #171) without depending on real MCP servers or a live LLM turn',
   tags: ['@functional', '@user-workflow'],
@@ -14,25 +14,19 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Open "Add to message" and click "Edit tools"',
-      expectedOutcome: 'The drawer opens and lists tools grouped by category',
+      expectedOutcome: 'The drawer opens and lists tools in Built-in/Assigned/Available sections',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'A globally-disabled tool is shown greyed out',
-      expectedOutcome: 'Its checkbox is disabled and unchecked',
+      action: 'A globally-disabled tool is not shown',
+      expectedOutcome: 'It does not appear in any section',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'Toggle a tool on and click Save',
+      action: 'Click "+ Add" on an Available tool and click Save',
       expectedOutcome: 'PUT is sent with the full resulting selection',
-      test: () => {},
-    },
-    {
-      tags: ['@user-workflow'],
-      action: 'Click Reset to defaults',
-      expectedOutcome: 'DELETE is sent and the thread reverts to tracking global defaults',
       test: () => {},
     },
   ],
@@ -43,6 +37,7 @@ interface ThreadToolItem {
   name: string;
   description: string;
   category: 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
+  alwaysOn: boolean;
   enabled: boolean;
   defaultInclude: boolean;
   mcpServer: string | null;
@@ -58,6 +53,7 @@ function tool(overrides: Partial<ThreadToolItem>): ThreadToolItem {
     name: 'Web Fetch',
     description: 'Fetch and summarize a URL.',
     category: 'built-in',
+    alwaysOn: false,
     enabled: true,
     defaultInclude: true,
     mcpServer: null,
@@ -79,7 +75,13 @@ const INITIAL_TOOLS: ThreadToolItem[] = [
     defaultInclude: false,
     selected: false,
   }),
-  tool({ toolId: 'wiki_search', name: 'Wiki Search', category: 'wiki', selected: true }),
+  tool({
+    toolId: 'wiki_search',
+    name: 'Wiki Search',
+    category: 'wiki',
+    alwaysOn: true,
+    selected: true,
+  }),
 ];
 
 // Only the per-thread tool endpoints are mocked — everything else on the
@@ -116,7 +118,7 @@ async function mockThreadToolsApi(page: Page) {
 }
 
 test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) }, () => {
-  test('opens from the + menu and lists tools by category @user-workflow', async ({
+  test('opens from the + menu and lists tools in Built-in/Assigned/Available @user-workflow', async ({
     page,
   }, testInfo) => {
     await mockThreadToolsApi(page);
@@ -133,7 +135,7 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await expect(drawer.getByText('Always on')).toBeVisible();
   });
 
-  test('a globally-disabled tool is greyed out and unselectable @user-workflow', async ({
+  test('a globally-disabled tool does not appear in any section @user-workflow', async ({
     page,
   }, testInfo) => {
     await mockThreadToolsApi(page);
@@ -143,12 +145,14 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await page.locator('button[aria-label="Add to message"]').click();
     await page.getByRole('menuitem', { name: 'Edit tools' }).click();
 
-    const checkbox = page.getByLabel('Include Search Skills');
-    await expect(checkbox).toBeDisabled();
-    await expect(checkbox).not.toBeChecked();
+    const drawer = page.locator('dialog[open]');
+    await expect(drawer.getByText('Web Fetch')).toBeVisible();
+    await expect(drawer.getByText('Search Skills')).not.toBeVisible();
   });
 
-  test('Save sends the full resulting selection @user-workflow', async ({ page }, testInfo) => {
+  test('+ Add then Save sends the full resulting selection @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockThreadToolsApi(page);
     await page.goto('/');
     await pauseBeforeAction(page, testInfo);
@@ -156,7 +160,11 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     await page.locator('button[aria-label="Add to message"]').click();
     await page.getByRole('menuitem', { name: 'Edit tools' }).click();
 
-    await page.getByLabel('Include Shell Exec').check();
+    const drawer = page.locator('dialog[open]');
+    await drawer
+      .locator('[data-slot="thread-tool-row"]', { hasText: 'Shell Exec' })
+      .getByRole('button', { name: '+ Add' })
+      .click();
 
     const [putRequest] = await Promise.all([
       page.waitForRequest((req) => req.url().includes('/tools') && req.method() === 'PUT'),
@@ -164,20 +172,5 @@ test.describe('Chat Edit Tools drawer', { annotation: suiteAnnotations(suite) },
     ]);
     const body = putRequest.postDataJSON() as { toolIds: string[] };
     expect(new Set(body.toolIds)).toEqual(new Set(['web_fetch', 'shell_exec']));
-  });
-
-  test('Reset to defaults sends a DELETE @user-workflow', async ({ page }, testInfo) => {
-    await mockThreadToolsApi(page);
-    await page.goto('/');
-    await pauseBeforeAction(page, testInfo);
-
-    await page.locator('button[aria-label="Add to message"]').click();
-    await page.getByRole('menuitem', { name: 'Edit tools' }).click();
-
-    const [deleteRequest] = await Promise.all([
-      page.waitForRequest((req) => req.url().includes('/tools') && req.method() === 'DELETE'),
-      page.getByRole('button', { name: 'Reset to defaults' }).click(),
-    ]);
-    expect(deleteRequest.method()).toBe('DELETE');
   });
 });
