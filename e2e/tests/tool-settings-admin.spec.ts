@@ -131,8 +131,12 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
 
     await page.getByLabel('Search tools').fill('wiki');
 
-    await expect(page.getByText('Wiki Search')).toBeVisible();
-    await expect(page.getByText('Web Fetch')).not.toBeVisible();
+    // Scoped to the row, not a bare getByText: each row's own (closed but
+    // still-mounted, per Drawer's usual behavior) admin drawer carries an
+    // <h2> title with the same tool name, so an unscoped match is ambiguous
+    // the moment more than one row exists.
+    await expect(toolRow(page, 'Wiki Search')).toBeVisible();
+    await expect(toolRow(page, 'Web Fetch')).not.toBeVisible();
   });
 
   test("Opening a row pre-fills the drawer with that tool's own settings @user-workflow", async ({
