@@ -1,81 +1,77 @@
-import { render, screen, waitFor } from '@testing-library/preact';
+import { render, screen, waitFor, fireEvent } from '@testing-library/preact';
 
-jest.mock('@/services/settings-api', () => {
-  class SettingsValidationError extends Error {
-    fieldErrors: Record<string, string[]> | string;
-    constructor(fe: Record<string, string[]> | string) {
-      super('Validation failed');
-      this.name = 'SettingsValidationError';
-      this.fieldErrors = fe;
-    }
-  }
-  return {
-    SettingsValidationError,
-    fetchSettingsSection: jest.fn(),
-    patchSettingsSection: jest.fn(),
-  };
-});
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
-
-// ToolsPanel now also mounts <ToolAccessSection />, which fetches its own
-// data independently of useSettingsSection('tools') above — mocked here
-// purely so this file's existing tests (which only care about the
-// webFetch/RLM/shell form) aren't left waiting on real, unmocked network
-// calls. tool-access-section.test.tsx covers this section's own behavior.
 jest.mock('@/services/tool-settings-api', () => ({
-  fetchToolSettings: jest.fn().mockResolvedValue([]),
+  fetchToolSettings: jest.fn(),
   patchToolSetting: jest.fn(),
+  resetToolSetting: jest.fn(),
   refreshToolSettings: jest.fn(),
-}));
-jest.mock('@/services/skills-manage-api', () => ({
-  fetchAllSkills: jest.fn().mockResolvedValue([]),
 }));
 
 import { ToolsPanel } from '@/pages/settings/tools-panel';
-import * as api from '@/services/settings-api';
+import * as api from '@/services/tool-settings-api';
+import type { ToolSettingItem } from '@/services/tool-settings-api';
 
-const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;
+const mockFetch = api.fetchToolSettings as jest.MockedFunction<typeof api.fetchToolSettings>;
 
-const PROVIDERS_DATA = { providers: [{ name: 'ollama' }, { name: 'openai' }] };
-
-const DEFAULT_TOOLS = {
-  webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
-  rlm: { maxIterations: 10, truncateThreshold: 6000 },
-  tools: { shell: { allowlist: ['**/*.txt', '**/*.md'], denylist: [] } },
-};
+function tool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
+  return {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'Fetch and summarize the contents of a URL.',
+    category: 'built-in',
+    alwaysOn: false,
+    mcpServer: null,
+    lastSeenAt: null,
+    lastStatus: null,
+    enabled: true,
+    defaultInclude: { chat: true, subAgent: false, autonomous: true },
+    instructions: '',
+    ...overrides,
+  };
+}
 
 describe('ToolsPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // fetchSettingsSection is called twice: once for tools, once for model-providers
-    mockFetch.mockImplementation((slug: string) => {
-      if (slug === 'model-providers') return Promise.resolve(PROVIDERS_DATA);
-      return Promise.resolve(DEFAULT_TOOLS);
-    });
   });
 
-  it('renders 3 card headings', async () => {
+  it('renders every tool row, sorted alphabetically', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'wiki_search', name: 'Wiki Search' }),
+      tool({ toolId: 'ask_user', name: 'Ask User' }),
+      tool({ toolId: 'web_fetch', name: 'Web Fetch' }),
+    ]);
     render(<ToolsPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
-    expect(screen.getByText('Web fetch')).toBeInTheDocument();
-    expect(screen.getByText('Retrieval loop model')).toBeInTheDocument();
-    expect(screen.getByText('Shell execution')).toBeInTheDocument();
+    const rows = document.querySelectorAll('[data-slot="tool-access-row-name"]');
+    expect(Array.from(rows).map((r) => r.textContent)).toEqual([
+      'Ask User',
+      'Web Fetch',
+      'Wiki Search',
+    ]);
   });
 
-  it('renders allowlist textarea with joined string[] content', async () => {
+  it('filters rows by the search input', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'wiki_search', name: 'Wiki Search' }),
+      tool({ toolId: 'web_fetch', name: 'Web Fetch' }),
+    ]);
     render(<ToolsPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
-    const allowlist = screen.getByLabelText('Allowlist (one glob per line)') as HTMLTextAreaElement;
-    expect(allowlist.value).toBe('**/*.txt\n**/*.md');
+    fireEvent.input(screen.getByLabelText('Search tools'), { target: { value: 'wiki' } });
+
+    expect(screen.getByText('Wiki Search')).toBeInTheDocument();
+    expect(screen.queryByText('Web Fetch')).not.toBeInTheDocument();
   });
 
-  it('renders empty denylist textarea', async () => {
+  it('shows a disabled indicator for a globally-disabled tool', async () => {
+    mockFetch.mockResolvedValue([tool({ enabled: false })]);
     render(<ToolsPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
-    const denylist = screen.getByLabelText('Denylist (one glob per line)') as HTMLTextAreaElement;
-    expect(denylist.value).toBe('');
+    expect(screen.getByText('(disabled)')).toBeInTheDocument();
   });
 });

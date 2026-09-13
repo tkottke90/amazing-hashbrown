@@ -1,21 +1,57 @@
-// Standalone types mirroring api/src/services/tool-settings-store.ts's
-// ToolSettingRow shape (ui/ has no dependency on the api package — same
-// rationale as mcp-servers-api.ts's McpServerConfig mirror).
+// Standalone types mirroring api/src/agents/tool-config.ts's
+// ResolvedToolSettingItem shape (ui/ has no dependency on the api package —
+// same rationale as mcp-servers-api.ts's McpServerConfig mirror).
+//
+// design: docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6/§7
 export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
 export type ToolStatus = 'connected' | 'unreachable';
+
+export interface ToolDefaultInclude {
+  chat: boolean;
+  subAgent: boolean;
+  autonomous: boolean;
+}
 
 export interface ToolSettingItem {
   toolId: string;
   name: string;
   description: string;
   category: ToolCategory;
-  enabled: boolean;
-  defaultInclude: boolean;
+  alwaysOn: boolean;
   mcpServer: string | null;
   lastSeenAt: string | null;
   lastStatus: ToolStatus | null;
-  updatedAt: string;
+  enabled: boolean;
+  defaultInclude: ToolDefaultInclude;
+  instructions: string;
+  // web_fetch
+  timeoutMs?: number;
+  respectRobotsTxt?: boolean;
+  // rlm_query
+  provider?: string;
+  model?: string;
+  maxIterations?: number;
+  truncateThreshold?: number;
+  // shell_exec
+  allowlist?: string[];
+  denylist?: string[];
 }
+
+export type ToolSettingPatch = Partial<
+  Pick<ToolSettingItem, 'enabled' | 'description' | 'instructions'> & {
+    defaultInclude: Partial<ToolDefaultInclude>;
+  } & Pick<
+      ToolSettingItem,
+      | 'timeoutMs'
+      | 'respectRobotsTxt'
+      | 'provider'
+      | 'model'
+      | 'maxIterations'
+      | 'truncateThreshold'
+      | 'allowlist'
+      | 'denylist'
+    >
+>;
 
 export interface ThreadToolItem extends ToolSettingItem {
   selected: boolean;
@@ -43,12 +79,19 @@ export async function fetchToolSettings(): Promise<ToolSettingItem[]> {
 
 export async function patchToolSetting(
   toolId: string,
-  patch: { enabled?: boolean; defaultInclude?: boolean },
+  patch: ToolSettingPatch,
 ): Promise<ToolSettingItem> {
   return request<ToolSettingItem>(`/api/v1/tool-settings/${encodeURIComponent(toolId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
+  });
+}
+
+// Reset Defaults — clears the tool's entire config.yaml entry.
+export async function resetToolSetting(toolId: string): Promise<ToolSettingItem> {
+  return request<ToolSettingItem>(`/api/v1/tool-settings/${encodeURIComponent(toolId)}`, {
+    method: 'DELETE',
   });
 }
 

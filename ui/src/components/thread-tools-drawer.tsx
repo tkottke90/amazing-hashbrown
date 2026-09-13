@@ -14,8 +14,11 @@ import {
 import type { ThreadToolItem, ThreadToolsResponse } from '@/services/tool-settings-api';
 
 // Per-thread "Edit Tools" drawer, opened from the chat window's `+` menu
-// (chat-input.tsx). Same grouped layout as the Settings > Tools page's
-// ToolAccessSection, scoped to one thread.
+// (chat-input.tsx). Category-grouped read/select layout, scoped to one
+// thread — unlike the Settings > Tools page's table+drawer (tool-access-table.tsx),
+// this one is unchanged by the 2026-09-13 redesign; it just reads the same
+// underlying per-tool data through a different endpoint
+// (/threads/:id/tools).
 //
 // design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §8
 
