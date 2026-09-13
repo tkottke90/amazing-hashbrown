@@ -52,8 +52,13 @@ export class ToolsManager {
 
   // ── Built-in registration ────────────────────────────────────────────────
 
+  // Keyed by boundName, not name — for a builtin these are the same value
+  // (callers construct RegisteredTool with boundName: name; no collision
+  // risk since builtin ids are curated), but keying consistently by
+  // boundName everywhere means _allTools()/execute() never need to know
+  // which source a tool came from.
   register(tool: RegisteredTool): void {
-    this.builtins.set(tool.name, tool);
+    this.builtins.set(tool.boundName, tool);
   }
 
   // ── MCP server management ────────────────────────────────────────────────
@@ -120,6 +125,9 @@ export class ToolsManager {
     await this._ensureMcpInitialized();
   }
 
+  // call.name is expected to be a boundName (both Maps below are keyed by
+  // it) — for an MCP tool that's the server-qualified form
+  // (mcpBoundName), not the bare tool name.
   async execute(call: ToolCall): Promise<unknown> {
     await this._ensureMcpInitialized();
     const builtin = this.builtins.get(call.name);
@@ -149,7 +157,10 @@ export class ToolsManager {
     if (this.mcpClients.size > 0 && !this.mcpInitialized) {
       const { tools, statuses } = await fetchAllMcpTools(this.mcpClients);
       this.mcpTools.clear();
-      for (const t of tools) this.mcpTools.set(t.name, t);
+      // Keyed by boundName (server-qualified), not bare name — two servers
+      // exposing an identically-named tool must not silently overwrite each
+      // other here (the bug this field exists to fix).
+      for (const t of tools) this.mcpTools.set(t.boundName, t);
       this.mcpServerStatuses = statuses;
       this.mcpInitialized = true;
     }

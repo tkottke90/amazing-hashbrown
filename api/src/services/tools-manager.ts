@@ -13,6 +13,7 @@ function wrapBuiltin(
 ): RegisteredTool {
   return {
     name: lcTool.name,
+    boundName: lcTool.name,
     description: lcTool.description,
     // Double-cast required: schema is a zod v4 ZodObject at runtime; RegisteredTool.parameters
     // is typed against the tools-manager's zod dependency — structurally identical but a

@@ -33,6 +33,7 @@ await tm.boot();
 // Register a built-in tool
 tm.register({
   name: 'wiki-orient',
+  boundName: 'wiki-orient',
   description: 'Orient within the wiki',
   parameters: z.object({ query: z.string() }),
   source: 'builtin',

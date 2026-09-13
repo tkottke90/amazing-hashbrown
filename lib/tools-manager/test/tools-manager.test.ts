@@ -10,6 +10,7 @@ import type { RegisteredTool, McpStdioConfig } from '../src/types.js';
 function makeBuiltin(name: string): RegisteredTool {
   return {
     name,
+    boundName: name,
     description: `${name} description`,
     parameters: z.object({ input: z.string() }),
     source: 'builtin',
@@ -277,6 +278,49 @@ describe('ToolsManager', () => {
       const statuses = manager.getMcpServerStatuses();
       expect(statuses.get('broken')).to.equal('unreachable');
       expect(statuses.get('healthy')).to.equal('connected');
+    });
+
+    it('two servers exposing an identically-named tool both survive list(), keyed by their distinct boundName (regression test — this used to silently overwrite the first)', async () => {
+      stubMcpFetch(
+        manager,
+        new Map([
+          [
+            'server-one',
+            {
+              initializeConnections: async () => ({
+                'server-one': [
+                  { name: 'browser_click', description: 'd1', schema: {}, invoke: async () => 'a' },
+                ],
+              }),
+            },
+          ],
+          [
+            'server-two',
+            {
+              initializeConnections: async () => ({
+                'server-two': [
+                  { name: 'browser_click', description: 'd2', schema: {}, invoke: async () => 'b' },
+                ],
+              }),
+            },
+          ],
+        ]),
+      );
+      // getTools() itself is only ever called to trigger initialization in
+      // this app (its return value is discarded) and still reports the bare,
+      // possibly-colliding name — list() is what actually matters, and is
+      // what loadMcpTools() (api/src/agents/chat-agent.ts) really binds from.
+      await manager.getTools();
+      const all = manager.list();
+      // Both entries survive under distinct boundNames — neither overwrote
+      // the other in the internal Map, which used to be keyed by bare name.
+      expect(all).to.have.length(2);
+      expect(all.map((t) => t.boundName).sort()).to.deep.equal([
+        'server-one__browser_click',
+        'server-two__browser_click',
+      ]);
+      expect(all.map((t) => t.name)).to.deep.equal(['browser_click', 'browser_click']);
+      expect(all.map((t) => t.mcpServer).sort()).to.deep.equal(['server-one', 'server-two']);
     });
 
     it('refreshMcpTools() forces a re-fetch even after a prior successful init', async () => {

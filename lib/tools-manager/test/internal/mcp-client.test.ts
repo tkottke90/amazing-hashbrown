@@ -75,6 +75,13 @@ describe('mcp-client', () => {
       expect(statuses.get('healthy')).to.equal('connected');
     });
 
+    it('derives boundName as a slugified-server-qualified, provider-safe name', async () => {
+      const clients = new Map([['My Server!', fakeClient('resolve', 'My Server!')]]);
+      const { tools } = await fetchAllMcpTools(clients);
+      expect(tools[0]!.boundName).to.equal('my-server__My Server!-tool');
+      expect(tools[0]!.mcpServer).to.equal('My Server!');
+    });
+
     it('isolates a failing server: does not throw, contributes no tools, marked unreachable', async () => {
       const clients = new Map([['broken', fakeClient('reject', 'broken')]]);
       const { tools, statuses } = await fetchAllMcpTools(clients);

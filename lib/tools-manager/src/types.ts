@@ -4,6 +4,13 @@ export type { ToolDefinition, ToolCall } from '@tkottke90/inference-adapter';
 
 export interface RegisteredTool {
   name: string;
+  // The tool's real bind/execute identity everywhere in this app — what's
+  // actually given to the model as its tool name, and what ToolsManager's
+  // internal Maps key by. For a builtin, identical to name (no collision
+  // risk — ids are curated). For an MCP tool, server-qualified
+  // (mcpDisplayId/mcpBoundName in internal/mcp-naming.ts) so two servers
+  // exposing an identically-named tool don't silently overwrite each other.
+  boundName: string;
   description: string;
   parameters: z.ZodType;
   source: 'builtin' | 'mcp';

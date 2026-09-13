@@ -1,6 +1,7 @@
 export { ToolsManager } from './tools-manager.js';
 export { testMcpConnection } from './internal/mcp-client.js';
 export type { McpCapabilities, McpServerStatus } from './internal/mcp-client.js';
+export { slugifyServerName, mcpDisplayId, mcpBoundName } from './internal/mcp-naming.js';
 export type {
   RegisteredTool,
   McpServerConfig,

@@ -2,6 +2,7 @@ import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import type { Connection } from '@langchain/mcp-adapters';
 import type { z } from 'zod';
 import type { McpConfigFile, McpServerConfig, RegisteredTool } from '../types.js';
+import { slugifyServerName, mcpBoundName } from './mcp-naming.js';
 
 // Minimal interface matching what @langchain/mcp-adapters StructuredToolInterface provides.
 // schema is typed as unknown to avoid zod version mismatches between packages.
@@ -102,6 +103,7 @@ export async function fetchAllMcpTools(
 function fromLangChain(tool: LangChainTool, serverName: string): RegisteredTool {
   return {
     name: tool.name,
+    boundName: mcpBoundName(slugifyServerName(serverName), tool.name),
     description: tool.description,
     // Cast required: MCP adapters produce a zod v3 schema at runtime; callers
     // treat this as z.ZodType (v4) which is compatible structurally.
