@@ -72,11 +72,6 @@ const STUBS: StubMap = {
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
-  tools: {
-    webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
-    rlm: { maxIterations: 10, truncateThreshold: 6000 },
-    tools: undefined,
-  },
   'cost-rates': { costs: {} },
   skills: {},
 };
