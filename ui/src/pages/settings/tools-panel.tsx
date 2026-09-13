@@ -14,7 +14,7 @@ export function ToolsPanel() {
   useTitle('Settings - Tools');
 
   return (
-    <div class="flex min-h-full flex-col">
+    <div class="flex grow flex-col">
       <div class="flex-1 space-y-6 p-6">
         <ToolAccessTable />
       </div>

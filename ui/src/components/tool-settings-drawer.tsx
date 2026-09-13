@@ -50,7 +50,7 @@ export function ToolSettingsDrawer({ tool, onSaved, trigger }: ToolSettingsDrawe
     <Drawer
       title={tool.name}
       side="right"
-      className="w-[90vw]! sm:w-[28rem]! sm:max-w-[90vw]!"
+      className="w-[90vw]! sm:w-4xl! sm:max-w-[90vw]!"
       trigger={trigger}
       onOpen={() => {
         openCount.value++;
@@ -172,7 +172,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   }
 
   return (
-    <form onSubmit={handleSave} class="flex min-h-full flex-col">
+    <form onSubmit={handleSave} class="flex grow flex-col overflow-hidden">
       <div class="flex-1 space-y-4 overflow-y-auto p-4">
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span

@@ -1,9 +1,9 @@
 import { useEffect } from 'preact/hooks';
 import { useComputed, useSignal } from '@preact/signals';
-import { Loader2 } from 'lucide-preact';
+import { Loader2, RefreshCcw } from 'lucide-preact';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { ClearableInput, Input } from '@/components/ui/input';
 import { showToast } from '@/lib/toast';
 import { ToolSettingsDrawer } from '@/components/tool-settings-drawer';
 import {
@@ -11,6 +11,7 @@ import {
   refreshToolSettings,
   type ToolSettingItem,
 } from '@/services/tool-settings-api';
+import { cn } from '@/lib/utils';
 
 // Replaces the old category-grouped ToolAccessSection with a single
 // alphabetical, searchable table — grouping by type made a tool hard to
@@ -53,7 +54,12 @@ function ToolRow({ tool, onSaved }: ToolRowProps) {
         <button
           type="button"
           data-slot="tool-access-row"
-          class="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 text-left hover:bg-muted/50"
+          className={
+            cn(
+              "grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 text-left hover:bg-muted/50",
+              tool.enabled ? '' : 'opacity-40'
+            )
+          }
         >
           <span class="flex min-w-0 items-center gap-1.5">
             {tool.category === 'mcp' && (
@@ -153,25 +159,34 @@ export function ToolAccessTable() {
   return (
     <Card>
       <CardHeader class="flex flex-row items-center justify-between gap-3">
-        <CardTitle>Tool Access ({tools.value.length})</CardTitle>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => void handleRefresh()}
-          disabled={refreshing.value}
-        >
-          {refreshing.value && <Loader2 class="size-3.5 animate-spin" />}
-          Refresh
-        </Button>
+        <CardTitle className="flex justify-between">
+          <span>Tool Access ({tools.value.length})</span>
+          <span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title="Refresh List"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing.value}
+            >
+              {refreshing.value && <Loader2 class="size-3.5 animate-spin" />}
+              {!refreshing.value && <RefreshCcw class="size-3.5" />}
+              Refresh
+            </Button>
+          </span>
+        </CardTitle>
       </CardHeader>
       <CardContent class="space-y-3">
-        <Input
+        <ClearableInput
           value={search.value}
           onInput={(e) => (search.value = (e.target as HTMLInputElement).value)}
-          placeholder="Search tools by name or description…"
+          placeholder="Search tools"
           aria-label="Search tools"
+          className="max-w-[60ch]"
         />
+        <br />
+        <br />
         {filtered.value.length === 0 ? (
           <p class="py-4 text-center text-sm text-muted-foreground">No tools match your search.</p>
         ) : (
