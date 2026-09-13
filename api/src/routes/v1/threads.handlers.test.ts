@@ -394,8 +394,9 @@ describe('routes/v1/threads.handlers', () => {
       });
 
       it('a non-customized thread reflects live global defaults', () => {
-        toolSettingsStore.patch('shell_exec', { defaultInclude: false });
-        const result = getThreadToolsHandler(store, toolSettingsStore, 't1');
+        const result = getThreadToolsHandler(store, toolSettingsStore, 't1', {
+          shell_exec: { defaultInclude: { chat: false } },
+        });
         expect(result.ok).to.equal(true);
         if (result.ok) {
           expect(result.data.customized).to.equal(false);
@@ -409,10 +410,13 @@ describe('routes/v1/threads.handlers', () => {
 
     describe('putThreadToolsHandler', () => {
       it('400s if a toolId is not currently globally enabled', () => {
-        toolSettingsStore.patch('shell_exec', { enabled: false });
-        const result = putThreadToolsHandler(store, toolSettingsStore, 't1', {
-          toolIds: ['shell_exec'],
-        });
+        const result = putThreadToolsHandler(
+          store,
+          toolSettingsStore,
+          't1',
+          { toolIds: ['shell_exec'] },
+          { shell_exec: { enabled: false } },
+        );
         expect(result.ok).to.equal(false);
         if (!result.ok) expect(result.status).to.equal(400);
       });

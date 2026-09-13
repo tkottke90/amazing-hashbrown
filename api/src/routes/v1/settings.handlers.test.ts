@@ -34,7 +34,6 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
     rlm: { maxIterations: 10, truncateThreshold: 6000, provider: undefined, model: undefined },
     costs: {},
-    tools: undefined,
     workspaces: {},
     ...overrides,
   };

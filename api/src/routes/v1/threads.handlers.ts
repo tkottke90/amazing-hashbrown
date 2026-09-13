@@ -7,8 +7,15 @@ import type {
   ThreadStore,
   ThreadSummary,
 } from '../../services/thread-store.js';
-import type { ToolSettingsStore, ToolSettingRow } from '../../services/tool-settings-store.js';
+import type { ToolSettingsStore } from '../../services/tool-settings-store.js';
 import { ALWAYS_ON_TOOL_IDS } from '../../agents/tool-access.js';
+import {
+  listResolvedToolSettings,
+  getGlobalDefaultToolIds,
+  getGloballyEnabledToolIds,
+  type ResolvedToolSettingItem,
+} from '../../agents/tool-config.js';
+import type { ToolEntry } from '../../config/env.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
 import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
 import { getObservabilityStore } from '../../services/observability.js';
@@ -285,9 +292,13 @@ export async function generateThreadReportHandler(
 // Per-thread tool management (issue #171)
 // ---------------------------------------------------------------------------
 //
-// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §5
+// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §5,
+// docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §2/§6
+// (internal wiring only — this file's public contract is unchanged; its two
+// store-only calls now go through tool-config.ts, since "enabled"/"default
+// include" moved to config.yaml)
 
-export interface ThreadToolItem extends ToolSettingRow {
+export interface ThreadToolItem extends ResolvedToolSettingItem {
   selected: boolean;
 }
 
@@ -296,36 +307,46 @@ export interface ThreadToolsResponse {
   tools: ThreadToolItem[];
 }
 
-// Mirrors agents/tool-access.ts's resolveEffectiveToolIds() logic, but takes
-// an explicit ToolSettingsStore instead of the getToolSettingsStore()
-// singleton that helper reads — this file's handlers are plain functions
-// over explicit store arguments (see the module doc comment above), so a
-// Mocha test can construct its own throwaway stores without also having to
-// boot the app's global singletons. Small, deliberate duplication over
-// coupling this file's testability to a different module's singleton.
+// Mirrors agents/tool-access.ts's resolveEffectiveToolIds() logic. toolsConfig
+// is an optional override purely for testability (see tool-config.ts's own
+// rationale) — production call sites omit it.
 function computeThreadTools(
   toolSettingsStore: ToolSettingsStore,
   thread: ThreadSummary,
+  toolsConfig?: Record<string, ToolEntry>,
 ): ThreadToolsResponse {
   const customized = thread.toolsCustomizedAt != null;
+  // getThreadToolIds() returns the thread's raw stored snapshot, unfiltered
+  // — intersect with what's still globally enabled, same reason
+  // tool-access.ts's resolveEffectiveToolIds() does (enabled now lives in
+  // config.yaml, not the SQLite table).
   const baseIds = customized
-    ? toolSettingsStore.getThreadToolIds(thread.id)
-    : toolSettingsStore.getGlobalDefaultToolIds();
+    ? new Set(
+        [...toolSettingsStore.getThreadToolIds(thread.id)].filter((id) =>
+          getGloballyEnabledToolIds(toolsConfig, toolSettingsStore).has(id),
+        ),
+      )
+    : getGlobalDefaultToolIds(toolsConfig, toolSettingsStore);
   const effectiveIds = new Set([...baseIds, ...ALWAYS_ON_TOOL_IDS]);
-  const tools = toolSettingsStore
-    .list()
-    .map((tool) => ({ ...tool, selected: effectiveIds.has(tool.toolId) }));
+  const tools = listResolvedToolSettings(toolsConfig, toolSettingsStore).map((tool) => ({
+    ...tool,
+    selected: effectiveIds.has(tool.toolId),
+  }));
   return { customized, tools };
 }
 
+// toolsConfig is an optional trailing override purely for testability
+// (tool-config.ts's own rationale) — the route never passes it, so this is
+// additive, not a contract change for any real caller.
 export function getThreadToolsHandler(
   store: ThreadStore,
   toolSettingsStore: ToolSettingsStore,
   threadId: string,
+  toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
   const thread = store.getThreadMeta(threadId);
   if (!thread) return notFound(`Thread "${threadId}" not found`);
-  return ok(computeThreadTools(toolSettingsStore, thread));
+  return ok(computeThreadTools(toolSettingsStore, thread, toolsConfig));
 }
 
 const PutThreadToolsSchema = z.object({ toolIds: z.array(z.string()) });
@@ -342,6 +363,7 @@ export function putThreadToolsHandler(
   toolSettingsStore: ToolSettingsStore,
   threadId: string,
   body: unknown,
+  toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
   const thread = store.getThreadMeta(threadId);
   if (!thread) return notFound(`Thread "${threadId}" not found`);
@@ -351,7 +373,7 @@ export function putThreadToolsHandler(
     return invalid(parsed.error.issues.map((i) => i.message).join('; '));
   }
 
-  const globallyEnabled = toolSettingsStore.getGloballyEnabledToolIds();
+  const globallyEnabled = getGloballyEnabledToolIds(toolsConfig, toolSettingsStore);
   const notEnabled = parsed.data.toolIds.filter((toolId) => !globallyEnabled.has(toolId));
   if (notEnabled.length > 0) {
     return invalid(`Not currently enabled globally: ${notEnabled.join(', ')}`);
@@ -360,13 +382,14 @@ export function putThreadToolsHandler(
   toolSettingsStore.setThreadTools(threadId, parsed.data.toolIds);
   store.markThreadToolsCustomized(threadId);
 
-  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!));
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
 }
 
 export function deleteThreadToolsHandler(
   store: ThreadStore,
   toolSettingsStore: ToolSettingsStore,
   threadId: string,
+  toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
   const thread = store.getThreadMeta(threadId);
   if (!thread) return notFound(`Thread "${threadId}" not found`);
@@ -374,5 +397,5 @@ export function deleteThreadToolsHandler(
   toolSettingsStore.resetThreadTools(threadId);
   store.resetThreadToolsCustomization(threadId);
 
-  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!));
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
 }

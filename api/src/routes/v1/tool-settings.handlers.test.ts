@@ -1,34 +1,25 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
+import yaml from 'yaml';
 import { openDatabase, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { ToolsManager } from '@tkottke90/tools-manager';
-import { ToolSettingsStore } from '../../services/tool-settings-store.js';
+import { bootToolSettingsStore } from '../../services/tool-settings-store.js';
 import type { CatalogEntry } from '../../agents/tool-catalog.js';
 import {
   listToolSettingsHandler,
   patchToolSettingHandler,
+  deleteToolSettingHandler,
   refreshToolSettingsHandler,
 } from './tool-settings.handlers.js';
 
-const CATALOG: CatalogEntry[] = [
-  {
-    toolId: 'web_fetch',
-    name: 'Web Fetch',
-    description: 'd',
-    category: 'built-in',
-    alwaysOn: false,
-  },
-  {
-    toolId: 'wiki_search',
-    name: 'Wiki Search',
-    description: 'd',
-    category: 'wiki',
-    alwaysOn: true,
-  },
-];
+// listResolvedToolSettings() (which every handler above calls) reads
+// TOOL_CATALOG directly, not an injectable list — these tests only cover
+// the two catalog entries relevant to their assertions (web_fetch,
+// wiki_search) plus whatever this test's own recordMcpDiscoveryResult()
+// calls add, and don't assert on the full catalog's length.
 
 // Same private-field stubbing seam Phase 1's tools-manager.test.ts uses —
 // avoids a real MCP connection while still exercising ToolsManager's real
@@ -48,52 +39,112 @@ function stubMcpFetch(
 describe('routes/v1/tool-settings.handlers', () => {
   let db: SqliteDatabase;
   let dir: string;
-  let store: ToolSettingsStore;
+  let configDir: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'tool-settings-handlers-test-'));
     db = openDatabase(join(dir, 'test.db'));
-    store = new ToolSettingsStore(db);
-    store.seedCatalogDefaults(CATALOG);
+    bootToolSettingsStore(db);
+    configDir = mkdtempSync(join(tmpdir(), 'tool-settings-handlers-config-'));
   });
 
   afterEach(() => {
-    store.close();
     rmSync(dir, { recursive: true, force: true });
+    rmSync(configDir, { recursive: true, force: true });
   });
 
   describe('listToolSettingsHandler()', () => {
-    it('returns every seeded tool', () => {
-      const result = listToolSettingsHandler(store);
+    it('returns every catalog tool, resolved', () => {
+      const result = listToolSettingsHandler();
       expect(result.ok).to.equal(true);
-      if (result.ok)
+      if (result.ok) {
         expect(result.data.map((t) => t.toolId)).to.include.members(['web_fetch', 'wiki_search']);
+        const webFetch = result.data.find((t) => t.toolId === 'web_fetch')!;
+        expect(webFetch.enabled).to.equal(true);
+      }
     });
   });
 
   describe('patchToolSettingHandler()', () => {
-    it('updates a built-in tool', () => {
-      const result = patchToolSettingHandler(store, 'web_fetch', { enabled: false });
+    it('updates a built-in tool and writes it into config.yaml', () => {
+      const result = patchToolSettingHandler('web_fetch', { enabled: false }, configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data.enabled).to.equal(false);
+      const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+      expect(written.tools.web_fetch.enabled).to.equal(false);
     });
 
-    it('400s on a wiki tool', () => {
-      const result = patchToolSettingHandler(store, 'wiki_search', { enabled: false });
+    it('400s on a skill-gated tool', () => {
+      const result = patchToolSettingHandler('create_workspace', { enabled: false }, configDir);
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
     });
 
+    it('400s on enabled/defaultInclude for an alwaysOn tool', () => {
+      const result = patchToolSettingHandler('wiki_search', { enabled: false }, configDir);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('allows editing description/instructions on an alwaysOn tool', () => {
+      const result = patchToolSettingHandler(
+        'wiki_search',
+        { instructions: 'be thorough' },
+        configDir,
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.instructions).to.equal('be thorough');
+    });
+
     it('404s on an unknown tool', () => {
-      const result = patchToolSettingHandler(store, 'nonexistent', { enabled: false });
+      const result = patchToolSettingHandler('nonexistent', { enabled: false }, configDir);
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
-    it('400s when the body has neither field', () => {
-      const result = patchToolSettingHandler(store, 'web_fetch', {});
+    it("validates web_fetch's extra fields against its own typed schema", () => {
+      const result = patchToolSettingHandler('web_fetch', { timeoutMs: 5000 }, configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data['timeoutMs']).to.equal(5000);
+    });
+
+    it('rejects an extra field for a tool with no known extra-field schema', () => {
+      const result = patchToolSettingHandler('web_fetch', { notAField: 'x' }, configDir);
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('preserves an unrelated tool already stored in config.yaml when patching a different one', () => {
+      patchToolSettingHandler('web_fetch', { enabled: false }, configDir);
+      patchToolSettingHandler('shell_exec', { enabled: false }, configDir);
+      const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+      expect(written.tools.web_fetch.enabled).to.equal(false);
+      expect(written.tools.shell_exec.enabled).to.equal(false);
+    });
+
+    it('calls the provided reload callback on success', () => {
+      let reloaded = 0;
+      patchToolSettingHandler('web_fetch', { enabled: false }, configDir, () => {
+        reloaded += 1;
+      });
+      expect(reloaded).to.equal(1);
+    });
+  });
+
+  describe('deleteToolSettingHandler()', () => {
+    it('removes a stored override, reverting the tool to computed defaults', () => {
+      patchToolSettingHandler('web_fetch', { enabled: false }, configDir);
+      const result = deleteToolSettingHandler('web_fetch', configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.enabled).to.equal(true);
+      const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+      expect(written.tools.web_fetch).to.equal(undefined);
+    });
+
+    it('404s on an unknown tool', () => {
+      const result = deleteToolSettingHandler('nonexistent', configDir);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
     });
   });
 
@@ -112,14 +163,15 @@ describe('routes/v1/tool-settings.handlers', () => {
       rmSync(mcpDir, { recursive: true, force: true });
     });
 
-    it('returns the current list unchanged when no MCP servers are configured', async () => {
-      const result = await refreshToolSettingsHandler(manager, store);
+    it('returns the resolved list unchanged when no MCP servers are configured', async () => {
+      const result = await refreshToolSettingsHandler(manager);
       expect(result.ok).to.equal(true);
-      if (result.ok)
-        expect(result.data.map((t) => t.toolId)).to.deep.equal(['web_fetch', 'wiki_search']);
+      if (result.ok) {
+        expect(result.data.map((t) => t.toolId)).to.not.include('pushover:pushover_send');
+      }
     });
 
-    it('writes a newly discovered MCP tool into the store', async () => {
+    it('writes a newly discovered MCP tool into the store under its display id', async () => {
       stubMcpFetch(
         manager,
         new Map([
@@ -140,10 +192,10 @@ describe('routes/v1/tool-settings.handlers', () => {
           ],
         ]),
       );
-      const result = await refreshToolSettingsHandler(manager, store);
+      const result = await refreshToolSettingsHandler(manager);
       expect(result.ok).to.equal(true);
       if (result.ok) {
-        const row = result.data.find((t) => t.toolId === 'pushover_send');
+        const row = result.data.find((t) => t.toolId === 'pushover:pushover_send');
         expect(row).to.not.equal(undefined);
         expect(row!.category).to.equal('mcp');
         expect(row!.lastStatus).to.equal('connected');

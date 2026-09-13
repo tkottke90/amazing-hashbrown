@@ -10,7 +10,6 @@ import {
   EmbeddingsSchema,
   RLMConfigSchema,
   WebFetchConfigSchema,
-  ToolsConfigSchema,
   ProviderSchema,
   CostEntrySchema,
   GithubTrackerSchema,
@@ -72,7 +71,6 @@ export interface EnvAccessor {
   webFetch: z.infer<typeof WebFetchConfigSchema>;
   rlm: RLMConfig;
   costs: Record<string, CostEntry>;
-  tools: Record<string, unknown> | undefined;
   workspaces: z.infer<typeof WorkspacesSchema>;
 }
 
@@ -95,14 +93,20 @@ export function unmaskApiKey(
 
 // ---- YAML config write -------------------------------------------------------
 
-function readConfigYaml(configDir: string): Record<string, unknown> {
+// Exported for reuse by tool-settings.handlers.ts, which needs the same
+// read/merge-into-config.yaml primitive for its own nested `tools.<toolId>`
+// writes (a shallow top-level merge alone would wholesale replace the
+// entire tools map, so that handler builds its own deep-merged `tools`
+// value before calling mergeConfigYaml, same as every write() below does
+// for its own section).
+export function readConfigYaml(configDir: string): Record<string, unknown> {
   const configPath = nodePath.join(configDir, 'config.yaml');
   if (!fs.existsSync(configPath)) return {};
   const raw = fs.readFileSync(configPath, 'utf8');
   return (yaml.parse(raw) as Record<string, unknown>) ?? {};
 }
 
-function mergeConfigYaml(configDir: string, updates: Record<string, unknown>): void {
+export function mergeConfigYaml(configDir: string, updates: Record<string, unknown>): void {
   const configPath = nodePath.join(configDir, 'config.yaml');
   const current = readConfigYaml(configDir);
   const merged = { ...current, ...updates };
@@ -137,12 +141,6 @@ export type AgentBehaviorSettings = {
   afterAgent: z.infer<typeof AfterAgentSchema>;
   chat: z.infer<typeof ChatSchema>;
   observability: z.infer<typeof ObservabilitySchema>;
-};
-
-export type ToolsSettings = {
-  webFetch: z.infer<typeof WebFetchConfigSchema>;
-  rlm: RLMConfig;
-  tools?: z.infer<typeof ToolsConfigSchema>;
 };
 
 export type CostRatesSettings = { costs: Record<string, CostEntry> };
@@ -278,29 +276,11 @@ const SLUG_MAP: Record<string, SlugDef> = {
     },
   },
 
-  tools: {
-    get: (env) => ({
-      webFetch: env.webFetch,
-      rlm: env.rlm,
-      tools: env.tools,
-    }),
-    patchSchema: z.object({
-      webFetch: WebFetchConfigSchema.partial().optional(),
-      rlm: RLMConfigSchema.partial().optional(),
-      tools: ToolsConfigSchema.partial().optional(),
-    }),
-    write: (v, configDir, env) => {
-      const data = v as {
-        webFetch?: Partial<z.infer<typeof WebFetchConfigSchema>>;
-        rlm?: Partial<z.infer<typeof RLMConfigSchema>>;
-        tools?: Partial<z.infer<typeof ToolsConfigSchema>>;
-      };
-      const updates: Record<string, unknown> = {};
-      if (data.webFetch !== undefined) updates.webFetch = { ...env.webFetch, ...data.webFetch };
-      if (data.rlm !== undefined) updates.rlm = { ...env.rlm, ...data.rlm };
-      if (data.tools !== undefined) updates.tools = { ...(env.tools ?? {}), ...data.tools };
-      mergeConfigYaml(configDir, updates);
-    },
+  // 'tools' slug removed — webFetch/rlm/shell config moved into per-tool
+  // config.yaml entries (tools.<toolId>), managed via
+  // GET/PATCH/DELETE /api/v1/tool-settings/:toolId (tool-settings.handlers.ts)
+  // instead of this batched form. See
+  // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §4/§6.
   },
 
   'cost-rates': {
