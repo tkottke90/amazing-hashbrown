@@ -21,6 +21,7 @@ Along the way:
 - Close **issue #154**: let a tool optionally carry an instruction block that gets injected into the system prompt when that tool is actually active for the turn.
 - Fix a real architectural inconsistency: every other Settings section is backed by `config.yaml` via `configManager` (`api/src/config/env.ts`, `api/src/routes/v1/settings.handlers.ts`); the shipped `ToolSettingsStore` is the only settings-shaped state living in SQLite instead. Move it to match.
 - Give the Sub-Agent context (`buildSubAgentAgent`) genuine, config-driven tool control instead of a hardcoded allowlist — while keeping the two tools that are structurally incompatible with a sub-agent run (not just "risky") hard-excluded in code.
+- Fix a real naming-collision gap: MCP tool names come from the server, not the user, so two enabled servers can expose the same tool name — today's `tool-access.middleware.ts` can't tell them apart at all (documented as a known limitation in PR #180, never actually fixed). Give every MCP tool a server-qualified identity, both in config/UI and in the tool actually bound to the model.
 
 ---
 
@@ -123,12 +124,19 @@ tools:
     defaultInclude: { chat: true, subAgent: false, autonomous: true }
     maxIterations: 10
     truncateThreshold: 6000
-  browser_click: # example MCP tool — toolId is the bare tool name, same key ToolSettingsStore already uses
+  playwright:browser_click: # example MCP tool — see "MCP tool naming" below
     enabled: false
     description: 'Custom override text'
 ```
 
-Schema: `ToolsConfigSchema = z.record(toolIdPattern, ToolEntrySchema)`, where `ToolEntrySchema` covers the generic optional fields (`enabled`, `defaultInclude: { chat, subAgent, autonomous }`, `description`, `instructions`) plus a catchall for unknown extra properties. The three known special-cased toolIds get their extra fields validated against their existing typed schemas (`WebFetchConfigSchema`, `RLMConfigSchema`, `ShellExecutorConfigSchema`) at the handler level, mirroring how `settings.handlers.ts`'s `tools` slug already merges partial typed sections today.
+Schema: `ToolsConfigSchema = z.record(toolIdPattern, ToolEntrySchema)`, where `ToolEntrySchema` covers the generic optional fields (`enabled`, `defaultInclude: { chat, subAgent, autonomous }`, `description`, `instructions`) plus a catchall for unknown extra properties. The three known special-cased toolIds get their extra fields validated against their existing typed schemas (`WebFetchConfigSchema`, `RLMConfigSchema`, `ShellExecutorConfigSchema`) at the handler level, mirroring how `settings.handlers.ts`'s `tools` slug already merges partial typed sections today. `toolIdPattern` allows a colon (built-in/wiki/skill-gated ids never contain one; MCP ids always do — see below).
+
+**MCP tool naming.** MCP tool names come from the server, not the user — two enabled servers can expose a same-named tool, and today's middleware can't disambiguate them at all. Every MCP tool gets a server-qualified identity, computed the same way everywhere from the server's own name (already required unique — it's the key of `manager.listMcpServers()`) and the tool's bare discovered name:
+
+- **Config/display id** (config.yaml key, table row id, drawer, `:toolId` path param): `<server-slug>:<tool-name>`, e.g. `playwright:browser_click`. `server-slug` is the server's own name, lowercased, non-alphanumeric runs collapsed to a single hyphen, trimmed — human-readable, matches what's in `Settings > MCP Servers`. On the practically-impossible case of two server names slugifying to the same value, a numeric suffix disambiguates (`playwright-2`).
+- **Bound tool name** (what `mcpToolToLangChain()` actually binds, i.e. what the model calls): `<server-slug>__<tool-name>` (double underscore) — both OpenAI's and Anthropic's tool-calling APIs restrict names to `[a-zA-Z0-9_-]`, so the colon form can't be the real bound name. Applied to **every** MCP tool unconditionally, not only on an actual collision, so a tool's model-visible identity never silently changes just because a second server later adds a same-named tool.
+
+Both forms derive from the same `(serverSlug, toolName)` pair via one shared helper, so there's one source of truth, not two identifiers to keep in sync. `tool-access.middleware.ts` matches bound tools (now always in the `__`-prefixed form for MCP) directly against the effective-id set — resolving the disambiguation gap outright, not just moving it into config.
 
 Reads merge stored config.yaml entries over computed defaults:
 
@@ -139,7 +147,7 @@ Reads merge stored config.yaml entries over computed defaults:
 - `enabled` and every `defaultInclude` field are forced `true` and non-patchable for `alwaysOn` catalog tools (wiki tools, `complete_task`), regardless of what's stored in config.yaml — same rule the drawer enforces (§2).
 - `description`/`instructions` default to the catalog entry's description / empty string respectively; for `mcp` tools, `description` defaults to whatever was captured at discovery time.
 
-**SQLite `tool_settings`** shrinks to a pure MCP-discovery cache — drop `enabled`/`default_include` (new migration), keep `tool_id`, `name`, `description` (as-discovered, immutable — the config.yaml override is a separate concept layered on top at read time), `mcp_server`, `last_seen_at`, `last_status`, `updated_at`. `thread_tools` and `threads.tools_customized_at` are untouched — they're genuine per-thread relational state, not configuration.
+**SQLite `tool_settings`** shrinks to a pure MCP-discovery cache — drop `enabled`/`default_include` (new migration), keep `tool_id` (now the server-qualified config/display id above, e.g. `playwright:browser_click` — the primary key changes shape, see Migration notes), `name` (bare discovered tool name), `description` (as-discovered, immutable — the config.yaml override is a separate concept layered on top at read time), `mcp_server` (the server's raw configured name, not the slug), `last_seen_at`, `last_status`, `updated_at`. `thread_tools` and `threads.tools_customized_at` are untouched — they're genuine per-thread relational state, not configuration.
 
 ### 4. API
 
@@ -148,6 +156,8 @@ Reads merge stored config.yaml entries over computed defaults:
 `PATCH /api/v1/tool-settings/:toolId` — body carries any subset of the generic fields plus (for the three known toolIds) their extra fields; merges into `tools.<toolId>` in config.yaml via the same `mergeConfigYaml`/`configManager.reload()` pattern as every other settings slug. 400 for: unknown toolId; any field at all on a `skill-gated` tool (fully read-only, matching its drawer — see §2); or `enabled`/`defaultInclude` on an `alwaysOn` catalog tool — wiki tools and `complete_task` (their drawer still allows editing `description`/`instructions`, since those aren't locked always-on the way availability is).
 
 `DELETE /api/v1/tool-settings/:toolId` — removes `tools.<toolId>` from config.yaml entirely (Reset Defaults).
+
+`:toolId` may contain a colon (any MCP tool) — the client always `encodeURIComponent`s it and the route decodes it before lookup, same as any other free-text path segment in this app.
 
 `POST /api/v1/tool-settings/refresh` — unchanged from PR #180 (live MCP discovery, writes through to the SQLite cache only).
 
@@ -163,7 +173,7 @@ Every write triggers the same reload/invalidate sequence `patchSettingsSectionHa
 </tool_guidance>
 ```
 
-— and append the joined block to `request.systemMessage`, following the same per-section tagging convention `system-prompt.ts`'s `wrapSection()` already uses for the static `HARNESS_SECTIONS`. A tool with no `instructions` set contributes nothing. This is purely additive to the existing system prompt — no change to `buildSystemPrompt()` itself, since the injection point is call-time middleware, not build-time prompt assembly.
+— and append the joined block to `request.systemMessage`, following the same per-section tagging convention `system-prompt.ts`'s `wrapSection()` already uses for the static `HARNESS_SECTIONS`. For an MCP tool the tag uses its config/display id (e.g. `<tool_guidance:playwright:browser_click>`), not the `__`-prefixed bound name — the tag is prose the model reads, not something it has to call, so the human-readable colon form is clearer there. A tool with no `instructions` set contributes nothing. This is purely additive to the existing system prompt — no change to `buildSystemPrompt()` itself, since the injection point is call-time middleware, not build-time prompt assembly.
 
 ### 6. Sub-Agent enforcement
 
@@ -178,7 +188,9 @@ Every write triggers the same reload/invalidate sequence `patchSettingsSectionHa
 ## Migration notes
 
 - `config.yaml`: `webFetch`/`rlm` (top-level) and `tools.shell` are renamed to `tools.web_fetch`/`tools.rlm_query`/`tools.shell_exec`. One-time breaking change to hand-edited config files, consistent with issue #63's own accepted migration note — call it out in the PR description.
-- SQLite: new migration drops `tool_settings.enabled`/`default_include` columns. No data migration needed for `defaultInclude` values — the config.yaml default rules (§3) reproduce current behavior for every existing install without requiring a backfill.
+- SQLite: new migration drops `tool_settings.enabled`/`default_include` columns **and truncates the table's MCP rows outright** — their primary key changes shape (bare tool name → `<server-slug>:<tool-name>`), so an in-place rename isn't meaningful; the next discovery/refresh repopulates them under the new id. Built-in/wiki/skill-gated rows aren't affected (their ids never had a bare-vs-qualified distinction).
+  - Real side effect worth calling out in the PR description: any thread previously customized (`tools_customized_at` set) that had explicitly selected a specific MCP tool loses just that selection — `thread_tools.tool_id` has `ON DELETE CASCADE` to `tool_settings.tool_id`, so those specific rows cascade-delete along with the truncated old-id MCP rows. The thread's other tool selections (built-in/wiki) and its `tools_customized_at` flag are untouched; only the stale MCP entries disappear, and the tool simply reverts to its global default for that thread until re-selected.
+- No data migration needed for `defaultInclude` values — the config.yaml default rules (§3) reproduce current behavior for every existing install without requiring a backfill.
 - Any config.yaml file with no `tools.*` entries at all behaves identically to today (all computed defaults apply) — this is a purely additive schema change for anyone who hasn't customized anything yet.
 
 ---
@@ -187,5 +199,6 @@ Every write triggers the same reload/invalidate sequence `patchSettingsSectionHa
 
 - Unit: config.yaml read/merge logic for `tools.<toolId>` (defaults + overrides, including the three special-cased tools' extra fields validating against their existing typed schemas); the middleware's instruction-injection (a tool with `instructions` set appears in the system prompt only when it survives the filter, tag format correct, empty instructions contribute nothing); `buildSubAgentAgent`'s new config-driven binding (an MCP tool flagged `defaultInclude.subAgent: true` is bound; `ask_user`/`spawn_sub_agent` are never bound regardless of config).
 - Frontend: table rendering/search/sort: drawer open-on-click, generic field save/reset, the three tool-specific extra-field sections rendering only for their matching toolId, wiki/skill-gated read-only variants.
-- Manual: toggle a tool off globally, confirm it's absent from the next chat turn's bound tools; set an MCP tool's Sub-Agent include on, dispatch a sub-agent, confirm it's bound; confirm `ask_user`/`spawn_sub_agent` never appear as Sub-Agent-toggleable in the drawer regardless of what's in config.yaml.
+- Unit: the shared server-slug/bound-name helper (slug derivation, collision suffixing, the config-id ↔ bound-name mapping is bijective); `tool-access.middleware.ts` correctly disambiguates two enabled servers exposing an identically-named tool — enabling one and not the other only binds that server's tool, by its prefixed name.
+- Manual: toggle a tool off globally, confirm it's absent from the next chat turn's bound tools; set an MCP tool's Sub-Agent include on, dispatch a sub-agent, confirm it's bound; confirm `ask_user`/`spawn_sub_agent` never appear as Sub-Agent-toggleable in the drawer regardless of what's in config.yaml; configure two MCP servers with a deliberately colliding tool name, enable only one of them for a thread, and confirm only that server's tool is actually callable.
 - `npm run eval` is not required — no system-prompt _default_ content changes (only a new dynamic, opt-in per-tool injection point with no seeded instructions by default).
