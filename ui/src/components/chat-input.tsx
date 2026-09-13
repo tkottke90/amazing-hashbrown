@@ -470,7 +470,6 @@ export function ChatInput({
               </DropdownMenuItem>
               {threadId && (
                 <>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => void openThreadToolsDrawer(threadId)}>
                     Edit tools
                   </DropdownMenuItem>
