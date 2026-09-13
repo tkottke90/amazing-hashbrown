@@ -14,7 +14,7 @@ sections, each rendered with its own near-identical block in
 `ThreadToolsBody`. A user trying to answer "what does this thread actually
 have access to right now?" has to scan four sections and mentally separate
 checked from unchecked rows within each — the layout mirrors where a tool
-*comes from*, not whether it's *in use*. The reference screenshot instead
+_comes from_, not whether it's _in use_. The reference screenshot instead
 answers that question directly: everything the thread cannot change sits in
 one place, everything it currently has sits in another, and everything it
 could add sits in a third, searchable list.
@@ -22,6 +22,7 @@ could add sits in a third, searchable list.
 ## Scope
 
 In scope:
+
 - Restructuring `thread-tools-drawer.tsx`'s body into three sections:
   **Built-in**, **Assigned**, **Available**.
 - A search input scoped to the Available section.
@@ -30,6 +31,7 @@ In scope:
   that varies by section (none / Remove / + Add) instead of a checkbox.
 
 Out of scope (unchanged):
+
 - The per-thread API contract (`GET/PUT/DELETE /api/v1/threads/:id/tools`)
   and `use-thread-tools.ts`'s existing signals/actions — this is a
   presentation-layer change only.
@@ -37,7 +39,7 @@ Out of scope (unchanged):
   `tool-settings-drawer.tsx`) — already redesigned in
   `2026-09-13-tool-settings-redesign-design.md`, not touched here beyond
   reusing its badge/search visual patterns for consistency.
-- Any change to *what* determines whether a tool is selectable for a thread
+- Any change to _what_ determines whether a tool is selectable for a thread
   (global `enabled`, `alwaysOn`) — only how it's presented.
 
 ## Design
@@ -74,9 +76,9 @@ an `action` prop instead of a bare `checked`/`onToggle` pair:
 
 ```ts
 type ToolRowAction =
-  | { kind: 'none'; caption: string }        // Built-in
+  | { kind: 'none'; caption: string } // Built-in
   | { kind: 'remove'; onRemove: () => void } // Assigned
-  | { kind: 'add'; onAdd: () => void };      // Available
+  | { kind: 'add'; onAdd: () => void }; // Available
 ```
 
 Each row renders: name, description, an origin badge, and the action.
@@ -121,13 +123,13 @@ width/slide-in classes. Body structure mirrors `tool-settings-drawer.tsx`'s
 pattern exactly: an outer `flex h-full flex-col` wrapper, a `flex-1
 overflow-y-auto` region holding all three sections (Built-in, then
 Assigned, then Available with its search box) so **only that region
-scrolls**, and a `border-t` footer *outside* the scrolling region holding
+scrolls**, and a `border-t` footer _outside_ the scrolling region holding
 just the **Save** button — always visible regardless of scroll position,
 never removed like the old two-button footer's Reset half was.
 
 Empty states: Assigned shows "No tools assigned yet" when its list is
 empty; Available shows "No matching tools" when the search query excludes
-every row (and, distinctly, has no special empty state when the *unfiltered*
+every row (and, distinctly, has no special empty state when the _unfiltered_
 list is simply empty — that's the normal "everything's already assigned"
 case and doesn't need a message).
 
