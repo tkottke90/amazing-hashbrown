@@ -71,7 +71,7 @@ Replaces `ToolAccessSection`'s four grouped lists with one table, sorted alphabe
 - Source is derived from category: `built-in` / `wiki` / `skill-gated` → **Built-in**; `mcp` → **MCP**. (The derivation function is a switch keyed on category, written so a future `custom` category is a one-line addition — no work item to actually produce one.)
 - Hovering a row highlights it (`:hover` background). Clicking anywhere on the row opens the drawer for that tool.
 
-This table becomes the *only* content of the "Tool Access" section — `ToolsPanel`'s three separate config cards for Web Fetch / RLM / Shell are deleted; their fields move into the relevant tool's drawer (§2).
+This table becomes the _only_ content of the "Tool Access" section — `ToolsPanel`'s three separate config cards for Web Fetch / RLM / Shell are deleted; their fields move into the relevant tool's drawer (§2).
 
 ### 2. The drawer
 
@@ -97,10 +97,10 @@ Category-specific drawer behavior:
 
 Tool-specific extra fields, rendered in the drawer only for these three toolIds, directly below the generic fields, all part of the same form/Save:
 
-| toolId | Extra fields |
-|---|---|
-| `web_fetch` | Timeout (ms), Respect robots.txt |
-| `rlm_query` | Provider, Model, Max iterations, Truncate threshold |
+| toolId       | Extra fields                                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_fetch`  | Timeout (ms), Respect robots.txt                                                                                                                                                 |
+| `rlm_query`  | Provider, Model, Max iterations, Truncate threshold                                                                                                                              |
 | `shell_exec` | Allowlist, Denylist (matches today's `ToolsPanel` fields exactly — working directory is derived per-agent-context at runtime, not user-configured, and isn't shown today either) |
 
 ### 3. Data model
@@ -123,9 +123,9 @@ tools:
     defaultInclude: { chat: true, subAgent: false, autonomous: true }
     maxIterations: 10
     truncateThreshold: 6000
-  browser_click:                     # example MCP tool — toolId is the bare tool name, same key ToolSettingsStore already uses
+  browser_click: # example MCP tool — toolId is the bare tool name, same key ToolSettingsStore already uses
     enabled: false
-    description: "Custom override text"
+    description: 'Custom override text'
 ```
 
 Schema: `ToolsConfigSchema = z.record(toolIdPattern, ToolEntrySchema)`, where `ToolEntrySchema` covers the generic optional fields (`enabled`, `defaultInclude: { chat, subAgent, autonomous }`, `description`, `instructions`) plus a catchall for unknown extra properties. The three known special-cased toolIds get their extra fields validated against their existing typed schemas (`WebFetchConfigSchema`, `RLMConfigSchema`, `ShellExecutorConfigSchema`) at the handler level, mirroring how `settings.handlers.ts`'s `tools` slug already merges partial typed sections today.
@@ -188,4 +188,4 @@ Every write triggers the same reload/invalidate sequence `patchSettingsSectionHa
 - Unit: config.yaml read/merge logic for `tools.<toolId>` (defaults + overrides, including the three special-cased tools' extra fields validating against their existing typed schemas); the middleware's instruction-injection (a tool with `instructions` set appears in the system prompt only when it survives the filter, tag format correct, empty instructions contribute nothing); `buildSubAgentAgent`'s new config-driven binding (an MCP tool flagged `defaultInclude.subAgent: true` is bound; `ask_user`/`spawn_sub_agent` are never bound regardless of config).
 - Frontend: table rendering/search/sort: drawer open-on-click, generic field save/reset, the three tool-specific extra-field sections rendering only for their matching toolId, wiki/skill-gated read-only variants.
 - Manual: toggle a tool off globally, confirm it's absent from the next chat turn's bound tools; set an MCP tool's Sub-Agent include on, dispatch a sub-agent, confirm it's bound; confirm `ask_user`/`spawn_sub_agent` never appear as Sub-Agent-toggleable in the drawer regardless of what's in config.yaml.
-- `npm run eval` is not required — no system-prompt *default* content changes (only a new dynamic, opt-in per-tool injection point with no seeded instructions by default).
+- `npm run eval` is not required — no system-prompt _default_ content changes (only a new dynamic, opt-in per-tool injection point with no seeded instructions by default).
