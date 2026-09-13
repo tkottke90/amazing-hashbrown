@@ -196,7 +196,7 @@ export function ThreadToolsDrawer() {
     <Drawer
       open={threadToolsDrawerOpen}
       title="Edit Tools"
-      className="w-[90vw]! rounded-none! border-0! bg-background! p-0! border-l border-border sm:w-[420px]! sm:max-w-[90vw]!"
+      className="w-[90vw]! rounded-none! border-0! bg-background! p-0! border-l border-border sm:max-w-5xl"
     >
       <ThreadToolsBody />
     </Drawer>
