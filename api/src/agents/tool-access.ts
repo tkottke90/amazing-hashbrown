@@ -3,11 +3,13 @@
 // and threads.handlers.ts (GET/PUT/DELETE /threads/:id/tools) read from, so
 // the two can never drift apart on what "effective" means.
 //
-// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §3
+// design: docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §3
 
 import { getThreadStore } from '../services/thread-store.js';
 import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
+import { getGlobalDefaultToolIds, getGloballyEnabledToolIds } from './tool-config.js';
+import { env, type ToolEntry } from '../config/env.js';
 
 export const ALWAYS_ON_TOOL_IDS = new Set(
   TOOL_CATALOG.filter((entry) => entry.alwaysOn).map((entry) => entry.toolId),
@@ -40,10 +42,26 @@ export interface EffectiveToolIds {
   toolIds: Set<string>;
 }
 
-export function resolveEffectiveToolIds(threadId: string): EffectiveToolIds {
+// toolsConfig defaults to the real config.yaml-backed singleton (env.tools);
+// accepted as an optional override purely for testability, same rationale
+// as tool-config.ts's own functions.
+export function resolveEffectiveToolIds(
+  threadId: string,
+  toolsConfig: Record<string, ToolEntry> = env.tools,
+): EffectiveToolIds {
   const thread = getThreadStore().getThreadMeta(threadId);
   const customized = thread?.toolsCustomizedAt != null;
-  const store = getToolSettingsStore();
-  const baseIds = customized ? store.getThreadToolIds(threadId) : store.getGlobalDefaultToolIds();
+  // getThreadToolIds() returns the thread's raw stored snapshot, unfiltered —
+  // "enabled" now lives in config.yaml (tool-config.ts), not the SQLite
+  // table, so a tool disabled globally after the snapshot was taken must be
+  // intersected out here to keep "global disabled makes it unavailable in
+  // all threads" true (design §3).
+  const baseIds = customized
+    ? new Set(
+        [...getToolSettingsStore().getThreadToolIds(threadId)].filter((id) =>
+          getGloballyEnabledToolIds(toolsConfig).has(id),
+        ),
+      )
+    : getGlobalDefaultToolIds(toolsConfig);
   return { customized, toolIds: new Set([...baseIds, ...ALWAYS_ON_TOOL_IDS]) };
 }
