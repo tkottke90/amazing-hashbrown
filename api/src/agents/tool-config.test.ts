@@ -5,6 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { bootToolSettingsStore, getToolSettingsStore } from '../services/tool-settings-store.js';
+import { TOOL_CATALOG } from './tool-catalog.js';
 import type { ToolEntry } from '../config/env.js';
 import {
   resolveToolSettings,
@@ -126,6 +127,23 @@ describe('agents/tool-config', () => {
 
     afterEach(() => {
       rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Regression test: production always calls seedCatalogDefaults() at
+    // boot (see index.ts), which inserts an identity row per catalog tool
+    // into the SAME tool_settings table store.list() reads from. Without
+    // filtering those rows out, listResolvedToolSettings() mapped every one
+    // of them through mcpDefaultsFor() (which hardcodes category: 'mcp'),
+    // producing a second, fake "MCP" entry for every built-in/wiki/
+    // skill-gated tool — the bug a user reported seeing as double rows in
+    // Settings > Tools ("Ask User" listed as both Built-in and MCP).
+    it('does not duplicate a catalog tool as a fake MCP row when seedCatalogDefaults() has run', () => {
+      getToolSettingsStore().seedCatalogDefaults(TOOL_CATALOG);
+      const items = listResolvedToolSettings({});
+      const askUserRows = items.filter((t) => t.toolId === 'ask_user');
+      expect(askUserRows).to.have.length(1);
+      expect(askUserRows[0]?.category).to.equal('built-in');
+      expect(items.filter((t) => t.category === 'mcp')).to.have.length(0);
     });
 
     it('listResolvedToolSettings() merges catalog defaults with an MCP discovery row', () => {

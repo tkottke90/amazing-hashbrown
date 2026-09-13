@@ -177,7 +177,16 @@ export function listResolvedToolSettings(
   const catalogItems = TOOL_CATALOG.map((entry) =>
     resolveToolSettings(catalogDefaultsFor(entry), toolsConfig),
   );
-  const mcpItems = store.list().map((row) => resolveToolSettings(mcpDefaultsFor(row), toolsConfig));
+  // store.list() returns EVERY tool_settings row, including the catalog
+  // identity rows seedCatalogDefaults() writes for built-in/wiki/skill-gated
+  // tools (kept only so thread_tools' FK has something to reference) — not
+  // just actual MCP discovery rows. Without this filter, every catalog tool
+  // would be listed twice: once from TOOL_CATALOG above, and again here
+  // mislabeled as an MCP tool with mcpServer: null.
+  const mcpItems = store
+    .list()
+    .filter((row) => row.category === 'mcp')
+    .map((row) => resolveToolSettings(mcpDefaultsFor(row), toolsConfig));
   return [...catalogItems, ...mcpItems];
 }
 
