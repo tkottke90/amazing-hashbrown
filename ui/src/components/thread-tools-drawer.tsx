@@ -47,18 +47,18 @@ type ToolRowAction =
 
 function ToolRow({ tool, action }: { tool: ThreadToolItem; action: ToolRowAction }) {
   return (
-    <li data-slot="thread-tool-row" class="flex items-center justify-between gap-3 py-2">
+    <li data-slot="thread-tool-row" class="flex items-center justify-between gap-3 py-2 px-2 rounded mt-2 bg-gray-300 dark:bg-gray-700">
       <div class="flex min-w-0 flex-col">
         <div class="flex items-center gap-1.5">
           <span class="text-sm font-medium">{tool.name}</span>
           <span
             data-slot="thread-tool-row-badge"
-            class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+            class="shrink-0 rounded border border-gray-700 dark:border-border px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
           >
             {originBadge(tool)}
           </span>
         </div>
-        <span class="text-xs text-muted-foreground">{tool.description}</span>
+        <span class="text-xs text-muted-foreground line-clamp-5">{tool.description}</span>
       </div>
       {action.kind === 'none' && (
         <span class="shrink-0 text-xs text-muted-foreground">{action.caption}</span>
@@ -144,11 +144,12 @@ function ThreadToolsBody() {
   }
 
   return (
-    <div class="flex h-full flex-col">
-      <div class="flex-1 space-y-6 overflow-y-auto p-6">
+    <div class="flex h-full flex-col overflow-hidden px-6">
+      <p>Edit the tools the Agent has access to in this thread.  Add/Remove tools by clicking the button next to the tool itself.</p>
+      <div class="flex-1 space-y-6 overflow-y-auto py-6">
         <div>
           <h3 class="mb-1 text-sm font-medium text-muted-foreground">Built-in</h3>
-          <ul class="divide-y divide-border">
+          <ul>
             {builtIn.map((tool) => (
               <ToolRow
                 key={tool.toolId}
@@ -164,7 +165,7 @@ function ThreadToolsBody() {
           {assigned.length === 0 ? (
             <p class="py-2 text-xs text-muted-foreground">No tools assigned yet</p>
           ) : (
-            <ul class="divide-y divide-border">
+            <ul>
               {assigned.map((tool) => (
                 <ToolRow
                   key={tool.toolId}
@@ -176,7 +177,7 @@ function ThreadToolsBody() {
           )}
         </div>
 
-        <div>
+        { filteredAvailable.length > 0 && <div>
           <h3 class="mb-1 text-sm font-medium text-muted-foreground">Available</h3>
           <ClearableInput
             value={search.value}
@@ -198,7 +199,7 @@ function ThreadToolsBody() {
               ))}
             </ul>
           )}
-        </div>
+        </div> }
       </div>
 
       <div class="flex justify-end gap-2 border-t border-border p-4">
