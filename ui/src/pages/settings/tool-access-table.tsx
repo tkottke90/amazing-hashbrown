@@ -54,12 +54,10 @@ function ToolRow({ tool, onSaved }: ToolRowProps) {
         <button
           type="button"
           data-slot="tool-access-row"
-          className={
-            cn(
-              "grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 text-left hover:bg-muted/50",
-              tool.enabled ? '' : 'opacity-40'
-            )
-          }
+          className={cn(
+            'grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-border px-3 py-2.5 text-left hover:bg-muted/50',
+            tool.enabled ? '' : 'opacity-40',
+          )}
         >
           <span class="flex min-w-0 items-center gap-1.5">
             {tool.category === 'mcp' && (

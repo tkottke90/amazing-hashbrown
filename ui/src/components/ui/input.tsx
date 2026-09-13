@@ -69,10 +69,7 @@ const ClearableInput = React.forwardRef<HTMLInputElement, React.ComponentProps<'
           variant="ghost"
           size="icon-xs"
           tabIndex={-1}
-          className={hasValue 
-            ? 'pointer-events-auto'
-            : 'opacity-0 pointer-events-none'
-          }
+          className={hasValue ? 'pointer-events-auto' : 'opacity-0 pointer-events-none'}
           onClick={handleClear}
         >
           <XIcon />
