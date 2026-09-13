@@ -47,7 +47,10 @@ type ToolRowAction =
 
 function ToolRow({ tool, action }: { tool: ThreadToolItem; action: ToolRowAction }) {
   return (
-    <li data-slot="thread-tool-row" class="flex items-center justify-between gap-3 py-2 px-2 rounded mt-2 bg-gray-300 dark:bg-gray-700">
+    <li
+      data-slot="thread-tool-row"
+      class="flex items-center justify-between gap-3 py-2 px-2 rounded mt-2 bg-gray-300 dark:bg-gray-700"
+    >
       <div class="flex min-w-0 flex-col">
         <div class="flex items-center gap-1.5">
           <span class="text-sm font-medium">{tool.name}</span>
@@ -145,7 +148,10 @@ function ThreadToolsBody() {
 
   return (
     <div class="flex h-full flex-col overflow-hidden px-6">
-      <p>Edit the tools the Agent has access to in this thread.  Add/Remove tools by clicking the button next to the tool itself.</p>
+      <p>
+        Edit the tools the Agent has access to in this thread. Add/Remove tools by clicking the
+        button next to the tool itself.
+      </p>
       <div class="flex-1 space-y-6 overflow-y-auto py-6">
         <div>
           <h3 class="mb-1 text-sm font-medium text-muted-foreground">Built-in</h3>
@@ -177,29 +183,39 @@ function ThreadToolsBody() {
           )}
         </div>
 
-        { filteredAvailable.length > 0 && <div>
-          <h3 class="mb-1 text-sm font-medium text-muted-foreground">Available</h3>
-          <ClearableInput
-            value={search.value}
-            onInput={(e) => (search.value = (e.target as HTMLInputElement).value)}
-            placeholder="Search tools"
-            aria-label="Search available tools"
-            className="mb-2 max-w-[60ch]"
-          />
-          {filteredAvailable.length === 0 ? (
-            query.length > 0 && <p class="py-2 text-xs text-muted-foreground">No matching tools</p>
-          ) : (
-            <ul class="divide-y divide-border">
-              {filteredAvailable.map((tool) => (
-                <ToolRow
-                  key={tool.toolId}
-                  tool={tool}
-                  action={{ kind: 'add', onAdd: () => addTool(tool.toolId) }}
-                />
-              ))}
-            </ul>
-          )}
-        </div> }
+        {/* Gated on the unfiltered count, not filteredAvailable — a search
+            query that matches nothing must still show "No matching tools"
+            below and, critically, must not make the search box itself
+            disappear (there'd be no way left to clear the query). Hiding
+            the whole section is only for the genuinely-nothing-to-add
+            case. */}
+        {available.length > 0 && (
+          <div>
+            <h3 class="mb-1 text-sm font-medium text-muted-foreground">Available</h3>
+            <ClearableInput
+              value={search.value}
+              onInput={(e) => (search.value = (e.target as HTMLInputElement).value)}
+              placeholder="Search tools"
+              aria-label="Search available tools"
+              className="mb-2 max-w-[60ch]"
+            />
+            {filteredAvailable.length === 0 ? (
+              query.length > 0 && (
+                <p class="py-2 text-xs text-muted-foreground">No matching tools</p>
+              )
+            ) : (
+              <ul class="divide-y divide-border">
+                {filteredAvailable.map((tool) => (
+                  <ToolRow
+                    key={tool.toolId}
+                    tool={tool}
+                    action={{ kind: 'add', onAdd: () => addTool(tool.toolId) }}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       <div class="flex justify-end gap-2 border-t border-border p-4">
