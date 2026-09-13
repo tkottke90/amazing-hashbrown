@@ -108,7 +108,7 @@ export function createToolAccessMiddleware(
         .map((tool) => {
           const displayId = displayIdByMatchKey.get(tool.name as string);
           if (!displayId) return null;
-          const text = getToolInstructions(displayId).trim();
+          const text = getToolInstructions(displayId, getToolsConfig()).trim();
           return text ? `<tool_guidance:${displayId}>\n${text}\n</tool_guidance>` : null;
         })
         .filter((block): block is string => block !== null);

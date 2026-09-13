@@ -40,7 +40,10 @@ const REGULAR: Parameters<typeof resolveToolSettings>[0] = {
 describe('agents/tool-config', () => {
   describe('resolveToolSettings() — pure, no store dependency', () => {
     it('defaults enabled/defaultInclude.chat/autonomous to true, subAgent to false, when nothing is stored', () => {
-      const resolved = resolveToolSettings(REGULAR, {});
+      // shell_exec, not REGULAR's web_fetch — web_fetch is itself a legacy
+      // SUB_AGENT_TOOLS member (see the next test), so it would default
+      // subAgent to true and defeat the point of this one.
+      const resolved = resolveToolSettings({ ...REGULAR, toolId: 'shell_exec' }, {});
       expect(resolved.enabled).to.equal(true);
       expect(resolved.defaultInclude).to.deep.equal({
         chat: true,
@@ -54,7 +57,11 @@ describe('agents/tool-config', () => {
       expect(resolved.defaultInclude.subAgent).to.equal(true);
     });
 
-    it('forces enabled/every defaultInclude to true for an alwaysOn tool regardless of stored overrides', () => {
+    it('forces enabled/chat/autonomous to true for an alwaysOn tool regardless of stored overrides, but respects a stored subAgent override', () => {
+      // subAgent is deliberately exempt from the alwaysOn force — see
+      // resolveToolSettings()'s own comment. wiki_search defaults subAgent
+      // true (it's a legacy SUB_AGENT_TOOLS member), but an explicit stored
+      // `false` here must still win, the same as it would for any tool.
       const toolsConfig: Record<string, ToolEntry> = {
         wiki_search: {
           enabled: false,
@@ -65,7 +72,22 @@ describe('agents/tool-config', () => {
       expect(resolved.enabled).to.equal(true);
       expect(resolved.defaultInclude).to.deep.equal({
         chat: true,
-        subAgent: true,
+        subAgent: false,
+        autonomous: true,
+      });
+    });
+
+    it('an alwaysOn tool not in the legacy SUB_AGENT_TOOLS list defaults subAgent to false even though chat/autonomous are forced true', () => {
+      // wiki_create_page: alwaysOn (wiki tools can't be hidden from chat),
+      // but a mutating tool the pre-redesign hardcoded allowlist never
+      // exposed to a sub-agent. Nothing stored — this is the pure default.
+      const resolved = resolveToolSettings(
+        { ...ALWAYS_ON, toolId: 'wiki_create_page', name: 'Wiki Create Page' },
+        {},
+      );
+      expect(resolved.defaultInclude).to.deep.equal({
+        chat: true,
+        subAgent: false,
         autonomous: true,
       });
     });

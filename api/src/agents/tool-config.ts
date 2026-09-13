@@ -94,17 +94,26 @@ export function resolveToolSettings(
 ): ResolvedToolSettingItem {
   const stored = getStoredToolEntry(base.toolId, toolsConfig);
 
-  // alwaysOn catalog tools (wiki tools, complete_task) are forced on
-  // regardless of what's stored — same rule the drawer/PATCH handler
-  // enforce (docs .../design.md §3, §6 "Global tool-settings API").
+  // alwaysOn catalog tools (wiki tools, complete_task) are forced on for
+  // enabled/chat/autonomous regardless of what's stored — same rule the
+  // drawer/PATCH handler enforce (docs .../design.md §3, §6 "Global
+  // tool-settings API"). subAgent is deliberately NOT forced by alwaysOn:
+  // "always available in chat" (why wiki tools are alwaysOn at all — see
+  // tool-catalog.ts) is a different guarantee from "safe to hand to an
+  // unsupervised sub-agent". Several alwaysOn wiki tools are mutating
+  // (wiki_create_page, wiki_update_page, wiki_register_domain, ...) and the
+  // pre-redesign hardcoded SUB_AGENT_TOOLS allowlist deliberately excluded
+  // every one of them; forcing subAgent true here would silently hand a
+  // sub-agent write access the moment its underlying wiki tool became
+  // alwaysOn, with no way to turn it back off. subAgent is computed exactly
+  // like any other tool's: an explicit stored override, else the legacy
+  // membership default.
   const enabled = base.alwaysOn ? true : (stored?.enabled ?? true);
-  const defaultInclude: ResolvedDefaultInclude = base.alwaysOn
-    ? { chat: true, subAgent: true, autonomous: true }
-    : {
-        chat: stored?.defaultInclude?.chat ?? true,
-        subAgent: stored?.defaultInclude?.subAgent ?? LEGACY_SUB_AGENT_TOOL_IDS.has(base.toolId),
-        autonomous: stored?.defaultInclude?.autonomous ?? true,
-      };
+  const defaultInclude: ResolvedDefaultInclude = {
+    chat: base.alwaysOn ? true : (stored?.defaultInclude?.chat ?? true),
+    subAgent: stored?.defaultInclude?.subAgent ?? LEGACY_SUB_AGENT_TOOL_IDS.has(base.toolId),
+    autonomous: base.alwaysOn ? true : (stored?.defaultInclude?.autonomous ?? true),
+  };
 
   const KNOWN_FIELDS = new Set(['enabled', 'defaultInclude', 'description', 'instructions']);
   const extra = Object.fromEntries(

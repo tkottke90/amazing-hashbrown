@@ -52,10 +52,13 @@ const PatchToolSettingSchema = z
   })
   .catchall(z.unknown());
 
+// .strict() — a plain .partial() silently strips unrecognized keys instead
+// of rejecting them, which would let an unsupported field through as a
+// no-op rather than surfacing the 400 a typo or stale client deserves.
 const EXTRA_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
-  web_fetch: WebFetchConfigSchema.partial(),
-  rlm_query: RLMConfigSchema.partial(),
-  shell_exec: ShellExecutorConfigSchema.partial(),
+  web_fetch: WebFetchConfigSchema.partial().strict(),
+  rlm_query: RLMConfigSchema.partial().strict(),
+  shell_exec: ShellExecutorConfigSchema.partial().strict(),
 };
 
 const GENERIC_FIELD_NAMES = new Set(['enabled', 'defaultInclude', 'description', 'instructions']);
