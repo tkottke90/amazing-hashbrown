@@ -128,7 +128,9 @@ export function createToolAccessMiddleware(
         return handler({ ...request, tools });
       }
 
-      const systemMessage = new SystemMessage(`${baseContent}\n\n${instructionBlocks.join('\n\n')}`);
+      const systemMessage = new SystemMessage(
+        `${baseContent}\n\n${instructionBlocks.join('\n\n')}`,
+      );
 
       return handler({ ...request, tools, systemMessage });
     },

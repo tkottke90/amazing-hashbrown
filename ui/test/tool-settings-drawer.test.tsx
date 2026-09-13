@@ -122,7 +122,11 @@ describe('ToolSettingsDrawer', () => {
     mockPatch.mockResolvedValue(tool({ enabled: false }));
     const onSaved = jest.fn();
     render(
-      <ToolSettingsDrawer tool={tool({ toolId: 'web_fetch' })} onSaved={onSaved} trigger={OPEN_TRIGGER} />,
+      <ToolSettingsDrawer
+        tool={tool({ toolId: 'web_fetch' })}
+        onSaved={onSaved}
+        trigger={OPEN_TRIGGER}
+      />,
     );
 
     fireEvent.click(screen.getByLabelText('Enable Web Fetch'));
@@ -137,7 +141,9 @@ describe('ToolSettingsDrawer', () => {
         respectRobotsTxt: true,
       }),
     );
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ enabled: false })));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ enabled: false })),
+    );
   });
 
   it('Reset Defaults calls the reset endpoint', async () => {

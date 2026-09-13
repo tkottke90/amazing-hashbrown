@@ -42,24 +42,32 @@ describe('agents/tool-config', () => {
     it('defaults enabled/defaultInclude.chat/autonomous to true, subAgent to false, when nothing is stored', () => {
       const resolved = resolveToolSettings(REGULAR, {});
       expect(resolved.enabled).to.equal(true);
-      expect(resolved.defaultInclude).to.deep.equal({ chat: true, subAgent: false, autonomous: true });
+      expect(resolved.defaultInclude).to.deep.equal({
+        chat: true,
+        subAgent: false,
+        autonomous: true,
+      });
     });
 
     it('defaults defaultInclude.subAgent to true for a legacy SUB_AGENT_TOOLS member', () => {
-      const resolved = resolveToolSettings(
-        { ...REGULAR, toolId: 'wiki_orient' },
-        {},
-      );
+      const resolved = resolveToolSettings({ ...REGULAR, toolId: 'wiki_orient' }, {});
       expect(resolved.defaultInclude.subAgent).to.equal(true);
     });
 
     it('forces enabled/every defaultInclude to true for an alwaysOn tool regardless of stored overrides', () => {
       const toolsConfig: Record<string, ToolEntry> = {
-        wiki_search: { enabled: false, defaultInclude: { chat: false, subAgent: false, autonomous: false } },
+        wiki_search: {
+          enabled: false,
+          defaultInclude: { chat: false, subAgent: false, autonomous: false },
+        },
       };
       const resolved = resolveToolSettings(ALWAYS_ON, toolsConfig);
       expect(resolved.enabled).to.equal(true);
-      expect(resolved.defaultInclude).to.deep.equal({ chat: true, subAgent: true, autonomous: true });
+      expect(resolved.defaultInclude).to.deep.equal({
+        chat: true,
+        subAgent: true,
+        autonomous: true,
+      });
     });
 
     it('applies a stored override on top of computed defaults', () => {
@@ -100,12 +108,19 @@ describe('agents/tool-config', () => {
 
     it('listResolvedToolSettings() merges catalog defaults with an MCP discovery row', () => {
       getToolSettingsStore().recordMcpDiscoveryResult(
-        [{ toolId: 'playwright:browser_click', name: 'browser_click', description: 'd', mcpServer: 'playwright' }],
+        [
+          {
+            toolId: 'playwright:browser_click',
+            name: 'browser_click',
+            description: 'd',
+            mcpServer: 'playwright',
+          },
+        ],
         new Map([['playwright', 'connected']]),
       );
       const items = listResolvedToolSettings({});
       const mcpItem = items.find((t) => t.toolId === 'playwright:browser_click');
-      expect(mcpItem).to.exist;
+      expect(mcpItem).to.not.equal(undefined);
       expect(mcpItem!.category).to.equal('mcp');
       expect(mcpItem!.mcpServer).to.equal('playwright');
       expect(mcpItem!.enabled).to.equal(true);
@@ -113,7 +128,14 @@ describe('agents/tool-config', () => {
 
     it('getGlobalDefaultToolIds()/getGloballyEnabledToolIds() reflect config.yaml overrides', () => {
       getToolSettingsStore().recordMcpDiscoveryResult(
-        [{ toolId: 'playwright:browser_click', name: 'browser_click', description: 'd', mcpServer: 'playwright' }],
+        [
+          {
+            toolId: 'playwright:browser_click',
+            name: 'browser_click',
+            description: 'd',
+            mcpServer: 'playwright',
+          },
+        ],
         new Map([['playwright', 'connected']]),
       );
       const toolsConfig: Record<string, ToolEntry> = {
@@ -135,7 +157,14 @@ describe('agents/tool-config', () => {
 
     it('getSubAgentToolIds() includes a tool explicitly opted in', () => {
       getToolSettingsStore().recordMcpDiscoveryResult(
-        [{ toolId: 'playwright:browser_click', name: 'browser_click', description: 'd', mcpServer: 'playwright' }],
+        [
+          {
+            toolId: 'playwright:browser_click',
+            name: 'browser_click',
+            description: 'd',
+            mcpServer: 'playwright',
+          },
+        ],
         new Map([['playwright', 'connected']]),
       );
       const toolsConfig: Record<string, ToolEntry> = {

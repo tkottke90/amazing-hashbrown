@@ -281,7 +281,6 @@ const SLUG_MAP: Record<string, SlugDef> = {
   // GET/PATCH/DELETE /api/v1/tool-settings/:toolId (tool-settings.handlers.ts)
   // instead of this batched form. See
   // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §4/§6.
-  },
 
   'cost-rates': {
     get: (env) => ({ costs: env.costs }),

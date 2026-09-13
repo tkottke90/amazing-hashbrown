@@ -145,7 +145,9 @@ export function deleteToolSettingHandler(
   const existing = findResolved(toolId);
   if (!existing) return notFound(`Tool "${toolId}" not found`);
 
-  const currentTools = { ...((readConfigYaml(configDir)['tools'] as Record<string, ToolEntry>) ?? {}) };
+  const currentTools = {
+    ...((readConfigYaml(configDir)['tools'] as Record<string, ToolEntry>) ?? {}),
+  };
   delete currentTools[toolId];
   mergeConfigYaml(configDir, { tools: currentTools });
   reload();

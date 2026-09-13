@@ -74,10 +74,10 @@ const subset = await tm.getTools(['wiki-orient', 'rlm-run']);
 
 Dispatches a tool call. Built-ins are checked first, then MCP tools. Lazily initialises MCP connections if needed.
 
-| Parameter        | Type                      | Description               |
-| ---------------- | ------------------------- | ------------------------- |
+| Parameter        | Type                      | Description                                           |
+| ---------------- | ------------------------- | ----------------------------------------------------- |
 | `call.name`      | `string`                  | Tool `boundName` (for a builtin, same as its `name`). |
-| `call.arguments` | `Record<string, unknown>` | Arguments from the model. |
+| `call.arguments` | `Record<string, unknown>` | Arguments from the model.                             |
 
 **Throws:** `Error: Unknown tool: "<name>"` if no tool with that name is registered.
 

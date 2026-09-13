@@ -35,7 +35,10 @@ async function runMiddleware(
   request: unknown,
 ): Promise<RunResult> {
   let result: RunResult = { tools: [], systemContent: '' };
-  const handler = async (req: { tools: { name: string }[]; systemMessage: { content: unknown } }) => {
+  const handler = async (req: {
+    tools: { name: string }[];
+    systemMessage: { content: unknown };
+  }) => {
     result = {
       tools: req.tools.map((t) => t.name),
       systemContent: req.systemMessage.content as string,
@@ -91,14 +94,20 @@ describe('agents/tool-access.middleware', () => {
 
   it('a globally-disabled built-in tool is filtered out even though nothing thread-specific changed', async () => {
     toolsConfig['shell_exec'] = { enabled: false };
-    const { tools } = await runMiddleware(middleware, fakeRequest(['web_fetch', 'shell_exec'], 't1'));
+    const { tools } = await runMiddleware(
+      middleware,
+      fakeRequest(['web_fetch', 'shell_exec'], 't1'),
+    );
     expect(tools).to.deep.equal(['web_fetch']);
   });
 
   it('a globally-enabled tool the thread has not selected is filtered out once the thread is customized', async () => {
     getToolSettingsStore().setThreadTools('t1', ['shell_exec']);
     getThreadStore().markThreadToolsCustomized('t1');
-    const { tools } = await runMiddleware(middleware, fakeRequest(['web_fetch', 'shell_exec'], 't1'));
+    const { tools } = await runMiddleware(
+      middleware,
+      fakeRequest(['web_fetch', 'shell_exec'], 't1'),
+    );
     expect(tools).to.deep.equal(['shell_exec']);
   });
 

@@ -8,7 +8,7 @@ const suite: TestSuite = {
   description:
     'Verifies the Settings > Tools table and its per-tool admin drawer: search, opening a row, editing description/instructions, saving, and resetting to defaults',
   purpose:
-    'Ensure users can view and edit every tool\'s config.yaml-backed settings (2026-09-13 redesign) without a live backend',
+    "Ensure users can view and edit every tool's config.yaml-backed settings (2026-09-13 redesign) without a live backend",
   tags: ['@functional', '@user-workflow'],
   steps: [
     {
@@ -20,7 +20,7 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Click a row to open its admin drawer',
-      expectedOutcome: 'The drawer opens pre-filled with that tool\'s own settings',
+      expectedOutcome: "The drawer opens pre-filled with that tool's own settings",
       test: () => {},
     },
     {
@@ -135,7 +135,7 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
     await expect(page.getByText('Web Fetch')).not.toBeVisible();
   });
 
-  test('Opening a row pre-fills the drawer with that tool\'s own settings @user-workflow', async ({
+  test("Opening a row pre-fills the drawer with that tool's own settings @user-workflow", async ({
     page,
   }, testInfo) => {
     await mockToolSettingsApi(page);
@@ -187,9 +187,7 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
     );
   });
 
-  test('Reset Defaults sends a DELETE for that tool @user-workflow', async ({
-    page,
-  }, testInfo) => {
+  test('Reset Defaults sends a DELETE for that tool @user-workflow', async ({ page }, testInfo) => {
     await mockToolSettingsApi(page);
     await page.goto('/settings?section=tools');
     await pauseBeforeAction(page, testInfo);
@@ -199,8 +197,7 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
 
     const [deleteRequest] = await Promise.all([
       page.waitForRequest(
-        (req) =>
-          req.url().includes('/api/v1/tool-settings/web_fetch') && req.method() === 'DELETE',
+        (req) => req.url().includes('/api/v1/tool-settings/web_fetch') && req.method() === 'DELETE',
       ),
       drawer.getByRole('button', { name: 'Reset Defaults' }).click(),
     ]);

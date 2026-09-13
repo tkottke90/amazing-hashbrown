@@ -150,7 +150,8 @@ export class ToolSettingsStore extends BaseStore {
 
   getToolSetting(toolId: string): ToolSettingRow | null {
     const row = this.db.prepare(`SELECT * FROM tool_settings WHERE tool_id = ?`).get(toolId) as
-      RawToolSettingRow | undefined;
+      | RawToolSettingRow
+      | undefined;
     return row ? mapRow(row) : null;
   }
 
@@ -195,14 +196,7 @@ export class ToolSettingsStore extends BaseStore {
       for (const [serverName, status] of statuses) {
         if (status === 'connected') {
           for (const tool of tools.filter((t) => t.mcpServer === serverName)) {
-            insertIfMissing.run(
-              tool.toolId,
-              tool.name,
-              tool.description,
-              tool.mcpServer,
-              now,
-              now,
-            );
+            insertIfMissing.run(tool.toolId, tool.name, tool.description, tool.mcpServer, now, now);
           }
           markConnected.run(now, now, serverName);
         } else {

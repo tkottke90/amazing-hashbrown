@@ -120,8 +120,7 @@ export function ToolAccessTable() {
     const sorted = [...tools.value].sort((a, b) => a.name.localeCompare(b.name));
     if (!query) return sorted;
     return sorted.filter(
-      (t) =>
-        t.name.toLowerCase().includes(query) || t.description.toLowerCase().includes(query),
+      (t) => t.name.toLowerCase().includes(query) || t.description.toLowerCase().includes(query),
     );
   });
 
