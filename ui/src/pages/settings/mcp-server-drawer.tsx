@@ -58,7 +58,7 @@ export function McpServerDrawer({ mode, initial, onSave, trigger }: McpServerDra
     <Drawer
       title={mode === 'add' ? 'Add MCP server' : 'Edit MCP server'}
       side="right"
-      className="w-[90vw]! sm:w-[32rem]! sm:max-w-[90vw]!"
+      className="w-[90vw]! sm:w-lg! sm:max-w-[90vw]! py-4"
       trigger={trigger}
       onOpen={() => {
         openCount.value++;
@@ -430,7 +430,7 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
         {saveError.value && <p class="text-xs text-destructive">{saveError.value}</p>}
       </div>
 
-      <div class="flex justify-end gap-2 border-t border-border p-3">
+      <div class="flex justify-end gap-2 border-t border-border px-3 py-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => close()}>
           Cancel
         </Button>
