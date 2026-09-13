@@ -11,7 +11,6 @@ import {
   buildTaskContextBlock,
   estimateToolsTokens,
   createContextWindowMiddleware,
-  SUB_AGENT_TOOLS,
 } from './chat-agent.js';
 import { logger } from '../config/logger.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
@@ -73,6 +72,13 @@ describe('agents/chat-agent', () => {
     it('preserves the tool name', () => {
       const lc = mcpToolToLangChain(makeMcpTool({ name: 'my_tool' }));
       expect(lc.name).to.equal('my_tool');
+    });
+
+    it('binds by boundName, not bare name, when they differ (server-qualified MCP tool ids)', () => {
+      const lc = mcpToolToLangChain(
+        makeMcpTool({ name: 'browser_click', boundName: 'playwright__browser_click' }),
+      );
+      expect(lc.name).to.equal('playwright__browser_click');
     });
 
     it('preserves the tool description', () => {
@@ -223,44 +229,11 @@ describe('agents/chat-agent', () => {
     });
   });
 
-  describe('SUB_AGENT_TOOLS (issue #161 — read-only allowlist for spawn_sub_agent runs)', () => {
-    const toolNames = SUB_AGENT_TOOLS.map((t) => t.name);
-
-    it('excludes ask_user, shell_exec, spawn_sub_agent, and every mutating built-in tool', () => {
-      const excluded = [
-        'ask_user',
-        'shell_exec',
-        'spawn_sub_agent',
-        'upload_image',
-        'wiki_create_page',
-        'wiki_update_page',
-        'wiki_add_cross_link',
-        'wiki_rebaseline_source',
-        'wiki_register_domain',
-        'create_workspace',
-        'create_project',
-        'complete_task',
-      ];
-      for (const name of excluded) {
-        expect(toolNames, `expected SUB_AGENT_TOOLS to exclude ${name}`).to.not.include(name);
-      }
-    });
-
-    it('includes the expected read-only tools', () => {
-      expect(toolNames).to.have.members([
-        'wiki_search',
-        'wiki_read_page',
-        'wiki_locate',
-        'wiki_orient',
-        'wiki_lint',
-        'web_fetch',
-        'get_tool_key',
-        'rlm_query',
-        'search_skills',
-        'search_conversation',
-      ]);
-    });
-  });
+  // Sub-agent tool set membership: previously a fixed SUB_AGENT_TOOLS array
+  // in this file, now config-driven via tool-config.ts's getSubAgentToolIds()
+  // — see tool-config.test.ts for coverage of its default-membership and
+  // hard-exclusion behavior, and buildSubAgentAgent's own header comment in
+  // chat-agent.ts for how that set is applied at build time.
 
   describe('estimateToolsTokens()', () => {
     it('returns 0 for an empty tool list', () => {

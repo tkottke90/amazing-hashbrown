@@ -39,6 +39,10 @@ import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js'
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
+import { toolAccessMiddleware } from './tool-access.middleware.js';
+import { getSubAgentToolIds, toBoundMatchKeys } from './tool-config.js';
+import { syncMcpToolStatus } from './mcp-tool-status.js';
+import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
@@ -225,6 +229,10 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
 const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 
+// Binds by boundName, not name — name is bare and not guaranteed unique
+// across MCP servers (two servers can expose an identically-named tool);
+// boundName is the server-qualified form (see @tkottke90/tools-manager's
+// RegisteredTool) that's actually safe to give the model as a tool name.
 export function mcpToolToLangChain(t: RegisteredTool) {
   return tool(
     async (args: Record<string, unknown>) => {
@@ -232,7 +240,7 @@ export function mcpToolToLangChain(t: RegisteredTool) {
       return typeof result === 'string' ? result : JSON.stringify(result);
     },
     {
-      name: t.name,
+      name: t.boundName,
       description: t.description,
       schema: t.parameters,
     },
@@ -247,9 +255,11 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 // so workspace/task agents can bind it to that workspace's own directory.
 // spawn_sub_agent is included here too — every flavor built from this array
 // (interactive chat, workspace chat, and buildTaskAgent below) may delegate
-// to a sub-agent. buildSubAgentAgent() deliberately does NOT spread this
-// array (it builds its own SUB_AGENT_TOOLS allowlist instead), which is what
-// structurally blocks a sub-agent from nesting another spawn_sub_agent call.
+// to a sub-agent. buildSubAgentAgent() spreads this array too now (its tool
+// set is config-driven, per getSubAgentToolIds() — see its own comment), but
+// spawn_sub_agent and ask_user are hard-excluded there regardless of config,
+// which is what structurally blocks a sub-agent from nesting another
+// spawn_sub_agent call.
 const STATIC_CHAT_TOOLS = [
   askUserTool,
   uploadImageTool,
@@ -265,30 +275,6 @@ const STATIC_CHAT_TOOLS = [
   searchSkillsTool,
   searchConversationTool,
   spawnSubAgentTool,
-];
-
-// The sub-agent's own read-only allowlist — an explicit list, not
-// STATIC_CHAT_TOOLS filtered down, so a future mutating addition to
-// STATIC_CHAT_TOOLS (or wikiRegisterDomainTool, which is already mutating
-// and already in STATIC_CHAT_TOOLS above) can never leak into a sub-agent
-// run by accident. No ask_user (interrupt()-based — would suspend a graph
-// nothing is watching to resume), no shell_exec/write tools, no MCP tools,
-// no spawn_sub_agent itself. See
-// docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
-// Exported for direct testing (same rationale as buildWikiWriteTools()
-// above) — buildSubAgentAgent() itself calls createProvider()/createAgent(),
-// which needs a real provider config to exercise end-to-end.
-export const SUB_AGENT_TOOLS = [
-  wikiSearchTool,
-  wikiReadPageTool,
-  wikiLocateTool,
-  wikiOrientTool,
-  wikiLintTool,
-  webFetchTool,
-  getToolKeyTool,
-  rlmQueryTool,
-  searchSkillsTool,
-  searchConversationTool,
 ];
 
 // Skill-gated tools — see GATED_SKILL_REGISTRATIONS below. Graph-registered
@@ -321,6 +307,13 @@ async function loadMcpTools() {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn('MCP initialization failed — MCP tools will be unavailable', { err: message });
   });
+
+  // Write-through into tool_settings BEFORE this function returns, so any
+  // MCP tool bound below already has a row by the time toolAccessMiddleware
+  // runs on this same agent's first turn — otherwise a freshly-discovered
+  // tool with no row yet would look "not effective" and get filtered out
+  // entirely until an unrelated refresh happened to run first.
+  syncMcpToolStatus(toolsManager, getToolSettingsStore());
 
   const mcpTools = toolsManager
     .list()
@@ -359,6 +352,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
@@ -451,6 +445,7 @@ async function buildWorkspaceChatAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
@@ -590,6 +585,7 @@ export async function buildTaskAgent(
       ),
       skillExpansionMiddleware,
       skillGatedToolsMiddleware,
+      toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
     ],
@@ -603,20 +599,37 @@ export async function buildTaskAgent(
 // per run (never cached), same rationale as buildTaskAgent above: its
 // complete_task tool and system prompt are specific to one task. Unlike
 // buildTaskAgent it:
-//   - never calls loadMcpTools() — MCP tools are not fetched at all, not
-//     filtered out afterward (design §3: "never invoked").
-//   - never binds makeShellExecTool()/buildGatedTools()/buildWikiWriteTools()
-//     — every one of those is mutating.
-//   - uses SUB_AGENT_TOOLS (an explicit read-only allowlist) instead of
-//     STATIC_CHAT_TOOLS, so it never sees spawn_sub_agent itself (blocks
-//     nesting by construction) or ask_user (no HITL — see
-//     buildTaskContextBlock's hasAskUser=false above).
+//   - its tool set is config-driven via tool-config.ts's getSubAgentToolIds()
+//     (defaultInclude.subAgent), filtered from the same candidate pool
+//     buildChatAgent draws from (STATIC_CHAT_TOOLS, wiki write tools,
+//     shell_exec, MCP tools) — NOT the fixed read-only allowlist this used
+//     to be. ask_user and spawn_sub_agent are hard-excluded by
+//     getSubAgentToolIds() itself regardless of config: ask_user's
+//     interrupt() has nothing watching to resume it in a sub-agent run
+//     (hangs, not just risky), and spawn_sub_agent has no nesting-depth
+//     guard, so allowing it would let a sub-agent spawn another unbounded.
+//     getSubAgentToolIds()'s default-seed values reproduce this file's old
+//     hardcoded SUB_AGENT_TOOLS membership exactly, so an unedited
+//     config.yaml changes nothing about today's behavior.
+//   - filters by boundName (tool-config.ts's toBoundMatchKeys()), the same
+//     conversion tool-access.middleware.ts uses, since getSubAgentToolIds()
+//     returns display ids (colon form) but MCP tools bind under boundName
+//     (double-underscore form).
+//   - now goes through the same toolAccessMiddleware Chat/Autonomous use —
+//     previously this had no tool-access middleware at all, relying
+//     entirely on the hardcoded array for scoping. Safe to reuse here even
+//     though buildSubAgentAgent has no per-run "thread" customization
+//     concept: tool-access.middleware.ts's dynamic thread_id read is a
+//     no-op pass-through when absent, and this filter has already narrowed
+//     the tools array to the config-driven sub-agent set before that
+//     middleware ever runs.
 //   - omits createRecursionGuardMiddleware (also interrupt()-based) and the
 //     skill-gating middlewares (the only tools they gate — create-workspace/
-//     create-project — aren't in this tool list at all). Its only recursion
+//     create-project — aren't in this tool list). Its only recursion
 //     backstop is the smaller hard env.agent.subAgentRecursionLimit ceiling
 //     passed at the agent.streamEvents() call site in task-execution.ts.
-// See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
+// See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3 and
+// docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6.
 // ---------------------------------------------------------------------------
 // Return type deliberately not annotated as ChatAgent — that alias is
 // pinned to buildChatAgent's exact 5-entry middleware tuple, and this
@@ -643,18 +656,37 @@ export async function buildSubAgentAgent(
     : baseBlock;
   const systemPrompt = buildSystemPrompt(getAgentInstructions(), contextBlock);
 
+  // Config-driven tool set (see this function's own header comment) — the
+  // same candidate pool buildChatAgent draws from, filtered down to
+  // getSubAgentToolIds()'s resolved set. Filtering by boundName (via
+  // toBoundMatchKeys()) since MCP tools bind under that form, not their
+  // display id.
+  const mcpTools = await loadMcpTools();
+  const candidatePool = [
+    ...STATIC_CHAT_TOOLS,
+    ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
+    makeShellExecTool(workspaceScope?.workspaceContext.location),
+    ...mcpTools,
+  ];
+  const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
+  const tools = candidatePool.filter((t) => allowedBoundNames.has(t.name));
+
   const agent = createAgent({
     model: llm,
-    // makeCompleteTaskTool(task.id) listed before the ...SUB_AGENT_TOOLS
-    // spread deliberately — createAgent's overloaded, const-generic tools
-    // param fails TS's overload resolution when a single element trails a
-    // spread here (though the identical pattern is fine elsewhere in this
-    // file with more/longer spreads around it); order has no runtime effect
+    // makeCompleteTaskTool(task.id) listed before the ...tools spread
+    // deliberately — createAgent's overloaded, const-generic tools param
+    // fails TS's overload resolution when a single element trails a spread
+    // here (though the identical pattern is fine elsewhere in this file
+    // with more/longer spreads around it); order has no runtime effect
     // either way.
-    tools: [makeCompleteTaskTool(task.id), ...SUB_AGENT_TOOLS],
+    tools: [makeCompleteTaskTool(task.id), ...tools],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [createContextWindowMiddleware(env.chat?.contextWindow), afterAgentMiddleware],
+    middleware: [
+      createContextWindowMiddleware(env.chat?.contextWindow),
+      toolAccessMiddleware,
+      afterAgentMiddleware,
+    ],
   });
 
   return { agent, systemPrompt };

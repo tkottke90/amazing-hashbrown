@@ -359,7 +359,13 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // resume_answer, for Automated Task Execution). 25=WorkspaceStore
 // (projects.close_intent/snapshot_path/close_progress, for the Project Close
 // Process feature). 26=WorkspaceStore (task_queue.pause_reason/paused_at,
-// for Task Cancel/Pause/Take-over).
+// for Task Cancel/Pause/Take-over). 27=WorkspaceStore (tasks.origin/
+// parent_thread_id/dispatch_group_id/role, for sub-agent tooling).
+// 28=ToolSettingsStore (tool_settings/thread_tools tables, tool-settings-store.ts).
+// 29=threads (tools_customized_at column). 28-29 are for Per-Thread/Global
+// Tool Management — issue #171 — see thread-store.ts's own comment.
+// 30=ToolSettingsStore (drops tool_settings.enabled/default_include —
+// moved to config.yaml, for the 2026-09-13 tool settings redesign).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,

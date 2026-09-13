@@ -15,6 +15,7 @@ await tm.boot();
 
 tm.register({
   name: 'wiki-orient',
+  boundName: 'wiki-orient',
   description: 'List top-level pages and their one-line summaries',
   parameters: z.object({}),
   source: 'builtin',
@@ -23,6 +24,7 @@ tm.register({
 
 tm.register({
   name: 'wiki-search',
+  boundName: 'wiki-search',
   description: 'Semantic search across wiki pages',
   parameters: z.object({ query: z.string() }),
   source: 'builtin',
@@ -31,6 +33,7 @@ tm.register({
 
 tm.register({
   name: 'wiki-read',
+  boundName: 'wiki-read',
   description: 'Read the full content of a wiki page',
   parameters: z.object({ slug: z.string() }),
   source: 'builtin',

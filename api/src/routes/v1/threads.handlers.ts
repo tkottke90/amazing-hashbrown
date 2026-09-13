@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
@@ -6,6 +7,15 @@ import type {
   ThreadStore,
   ThreadSummary,
 } from '../../services/thread-store.js';
+import type { ToolSettingsStore } from '../../services/tool-settings-store.js';
+import { ALWAYS_ON_TOOL_IDS } from '../../agents/tool-access.js';
+import {
+  listResolvedToolSettings,
+  getGlobalDefaultToolIds,
+  getGloballyEnabledToolIds,
+  type ResolvedToolSettingItem,
+} from '../../agents/tool-config.js';
+import type { ToolEntry } from '../../config/env.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
 import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
 import { getObservabilityStore } from '../../services/observability.js';
@@ -276,4 +286,116 @@ export async function generateThreadReportHandler(
   if (!data) return notFound(`Thread "${threadId}" not found`);
   const html = await renderThreadReportHtml(data);
   return ok({ html });
+}
+
+// ---------------------------------------------------------------------------
+// Per-thread tool management (issue #171)
+// ---------------------------------------------------------------------------
+//
+// design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §5,
+// docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §2/§6
+// (internal wiring only — this file's public contract is unchanged; its two
+// store-only calls now go through tool-config.ts, since "enabled"/"default
+// include" moved to config.yaml)
+
+export interface ThreadToolItem extends ResolvedToolSettingItem {
+  selected: boolean;
+}
+
+export interface ThreadToolsResponse {
+  customized: boolean;
+  tools: ThreadToolItem[];
+}
+
+// Mirrors agents/tool-access.ts's resolveEffectiveToolIds() logic. toolsConfig
+// is an optional override purely for testability (see tool-config.ts's own
+// rationale) — production call sites omit it.
+function computeThreadTools(
+  toolSettingsStore: ToolSettingsStore,
+  thread: ThreadSummary,
+  toolsConfig?: Record<string, ToolEntry>,
+): ThreadToolsResponse {
+  const customized = thread.toolsCustomizedAt != null;
+  // getThreadToolIds() returns the thread's raw stored snapshot, unfiltered
+  // — intersect with what's still globally enabled, same reason
+  // tool-access.ts's resolveEffectiveToolIds() does (enabled now lives in
+  // config.yaml, not the SQLite table).
+  const baseIds = customized
+    ? new Set(
+        [...toolSettingsStore.getThreadToolIds(thread.id)].filter((id) =>
+          getGloballyEnabledToolIds(toolsConfig, toolSettingsStore).has(id),
+        ),
+      )
+    : getGlobalDefaultToolIds(toolsConfig, toolSettingsStore);
+  const effectiveIds = new Set([...baseIds, ...ALWAYS_ON_TOOL_IDS]);
+  const tools = listResolvedToolSettings(toolsConfig, toolSettingsStore).map((tool) => ({
+    ...tool,
+    selected: effectiveIds.has(tool.toolId),
+  }));
+  return { customized, tools };
+}
+
+// toolsConfig is an optional trailing override purely for testability
+// (tool-config.ts's own rationale) — the route never passes it, so this is
+// additive, not a contract change for any real caller.
+export function getThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+  toolsConfig?: Record<string, ToolEntry>,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+  return ok(computeThreadTools(toolSettingsStore, thread, toolsConfig));
+}
+
+const PutThreadToolsSchema = z.object({ toolIds: z.array(z.string()) });
+
+// The submitted set IS the full resulting selection, not a diff (design §3:
+// "snapshots the outcome" — starting from defaults and disabling one tool
+// persists every other currently-default tool, minus that one). Always-on
+// tools are never required in the body and are never written into
+// thread_tools even if sent — computeThreadTools()'s read-time union
+// already guarantees their availability regardless of what's persisted, so
+// storing them too would just be redundant noise in the table.
+export function putThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+  body: unknown,
+  toolsConfig?: Record<string, ToolEntry>,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+
+  const parsed = PutThreadToolsSchema.safeParse(body);
+  if (!parsed.success) {
+    return invalid(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+
+  const globallyEnabled = getGloballyEnabledToolIds(toolsConfig, toolSettingsStore);
+  const notEnabled = parsed.data.toolIds.filter((toolId) => !globallyEnabled.has(toolId));
+  if (notEnabled.length > 0) {
+    return invalid(`Not currently enabled globally: ${notEnabled.join(', ')}`);
+  }
+
+  toolSettingsStore.setThreadTools(threadId, parsed.data.toolIds);
+  store.markThreadToolsCustomized(threadId);
+
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
+}
+
+export function deleteThreadToolsHandler(
+  store: ThreadStore,
+  toolSettingsStore: ToolSettingsStore,
+  threadId: string,
+  toolsConfig?: Record<string, ToolEntry>,
+): HandlerResult<ThreadToolsResponse> {
+  const thread = store.getThreadMeta(threadId);
+  if (!thread) return notFound(`Thread "${threadId}" not found`);
+
+  toolSettingsStore.resetThreadTools(threadId);
+  store.resetThreadToolsCustomization(threadId);
+
+  return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { getThreadStore } from '../../services/thread-store.js';
+import { getToolSettingsStore } from '../../services/tool-settings-store.js';
 import { getCheckpointer } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
 import {
@@ -12,6 +13,9 @@ import {
   generateTitleHandler,
   getAfterAgentStatusHandler,
   generateThreadReportHandler,
+  getThreadToolsHandler,
+  putThreadToolsHandler,
+  deleteThreadToolsHandler,
 } from './threads.handlers.js';
 
 export const threadsRouter = Router();
@@ -84,6 +88,36 @@ threadsRouter.post('/:id/fork', async (req: Request, res: Response) => {
     return;
   }
   const result = await forkThreadHandler(getThreadStore(), getCheckpointer(), id, atSeq);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.get('/:id/tools', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = getThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.put('/:id/tools', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = putThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id, req.body);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.delete('/:id/tools', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = deleteThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

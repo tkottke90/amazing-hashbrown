@@ -14,7 +14,6 @@ import type {
   ModelProvidersSettings,
   EmbeddingsSettings,
   AgentBehaviorSettings,
-  ToolsSettings,
   CostRatesSettings,
 } from '../../api/src/routes/v1/settings.handlers.js';
 
@@ -61,13 +60,6 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Edit RLM max iterations in Tools and Save',
-      expectedOutcome:
-        'PATCH body equals the full Tools section with only rlm.maxIterations changed',
-      test: () => {},
-    },
-    {
-      tags: ['@user-workflow'],
       action: 'Add a cost rate via the provider/model picker and Save',
       expectedOutcome:
         'PATCH body costs map includes the new provider/model key with the entered prices',
@@ -92,7 +84,6 @@ const STUBS: {
   'model-providers': ModelProvidersSettings;
   embeddings: EmbeddingsSettings;
   'agent-behavior': AgentBehaviorSettings;
-  tools: ToolsSettings;
   'cost-rates': CostRatesSettings;
 } = {
   general: { port: 3000, logLevel: 'info' },
@@ -114,22 +105,6 @@ const STUBS: {
     afterAgent: { enabled: true },
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
-  },
-  tools: {
-    webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
-    rlm: { maxIterations: 10, truncateThreshold: 6000 },
-    tools: {
-      shell: {
-        // workingDirectory/env are required in the parsed output (they're
-        // zod .default()s in ShellExecutorConfigSchema, so the real GET
-        // response always includes them, even though the UI's own local
-        // ShellConfig interface in tools-panel.tsx marks them optional).
-        workingDirectory: '/app',
-        allowlist: ['**/*.txt'],
-        denylist: [],
-        env: { PATH: '/usr/bin' },
-      },
-    },
   },
   'cost-rates': { costs: {} },
 };
@@ -347,31 +322,13 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     expect(captured['agent-behavior']).toEqual(expected);
   });
 
-  test('Tools: Save sends the full section with only rlm.maxIterations changed @user-workflow', async ({
-    page,
-  }, testInfo) => {
-    const captured = await mockSettingsApi(page);
-    await page.goto('/settings?section=tools');
-    await page.waitForSelector('[data-slot="settings-nav-item"]');
-    await pauseBeforeAction(page, testInfo);
-
-    await page.getByLabel('Max iterations').fill('20');
-    await save(page);
-
-    const expected: ToolsSettings = {
-      webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
-      rlm: { maxIterations: 20, truncateThreshold: 6000 },
-      tools: {
-        shell: {
-          workingDirectory: '/app',
-          allowlist: ['**/*.txt'],
-          denylist: [],
-          env: { PATH: '/usr/bin' },
-        },
-      },
-    };
-    expect(captured.tools).toEqual(expected);
-  });
+  // The old "Tools: Save sends the full section with only rlm.maxIterations
+  // changed" contract test lived here — removed along with the batched
+  // /api/v1/settings/tools slug itself (2026-09-13 redesign). RLM/Web
+  // Fetch/Shell config now lives in each tool's own admin drawer, saved via
+  // PATCH /api/v1/tool-settings/:toolId; see tool-settings-admin.spec.ts's
+  // "Save sends a PATCH with the edited description" test for that
+  // contract's e2e coverage.
 
   test('Cost rates: adding a rate sends it in the costs map @user-workflow', async ({
     page,

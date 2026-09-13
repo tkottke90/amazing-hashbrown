@@ -63,7 +63,7 @@ const suite: TestSuite = {
     {
       tags: ['@smoke'],
       action: 'Load Tools section',
-      expectedOutcome: '3 card headings and allowlist textarea render',
+      expectedOutcome: 'The tool access table renders rows sorted alphabetically',
       test: () => {},
     },
     {
@@ -104,11 +104,6 @@ const STUBS: StubMap = {
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
-  tools: {
-    webFetch: { timeoutMs: 10000, respectRobotsTxt: true },
-    rlm: { maxIterations: 10, truncateThreshold: 6000 },
-    tools: { shell: { allowlist: ['**/*.txt'], denylist: [] } },
-  },
   'cost-rates': {
     costs: {
       'gpt-4o': {
@@ -121,6 +116,37 @@ const STUBS: StubMap = {
   },
   skills: {},
 };
+
+interface ToolSettingsItem {
+  toolId: string;
+  name: string;
+  description: string;
+  category: 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
+  alwaysOn: boolean;
+  mcpServer: string | null;
+  lastSeenAt: string | null;
+  lastStatus: string | null;
+  enabled: boolean;
+  defaultInclude: { chat: boolean; subAgent: boolean; autonomous: boolean };
+  instructions: string;
+}
+
+function toolSettingsItem(overrides: Partial<ToolSettingsItem>): ToolSettingsItem {
+  return {
+    toolId: 'web_fetch',
+    name: 'Web Fetch',
+    description: 'Fetch and summarize the contents of a URL.',
+    category: 'built-in',
+    alwaysOn: false,
+    mcpServer: null,
+    lastSeenAt: null,
+    lastStatus: null,
+    enabled: true,
+    defaultInclude: { chat: true, subAgent: false, autonomous: true },
+    instructions: '',
+    ...overrides,
+  };
+}
 
 async function mockSettingsApi(page: Page, stubs: StubMap = STUBS) {
   await page.route('**/api/v1/settings/**', async (route) => {
@@ -302,17 +328,31 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
   });
 
   // ---- Tools -------------------------------------------------------------
+  //
+  // The 2026-09-13 redesign moved Web Fetch/RLM/Shell config into each
+  // tool's own drawer and removed the batched /api/v1/settings/tools slug
+  // entirely — the Tools panel now reads from /api/v1/tool-settings instead,
+  // so it needs its own route mock rather than a STUBS entry. See
+  // tool-settings-admin.spec.ts for the drawer's own edit/save/reset flows.
 
-  test('Tools: 3 card headings and allowlist textarea render @smoke', async ({
+  test('Tools: the tool access table renders rows sorted alphabetically @smoke', async ({
     page,
   }, testInfo) => {
     await mockSettingsApi(page);
+    await page.route('**/api/v1/tool-settings', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        json: [
+          toolSettingsItem({ toolId: 'wiki_search', name: 'Wiki Search', category: 'wiki' }),
+          toolSettingsItem({ toolId: 'web_fetch', name: 'Web Fetch' }),
+        ],
+      });
+    });
     await page.goto('/settings?section=tools');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('Web fetch')).toBeVisible();
-    await expect(page.getByText('Retrieval loop model')).toBeVisible();
-    await expect(page.getByText('Shell execution')).toBeVisible();
-    await expect(page.getByLabel('Allowlist (one glob per line)')).toHaveValue('**/*.txt');
+
+    const rowNames = page.locator('[data-slot="tool-access-row-name"]');
+    await expect(rowNames).toHaveText(['Web Fetch', 'Wiki Search']);
   });
 
   // ---- Cost rates --------------------------------------------------------

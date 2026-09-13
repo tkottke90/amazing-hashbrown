@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import type { ToolDefinition, ToolCall } from '@tkottke90/inference-adapter';
 import type { RegisteredTool, McpServerConfig, McpConfigFile } from './types.js';
 import { readMcpConfig, writeMcpConfig, parseMcpSource } from './internal/mcp-config.js';
-import { buildMcpClient, fetchMcpTools } from './internal/mcp-client.js';
+import { buildMcpClient, fetchAllMcpTools } from './internal/mcp-client.js';
+import type { McpServerStatus } from './internal/mcp-client.js';
 import type { MultiServerMCPClient } from '@langchain/mcp-adapters';
 
 const MCP_FILE = 'mcp.json';
@@ -14,7 +15,8 @@ export class ToolsManager {
 
   private builtins: Map<string, RegisteredTool> = new Map();
   private mcpTools: Map<string, RegisteredTool> = new Map();
-  private mcpClient: MultiServerMCPClient | null = null;
+  private mcpClients: Map<string, MultiServerMCPClient> = new Map();
+  private mcpServerStatuses: Map<string, McpServerStatus> = new Map();
   private mcpConfig: McpConfigFile = { mcpServers: {} };
   private mcpInitialized = false;
 
@@ -37,21 +39,26 @@ export class ToolsManager {
     } else {
       this.mcpConfig = await readMcpConfig(this.mcpFilePath);
     }
-    this.mcpClient = buildMcpClient(this.mcpConfig);
+    this.mcpClients = buildMcpClient(this.mcpConfig);
     this.mcpInitialized = false;
   }
 
   async close(): Promise<void> {
-    if (this.mcpClient !== null) await this.mcpClient.close();
+    for (const client of this.mcpClients.values()) await client.close();
     this.mcpTools.clear();
     this.mcpInitialized = false;
-    this.mcpClient = null;
+    this.mcpClients = new Map();
   }
 
   // ── Built-in registration ────────────────────────────────────────────────
 
+  // Keyed by boundName, not name — for a builtin these are the same value
+  // (callers construct RegisteredTool with boundName: name; no collision
+  // risk since builtin ids are curated), but keying consistently by
+  // boundName everywhere means _allTools()/execute() never need to know
+  // which source a tool came from.
   register(tool: RegisteredTool): void {
-    this.builtins.set(tool.name, tool);
+    this.builtins.set(tool.boundName, tool);
   }
 
   // ── MCP server management ────────────────────────────────────────────────
@@ -108,6 +115,19 @@ export class ToolsManager {
     return definitions.filter((d) => allowed.has(d.name));
   }
 
+  // Forces a fresh MCP fetch attempt, bypassing the "only fetch once, ever,
+  // until a config change resets it" gate _ensureMcpInitialized normally
+  // applies. Used by an explicit user-triggered refresh action — routine
+  // calls (getTools()/execute()) deliberately do NOT get this, so they never
+  // reconnect to every server on every chat turn.
+  async refreshMcpTools(): Promise<void> {
+    this.mcpInitialized = false;
+    await this._ensureMcpInitialized();
+  }
+
+  // call.name is expected to be a boundName (both Maps below are keyed by
+  // it) — for an MCP tool that's the server-qualified form
+  // (mcpBoundName), not the bare tool name.
   async execute(call: ToolCall): Promise<unknown> {
     await this._ensureMcpInitialized();
     const builtin = this.builtins.get(call.name);
@@ -121,22 +141,36 @@ export class ToolsManager {
     return this._allTools();
   }
 
+  // Per-server connected/unreachable outcome of the most recent fetch
+  // attempt. Empty until getTools()/list()-triggered initialization has run
+  // at least once — this never itself triggers a connection, matching the
+  // "no side effects from merely reading state" principle used elsewhere in
+  // this app's MCP tooling (e.g. the settings UI never auto-checks on page
+  // load).
+  getMcpServerStatuses(): Map<string, McpServerStatus> {
+    return new Map(this.mcpServerStatuses);
+  }
+
   // ── Private ──────────────────────────────────────────────────────────────
 
   private async _ensureMcpInitialized(): Promise<void> {
-    if (this.mcpClient !== null && !this.mcpInitialized) {
-      const tools = await fetchMcpTools(this.mcpClient);
+    if (this.mcpClients.size > 0 && !this.mcpInitialized) {
+      const { tools, statuses } = await fetchAllMcpTools(this.mcpClients);
       this.mcpTools.clear();
-      for (const t of tools) this.mcpTools.set(t.name, t);
+      // Keyed by boundName (server-qualified), not bare name — two servers
+      // exposing an identically-named tool must not silently overwrite each
+      // other here (the bug this field exists to fix).
+      for (const t of tools) this.mcpTools.set(t.boundName, t);
+      this.mcpServerStatuses = statuses;
       this.mcpInitialized = true;
     }
   }
 
   private async _resetMcpClient(): Promise<void> {
-    if (this.mcpClient !== null) await this.mcpClient.close();
+    for (const client of this.mcpClients.values()) await client.close();
     this.mcpTools.clear();
     this.mcpInitialized = false;
-    this.mcpClient = buildMcpClient(this.mcpConfig);
+    this.mcpClients = buildMcpClient(this.mcpConfig);
   }
 
   private _allTools(): RegisteredTool[] {

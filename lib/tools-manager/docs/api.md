@@ -45,6 +45,7 @@ Registers a built-in tool. Built-in tools take priority over MCP tools during di
 ```ts
 tm.register({
   name: 'echo',
+  boundName: 'echo',
   description: 'Echo the input',
   parameters: z.object({ text: z.string() }),
   source: 'builtin',
@@ -73,10 +74,10 @@ const subset = await tm.getTools(['wiki-orient', 'rlm-run']);
 
 Dispatches a tool call. Built-ins are checked first, then MCP tools. Lazily initialises MCP connections if needed.
 
-| Parameter        | Type                      | Description               |
-| ---------------- | ------------------------- | ------------------------- |
-| `call.name`      | `string`                  | Tool name.                |
-| `call.arguments` | `Record<string, unknown>` | Arguments from the model. |
+| Parameter        | Type                      | Description                                           |
+| ---------------- | ------------------------- | ----------------------------------------------------- |
+| `call.name`      | `string`                  | Tool `boundName` (for a builtin, same as its `name`). |
+| `call.arguments` | `Record<string, unknown>` | Arguments from the model.                             |
 
 **Throws:** `Error: Unknown tool: "<name>"` if no tool with that name is registered.
 
@@ -172,7 +173,11 @@ const servers = tm.listMcpServers();
 
 ```ts
 interface RegisteredTool {
-  name: string;
+  name: string; // bare, as-reported — not guaranteed unique across servers
+  boundName: string; // the real bind/execute identity; register()/list()/execute() key by this.
+  // For a builtin, equal to name. For an MCP tool, server-qualified
+  // (`${slugifiedServerName}__${name}`) so two servers exposing an
+  // identically-named tool don't collide.
   description: string;
   parameters: z.ZodType;
   source: 'builtin' | 'mcp';

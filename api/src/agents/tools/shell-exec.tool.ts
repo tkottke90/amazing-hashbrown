@@ -37,7 +37,7 @@ export function makeShellExecTool(workingDirectory?: string) {
   return tool(
     async (input: z.infer<typeof ShellExecSchema>) => {
       const { command, reason, threadId } = input;
-      const baseConfig = env.tools?.shell ?? ShellExecutorConfigSchema.parse({});
+      const baseConfig = ShellExecutorConfigSchema.parse(env.tools['shell_exec'] ?? {});
       const config = workingDirectory ? { ...baseConfig, workingDirectory } : baseConfig;
       const sessionAllowlist = threadId ? getSessionPatterns(threadId) : [];
 

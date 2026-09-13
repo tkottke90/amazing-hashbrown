@@ -10,6 +10,7 @@ import type { RegisteredTool, McpStdioConfig } from '../src/types.js';
 function makeBuiltin(name: string): RegisteredTool {
   return {
     name,
+    boundName: name,
     description: `${name} description`,
     parameters: z.object({ input: z.string() }),
     source: 'builtin',
@@ -20,8 +21,18 @@ function makeBuiltin(name: string): RegisteredTool {
 // Bypass real MCP connections — set this seam before calling getTools/execute
 function bypassMcp(manager: ToolsManager): void {
   (manager as unknown as Record<string, unknown>)['_ensureMcpInitialized'] = async () => {};
-  // Prevent _resetMcpClient from trying to close a real client
-  (manager as unknown as Record<string, unknown>)['mcpClient'] = null;
+  // Prevent _resetMcpClient from trying to close real clients
+  (manager as unknown as Record<string, unknown>)['mcpClients'] = new Map();
+}
+
+// Installs a fake per-server fetch seam (bypassing real network/stdio I/O)
+// so getMcpServerStatuses()/list() can be exercised end-to-end through
+// ToolsManager without a real MultiServerMCPClient.
+function stubMcpFetch(
+  manager: ToolsManager,
+  clients: Map<string, { initializeConnections(): Promise<unknown> }>,
+): void {
+  (manager as unknown as Record<string, unknown>)['mcpClients'] = clients;
 }
 
 describe('ToolsManager', () => {
@@ -189,6 +200,158 @@ describe('ToolsManager', () => {
         expect((err as Error).message).to.include('missing');
       }
       expect(threw).to.equal(true);
+    });
+  });
+
+  // ── MCP per-server isolation/status ─────────────────────────────────────
+
+  describe('MCP per-server status', () => {
+    let manager: ToolsManager;
+
+    beforeEach(async () => {
+      manager = new ToolsManager({ configDir: join(dir, `status-${Math.random()}`) });
+      await manager.boot();
+    });
+
+    afterEach(async () => {
+      // mcpClients holds fakes at this point, not real clients — close() is
+      // still safe to call since the fakes have no close() but ToolsManager
+      // only calls close() on entries actually present in the map, and the
+      // fakes below never register a close() the manager would invoke here
+      // (close() iterates mcpClients, which stubMcpFetch replaced with
+      // fakes lacking .close — guard by clearing first).
+      (manager as unknown as Record<string, unknown>)['mcpClients'] = new Map();
+      await manager.close();
+    });
+
+    it('getMcpServerStatuses() is empty before any fetch has run', () => {
+      expect(manager.getMcpServerStatuses().size).to.equal(0);
+    });
+
+    it('a healthy server contributes tools and is marked connected', async () => {
+      stubMcpFetch(
+        manager,
+        new Map([
+          [
+            'healthy',
+            {
+              initializeConnections: async () => ({
+                healthy: [
+                  { name: 'h-tool', description: 'd', schema: {}, invoke: async () => 'ok' },
+                ],
+              }),
+            },
+          ],
+        ]),
+      );
+      const tools = await manager.getTools();
+      expect(tools.map((t) => t.name)).to.include('h-tool');
+      expect(manager.getMcpServerStatuses().get('healthy')).to.equal('connected');
+    });
+
+    it('one unreachable server does not remove another healthy server’s tools', async () => {
+      stubMcpFetch(
+        manager,
+        new Map([
+          [
+            'broken',
+            {
+              initializeConnections: async () => {
+                throw new Error('down');
+              },
+            },
+          ],
+          [
+            'healthy',
+            {
+              initializeConnections: async () => ({
+                healthy: [
+                  { name: 'h-tool', description: 'd', schema: {}, invoke: async () => 'ok' },
+                ],
+              }),
+            },
+          ],
+        ]),
+      );
+      const tools = await manager.getTools();
+      expect(tools.map((t) => t.name)).to.include('h-tool');
+      const statuses = manager.getMcpServerStatuses();
+      expect(statuses.get('broken')).to.equal('unreachable');
+      expect(statuses.get('healthy')).to.equal('connected');
+    });
+
+    it('two servers exposing an identically-named tool both survive list(), keyed by their distinct boundName (regression test — this used to silently overwrite the first)', async () => {
+      stubMcpFetch(
+        manager,
+        new Map([
+          [
+            'server-one',
+            {
+              initializeConnections: async () => ({
+                'server-one': [
+                  { name: 'browser_click', description: 'd1', schema: {}, invoke: async () => 'a' },
+                ],
+              }),
+            },
+          ],
+          [
+            'server-two',
+            {
+              initializeConnections: async () => ({
+                'server-two': [
+                  { name: 'browser_click', description: 'd2', schema: {}, invoke: async () => 'b' },
+                ],
+              }),
+            },
+          ],
+        ]),
+      );
+      // getTools() itself is only ever called to trigger initialization in
+      // this app (its return value is discarded) and still reports the bare,
+      // possibly-colliding name — list() is what actually matters, and is
+      // what loadMcpTools() (api/src/agents/chat-agent.ts) really binds from.
+      await manager.getTools();
+      const all = manager.list();
+      // Both entries survive under distinct boundNames — neither overwrote
+      // the other in the internal Map, which used to be keyed by bare name.
+      expect(all).to.have.length(2);
+      expect(all.map((t) => t.boundName).sort()).to.deep.equal([
+        'server-one__browser_click',
+        'server-two__browser_click',
+      ]);
+      expect(all.map((t) => t.name)).to.deep.equal(['browser_click', 'browser_click']);
+      expect(all.map((t) => t.mcpServer).sort()).to.deep.equal(['server-one', 'server-two']);
+    });
+
+    it('refreshMcpTools() forces a re-fetch even after a prior successful init', async () => {
+      let call = 0;
+      stubMcpFetch(
+        manager,
+        new Map([
+          [
+            'flaky',
+            {
+              initializeConnections: async () => {
+                call += 1;
+                if (call === 1) return { flaky: [] };
+                throw new Error('now down');
+              },
+            },
+          ],
+        ]),
+      );
+      await manager.getTools();
+      expect(manager.getMcpServerStatuses().get('flaky')).to.equal('connected');
+
+      // A second getTools() call must NOT re-fetch (mcpInitialized guard) —
+      // status should still read 'connected' even though the underlying
+      // fake would now throw if it were actually re-invoked.
+      await manager.getTools();
+      expect(call).to.equal(1);
+
+      await manager.refreshMcpTools();
+      expect(call).to.equal(2);
+      expect(manager.getMcpServerStatuses().get('flaky')).to.equal('unreachable');
     });
   });
 

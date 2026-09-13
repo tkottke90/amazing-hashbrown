@@ -12,6 +12,7 @@ export function makeMcpTool(
 ): RegisteredTool {
   return {
     name: 'test_tool',
+    boundName: overrides.boundName ?? overrides.name ?? 'test_tool',
     description: 'A test MCP tool',
     // Double-cast required: same Zod version mismatch as in production code
     parameters: z.object({}) as unknown as RegisteredTool['parameters'],

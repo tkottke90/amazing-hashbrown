@@ -41,6 +41,7 @@ import { z } from 'zod';
 
 tm.register({
   name: 'wiki-orient',
+  boundName: 'wiki-orient',
   description: 'List top-level pages in the wiki',
   parameters: z.object({ query: z.string().optional() }),
   source: 'builtin',
@@ -49,6 +50,7 @@ tm.register({
 
 tm.register({
   name: 'rlm-run',
+  boundName: 'rlm-run',
   description: 'Run the Read-Learn-Memorize cycle',
   parameters: z.object({ topic: z.string() }),
   source: 'builtin',
