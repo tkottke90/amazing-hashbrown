@@ -642,7 +642,32 @@ wiki tool. Routing needs the content: you can't judge which domain a page belong
 alone, so calling wiki_locate before fetching just orders the steps backwards. Fetch, then route,
 then write.
 
-The reverse applies once the content is already in hand. If a web_fetch already succeeded in this
+Some web_fetch results are compact stubs — the full content was too large to include inline and is
+stored externally. A stub is recognisable by its opening line:
+
+  ── CONTENT OFFLOADED ──────────────────
+
+It contains a short summary, key concepts, and metadata (tool, chars, key, threadId).
+
+Reach for get_tool_key when you need the offloaded text for anything else — answering a question in
+more detail than the stub's summary gives you, quoting a passage, or working with the full document
+yourself. Call it with the same threadId and toolKey shown in the stub, copied verbatim. get_tool_key
+only works with a real key from an actual stub already in this conversation — never invent a
+threadId or toolKey to try it speculatively; if there's no stub, the content you have is already
+everything there is.
+
+If a stub's summary points at a "to ingest into wiki:" workflow but you don't have wiki write access
+in your current toolset, don't try to satisfy it — not by calling anything under a guessed title, and
+not by asking the user for missing details like a title. Present the stub's summary and key concepts
+as your answer instead, and say plainly that you don't currently have write access to store it.`;
+
+// Split out of WEB_FETCH_SECTION (issue #154) — this content only makes sense
+// when wiki_create_page is actually bound; see filterHarnessSections() below
+// and docs/superpowers/specs/2026-09-13-tool-scoped-system-prompt-sections-design.md.
+// Requires BOTH web_fetch and wiki_create_page (not just wiki_create_page):
+// every paragraph here is about combining a web_fetch result with a wiki
+// write, so it's meaningless on its own if fetching isn't even bound.
+const WIKI_INGEST_SECTION = `The reverse applies once the content is already in hand. If a web_fetch already succeeded in this
 conversation and the user asks you to save what it returned, that request is the decision — proceed
 to the write. When a wiki_locate result has already established the domain, call wiki_create_page
 directly with the fetched content, passing it as an inline corpus:
@@ -669,13 +694,7 @@ wiki_orient pass to "see the domain's structure" first. wiki_locate's result may
 wiki_orient as a possible next step — that is a generic browsing pointer, not an error or a
 correction, so it doesn't override this direct-write path the way a real error result would.
 
-Some web_fetch results are compact stubs — the full content was too large to include inline and is
-stored externally. A stub is recognisable by its opening line:
-
-  ── CONTENT OFFLOADED ──────────────────
-
-It contains a short summary, key concepts, and metadata (tool, chars, key, threadId). When a stub
-includes a "to ingest into wiki:" block like this:
+When a compact stub (see web_fetch above) includes a "to ingest into wiki:" block like this:
 
   to ingest into wiki:
     wiki_create_page({
@@ -700,25 +719,14 @@ you already have, not a missing prerequisite that requires fetching the full tex
 
 That reference is for the wiki path specifically — do not resolve it yourself first with
 get_tool_key just to hand the text to wiki_create_page as corpus.raw; pass the
-corpus:{threadId, toolKey} reference straight through instead. Reach for get_tool_key when you
-need the offloaded text for anything else — answering a question in more detail than the stub's
-summary gives you, quoting a passage, or working with the full document yourself. Call it with the
-same threadId and toolKey shown in the stub, copied verbatim. get_tool_key only works with a real
-key from an actual stub already in this conversation — never invent a threadId or toolKey to try
-it speculatively; if there's no stub, the content you have is already everything there is.
+corpus:{threadId, toolKey} reference straight through instead.
 
 A stub without that literal "to ingest into wiki:" heading never carries the instruction above,
 no matter how similar it looks to one that does — check the stub's own text for that heading
 before acting on it, rather than assuming it based on other stubs you've seen in this conversation
 or in these instructions. A plain stub (summary and key concepts only) paired with a request for
 more than the summary gives — the exact wording, a specific detail, the full document — is a
-get_tool_key case, not a reason to invent an ingest block that was never actually there.
-
-This only applies when wiki_create_page is actually available to you right now. If it isn't in
-your current toolset — write access can be scoped or withheld per wiki — don't try to act on the
-block anyway: not by calling it under a guessed title, and not by asking the user for missing
-details like a title so you can call it. Present the stub's summary and key concepts as your
-answer instead, and tell the user plainly that you don't currently have write access to store it.`;
+get_tool_key case, not a reason to invent an ingest block that was never actually there.`;
 
 // Added from auto-eval round 2 of suites/rlm.yaml (2026-08-03), the first
 // round where the suite's seeded turns actually reached the models (round 1
@@ -888,22 +896,50 @@ check and missing a documented, setup-specific answer is the actual failure.`;
 interface HarnessSection {
   tag: string;
   content: string;
+  // Tool ids this section's guidance depends on (issue #154) — omitted means
+  // always included (identity/memory: cross-cutting, not tied to a specific
+  // tool's availability). requiresAnyOf: included if at least one listed id
+  // is bound. requiresAllOf: included only if every listed id is bound (used
+  // by wiki_ingest, which is meaningless without both web_fetch AND
+  // wiki_create_page). See filterHarnessSections() below, which is the thing
+  // that actually applies these per call — buildHarnessPrompt()/
+  // buildSystemPrompt() below always emit every section unfiltered, since
+  // tool binding isn't known yet at agent-build time (see
+  // tool-access.middleware.ts and docs/superpowers/specs/
+  // 2026-09-13-tool-scoped-system-prompt-sections-design.md).
+  requiresAnyOf?: string[];
+  requiresAllOf?: string[];
 }
 
-// One entry per internal tool group or behavior area, in a fixed order. Every
-// section is always included — MCP/external tool relevance is a future
-// llmToolSelectorMiddleware concern, not a system-prompt one (see
-// docs/superpowers/specs/2026-07-21-agent-behavior-baseline-system-prompt-pattern-design.md).
+const WIKI_TOOL_IDS = [
+  'wiki_search',
+  'wiki_read_page',
+  'wiki_locate',
+  'wiki_orient',
+  'wiki_lint',
+  'wiki_register_domain',
+  'wiki_create_page',
+  'wiki_update_page',
+  'wiki_add_cross_link',
+  'wiki_rebaseline_source',
+];
+
+// One entry per internal tool group or behavior area, in a fixed order.
 // identity/memory lead the list — they frame how the model should read the
 // tool-orchestration rules that follow, not the other way around.
 const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
-  { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION },
-  { tag: 'web_fetch', content: WEB_FETCH_SECTION },
-  { tag: 'rlm', content: RLM_SECTION },
-  { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION },
-  { tag: 'ask_user_routing', content: ASK_USER_SECTION },
+  { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
+  { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
+  {
+    tag: 'wiki_ingest',
+    content: WIKI_INGEST_SECTION,
+    requiresAllOf: ['web_fetch', 'wiki_create_page'],
+  },
+  { tag: 'rlm', content: RLM_SECTION, requiresAnyOf: ['rlm_query'] },
+  { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION, requiresAnyOf: ['shell_exec'] },
+  { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...
 ];
 
@@ -919,6 +955,35 @@ function wrapSection(section: HarnessSection): string {
 
 function buildHarnessPrompt(): string {
   return HARNESS_SECTIONS.map(wrapSection).join('\n\n');
+}
+
+// Gates tool-scoped sections on tool binding (issue #154). buildSystemPrompt()
+// below is unchanged and still emits every section unconditionally — it's
+// built once per cached agent (see chat-agent.ts's _agents/_workspaceAgents
+// maps), before any thread's tool configuration is known. This is the actual
+// per-call/per-scenario filter, applied on top of that cached string by
+// tool-access.middleware.ts (production, using its already-resolved effective
+// tool set) and by bin/eval.ts via lib/evaluations' RunConfig.filterHarnessSections
+// callback (eval scenarios, using each scenario's bound-tool set) — never a
+// second source of truth for "what's available," just two callers passing in
+// the set they already computed. Pure string transform: no dependency on
+// tool-config, thread store, or agent-build state.
+export function filterHarnessSections(prompt: string, availableToolIds: Set<string>): string {
+  let result = prompt;
+  for (const section of HARNESS_SECTIONS) {
+    const anyOfOk =
+      !section.requiresAnyOf || section.requiresAnyOf.some((id) => availableToolIds.has(id));
+    const allOfOk =
+      !section.requiresAllOf || section.requiresAllOf.every((id) => availableToolIds.has(id));
+    if (anyOfOk && allOfOk) continue;
+    const blockPattern = new RegExp(`<${section.tag}>\\n[\\s\\S]*?\\n</${section.tag}>`);
+    result = result.replace(blockPattern, '');
+  }
+  // Removing a block can leave behind a run of blank lines (from the '\n\n'
+  // join in buildHarnessPrompt()/buildSystemPrompt()) or trailing whitespace
+  // if the last section got stripped — normalize both rather than trying to
+  // track and remove exactly one adjacent separator per removal.
+  return result.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
 }
 
 // workspaceContext carries factual/operational context (the workspace's

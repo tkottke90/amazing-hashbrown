@@ -70,6 +70,18 @@ export interface RunConfig {
    * (see withSystemPrompt) — undefined when the suite opted out via
    * appliesHarnessSystemPrompt: false. */
   systemPrompt?: string;
+  /** Gates tool-scoped sections out of systemPrompt for a scenario's actual
+   * bound-tool set (issue #154) — called, when set, in the tool-call/
+   * tool-sequence branches of executeScenario right before withSystemPrompt,
+   * with the ids of the tools that scenario actually ends up bound to
+   * (post-excludeTools/gated-skill resolution). Injected as a plain function
+   * rather than imported directly, like skillExpansionMiddleware/
+   * skillGatedToolsMiddleware below — this package has no dependency on the
+   * app that owns the real section-to-tool mapping (api/src/agents/
+   * system-prompt.ts's filterHarnessSections), and shouldn't gain one just
+   * to support this. Callers that don't set it (or don't set systemPrompt at
+   * all) get today's unfiltered behavior unchanged. */
+  filterHarnessSections?: (prompt: string, availableToolIds: Set<string>) => string;
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -371,6 +383,14 @@ async function invokeToolCallModel(
   return { ...extractToolCallData(response), latencyMs };
 }
 
+// Same name-extraction idiom already used inline for excludeTools filtering
+// in the tool-call/tool-sequence branches below — shared here too since
+// config.filterHarnessSections needs the same tool-id set from the same
+// BindToolsInput[] shape.
+function toolName(t: BindToolsInput): string {
+  return typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
+}
+
 // Every branch below attaches config.systemPrompt (via withSystemPrompt) when
 // the suite opts in (SuiteSchema.appliesHarnessSystemPrompt, default true) —
 // a scenario type added here should follow the same pattern.
@@ -520,6 +540,10 @@ export async function executeScenario(
           config.skillGatedToolsMiddleware,
         );
       }
+      const effectiveSystemPrompt =
+        config.filterHarnessSections && config.systemPrompt
+          ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
+          : config.systemPrompt;
       const {
         toolCalls,
         invalidToolCalls,
@@ -529,7 +553,7 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(modelInput, config.systemPrompt),
+        withSystemPrompt(modelInput, effectiveSystemPrompt),
         toolsForCall,
       );
       const details = {
@@ -585,6 +609,10 @@ export async function executeScenario(
           config.skillGatedToolsMiddleware,
         );
       }
+      const effectiveSystemPrompt =
+        config.filterHarnessSections && config.systemPrompt
+          ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
+          : config.systemPrompt;
       const {
         toolCalls,
         invalidToolCalls,
@@ -594,7 +622,7 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(modelInput, config.systemPrompt),
+        withSystemPrompt(modelInput, effectiveSystemPrompt),
         toolsForCall,
       );
       const details = {

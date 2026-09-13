@@ -6,6 +6,7 @@ import {
   SKILL_GATED_TOOL_IDS,
 } from './tool-access.js';
 import { getToolInstructions } from './tool-config.js';
+import { filterHarnessSections } from './system-prompt.js';
 import { env, type ToolEntry } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 
@@ -113,23 +114,30 @@ export function createToolAccessMiddleware(
         })
         .filter((block): block is string => block !== null);
 
-      if (instructionBlocks.length === 0) {
-        return handler({ ...request, tools });
-      }
-
       const baseContent = request.systemMessage.content;
       if (typeof baseContent !== 'string') {
         // Structured (non-string) system message content is not something
         // this app produces today (buildSystemPrompt() always returns a
         // plain string) — fail safe rather than risk corrupting it.
         logger.warn(
-          'tool-access: systemMessage.content is not a string, skipping instruction injection',
+          'tool-access: systemMessage.content is not a string, skipping section filtering and instruction injection',
         );
         return handler({ ...request, tools });
       }
 
+      // Gate tool-scoped harness sections (issue #154) on this call's actual
+      // bound-tool set — must happen unconditionally here, not only when
+      // instructionBlocks is non-empty below, or a thread with no per-tool
+      // custom instructions set (the common case) would never have its
+      // system message touched at all, silently defeating this filter.
+      const filteredContent = filterHarnessSections(baseContent, enabledIds);
+
+      if (instructionBlocks.length === 0) {
+        return handler({ ...request, tools, systemMessage: new SystemMessage(filteredContent) });
+      }
+
       const systemMessage = new SystemMessage(
-        `${baseContent}\n\n${instructionBlocks.join('\n\n')}`,
+        `${filteredContent}\n\n${instructionBlocks.join('\n\n')}`,
       );
 
       return handler({ ...request, tools, systemMessage });
