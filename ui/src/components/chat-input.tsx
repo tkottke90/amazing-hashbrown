@@ -107,6 +107,21 @@ export function ChatInputChip({ className, children, onRemove, ...props }: ChatI
   );
 }
 
+// Lower rank sorts first; null means "no match, excluded." A toolId match
+// ranks above a name/description-only match on the theory that the id is
+// what actually gets inserted — a query that happens to hit the id directly
+// is the more confident match. An empty query (bare '#' just typed, still
+// browsing) matches everything at the best rank, same as no filter at all.
+function toolMatchRank(tool: ThreadToolItem, query: string): number | null {
+  if (!query) return 0;
+  const toolId = tool.toolId.toLowerCase();
+  if (toolId.startsWith(query)) return 0;
+  if (toolId.includes(query)) return 1;
+  if (tool.name.toLowerCase().includes(query)) return 2;
+  if (tool.description.toLowerCase().includes(query)) return 3;
+  return null;
+}
+
 export function ChatInput({
   header,
   value,
@@ -361,10 +376,16 @@ export function ChatInput({
     toolMenuQuery.value = active.query;
 
     function applyFilter(tools: ThreadToolItem[]) {
+      const query = active!.query.toLowerCase();
       // Only enabled tools — anything else would be silently ignored if
       // picked (per tool-access.middleware.ts's own filter), so showing a
       // disabled tool here would be misleading.
-      const filtered = tools.filter((t) => t.enabled && t.toolId.startsWith(active!.query));
+      const filtered = tools
+        .filter((t) => t.enabled)
+        .map((t) => ({ tool: t, rank: toolMatchRank(t, query) }))
+        .filter((m): m is { tool: ThreadToolItem; rank: number } => m.rank !== null)
+        .sort((a, b) => a.rank - b.rank)
+        .map((m) => m.tool);
       toolMenuItems.value = filtered;
       toolMenuIndex.value = 0;
       toolMenuOpen.value = filtered.length > 0;

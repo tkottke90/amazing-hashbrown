@@ -518,4 +518,87 @@ describe('ChatInput — #tool-name autocomplete', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText('#172')).not.toBeInTheDocument();
   });
+
+  it('matches a substring of toolId, not just a prefix', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'mcp-gateway:pushover-send',
+        name: 'Pushover Send',
+        description: 'Sends a push notification via Pushover.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#push' } });
+
+    await waitFor(() => expect(screen.getByText('#mcp-gateway:pushover-send')).toBeInTheDocument());
+  });
+
+  it('matches on name when the query is not in toolId', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Pager',
+        description: 'Posts a message to a Slack channel.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#pager' } });
+
+    await waitFor(() => expect(screen.getByText('#notify_slack')).toBeInTheDocument());
+  });
+
+  it('matches on description when the query is not in toolId or name', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Notifier',
+        description: 'Posts a reminder message to a Slack channel.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#reminder' } });
+
+    await waitFor(() => expect(screen.getByText('#notify_slack')).toBeInTheDocument());
+  });
+
+  it('ranks a toolId match above a description-only match for the same query', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Notifier',
+        description: 'Posts a push-style reminder to Slack.',
+      }),
+      makeToolItem({
+        toolId: 'push_notification',
+        name: 'Push Notification',
+        description: 'Sends a mobile push notification.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#push' } });
+
+    await waitFor(() => expect(screen.getByText('#push_notification')).toBeInTheDocument());
+    const items = screen.getAllByText(/^#/);
+    expect(items.map((el) => el.textContent)).toEqual(['#push_notification', '#notify_slack']);
+  });
+
+  it('finds no match when the query appears in none of toolId/name/description', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch', name: 'Web Fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#zzz' } });
+
+    // Give the debounce/fetch a moment, then confirm nothing rendered.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+  });
 });
