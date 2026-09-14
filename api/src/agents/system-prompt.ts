@@ -442,6 +442,22 @@
 // exactly the Verdaccio-style case (could belong to a technical domain
 // too), just wearing the color example's "favorite" phrasing. Re-run
 // Ornith and Lemonade against ets-002/ets-004 next round to confirm.
+//
+// Correction to the seventeenth entry, from the very next round against its
+// own wording. ets-002/ets-004 fixed for both models (Ornith 2/4→3/4,
+// Lemonade to a clean pass), but Ornith regressed ets-001 — the one
+// scenario that requires the directive to override this section's default
+// entirely. Ornith's reasoning quoted the new paragraph nearly verbatim and
+// concluded to call wiki_locate anyway, despite an explicit #wiki_search
+// directive. The new example, by naming the exact input phrase, apparently
+// out-weighed NOTATION_SECTION's directive-overrides-default rule in the
+// model's own reasoning — the new paragraph never said what to do when a
+// directive is already present, so nothing there resolved the conflict.
+// Added a closing sentence to the same paragraph making the default
+// explicitly conditional: it yields to an explicit #tool-name directive,
+// pointing back at notation's own precedence rule rather than restating it
+// abstractly. Re-run Ornith against ets-001 next round; watch for the
+// original ets-002/ets-004 fix holding at the same time.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -466,8 +482,10 @@ Watch for the same "favorite" phrasing on a topic that isn't actually domain-exc
 "What is my favorite programming language?" reads like the color example on the surface, but a programming
 language could just as easily be documented in a dedicated technical or engineering domain as in personal
 preferences — the same ambiguity the Verdaccio example below covers, just phrased as a "favorite" question
-instead of a how-to. Call wiki_locate first here; the word "favorite" alone doesn't make a topic
-domain-exclusive, only the topic itself does.
+instead of a how-to. By default, call wiki_locate first here; the word "favorite" alone doesn't make a topic
+domain-exclusive, only the topic itself does. That default yields to an explicit #tool-name directive the
+way notation above describes, though — a <required-tool> instruction already settled which tool to call, so
+this domain-ambiguity distinction doesn't re-open a choice that was never in question.
 
 That skip only covers a direct question about a concrete personal fact — not a question about where to
 look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain

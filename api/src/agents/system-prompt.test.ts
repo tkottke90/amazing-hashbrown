@@ -157,6 +157,13 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('yields the favorite-programming-language default to an explicit #tool-name directive', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'That default yields to an explicit #tool-name directive the\nway notation above describes',
+      );
+    });
+
     it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
