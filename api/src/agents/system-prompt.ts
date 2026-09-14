@@ -422,6 +422,26 @@
 // the new example lands; if it reproduces in the same wiki_orient-first
 // shape with wording unchanged, that's evidence of a second Lemonade-
 // specific ceiling, not a remaining wording gap.
+//
+// Seventeenth entry, auto-eval round 1 of suites/explicit-tool-syntax.yaml
+// (2026-09-14, local/Lemonade/Ornith, judge local). ets-002/ets-004 both ask
+// "What is my favorite programming language?" (with and without an
+// unmatched #-token) and expect wiki_locate first, per the cold-start
+// personal-preference default this section already establishes. Ornith
+// failed both, Lemonade failed ets-004 only; local passed both. Both
+// failing models' reasoning explicitly echoed this section's own
+// "favorite color" example back ("the topic sounds personal enough that
+// it's clearly about the user's own domain" / "there's only one plausible
+// domain") — the exact over-generalization interpreting-results.md §3
+// warns about: a contrastive example anchors on its surface wording
+// ("favorite"), not the property it's meant to illustrate (domain
+// exclusivity). local's cross-check pass on identical wording confirms
+// this is a real prompt gap, not a shared ceiling. Added a paragraph
+// directly after the color/growth example distinguishing "favorite
+// programming language" from "favorite color" — a programming language is
+// exactly the Verdaccio-style case (could belong to a technical domain
+// too), just wearing the color example's "favorite" phrasing. Re-run
+// Ornith and Lemonade against ets-002/ets-004 next round to confirm.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -441,6 +461,13 @@ For example: "What's my favorite color?" has no plausible domain other than the 
 skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
 growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
 rather than guessing which one it means.
+
+Watch for the same "favorite" phrasing on a topic that isn't actually domain-exclusive the way color is:
+"What is my favorite programming language?" reads like the color example on the surface, but a programming
+language could just as easily be documented in a dedicated technical or engineering domain as in personal
+preferences — the same ambiguity the Verdaccio example below covers, just phrased as a "favorite" question
+instead of a how-to. Call wiki_locate first here; the word "favorite" alone doesn't make a topic
+domain-exclusive, only the topic itself does.
 
 That skip only covers a direct question about a concrete personal fact — not a question about where to
 look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain

@@ -147,6 +147,16 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('"What have you noticed about growth lately?" could mean');
     });
 
+    it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Watch for the same "favorite" phrasing on a topic that isn\'t actually domain-exclusive',
+      );
+      expect(result).to.include(
+        '"What is my favorite programming language?" reads like the color example on the surface',
+      );
+    });
+
     it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
