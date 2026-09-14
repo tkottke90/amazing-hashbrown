@@ -44,23 +44,23 @@ Reduce Lemonade's (GLM-4.7-Flash-GGUF) confirmed sampling flakiness on the defau
 
 Confirms nothing is dropped in the rewrite:
 
-| Current rule | Protects (scenario) | New location |
-|---|---|---|
-| Tool descriptions (4 wiki tools) | — | Unchanged intro |
-| Skip `wiki_locate` only if domain established earlier, or topic so specific no other domain could cover it | `wnav-001`, `wnav-007`, `wnav-008` | Step 1, first three bullets |
-| "Merely sounding personal ≠ established domain" | `wnav-007` | Step 1, fourth bullet |
-| Favorite-color (skip) vs. growth (ambiguous) contrastive example | `wnav-008` vs. `wnav-007` | Step 1 examples |
-| Meta-question ("which part of the KB") ≠ personal-fact question | `wnav-001` | Step 1, second bullet + example |
-| Technical/setup topic (Verdaccio), including possessive phrasing, isn't an outright personal match | `wnav-010`, `wnav-010b`, `wnav-010c` | Step 1, fourth bullet + example |
-| No-match → report honestly, don't fabricate | `wnav-005` (via MEMORY/IDENTITY, referenced here) | Step 2, first bullet |
-| wikiId travels directly into `wiki_search`/`wiki_orient`, no separate confinement step | `wnav-009`, `wnav-013` | Step 3, search bullet |
-| Concrete fact → scoped search, not orient detour | `wnav-009`, `wnav-013` | Step 3, search bullet + examples |
-| Overview request → orient even on single match | `wnav-002` | Step 3, orient bullet + example |
-| Tie-break only with real conversational info, never fabricated | `wnav-004` | Step 2, tie bullet |
-| Reported tie outranks the model's own hunch; call `ask_user`, don't decide | `wnav-004` | Step 2, tie bullet |
-| Write directly when nothing on-topic exists; no pre-check search, no asking where | `wnav-012` | Step 3, create bullet |
-| Tool's own result outranks default guidance | `wnav-006` | Step 4, first bullet |
-| Write rejection (known-wrong wiki) vs. unrecognized wikiId; retry with only wikiId swapped | `wwrite-006`–`009` (wiki-write.yaml) | Step 4, second bullet |
+| Current rule                                                                                               | Protects (scenario)                               | New location                     |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | -------------------------------- |
+| Tool descriptions (4 wiki tools)                                                                           | —                                                 | Unchanged intro                  |
+| Skip `wiki_locate` only if domain established earlier, or topic so specific no other domain could cover it | `wnav-001`, `wnav-007`, `wnav-008`                | Step 1, first three bullets      |
+| "Merely sounding personal ≠ established domain"                                                            | `wnav-007`                                        | Step 1, fourth bullet            |
+| Favorite-color (skip) vs. growth (ambiguous) contrastive example                                           | `wnav-008` vs. `wnav-007`                         | Step 1 examples                  |
+| Meta-question ("which part of the KB") ≠ personal-fact question                                            | `wnav-001`                                        | Step 1, second bullet + example  |
+| Technical/setup topic (Verdaccio), including possessive phrasing, isn't an outright personal match         | `wnav-010`, `wnav-010b`, `wnav-010c`              | Step 1, fourth bullet + example  |
+| No-match → report honestly, don't fabricate                                                                | `wnav-005` (via MEMORY/IDENTITY, referenced here) | Step 2, first bullet             |
+| wikiId travels directly into `wiki_search`/`wiki_orient`, no separate confinement step                     | `wnav-009`, `wnav-013`                            | Step 3, search bullet            |
+| Concrete fact → scoped search, not orient detour                                                           | `wnav-009`, `wnav-013`                            | Step 3, search bullet + examples |
+| Overview request → orient even on single match                                                             | `wnav-002`                                        | Step 3, orient bullet + example  |
+| Tie-break only with real conversational info, never fabricated                                             | `wnav-004`                                        | Step 2, tie bullet               |
+| Reported tie outranks the model's own hunch; call `ask_user`, don't decide                                 | `wnav-004`                                        | Step 2, tie bullet               |
+| Write directly when nothing on-topic exists; no pre-check search, no asking where                          | `wnav-012`                                        | Step 3, create bullet            |
+| Tool's own result outranks default guidance                                                                | `wnav-006`                                        | Step 4, first bullet             |
+| Write rejection (known-wrong wiki) vs. unrecognized wikiId; retry with only wikiId swapped                 | `wwrite-006`–`009` (wiki-write.yaml)              | Step 4, second bullet            |
 
 ---
 

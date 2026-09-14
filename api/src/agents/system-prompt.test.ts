@@ -190,14 +190,14 @@ describe('agents/system-prompt', () => {
         '"I need to generate\n     a new NPM token for my Verdaccio instance" → wiki_locate either way',
       );
       expect(result).to.include(
-        'the possessive\n     phrasing in the second one doesn\'t change that)',
+        "the possessive\n     phrasing in the second one doesn't change that)",
       );
     });
 
     it('tells the agent to pass a resolved wikiId straight into wiki_search regardless of how the domain was resolved', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "directly, whether wikiId came from an outright match or from narrowing a tie",
+        'directly, whether wikiId came from an outright match or from narrowing a tie',
       );
       expect(result).to.include(
         'Omit wikiId only when you deliberately want to search\n     across every domain at once',
@@ -230,7 +230,7 @@ describe('agents/system-prompt', () => {
         'wiki_create_page directly, picking a sensible\n     title yourself',
       );
       expect(result).to.include(
-        'Don\'t run a wiki_search first to check whether a page already exists —\n     wiki_create_page detects near-duplicates itself',
+        "Don't run a wiki_search first to check whether a page already exists —\n     wiki_create_page detects near-duplicates itself",
       );
     });
 
