@@ -37,7 +37,7 @@ import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
-import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
+import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
 // The static built-in tool set the production chat agent binds (see
@@ -254,6 +254,7 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       judgeModelId,
       tools: evalTools,
       systemPrompt,
+      filterHarnessSections,
       embeddings,
       suitePaths: { bundledPath: suitesPath },
       resultPath,

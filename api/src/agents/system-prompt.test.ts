@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { buildSystemPrompt } from './system-prompt.js';
+import { buildSystemPrompt, filterHarnessSections } from './system-prompt.js';
 
 describe('agents/system-prompt', () => {
   describe('buildSystemPrompt()', () => {
@@ -33,6 +33,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
       expect(result).to.include('</web_fetch>');
+      expect(result).to.include('<wiki_ingest>');
+      expect(result).to.include('</wiki_ingest>');
       expect(result).to.include('<rlm>');
       expect(result).to.include('</rlm>');
       expect(result).to.include('<shell_execution>');
@@ -41,16 +43,17 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(7);
-      expect(closes).to.equal(7);
+      expect(opens).to.equal(8);
+      expect(closes).to.equal(8);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, rlm, shell execution, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, wiki ingest, rlm, shell execution, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
+      const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
       const rlmTagIndex = result.indexOf('<rlm>');
       const shellTagIndex = result.indexOf('<shell_execution>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
@@ -58,13 +61,15 @@ describe('agents/system-prompt', () => {
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
+      expect(wikiIngestTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(shellTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
-      expect(webFetchTagIndex).to.be.lessThan(rlmTagIndex);
+      expect(webFetchTagIndex).to.be.lessThan(wikiIngestTagIndex);
+      expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
       expect(shellTagIndex).to.be.lessThan(askUserTagIndex);
     });
@@ -260,16 +265,21 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('scopes the ingest-stub instruction to when wiki_create_page is actually available', () => {
+    // Issue #154: the ingest-stub instructions themselves (wiki_ingest,
+    // requiring wiki_create_page) are now structurally omitted from the
+    // prompt when wiki_create_page isn't bound — see filterHarnessSections()
+    // tests below — rather than described-then-caveated with a workaround
+    // sentence. This test now covers the fallback that stays in web_fetch
+    // (requiring only web_fetch), which doesn't know whether wiki_ingest is
+    // present and so never names wiki_create_page or the ingest workflow.
+    it('gives web_fetch a wiki-write-agnostic fallback for a stub pointing at an ingest workflow', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'This only applies when wiki_create_page is actually available to you right now.',
+        'If a stub\'s summary points at a "to ingest into wiki:" workflow but you don\'t have wiki write access',
       );
+      expect(result).to.include('not by asking the user for missing details like a title');
       expect(result).to.include(
-        'not by asking the user for missing\ndetails like a title so you can call it',
-      );
-      expect(result).to.include(
-        "tell the user plainly that you don't currently have write access to store it.",
+        "say plainly that you don't currently have write access to store it.",
       );
     });
 
@@ -413,6 +423,113 @@ describe('agents/system-prompt', () => {
     it('omits the workspace_context block when workspaceContext is empty/whitespace', () => {
       const result = buildSystemPrompt(undefined, '   \n  ');
       expect(result).to.equal(buildSystemPrompt());
+    });
+  });
+
+  // Issue #154: gates tool-scoped sections on tool binding. buildSystemPrompt()
+  // itself stays unfiltered (verified above) — filterHarnessSections() is the
+  // separate, explicit step production (tool-access.middleware.ts) and the
+  // eval harness (bin/eval.ts via lib/evaluations' RunConfig callback) apply
+  // on top, each with the tool set it already resolved for that call/scenario.
+  describe('filterHarnessSections()', () => {
+    const ALL_TOOL_IDS = new Set([
+      'wiki_search',
+      'wiki_read_page',
+      'wiki_locate',
+      'wiki_orient',
+      'wiki_lint',
+      'wiki_register_domain',
+      'wiki_create_page',
+      'wiki_update_page',
+      'wiki_add_cross_link',
+      'wiki_rebaseline_source',
+      'web_fetch',
+      'rlm_query',
+      'shell_exec',
+      'ask_user',
+    ]);
+
+    it('keeps every section when every tool id is available', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), ALL_TOOL_IDS);
+      for (const tag of [
+        'identity',
+        'memory',
+        'wiki_navigation',
+        'web_fetch',
+        'wiki_ingest',
+        'rlm',
+        'shell_execution',
+        'ask_user_routing',
+      ]) {
+        expect(result).to.include(`<${tag}>`);
+        expect(result).to.include(`</${tag}>`);
+      }
+    });
+
+    it('never removes identity or memory regardless of the available set', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), new Set());
+      expect(result).to.include('<identity>');
+      expect(result).to.include('<memory>');
+    });
+
+    it('removes wiki_navigation and wiki_ingest when no wiki tool is available, keeping web_fetch', () => {
+      const available = new Set(['web_fetch', 'rlm_query', 'shell_exec', 'ask_user']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<wiki_navigation>');
+      expect(result).to.not.include('<wiki_ingest>');
+      expect(result).to.include('<web_fetch>');
+    });
+
+    it('keeps wiki_navigation when any one wiki tool is available', () => {
+      const available = new Set(['wiki_locate']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<wiki_navigation>');
+    });
+
+    it('gates wiki_ingest independently of web_fetch — bound web_fetch, unbound wiki_create_page', () => {
+      const available = new Set(['web_fetch', 'wiki_search']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<web_fetch>');
+      expect(result).to.include('<wiki_navigation>');
+      expect(result).to.not.include('<wiki_ingest>');
+    });
+
+    it('gates wiki_ingest independently of web_fetch — bound wiki_create_page, unbound web_fetch', () => {
+      const available = new Set(['wiki_create_page']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<wiki_navigation>');
+      expect(result).to.not.include('<web_fetch>');
+      expect(result).to.not.include('<wiki_ingest>');
+    });
+
+    it('includes wiki_ingest only when both web_fetch and wiki_create_page are available', () => {
+      const available = new Set(['web_fetch', 'wiki_create_page']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<wiki_ingest>');
+    });
+
+    it('removes rlm when rlm_query is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<rlm>');
+    });
+
+    it('removes shell_execution when shell_exec is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<shell_execution>');
+    });
+
+    it('removes ask_user_routing when ask_user is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<ask_user_routing>');
+    });
+
+    it('leaves no triple-newline runs or dangling whitespace after removing sections', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), new Set());
+      expect(result).to.not.match(/\n{3,}/);
+      expect(result).to.equal(result.trimEnd());
     });
   });
 });

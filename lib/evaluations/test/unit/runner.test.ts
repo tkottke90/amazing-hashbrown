@@ -606,6 +606,67 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
   });
 });
 
+// Issue #154: config.filterHarnessSections lets a caller (bin/eval.ts, using
+// the real api/src/agents/system-prompt.ts implementation) gate tool-scoped
+// system-prompt content on a scenario's actual bound-tool set, without this
+// package importing anything from api — see RunConfig's own doc comment.
+// These tests use a trivial fake filter rather than the real one, since this
+// package has no dependency on api/src/agents/system-prompt.ts.
+describe('executeScenario — filterHarnessSections (issue #154)', () => {
+  function makeToolCallScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'filter-tc-1',
+      name: 'Filter tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: 'do something',
+      tool: 'web_fetch',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  it("passes the scenario's actual bound-tool set (post-excludeTools) to the callback and uses its result", async () => {
+    const scenario = makeToolCallScenario({ excludeTools: ['shell_exec'] });
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('web_fetch');
+    let capturedIds: Set<string> | undefined;
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch'), fakeTool('shell_exec')],
+      systemPrompt: 'BASE PROMPT',
+      filterHarnessSections: (prompt, ids) => {
+        capturedIds = ids;
+        return `${prompt} (filtered)`;
+      },
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.deepEqual([...(capturedIds ?? [])], ['web_fetch']);
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT (filtered)');
+  });
+
+  it('leaves config.systemPrompt unfiltered when filterHarnessSections is not provided', async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('web_fetch');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch')],
+      systemPrompt: 'BASE PROMPT',
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT');
+  });
+});
+
 describe('computeRunSummary', () => {
   function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
     return {

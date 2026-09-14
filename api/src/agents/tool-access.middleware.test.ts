@@ -225,4 +225,47 @@ describe('agents/tool-access.middleware', () => {
       expect(systemContent).to.include('click carefully');
     });
   });
+
+  describe('harness section filtering (issue #154)', () => {
+    const HARNESS_TEXT =
+      '<identity>\nalways here\n</identity>\n\n<web_fetch>\nfetch guidance\n</web_fetch>\n\n<shell_execution>\nshell guidance\n</shell_execution>';
+
+    it("strips a disabled tool's section even when no tool has custom instructions set", async () => {
+      // Regression test: wrapModelCall used to early-return before ever
+      // touching systemMessage when instructionBlocks was empty — the common
+      // case, since per-tool instructions are opt-in and empty by default.
+      // That would have silently defeated section-filtering on every call
+      // with no custom instructions set, which is most of them.
+      toolsConfig['shell_exec'] = { enabled: false };
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch', 'shell_exec'], 't1', HARNESS_TEXT),
+      );
+      expect(systemContent).to.not.include('<shell_execution>');
+      expect(systemContent).to.include('<web_fetch>');
+      expect(systemContent).to.include('<identity>');
+    });
+
+    it('keeps every section whose tool is enabled', async () => {
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch', 'shell_exec'], 't1', HARNESS_TEXT),
+      );
+      expect(systemContent).to.include('<web_fetch>');
+      expect(systemContent).to.include('<shell_execution>');
+    });
+
+    it('filters sections and still appends instruction blocks in the same call', async () => {
+      toolsConfig['shell_exec'] = { enabled: false };
+      toolsConfig['web_fetch'] = { instructions: 'Always summarize concisely.' };
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch', 'shell_exec'], 't1', HARNESS_TEXT),
+      );
+      expect(systemContent).to.not.include('<shell_execution>');
+      expect(systemContent).to.include('<web_fetch>');
+      expect(systemContent).to.include('<tool_guidance:web_fetch>');
+      expect(systemContent).to.include('Always summarize concisely.');
+    });
+  });
 });
