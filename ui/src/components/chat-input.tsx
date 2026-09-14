@@ -572,7 +572,9 @@ export function ChatInput({
               }}
             >
               <div className="font-mono text-sm font-semibold">#{tool.toolId}</div>
-              <div className="text-xs text-muted-foreground max-w-[70ch]">{tool.description}</div>
+              <div className="text-xs text-muted-foreground max-w-[70ch] line-clamp-3">
+                {tool.description}
+              </div>
             </div>
           ))}
         </div>
