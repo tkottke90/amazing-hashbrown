@@ -459,7 +459,23 @@ describe('ChatInput — #tool-name autocomplete', () => {
 
     fireEvent.mouseDown(screen.getByText('#web_fetch'));
 
-    expect(textarea.value).toBe('please use web_fetch  to fetch this');
+    // The leading # must survive the replacement — the backend's
+    // extractRequestedToolIds only matches a #-prefixed token; dropping the
+    // # here would silently make the directive a no-op server-side.
+    expect(textarea.value).toBe('please use #web_fetch  to fetch this');
+  });
+
+  it('preserves the # for an MCP-style toolId containing a colon', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'mcp-gateway:pushover-send' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#mcp' } });
+    await waitFor(() => expect(screen.getByText('#mcp-gateway:pushover-send')).toBeInTheDocument());
+
+    fireEvent.mouseDown(screen.getByText('#mcp-gateway:pushover-send'));
+
+    expect(textarea.value).toBe('#mcp-gateway:pushover-send ');
   });
 
   it('a second # later in the same message retriggers the dropdown after typing past the first', async () => {

@@ -393,7 +393,7 @@ export function ChatInput({
     const start = activeHashStart.value;
     if (start === null) return;
     const end = start + 1 + toolMenuQuery.value.length;
-    const insertion = `${tool.toolId} `;
+    const insertion = `#${tool.toolId} `;
     const newValue = value.slice(0, start) + insertion + value.slice(end);
     const newCaret = start + insertion.length;
 
