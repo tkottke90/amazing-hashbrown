@@ -17,11 +17,17 @@ function fakeTool(name: string): any {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function fakeRequest(toolNames: string[], threadId?: string, systemText = 'base prompt'): any {
+function fakeRequest(
+  toolNames: string[],
+  threadId?: string,
+  systemText = 'base prompt',
+  requestedToolIds: string[] = [],
+): any {
   return {
     tools: toolNames.map(fakeTool),
     runtime: { configurable: threadId ? { thread_id: threadId } : {} },
     systemMessage: new SystemMessage(systemText),
+    state: { requestedToolIds },
   };
 }
 
@@ -223,6 +229,52 @@ describe('agents/tool-access.middleware', () => {
       );
       expect(systemContent).to.include('<tool_guidance:playwright:browser_click>');
       expect(systemContent).to.include('click carefully');
+    });
+  });
+
+  describe('required-tool injection (issue #172)', () => {
+    it('appends a required-tool block for a requested id that is bound/enabled', async () => {
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch'], 't1', 'base prompt', ['web_fetch']),
+      );
+      expect(systemContent).to.include('<required-tool id="web_fetch">');
+      expect(systemContent).to.include(
+        'The user has explicitly asked that you use the web_fetch tool to complete this request',
+      );
+      expect(systemContent).to.include('</required-tool>');
+    });
+
+    it('drops a requested id that is not bound/enabled for this call (typo or disabled)', async () => {
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch'], 't1', 'base prompt', ['not_a_real_tool']),
+      );
+      expect(systemContent).to.not.include('required-tool');
+    });
+
+    it('drops a requested id for a tool that was filtered out by this call (globally disabled)', async () => {
+      toolsConfig['shell_exec'] = { enabled: false };
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch', 'shell_exec'], 't1', 'base prompt', ['shell_exec']),
+      );
+      expect(systemContent).to.not.include('required-tool');
+    });
+
+    it('leaves output unchanged when requestedToolIds is empty (the common case)', async () => {
+      const { systemContent } = await runMiddleware(middleware, fakeRequest(['web_fetch'], 't1'));
+      expect(systemContent).to.equal('base prompt');
+    });
+
+    it('produces both a tool_guidance block and a required-tool block for the same tool in one call', async () => {
+      toolsConfig['web_fetch'] = { instructions: 'Always summarize concisely.' };
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch'], 't1', 'base prompt', ['web_fetch']),
+      );
+      expect(systemContent).to.include('<tool_guidance:web_fetch>');
+      expect(systemContent).to.include('<required-tool id="web_fetch">');
     });
   });
 

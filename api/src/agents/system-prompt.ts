@@ -893,6 +893,29 @@ can't know about. Don't reason your way out of checking just because the topic s
 could plausibly answer without it — checking first and finding nothing costs one extra call; skipping the
 check and missing a documented, setup-specific answer is the actual failure.`;
 
+// Documents both message-prefix notations the user may write, so the model
+// recognizes them without having to infer their meaning from context alone.
+// `/skill-name` already exists (skill-expansion.middleware.ts); `#tool-name`
+// is new (issue #172) — tool-syntax.middleware.ts detects it and
+// tool-access.middleware.ts turns a matched, currently-bound tool into a
+// <required-tool id="..."> instruction appended to this same system message.
+// An unmatched or currently-unavailable #name produces no instruction at
+// all — the last sentence exists so the model doesn't go looking for one or
+// comment on its absence when a user's message happens to contain a bare #.
+const NOTATION_SECTION = `Two prefixes carry special meaning when they appear in a user's message:
+
+- \`/skill-name\` invokes a skill — its instructions replace or extend the message content for this turn.
+- \`#tool-name\` marks a tool the user is explicitly requiring for this request. When a matching tool is
+currently available to you, you will also see a \`<required-tool id="tool-name">\` instruction elsewhere in
+this system message — treat that as a directive overriding your own default tool choice, not as a
+suggestion to weigh against other options.
+
+Both prefixes only take effect through the mechanism above — a \`<required-tool>\` instruction is either
+present or it isn't. If a message contains \`#something\` but no matching \`<required-tool>\` instruction
+appears, the name didn't match any tool currently available to you (a typo, or a real tool that's
+disabled right now); this needs no reaction from you — proceed with the request normally, using your own
+judgment for tool selection as you would if the \`#\` text weren't there.`;
+
 interface HarnessSection {
   tag: string;
   content: string;
@@ -930,6 +953,7 @@ const WIKI_TOOL_IDS = [
 const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
+  { tag: 'notation', content: NOTATION_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   {

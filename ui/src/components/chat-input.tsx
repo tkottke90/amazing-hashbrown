@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TextEllipsis } from '@/components/text-ellipsis';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { fetchSkills, type SkillInfo } from '@/services/skills-api';
+import { fetchThreadTools, type ThreadToolItem } from '@/services/tool-settings-api';
 import {
   uploadArtifact,
   deleteArtifact,
@@ -131,6 +132,33 @@ export function ChatInput({
   const menuItems = useSignal<SkillInfo[]>([]);
   const menuIndex = useSignal(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // #tool-name autocomplete (issue #172). Unlike the /-skill menu above,
+  // this must trigger anywhere in the message, not just at position 0 — see
+  // findActiveHashToken below — and selection replaces only the matched
+  // token span, not the whole textarea value (see selectTool).
+  const toolMenuOpen = useSignal(false);
+  const toolMenuItems = useSignal<ThreadToolItem[]>([]);
+  const toolMenuIndex = useSignal(0);
+  const toolMenuQuery = useSignal('');
+  // Index of the '#' that opened the currently-active menu, or null when no
+  // token is active — selectTool() needs this (plus toolMenuQuery's current
+  // length) to know exactly which span of `value` to replace.
+  const activeHashStart = useSignal<number | null>(null);
+  const toolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // fetchThreadTools() has no server-side search param and isn't cached
+  // anywhere outside the Edit Tools drawer (ui/src/hooks/use-thread-tools.ts
+  // is drawer-lifecycle-coupled, not a general-purpose cache) — fetch once
+  // per thread the first time '#' is typed, then filter client-side on every
+  // subsequent keystroke without refetching.
+  const threadToolsCache = useSignal<{ threadId: string; tools: ThreadToolItem[] } | null>(null);
+  // Captured from the native input/keydown event target on every keystroke —
+  // Textarea (ui/src/components/ui/textarea.tsx) is a plain function
+  // component that spreads props onto a native <textarea> without
+  // forwardRef, so nothing here can rely on a ref prop reaching the DOM
+  // node. Reading it off the event instead (same element either way) avoids
+  // needing to touch that shared component.
+  const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
 
   const stagedAttachment = useSignal<StagedAttachment | null>(null);
   const attachmentError = useSignal<string | null>(null);
@@ -298,6 +326,97 @@ export function ChatInput({
     menuIndex.value = 0;
   }
 
+  // Finds a '#token' whose characters run right up to `caret`, if there is
+  // one — the token itself may be empty ('#' just typed with nothing after
+  // it yet). Requires a word boundary before the '#' (start of string or
+  // preceded by whitespace), so "issue#172" doesn't trigger. Character class
+  // matches tool-syntax.ts's backend regex exactly (#([a-z0-9][a-z0-9_:-]*)),
+  // loosened only to allow the in-progress empty case.
+  function findActiveHashToken(
+    text: string,
+    caret: number,
+  ): { start: number; query: string } | null {
+    let i = caret;
+    while (i > 0 && /[a-z0-9_:-]/.test(text[i - 1] ?? '')) i--;
+    if (i === 0 || text[i - 1] !== '#') return null;
+    const hashIdx = i - 1;
+    if (hashIdx > 0 && !/\s/.test(text[hashIdx - 1] ?? '')) return null;
+    return { start: hashIdx, query: text.slice(i, caret) };
+  }
+
+  function updateToolMenu(newValue: string, caret: number) {
+    if (isGenerating || !threadId) {
+      toolMenuOpen.value = false;
+      activeHashStart.value = null;
+      return;
+    }
+
+    const active = findActiveHashToken(newValue, caret);
+    if (!active) {
+      toolMenuOpen.value = false;
+      activeHashStart.value = null;
+      return;
+    }
+    activeHashStart.value = active.start;
+    toolMenuQuery.value = active.query;
+
+    function applyFilter(tools: ThreadToolItem[]) {
+      // Only enabled tools — anything else would be silently ignored if
+      // picked (per tool-access.middleware.ts's own filter), so showing a
+      // disabled tool here would be misleading.
+      const filtered = tools.filter((t) => t.enabled && t.toolId.startsWith(active!.query));
+      toolMenuItems.value = filtered;
+      toolMenuIndex.value = 0;
+      toolMenuOpen.value = filtered.length > 0;
+    }
+
+    const cached = threadToolsCache.value;
+    if (cached && cached.threadId === threadId) {
+      applyFilter(cached.tools);
+      return;
+    }
+
+    if (toolDebounceRef.current) clearTimeout(toolDebounceRef.current);
+    toolDebounceRef.current = setTimeout(() => {
+      fetchThreadTools(threadId)
+        .then((res) => {
+          threadToolsCache.value = { threadId, tools: res.tools };
+          applyFilter(res.tools);
+        })
+        .catch(() => {
+          toolMenuOpen.value = false;
+        });
+    }, 150);
+  }
+
+  function selectTool(tool: ThreadToolItem) {
+    const start = activeHashStart.value;
+    if (start === null) return;
+    const end = start + 1 + toolMenuQuery.value.length;
+    const insertion = `${tool.toolId} `;
+    const newValue = value.slice(0, start) + insertion + value.slice(end);
+    const newCaret = start + insertion.length;
+
+    // Forces the parent's setState (and this component's re-render with the
+    // new `value` prop) to complete synchronously, so the DOM textarea
+    // already reflects newValue before setSelectionRange below runs —
+    // same technique already used in this file for the provider sub-menu
+    // (see openProviderMenuNow), for the same reason: without it, the
+    // browser's own caret-placement default would win the race instead.
+    flushSync(() => {
+      onValueChange(newValue);
+    });
+    const el = textareaElRef.current;
+    if (el) {
+      el.setSelectionRange(newCaret, newCaret);
+      el.focus();
+    }
+
+    toolMenuOpen.value = false;
+    toolMenuIndex.value = 0;
+    activeHashStart.value = null;
+  }
+
   function handleValueChange(newValue: string) {
     onValueChange(newValue);
 
@@ -350,6 +469,30 @@ export function ChatInput({
         event.preventDefault();
         const skill = menuItems.value[menuIndex.value];
         if (skill) selectSkill(skill);
+        return;
+      }
+    }
+
+    if (toolMenuOpen.value) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        toolMenuIndex.value = Math.min(toolMenuIndex.value + 1, toolMenuItems.value.length - 1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        toolMenuIndex.value = Math.max(toolMenuIndex.value - 1, 0);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        toolMenuOpen.value = false;
+        return;
+      }
+      if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+        event.preventDefault();
+        const tool = toolMenuItems.value[toolMenuIndex.value];
+        if (tool) selectTool(tool);
         return;
       }
     }
@@ -411,6 +554,30 @@ export function ChatInput({
         </div>
       )}
 
+      {toolMenuOpen.value && toolMenuItems.value.length > 0 && (
+        <div
+          data-slot="chat-input-tool-menu"
+          className="absolute bottom-full left-0 z-50 mb-1 w-fit overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+        >
+          {toolMenuItems.value.map((tool, i) => (
+            <div
+              key={tool.toolId}
+              className={cn('cursor-pointer px-3 py-2', i === toolMenuIndex.value && 'bg-accent')}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectTool(tool);
+              }}
+              onMouseEnter={() => {
+                toolMenuIndex.value = i;
+              }}
+            >
+              <div className="font-mono text-sm font-semibold">#{tool.toolId}</div>
+              <div className="text-xs text-muted-foreground max-w-[70ch]">{tool.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div
         className="grid w-full grid-cols-3 gap-2 overflow-hidden rounded-[4px] border border-border p-2"
         style={{
@@ -438,7 +605,12 @@ export function ChatInput({
         <div data-slot="chat-input-body" style={{ gridArea: 'input' }} className="min-w-0">
           <Textarea
             value={value}
-            onInput={(event) => handleValueChange((event.target as HTMLTextAreaElement).value)}
+            onInput={(event) => {
+              const target = event.target as HTMLTextAreaElement;
+              textareaElRef.current = target;
+              handleValueChange(target.value);
+              updateToolMenu(target.value, target.selectionStart ?? target.value.length);
+            }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}

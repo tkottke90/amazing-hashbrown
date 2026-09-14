@@ -1,0 +1,83 @@
+suite:
+  id: explicit-tool-syntax
+  name: Explicit Tool Syntax (#tool-name)
+  purpose: >
+    Verifies the model actually obeys a #tool-name directive (issue #172) —
+    not just that tool-access.middleware.ts correctly constructs the
+    <required-tool> block, which system-prompt.test.ts and
+    tool-access.middleware.test.ts already cover at the unit level. These
+    scenarios exercise real model behavior: does #tool-name change which
+    tool gets called versus the model's own unprompted default, and does it
+    coexist correctly with the model's existing tool-ordering rules rather
+    than overriding them incorrectly. bin/eval.ts's evalTools list has no
+    generic web-search tool (only web_fetch, which needs an explicit URL),
+    so these scenarios use wiki_search vs. wiki_locate as the
+    directive-vs-default pair — see ets-001/ets-002 below for why that's a
+    genuine, already-established contract to override, not an artificial one.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: ets-001-directive-overrides-default-routing
+    name: '#wiki_search forces a direct call despite the cold-start wiki_locate default'
+    purpose: >
+      Per system-prompt.ts's MEMORY_SECTION/WIKI_NAVIGATION_SECTION (see
+      suites/wiki-navigation.yaml's wnav-001), a cold-start personal-preference
+      question with no domain established yet should normally route through
+      wiki_locate first, not wiki_search directly. Explicitly requiring
+      wiki_search via #wiki_search should override that default and produce
+      a direct wiki_search call instead — this is the scenario that actually
+      matters most: proving the directive changes behavior versus what the
+      model would do unprompted, not just that it calls a tool it was going
+      to call anyway.
+    type: tool-call
+    input: '#wiki_search What is my favorite programming language?'
+    tool: wiki_search
+
+  - id: ets-002-baseline-without-directive
+    name: 'Same cold-start question without #-syntax follows the normal wiki_locate-first default'
+    purpose: >
+      Companion/control for ets-001 — same request, same cold-start
+      (no-domain-established) condition, minus the #wiki_search directive.
+      Demonstrates the baseline this feature is meant to override:
+      unlike a genuinely ambiguous case, this one is already a deterministic,
+      previously-eval'd contract (wnav-001), so it's asserted here, not just
+      documented — a regression in either scenario means the #-directive
+      either isn't taking effect (ets-001) or is bleeding into turns that
+      never used it (ets-002).
+    type: tool-call
+    input: 'What is my favorite programming language?'
+    tool: wiki_locate
+
+  - id: ets-003-multiple-tokens-respect-existing-ordering
+    name: 'Multiple #tool-name tokens in one message do not override natural tool ordering'
+    purpose: >
+      Both web_fetch and wiki_create_page are explicitly required in the
+      same message, but nothing has been fetched yet — the correct first
+      call is still web_fetch, not wiki_create_page. Confirms
+      <required-tool> directives layer additively (both tools are
+      emphasized as required for the overall request) rather than forcing
+      whichever one is named first to be called first, which would break
+      the fetch-before-write contract WEB_FETCH_SECTION/WIKI_INGEST_SECTION
+      already establish.
+    type: tool-call
+    input: '#web_fetch #wiki_create_page fetch https://example.com/article and save it to the wiki'
+    tool: web_fetch
+    argChecks:
+      - path: url
+        match: contains
+        value: 'https://example.com/article'
+
+  - id: ets-004-unmatched-token-silently-ignored
+    name: 'A #name matching no real tool does not derail the request'
+    purpose: >
+      #not_a_real_tool matches nothing in tool-syntax.ts's
+      extractRequestedToolIds/buildRequiredToolBlocks filter (it's dropped
+      silently, per the design's decision — no error, no user-facing
+      feedback). Confirms this doesn't confuse the model into refusing the
+      request, asking about the unrecognized tag, or hallucinating a tool
+      call by that name — it should just proceed with the request normally,
+      here falling back to the same wiki_locate-first default as ets-002
+      since #not_a_real_tool contributes no <required-tool> instruction.
+    type: tool-call
+    input: '#not_a_real_tool What is my favorite programming language?'
+    tool: wiki_locate

@@ -356,3 +356,150 @@ describe('ChatInput — vision-capability warning badge', () => {
     );
   });
 });
+
+// #tool-name autocomplete (issue #172). Unlike the /-skill menu, this must
+// trigger anywhere in the message (not just position 0) and support more
+// than one occurrence per message — see chat-input.tsx's findActiveHashToken.
+describe('ChatInput — #tool-name autocomplete', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function makeToolItem(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      toolId: 'web_fetch',
+      name: 'Web Fetch',
+      description: 'Fetches a URL and returns its content.',
+      category: 'built-in',
+      alwaysOn: false,
+      mcpServer: null,
+      lastSeenAt: null,
+      lastStatus: null,
+      enabled: true,
+      defaultInclude: { chat: true, subAgent: true, autonomous: true },
+      instructions: '',
+      selected: true,
+      ...overrides,
+    };
+  }
+
+  function mockThreadTools(tools: unknown[]) {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ customized: false, tools }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it('opens the dropdown when # appears mid-message', async () => {
+    mockThreadTools([makeToolItem()]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: 'please use #web_fetch' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('opens the dropdown when # is the first character (parity with /)', async () => {
+    mockThreadTools([makeToolItem()]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('filters the list client-side as more of the name is typed, without a second fetch', async () => {
+    const fetchMock = mockThreadTools([
+      makeToolItem({ toolId: 'web_fetch' }),
+      makeToolItem({ toolId: 'shell_exec', name: 'Shell Exec' }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+    expect(screen.getByText('#shell_exec')).toBeInTheDocument();
+
+    fireEvent.input(textarea, { target: { value: '#web' } });
+    await waitFor(() => expect(screen.queryByText('#shell_exec')).not.toBeInTheDocument());
+    expect(screen.getByText('#web_fetch')).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('only lists enabled tools', async () => {
+    mockThreadTools([
+      makeToolItem({ toolId: 'web_fetch', enabled: true }),
+      makeToolItem({ toolId: 'shell_exec', name: 'Shell Exec', enabled: false }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+    expect(screen.queryByText('#shell_exec')).not.toBeInTheDocument();
+  });
+
+  it('selecting an item replaces only the #token span, not the whole message', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, {
+      target: { value: 'please use #web to fetch this', selectionStart: 15, selectionEnd: 15 },
+    });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+
+    fireEvent.mouseDown(screen.getByText('#web_fetch'));
+
+    expect(textarea.value).toBe('please use web_fetch  to fetch this');
+  });
+
+  it('a second # later in the same message retriggers the dropdown after typing past the first', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+
+    // Continuing to type past the token closes the menu naturally — the
+    // caret no longer sits immediately after a '#...' run.
+    fireEvent.input(textarea, { target: { value: '#web_fetch this and ' } });
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch this and #web_fetch' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('does not open when there is no threadId', () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ControlledChatInput />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+  });
+
+  it('does not trigger for a # embedded in a word (no preceding word boundary)', () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: 'issue#172' } });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('#172')).not.toBeInTheDocument();
+  });
+});

@@ -29,6 +29,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</identity>');
       expect(result).to.include('<memory>');
       expect(result).to.include('</memory>');
+      expect(result).to.include('<notation>');
+      expect(result).to.include('</notation>');
       expect(result).to.include('<wiki_navigation>');
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
@@ -43,14 +45,15 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(8);
-      expect(closes).to.equal(8);
+      expect(opens).to.equal(9);
+      expect(closes).to.equal(9);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, wiki navigation, web fetch, wiki ingest, rlm, shell execution, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
+      const notationTagIndex = result.indexOf('<notation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
       const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
@@ -59,6 +62,7 @@ describe('agents/system-prompt', () => {
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
+      expect(notationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(wikiIngestTagIndex).to.be.greaterThan(-1);
@@ -66,12 +70,20 @@ describe('agents/system-prompt', () => {
       expect(shellTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
-      expect(memoryTagIndex).to.be.lessThan(wikiTagIndex);
+      expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
+      expect(notationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(wikiIngestTagIndex);
       expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
       expect(shellTagIndex).to.be.lessThan(askUserTagIndex);
+    });
+
+    it('includes notation guidance explaining / for skills and # for required tools', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include('/skill-name');
+      expect(result).to.include('#tool-name');
+      expect(result).to.include('required-tool');
     });
 
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
