@@ -16,12 +16,12 @@ function fakeTool(name: string): any {
   return { name };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fakeRequest(
   toolNames: string[],
   threadId?: string,
   systemText = 'base prompt',
   requestedToolIds: string[] = [],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   return {
     tools: toolNames.map(fakeTool),

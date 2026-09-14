@@ -37,7 +37,8 @@ describe('agents/tool-syntax', () => {
     });
 
     it('finds a token embedded in a longer skill-expanded body', () => {
-      const expanded = 'Collect the fields, then call create_workspace.\n\n#web_fetch check this first';
+      const expanded =
+        'Collect the fields, then call create_workspace.\n\n#web_fetch check this first';
       expect(extractRequestedToolIds(expanded)).to.deep.equal(['web_fetch']);
     });
 

@@ -768,10 +768,7 @@ describe('executeScenario — required-tool injection (issue #172)', () => {
     await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
 
     const input = getLastInput() as SystemMessage[];
-    assert.equal(
-      input[0]!.content,
-      'BASE PROMPT (filtered)\n\n<required-tool id="web_fetch"/>',
-    );
+    assert.equal(input[0]!.content, 'BASE PROMPT (filtered)\n\n<required-tool id="web_fetch"/>');
   });
 });
 

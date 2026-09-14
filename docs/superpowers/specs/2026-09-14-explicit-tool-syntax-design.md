@@ -20,7 +20,7 @@ When multiple tools with similar capabilities are bound (e.g. a generic `web_fet
 
 ## Prior art this design reuses
 
-- **`/skill-name` detection and expansion** — `api/src/agents/skill-expansion.middleware.ts`. A `beforeAgent` hook rewrites the *latest* human message's content for the LLM call only; the checkpoint always keeps the original raw text. Unknown skill names get an inline bracketed marker (`[Skill "/x" not found — ...]`) substituted in rather than an error response.
+- **`/skill-name` detection and expansion** — `api/src/agents/skill-expansion.middleware.ts`. A `beforeAgent` hook rewrites the _latest_ human message's content for the LLM call only; the checkpoint always keeps the original raw text. Unknown skill names get an inline bracketed marker (`[Skill "/x" not found — ...]`) substituted in rather than an error response.
 - **Cross-middleware state passing** — `api/src/agents/skill-gated-tools.middleware.ts`'s `gatedSkillStateSchema` (`z.object({ activeGatedSkill: z.string().nullable().default(null) })`). One middleware's `beforeAgent` writes a field; a later middleware's `wrapModelCall` reads it via `request.state.<field>`. This is the established mechanism for "detect something early, act on it later where the data you need is already computed."
 - **Per-call system-message instruction blocks** — `api/src/agents/tool-access.middleware.ts`'s `instructionBlocks`/`<tool_guidance:id>` construction (lines ~102–115, ~139–141). Built fresh on every model call from the thread's already-resolved effective tool-id set (`enabledIds`, via `resolveEffectiveToolIds`), appended to the (already `filterHarnessSections()`-filtered, per issue #154) system message. This is the closest existing analog to the issue's "message footer," and the natural home for `<required-tool>` blocks — same tool-id set, same append point.
 - **Tool-scoped system-prompt sections** — `docs/superpowers/specs/2026-09-13-tool-scoped-system-prompt-sections-design.md` (issue #154). Establishes the pattern that structural prompt content lives in `system-prompt.ts`, and dynamic/per-call content is layered on top inside `tool-access.middleware.ts`. This design's new system-prompt section (§4) and `<required-tool>` blocks (§3) both follow that split.
@@ -30,21 +30,22 @@ When multiple tools with similar capabilities are bound (e.g. a generic `web_fet
 
 ## Decisions already settled (via brainstorming Q&A)
 
-| Question | Decision |
-|---|---|
-| Footer visible in chat UI? | No — hidden from the rendered chat, same as skill expansion. Visible to the LLM and to whatever already captures the outbound model request for observability (inherited for free — no new observability work). |
-| Force-bind a disabled/unavailable tool? | No. `#tool-name` only adds emphasis among tools already bound for the call. Never overrides thread/global tool-access gating. |
-| Unknown or disabled `#tool-name`? | Silently ignored. No error marker, no user-facing feedback, no log noise. Same handling whether it's a typo or a real-but-disabled tool. |
-| Match precision | Exact, case-sensitive match against a tool's full display id (e.g. `web_fetch`, `playwright:browser_click`). No fuzzy or short-name matching. |
-| Token boundary | `#` followed by `[a-z0-9][a-z0-9_:-]*`, terminated at the next character outside that class (whitespace or punctuation). Trailing punctuation (`#web_fetch.`) is not consumed into the candidate token. |
-| Footer placement | System-message block (new `<required-tool id="...">` blocks), not a human-message rewrite — see Architecture §1 for why. |
-| Dropdown tool list | Enabled tools only for the current thread. Nothing shown can silently no-op if selected. |
+| Question                                | Decision                                                                                                                                                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Footer visible in chat UI?              | No — hidden from the rendered chat, same as skill expansion. Visible to the LLM and to whatever already captures the outbound model request for observability (inherited for free — no new observability work). |
+| Force-bind a disabled/unavailable tool? | No. `#tool-name` only adds emphasis among tools already bound for the call. Never overrides thread/global tool-access gating.                                                                                   |
+| Unknown or disabled `#tool-name`?       | Silently ignored. No error marker, no user-facing feedback, no log noise. Same handling whether it's a typo or a real-but-disabled tool.                                                                        |
+| Match precision                         | Exact, case-sensitive match against a tool's full display id (e.g. `web_fetch`, `playwright:browser_click`). No fuzzy or short-name matching.                                                                   |
+| Token boundary                          | `#` followed by `[a-z0-9][a-z0-9_:-]*`, terminated at the next character outside that class (whitespace or punctuation). Trailing punctuation (`#web_fetch.`) is not consumed into the candidate token.         |
+| Footer placement                        | System-message block (new `<required-tool id="...">` blocks), not a human-message rewrite — see Architecture §1 for why.                                                                                        |
+| Dropdown tool list                      | Enabled tools only for the current thread. Nothing shown can silently no-op if selected.                                                                                                                        |
 
 ---
 
 ## Scope
 
 **In scope:**
+
 - Detect `#tool-name` tokens (one or more, anywhere in the message) in the latest human message, after skill expansion has run.
 - Validate each candidate against the thread's currently-bound/enabled tool ids; append one `<required-tool id="...">` block per match to the per-call system message.
 - New always-on system-prompt section documenting `/` (skill) and `#` (required tool) notation.
@@ -52,6 +53,7 @@ When multiple tools with similar capabilities are bound (e.g. a generic `web_fet
 - Unit tests for detection, validation/injection, and system-prompt content; frontend tests for dropdown trigger/selection.
 
 **Out of scope:**
+
 - Force-binding a tool that isn't currently enabled for the thread.
 - Fuzzy or partial tool-name matching.
 - Any user-facing error/warning UI for an unmatched `#tool-name` (silently ignored per the decision above).
@@ -78,7 +80,7 @@ createContextWindowMiddleware(...),
 afterAgentMiddleware,
 ```
 
-Running after `skillExpansionMiddleware` means this middleware always sees the *final* content for the turn — if a skill was invoked, that's the expanded skill body plus the user's trailing args; otherwise it's the user's raw message. Either way, one code path finds every `#tool-name` token regardless of whether it came from the user's own words or was carried through in a skill's args. This is also how the issue's second requirement ("apply the same tool syntax to skill instructions, after skill population, before the LLM call") is satisfied — it isn't separate work, it falls out of running this middleware after `skillExpansionMiddleware` in the existing chain.
+Running after `skillExpansionMiddleware` means this middleware always sees the _final_ content for the turn — if a skill was invoked, that's the expanded skill body plus the user's trailing args; otherwise it's the user's raw message. Either way, one code path finds every `#tool-name` token regardless of whether it came from the user's own words or was carried through in a skill's args. This is also how the issue's second requirement ("apply the same tool syntax to skill instructions, after skill population, before the LLM call") is satisfied — it isn't separate work, it falls out of running this middleware after `skillExpansionMiddleware` in the existing chain.
 
 It finds the latest human message the same way `skillExpansionMiddleware` does (walk `state.messages` backwards to the last `human`-typed entry), regex-scans its string content (see §2), dedupes matches, and writes them to new shared state:
 
@@ -111,7 +113,10 @@ Inside `tool-access.middleware.ts`, immediately after `enabledIds`/`displayIdByM
 ```ts
 const requiredToolBlocks = request.state.requestedToolIds
   .filter((id) => enabledIds.has(id))
-  .map((id) => `<required-tool id="${id}">The user has explicitly asked that you use the ${id} tool to complete this request</required-tool>`);
+  .map(
+    (id) =>
+      `<required-tool id="${id}">The user has explicitly asked that you use the ${id} tool to complete this request</required-tool>`,
+  );
 ```
 
 `requiredToolBlocks` is appended to the system message the same way `instructionBlocks` is today — joined in after the filtered harness content and any `<tool_guidance:id>` blocks. A `requestedToolIds` entry not present in `enabledIds` (typo, or a real tool that's currently disabled) is dropped by the `.filter()` with no further handling — same code path for both cases, no way to distinguish "doesn't exist" from "exists but disabled," which is intentional (§ Decisions: both are silently ignored).
@@ -131,11 +136,12 @@ Exact prose is an implementation-time task per the same convention issue #154 es
 ### 5. UI: `#`-tool autocomplete dropdown
 
 **Reused as-is:**
+
 - Data: `fetchThreadTools(threadId)` (`ui/src/services/tool-settings-api.ts`), already backing the Edit Tools drawer. Returns `ThreadToolItem[]` with `toolId`, `name`, `description`, `enabled`. No new API endpoint.
 - Visual/keyboard shell: inline-positioned dropdown, Arrow Up/Down to navigate, Enter/Tab to select, Escape to close, mouse hover/click — same interaction contract as the `/`-skill menu.
 
 **Not reused — different trigger and selection mechanics:**
-The existing `/`-skill dropdown (`chat-input.tsx`) triggers only when `/` is the first character of the entire input (`newValue.startsWith('/')`) and, on selection, replaces the *whole* textarea value (`onValueChange(`${skill.slashCommand} `)`). That matches `/skill`'s own whole-message-prefix semantics. `#tool-name` must work "regardless of message position" and support multiple occurrences in one message (per the issue's explicit requirement and the multi-tool example), so the trigger needs real cursor-relative detection instead:
+The existing `/`-skill dropdown (`chat-input.tsx`) triggers only when `/` is the first character of the entire input (`newValue.startsWith('/')`) and, on selection, replaces the _whole_ textarea value (`onValueChange(`${skill.slashCommand} `)`). That matches `/skill`'s own whole-message-prefix semantics. `#tool-name` must work "regardless of message position" and support multiple occurrences in one message (per the issue's explicit requirement and the multi-tool example), so the trigger needs real cursor-relative detection instead:
 
 - On each keystroke, inspect the token immediately preceding the caret. If it matches `#` followed by the in-progress name (§2's character class), open the dropdown filtered by what's typed so far.
 - On selection, replace only that `#token` span (from the `#` to the caret) with the chosen tool's id plus a trailing space — never the full message content.
