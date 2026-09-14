@@ -94,6 +94,15 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include('cold-start turn');
     });
 
+    it('gates the cold-start wiki_locate default on the absence of a required-tool directive', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Reach for wiki_locate before responding, unless a\n' +
+          '`<required-tool>` instruction (see notation) already named a different tool to call this turn — that\n' +
+          'directive is the decision, not a secondary consideration to weigh against this default.',
+      );
+    });
+
     it('includes guidance against falling back to a generic AI disclaimer instead of checking the wiki', () => {
       expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
     });

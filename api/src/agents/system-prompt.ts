@@ -1001,10 +1001,32 @@ about wiki content, never as something you can answer from general knowledge or 
 // wiki-as-memory framing entirely and reverted to a stock "I'm an AI
 // language model and can't do real-time search" disclaimer instead of
 // reporting honestly that the wiki had nothing.
+//
+// Extended for suites/explicit-tool-syntax.yaml's ets-001, round 3 of a
+// 2026-09-14 auto-eval session (Ornith/Lemonade/local, judge local).
+// WIKI_NAVIGATION_SECTION's own directive-override gate (see its twentieth
+// entry) was holding on its own terms but ets-001 kept failing anyway —
+// Lemonade's reasoning traced the exact mechanism directly: it read this
+// section's "Reach for wiki_locate before responding" as a complete,
+// self-sufficient instruction, treating the pointer to wiki_navigation as
+// only covering *when it's safe to skip* wiki_locate, not whether a
+// `<required-tool>` directive could override the default outright — so a
+// #wiki_search directive got "noted" and then set aside as secondary to
+// this sentence's own imperative. This section is read before
+// wiki_navigation's gate, so a model that treats it as sufficient on its
+// own never reaches the correction downstream. Added the same override
+// clause here, at the point where the competing imperative actually lives,
+// rather than relying on a model reading far enough ahead to find it. Not
+// yet re-tested against Ornith's own round-3 failure (a different shape —
+// no mention of the directive at all — that may be independent flakiness
+// rather than this same mechanism). Re-run both models against ets-001
+// next round.
 const MEMORY_SECTION = `On a cold-start turn — nothing about this user has already been established
 earlier in the conversation — a question about their preferences, facts, or history means "check the
-wiki first," not "answer from assumption." Reach for wiki_locate before responding — see wiki_navigation
-for exactly when it's safe to skip straight to wiki_search instead. If the wiki genuinely has nothing on the topic, say so
+wiki first," not "answer from assumption." Reach for wiki_locate before responding, unless a
+\`<required-tool>\` instruction (see notation) already named a different tool to call this turn — that
+directive is the decision, not a secondary consideration to weigh against this default. Otherwise see
+wiki_navigation for exactly when it's safe to skip straight to wiki_search instead. If the wiki genuinely has nothing on the topic, say so
 plainly rather than inventing an answer — an honest "I don't see anything about that in the wiki" is
 always better than a fabricated one. That's also better than falling back on a generic "I'm an AI and
 can't do that" disclaimer — you do have a concrete way to check, the wiki, so check it and report what
