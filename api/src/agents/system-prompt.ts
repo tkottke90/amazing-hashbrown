@@ -517,6 +517,32 @@
 // reproducing the old prose paragraph verbatim. Re-run Ornith and Lemonade
 // against ets-002/ets-004 next round to confirm this closes the gap the way
 // it did the first time.
+//
+// Twentieth entry, re-run against the nineteenth entry's fix (2026-09-14,
+// Ornith/Lemonade/local, judge local). ets-002/ets-004 held for both models
+// (4/4 combined across two rounds now) — the restored example closed that
+// gap. But ets-001 failed for BOTH models this round, in a shape distinct
+// from every previous ets-001 failure this section's history has seen:
+// both explicitly identified the `<required-tool id="wiki_search">`
+// instruction in their reasoning (Ornith's trace even quotes it verbatim
+// and states "This means I should use wiki_search directly"), then talked
+// themselves out of calling it because they believed wiki_search needed a
+// wikiId they didn't have yet, and called wiki_locate first to obtain one.
+// Root cause: the gate paragraph says to call the required tool "directly
+// with whatever arguments the request implies," but never states that
+// wiki_search's wikiId is optional and that omitting it (searching across
+// every domain, per its own tool-list line above) is a valid way to
+// satisfy "whatever arguments the request implies" when no domain is
+// already known — so the model filled that gap with its own assumption
+// that an argument was missing, and treated the steps below as the
+// prerequisite for producing it. This is a materially different failure
+// from the eighteenth/nineteenth entries' "ignored the gate" shape, so not
+// treating it as a recurrence of an already-ceiling-flagged issue — it's
+// a new, well-understood gap with an obvious fix. Added one sentence to
+// the gate paragraph closing this specific loophole, with wiki_search
+// named concretely (the only currently-required-able wiki tool this
+// section's own suite exercises without a prerequisite argument). Re-run
+// Ornith and Lemonade against ets-001 next round to confirm.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -531,7 +557,10 @@ A \`<required-tool>\` instruction already resolved which tool to use this turn (
 call it directly with whatever arguments the request implies, skipping every step below. The
 steps below are how you resolve the tool and its arguments when no such instruction is present;
 they're not a checklist to run through regardless, and a topic that would otherwise call for
-wiki_locate doesn't override a directive that already answered the question.
+wiki_locate doesn't override a directive that already answered the question. This includes a
+required wiki_search with no domain already known: wikiId is optional and wiki_search already
+searches across every domain when it's omitted, so call it without one rather than calling
+wiki_locate first to produce a wikiId the directive never asked for.
 
 1. Resolve the domain.
    - The domain was already established earlier in this conversation → it's known; skip to step 2.

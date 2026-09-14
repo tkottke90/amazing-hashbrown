@@ -174,6 +174,15 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it("closes the wikiId-first loophole for a required wiki_search with no domain already known", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "This includes a\nrequired wiki_search with no domain already known: wikiId is optional and wiki_search already\n" +
+          "searches across every domain when it's omitted, so call it without one rather than calling\n" +
+          "wiki_locate first to produce a wikiId the directive never asked for.",
+      );
+    });
+
     it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
