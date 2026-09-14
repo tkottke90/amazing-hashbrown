@@ -422,6 +422,43 @@
 // the new example lands; if it reproduces in the same wiki_orient-first
 // shape with wording unchanged, that's evidence of a second Lemonade-
 // specific ceiling, not a remaining wording gap.
+//
+// Seventeenth entry, issue #186 (2026-09-14). Not a wording tightening like
+// entries one through sixteen — those all reacted to a specific failure
+// shape with a targeted sentence or example. This one is structural.
+// PR #184's follow-up measurement comment (7 identical-condition samples
+// per scenario, rounds 4-10 of that suite's auto-eval loop) confirmed
+// Lemonade's flakiness on suites/explicit-tool-syntax.yaml's baseline,
+// no-directive scenarios (ets-002/ets-004 — the same default domain-routing
+// behavior wnav-001/007/008/009/013 exercise here) is genuine sampling
+// variance, not a reachable wording gap: 4/7 pass on both, failures
+// scattered across different rounds with no common reasoning-shape cause.
+// The usual fix pattern this section has used 16 times — add a contrastive
+// example anchoring the specific failure — doesn't apply when there's no
+// single failure shape to anchor against.
+// Full design: docs/superpowers/specs/
+// 2026-09-14-wiki-navigation-section-restructure-design.md. Rewrote the
+// section from ~13 flowing prose paragraphs into a numbered decision
+// procedure (resolve domain -> resolve wiki_locate's result -> act on the
+// resolved wikiId -> priority overrides), on the hypothesis — drawn from
+// PR #184's own diagnosis of a related ceiling ("a structural fix... is
+// more likely to move it than another paragraph edit") — that less content
+// competing for attention, laid out as an explicit checklist, is more
+// resistant to sampling variance than the same substance spread across
+// narrative paragraphs. Every rule and worked example from entries 1-16
+// is preserved (verified against the specific eval scenario each protects
+// — see the design doc's rule-inventory table); nothing new was added,
+// nothing was cut for length. No local model server is reachable from the
+// environment this change was authored in, so none of this has been
+// re-run yet. Next real eval run should: (1) regression-check every
+// previously-passing suites/wiki-navigation.yaml scenario, since a
+// structural rewrite risks touching rules that already work even without
+// changing their substance; (2) re-measure Lemonade's ets-002/ets-004 pass
+// rate against this entry's 4/7 baseline once suites/explicit-tool-
+// syntax.yaml is available locally (PR #184 is unmerged as of this entry).
+// If the pass rate doesn't move, that's evidence the density hypothesis
+// itself doesn't hold for this model/section — not a cue to keep chasing
+// this with further wording edits, per interpreting-results.md §5.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -429,88 +466,78 @@ const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge bas
 - wiki_search: find specific pages by content, across every domain by default or scoped to one via wikiId.
 - wiki_read_page: read a specific page's full content once you've found it.
 
-When you don't already know which domain applies, call wiki_locate first. Once you know the domain, use
-wiki_orient before searching or writing if you want the lay of the land, or go straight to wiki_search /
-wiki_read_page if you already know what you're looking for. Don't repeat a step you don't need — but only
-skip wiki_locate when the domain was actually established earlier in the conversation, or the query names
-something so specific to the user's own stated preferences that no other domain could plausibly cover it.
-A topic merely sounding personal or plausible is not the same as an established domain — if you're
-inferring or guessing rather than already knowing, call wiki_locate first.
+Follow this procedure in order — each step only applies when the step before it didn't already
+resolve things.
 
-For example: "What's my favorite color?" has no plausible domain other than the user's own preferences —
-skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
-growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
-rather than guessing which one it means.
+1. Resolve the domain.
+   - The domain was already established earlier in this conversation → it's known; skip to step 2.
+   - The question is itself about where to look ("which part of the knowledge base should I
+     check?") → call wiki_locate. Sounding personal doesn't exempt this — a question about
+     routing is not a question about the fact itself.
+   - The topic names something so specific to the user's own stated preferences that no other
+     domain could plausibly cover it → skip wiki_locate; the domain is known, go to step 2.
+   - Anything else — a topic that merely sounds personal or plausible without being
+     domain-exclusive, or a technical/setup topic even phrased possessively ("my X") — call
+     wiki_locate. "My" says whose thing it is, not which domain documents it.
 
-That skip only covers a direct question about a concrete personal fact — not a question about where to
-look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain
-identification outright, so call wiki_locate — the topic sounding like the kind of thing you'd otherwise
-skip for doesn't matter when the question itself is about routing, not the fact.
+   Examples:
+   - "What's my favorite color?" → skip (no domain but the user's own could ever answer this).
+   - "What have you noticed about growth lately?" → wiki_locate (could be the user's growth or
+     your own reflective growth — genuinely ambiguous).
+   - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
+     (asking for routing outright, despite mentioning "personal preferences").
+   - "What was the process for generating a new NPM token for Verdaccio?" and "I need to generate
+     a new NPM token for my Verdaccio instance" → wiki_locate either way (a technical/setup topic
+     could belong to a dedicated technical domain just as easily as personal notes; the possessive
+     phrasing in the second one doesn't change that).
 
-A technical or setup-specific topic isn't an outright match for the user's own domain either, even when
-it's framed around their setup: "What was the process for generating a new NPM token for Verdaccio?" could
-belong to a dedicated technical domain just as easily as personal notes, so call wiki_locate first rather
-than jumping straight to wiki_search just because the topic feels specific enough to search for directly.
-That holds even when the phrasing is possessive — "I need to generate a new NPM token for my Verdaccio
-instance" names the same ambiguous technical topic as before; "my" describes whose instance it is, not
-which domain documents it, so it doesn't turn a technical topic into an outright single-domain match either.
+2. Resolve wiki_locate's result (skip if step 1 already gave you a known domain).
+   - No match → stop trying to route further; say plainly that nothing in the wiki covers this
+     rather than answering from an unrelated domain.
+   - One outright match → that wikiId is resolved; go to step 3.
+   - Multiple candidates (a tie) → narrow to one only using something real: the routing notes
+     attributing the request to a single candidate, or something the user actually said elsewhere
+     in the conversation. Don't invent a narrower context to retry wiki_locate with, and don't let
+     a candidate merely feeling more plausible to you count as real information — that's the same
+     mistake, and announcing your pick in your reply doesn't fix it either. If nothing real breaks
+     the tie, call ask_user and ask which domain they mean; a reported tie stays a tie until the
+     user or the conversation actually resolves it. Once narrowed, go to step 3.
 
-wiki_search takes an optional wikiId to scope it to a single domain — pass the resolved wikiId straight
-into wiki_search once you have one, whether it came from a single outright wiki_locate match, from
-narrowing a multi-candidate wiki_locate result yourself using the routing notes, or from a domain already
-established earlier in the conversation. There's no separate confinement step required first: working out
-which candidate applies is a decision you make from wiki_locate's own result text, then apply directly by
-passing that wikiId to whichever call — wiki_search or wiki_orient — comes next. Only omit wikiId when you
-actually want to search across every domain at once.
+3. Act on the resolved wikiId.
+   - Overview request ("what do we already know about this?", "what's in the knowledge base
+     here?") → wiki_orient({ wikiId }), even on a single outright match — an overview needs the
+     page index, which only wiki_orient returns.
+   - Concrete question with something specific to search for → wiki_search({ wikiId, query })
+     directly, whether wikiId came from an outright match or from narrowing a tie. Don't detour
+     through wiki_orient first: only wikiId confines the search, and orient adds nothing a direct
+     scoped search doesn't already give you. Omit wikiId only when you deliberately want to search
+     across every domain at once.
+   - Already know exactly which page? → wiki_read_page it directly rather than re-searching.
+   - Add or save a fact, and nothing already on-topic turned up (from wiki_orient's index, or
+     because the domain was already established) → wiki_create_page directly, picking a sensible
+     title yourself. Don't run a wiki_search first to check whether a page already exists —
+     wiki_create_page detects near-duplicates itself — and don't ask where to put it; the request
+     to add the note was already the decision.
 
-For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient
-first. "What have I told you I prefer for my morning routine?" after wiki_locate narrows a "user" vs. "self"
-tie to "user" via its routing notes, or "What programming languages do I use most at work?" after
-wiki_locate returns "user" as a single outright match — both go straight to wiki_search({ wikiId: 'user',
-query: ... }). wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already
-does, so inserting it here is a wasted round-trip, not a cautious extra step — save wiki_orient for when the
-user is actually asking for an overview, covered next.
+   Examples:
+   - "What have I told you I prefer for my morning routine?" (wikiId narrowed from a tie) →
+     wiki_search({ wikiId, query }) — a concrete fact, not an overview.
+   - "What programming languages do I use most at work?" (wikiId from a single outright match) →
+     wiki_search({ wikiId, query }) — same reasoning; how the wikiId was resolved doesn't matter.
+   - "What do we already know here?" → wiki_orient({ wikiId }), even on a single outright match.
 
-The single-match skip also assumes you have something concrete to search for. wiki_search answers
-"which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
-domain's page index and structure. So when the user is asking for an overview — "what do we already
-know about this?", "what's in the knowledge base here?" — the call after wiki_locate is wiki_orient
-on the matched domain, even when that match was a single, outright one. Skipping to wiki_search to
-"see what pages exist" answers a different question than the one the user asked. Either way, pass the
-matched domain's wikiId along with the call.
-
-If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
-user pick one, only narrow it yourself with information the user actually already gave you elsewhere in
-the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
-narrower query is still a guess. When there's nothing real to narrow with, ask the user which domain they
-mean instead of retrying wiki_locate with fabricated specifics.
-
-A reported tie is a tie even if one candidate feels more plausible to you. Your own sense of which domain
-seems more likely is not "information the user actually gave you" — proceeding on that hunch, or announcing
-your pick in your reply, is the same mistake as inventing a narrower context, just skipping the retry step
-first. If you can't point to something the user actually said that breaks the tie, the only correct move is
-to call ask_user, not to decide for them.
-
-The same directness applies to writes. When the user asks you to add or save a fact, the domain is
-established, and wiki_orient's index shows nothing on-topic, call wiki_create_page directly, picking
-a sensible title yourself. Don't run a wiki_search first just to check whether a page already
-exists — wiki_create_page detects near-duplicate pages itself and points you to wiki_update_page
-when one does. And don't ask where to put it, in your reply or via ask_user — the request to add
-the note was the decision, already made.
-
-A tool's own result is more current than this default guidance. If a call returns an error or an explicit
-instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
-whatever step you would otherwise skip.
-
-A write rejection is a different case from that one, not the same one: an unrecognized wikiId means the
-domain is genuinely unknown, so wiki_locate is the right next step. A write restricted to one workspace's
-wiki — wiki_create_page, wiki_update_page, wiki_add_cross_link, or wiki_rebaseline_source coming back
-naming the one wiki you're allowed to write to — means the domain is already known, just not the one you
-tried. When the user's next turn confirms to proceed — "use the right one," "try that again," a plain
-"yes" — retry the exact same call again with only the wikiId swapped to the one the rejection named. The
-path, content, fromPage/toPage, or rawFilePath you already had were never in question, so don't re-derive
-them with wiki_search or wiki_locate, and don't ask the user what they'd like to do next — the
-confirmation already answered that.`;
+4. Priority overrides — these outrank every default above.
+   - A tool's own result is more current than this guidance. An error or explicit instruction from
+     a call — an unrecognized wikiId telling you to call wiki_locate, for example — wins over
+     whatever step you'd otherwise skip.
+   - A write rejection that already names the correct wiki (wiki_create_page, wiki_update_page,
+     wiki_add_cross_link, or wiki_rebaseline_source refusing the wiki you tried and naming the one
+     you're allowed to write to) is a different case from an unrecognized wikiId: the domain is
+     already known, just not the one you used. When the user's next turn confirms to proceed —
+     "use the right one," "try that again," a plain "yes" — retry the exact same call with only
+     wikiId swapped to the one the rejection named. Don't re-derive the path, content,
+     fromPage/toPage, or rawFilePath you already had, and don't ask what they'd like to do next;
+     the confirmation already answered that.`;
 
 // Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
 // first suite to exercise web_fetch alongside the wiki tools. Nothing in the
