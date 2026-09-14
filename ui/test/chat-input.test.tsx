@@ -356,3 +356,249 @@ describe('ChatInput — vision-capability warning badge', () => {
     );
   });
 });
+
+// #tool-name autocomplete (issue #172). Unlike the /-skill menu, this must
+// trigger anywhere in the message (not just position 0) and support more
+// than one occurrence per message — see chat-input.tsx's findActiveHashToken.
+describe('ChatInput — #tool-name autocomplete', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function makeToolItem(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      toolId: 'web_fetch',
+      name: 'Web Fetch',
+      description: 'Fetches a URL and returns its content.',
+      category: 'built-in',
+      alwaysOn: false,
+      mcpServer: null,
+      lastSeenAt: null,
+      lastStatus: null,
+      enabled: true,
+      defaultInclude: { chat: true, subAgent: true, autonomous: true },
+      instructions: '',
+      selected: true,
+      ...overrides,
+    };
+  }
+
+  function mockThreadTools(tools: unknown[]) {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ customized: false, tools }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it('opens the dropdown when # appears mid-message', async () => {
+    mockThreadTools([makeToolItem()]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: 'please use #web_fetch' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('opens the dropdown when # is the first character (parity with /)', async () => {
+    mockThreadTools([makeToolItem()]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('filters the list client-side as more of the name is typed, without a second fetch', async () => {
+    const fetchMock = mockThreadTools([
+      makeToolItem({ toolId: 'web_fetch' }),
+      makeToolItem({ toolId: 'shell_exec', name: 'Shell Exec' }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+    expect(screen.getByText('#shell_exec')).toBeInTheDocument();
+
+    fireEvent.input(textarea, { target: { value: '#web' } });
+    await waitFor(() => expect(screen.queryByText('#shell_exec')).not.toBeInTheDocument());
+    expect(screen.getByText('#web_fetch')).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('only lists enabled tools', async () => {
+    mockThreadTools([
+      makeToolItem({ toolId: 'web_fetch', enabled: true }),
+      makeToolItem({ toolId: 'shell_exec', name: 'Shell Exec', enabled: false }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#' } });
+
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+    expect(screen.queryByText('#shell_exec')).not.toBeInTheDocument();
+  });
+
+  it('selecting an item replaces only the #token span, not the whole message', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, {
+      target: { value: 'please use #web to fetch this', selectionStart: 15, selectionEnd: 15 },
+    });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+
+    fireEvent.mouseDown(screen.getByText('#web_fetch'));
+
+    // The leading # must survive the replacement — the backend's
+    // extractRequestedToolIds only matches a #-prefixed token; dropping the
+    // # here would silently make the directive a no-op server-side.
+    expect(textarea.value).toBe('please use #web_fetch  to fetch this');
+  });
+
+  it('preserves the # for an MCP-style toolId containing a colon', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'mcp-gateway:pushover-send' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#mcp' } });
+    await waitFor(() => expect(screen.getByText('#mcp-gateway:pushover-send')).toBeInTheDocument());
+
+    fireEvent.mouseDown(screen.getByText('#mcp-gateway:pushover-send'));
+
+    expect(textarea.value).toBe('#mcp-gateway:pushover-send ');
+  });
+
+  it('a second # later in the same message retriggers the dropdown after typing past the first', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+
+    // Continuing to type past the token closes the menu naturally — the
+    // caret no longer sits immediately after a '#...' run.
+    fireEvent.input(textarea, { target: { value: '#web_fetch this and ' } });
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch this and #web_fetch' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+  });
+
+  it('does not open when there is no threadId', () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ControlledChatInput />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#web_fetch' } });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+  });
+
+  it('does not trigger for a # embedded in a word (no preceding word boundary)', () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: 'issue#172' } });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('#172')).not.toBeInTheDocument();
+  });
+
+  it('matches a substring of toolId, not just a prefix', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'mcp-gateway:pushover-send',
+        name: 'Pushover Send',
+        description: 'Sends a push notification via Pushover.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#push' } });
+
+    await waitFor(() => expect(screen.getByText('#mcp-gateway:pushover-send')).toBeInTheDocument());
+  });
+
+  it('matches on name when the query is not in toolId', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Pager',
+        description: 'Posts a message to a Slack channel.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#pager' } });
+
+    await waitFor(() => expect(screen.getByText('#notify_slack')).toBeInTheDocument());
+  });
+
+  it('matches on description when the query is not in toolId or name', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Notifier',
+        description: 'Posts a reminder message to a Slack channel.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#reminder' } });
+
+    await waitFor(() => expect(screen.getByText('#notify_slack')).toBeInTheDocument());
+  });
+
+  it('ranks a toolId match above a description-only match for the same query', async () => {
+    mockThreadTools([
+      makeToolItem({
+        toolId: 'notify_slack',
+        name: 'Team Notifier',
+        description: 'Posts a push-style reminder to Slack.',
+      }),
+      makeToolItem({
+        toolId: 'push_notification',
+        name: 'Push Notification',
+        description: 'Sends a mobile push notification.',
+      }),
+    ]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#push' } });
+
+    await waitFor(() => expect(screen.getByText('#push_notification')).toBeInTheDocument());
+    const items = screen.getAllByText(/^#/);
+    expect(items.map((el) => el.textContent)).toEqual(['#push_notification', '#notify_slack']);
+  });
+
+  it('finds no match when the query appears in none of toolId/name/description', async () => {
+    mockThreadTools([makeToolItem({ toolId: 'web_fetch', name: 'Web Fetch' })]);
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    fireEvent.input(textarea, { target: { value: '#zzz' } });
+
+    // Give the debounce/fetch a moment, then confirm nothing rendered.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+  });
+});

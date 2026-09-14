@@ -38,6 +38,7 @@ import { boundaryAwareTrim } from './summary-boundary.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
+import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
 import { getSubAgentToolIds, toBoundMatchKeys } from './tool-config.js';
@@ -351,6 +352,7 @@ async function buildChatAgent(provider?: string, model?: string) {
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
       skillExpansionMiddleware,
+      toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
@@ -444,6 +446,7 @@ async function buildWorkspaceChatAgent(
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
       skillExpansionMiddleware,
+      toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
@@ -584,6 +587,7 @@ export async function buildTaskAgent(
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
       skillExpansionMiddleware,
+      toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),

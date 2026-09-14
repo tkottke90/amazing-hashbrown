@@ -422,6 +422,61 @@
 // the new example lands; if it reproduces in the same wiki_orient-first
 // shape with wording unchanged, that's evidence of a second Lemonade-
 // specific ceiling, not a remaining wording gap.
+//
+// Seventeenth entry, auto-eval round 1 of suites/explicit-tool-syntax.yaml
+// (2026-09-14, local/Lemonade/Ornith, judge local). ets-002/ets-004 both ask
+// "What is my favorite programming language?" (with and without an
+// unmatched #-token) and expect wiki_locate first, per the cold-start
+// personal-preference default this section already establishes. Ornith
+// failed both, Lemonade failed ets-004 only; local passed both. Both
+// failing models' reasoning explicitly echoed this section's own
+// "favorite color" example back ("the topic sounds personal enough that
+// it's clearly about the user's own domain" / "there's only one plausible
+// domain") — the exact over-generalization interpreting-results.md §3
+// warns about: a contrastive example anchors on its surface wording
+// ("favorite"), not the property it's meant to illustrate (domain
+// exclusivity). local's cross-check pass on identical wording confirms
+// this is a real prompt gap, not a shared ceiling. Added a paragraph
+// directly after the color/growth example distinguishing "favorite
+// programming language" from "favorite color" — a programming language is
+// exactly the Verdaccio-style case (could belong to a technical domain
+// too), just wearing the color example's "favorite" phrasing. Re-run
+// Ornith and Lemonade against ets-002/ets-004 next round to confirm.
+//
+// Correction to the seventeenth entry, from the very next round against its
+// own wording. ets-002/ets-004 fixed for both models (Ornith 2/4→3/4,
+// Lemonade to a clean pass), but Ornith regressed ets-001 — the one
+// scenario that requires the directive to override this section's default
+// entirely. Ornith's reasoning quoted the new paragraph nearly verbatim and
+// concluded to call wiki_locate anyway, despite an explicit #wiki_search
+// directive. The new example, by naming the exact input phrase, apparently
+// out-weighed NOTATION_SECTION's directive-overrides-default rule in the
+// model's own reasoning — the new paragraph never said what to do when a
+// directive is already present, so nothing there resolved the conflict.
+// Added a closing sentence to the same paragraph making the default
+// explicitly conditional: it yields to an explicit #tool-name directive,
+// pointing back at notation's own precedence rule rather than restating it
+// abstractly. Re-run Ornith against ets-001 next round; watch for the
+// original ets-002/ets-004 fix holding at the same time.
+//
+// Second correction to the seventeenth entry, same auto-eval loop, round 3.
+// The closing-sentence fix recovered Ornith's ets-001 (4/4), but the very
+// next Lemonade run failed the same scenario in a shape that shows *why*
+// a trailing sentence wasn't enough: Lemonade's own reasoning opened with
+// "The user has explicitly requested #wiki_search, so I will execute
+// wiki_search" — correctly primed by notation — and then walked itself
+// through the domain-ambiguity paragraph anyway, talking itself out of the
+// directive it had just stated. Putting the precedence rule at the *end* of
+// the paragraph meant the model read the domain-ambiguity reasoning first
+// and the override notice last, backwards from the order it needs to
+// reason in. Restructured: split into two paragraphs, gate first — a
+// directive settles the question outright and the ambiguity discussion
+// doesn't apply at all, stated before any mention of "favorite" or
+// programming languages — then the domain-ambiguity example, now opening
+// with "Absent a directive" instead of ending with the exception. Re-run
+// both Ornith and Lemonade against ets-001/ets-002/ets-004 next round to
+// confirm this ordering actually changes the reasoning order, not just the
+// prose.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -441,6 +496,18 @@ For example: "What's my favorite color?" has no plausible domain other than the 
 skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
 growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
 rather than guessing which one it means.
+
+This distinction, like the others in this section, only governs the default — when a message already carries
+a #tool-name directive (see notation above), the matching <required-tool> instruction already settled which
+tool to call, full stop. Don't re-litigate that settled choice against any domain-ambiguity reasoning below;
+there's nothing left here for that reasoning to resolve.
+
+Absent a directive, watch for the same "favorite" phrasing on a topic that isn't actually domain-exclusive
+the way color is: "What is my favorite programming language?" reads like the color example on the surface,
+but a programming language could just as easily be documented in a dedicated technical or engineering domain
+as in personal preferences — the same ambiguity the Verdaccio example below covers, just phrased as a
+"favorite" question instead of a how-to. Call wiki_locate first here; the word "favorite" alone doesn't make
+a topic domain-exclusive, only the topic itself does.
 
 That skip only covers a direct question about a concrete personal fact — not a question about where to
 look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain
@@ -893,6 +960,29 @@ can't know about. Don't reason your way out of checking just because the topic s
 could plausibly answer without it — checking first and finding nothing costs one extra call; skipping the
 check and missing a documented, setup-specific answer is the actual failure.`;
 
+// Documents both message-prefix notations the user may write, so the model
+// recognizes them without having to infer their meaning from context alone.
+// `/skill-name` already exists (skill-expansion.middleware.ts); `#tool-name`
+// is new (issue #172) — tool-syntax.middleware.ts detects it and
+// tool-access.middleware.ts turns a matched, currently-bound tool into a
+// <required-tool id="..."> instruction appended to this same system message.
+// An unmatched or currently-unavailable #name produces no instruction at
+// all — the last sentence exists so the model doesn't go looking for one or
+// comment on its absence when a user's message happens to contain a bare #.
+const NOTATION_SECTION = `Two prefixes carry special meaning when they appear in a user's message:
+
+- \`/skill-name\` invokes a skill — its instructions replace or extend the message content for this turn.
+- \`#tool-name\` marks a tool the user is explicitly requiring for this request. When a matching tool is
+currently available to you, you will also see a \`<required-tool id="tool-name">\` instruction elsewhere in
+this system message — treat that as a directive overriding your own default tool choice, not as a
+suggestion to weigh against other options.
+
+Both prefixes only take effect through the mechanism above — a \`<required-tool>\` instruction is either
+present or it isn't. If a message contains \`#something\` but no matching \`<required-tool>\` instruction
+appears, the name didn't match any tool currently available to you (a typo, or a real tool that's
+disabled right now); this needs no reaction from you — proceed with the request normally, using your own
+judgment for tool selection as you would if the \`#\` text weren't there.`;
+
 interface HarnessSection {
   tag: string;
   content: string;
@@ -930,6 +1020,7 @@ const WIKI_TOOL_IDS = [
 const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
+  { tag: 'notation', content: NOTATION_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   {

@@ -38,6 +38,7 @@ import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
+import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
 // The static built-in tool set the production chat agent binds (see
@@ -255,6 +256,8 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       tools: evalTools,
       systemPrompt,
       filterHarnessSections,
+      extractRequestedToolIds,
+      buildRequiredToolBlocks,
       embeddings,
       suitePaths: { bundledPath: suitesPath },
       resultPath,

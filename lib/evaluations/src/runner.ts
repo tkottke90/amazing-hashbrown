@@ -82,6 +82,22 @@ export interface RunConfig {
    * to support this. Callers that don't set it (or don't set systemPrompt at
    * all) get today's unfiltered behavior unchanged. */
   filterHarnessSections?: (prompt: string, availableToolIds: Set<string>) => string;
+  /** Detects `#tool-name` tokens in a scenario's literal `input` text (issue
+   * #172) — same split as filterHarnessSections above: this package has no
+   * dependency on the app that owns the real implementation
+   * (api/src/agents/tool-syntax.ts's extractRequestedToolIds), so it's
+   * injected as a plain function. Called, when set, in the tool-call/
+   * tool-sequence branches of executeScenario, on the scenario's `input`
+   * before any priorTurns/seeding is applied — mirrors how the production
+   * middleware chain reads only the latest human message's raw text. */
+  extractRequestedToolIds?: (content: string) => string[];
+  /** Turns detected requested tool ids into <required-tool> instruction
+   * blocks (issue #172), scoped to a scenario's actual bound-tool set the
+   * same way filterHarnessSections is — same source
+   * (api/src/agents/tool-syntax.ts's buildRequiredToolBlocks), same
+   * plain-function injection reasoning. Requires extractRequestedToolIds to
+   * also be set; either can be omitted independently to opt out. */
+  buildRequiredToolBlocks?: (requestedToolIds: string[], availableToolIds: Set<string>) => string[];
   suitePaths: SuiteLoaderConfig;
   resultPath: string;
   ci?: boolean;
@@ -391,6 +407,27 @@ function toolName(t: BindToolsInput): string {
   return typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
 }
 
+// Applies explicit #tool-name detection (issue #172) on top of an
+// already-filterHarnessSections'd prompt, using the exact same resolved
+// tool-id set — a scenario can write `input: '#web_fetch summarize this'`
+// and have it actually detected here, closing the gap that made this
+// undetectable before: the production middleware chain never runs in this
+// eval harness (see invokeToolCallModel), so nothing else in this file would
+// otherwise notice a literal `#token` in a scenario's input.
+function withRequiredToolBlocks(
+  systemPrompt: string | undefined,
+  scenarioInput: string,
+  availableToolIds: Set<string>,
+  config: Pick<RunConfig, 'extractRequestedToolIds' | 'buildRequiredToolBlocks'>,
+): string | undefined {
+  if (!systemPrompt || !config.extractRequestedToolIds || !config.buildRequiredToolBlocks) {
+    return systemPrompt;
+  }
+  const requested = config.extractRequestedToolIds(scenarioInput);
+  const blocks = config.buildRequiredToolBlocks(requested, availableToolIds);
+  return blocks.length > 0 ? `${systemPrompt}\n\n${blocks.join('\n\n')}` : systemPrompt;
+}
+
 // Every branch below attaches config.systemPrompt (via withSystemPrompt) when
 // the suite opts in (SuiteSchema.appliesHarnessSystemPrompt, default true) —
 // a scenario type added here should follow the same pattern.
@@ -544,6 +581,12 @@ export async function executeScenario(
         config.filterHarnessSections && config.systemPrompt
           ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
           : config.systemPrompt;
+      const finalSystemPrompt = withRequiredToolBlocks(
+        effectiveSystemPrompt,
+        s.input,
+        new Set(toolsForCall.map(toolName)),
+        config,
+      );
       const {
         toolCalls,
         invalidToolCalls,
@@ -553,7 +596,7 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(modelInput, effectiveSystemPrompt),
+        withSystemPrompt(modelInput, finalSystemPrompt),
         toolsForCall,
       );
       const details = {
@@ -613,6 +656,12 @@ export async function executeScenario(
         config.filterHarnessSections && config.systemPrompt
           ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
           : config.systemPrompt;
+      const finalSystemPrompt = withRequiredToolBlocks(
+        effectiveSystemPrompt,
+        s.input,
+        new Set(toolsForCall.map(toolName)),
+        config,
+      );
       const {
         toolCalls,
         invalidToolCalls,
@@ -622,7 +671,7 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(modelInput, effectiveSystemPrompt),
+        withSystemPrompt(modelInput, finalSystemPrompt),
         toolsForCall,
       );
       const details = {
