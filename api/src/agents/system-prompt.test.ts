@@ -153,6 +153,16 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('distinguishes "favorite programming language" from "favorite color" as not domain-exclusive', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"What is my favorite programming language?" → wiki_locate (looks like the color example on\n' +
+          '     the surface, but a programming language could belong to a technical/engineering domain\n' +
+          '     instead of personal preferences — not domain-exclusive the way color is, same ambiguity as\n' +
+          '     the Verdaccio example below)',
+      );
+    });
+
     it('gates the entire domain-routing procedure on the absence of a required-tool directive, checked first', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

@@ -487,6 +487,36 @@
 // appending a bullet to step 4. Re-run Ornith and Lemonade against ets-001
 // next round to confirm the gate holds now that it's back and positioned
 // first.
+//
+// Nineteenth entry, fresh auto-eval round against the eighteenth entry's
+// restored directive gate (2026-09-14, Ornith/Lemonade/local, judge local).
+// The gate itself is genuinely working now — Ornith passed ets-001 cleanly
+// this round — but Lemonade failed it again, in the same shape entry
+// seventeen's own restructure comment already described (named the
+// directive correctly, then reasoned through the numbered steps anyway and
+// landed on wiki_locate). One sample isn't enough after a wording change to
+// call this a ceiling per interpreting-results.md §5 — no code change here,
+// re-run next round to see if it recurs under unchanged wording before
+// touching this again.
+//
+// The same round surfaced a second, separate, and more clear-cut gap:
+// Ornith failed ets-004 (#not_a_real_tool, no real directive — falls back to
+// the plain no-directive default) while passing the identical underlying
+// question in ets-002. That inconsistency is explained by a real regression
+// entry seventeen's restructure introduced: the "favorite programming
+// language is NOT domain-exclusive the way favorite color is" contrastive
+// example — proven out over rounds 1-3 of the *original*
+// suites/explicit-tool-syntax.yaml auto-eval session (commits e75a104/
+// ff9edbe/93decd4, well before PR #186) — never made it into the rewritten
+// decision procedure. The seventeenth entry's restructure comment says its
+// rule-inventory table covered entries 1-16 (all wiki-navigation.yaml
+// failures); this fix came from a *different* suite's session and was
+// missed the same way the directive gate itself was (see the eighteenth
+// entry). Restored it as a terse contrastive example in step 1's list,
+// matching this section's new decision-procedure style rather than
+// reproducing the old prose paragraph verbatim. Re-run Ornith and Lemonade
+// against ets-002/ets-004 next round to confirm this closes the gap the way
+// it did the first time.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -516,6 +546,10 @@ wiki_locate doesn't override a directive that already answered the question.
 
    Examples:
    - "What's my favorite color?" → skip (no domain but the user's own could ever answer this).
+   - "What is my favorite programming language?" → wiki_locate (looks like the color example on
+     the surface, but a programming language could belong to a technical/engineering domain
+     instead of personal preferences — not domain-exclusive the way color is, same ambiguity as
+     the Verdaccio example below).
    - "What have you noticed about growth lately?" → wiki_locate (could be the user's growth or
      your own reflective growth — genuinely ambiguous).
    - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
