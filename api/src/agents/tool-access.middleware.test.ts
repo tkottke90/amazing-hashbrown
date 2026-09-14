@@ -230,7 +230,7 @@ describe('agents/tool-access.middleware', () => {
     const HARNESS_TEXT =
       '<identity>\nalways here\n</identity>\n\n<web_fetch>\nfetch guidance\n</web_fetch>\n\n<shell_execution>\nshell guidance\n</shell_execution>';
 
-    it('strips a disabled tool\'s section even when no tool has custom instructions set', async () => {
+    it("strips a disabled tool's section even when no tool has custom instructions set", async () => {
       // Regression test: wrapModelCall used to early-return before ever
       // touching systemMessage when instructionBlocks was empty — the common
       // case, since per-tool instructions are opt-in and empty by default.

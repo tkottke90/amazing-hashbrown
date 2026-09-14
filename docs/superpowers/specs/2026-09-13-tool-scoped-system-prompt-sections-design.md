@@ -64,16 +64,16 @@ interface HarnessSection {
 
 `HARNESS_SECTIONS` becomes:
 
-| tag | requiresAnyOf |
-|---|---|
-| `identity` | *(none)* |
-| `memory` | *(none)* |
-| `wiki_navigation` | `wiki_search`, `wiki_read_page`, `wiki_locate`, `wiki_orient`, `wiki_lint`, `wiki_register_domain`, `wiki_create_page`, `wiki_update_page`, `wiki_add_cross_link`, `wiki_rebaseline_source` |
-| `web_fetch` | `web_fetch` |
-| `wiki_ingest` *(new)* | `wiki_create_page` |
-| `rlm` | `rlm_query` |
-| `shell_execution` | `shell_exec` |
-| `ask_user_routing` | `ask_user` |
+| tag                   | requiresAnyOf                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`            | _(none)_                                                                                                                                                                                    |
+| `memory`              | _(none)_                                                                                                                                                                                    |
+| `wiki_navigation`     | `wiki_search`, `wiki_read_page`, `wiki_locate`, `wiki_orient`, `wiki_lint`, `wiki_register_domain`, `wiki_create_page`, `wiki_update_page`, `wiki_add_cross_link`, `wiki_rebaseline_source` |
+| `web_fetch`           | `web_fetch`                                                                                                                                                                                 |
+| `wiki_ingest` _(new)_ | `wiki_create_page`                                                                                                                                                                          |
+| `rlm`                 | `rlm_query`                                                                                                                                                                                 |
+| `shell_execution`     | `shell_exec`                                                                                                                                                                                |
+| `ask_user_routing`    | `ask_user`                                                                                                                                                                                  |
 
 Section order in the array stays: identity, memory, wiki_navigation, web_fetch, wiki_ingest, rlm, shell_execution, ask_user_routing.
 
@@ -90,7 +90,7 @@ Exact prose is an implementation-time task, not fixed by this design — the aut
 ### 3. `filterHarnessSections()`
 
 ```ts
-export function filterHarnessSections(prompt: string, availableToolIds: Set<string>): string
+export function filterHarnessSections(prompt: string, availableToolIds: Set<string>): string;
 ```
 
 For each `HARNESS_SECTIONS` entry with `requiresAnyOf` where no id in that list is present in `availableToolIds`, removes the exact `<tag>\n...\n</tag>` block (and its surrounding blank-line separator) from `prompt`. Entries with no `requiresAnyOf` are never touched. Pure string transform — no dependency on tool-config, thread store, or agent-build state — so it's testable with literal fixture strings.
@@ -102,10 +102,7 @@ For each `HARNESS_SECTIONS` entry with `requiresAnyOf` where no id in that list 
 In `tool-access.middleware.ts`'s `wrapModelCall`, immediately after `enabledIds` is resolved (and before the existing instruction-block injection), add:
 
 ```ts
-const baseContent = filterHarnessSections(
-  request.systemMessage.content as string,
-  enabledIds,
-);
+const baseContent = filterHarnessSections(request.systemMessage.content as string, enabledIds);
 ```
 
 replacing the current unfiltered read of `request.systemMessage.content`. The rest of the function (instruction-block collection and appending) proceeds unchanged, operating on the now-filtered `baseContent`. This mirrors the existing pattern exactly — a per-call transform layered on top of the cached, agent-build-time prompt, never mutating the cache itself.
