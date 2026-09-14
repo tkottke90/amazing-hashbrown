@@ -7,6 +7,8 @@ import {
 } from './tool-access.js';
 import { getToolInstructions } from './tool-config.js';
 import { filterHarnessSections } from './system-prompt.js';
+import { buildRequiredToolBlocks } from './tool-syntax.js';
+import { toolSyntaxStateSchema } from './middleware/tool-syntax.middleware.js';
 import { env, type ToolEntry } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 
@@ -46,6 +48,16 @@ export function createToolAccessMiddleware(
 ) {
   return createMiddleware({
     name: 'ToolAccessMiddleware',
+    // Required for request.state.requestedToolIds (issue #172) below to be
+    // visible at all: LangChain scopes a middleware's request.state to
+    // fields its OWN stateSchema declares, not the full merged graph state —
+    // confirmed empirically before writing this (see the design/plan's
+    // "Known risk" section). Sharing the literal schema object from
+    // tool-syntax.middleware.ts (not a separately-declared equivalent one)
+    // is what makes this work, mirroring the one existing precedent for
+    // this pattern: skill-expansion.middleware.ts and
+    // skill-gated-tools.middleware.ts both import gatedSkillStateSchema.
+    stateSchema: toolSyntaxStateSchema,
     wrapModelCall: async (request, handler) => {
       const threadId = request.runtime.configurable?.thread_id;
 
@@ -114,6 +126,22 @@ export function createToolAccessMiddleware(
         })
         .filter((block): block is string => block !== null);
 
+      // Explicit #tool-name syntax (issue #172): requestedToolIds was
+      // detected earlier in the chain by tool-syntax.middleware.ts from the
+      // latest human message, before this middleware's own enabledIds was
+      // available to validate against. Filtering happens here, in the one
+      // place that already resolves the effective tool-id set — a
+      // requested id not in enabledIds (typo, or a real but currently
+      // disabled tool) is silently dropped, same as an unmatched /skill
+      // name is handled differently on purpose: this one needs no user
+      // feedback, per the design doc.
+      const requiredToolBlocks = buildRequiredToolBlocks(
+        request.state.requestedToolIds,
+        enabledIds,
+      );
+
+      const allBlocks = [...instructionBlocks, ...requiredToolBlocks];
+
       const baseContent = request.systemMessage.content;
       if (typeof baseContent !== 'string') {
         // Structured (non-string) system message content is not something
@@ -127,18 +155,17 @@ export function createToolAccessMiddleware(
 
       // Gate tool-scoped harness sections (issue #154) on this call's actual
       // bound-tool set — must happen unconditionally here, not only when
-      // instructionBlocks is non-empty below, or a thread with no per-tool
-      // custom instructions set (the common case) would never have its
-      // system message touched at all, silently defeating this filter.
+      // allBlocks is non-empty below, or a thread with no per-tool custom
+      // instructions set and no #tool-name syntax present (the common case)
+      // would never have its system message touched at all, silently
+      // defeating this filter.
       const filteredContent = filterHarnessSections(baseContent, enabledIds);
 
-      if (instructionBlocks.length === 0) {
+      if (allBlocks.length === 0) {
         return handler({ ...request, tools, systemMessage: new SystemMessage(filteredContent) });
       }
 
-      const systemMessage = new SystemMessage(
-        `${filteredContent}\n\n${instructionBlocks.join('\n\n')}`,
-      );
+      const systemMessage = new SystemMessage(`${filteredContent}\n\n${allBlocks.join('\n\n')}`);
 
       return handler({ ...request, tools, systemMessage });
     },

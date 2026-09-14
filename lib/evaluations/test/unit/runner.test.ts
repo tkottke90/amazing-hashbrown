@@ -667,6 +667,111 @@ describe('executeScenario — filterHarnessSections (issue #154)', () => {
   });
 });
 
+// Explicit #tool-name syntax (issue #172) — same split as filterHarnessSections
+// above: extractRequestedToolIds/buildRequiredToolBlocks are the real
+// api/src/agents/tool-syntax.ts implementations in production, injected here
+// as trivial fakes since this package has no dependency on api.
+describe('executeScenario — required-tool injection (issue #172)', () => {
+  function makeToolCallScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'reqtool-tc-1',
+      name: 'Required-tool scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: '#web_fetch do something',
+      tool: 'web_fetch',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  it("detects a #token in the scenario's input and appends a required-tool block", async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('web_fetch');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch')],
+      systemPrompt: 'BASE PROMPT',
+      extractRequestedToolIds: (content) => {
+        const m = content.match(/#([a-z_]+)/);
+        return m ? [m[1]!] : [];
+      },
+      buildRequiredToolBlocks: (ids, available) =>
+        ids.filter((id) => available.has(id)).map((id) => `<required-tool id="${id}"/>`),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT\n\n<required-tool id="web_fetch"/>');
+  });
+
+  it('passes the actual bound-tool set (post-excludeTools) to buildRequiredToolBlocks', async () => {
+    const scenario = makeToolCallScenario({ excludeTools: ['web_fetch'] });
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('shell_exec');
+    let capturedIds: Set<string> | undefined;
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch'), fakeTool('shell_exec')],
+      systemPrompt: 'BASE PROMPT',
+      extractRequestedToolIds: () => ['web_fetch'],
+      buildRequiredToolBlocks: (ids, available) => {
+        capturedIds = available;
+        return ids.filter((id) => available.has(id)).map((id) => `<required-tool id="${id}"/>`);
+      },
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.deepEqual([...(capturedIds ?? [])], ['shell_exec']);
+    const input = getLastInput() as SystemMessage[];
+    // web_fetch was excluded from this scenario's bound tools, so even
+    // though the #token requested it, no block should be appended.
+    assert.equal(input[0]!.content, 'BASE PROMPT');
+  });
+
+  it('leaves config.systemPrompt unchanged when neither callback is provided', async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('web_fetch');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch')],
+      systemPrompt: 'BASE PROMPT',
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT');
+  });
+
+  it('composes with filterHarnessSections in the same call', async () => {
+    const scenario = makeToolCallScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('web_fetch');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('web_fetch')],
+      systemPrompt: 'BASE PROMPT',
+      filterHarnessSections: (prompt) => `${prompt} (filtered)`,
+      extractRequestedToolIds: () => ['web_fetch'],
+      buildRequiredToolBlocks: (ids) => ids.map((id) => `<required-tool id="${id}"/>`),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT (filtered)\n\n<required-tool id="web_fetch"/>');
+  });
+});
+
 describe('computeRunSummary', () => {
   function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
     return {
