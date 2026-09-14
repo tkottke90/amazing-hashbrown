@@ -458,6 +458,25 @@
 // pointing back at notation's own precedence rule rather than restating it
 // abstractly. Re-run Ornith against ets-001 next round; watch for the
 // original ets-002/ets-004 fix holding at the same time.
+//
+// Second correction to the seventeenth entry, same auto-eval loop, round 3.
+// The closing-sentence fix recovered Ornith's ets-001 (4/4), but the very
+// next Lemonade run failed the same scenario in a shape that shows *why*
+// a trailing sentence wasn't enough: Lemonade's own reasoning opened with
+// "The user has explicitly requested #wiki_search, so I will execute
+// wiki_search" — correctly primed by notation — and then walked itself
+// through the domain-ambiguity paragraph anyway, talking itself out of the
+// directive it had just stated. Putting the precedence rule at the *end* of
+// the paragraph meant the model read the domain-ambiguity reasoning first
+// and the override notice last, backwards from the order it needs to
+// reason in. Restructured: split into two paragraphs, gate first — a
+// directive settles the question outright and the ambiguity discussion
+// doesn't apply at all, stated before any mention of "favorite" or
+// programming languages — then the domain-ambiguity example, now opening
+// with "Absent a directive" instead of ending with the exception. Re-run
+// both Ornith and Lemonade against ets-001/ets-002/ets-004 next round to
+// confirm this ordering actually changes the reasoning order, not just the
+// prose.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -478,14 +497,17 @@ skip straight to wiki_search. "What have you noticed about growth lately?" could
 growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
 rather than guessing which one it means.
 
-Watch for the same "favorite" phrasing on a topic that isn't actually domain-exclusive the way color is:
-"What is my favorite programming language?" reads like the color example on the surface, but a programming
-language could just as easily be documented in a dedicated technical or engineering domain as in personal
-preferences — the same ambiguity the Verdaccio example below covers, just phrased as a "favorite" question
-instead of a how-to. By default, call wiki_locate first here; the word "favorite" alone doesn't make a topic
-domain-exclusive, only the topic itself does. That default yields to an explicit #tool-name directive the
-way notation above describes, though — a <required-tool> instruction already settled which tool to call, so
-this domain-ambiguity distinction doesn't re-open a choice that was never in question.
+This distinction, like the others in this section, only governs the default — when a message already carries
+a #tool-name directive (see notation above), the matching <required-tool> instruction already settled which
+tool to call, full stop. Don't re-litigate that settled choice against any domain-ambiguity reasoning below;
+there's nothing left here for that reasoning to resolve.
+
+Absent a directive, watch for the same "favorite" phrasing on a topic that isn't actually domain-exclusive
+the way color is: "What is my favorite programming language?" reads like the color example on the surface,
+but a programming language could just as easily be documented in a dedicated technical or engineering domain
+as in personal preferences — the same ambiguity the Verdaccio example below covers, just phrased as a
+"favorite" question instead of a how-to. Call wiki_locate first here; the word "favorite" alone doesn't make
+a topic domain-exclusive, only the topic itself does.
 
 That skip only covers a direct question about a concrete personal fact — not a question about where to
 look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain

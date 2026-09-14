@@ -147,20 +147,23 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('"What have you noticed about growth lately?" could mean');
     });
 
-    it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
+    it('gates the domain-ambiguity distinction on the absence of a #tool-name directive, checked first', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'Watch for the same "favorite" phrasing on a topic that isn\'t actually domain-exclusive',
+        'This distinction, like the others in this section, only governs the default',
       );
       expect(result).to.include(
-        '"What is my favorite programming language?" reads like the color example on the surface',
+        "there's nothing left here for that reasoning to resolve",
       );
     });
 
-    it('yields the favorite-programming-language default to an explicit #tool-name directive', () => {
+    it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'That default yields to an explicit #tool-name directive the\nway notation above describes',
+        'Absent a directive, watch for the same "favorite" phrasing on a topic',
+      );
+      expect(result).to.include(
+        '"What is my favorite programming language?" reads like the color example on the surface',
       );
     });
 
