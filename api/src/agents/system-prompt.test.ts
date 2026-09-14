@@ -153,21 +153,14 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('gates the domain-ambiguity distinction on the absence of a #tool-name directive, checked first', () => {
+    it('gates the entire domain-routing procedure on the absence of a required-tool directive, checked first', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'This distinction, like the others in this section, only governs the default',
-      );
-      expect(result).to.include("there's nothing left here for that reasoning to resolve");
-    });
-
-    it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
-      const result = buildSystemPrompt();
-      expect(result).to.include(
-        'Absent a directive, watch for the same "favorite" phrasing on a topic',
+        'A `<required-tool>` instruction already resolved which tool to use this turn (see notation) —\n' +
+          'call it directly with whatever arguments the request implies, skipping every step below.',
       );
       expect(result).to.include(
-        '"What is my favorite programming language?" reads like the color example on the surface',
+        "a topic that would otherwise call for\nwiki_locate doesn't override a directive that already answered the question",
       );
     });
 

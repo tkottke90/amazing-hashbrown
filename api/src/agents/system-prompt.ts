@@ -459,6 +459,34 @@
 // If the pass rate doesn't move, that's evidence the density hypothesis
 // itself doesn't hold for this model/section — not a cue to keep chasing
 // this with further wording edits, per interpreting-results.md §5.
+//
+// Eighteenth entry, fresh auto-eval round against the seventeenth entry's
+// restructure (2026-09-14, Ornith/Lemonade/local, judge local). ets-002/
+// ets-004 (the density hypothesis's target) held for both Ornith and
+// Lemonade this round — encouraging, though one round isn't enough to
+// confirm the 4/7 Lemonade flakiness is actually resolved. But a different,
+// previously-fixed scenario broke for BOTH models: ets-001
+// (directive-overrides-default-routing), where a #wiki_search token is
+// present. Both models' reasoningContent walked straight into the domain-
+// routing procedure and called wiki_locate first, never once citing the
+// directive or notation's override rule — Lemonade's trace even opened by
+// correctly stating "explicitly invoking the wiki_search tool" and then
+// talked itself into wiki_locate anyway. Root cause: the design doc's
+// rule-inventory table captured entries 1-16 (all reactions to
+// suites/wiki-navigation.yaml failures) but not the directive-precedence
+// gate a *different* auto-eval session (suites/explicit-tool-syntax.yaml,
+// rounds 2-3, commits ff9edbe/93decd4) had added to the old prose — that
+// fix predates this restructure's design doc and was never folded in, so
+// the rewritten step 4 ("Priority overrides") covers tool-result changes
+// and write-rejection retries but never mentions a `<required-tool>`
+// instruction at all. Also applying round 3's structural lesson from that
+// same prior session: a gate stated only in step 4, after the routing
+// steps, loses to top-to-bottom reasoning that's already committed to a
+// domain-routing chain of thought by the time it gets there. Added a
+// leading paragraph before step 1 stating the gate up front, rather than
+// appending a bullet to step 4. Re-run Ornith and Lemonade against ets-001
+// next round to confirm the gate holds now that it's back and positioned
+// first.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -468,6 +496,12 @@ const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge bas
 
 Follow this procedure in order — each step only applies when the step before it didn't already
 resolve things.
+
+A \`<required-tool>\` instruction already resolved which tool to use this turn (see notation) —
+call it directly with whatever arguments the request implies, skipping every step below. The
+steps below are how you resolve the tool and its arguments when no such instruction is present;
+they're not a checklist to run through regardless, and a topic that would otherwise call for
+wiki_locate doesn't override a directive that already answered the question.
 
 1. Resolve the domain.
    - The domain was already established earlier in this conversation → it's known; skip to step 2.
