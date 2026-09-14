@@ -152,9 +152,7 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'This distinction, like the others in this section, only governs the default',
       );
-      expect(result).to.include(
-        "there's nothing left here for that reasoning to resolve",
-      );
+      expect(result).to.include("there's nothing left here for that reasoning to resolve");
     });
 
     it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
