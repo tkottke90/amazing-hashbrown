@@ -423,60 +423,240 @@
 // shape with wording unchanged, that's evidence of a second Lemonade-
 // specific ceiling, not a remaining wording gap.
 //
-// Seventeenth entry, auto-eval round 1 of suites/explicit-tool-syntax.yaml
-// (2026-09-14, local/Lemonade/Ornith, judge local). ets-002/ets-004 both ask
-// "What is my favorite programming language?" (with and without an
-// unmatched #-token) and expect wiki_locate first, per the cold-start
-// personal-preference default this section already establishes. Ornith
-// failed both, Lemonade failed ets-004 only; local passed both. Both
-// failing models' reasoning explicitly echoed this section's own
-// "favorite color" example back ("the topic sounds personal enough that
-// it's clearly about the user's own domain" / "there's only one plausible
-// domain") — the exact over-generalization interpreting-results.md §3
-// warns about: a contrastive example anchors on its surface wording
-// ("favorite"), not the property it's meant to illustrate (domain
-// exclusivity). local's cross-check pass on identical wording confirms
-// this is a real prompt gap, not a shared ceiling. Added a paragraph
-// directly after the color/growth example distinguishing "favorite
-// programming language" from "favorite color" — a programming language is
-// exactly the Verdaccio-style case (could belong to a technical domain
-// too), just wearing the color example's "favorite" phrasing. Re-run
-// Ornith and Lemonade against ets-002/ets-004 next round to confirm.
+// Seventeenth entry, issue #186 (2026-09-14). Not a wording tightening like
+// entries one through sixteen — those all reacted to a specific failure
+// shape with a targeted sentence or example. This one is structural.
+// PR #184's follow-up measurement comment (7 identical-condition samples
+// per scenario, rounds 4-10 of that suite's auto-eval loop) confirmed
+// Lemonade's flakiness on suites/explicit-tool-syntax.yaml's baseline,
+// no-directive scenarios (ets-002/ets-004 — the same default domain-routing
+// behavior wnav-001/007/008/009/013 exercise here) is genuine sampling
+// variance, not a reachable wording gap: 4/7 pass on both, failures
+// scattered across different rounds with no common reasoning-shape cause.
+// The usual fix pattern this section has used 16 times — add a contrastive
+// example anchoring the specific failure — doesn't apply when there's no
+// single failure shape to anchor against.
+// Full design: docs/superpowers/specs/
+// 2026-09-14-wiki-navigation-section-restructure-design.md. Rewrote the
+// section from ~13 flowing prose paragraphs into a numbered decision
+// procedure (resolve domain -> resolve wiki_locate's result -> act on the
+// resolved wikiId -> priority overrides), on the hypothesis — drawn from
+// PR #184's own diagnosis of a related ceiling ("a structural fix... is
+// more likely to move it than another paragraph edit") — that less content
+// competing for attention, laid out as an explicit checklist, is more
+// resistant to sampling variance than the same substance spread across
+// narrative paragraphs. Every rule and worked example from entries 1-16
+// is preserved (verified against the specific eval scenario each protects
+// — see the design doc's rule-inventory table); nothing new was added,
+// nothing was cut for length. No local model server is reachable from the
+// environment this change was authored in, so none of this has been
+// re-run yet. Next real eval run should: (1) regression-check every
+// previously-passing suites/wiki-navigation.yaml scenario, since a
+// structural rewrite risks touching rules that already work even without
+// changing their substance; (2) re-measure Lemonade's ets-002/ets-004 pass
+// rate against this entry's 4/7 baseline once suites/explicit-tool-
+// syntax.yaml is available locally (PR #184 is unmerged as of this entry).
+// If the pass rate doesn't move, that's evidence the density hypothesis
+// itself doesn't hold for this model/section — not a cue to keep chasing
+// this with further wording edits, per interpreting-results.md §5.
 //
-// Correction to the seventeenth entry, from the very next round against its
-// own wording. ets-002/ets-004 fixed for both models (Ornith 2/4→3/4,
-// Lemonade to a clean pass), but Ornith regressed ets-001 — the one
-// scenario that requires the directive to override this section's default
-// entirely. Ornith's reasoning quoted the new paragraph nearly verbatim and
-// concluded to call wiki_locate anyway, despite an explicit #wiki_search
-// directive. The new example, by naming the exact input phrase, apparently
-// out-weighed NOTATION_SECTION's directive-overrides-default rule in the
-// model's own reasoning — the new paragraph never said what to do when a
-// directive is already present, so nothing there resolved the conflict.
-// Added a closing sentence to the same paragraph making the default
-// explicitly conditional: it yields to an explicit #tool-name directive,
-// pointing back at notation's own precedence rule rather than restating it
-// abstractly. Re-run Ornith against ets-001 next round; watch for the
-// original ets-002/ets-004 fix holding at the same time.
+// Eighteenth entry, fresh auto-eval round against the seventeenth entry's
+// restructure (2026-09-14, Ornith/Lemonade/local, judge local). ets-002/
+// ets-004 (the density hypothesis's target) held for both Ornith and
+// Lemonade this round — encouraging, though one round isn't enough to
+// confirm the 4/7 Lemonade flakiness is actually resolved. But a different,
+// previously-fixed scenario broke for BOTH models: ets-001
+// (directive-overrides-default-routing), where a #wiki_search token is
+// present. Both models' reasoningContent walked straight into the domain-
+// routing procedure and called wiki_locate first, never once citing the
+// directive or notation's override rule — Lemonade's trace even opened by
+// correctly stating "explicitly invoking the wiki_search tool" and then
+// talked itself into wiki_locate anyway. Root cause: the design doc's
+// rule-inventory table captured entries 1-16 (all reactions to
+// suites/wiki-navigation.yaml failures) but not the directive-precedence
+// gate a *different* auto-eval session (suites/explicit-tool-syntax.yaml,
+// rounds 2-3, commits ff9edbe/93decd4) had added to the old prose — that
+// fix predates this restructure's design doc and was never folded in, so
+// the rewritten step 4 ("Priority overrides") covers tool-result changes
+// and write-rejection retries but never mentions a `<required-tool>`
+// instruction at all. Also applying round 3's structural lesson from that
+// same prior session: a gate stated only in step 4, after the routing
+// steps, loses to top-to-bottom reasoning that's already committed to a
+// domain-routing chain of thought by the time it gets there. Added a
+// leading paragraph before step 1 stating the gate up front, rather than
+// appending a bullet to step 4. Re-run Ornith and Lemonade against ets-001
+// next round to confirm the gate holds now that it's back and positioned
+// first.
 //
-// Second correction to the seventeenth entry, same auto-eval loop, round 3.
-// The closing-sentence fix recovered Ornith's ets-001 (4/4), but the very
-// next Lemonade run failed the same scenario in a shape that shows *why*
-// a trailing sentence wasn't enough: Lemonade's own reasoning opened with
-// "The user has explicitly requested #wiki_search, so I will execute
-// wiki_search" — correctly primed by notation — and then walked itself
-// through the domain-ambiguity paragraph anyway, talking itself out of the
-// directive it had just stated. Putting the precedence rule at the *end* of
-// the paragraph meant the model read the domain-ambiguity reasoning first
-// and the override notice last, backwards from the order it needs to
-// reason in. Restructured: split into two paragraphs, gate first — a
-// directive settles the question outright and the ambiguity discussion
-// doesn't apply at all, stated before any mention of "favorite" or
-// programming languages — then the domain-ambiguity example, now opening
-// with "Absent a directive" instead of ending with the exception. Re-run
-// both Ornith and Lemonade against ets-001/ets-002/ets-004 next round to
-// confirm this ordering actually changes the reasoning order, not just the
-// prose.
+// Nineteenth entry, fresh auto-eval round against the eighteenth entry's
+// restored directive gate (2026-09-14, Ornith/Lemonade/local, judge local).
+// The gate itself is genuinely working now — Ornith passed ets-001 cleanly
+// this round — but Lemonade failed it again, in the same shape entry
+// seventeen's own restructure comment already described (named the
+// directive correctly, then reasoned through the numbered steps anyway and
+// landed on wiki_locate). One sample isn't enough after a wording change to
+// call this a ceiling per interpreting-results.md §5 — no code change here,
+// re-run next round to see if it recurs under unchanged wording before
+// touching this again.
+//
+// The same round surfaced a second, separate, and more clear-cut gap:
+// Ornith failed ets-004 (#not_a_real_tool, no real directive — falls back to
+// the plain no-directive default) while passing the identical underlying
+// question in ets-002. That inconsistency is explained by a real regression
+// entry seventeen's restructure introduced: the "favorite programming
+// language is NOT domain-exclusive the way favorite color is" contrastive
+// example — proven out over rounds 1-3 of the *original*
+// suites/explicit-tool-syntax.yaml auto-eval session (commits e75a104/
+// ff9edbe/93decd4, well before PR #186) — never made it into the rewritten
+// decision procedure. The seventeenth entry's restructure comment says its
+// rule-inventory table covered entries 1-16 (all wiki-navigation.yaml
+// failures); this fix came from a *different* suite's session and was
+// missed the same way the directive gate itself was (see the eighteenth
+// entry). Restored it as a terse contrastive example in step 1's list,
+// matching this section's new decision-procedure style rather than
+// reproducing the old prose paragraph verbatim. Re-run Ornith and Lemonade
+// against ets-002/ets-004 next round to confirm this closes the gap the way
+// it did the first time.
+//
+// Twentieth entry, re-run against the nineteenth entry's fix (2026-09-14,
+// Ornith/Lemonade/local, judge local). ets-002/ets-004 held for both models
+// (4/4 combined across two rounds now) — the restored example closed that
+// gap. But ets-001 failed for BOTH models this round, in a shape distinct
+// from every previous ets-001 failure this section's history has seen:
+// both explicitly identified the `<required-tool id="wiki_search">`
+// instruction in their reasoning (Ornith's trace even quotes it verbatim
+// and states "This means I should use wiki_search directly"), then talked
+// themselves out of calling it because they believed wiki_search needed a
+// wikiId they didn't have yet, and called wiki_locate first to obtain one.
+// Root cause: the gate paragraph says to call the required tool "directly
+// with whatever arguments the request implies," but never states that
+// wiki_search's wikiId is optional and that omitting it (searching across
+// every domain, per its own tool-list line above) is a valid way to
+// satisfy "whatever arguments the request implies" when no domain is
+// already known — so the model filled that gap with its own assumption
+// that an argument was missing, and treated the steps below as the
+// prerequisite for producing it. This is a materially different failure
+// from the eighteenth/nineteenth entries' "ignored the gate" shape, so not
+// treating it as a recurrence of an already-ceiling-flagged issue — it's
+// a new, well-understood gap with an obvious fix. Added one sentence to
+// the gate paragraph closing this specific loophole, with wiki_search
+// named concretely (the only currently-required-able wiki tool this
+// section's own suite exercises without a prerequisite argument). Re-run
+// Ornith and Lemonade against ets-001 next round to confirm.
+//
+// Twenty-first entry, 2026-09-15. Not from a fresh auto-eval run in this
+// environment (no local model server is reachable here) — from a
+// read-through diagnosis after PR #187's own 20-round consistency check
+// (posted as a PR comment) showed the eighteenth-twentieth entries' fixes
+// hadn't moved ets-001's aggregate pass rate (Lemonade 10/20, Ornith 6/20,
+// no streak pattern across rounds). Root cause: the nineteenth entry
+// restored the "favorite programming language" contrastive example's
+// content but not the "this is the no-directive default" qualifier the
+// *original* fix for this exact collision had, back when it first appeared
+// in the pre-restructure prose (suites/explicit-tool-syntax.yaml auto-eval
+// session, commits ff9edbe/93decd4, well before PR #186). ets-001's own
+// input is that literal phrase prefixed with #wiki_search — so the
+// unqualified restored example was anchoring the model toward wiki_locate
+// for ets-001's own input, competing directly with the leading directive
+// gate stated several lines earlier. Per interpreting-results.md §3
+// (contrastive examples anchor harder than abstract rules), an abstract
+// gate stated once, upstream of a concrete matching example, is exactly the
+// shape that loses. Added a second, narrower contrastive clause directly to
+// that example bullet, showing the same phrase with a directive landing on
+// wiki_search — the same fix pattern that closed this identical collision
+// the first time it appeared. Not yet validated here; needs a fresh
+// multi-round check against ets-001 specifically (not a single re-run) per
+// the PR's own consistency-check finding that single/double-round passes on
+// this scenario aren't distinguishable from its ~30-50% baseline noise.
+//
+// Twenty-second entry, 2026-09-15. Not from a fresh auto-eval run in this
+// environment (no local model server is reachable here) — from a
+// read-through diagnosis after a 20-round suites/wiki-navigation.yaml
+// regression check (posted as a PR #187 comment) against the twenty-first
+// entry's wording, run because every prior validation of this suite since
+// the restructure had been 1-2 rounds at most. Two real regressions
+// surfaced, both traced to content this section already carried getting
+// compressed or crowded during the restructure rather than to anything new:
+//
+// 1. wnav-008 ("What's my favorite color?" should skip straight to
+// wiki_search) failed 80-95% of rounds across all three models (local
+// 19/20, Ornith 16/20, Lemonade 19/20) — a cross-model near-universal
+// failure on a scenario that had been reliable since the third tightening
+// entry, which per interpreting-results.md §5's cross-check is the
+// signature of a shared prompt problem, not three coincident model
+// ceilings. Root cause: step 1's Examples list had grown to one skip case
+// immediately followed by four "looks similar, but call wiki_locate
+// anyway" cases in a row using near-identical phrasing ("not
+// domain-exclusive," "same ambiguity as..."), including the
+// favorite-programming-language example the twenty-first entry just made
+// longer. Nothing marked these as two different categories — a model
+// reading top-to-bottom hits one short "skip" line and then a wall of
+// "actually, don't skip" reasoning reinforced four times right after it.
+// Split the flat list into two explicitly labeled groups ("skip
+// wiki_locate" vs. "call wiki_locate (looks similar, but isn't")) so the
+// categorization is structural rather than something to infer from prose
+// similarity. No content removed or added, only regrouped.
+//
+// 2. wnav-004 (a reported tie should go to ask_user, never decided by
+// feel) jumped to a 12/20 miss rate for Ornith — previously only ever
+// logged as occasional variance for this model, never a pattern (see the
+// ninth/eleventh entries). This is, by this file's own history, the single
+// hardest rule to get a model to reliably follow: it took two full
+// emphatic paragraphs in the pre-restructure prose, with "a reported tie is
+// a tie even if one candidate feels more plausible to you" stated as its
+// own standalone sentence, and even then Lemonade never fully cleared it —
+// a confirmed, accepted ceiling (eleventh entry), not a wording gap. The
+// restructure compressed both paragraphs into one bullet and demoted that
+// same claim to a trailing subordinate clause. A rule that needed more
+// reinforcement than anything else in this file just to reach "ceiling,
+// not gap" is exactly the one most likely to suffer from under-reinforcing
+// during a density-reduction pass. Restructured the bullet so "a tie stays
+// a tie regardless of feeling" and "ask_user is the only correct move" are
+// each their own leading sentence again, same content, reordered for
+// emphasis — matching the shape that worked before the restructure.
+//
+// Both fixes are independent, non-overlapping edits (different bullets, no
+// interaction risk). Not yet validated in this environment; needs a fresh
+// 20-round suites/wiki-navigation.yaml run against all three models to
+// confirm wnav-008 recovers and to see whether Ornith's wnav-004 rate drops
+// back toward the "occasional variance" it was before — full recovery to
+// 0/20 isn't the bar, since some prior variance on this rule for Ornith,
+// and Lemonade's confirmed ceiling on it, both predate this restructure
+// entirely and aren't this round's problem to solve.
+//
+// Twenty-third entry, 2026-09-15. The twenty-second entry's confirmation run
+// landed as a PR #187 comment: wnav-008 recovered as predicted (local
+// 19/20→7/20, Ornith 16/20→7/20, Lemonade 19/20→12/20 failures), but
+// wnav-004 barely moved (Lemonade 20/20→17/20, Ornith 12/20→11/20) — the
+// wording change did not do what it was written to do. Four raw
+// reasoningContent traces (2 Lemonade, 2 Ornith; one before- and one
+// after-fix round each, user-supplied since eval logs aren't reachable from
+// this environment) were read directly rather than inferring cause from the
+// pass-rate delta alone, per interpreting-results.md §5. None showed the
+// targeted failure shape (reasoning correctly identifies the tie, then talks
+// itself into a hunch anyway). Instead: three of four traces (both Lemonade
+// rounds, one Ornith round) show reasoningContent correctly naming ask_user
+// as the right call, followed by no tool call at all — calledTools: [],
+// finish_reason: stop, prose output instead. The fourth (Ornith, post-fix)
+// skips tie-break reasoning entirely by hallucinating a candidate domain
+// name ("training-fitness") that was never seeded, then calling
+// wiki_read_page against it. Both are tool-invocation follow-through
+// failures, not reasoning failures this section's wording can reach —
+// there's no misjudgment in the transcript to correct with clearer prose.
+// This matches the eleventh entry's "confirmed ceiling" finding for
+// Lemonade and extends it: for both models, on this specific rule, the
+// bottleneck now looks like execution reliability (emitting the tool call
+// the model's own reasoning already committed to), not rule comprehension.
+// The wording change from the twenty-second entry is left in place — it's
+// harmless and correctly reordered emphasis that matches the
+// pre-restructure shape — but it should not be iterated on further as a fix
+// for wnav-004; doing so would be re-tightening a rule the traces show is
+// already being followed in reasoning and failing downstream of it. A real
+// fix, if pursued, is a harness-level change (e.g. detecting a
+// reasoning-committed-but-no-tool-call turn and forcing a retry, or a
+// stricter tool_choice constraint) — out of scope for this file and not
+// something to build speculatively without a separate decision to pursue
+// it.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -484,100 +664,95 @@ const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge bas
 - wiki_search: find specific pages by content, across every domain by default or scoped to one via wikiId.
 - wiki_read_page: read a specific page's full content once you've found it.
 
-When you don't already know which domain applies, call wiki_locate first. Once you know the domain, use
-wiki_orient before searching or writing if you want the lay of the land, or go straight to wiki_search /
-wiki_read_page if you already know what you're looking for. Don't repeat a step you don't need — but only
-skip wiki_locate when the domain was actually established earlier in the conversation, or the query names
-something so specific to the user's own stated preferences that no other domain could plausibly cover it.
-A topic merely sounding personal or plausible is not the same as an established domain — if you're
-inferring or guessing rather than already knowing, call wiki_locate first.
+Follow this procedure in order — each step only applies when the step before it didn't already
+resolve things.
 
-For example: "What's my favorite color?" has no plausible domain other than the user's own preferences —
-skip straight to wiki_search. "What have you noticed about growth lately?" could mean the user's own
-growth or your own reflective growth as the agent — that's genuinely ambiguous, so call wiki_locate first
-rather than guessing which one it means.
+A \`<required-tool>\` instruction already resolved which tool to use this turn (see notation) —
+call it directly with whatever arguments the request implies, skipping every step below. The
+steps below are how you resolve the tool and its arguments when no such instruction is present;
+they're not a checklist to run through regardless, and a topic that would otherwise call for
+wiki_locate doesn't override a directive that already answered the question. This includes a
+required wiki_search with no domain already known: wikiId is optional and wiki_search already
+searches across every domain when it's omitted, so call it without one rather than calling
+wiki_locate first to produce a wikiId the directive never asked for.
 
-This distinction, like the others in this section, only governs the default — when a message already carries
-a #tool-name directive (see notation above), the matching <required-tool> instruction already settled which
-tool to call, full stop. Don't re-litigate that settled choice against any domain-ambiguity reasoning below;
-there's nothing left here for that reasoning to resolve.
+1. Resolve the domain.
+   - The domain was already established earlier in this conversation → it's known; skip to step 2.
+   - The question is itself about where to look ("which part of the knowledge base should I
+     check?") → call wiki_locate. Sounding personal doesn't exempt this — a question about
+     routing is not a question about the fact itself.
+   - The topic names something so specific to the user's own stated preferences that no other
+     domain could plausibly cover it → skip wiki_locate; the domain is known, go to step 2.
+   - Anything else — a topic that merely sounds personal or plausible without being
+     domain-exclusive, or a technical/setup topic even phrased possessively ("my X") — call
+     wiki_locate. "My" says whose thing it is, not which domain documents it.
 
-Absent a directive, watch for the same "favorite" phrasing on a topic that isn't actually domain-exclusive
-the way color is: "What is my favorite programming language?" reads like the color example on the surface,
-but a programming language could just as easily be documented in a dedicated technical or engineering domain
-as in personal preferences — the same ambiguity the Verdaccio example below covers, just phrased as a
-"favorite" question instead of a how-to. Call wiki_locate first here; the word "favorite" alone doesn't make
-a topic domain-exclusive, only the topic itself does.
+   Examples — skip wiki_locate (no other domain could plausibly cover it):
+   - "What's my favorite color?" → wiki_search directly (nothing but the user's own preferences
+     could ever answer this).
 
-That skip only covers a direct question about a concrete personal fact — not a question about where to
-look. "Which part of the knowledge base should I check for my personal preferences?" is asking for domain
-identification outright, so call wiki_locate — the topic sounding like the kind of thing you'd otherwise
-skip for doesn't matter when the question itself is about routing, not the fact.
+   Examples — call wiki_locate (looks similar, but isn't actually domain-exclusive):
+   - "What is my favorite programming language?" → wiki_locate (could belong to a
+     technical/engineering domain instead of personal preferences — not domain-exclusive the way
+     color is, same ambiguity as the Verdaccio example below). This is the no-directive default:
+     "#wiki_search What is my favorite programming language?" → wiki_search directly instead —
+     the required-tool gate above already decided it, so this ambiguity doesn't apply.
+   - "What have you noticed about growth lately?" → wiki_locate (could be the user's growth or
+     your own reflective growth — genuinely ambiguous).
+   - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
+     (asking for routing outright, despite mentioning "personal preferences").
+   - "What was the process for generating a new NPM token for Verdaccio?" and "I need to generate
+     a new NPM token for my Verdaccio instance" → wiki_locate either way (a technical/setup topic
+     could belong to a dedicated technical domain just as easily as personal notes; the possessive
+     phrasing in the second one doesn't change that).
 
-A technical or setup-specific topic isn't an outright match for the user's own domain either, even when
-it's framed around their setup: "What was the process for generating a new NPM token for Verdaccio?" could
-belong to a dedicated technical domain just as easily as personal notes, so call wiki_locate first rather
-than jumping straight to wiki_search just because the topic feels specific enough to search for directly.
-That holds even when the phrasing is possessive — "I need to generate a new NPM token for my Verdaccio
-instance" names the same ambiguous technical topic as before; "my" describes whose instance it is, not
-which domain documents it, so it doesn't turn a technical topic into an outright single-domain match either.
+2. Resolve wiki_locate's result (skip if step 1 already gave you a known domain).
+   - No match → stop trying to route further; say plainly that nothing in the wiki covers this
+     rather than answering from an unrelated domain.
+   - One outright match → that wikiId is resolved; go to step 3.
+   - Multiple candidates (a tie) → a tie stays a tie even when one candidate feels more plausible
+     to you; that feeling is not real information, and proceeding on it — or announcing your pick
+     in your reply — is the same mistake as inventing a narrower context. Narrow to one only using
+     something real: the routing notes attributing the request to a single candidate, or something
+     the user actually said elsewhere in the conversation. Don't invent a narrower context to retry
+     wiki_locate with. If nothing real breaks the tie, call ask_user and ask which domain they
+     mean — that's the only correct move, not deciding for them. Once narrowed, go to step 3.
 
-wiki_search takes an optional wikiId to scope it to a single domain — pass the resolved wikiId straight
-into wiki_search once you have one, whether it came from a single outright wiki_locate match, from
-narrowing a multi-candidate wiki_locate result yourself using the routing notes, or from a domain already
-established earlier in the conversation. There's no separate confinement step required first: working out
-which candidate applies is a decision you make from wiki_locate's own result text, then apply directly by
-passing that wikiId to whichever call — wiki_search or wiki_orient — comes next. Only omit wikiId when you
-actually want to search across every domain at once.
+3. Act on the resolved wikiId.
+   - Overview request ("what do we already know about this?", "what's in the knowledge base
+     here?") → wiki_orient({ wikiId }), even on a single outright match — an overview needs the
+     page index, which only wiki_orient returns.
+   - Concrete question with something specific to search for → wiki_search({ wikiId, query })
+     directly, whether wikiId came from an outright match or from narrowing a tie. Don't detour
+     through wiki_orient first: only wikiId confines the search, and orient adds nothing a direct
+     scoped search doesn't already give you. Omit wikiId only when you deliberately want to search
+     across every domain at once.
+   - Already know exactly which page? → wiki_read_page it directly rather than re-searching.
+   - Add or save a fact, and nothing already on-topic turned up (from wiki_orient's index, or
+     because the domain was already established) → wiki_create_page directly, picking a sensible
+     title yourself. Don't run a wiki_search first to check whether a page already exists —
+     wiki_create_page detects near-duplicates itself — and don't ask where to put it; the request
+     to add the note was already the decision.
 
-For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient
-first. "What have I told you I prefer for my morning routine?" after wiki_locate narrows a "user" vs. "self"
-tie to "user" via its routing notes, or "What programming languages do I use most at work?" after
-wiki_locate returns "user" as a single outright match — both go straight to wiki_search({ wikiId: 'user',
-query: ... }). wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already
-does, so inserting it here is a wasted round-trip, not a cautious extra step — save wiki_orient for when the
-user is actually asking for an overview, covered next.
+   Examples:
+   - "What have I told you I prefer for my morning routine?" (wikiId narrowed from a tie) →
+     wiki_search({ wikiId, query }) — a concrete fact, not an overview.
+   - "What programming languages do I use most at work?" (wikiId from a single outright match) →
+     wiki_search({ wikiId, query }) — same reasoning; how the wikiId was resolved doesn't matter.
+   - "What do we already know here?" → wiki_orient({ wikiId }), even on a single outright match.
 
-The single-match skip also assumes you have something concrete to search for. wiki_search answers
-"which pages match this query?" — it needs a specific query to run. wiki_orient is what returns a
-domain's page index and structure. So when the user is asking for an overview — "what do we already
-know about this?", "what's in the knowledge base here?" — the call after wiki_locate is wiki_orient
-on the matched domain, even when that match was a single, outright one. Skipping to wiki_search to
-"see what pages exist" answers a different question than the one the user asked. Either way, pass the
-matched domain's wikiId along with the call.
-
-If wiki_locate reports multiple equally-good candidates and asks you to narrow the context or have the
-user pick one, only narrow it yourself with information the user actually already gave you elsewhere in
-the conversation. Don't invent a more specific context to retry wiki_locate with — a guess dressed up as a
-narrower query is still a guess. When there's nothing real to narrow with, ask the user which domain they
-mean instead of retrying wiki_locate with fabricated specifics.
-
-A reported tie is a tie even if one candidate feels more plausible to you. Your own sense of which domain
-seems more likely is not "information the user actually gave you" — proceeding on that hunch, or announcing
-your pick in your reply, is the same mistake as inventing a narrower context, just skipping the retry step
-first. If you can't point to something the user actually said that breaks the tie, the only correct move is
-to call ask_user, not to decide for them.
-
-The same directness applies to writes. When the user asks you to add or save a fact, the domain is
-established, and wiki_orient's index shows nothing on-topic, call wiki_create_page directly, picking
-a sensible title yourself. Don't run a wiki_search first just to check whether a page already
-exists — wiki_create_page detects near-duplicate pages itself and points you to wiki_update_page
-when one does. And don't ask where to put it, in your reply or via ask_user — the request to add
-the note was the decision, already made.
-
-A tool's own result is more current than this default guidance. If a call returns an error or an explicit
-instruction — an unrecognized wikiId telling you to call wiki_locate, for example — follow that over
-whatever step you would otherwise skip.
-
-A write rejection is a different case from that one, not the same one: an unrecognized wikiId means the
-domain is genuinely unknown, so wiki_locate is the right next step. A write restricted to one workspace's
-wiki — wiki_create_page, wiki_update_page, wiki_add_cross_link, or wiki_rebaseline_source coming back
-naming the one wiki you're allowed to write to — means the domain is already known, just not the one you
-tried. When the user's next turn confirms to proceed — "use the right one," "try that again," a plain
-"yes" — retry the exact same call again with only the wikiId swapped to the one the rejection named. The
-path, content, fromPage/toPage, or rawFilePath you already had were never in question, so don't re-derive
-them with wiki_search or wiki_locate, and don't ask the user what they'd like to do next — the
-confirmation already answered that.`;
+4. Priority overrides — these outrank every default above.
+   - A tool's own result is more current than this guidance. An error or explicit instruction from
+     a call — an unrecognized wikiId telling you to call wiki_locate, for example — wins over
+     whatever step you'd otherwise skip.
+   - A write rejection that already names the correct wiki (wiki_create_page, wiki_update_page,
+     wiki_add_cross_link, or wiki_rebaseline_source refusing the wiki you tried and naming the one
+     you're allowed to write to) is a different case from an unrecognized wikiId: the domain is
+     already known, just not the one you used. When the user's next turn confirms to proceed —
+     "use the right one," "try that again," a plain "yes" — retry the exact same call with only
+     wikiId swapped to the one the rejection named. Don't re-derive the path, content,
+     fromPage/toPage, or rawFilePath you already had, and don't ask what they'd like to do next;
+     the confirmation already answered that.`;
 
 // Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
 // first suite to exercise web_fetch alongside the wiki tools. Nothing in the
@@ -944,10 +1119,32 @@ about wiki content, never as something you can answer from general knowledge or 
 // wiki-as-memory framing entirely and reverted to a stock "I'm an AI
 // language model and can't do real-time search" disclaimer instead of
 // reporting honestly that the wiki had nothing.
+//
+// Extended for suites/explicit-tool-syntax.yaml's ets-001, round 3 of a
+// 2026-09-14 auto-eval session (Ornith/Lemonade/local, judge local).
+// WIKI_NAVIGATION_SECTION's own directive-override gate (see its twentieth
+// entry) was holding on its own terms but ets-001 kept failing anyway —
+// Lemonade's reasoning traced the exact mechanism directly: it read this
+// section's "Reach for wiki_locate before responding" as a complete,
+// self-sufficient instruction, treating the pointer to wiki_navigation as
+// only covering *when it's safe to skip* wiki_locate, not whether a
+// `<required-tool>` directive could override the default outright — so a
+// #wiki_search directive got "noted" and then set aside as secondary to
+// this sentence's own imperative. This section is read before
+// wiki_navigation's gate, so a model that treats it as sufficient on its
+// own never reaches the correction downstream. Added the same override
+// clause here, at the point where the competing imperative actually lives,
+// rather than relying on a model reading far enough ahead to find it. Not
+// yet re-tested against Ornith's own round-3 failure (a different shape —
+// no mention of the directive at all — that may be independent flakiness
+// rather than this same mechanism). Re-run both models against ets-001
+// next round.
 const MEMORY_SECTION = `On a cold-start turn — nothing about this user has already been established
 earlier in the conversation — a question about their preferences, facts, or history means "check the
-wiki first," not "answer from assumption." Reach for wiki_locate before responding — see wiki_navigation
-for exactly when it's safe to skip straight to wiki_search instead. If the wiki genuinely has nothing on the topic, say so
+wiki first," not "answer from assumption." Reach for wiki_locate before responding, unless a
+\`<required-tool>\` instruction (see notation) already named a different tool to call this turn — that
+directive is the decision, not a secondary consideration to weigh against this default. Otherwise see
+wiki_navigation for exactly when it's safe to skip straight to wiki_search instead. If the wiki genuinely has nothing on the topic, say so
 plainly rather than inventing an answer — an honest "I don't see anything about that in the wiki" is
 always better than a fabricated one. That's also better than falling back on a generic "I'm an AI and
 can't do that" disclaimer — you do have a concrete way to check, the wiki, so check it and report what

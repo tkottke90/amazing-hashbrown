@@ -94,6 +94,15 @@ describe('agents/system-prompt', () => {
       expect(buildSystemPrompt()).to.include('cold-start turn');
     });
 
+    it('gates the cold-start wiki_locate default on the absence of a required-tool directive', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Reach for wiki_locate before responding, unless a\n' +
+          '`<required-tool>` instruction (see notation) already named a different tool to call this turn — that\n' +
+          'directive is the decision, not a secondary consideration to weigh against this default.',
+      );
+    });
+
     it('includes guidance against falling back to a generic AI disclaimer instead of checking the wiki', () => {
       expect(buildSystemPrompt()).to.include("I'm an AI and\ncan't do that");
     });
@@ -110,149 +119,178 @@ describe('agents/system-prompt', () => {
 
     it("gives a tool's own result priority over the default step-skipping guidance", () => {
       const result = buildSystemPrompt();
-      expect(result).to.include("A tool's own result is more current than this default guidance");
-      expect(result).to.include('follow that over\nwhatever step you would otherwise skip');
+      expect(result).to.include("A tool's own result is more current than this guidance");
+      expect(result).to.include("wins over\n     whatever step you'd otherwise skip");
     });
 
     it('distinguishes an unrecognized wikiId from a forbidden one that already names the correct wiki', () => {
       const result = buildSystemPrompt();
+      expect(result).to.include('an unrecognized wikiId telling you to call wiki_locate');
       expect(result).to.include(
-        'an unrecognized wikiId means the\ndomain is genuinely unknown, so wiki_locate is the right next step',
+        'is a different case from an unrecognized wikiId: the domain is\n     already known, just not the one you used',
       );
-      expect(result).to.include('means the domain is already known, just not the one you\ntried');
     });
 
     it('retries a rejected write directly with the corrected wikiId once the user confirms', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'retry the exact same call again with only the wikiId swapped to the one the rejection named',
+        'retry the exact same call with only\n     wikiId swapped to the one the rejection named',
       );
-      expect(result).to.include("so don't re-derive\nthem with wiki_search or wiki_locate");
       expect(result).to.include(
-        "don't ask the user what they'd like to do next — the\nconfirmation already answered that",
+        "Don't re-derive the path, content,\n     fromPage/toPage, or rawFilePath you already had",
+      );
+      expect(result).to.include(
+        "don't ask what they'd like to do next;\n     the confirmation already answered that",
       );
     });
 
     it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
       const result = buildSystemPrompt();
-      expect(result).to.include('no other domain could plausibly cover it');
+      expect(result).to.include('no other\n     domain could plausibly cover it');
       expect(result).to.include(
-        'A topic merely sounding personal or plausible is not the same as an established domain',
+        'a topic that merely sounds personal or plausible without being\n     domain-exclusive',
       );
     });
 
-    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example', () => {
-      const result = buildSystemPrompt();
-      expect(result).to.include('"What\'s my favorite color?" has no plausible domain other than');
-      expect(result).to.include('"What have you noticed about growth lately?" could mean');
-    });
-
-    it('gates the domain-ambiguity distinction on the absence of a #tool-name directive, checked first', () => {
+    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example, grouped into separate skip/no-skip example lists', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'This distinction, like the others in this section, only governs the default',
-      );
-      expect(result).to.include("there's nothing left here for that reasoning to resolve");
-    });
-
-    it('distinguishes "favorite programming language" from the "favorite color" example as domain-ambiguous', () => {
-      const result = buildSystemPrompt();
-      expect(result).to.include(
-        'Absent a directive, watch for the same "favorite" phrasing on a topic',
+        'Examples — skip wiki_locate (no other domain could plausibly cover it):',
       );
       expect(result).to.include(
-        '"What is my favorite programming language?" reads like the color example on the surface',
+        '"What\'s my favorite color?" → wiki_search directly (nothing but the user\'s own preferences\n     could ever answer this)',
+      );
+      expect(result).to.include(
+        "Examples — call wiki_locate (looks similar, but isn't actually domain-exclusive):",
+      );
+      expect(result).to.include(
+        '"What have you noticed about growth lately?" → wiki_locate (could be the user\'s growth or\n     your own reflective growth',
+      );
+    });
+
+    it('distinguishes "favorite programming language" from "favorite color" as not domain-exclusive', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"What is my favorite programming language?" → wiki_locate (could belong to a\n' +
+          '     technical/engineering domain instead of personal preferences — not domain-exclusive the way\n' +
+          '     color is, same ambiguity as the Verdaccio example below)',
+      );
+    });
+
+    it('scopes the favorite-programming-language example to the no-directive default, with a directive-present contrastive pair', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This is the no-directive default:\n' +
+          '     "#wiki_search What is my favorite programming language?" → wiki_search directly instead —\n' +
+          "     the required-tool gate above already decided it, so this ambiguity doesn't apply.",
+      );
+    });
+
+    it('gates the entire domain-routing procedure on the absence of a required-tool directive, checked first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'A `<required-tool>` instruction already resolved which tool to use this turn (see notation) —\n' +
+          'call it directly with whatever arguments the request implies, skipping every step below.',
+      );
+      expect(result).to.include(
+        "a topic that would otherwise call for\nwiki_locate doesn't override a directive that already answered the question",
+      );
+    });
+
+    it('closes the wikiId-first loophole for a required wiki_search with no domain already known', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This includes a\nrequired wiki_search with no domain already known: wikiId is optional and wiki_search already\n' +
+          "searches across every domain when it's omitted, so call it without one rather than calling\n" +
+          'wiki_locate first to produce a wikiId the directive never asked for.',
       );
     });
 
     it('distinguishes a concrete personal-fact question from a meta-question about which domain to check', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'That skip only covers a direct question about a concrete personal fact — not a question about where to',
+        "Sounding personal doesn't exempt this — a question about\n     routing is not a question about the fact itself",
       );
       expect(result).to.include(
-        '"Which part of the knowledge base should I check for my personal preferences?" is asking for domain',
+        '"Which part of the knowledge base should I check for my personal preferences?" → wiki_locate\n     (asking for routing outright',
       );
     });
 
     it("doesn't extend the skip-to-search permission to a technical or setup-specific topic", () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "A technical or setup-specific topic isn't an outright match for the user's own domain either",
+        'a technical/setup topic even phrased possessively ("my X") — call\n     wiki_locate.',
       );
       expect(result).to.include(
-        '"What was the process for generating a new NPM token for Verdaccio?" could\nbelong to a dedicated technical domain',
+        '"What was the process for generating a new NPM token for Verdaccio?" and "I need to generate\n     a new NPM token for my Verdaccio instance" → wiki_locate either way (a technical/setup topic\n     could belong to a dedicated technical domain',
       );
     });
 
     it('covers possessive phrasing of the same technical topic, not just the bare noun phrase', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        '"I need to generate a new NPM token for my Verdaccio\ninstance" names the same ambiguous technical topic as before',
+        '"I need to generate\n     a new NPM token for my Verdaccio instance" → wiki_locate either way',
       );
       expect(result).to.include(
-        "doesn't turn a technical topic into an outright single-domain match either",
+        "the possessive\n     phrasing in the second one doesn't change that)",
       );
     });
 
     it('tells the agent to pass a resolved wikiId straight into wiki_search regardless of how the domain was resolved', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'wiki_search takes an optional wikiId to scope it to a single domain',
+        'directly, whether wikiId came from an outright match or from narrowing a tie',
       );
       expect(result).to.include(
-        'whether it came from a single outright wiki_locate match, from\nnarrowing a multi-candidate wiki_locate result yourself using the routing notes, or from a domain already\nestablished earlier in the conversation',
-      );
-      expect(result).to.include(
-        'Only omit wikiId when you\nactually want to search across every domain at once',
+        'Omit wikiId only when you deliberately want to search\n     across every domain at once',
       );
     });
 
     it('gives a worked example of going straight to scoped wiki_search instead of wiki_orient first', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'For a concrete factual question, that means going straight to the scoped wiki_search call, not wiki_orient\nfirst.',
+        "Don't detour\n     through wiki_orient first: only wikiId confines the search",
       );
       expect(result).to.include(
-        "wiki_orient doesn't confine wiki_search any further than passing the wikiId directly already\ndoes, so inserting it here is a wasted round-trip",
+        "orient adds nothing a direct\n     scoped search doesn't already give you",
       );
     });
 
     it('scopes the single-match skip to concrete queries — overview questions take wiki_orient', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'The single-match skip also assumes you have something concrete to search for.',
+        'wiki_orient({ wikiId }), even on a single outright match — an overview needs the\n     page index, which only wiki_orient returns',
       );
       expect(result).to.include(
-        'Skipping to wiki_search to\n"see what pages exist" answers a different question than the one the user asked.',
+        '"What do we already know here?" → wiki_orient({ wikiId }), even on a single outright match',
       );
     });
 
     it('extends the direct-write rule to plain add-a-fact requests — create directly, no duplicate-check search', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'call wiki_create_page directly, picking\na sensible title yourself',
+        'wiki_create_page directly, picking a sensible\n     title yourself',
       );
       expect(result).to.include(
-        "Don't run a wiki_search first just to check whether a page already\nexists",
+        "Don't run a wiki_search first to check whether a page already exists —\n     wiki_create_page detects near-duplicates itself",
       );
     });
 
     it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'only narrow it yourself with information the user actually already gave you',
+        'Narrow to one only using\n     something real: the routing notes attributing the request to a single candidate, or something\n     the user actually said elsewhere in the conversation',
       );
-      expect(result).to.include("Don't invent a more specific context to retry wiki_locate with");
+      expect(result).to.include("Don't invent a narrower context to retry\n     wiki_locate with");
     });
 
-    it("doesn't let the model's own plausibility hunch override a reported tie", () => {
+    it("doesn't let the model's own plausibility hunch override a reported tie, leading with that claim rather than burying it", () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'A reported tie is a tie even if one candidate feels more plausible to you',
+        'a tie stays a tie even when one candidate feels more plausible\n     to you; that feeling is not real information, and proceeding on it — or announcing your pick\n     in your reply — is the same mistake as inventing a narrower context',
       );
       expect(result).to.include(
-        'the only correct move is\nto call ask_user, not to decide for them',
+        "call ask_user and ask which domain they\n     mean — that's the only correct move, not deciding for them",
       );
     });
 
