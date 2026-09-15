@@ -152,10 +152,16 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example', () => {
+    it('anchors the obvious-vs-ambiguous rule with a worked contrastive example, grouped into separate skip/no-skip example lists', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        '"What\'s my favorite color?" → skip (no domain but the user\'s own could ever answer this)',
+        'Examples — skip wiki_locate (no other domain could plausibly cover it):',
+      );
+      expect(result).to.include(
+        '"What\'s my favorite color?" → wiki_search directly (nothing but the user\'s own preferences\n     could ever answer this)',
+      );
+      expect(result).to.include(
+        "Examples — call wiki_locate (looks similar, but isn't actually domain-exclusive):",
       );
       expect(result).to.include(
         '"What have you noticed about growth lately?" → wiki_locate (could be the user\'s growth or\n     your own reflective growth',
@@ -165,19 +171,18 @@ describe('agents/system-prompt', () => {
     it('distinguishes "favorite programming language" from "favorite color" as not domain-exclusive', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        '"What is my favorite programming language?" → wiki_locate (looks like the color example on\n' +
-          '     the surface, but a programming language could belong to a technical/engineering domain\n' +
-          '     instead of personal preferences — not domain-exclusive the way color is, same ambiguity as\n' +
-          '     the Verdaccio example below)',
+        '"What is my favorite programming language?" → wiki_locate (could belong to a\n' +
+          '     technical/engineering domain instead of personal preferences — not domain-exclusive the way\n' +
+          '     color is, same ambiguity as the Verdaccio example below)',
       );
     });
 
     it('scopes the favorite-programming-language example to the no-directive default, with a directive-present contrastive pair', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'This is the no-directive default: "#wiki_search What is my\n' +
-          '     favorite programming language?" → wiki_search directly instead — the required-tool gate\n' +
-          "     above already decided it, so this ambiguity doesn't apply.",
+        'This is the no-directive default:\n' +
+          '     "#wiki_search What is my favorite programming language?" → wiki_search directly instead —\n' +
+          "     the required-tool gate above already decided it, so this ambiguity doesn't apply.",
       );
     });
 
@@ -274,18 +279,18 @@ describe('agents/system-prompt', () => {
     it('requires narrowing an ambiguous locate match with real information, not a fabricated guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'narrow to one only using something real: the routing notes\n     attributing the request to a single candidate, or something the user actually said elsewhere',
+        'Narrow to one only using\n     something real: the routing notes attributing the request to a single candidate, or something\n     the user actually said elsewhere in the conversation',
       );
-      expect(result).to.include("Don't invent a narrower context to retry wiki_locate with");
+      expect(result).to.include("Don't invent a narrower context to retry\n     wiki_locate with");
     });
 
-    it("doesn't let the model's own plausibility hunch override a reported tie", () => {
+    it("doesn't let the model's own plausibility hunch override a reported tie, leading with that claim rather than burying it", () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "a candidate merely feeling more plausible to you count as real information — that's the same\n     mistake, and announcing your pick in your reply doesn't fix it either",
+        'a tie stays a tie even when one candidate feels more plausible\n     to you; that feeling is not real information, and proceeding on it — or announcing your pick\n     in your reply — is the same mistake as inventing a narrower context',
       );
       expect(result).to.include(
-        'call ask_user and ask which domain they mean; a reported tie stays a tie until the\n     user or the conversation actually resolves it',
+        "call ask_user and ask which domain they\n     mean — that's the only correct move, not deciding for them",
       );
     });
 

@@ -568,6 +568,61 @@
 // multi-round check against ets-001 specifically (not a single re-run) per
 // the PR's own consistency-check finding that single/double-round passes on
 // this scenario aren't distinguishable from its ~30-50% baseline noise.
+//
+// Twenty-second entry, 2026-09-15. Not from a fresh auto-eval run in this
+// environment (no local model server is reachable here) — from a
+// read-through diagnosis after a 20-round suites/wiki-navigation.yaml
+// regression check (posted as a PR #187 comment) against the twenty-first
+// entry's wording, run because every prior validation of this suite since
+// the restructure had been 1-2 rounds at most. Two real regressions
+// surfaced, both traced to content this section already carried getting
+// compressed or crowded during the restructure rather than to anything new:
+//
+// 1. wnav-008 ("What's my favorite color?" should skip straight to
+// wiki_search) failed 80-95% of rounds across all three models (local
+// 19/20, Ornith 16/20, Lemonade 19/20) — a cross-model near-universal
+// failure on a scenario that had been reliable since the third tightening
+// entry, which per interpreting-results.md §5's cross-check is the
+// signature of a shared prompt problem, not three coincident model
+// ceilings. Root cause: step 1's Examples list had grown to one skip case
+// immediately followed by four "looks similar, but call wiki_locate
+// anyway" cases in a row using near-identical phrasing ("not
+// domain-exclusive," "same ambiguity as..."), including the
+// favorite-programming-language example the twenty-first entry just made
+// longer. Nothing marked these as two different categories — a model
+// reading top-to-bottom hits one short "skip" line and then a wall of
+// "actually, don't skip" reasoning reinforced four times right after it.
+// Split the flat list into two explicitly labeled groups ("skip
+// wiki_locate" vs. "call wiki_locate (looks similar, but isn't")) so the
+// categorization is structural rather than something to infer from prose
+// similarity. No content removed or added, only regrouped.
+//
+// 2. wnav-004 (a reported tie should go to ask_user, never decided by
+// feel) jumped to a 12/20 miss rate for Ornith — previously only ever
+// logged as occasional variance for this model, never a pattern (see the
+// ninth/eleventh entries). This is, by this file's own history, the single
+// hardest rule to get a model to reliably follow: it took two full
+// emphatic paragraphs in the pre-restructure prose, with "a reported tie is
+// a tie even if one candidate feels more plausible to you" stated as its
+// own standalone sentence, and even then Lemonade never fully cleared it —
+// a confirmed, accepted ceiling (eleventh entry), not a wording gap. The
+// restructure compressed both paragraphs into one bullet and demoted that
+// same claim to a trailing subordinate clause. A rule that needed more
+// reinforcement than anything else in this file just to reach "ceiling,
+// not gap" is exactly the one most likely to suffer from under-reinforcing
+// during a density-reduction pass. Restructured the bullet so "a tie stays
+// a tie regardless of feeling" and "ask_user is the only correct move" are
+// each their own leading sentence again, same content, reordered for
+// emphasis — matching the shape that worked before the restructure.
+//
+// Both fixes are independent, non-overlapping edits (different bullets, no
+// interaction risk). Not yet validated in this environment; needs a fresh
+// 20-round suites/wiki-navigation.yaml run against all three models to
+// confirm wnav-008 recovers and to see whether Ornith's wnav-004 rate drops
+// back toward the "occasional variance" it was before — full recovery to
+// 0/20 isn't the bar, since some prior variance on this rule for Ornith,
+// and Lemonade's confirmed ceiling on it, both predate this restructure
+// entirely and aren't this round's problem to solve.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -598,14 +653,16 @@ wiki_locate first to produce a wikiId the directive never asked for.
      domain-exclusive, or a technical/setup topic even phrased possessively ("my X") — call
      wiki_locate. "My" says whose thing it is, not which domain documents it.
 
-   Examples:
-   - "What's my favorite color?" → skip (no domain but the user's own could ever answer this).
-   - "What is my favorite programming language?" → wiki_locate (looks like the color example on
-     the surface, but a programming language could belong to a technical/engineering domain
-     instead of personal preferences — not domain-exclusive the way color is, same ambiguity as
-     the Verdaccio example below). This is the no-directive default: "#wiki_search What is my
-     favorite programming language?" → wiki_search directly instead — the required-tool gate
-     above already decided it, so this ambiguity doesn't apply.
+   Examples — skip wiki_locate (no other domain could plausibly cover it):
+   - "What's my favorite color?" → wiki_search directly (nothing but the user's own preferences
+     could ever answer this).
+
+   Examples — call wiki_locate (looks similar, but isn't actually domain-exclusive):
+   - "What is my favorite programming language?" → wiki_locate (could belong to a
+     technical/engineering domain instead of personal preferences — not domain-exclusive the way
+     color is, same ambiguity as the Verdaccio example below). This is the no-directive default:
+     "#wiki_search What is my favorite programming language?" → wiki_search directly instead —
+     the required-tool gate above already decided it, so this ambiguity doesn't apply.
    - "What have you noticed about growth lately?" → wiki_locate (could be the user's growth or
      your own reflective growth — genuinely ambiguous).
    - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
@@ -619,13 +676,13 @@ wiki_locate first to produce a wikiId the directive never asked for.
    - No match → stop trying to route further; say plainly that nothing in the wiki covers this
      rather than answering from an unrelated domain.
    - One outright match → that wikiId is resolved; go to step 3.
-   - Multiple candidates (a tie) → narrow to one only using something real: the routing notes
-     attributing the request to a single candidate, or something the user actually said elsewhere
-     in the conversation. Don't invent a narrower context to retry wiki_locate with, and don't let
-     a candidate merely feeling more plausible to you count as real information — that's the same
-     mistake, and announcing your pick in your reply doesn't fix it either. If nothing real breaks
-     the tie, call ask_user and ask which domain they mean; a reported tie stays a tie until the
-     user or the conversation actually resolves it. Once narrowed, go to step 3.
+   - Multiple candidates (a tie) → a tie stays a tie even when one candidate feels more plausible
+     to you; that feeling is not real information, and proceeding on it — or announcing your pick
+     in your reply — is the same mistake as inventing a narrower context. Narrow to one only using
+     something real: the routing notes attributing the request to a single candidate, or something
+     the user actually said elsewhere in the conversation. Don't invent a narrower context to retry
+     wiki_locate with. If nothing real breaks the tie, call ask_user and ask which domain they
+     mean — that's the only correct move, not deciding for them. Once narrowed, go to step 3.
 
 3. Act on the resolved wikiId.
    - Overview request ("what do we already know about this?", "what's in the knowledge base
