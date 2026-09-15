@@ -172,6 +172,15 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('scopes the favorite-programming-language example to the no-directive default, with a directive-present contrastive pair', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This is the no-directive default: "#wiki_search What is my\n' +
+          '     favorite programming language?" → wiki_search directly instead — the required-tool gate\n' +
+          "     above already decided it, so this ambiguity doesn't apply.",
+      );
+    });
+
     it('gates the entire domain-routing procedure on the absence of a required-tool directive, checked first', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

@@ -543,6 +543,31 @@
 // named concretely (the only currently-required-able wiki tool this
 // section's own suite exercises without a prerequisite argument). Re-run
 // Ornith and Lemonade against ets-001 next round to confirm.
+//
+// Twenty-first entry, 2026-09-15. Not from a fresh auto-eval run in this
+// environment (no local model server is reachable here) — from a
+// read-through diagnosis after PR #187's own 20-round consistency check
+// (posted as a PR comment) showed the eighteenth-twentieth entries' fixes
+// hadn't moved ets-001's aggregate pass rate (Lemonade 10/20, Ornith 6/20,
+// no streak pattern across rounds). Root cause: the nineteenth entry
+// restored the "favorite programming language" contrastive example's
+// content but not the "this is the no-directive default" qualifier the
+// *original* fix for this exact collision had, back when it first appeared
+// in the pre-restructure prose (suites/explicit-tool-syntax.yaml auto-eval
+// session, commits ff9edbe/93decd4, well before PR #186). ets-001's own
+// input is that literal phrase prefixed with #wiki_search — so the
+// unqualified restored example was anchoring the model toward wiki_locate
+// for ets-001's own input, competing directly with the leading directive
+// gate stated several lines earlier. Per interpreting-results.md §3
+// (contrastive examples anchor harder than abstract rules), an abstract
+// gate stated once, upstream of a concrete matching example, is exactly the
+// shape that loses. Added a second, narrower contrastive clause directly to
+// that example bullet, showing the same phrase with a directive landing on
+// wiki_search — the same fix pattern that closed this identical collision
+// the first time it appeared. Not yet validated here; needs a fresh
+// multi-round check against ets-001 specifically (not a single re-run) per
+// the PR's own consistency-check finding that single/double-round passes on
+// this scenario aren't distinguishable from its ~30-50% baseline noise.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -578,7 +603,9 @@ wiki_locate first to produce a wikiId the directive never asked for.
    - "What is my favorite programming language?" → wiki_locate (looks like the color example on
      the surface, but a programming language could belong to a technical/engineering domain
      instead of personal preferences — not domain-exclusive the way color is, same ambiguity as
-     the Verdaccio example below).
+     the Verdaccio example below). This is the no-directive default: "#wiki_search What is my
+     favorite programming language?" → wiki_search directly instead — the required-tool gate
+     above already decided it, so this ambiguity doesn't apply.
    - "What have you noticed about growth lately?" → wiki_locate (could be the user's growth or
      your own reflective growth — genuinely ambiguous).
    - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
