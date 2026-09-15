@@ -623,6 +623,40 @@
 // 0/20 isn't the bar, since some prior variance on this rule for Ornith,
 // and Lemonade's confirmed ceiling on it, both predate this restructure
 // entirely and aren't this round's problem to solve.
+//
+// Twenty-third entry, 2026-09-15. The twenty-second entry's confirmation run
+// landed as a PR #187 comment: wnav-008 recovered as predicted (local
+// 19/20→7/20, Ornith 16/20→7/20, Lemonade 19/20→12/20 failures), but
+// wnav-004 barely moved (Lemonade 20/20→17/20, Ornith 12/20→11/20) — the
+// wording change did not do what it was written to do. Four raw
+// reasoningContent traces (2 Lemonade, 2 Ornith; one before- and one
+// after-fix round each, user-supplied since eval logs aren't reachable from
+// this environment) were read directly rather than inferring cause from the
+// pass-rate delta alone, per interpreting-results.md §5. None showed the
+// targeted failure shape (reasoning correctly identifies the tie, then talks
+// itself into a hunch anyway). Instead: three of four traces (both Lemonade
+// rounds, one Ornith round) show reasoningContent correctly naming ask_user
+// as the right call, followed by no tool call at all — calledTools: [],
+// finish_reason: stop, prose output instead. The fourth (Ornith, post-fix)
+// skips tie-break reasoning entirely by hallucinating a candidate domain
+// name ("training-fitness") that was never seeded, then calling
+// wiki_read_page against it. Both are tool-invocation follow-through
+// failures, not reasoning failures this section's wording can reach —
+// there's no misjudgment in the transcript to correct with clearer prose.
+// This matches the eleventh entry's "confirmed ceiling" finding for
+// Lemonade and extends it: for both models, on this specific rule, the
+// bottleneck now looks like execution reliability (emitting the tool call
+// the model's own reasoning already committed to), not rule comprehension.
+// The wording change from the twenty-second entry is left in place — it's
+// harmless and correctly reordered emphasis that matches the
+// pre-restructure shape — but it should not be iterated on further as a fix
+// for wnav-004; doing so would be re-tightening a rule the traces show is
+// already being followed in reasoning and failing downstream of it. A real
+// fix, if pursued, is a harness-level change (e.g. detecting a
+// reasoning-committed-but-no-tool-call turn and forcing a retry, or a
+// stricter tool_choice constraint) — out of scope for this file and not
+// something to build speculatively without a separate decision to pursue
+// it.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
