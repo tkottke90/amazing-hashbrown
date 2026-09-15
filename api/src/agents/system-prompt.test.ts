@@ -183,12 +183,12 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it("closes the wikiId-first loophole for a required wiki_search with no domain already known", () => {
+    it('closes the wikiId-first loophole for a required wiki_search with no domain already known', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "This includes a\nrequired wiki_search with no domain already known: wikiId is optional and wiki_search already\n" +
+        'This includes a\nrequired wiki_search with no domain already known: wikiId is optional and wiki_search already\n' +
           "searches across every domain when it's omitted, so call it without one rather than calling\n" +
-          "wiki_locate first to produce a wikiId the directive never asked for.",
+          'wiki_locate first to produce a wikiId the directive never asked for.',
       );
     });
 
