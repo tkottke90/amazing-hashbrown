@@ -86,6 +86,19 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('required-tool');
     });
 
+    it('anchors the unmatched #token case to the same no-directive procedure with a worked example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'That means actually re-running\n' +
+          'the same tool-selection procedure (see wiki_navigation) the request would get without any `#` text at\n' +
+          'all, not treating the unmatched name as a shortcut to whichever tool sounds related. For example,\n' +
+          '"#not_a_real_tool What is my favorite programming language?" resolves exactly like the bare question\n' +
+          '"What is my favorite programming language?" would on its own — wiki_locate first, per wiki_navigation\'s\n' +
+          'own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the\n' +
+          'message.',
+      );
+    });
+
     it('includes identity framing establishing the wiki as the source of truth about the user', () => {
       expect(buildSystemPrompt()).to.include('no built-in memory of this specific user');
     });

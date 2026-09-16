@@ -1166,6 +1166,27 @@ check and missing a documented, setup-specific answer is the actual failure.`;
 // An unmatched or currently-unavailable #name produces no instruction at
 // all — the last sentence exists so the model doesn't go looking for one or
 // comment on its absence when a user's message happens to contain a bare #.
+//
+// Second entry, fresh auto-eval round against suites/explicit-tool-syntax.yaml
+// (2026-09-16, local/Lemonade/Ornith, judge local; log
+// eval-logs/auto-eval-20260915211428.yaml). Lemonade and Ornith both passed
+// 4/4; local alone failed ets-004 (#not_a_real_tool, an unmatched token) at
+// 3/4. local's own reasoningContent stated the unmatched-token rule
+// correctly almost verbatim ("the #something doesn't match a tool
+// currently available, we proceed normally") and then didn't follow
+// through — it treated "proceed normally" as license to pick whichever
+// tool seemed related (wiki_search) rather than actually re-running the
+// same procedure the identical question (minus the token) correctly
+// produced wiki_locate for in ets-002 moments earlier in the same run. Per
+// interpreting-results.md §5 this is the "states the correct rule, doesn't
+// follow through" ceiling shape, but this is the first round against this
+// exact wording for this scenario/model pair, so treating it as a wording
+// gap rather than an established ceiling. Per interpreting-results.md §3,
+// the abstract "using your own judgment" phrasing gives a smaller model
+// nothing concrete to anchor the word "normally" to; added a worked
+// example, using this suite's own scenario input, showing the unmatched
+// case resolving identically to the bare no-directive case. Re-run local
+// against ets-004 next round to confirm.
 const NOTATION_SECTION = `Two prefixes carry special meaning when they appear in a user's message:
 
 - \`/skill-name\` invokes a skill — its instructions replace or extend the message content for this turn.
@@ -1178,7 +1199,13 @@ Both prefixes only take effect through the mechanism above — a \`<required-too
 present or it isn't. If a message contains \`#something\` but no matching \`<required-tool>\` instruction
 appears, the name didn't match any tool currently available to you (a typo, or a real tool that's
 disabled right now); this needs no reaction from you — proceed with the request normally, using your own
-judgment for tool selection as you would if the \`#\` text weren't there.`;
+judgment for tool selection as you would if the \`#\` text weren't there. That means actually re-running
+the same tool-selection procedure (see wiki_navigation) the request would get without any \`#\` text at
+all, not treating the unmatched name as a shortcut to whichever tool sounds related. For example,
+"#not_a_real_tool What is my favorite programming language?" resolves exactly like the bare question
+"What is my favorite programming language?" would on its own — wiki_locate first, per wiki_navigation's
+own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the
+message.`;
 
 interface HarnessSection {
   tag: string;
