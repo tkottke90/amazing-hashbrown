@@ -7,12 +7,24 @@ import {
   patchToolSettingHandler,
   deleteToolSettingHandler,
   refreshToolSettingsHandler,
+  listAvailableEnvVarsHandler,
 } from './tool-settings.handlers.js';
 
 export const toolSettingsRouter = Router();
 
 toolSettingsRouter.get('/', (_req: Request, res: Response) => {
   const result = listToolSettingsHandler();
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+// Registered before the /:toolId routes so Express doesn't route "env-vars"
+// through the toolId param path.
+toolSettingsRouter.get('/shell_exec/env-vars', (_req: Request, res: Response) => {
+  const result = listAvailableEnvVarsHandler();
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

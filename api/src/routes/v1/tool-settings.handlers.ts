@@ -76,6 +76,16 @@ function validateShellEnv(env: Record<string, unknown>): HandlerResult<Record<st
   return { ok: true, data: validated };
 }
 
+// Names only — values are never included, logged, or sent. Used by the
+// drawer's env editor combobox; the value side stays "${VAR}" lookup syntax
+// the user types (or the stored config value), never a resolved secret.
+export function listAvailableEnvVarsHandler(): HandlerResult<{ names: string[] }> {
+  const names = Object.keys(process.env)
+    .filter((name) => ENV_VAR_NAME_RE.test(name))
+    .sort((a, b) => a.localeCompare(b));
+  return ok({ names });
+}
+
 // ---- Validation ------------------------------------------------------------
 
 const DefaultIncludePatchSchema = z.object({

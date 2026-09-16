@@ -13,6 +13,7 @@ import {
   patchToolSettingHandler,
   deleteToolSettingHandler,
   refreshToolSettingsHandler,
+  listAvailableEnvVarsHandler,
 } from './tool-settings.handlers.js';
 
 // listResolvedToolSettings() (which every handler above calls) reads
@@ -208,6 +209,45 @@ describe('routes/v1/tool-settings.handlers', () => {
         });
         delete process.env['GH_TOKEN_TEST_VAR'];
       });
+    });
+  });
+
+  describe('env var name listing (issue #189)', () => {
+    it('returns sorted uppercase names, filtering out lowercase ones', () => {
+      process.env['ZEBRA_TEST_VAR'] = 'zv';
+      process.env['ALPHA_TEST_VAR'] = 'av';
+      process.env['lowercase_var'] = 'lv';
+      try {
+        const result = listAvailableEnvVarsHandler();
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          const { names } = result.data;
+          expect(names).to.include('ZEBRA_TEST_VAR');
+          expect(names).to.include('ALPHA_TEST_VAR');
+          expect(names).to.not.include('lowercase_var');
+          const seeded = names.filter((n) => n === 'ZEBRA_TEST_VAR' || n === 'ALPHA_TEST_VAR');
+          expect(seeded).to.deep.equal(['ALPHA_TEST_VAR', 'ZEBRA_TEST_VAR']);
+        }
+      } finally {
+        delete process.env['ZEBRA_TEST_VAR'];
+        delete process.env['ALPHA_TEST_VAR'];
+        delete process.env['lowercase_var'];
+      }
+    });
+
+    it('never includes any variable value in the serialized response', () => {
+      process.env['SECRET_VALUE_TEST_VAR'] = 'super-secret-sentinel-value';
+      try {
+        const result = listAvailableEnvVarsHandler();
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          const serialized = JSON.stringify(result.data);
+          expect(serialized).to.include('SECRET_VALUE_TEST_VAR');
+          expect(serialized).to.not.include('super-secret-sentinel-value');
+        }
+      } finally {
+        delete process.env['SECRET_VALUE_TEST_VAR'];
+      }
     });
   });
 
