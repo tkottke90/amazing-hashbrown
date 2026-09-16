@@ -32,6 +32,50 @@ function badRequest(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
 }
 
+// ---- shell_exec env validation (issue #189) ---------------------------------
+
+// config-manager's interpolateEnvVars() only matches
+// /\$\{([A-Z_][A-Z0-9_]*)\}/g — lowercase names stay literal strings.
+export const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+// Exactly one lookup, no surrounding text — keeps secrets out of config.yaml
+// by construction: only "${VAR}" lookup syntax is storable via the API.
+export const ENV_VALUE_RE = /^\$\{([A-Z_][A-Z0-9_]*)\}$/;
+
+function validateShellEnv(env: Record<string, unknown>): HandlerResult<Record<string, string>> {
+  const validated: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const [key, rawValue] of Object.entries(env)) {
+    if (!ENV_VAR_NAME_RE.test(key)) {
+      return badRequest(
+        `Invalid environment variable name "${key}": config-manager env lookups ` +
+          'support uppercase names only (pattern [A-Z_][A-Z0-9_]*).',
+      );
+    }
+    const value = typeof rawValue === 'string' ? rawValue : '';
+    const valueMatch = ENV_VALUE_RE.exec(value);
+    if (!valueMatch) {
+      return badRequest(
+        `Invalid value for environment variable "${key}": must be exactly one ` +
+          'env lookup in the form "${VAR}" — secrets are never written to ' +
+          'config.yaml, only the lookup syntax is.',
+      );
+    }
+    const referenced = valueMatch[1];
+    if (referenced && !(referenced in process.env)) {
+      missing.push(referenced);
+    }
+    validated[key] = value;
+  }
+  if (missing.length > 0) {
+    return badRequest(
+      `Referenced environment variable(s) not set in this environment: ` +
+        `${missing.join(', ')}. A missing variable would silently resolve to ` +
+        'an empty string at load time.',
+    );
+  }
+  return { ok: true, data: validated };
+}
+
 // ---- Validation ------------------------------------------------------------
 
 const DefaultIncludePatchSchema = z.object({
@@ -121,6 +165,13 @@ export function patchToolSettingHandler(
       return badRequest(parsedExtra.error.issues.map((i) => i.message).join('; '));
     }
     validatedExtra = parsedExtra.data as Record<string, unknown>;
+    // shell_exec-specific: env entries must be config-manager lookup syntax
+    // referencing variables that actually exist (issue #189).
+    if (toolId === 'shell_exec' && validatedExtra['env'] !== undefined) {
+      const envResult = validateShellEnv(validatedExtra['env'] as Record<string, unknown>);
+      if (!envResult.ok) return envResult;
+      validatedExtra['env'] = envResult.data;
+    }
   }
 
   const currentTools = (readConfigYaml(configDir)['tools'] as Record<string, ToolEntry>) ?? {};

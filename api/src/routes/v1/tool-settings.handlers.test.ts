@@ -129,6 +129,86 @@ describe('routes/v1/tool-settings.handlers', () => {
       });
       expect(reloaded).to.equal(1);
     });
+
+    describe('shell_exec env patch validation (issue #189)', () => {
+      it('400s on a lowercase env key and names it', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { gh_token: '${GH_TOKEN}' } },
+          configDir,
+        );
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(400);
+          expect(result.error).to.include('gh_token');
+        }
+      });
+
+      it('400s on a plain (non-lookup) value', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { GH_TOKEN: 'abc123' } },
+          configDir,
+        );
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(400);
+          expect(result.error).to.include('${VAR}');
+        }
+      });
+
+      it('400s when the value contains more than the lookup syntax', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { GH_TOKEN: 'Bearer ${GH_TOKEN}' } },
+          configDir,
+        );
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('400s on a variable that is not set, listing it; succeeds once it is set', () => {
+        delete process.env['DOES_NOT_EXIST_XYZ_9'];
+        const missing = patchToolSettingHandler(
+          'shell_exec',
+          { env: { GH_TOKEN: '${DOES_NOT_EXIST_XYZ_9}' } },
+          configDir,
+        );
+        expect(missing.ok).to.equal(false);
+        if (!missing.ok) {
+          expect(missing.status).to.equal(400);
+          expect(missing.error).to.include('DOES_NOT_EXIST_XYZ_9');
+        }
+        process.env['DOES_NOT_EXIST_XYZ_9'] = 'sentinel-value';
+        const present = patchToolSettingHandler(
+          'shell_exec',
+          { env: { GH_TOKEN: '${DOES_NOT_EXIST_XYZ_9}' } },
+          configDir,
+        );
+        expect(present.ok).to.equal(true);
+        delete process.env['DOES_NOT_EXIST_XYZ_9'];
+      });
+
+      it('persists a valid env entry to config.yaml and returns it', () => {
+        process.env['GH_TOKEN_TEST_VAR'] = 'sentinel-value';
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { GH_TOKEN: '${GH_TOKEN_TEST_VAR}' } },
+          configDir,
+        );
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect((result.data as Record<string, unknown>)['env']).to.deep.equal({
+            GH_TOKEN: '${GH_TOKEN_TEST_VAR}',
+          });
+        }
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.shell_exec.env).to.deep.equal({
+          GH_TOKEN: '${GH_TOKEN_TEST_VAR}',
+        });
+        delete process.env['GH_TOKEN_TEST_VAR'];
+      });
+    });
   });
 
   describe('deleteToolSettingHandler()', () => {
