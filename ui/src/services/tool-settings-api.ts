@@ -35,6 +35,7 @@ export interface ToolSettingItem {
   // shell_exec
   allowlist?: string[];
   denylist?: string[];
+  env?: Record<string, string>;
 }
 
 export type ToolSettingPatch = Partial<
@@ -50,6 +51,7 @@ export type ToolSettingPatch = Partial<
       | 'truncateThreshold'
       | 'allowlist'
       | 'denylist'
+      | 'env'
     >
 >;
 
@@ -72,6 +74,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 // ---- Global (Settings > Tools) --------------------------------------------
+
+// Names only — the API never exposes env var values, so there is nothing
+// here to accidentally render or log a secret from.
+export async function fetchShellEnvVarNames(): Promise<string[]> {
+  const res = await fetch('/api/v1/tool-settings/shell_exec/env-vars');
+  if (!res.ok) throw new Error('Failed to fetch environment variable names');
+  const data = (await res.json()) as { names: string[] };
+  return data.names;
+}
 
 export async function fetchToolSettings(): Promise<ToolSettingItem[]> {
   return request<ToolSettingItem[]>('/api/v1/tool-settings');
