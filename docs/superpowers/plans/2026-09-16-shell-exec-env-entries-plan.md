@@ -82,7 +82,10 @@ routes so Express doesn't route `env-vars` through the param path:
 ```typescript
 toolSettingsRouter.get('/shell_exec/env-vars', (_req, res) => {
   const result = listAvailableEnvVarsHandler();
-  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
   res.json(result.data);
 });
 ```
@@ -102,13 +105,13 @@ Inside the `tools:` section (next to the existing `shell_exec` example if
 present, otherwise at its documented position), add:
 
 ```yaml
-  shell_exec:
-    # Optional: extra env vars passed to shell_exec child commands, on top
-    # of the sanitized minimal environment (PATH/HOME/USER).
-    # Values must be config-manager env lookups: "${VAR}" — uppercase names
-    # only; a missing variable resolves to an empty string.
-    env:
-      GH_TOKEN: "${GH_TOKEN}"
+shell_exec:
+  # Optional: extra env vars passed to shell_exec child commands, on top
+  # of the sanitized minimal environment (PATH/HOME/USER).
+  # Values must be config-manager env lookups: "${VAR}" — uppercase names
+  # only; a missing variable resolves to an empty string.
+  env:
+    GH_TOKEN: '${GH_TOKEN}'
 ```
 
 **Tests:** none (example file). Verify by loading the API with a scratch
@@ -152,23 +155,22 @@ section (after the allowlist/denylist fields, ~line 330):
   query, excluding names already added. Selecting a name appends
   `{ name, value: \`$\{name\}\` }` and clears the query. Free-typing an
   unlisted name is allowed: Enter appends it with value `` `${typed}` ``; if
-  it doesn't match `^[A-Z_][A-Z0-9_]*$` show the inline warning text
+it doesn't match `^[A-Z_][A-Z0-9_]*$` show the inline warning text
   ("config-manager only supports uppercase names — save will be rejected").
 - **Save:** in the `tool.toolId === 'shell_exec'` branch of `handleSave`,
   add:
 
 ```typescript
 if (envEntries.value.length > 0) {
-  patch.env = Object.fromEntries(
-    envEntries.value.map((e) => [e.name, e.value]),
-  );
+  patch.env = Object.fromEntries(envEntries.value.map((e) => [e.name, e.value]));
 }
 ```
 
-  (An empty list omits the field — no accidental wipe of pre-existing file
-  entries; removal of individual entries still works because untouched rows
-  stay in the list.) Backend 400s surface through the existing `saveError`
-  path unchanged.
+(An empty list omits the field — no accidental wipe of pre-existing file
+entries; removal of individual entries still works because untouched rows
+stay in the list.) Backend 400s surface through the existing `saveError`
+path unchanged.
+
 - The UI never fetches, renders, or logs resolved values (the API never
   provides them).
 

@@ -16,7 +16,7 @@ deliberate sanitization boundary.
 ## Solution
 
 Explicit, per-variable opt-in using the existing `@tkottke90/config-manager`
-environment-lookup mechanism. The config file stores only the *lookup syntax*
+environment-lookup mechanism. The config file stores only the _lookup syntax_
 (`${VAR}`); config-manager pulls the actual value from the container environment at
 load time via `interpolateEnvVars()` (recursive, runs on `loadConfig()`/`reload()`,
 so nested `tools.shell_exec.env` entries are resolved — verified in the issue
@@ -26,7 +26,7 @@ thread; no library changes needed).
 tools:
   shell_exec:
     env:
-      GH_TOKEN: "${GH_TOKEN}"
+      GH_TOKEN: '${GH_TOKEN}'
 ```
 
 ### Constraints from config-manager (v1.1.1)
