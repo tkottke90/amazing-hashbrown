@@ -6,7 +6,7 @@ In the workspace chat thread, a `shell_approval` HITL card can grow tall
 enough that a user (especially on mobile) can't reach the Deny/Approve
 action buttons without scrolling. The 2026-09-05 shell-approval-card
 redesign (`docs/superpowers/specs/2026-09-05-shell-approval-card-redesign-design.md`)
-already fixed the card *body*: the raw command is truncated to one line
+already fixed the card _body_: the raw command is truncated to one line
 with a "View command" modal for the full text, and never dumped inline.
 
 The overflow persists because it comes from a different source the prior
@@ -66,15 +66,13 @@ promptKind-conditional body) gains a fixed max-height with internal
 scrolling:
 
 ```tsx
-<p className="font-medium leading-snug max-h-32 overflow-y-auto">
-  {message.question}
-</p>
+<p className="font-medium leading-snug max-h-32 overflow-y-auto">{message.question}</p>
 ```
 
 `max-h-32 overflow-y-auto` — no ellipsis/truncate, no "show more" toggle.
 However long the question text is, the header scrolls internally within a
-fixed ~8rem box; the full text stays reachable by scrolling *inside the
-header*, and the buttons below it are always reachable without scrolling
+fixed ~8rem box; the full text stays reachable by scrolling _inside the
+header_, and the buttons below it are always reachable without scrolling
 the page. This mirrors the existing precedent in this same file (the "View
 command" modal's `CodeBlock` uses the identical `overflow-y-auto` pattern)
 — no new interaction pattern is introduced.
@@ -96,7 +94,7 @@ mechanism would be redundant complexity.
 
 - Update `e2e/tests/hitl-shell-approval.spec.ts` and
   `api/src/agents/thread-message-writer.test.ts` expectations that assert
-  the old `` 'Allow command: `ls -la`\n\nReason: ...' `` question string to
+  the old ``'Allow command: `ls -la`\n\nReason: ...'`` question string to
   expect `'Approve command execution?'` instead.
 - Add an e2e case that triggers a `shell_approval` (or any prompt kind)
   interrupt with an intentionally long multi-line command/reason and
