@@ -5,15 +5,21 @@ import {
   fetchFileTree,
   fetchFileContent,
   saveFile,
+  uploadFiles as uploadFilesApi,
+  createDirectory as createDirectoryApi,
+  createFile as createFileApi,
   FileFetchError,
   type FileTreeResponse,
   type FileNode,
+  type UploadResult,
+  type CreateEntryResult,
 } from '@/services/workspace-files-api';
 
 export const fileTree = signal<FileTreeResponse | null>(null);
 export const fileTreeLoading = signal(false);
 export const fileTreeError = signal<string | null>(null);
 export const expandedFolders = signal<Set<string>>(new Set());
+export const selectedFolderPath = signal<string | null>(null); // null = workspace root
 
 export interface OpenTab {
   path: string;
@@ -58,7 +64,35 @@ export function toggleFolder(path: string): void {
   expandedFolders.value = next;
 }
 
+// Clicking the same already-selected folder again clears the selection back
+// to root — there's no separate "deselect" affordance since clicking any
+// file also clears it (see openFile below).
+export function selectFolder(path: string): void {
+  selectedFolderPath.value = selectedFolderPath.value === path ? null : path;
+}
+
+function expandFolder(path: string): void {
+  if (!path || expandedFolders.value.has(path)) return;
+  expandedFolders.value = new Set(expandedFolders.value).add(path);
+}
+
+// Depth-first search of the (nested) tree for a node by its relative path —
+// needed after creating a new file, since the create-file response doesn't
+// carry a content URL (see createFile() below for why).
+function findNode(nodes: FileNode[], path: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNode(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export async function openFile(workspaceId: string, node: FileNode): Promise<void> {
+  selectedFolderPath.value = null;
+
   const existing = openTabs.value.find((t) => t.path === node.path);
   if (existing) {
     activeTabPath.value = node.path;
@@ -197,6 +231,50 @@ export function closeTab(path: string): void {
   }
 }
 
+export async function uploadFiles(
+  workspaceId: string,
+  dir: string,
+  files: FileList | File[],
+): Promise<UploadResult> {
+  const result = await uploadFilesApi(workspaceId, dir, files);
+  if (result.ok) {
+    void loadFileTree(workspaceId, { force: true });
+  }
+  return result;
+}
+
+export async function createDirectory(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  const result = await createDirectoryApi(workspaceId, dir, name);
+  if (result.ok) {
+    expandFolder(dir);
+    await loadFileTree(workspaceId, { force: true });
+  }
+  return result;
+}
+
+export async function createFile(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  const result = await createFileApi(workspaceId, dir, name);
+  if (result.ok) {
+    expandFolder(dir);
+    await loadFileTree(workspaceId, { force: true });
+    // The create-file response doesn't carry a content URL (that's built
+    // server-side from the tree walk, not this endpoint) — find the fresh
+    // node in the just-reloaded tree instead of duplicating the URL-building
+    // logic here.
+    const node = fileTree.value ? findNode(fileTree.value.entries, result.path) : null;
+    if (node) await openFile(workspaceId, node);
+  }
+  return result;
+}
+
 // Test-only: signals are module-level singletons, so every describe block
 // touching this hook must reset state in afterEach (same reason
 // workspace-overview.test.tsx resets workspaces/projects).
@@ -205,6 +283,7 @@ export function resetWorkspaceFilesState(): void {
   fileTreeLoading.value = false;
   fileTreeError.value = null;
   expandedFolders.value = new Set();
+  selectedFolderPath.value = null;
   openTabs.value = [];
   activeTabPath.value = null;
 }

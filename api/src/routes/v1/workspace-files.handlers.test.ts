@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  statSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -11,6 +19,9 @@ import {
   getFileTreeHandler,
   getFileContentHandler,
   patchFileContentHandler,
+  uploadFilesHandler,
+  createDirectoryHandler,
+  createFileHandler,
 } from './workspace-files.handlers.js';
 
 describe('routes/v1/workspace-files.handlers', () => {
@@ -314,6 +325,180 @@ describe('routes/v1/workspace-files.handlers', () => {
       expect(readFileSync(join(ws.location, 'photo.png'), 'utf8')).to.equal(
         'not real png bytes, just text',
       );
+    });
+  });
+
+  describe('uploadFilesHandler()', () => {
+    function file(name: string, content = 'x'): { name: string; buffer: Buffer } {
+      return { name, buffer: Buffer.from(content) };
+    }
+
+    it('returns 404 for an unknown workspace', async () => {
+      const result = await uploadFilesHandler(store, 'does-not-exist', '', [file('a.txt')]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 404 when the target dir does not exist', async () => {
+      const ws = makeWorkspace();
+      const result = await uploadFilesHandler(store, ws.id, 'missing-dir', [file('a.txt')]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 when the target dir resolves to a file', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'not-a-dir.txt'), 'x');
+      const result = await uploadFilesHandler(store, ws.id, 'not-a-dir.txt', [file('a.txt')]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('writes each file to the target directory and invalidates the tree cache', async () => {
+      const ws = makeWorkspace({ git: false });
+      mkdirSync(join(ws.location, 'sub'));
+
+      const before = await getFileTreeHandler(store, ws.id);
+      expect(before.ok).to.equal(true); // primes the cache
+
+      const result = await uploadFilesHandler(store, ws.id, 'sub', [
+        file('a.txt', 'hello'),
+        file('b.txt', 'world'),
+      ]);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.created).to.have.members(['a.txt', 'b.txt']);
+      expect(readFileSync(join(ws.location, 'sub', 'a.txt'), 'utf8')).to.equal('hello');
+      expect(readFileSync(join(ws.location, 'sub', 'b.txt'), 'utf8')).to.equal('world');
+
+      const after = await getFileTreeHandler(store, ws.id);
+      expect(after.ok).to.equal(true);
+      if (after.ok) {
+        const sub = after.data.entries.find((n) => n.name === 'sub');
+        expect(sub?.children?.map((n) => n.name)).to.include.members(['a.txt', 'b.txt']);
+      }
+    });
+
+    it('rejects the whole batch (writing nothing) when one file collides with an existing entry', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'a.txt'), 'original');
+
+      const result = await uploadFilesHandler(store, ws.id, '', [
+        file('a.txt', 'clobber'),
+        file('b.txt', 'new'),
+      ]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(409);
+        expect((result as { conflicts?: string[] }).conflicts).to.include('a.txt');
+      }
+      expect(readFileSync(join(ws.location, 'a.txt'), 'utf8')).to.equal('original');
+      expect(existsSync(join(ws.location, 'b.txt'))).to.equal(false);
+    });
+
+    it('rejects the whole batch when two files in the same request share a name', async () => {
+      const ws = makeWorkspace();
+      const result = await uploadFilesHandler(store, ws.id, '', [
+        file('dup.txt', 'one'),
+        file('dup.txt', 'two'),
+      ]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+      expect(existsSync(join(ws.location, 'dup.txt'))).to.equal(false);
+    });
+
+    it('rejects the whole batch when a filename is invalid', async () => {
+      const ws = makeWorkspace();
+      const result = await uploadFilesHandler(store, ws.id, '', [
+        file('ok.txt'),
+        file('../escape.txt'),
+      ]);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(409);
+        expect((result as { conflicts?: string[] }).conflicts).to.include('../escape.txt');
+      }
+      expect(existsSync(join(ws.location, 'ok.txt'))).to.equal(false);
+    });
+
+    it('returns 400 when no files are provided', async () => {
+      const ws = makeWorkspace();
+      const result = await uploadFilesHandler(store, ws.id, '', []);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+  });
+
+  describe('createDirectoryHandler()', () => {
+    it('returns 404 for an unknown workspace', async () => {
+      const result = await createDirectoryHandler(store, 'does-not-exist', '', 'new-folder');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for an invalid name', async () => {
+      const ws = makeWorkspace();
+      const result = await createDirectoryHandler(store, ws.id, '', '..');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('returns 404 when the target dir does not exist', async () => {
+      const ws = makeWorkspace();
+      const result = await createDirectoryHandler(store, ws.id, 'missing', 'new-folder');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('creates the directory, invalidates the cache, and returns its path', async () => {
+      const ws = makeWorkspace({ git: false });
+      mkdirSync(join(ws.location, 'sub'));
+
+      const result = await createDirectoryHandler(store, ws.id, 'sub', 'new-folder');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.path).to.equal('sub/new-folder');
+      expect(statSync(join(ws.location, 'sub', 'new-folder')).isDirectory()).to.equal(true);
+    });
+
+    it('returns 409 when the name already exists in that folder', async () => {
+      const ws = makeWorkspace();
+      mkdirSync(join(ws.location, 'existing'));
+
+      const result = await createDirectoryHandler(store, ws.id, '', 'existing');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+  });
+
+  describe('createFileHandler()', () => {
+    it('returns 404 for an unknown workspace', async () => {
+      const result = await createFileHandler(store, 'does-not-exist', '', 'new.txt');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for an invalid name', async () => {
+      const ws = makeWorkspace();
+      const result = await createFileHandler(store, ws.id, '', 'a/b.txt');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('creates an empty file at the workspace root, invalidates the cache, and returns its path', async () => {
+      const ws = makeWorkspace({ git: false });
+
+      const result = await createFileHandler(store, ws.id, '', 'new.txt');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.path).to.equal('new.txt');
+      expect(readFileSync(join(ws.location, 'new.txt'), 'utf8')).to.equal('');
+    });
+
+    it('returns 409 when the name already exists in that folder', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'existing.txt'), 'x');
+
+      const result = await createFileHandler(store, ws.id, '', 'existing.txt');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
     });
   });
 });
