@@ -95,7 +95,11 @@ export async function uploadFiles(
     conflicts?: string[];
   };
   if (!res.ok) {
-    return { ok: false, error: body.error ?? `Upload failed: ${res.status}`, conflicts: body.conflicts };
+    return {
+      ok: false,
+      error: body.error ?? `Upload failed: ${res.status}`,
+      conflicts: body.conflicts,
+    };
   }
   return { ok: true, created: body.created ?? [] };
 }

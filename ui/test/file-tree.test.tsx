@@ -240,9 +240,7 @@ describe('FileTree', () => {
       Object.defineProperty(input, 'files', { value: [file], configurable: true });
       fireEvent.change(input);
 
-      await waitFor(() =>
-        expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]),
-      );
+      await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]));
     });
 
     it('shows an inline error when an upload is rejected', async () => {
@@ -290,9 +288,7 @@ describe('FileTree', () => {
       fireEvent.input(input, { target: { value: 'child' } });
       fireEvent.submit(input.closest('form')!);
 
-      await waitFor(() =>
-        expect(createDirectoryMock).toHaveBeenCalledWith('ws-1', 'src', 'child'),
-      );
+      await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith('ws-1', 'src', 'child'));
     });
   });
 });

@@ -93,7 +93,12 @@ workspaceFilesRouter.post(
       name: f.originalname,
       buffer: f.buffer,
     }));
-    const result = await uploadFilesHandler(getWorkspaceStore(), req.params['id'] as string, dir, files);
+    const result = await uploadFilesHandler(
+      getWorkspaceStore(),
+      req.params['id'] as string,
+      dir,
+      files,
+    );
     if (!result.ok) {
       // uploadFilesHandler's 409 case returns a ConflictFailure (HandlerFailure
       // plus `conflicts`); HandlerResult's public type erases that extra field,

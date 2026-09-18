@@ -287,7 +287,11 @@ function FileTreeRow({
           {node.category === 'unsupported' && <UnsupportedBadge />}
           {node.oversize && <OversizeBadge />}
           {isSelected && (
-            <FolderActionIcons workspaceId={workspaceId} dir={node.path} onUploadClick={onUploadClick} />
+            <FolderActionIcons
+              workspaceId={workspaceId}
+              dir={node.path}
+              onUploadClick={onUploadClick}
+            />
           )}
         </span>
       </div>
@@ -387,7 +391,10 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
       </div>
 
       {uploadError.value && (
-        <div class="border-b border-border px-2 py-1.5 text-xs text-destructive" data-testid="upload-error">
+        <div
+          class="border-b border-border px-2 py-1.5 text-xs text-destructive"
+          data-testid="upload-error"
+        >
           {uploadError.value}
         </div>
       )}

@@ -442,7 +442,9 @@ describe('services/workspace-files', () => {
     });
 
     it('rejects (ENOENT) a directory that does not exist', async () => {
-      const err = (await captureRejection(resolveTargetDir(dir, 'missing'))) as NodeJS.ErrnoException;
+      const err = (await captureRejection(
+        resolveTargetDir(dir, 'missing'),
+      )) as NodeJS.ErrnoException;
       expect(err.code).to.equal('ENOENT');
     });
 

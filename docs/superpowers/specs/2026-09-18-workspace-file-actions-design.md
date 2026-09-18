@@ -71,7 +71,7 @@ On success (`201 { created: string[] }`), the frontend calls `loadFileTree(works
 
 **Backend (`workspace-files.route.ts` / `.handlers.ts` / `.ts`):**
 
-- `multer.memoryStorage()` (not `diskStorage`, unlike `wiki-upload.route.ts`) with `limits: { fileSize: 50 * 1024 * 1024, files: 20 }`. Memory storage is used deliberately: the handler must validate every filename in the batch (for collisions and invalid names) *before* committing any bytes to disk, so a rejected batch never leaves a partial write behind.
+- `multer.memoryStorage()` (not `diskStorage`, unlike `wiki-upload.route.ts`) with `limits: { fileSize: 50 * 1024 * 1024, files: 20 }`. Memory storage is used deliberately: the handler must validate every filename in the batch (for collisions and invalid names) _before_ committing any bytes to disk, so a rejected batch never leaves a partial write behind.
 - Multer errors (`MulterError`, e.g. file-too-large or too-many-files) are mapped to `413`, same pattern as `wiki-upload.route.ts`'s inline error-mapping middleware.
 - Handler validates: `dir` resolves to an existing directory under the workspace (via a new `resolveTargetDir()` helper — see below); every filename passes `isValidLeafName()`; no filename collides with an existing entry in `dir`, and no two files in the same batch share a name.
 - If any of the above fails, the entire batch is rejected (`400`/`409`, listing every problem name) — nothing is written.
@@ -99,30 +99,33 @@ On success:
 // dir === '' or undefined resolves to the workspace root itself. Otherwise
 // delegates to resolveFilePathUnderWorkspace for containment, then stats the
 // result to confirm it's actually a directory (distinct error from "missing").
-async function resolveTargetDir(workspaceLocation: string, dir: string | undefined): Promise<string>
+async function resolveTargetDir(
+  workspaceLocation: string,
+  dir: string | undefined,
+): Promise<string>;
 
 // A single path segment: rejects empty/whitespace-only, ".", "..", and any
 // name containing "/", "\", or a null byte. Deliberately more permissive
 // than the wiki uploader's slug regex — ordinary filenames like
 // "report v2.docx" must be allowed.
-function isValidLeafName(name: string): boolean
+function isValidLeafName(name: string): boolean;
 ```
 
 ---
 
 ## Error handling
 
-| Case | Behavior |
-|---|---|
-| Target `dir` doesn't exist / deleted concurrently | 404 `Directory "<dir>" not found` |
-| Target `dir` resolves to a file, not a directory | 400 `"<dir>" is not a directory` |
-| Any uploaded filename collides with an existing entry, or two files in the batch share a name | 409, whole batch rejected: `{ error, conflicts: [...names] }` |
-| New file/folder name collides with an existing entry | 409 `"<name>" already exists in this folder` |
-| Invalid name (empty, `.`/`..`, contains `/`, `\`, or null byte) | 400, same message style as existing `resolveFilePathUnderWorkspace` errors |
-| File exceeds 50MB, or more than 20 files in one request | 413, mapped from `MulterError` |
-| Disk write fails mid-batch (upload) | 500; files already written in that batch are left as-is — no rollback, matching the existing PATCH handler's precedent of not rolling back on write failure |
-| Uploaded file would classify as `unsupported`/oversize per #135's rules | Allowed at upload time — upload only writes bytes; #135's existing content-route rules govern what happens if/when it's later opened |
-| Tree cache | All three new endpoints call `invalidateFileTreeCache(workspaceId)` on success |
+| Case                                                                                          | Behavior                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Target `dir` doesn't exist / deleted concurrently                                             | 404 `Directory "<dir>" not found`                                                                                                                           |
+| Target `dir` resolves to a file, not a directory                                              | 400 `"<dir>" is not a directory`                                                                                                                            |
+| Any uploaded filename collides with an existing entry, or two files in the batch share a name | 409, whole batch rejected: `{ error, conflicts: [...names] }`                                                                                               |
+| New file/folder name collides with an existing entry                                          | 409 `"<name>" already exists in this folder`                                                                                                                |
+| Invalid name (empty, `.`/`..`, contains `/`, `\`, or null byte)                               | 400, same message style as existing `resolveFilePathUnderWorkspace` errors                                                                                  |
+| File exceeds 50MB, or more than 20 files in one request                                       | 413, mapped from `MulterError`                                                                                                                              |
+| Disk write fails mid-batch (upload)                                                           | 500; files already written in that batch are left as-is — no rollback, matching the existing PATCH handler's precedent of not rolling back on write failure |
+| Uploaded file would classify as `unsupported`/oversize per #135's rules                       | Allowed at upload time — upload only writes bytes; #135's existing content-route rules govern what happens if/when it's later opened                        |
+| Tree cache                                                                                    | All three new endpoints call `invalidateFileTreeCache(workspaceId)` on success                                                                              |
 
 ---
 
@@ -142,13 +145,13 @@ function isValidLeafName(name: string): boolean
 
 Extend `e2e/tests/003-WorkspaceFileBrowser.spec.ts`:
 
-| Action | Expected outcome |
-|---|---|
-| Upload a file with the header (root) icon | File appears at the tree root without a manual refresh |
-| Select a nested folder, upload a file there | File appears nested under that folder |
+| Action                                                 | Expected outcome                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| Upload a file with the header (root) icon              | File appears at the tree root without a manual refresh              |
+| Select a nested folder, upload a file there            | File appears nested under that folder                               |
 | Upload a file whose name collides with an existing one | Rejected with an inline conflict message; nothing added to the tree |
-| Create a new file via the modal | File appears in the tree and opens in an empty editor tab |
-| Create a new folder via the modal | Folder appears in the tree, expanded |
+| Create a new file via the modal                        | File appears in the tree and opens in an empty editor tab           |
+| Create a new folder via the modal                      | Folder appears in the tree, expanded                                |
 
 ---
 

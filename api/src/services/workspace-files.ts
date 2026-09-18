@@ -28,7 +28,8 @@ export interface FileTreeResult {
 }
 
 export type ReadGuardResult =
-  { ok: true; content: string } | { ok: false; reason: 'too-large' | 'binary' };
+  | { ok: true; content: string }
+  | { ok: false; reason: 'too-large' | 'binary' };
 
 // ---------------------------------------------------------------------------
 // Constants

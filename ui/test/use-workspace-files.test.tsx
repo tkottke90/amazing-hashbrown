@@ -399,7 +399,11 @@ describe('use-workspace-files — uploadFiles', () => {
   });
 
   it('returns the failure without throwing, and does not reload the tree', async () => {
-    mockUploadFiles.mockResolvedValue({ ok: false, error: 'Upload rejected', conflicts: ['a.txt'] });
+    mockUploadFiles.mockResolvedValue({
+      ok: false,
+      error: 'Upload rejected',
+      conflicts: ['a.txt'],
+    });
 
     const result = await uploadFiles('ws-1', '', [new File(['x'], 'a.txt')]);
 

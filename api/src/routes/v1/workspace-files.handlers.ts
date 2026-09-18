@@ -102,7 +102,8 @@ export async function getFileTreeHandler(
 }
 
 export type FileContentResult =
-  { kind: 'text'; content: string } | { kind: 'binary'; buffer: Buffer; contentType: string };
+  | { kind: 'text'; content: string }
+  | { kind: 'binary'; buffer: Buffer; contentType: string };
 
 export async function getFileContentHandler(
   store: WorkspaceStore,
@@ -258,7 +259,11 @@ export async function uploadFilesHandler(
   }
 
   for (const file of files) {
-    await writeFile(path.join(absDir, file.name), file.buffer);
+    // Re-wrapped in a fresh Uint8Array — same reasoning as readFileGuarded's
+    // TextDecoder call above: a Buffer's underlying ArrayBufferLike can
+    // type-check as a SharedArrayBuffer, which writeFile's ArrayBufferView
+    // overload rejects under this project's @types/node.
+    await writeFile(path.join(absDir, file.name), new Uint8Array(file.buffer));
   }
 
   invalidateFileTreeCache(workspaceId);
@@ -314,7 +319,9 @@ export async function createFileHandler(
     await createFileEntry(dirResult.absDir, name);
   } catch (err) {
     if (isEexist(err)) return conflict(`"${name}" already exists in this folder`, [name]);
-    return serverError(`Failed to create file: ${err instanceof Error ? err.message : String(err)}`);
+    return serverError(
+      `Failed to create file: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   invalidateFileTreeCache(workspaceId);
