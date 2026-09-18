@@ -32,6 +32,14 @@ const suite: TestSuite = {
         'and clicking "View command" opens a dialog showing the full multi-line command',
       test: () => {},
     },
+    {
+      tags: ['@smoke'],
+      action:
+        'Load a shell_approval prompt with a long multi-line command and a long reason on a mobile viewport (375×812)',
+      expectedOutcome:
+        'Deny/Approve/Approve & remember buttons are all visible within the viewport with no page-level scrolling required',
+      test: () => {},
+    },
   ],
 };
 
@@ -57,11 +65,83 @@ const pendingShellPrompt = {
   seq: 2,
   status: 'pending',
   promptId: 'prompt-1',
-  question: 'Allow command: `ls -la`\n\nReason: List directory contents',
+  question: 'Approve command execution?',
   promptKind: 'shell_approval',
   command: 'echo line-one\necho line-two\necho line-three',
   reason: 'List directory contents',
 };
+
+const LONG_THREAD_ID = 'thread-hitl-overflow-test';
+
+const mockLongThread = {
+  id: LONG_THREAD_ID,
+  title: 'Shell Approval Overflow Test',
+  createdAt: '2026-08-06T10:00:00.000Z',
+  updatedAt: '2026-08-06T10:01:00.000Z',
+  forkedFromThreadId: null,
+  forkedFromSeq: null,
+  afterAgentState: { status: 'idle' },
+  links: {
+    self: `/api/v1/threads/${LONG_THREAD_ID}`,
+    afterAgentStatus: `/api/v1/threads/${LONG_THREAD_ID}/after-agent-status`,
+  },
+};
+
+// Intentionally long, multi-line command + a long reason — regression
+// coverage for the header-overflow bug: before the fix, a long question
+// (or a long embedded command in it) could grow the header tall enough to
+// push the action buttons below the mobile viewport.
+const longReason =
+  'This command rewrites several configuration files across the workspace ' +
+  'and should only run if you have already reviewed the diff, backed up ' +
+  'any local changes, and understand it will overwrite existing content ' +
+  'without prompting for confirmation first.';
+
+const longCommand = Array.from(
+  { length: 20 },
+  (_, i) => `echo "line ${i + 1} of a very long heredoc payload being written to disk"`,
+).join('\n');
+
+const pendingLongShellPrompt = {
+  id: 'prompt-overflow-1',
+  kind: 'hitl_prompt',
+  seq: 2,
+  status: 'pending',
+  promptId: 'prompt-overflow-1',
+  question: 'Approve command execution?',
+  promptKind: 'shell_approval',
+  command: longCommand,
+  reason: longReason,
+};
+
+async function mockLongPromptApis(page: import('@playwright/test').Page) {
+  await page.route('**/api/v1/threads**', async (route: Route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const match = url.pathname.match(/^\/api\/v1\/threads(?:\/([^/]+))?$/);
+
+    if (!match) {
+      await route.fallback();
+      return;
+    }
+
+    const id = match[1];
+
+    if (!id && method === 'GET') {
+      await route.fulfill({ json: [mockLongThread] });
+      return;
+    }
+
+    if (id === LONG_THREAD_ID && method === 'GET') {
+      await route.fulfill({
+        json: { ...mockLongThread, messages: [pendingLongShellPrompt] },
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
 
 async function mockApis(page: import('@playwright/test').Page) {
   await page.route('**/api/v1/threads**', async (route: Route) => {
@@ -180,3 +260,45 @@ test.describe(
     });
   },
 );
+
+test.describe('Mobile viewport @smoke', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('a long command/reason does not push the action buttons out of the viewport', async ({
+    page,
+  }, testInfo) => {
+    await mockLongPromptApis(page);
+    await page.goto('/');
+
+    const row = page
+      .locator('[data-slot="thread-row"]')
+      .filter({ hasText: 'Shell Approval Overflow Test' });
+    await pauseBeforeAction(page, testInfo);
+    await row.click();
+
+    await expect(page.locator('[data-slot="textarea"]')).toBeDisabled({ timeout: 10_000 });
+
+    const approveButton = page.getByRole('button', { name: 'Approve', exact: true });
+    const approveRememberButton = page.getByRole('button', { name: 'Approve & remember' });
+    const denyButton = page.getByRole('button', { name: 'Deny' });
+
+    await expect(approveButton).toBeVisible();
+    await expect(approveRememberButton).toBeVisible();
+    await expect(denyButton).toBeVisible();
+
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error('missing viewport size');
+
+    for (const button of [denyButton, approveRememberButton, approveButton]) {
+      const box = await button.boundingBox();
+      if (!box) throw new Error('missing bounding box for action button');
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    }
+
+    // The page itself must not need scrolling to reach the buttons — only
+    // the header's internal max-h-32 overflow-y-auto box may scroll.
+    const bodyScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+    expect(bodyScrollHeight).toBeLessThanOrEqual(viewport.height + 1);
+  });
+});

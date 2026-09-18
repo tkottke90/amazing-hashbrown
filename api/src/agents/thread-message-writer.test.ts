@@ -377,7 +377,7 @@ describe('agents/thread-message-writer', () => {
 
     it('recordHitlPrompt stores command and reason for shell_approval', () => {
       recordHitlPrompt(store, 't1', 'p2', {
-        question: 'Allow command: `ls -la`\n\nReason: list files',
+        question: 'Approve command execution?',
         promptKind: 'shell_approval',
         command: 'ls -la',
         reason: 'list files',

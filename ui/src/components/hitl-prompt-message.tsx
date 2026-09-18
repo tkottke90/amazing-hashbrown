@@ -64,7 +64,7 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
       {/* Question header */}
       <div className={cn('flex items-start gap-2 px-4 pt-4', isMultipleChoice ? 'pb-3' : 'pb-0')}>
         <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <p className="font-medium leading-snug">{message.question}</p>
+        <p className="font-medium leading-snug max-h-32 overflow-y-auto">{message.question}</p>
       </div>
 
       {/* Controls */}
