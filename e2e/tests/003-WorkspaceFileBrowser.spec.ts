@@ -735,8 +735,14 @@ export const WorkspaceFileBrowser: TestSuite = {
         // empty and starts collapsed like any other fresh folder.
         await fileRow(page, 'sub').click();
         await fileRow(page, 'sub').getByTestId('folder-action-new-folder').click();
-        // Same disambiguation as the "New file" step above.
-        const newFolderForm = page.locator('form', { has: page.getByPlaceholder('Folder name') });
+        // With "sub" selected, BOTH the header's and "sub" row's own New
+        // Folder forms are mounted at once (each modal's content lives
+        // where its trigger is, not portalled), so a page-wide form/
+        // placeholder filter still matches two. Scope to the "sub" row
+        // itself, which contains only its own modal's form.
+        const newFolderForm = fileRow(page, 'sub').locator('form', {
+          has: page.getByPlaceholder('Folder name'),
+        });
         await newFolderForm.getByPlaceholder('Folder name').fill('child-folder');
         await newFolderForm.getByRole('button', { name: 'Create' }).click();
 
