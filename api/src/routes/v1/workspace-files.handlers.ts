@@ -10,6 +10,10 @@ import {
   invalidateFileTreeCache,
   classifyFile,
   getContentType,
+  isValidLeafName,
+  resolveTargetDir,
+  createDirectoryEntry,
+  createFileEntry,
   type FileTreeResult,
 } from '../../services/workspace-files.js';
 import type { ExecFileFn } from '../../services/workspace-provision.js';
@@ -38,8 +42,41 @@ function serverError(error: string): HandlerFailure {
   return { ok: false, status: 500, error };
 }
 
+interface ConflictFailure extends HandlerFailure {
+  status: 409;
+  conflicts: string[];
+}
+
+function conflict(error: string, conflicts: string[]): ConflictFailure {
+  return { ok: false, status: 409, error, conflicts };
+}
+
 function isEnoent(err: unknown): boolean {
   return !!err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT';
+}
+
+function isEexist(err: unknown): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && err.code === 'EEXIST';
+}
+
+// Shared by uploadFilesHandler/createDirectoryHandler/createFileHandler:
+// resolves `dir` under the workspace, mapping a missing directory to 404 and
+// a dir that resolves to a file (or any other resolution error, e.g. path
+// traversal) to 400.
+async function resolveDirOrFail(
+  workspaceLocation: string,
+  dir: string,
+): Promise<{ ok: true; absDir: string } | { ok: false; failure: HandlerFailure }> {
+  try {
+    const absDir = await resolveTargetDir(workspaceLocation, dir);
+    return { ok: true, absDir };
+  } catch (err) {
+    if (isEnoent(err)) return { ok: false, failure: notFound(`Directory "${dir}" not found`) };
+    return {
+      ok: false,
+      failure: badRequest(err instanceof Error ? err.message : String(err)),
+    };
+  }
 }
 
 export async function getFileTreeHandler(
@@ -163,4 +200,123 @@ export async function patchFileContentHandler(
 
   invalidateFileTreeCache(workspaceId);
   return ok({ ok: true });
+}
+
+export interface UploadedFile {
+  name: string;
+  buffer: Buffer;
+}
+
+export async function uploadFilesHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  dir: string,
+  files: UploadedFile[],
+): Promise<HandlerResult<{ created: string[] }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
+
+  const dirResult = await resolveDirOrFail(workspace.location, dir);
+  if (!dirResult.ok) return dirResult.failure;
+  const { absDir } = dirResult;
+
+  if (files.length === 0) return badRequest('At least one file is required');
+
+  // Validate every filename before writing anything — a single bad name or
+  // collision rejects the whole batch, never a partial write.
+  const invalidNames = files.filter((f) => !isValidLeafName(f.name)).map((f) => f.name);
+
+  // Only names that already passed isValidLeafName ever reach path.join()
+  // below — an invalid name (e.g. "../escape.txt") must never be statted
+  // against the filesystem at all, since that would probe a path outside
+  // absDir before it's been rejected.
+  const validNames = files.filter((f) => isValidLeafName(f.name));
+
+  const seen = new Set<string>();
+  const duplicateNames = new Set<string>();
+  for (const f of validNames) {
+    if (seen.has(f.name)) duplicateNames.add(f.name);
+    seen.add(f.name);
+  }
+
+  const existingCollisions: string[] = [];
+  for (const name of seen) {
+    try {
+      await stat(path.join(absDir, name));
+      existingCollisions.push(name);
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+    }
+  }
+
+  const conflicts = [...new Set([...invalidNames, ...duplicateNames, ...existingCollisions])];
+  if (conflicts.length > 0) {
+    return conflict(
+      `Upload rejected — ${conflicts.length} file name(s) are invalid or already exist`,
+      conflicts,
+    );
+  }
+
+  for (const file of files) {
+    await writeFile(path.join(absDir, file.name), file.buffer);
+  }
+
+  invalidateFileTreeCache(workspaceId);
+  return ok({ created: files.map((f) => f.name) });
+}
+
+function entryPath(dir: string, name: string): string {
+  return dir ? `${dir}/${name}` : name;
+}
+
+export async function createDirectoryHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<HandlerResult<{ path: string }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
+
+  if (!isValidLeafName(name)) return badRequest(`Invalid name "${name}"`);
+
+  const dirResult = await resolveDirOrFail(workspace.location, dir);
+  if (!dirResult.ok) return dirResult.failure;
+
+  try {
+    await createDirectoryEntry(dirResult.absDir, name);
+  } catch (err) {
+    if (isEexist(err)) return conflict(`"${name}" already exists in this folder`, [name]);
+    return serverError(
+      `Failed to create directory: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  invalidateFileTreeCache(workspaceId);
+  return ok({ path: entryPath(dir, name) });
+}
+
+export async function createFileHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<HandlerResult<{ path: string }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
+
+  if (!isValidLeafName(name)) return badRequest(`Invalid name "${name}"`);
+
+  const dirResult = await resolveDirOrFail(workspace.location, dir);
+  if (!dirResult.ok) return dirResult.failure;
+
+  try {
+    await createFileEntry(dirResult.absDir, name);
+  } catch (err) {
+    if (isEexist(err)) return conflict(`"${name}" already exists in this folder`, [name]);
+    return serverError(`Failed to create file: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  invalidateFileTreeCache(workspaceId);
+  return ok({ path: entryPath(dir, name) });
 }

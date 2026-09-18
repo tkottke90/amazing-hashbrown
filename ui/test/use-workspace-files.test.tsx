@@ -8,6 +8,9 @@ jest.mock('@/services/workspace-files-api', () => {
     fetchFileTree: jest.fn().mockResolvedValue({ branch: null, entries: [] }),
     fetchFileContent: jest.fn(),
     saveFile: jest.fn(),
+    uploadFiles: jest.fn(),
+    createDirectory: jest.fn(),
+    createFile: jest.fn(),
   };
 });
 
@@ -20,6 +23,13 @@ import {
   saveTab,
   discardTab,
   closeTab,
+  selectFolder,
+  selectedFolderPath,
+  expandedFolders,
+  fileTree,
+  uploadFiles,
+  createDirectory,
+  createFile,
   resetWorkspaceFilesState,
   type OpenTab,
 } from '@/hooks/use-workspace-files';
@@ -28,6 +38,10 @@ const mockSaveFile = api.saveFile as jest.MockedFunction<typeof api.saveFile>;
 const mockFetchFileContent = api.fetchFileContent as jest.MockedFunction<
   typeof api.fetchFileContent
 >;
+const mockFetchFileTree = api.fetchFileTree as jest.MockedFunction<typeof api.fetchFileTree>;
+const mockUploadFiles = api.uploadFiles as jest.MockedFunction<typeof api.uploadFiles>;
+const mockCreateDirectory = api.createDirectory as jest.MockedFunction<typeof api.createDirectory>;
+const mockCreateFile = api.createFile as jest.MockedFunction<typeof api.createFile>;
 
 function makeNode(
   path: string,
@@ -325,6 +339,151 @@ describe('use-workspace-files — closeTab', () => {
 
     closeTab('a.ts');
 
+    expect(openTabs.value).toHaveLength(0);
+  });
+});
+
+describe('use-workspace-files — selectFolder / clearing selection', () => {
+  afterEach(() => {
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it('selects a folder path', () => {
+    selectFolder('src');
+    expect(selectedFolderPath.value).toBe('src');
+  });
+
+  it('deselects when the already-selected folder is selected again', () => {
+    selectFolder('src');
+    selectFolder('src');
+    expect(selectedFolderPath.value).toBeNull();
+  });
+
+  it('switches selection to a different folder without needing to deselect first', () => {
+    selectFolder('src');
+    selectFolder('docs');
+    expect(selectedFolderPath.value).toBe('docs');
+  });
+
+  it('openFile() clears any folder selection, even for a file it fails to open', async () => {
+    selectFolder('src');
+    mockFetchFileContent.mockRejectedValue(new Error('network error'));
+
+    await openFile('ws-1', makeNode('a.ts', 'text'));
+
+    expect(selectedFolderPath.value).toBeNull();
+  });
+});
+
+describe('use-workspace-files — uploadFiles', () => {
+  afterEach(() => {
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it('delegates to the api and reloads the tree on success', async () => {
+    mockUploadFiles.mockResolvedValue({ ok: true, created: ['a.txt'] });
+    mockFetchFileTree.mockResolvedValue({
+      branch: null,
+      entries: [{ name: 'a.txt', path: 'a.txt', type: 'file', category: 'text', content: 'u' }],
+    });
+    const files = [new File(['x'], 'a.txt')];
+
+    const result = await uploadFiles('ws-1', 'sub', files);
+
+    expect(mockUploadFiles).toHaveBeenCalledWith('ws-1', 'sub', files);
+    expect(result).toEqual({ ok: true, created: ['a.txt'] });
+    expect(mockFetchFileTree).toHaveBeenCalledWith('ws-1');
+    expect(fileTree.value?.entries.map((n) => n.name)).toEqual(['a.txt']);
+  });
+
+  it('returns the failure without throwing, and does not reload the tree', async () => {
+    mockUploadFiles.mockResolvedValue({ ok: false, error: 'Upload rejected', conflicts: ['a.txt'] });
+
+    const result = await uploadFiles('ws-1', '', [new File(['x'], 'a.txt')]);
+
+    expect(result).toEqual({ ok: false, error: 'Upload rejected', conflicts: ['a.txt'] });
+    expect(mockFetchFileTree).not.toHaveBeenCalled();
+  });
+});
+
+describe('use-workspace-files — createDirectory', () => {
+  afterEach(() => {
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it('on success: expands the parent folder and reloads the tree', async () => {
+    mockCreateDirectory.mockResolvedValue({ ok: true, path: 'sub/child' });
+    mockFetchFileTree.mockResolvedValue({ branch: null, entries: [] });
+
+    const result = await createDirectory('ws-1', 'sub', 'child');
+
+    expect(mockCreateDirectory).toHaveBeenCalledWith('ws-1', 'sub', 'child');
+    expect(result).toEqual({ ok: true, path: 'sub/child' });
+    expect(expandedFolders.value.has('sub')).toBe(true);
+    expect(mockFetchFileTree).toHaveBeenCalledWith('ws-1');
+  });
+
+  it('on failure: does not expand or reload', async () => {
+    mockCreateDirectory.mockResolvedValue({ ok: false, error: 'already exists' });
+
+    const result = await createDirectory('ws-1', 'sub', 'child');
+
+    expect(result).toEqual({ ok: false, error: 'already exists' });
+    expect(expandedFolders.value.has('sub')).toBe(false);
+    expect(mockFetchFileTree).not.toHaveBeenCalled();
+  });
+});
+
+describe('use-workspace-files — createFile', () => {
+  afterEach(() => {
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it('on success: reloads the tree, expands the parent, and opens the new file as an empty text tab', async () => {
+    mockCreateFile.mockResolvedValue({ ok: true, path: 'sub/new.txt' });
+    mockFetchFileTree.mockResolvedValue({
+      branch: null,
+      entries: [
+        {
+          name: 'sub',
+          path: 'sub',
+          type: 'dir',
+          children: [
+            {
+              name: 'new.txt',
+              path: 'sub/new.txt',
+              type: 'file',
+              category: 'text',
+              content: '/api/v1/workspaces/ws-1/files/sub/new.txt/content',
+            },
+          ],
+        },
+      ],
+    });
+    mockFetchFileContent.mockResolvedValue('');
+
+    const result = await createFile('ws-1', 'sub', 'new.txt');
+
+    expect(mockCreateFile).toHaveBeenCalledWith('ws-1', 'sub', 'new.txt');
+    expect(result).toEqual({ ok: true, path: 'sub/new.txt' });
+    expect(expandedFolders.value.has('sub')).toBe(true);
+
+    const tab = openTabs.value.find((t) => t.path === 'sub/new.txt');
+    expect(tab).toBeDefined();
+    expect(tab?.category).toBe('text');
+  });
+
+  it('on failure: does not touch the tree or open a tab', async () => {
+    mockCreateFile.mockResolvedValue({ ok: false, error: 'already exists' });
+
+    const result = await createFile('ws-1', '', 'existing.txt');
+
+    expect(result).toEqual({ ok: false, error: 'already exists' });
+    expect(mockFetchFileTree).not.toHaveBeenCalled();
     expect(openTabs.value).toHaveLength(0);
   });
 });

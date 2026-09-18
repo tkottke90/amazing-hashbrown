@@ -69,3 +69,69 @@ export async function saveFile(contentUrl: string, content: string): Promise<voi
     body: JSON.stringify({ content }),
   });
 }
+
+export type UploadResult =
+  | { ok: true; created: string[] }
+  | { ok: false; error: string; conflicts?: string[] };
+
+// Doesn't reuse request<T>() — a multipart body needs no Content-Type header
+// (the browser sets its own boundary), and a conflict response is returned
+// rather than thrown so the tree UI can render it inline.
+export async function uploadFiles(
+  workspaceId: string,
+  dir: string,
+  files: FileList | File[],
+): Promise<UploadResult> {
+  const formData = new FormData();
+  for (const file of Array.from(files)) formData.append('files', file);
+
+  const res = await fetch(
+    `/api/v1/workspaces/${workspaceId}/files/upload?dir=${encodeURIComponent(dir)}`,
+    { method: 'POST', body: formData },
+  );
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    created?: string[];
+    conflicts?: string[];
+  };
+  if (!res.ok) {
+    return { ok: false, error: body.error ?? `Upload failed: ${res.status}`, conflicts: body.conflicts };
+  }
+  return { ok: true, created: body.created ?? [] };
+}
+
+export type CreateEntryResult = { ok: true; path: string } | { ok: false; error: string };
+
+async function createEntry(
+  workspaceId: string,
+  kind: 'file' | 'directory',
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  const res = await fetch(`/api/v1/workspaces/${workspaceId}/files/${kind}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir, name }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { error?: string; path?: string };
+  if (!res.ok) {
+    return { ok: false, error: body.error ?? `Request failed: ${res.status}` };
+  }
+  return { ok: true, path: body.path ?? name };
+}
+
+export async function createDirectory(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  return createEntry(workspaceId, 'directory', dir, name);
+}
+
+export async function createFile(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  return createEntry(workspaceId, 'file', dir, name);
+}
