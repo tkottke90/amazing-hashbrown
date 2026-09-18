@@ -697,8 +697,15 @@ export const WorkspaceFileBrowser: TestSuite = {
         await openFilesTab(page, ws.id);
 
         await page.getByTestId('file-tree-header').getByTestId('folder-action-new-file').click();
-        await page.getByPlaceholder('File name (e.g. notes.txt)').fill('created.txt');
-        await page.getByRole('button', { name: 'Create' }).click();
+        // The header always renders both the New File and New Folder forms,
+        // so a bare getByRole('button', { name: 'Create' }) would match two
+        // elements — scope to the <form> that contains this modal's own
+        // input (CreateEntryForm wraps each modal's body in one <form>).
+        const newFileForm = page.locator('form', {
+          has: page.getByPlaceholder('File name (e.g. notes.txt)'),
+        });
+        await newFileForm.getByPlaceholder('File name (e.g. notes.txt)').fill('created.txt');
+        await newFileForm.getByRole('button', { name: 'Create' }).click();
 
         await expect(fileRow(page, 'created.txt')).toBeVisible();
         await expect(fileTab(page, 'created.txt')).toBeVisible();
@@ -721,8 +728,10 @@ export const WorkspaceFileBrowser: TestSuite = {
         await openFilesTab(page, ws.id);
 
         await page.getByTestId('file-tree-header').getByTestId('folder-action-new-folder').click();
-        await page.getByPlaceholder('Folder name').fill('created-folder');
-        await page.getByRole('button', { name: 'Create' }).click();
+        // Same disambiguation as the "New file" step above.
+        const newFolderForm = page.locator('form', { has: page.getByPlaceholder('Folder name') });
+        await newFolderForm.getByPlaceholder('Folder name').fill('created-folder');
+        await newFolderForm.getByRole('button', { name: 'Create' }).click();
 
         await expect(fileRow(page, 'created-folder')).toBeVisible();
         await expect(

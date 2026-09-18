@@ -71,8 +71,7 @@ export async function saveFile(contentUrl: string, content: string): Promise<voi
 }
 
 export type UploadResult =
-  | { ok: true; created: string[] }
-  | { ok: false; error: string; conflicts?: string[] };
+  { ok: true; created: string[] } | { ok: false; error: string; conflicts?: string[] };
 
 // Doesn't reuse request<T>() — a multipart body needs no Content-Type header
 // (the browser sets its own boundary), and a conflict response is returned
