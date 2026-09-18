@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +14,7 @@ import {
 } from '../services/workspace-store.js';
 import { getActiveSseWriter } from './active-sse-writer.js';
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
-import { executeTask, type QueueEntryWithTask } from './task-execution.js';
+import { executeTask, resolveOriginThreadId, type QueueEntryWithTask } from './task-execution.js';
 import type { buildTaskAgent } from './chat-agent.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -560,6 +561,55 @@ describe('agents/task-execution', () => {
         .getThreadMessages(task.threadId!)
         .filter((m) => m.kind === 'sub_agent_marker');
       expect(markers).to.have.length(0);
+    });
+  });
+  describe('resolveOriginThreadId', () => {
+    it('returns the workspace chat threadId for a workspace-scoped task', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const threadId = randomUUID();
+      threadStore.upsertThreadOnFirstMessage(threadId, 'Ws chat', 'workspace-chat');
+      store.patchWorkspace(workspace.id, { threadId });
+      const task = store.createTask({ title: 'T', assignedTo: 'agent', workspaceId: workspace.id });
+
+      expect(resolveOriginThreadId(store, threadStore, task)).to.equal(threadId);
+    });
+
+    it('returns null for a workspace-scoped task whose workspace has no thread yet', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const task = store.createTask({ title: 'T', assignedTo: 'agent', workspaceId: workspace.id });
+
+      expect(resolveOriginThreadId(store, threadStore, task)).to.equal(null);
+    });
+
+    it('returns parentThreadId for a global task whose parent thread still exists', () => {
+      const parentId = randomUUID();
+      threadStore.upsertThreadOnFirstMessage(parentId, 'Origin chat', 'chat');
+      const task = store.createTask({
+        title: 'T',
+        assignedTo: 'agent',
+        parentThreadId: parentId,
+      });
+
+      expect(resolveOriginThreadId(store, threadStore, task)).to.equal(parentId);
+    });
+
+    it('returns null when parentThreadId is null', () => {
+      const task = store.createTask({ title: 'T', assignedTo: 'agent' });
+
+      expect(resolveOriginThreadId(store, threadStore, task)).to.equal(null);
+    });
+
+    it('returns null when the parent thread has been deleted', () => {
+      const parentId = randomUUID();
+      threadStore.upsertThreadOnFirstMessage(parentId, 'Origin chat', 'chat');
+      threadStore.deleteThread(parentId);
+      const task = store.createTask({
+        title: 'T',
+        assignedTo: 'agent',
+        parentThreadId: parentId,
+      });
+
+      expect(resolveOriginThreadId(store, threadStore, task)).to.equal(null);
     });
   });
 });

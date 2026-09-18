@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { env } from '../config/env.js';
-import { getThreadStore } from '../services/thread-store.js';
+import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
+  type WorkspaceStore,
   type Task,
   type TaskQueueEntry,
   type Workspace,
@@ -392,4 +393,27 @@ export async function executeTask(
     drainPendingTurns(threadId);
     clearTaskAbort(entry.id);
   }
+}
+
+// Resolves the originating conversation a task-completion pointer message
+// should be written into (docs/superpowers/specs/2026-09-17-task-threads-design.md).
+//
+// - Workspace-scoped task → the workspace's own chat thread. A workspace
+//   without a thread yet has nothing to attach a pointer to → null.
+// - Global task → task.parentThreadId (captured at task creation). A null
+//   parent, or a thread that has since been deleted, → null.
+//
+// Exported pure (stores passed in) so tests can exercise every branch
+// without going through executeTask's full run.
+export function resolveOriginThreadId(
+  store: Pick<WorkspaceStore, 'getWorkspace'>,
+  threadStore: Pick<ThreadStore, 'getThreadMeta'>,
+  task: Pick<Task, 'workspaceId' | 'parentThreadId'>,
+): string | null {
+  if (task.workspaceId) {
+    const workspace = store.getWorkspace(task.workspaceId);
+    return workspace?.threadId ?? null;
+  }
+  if (!task.parentThreadId) return null;
+  return threadStore.getThreadMeta(task.parentThreadId) ? task.parentThreadId : null;
 }
