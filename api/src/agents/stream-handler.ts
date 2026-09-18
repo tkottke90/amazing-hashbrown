@@ -443,9 +443,7 @@ export async function finalizeTurn(
     try {
       if (interruptValue.kind === 'shell_approval') {
         const { command, reason } = interruptValue as { command: string; reason?: string };
-        const question = reason
-          ? `Allow command: \`${command}\`\n\nReason: ${reason}`
-          : `Allow command: \`${command}\``;
+        const question = 'Approve command execution?';
         const seq = recordHitlPrompt(threadStore, threadId, promptId, {
           question,
           promptKind: 'shell_approval',
