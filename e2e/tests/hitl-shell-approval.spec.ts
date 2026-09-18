@@ -268,13 +268,12 @@ test.describe('Mobile viewport @smoke', () => {
     page,
   }, testInfo) => {
     await mockLongPromptApis(page);
-    await page.goto('/');
-
-    const row = page
-      .locator('[data-slot="thread-row"]')
-      .filter({ hasText: 'Shell Approval Overflow Test' });
+    // The thread sidebar is `hidden lg:block` and only mounts inside a
+    // bottom-sheet toggle below that breakpoint, so at this mobile viewport
+    // there's no visible thread-row to click — navigate straight to the
+    // thread's own route instead, same as clicking a row would.
     await pauseBeforeAction(page, testInfo);
-    await row.click();
+    await page.goto(`/chat/${LONG_THREAD_ID}`);
 
     await expect(page.locator('[data-slot="textarea"]')).toBeDisabled({ timeout: 10_000 });
 
