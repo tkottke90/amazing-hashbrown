@@ -145,13 +145,13 @@ function isValidLeafName(name: string): boolean;
 
 Extend `e2e/tests/003-WorkspaceFileBrowser.spec.ts`:
 
-| Action                                                 | Expected outcome                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------- |
-| Upload a file with the header (root) icon              | File appears at the tree root without a manual refresh              |
-| Select a nested folder, upload a file there            | File appears nested under that folder                               |
-| Upload a file whose name collides with an existing one | Rejected with an inline conflict message; nothing added to the tree |
-| Create a new file via the modal                        | File appears in the tree and opens in an empty editor tab           |
-| Create a new folder via the modal                      | Folder appears in the tree, expanded                                |
+| Action                                                 | Expected outcome                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Upload a file with the header (root) icon              | File appears at the tree root without a manual refresh                   |
+| Select a nested folder, upload a file there            | File appears nested under that folder                                    |
+| Upload a file whose name collides with an existing one | Rejected with an inline conflict message; nothing added to the tree      |
+| Create a new file via the modal                        | File appears in the tree and opens in an empty editor tab                |
+| Create a new folder inside a selected parent folder    | New folder appears nested under the parent, which is expanded to show it |
 
 ---
 

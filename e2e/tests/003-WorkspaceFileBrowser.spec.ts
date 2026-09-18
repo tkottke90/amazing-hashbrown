@@ -714,8 +714,9 @@ export const WorkspaceFileBrowser: TestSuite = {
       },
     },
     {
-      action: 'Create a new folder via the "New folder" modal',
-      expectedOutcome: 'The new folder appears in the tree, already expanded',
+      action: 'Create a new folder inside a selected folder via the "New folder" modal',
+      expectedOutcome:
+        'The new folder appears nested under the selected parent, and the parent is expanded to show it without needing a manual expand click',
       test: async ({ page }, testInfo) => {
         const ws = await createWorkspace(page, {
           name: `fb-new-folder-${Date.now()}`,
@@ -723,20 +724,27 @@ export const WorkspaceFileBrowser: TestSuite = {
           directoryName: `fb-new-folder-${Date.now()}`,
           git: false,
         });
+        await writeFileDirect(ws.location, 'sub/existing.txt', 'already here\n');
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await openFilesTab(page, ws.id);
 
-        await page.getByTestId('file-tree-header').getByTestId('folder-action-new-folder').click();
+        // Selecting "sub" (collapsed by default) reveals its own action
+        // icons; creating a folder inside it should expand "sub" itself
+        // (the parent of the new folder) — not the new folder, which is
+        // empty and starts collapsed like any other fresh folder.
+        await fileRow(page, 'sub').click();
+        await fileRow(page, 'sub').getByTestId('folder-action-new-folder').click();
         // Same disambiguation as the "New file" step above.
         const newFolderForm = page.locator('form', { has: page.getByPlaceholder('Folder name') });
-        await newFolderForm.getByPlaceholder('Folder name').fill('created-folder');
+        await newFolderForm.getByPlaceholder('Folder name').fill('child-folder');
         await newFolderForm.getByRole('button', { name: 'Create' }).click();
 
-        await expect(fileRow(page, 'created-folder')).toBeVisible();
-        await expect(
-          fileRow(page, 'created-folder').getByTestId('file-tree-chevron'),
-        ).toHaveAttribute('aria-label', 'Collapse folder');
+        await expect(fileRow(page, 'sub').getByTestId('file-tree-chevron')).toHaveAttribute(
+          'aria-label',
+          'Collapse folder',
+        );
+        await expect(fileRow(page, 'sub/child-folder')).toBeVisible();
 
         await page.request.delete(`/api/v1/workspaces/${ws.id}`);
       },
