@@ -105,27 +105,23 @@ export async function executeTask(
   let workspaceScope: WorkspaceScope | undefined;
 
   try {
+    // Every task mints its own dedicated 'task' thread, lazily on first run.
+    // Workspace-scoped tasks never reuse the workspace chat thread — that
+    // thread stays reserved for interactive workspace chat (see
+    // docs/superpowers/specs/2026-09-17-task-threads-design.md).
+    threadId = task.threadId ?? randomUUID();
+    if (!task.threadId) {
+      store.patchTask(task.id, { threadId });
+      threadStore.upsertThreadOnFirstMessage(threadId, task.title, 'task');
+    }
     if (task.workspaceId) {
       const workspace = store.getWorkspace(task.workspaceId);
       if (!workspace) {
         throw new Error(`Task ${task.id} references missing workspace ${task.workspaceId}`);
       }
-      threadId = workspace.threadId ?? randomUUID();
-      if (!workspace.threadId) {
-        store.patchWorkspace(workspace.id, { threadId });
-        threadStore.upsertThreadOnFirstMessage(threadId, workspace.name, 'workspace-chat');
-      }
       const allowedWikiId = resolveAllowedWikiId(store, workspace.id);
       const workspaceContext = await buildWorkspaceContext(workspace);
       workspaceScope = { workspace, workspaceContext, allowedWikiId };
-    } else {
-      // A global task has no shared chat surface to inline into — it gets
-      // its own dedicated 'task' thread, minted lazily on first run.
-      threadId = task.threadId ?? randomUUID();
-      if (!task.threadId) {
-        store.patchTask(task.id, { threadId });
-        threadStore.upsertThreadOnFirstMessage(threadId, task.title, 'task');
-      }
     }
   } catch (err) {
     logger.error('task-execution: thread resolution failed', {

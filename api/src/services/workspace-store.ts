@@ -112,9 +112,10 @@ export interface Task {
   trackerType: string | null;
   trackerId: string | null;
   plan: PlanStep[] | null;
-  // Dedicated automated-execution thread for a task with no workspace —
-  // minted lazily on the task's own first run (see task-execution.ts).
-  // Workspace-scoped tasks reuse workspace.threadId instead.
+  // Dedicated 'task' thread minted lazily on the task's own first run
+  // (see task-execution.ts). Every task — workspace-scoped or global —
+  // gets its own thread; workspace-scoped tasks never reuse
+  // workspace.threadId, which stays reserved for interactive chat.
   threadId: string | null;
   // Carries a HITL answer from the /hitl route's task re-enqueue branch
   // through to the next executeTask() run, which consumes (clears) it and

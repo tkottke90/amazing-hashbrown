@@ -289,7 +289,7 @@ describe('agents/task-execution', () => {
     expect(summary, 'expected a type:"task" thread row').to.not.equal(undefined);
   });
 
-  it('reuses (or mints) the workspace thread for a workspace-scoped task', async () => {
+  it('mints a dedicated "task" thread for a workspace-scoped task (workspace thread untouched)', async () => {
     const { entry, workspaceId } = makeWorkspaceEntry();
     expect(store.getWorkspace(workspaceId)!.threadId).to.equal(null);
 
@@ -297,12 +297,43 @@ describe('agents/task-execution', () => {
       buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
     });
 
+    // The task gets its own 'task' thread — never the workspace chat thread.
+    const task = store.getTask(entry.task.id)!;
+    expect(task.threadId).to.not.equal(null);
+    const summary = threadStore.listThreads({ type: 'task' }).find((t) => t.id === task.threadId);
+    expect(summary, 'expected a type:"task" thread row').to.not.equal(undefined);
+
+    // The workspace's chat thread is untouched by task execution.
     const workspace = store.getWorkspace(workspaceId)!;
-    expect(workspace.threadId).to.not.equal(null);
-    const summary = threadStore
-      .listThreads({ type: 'workspace-chat' })
-      .find((t) => t.id === workspace.threadId);
-    expect(summary, 'expected a workspace-chat thread row').to.not.equal(undefined);
+    expect(workspace.threadId).to.equal(null);
+    expect(workspace.threadId).to.not.equal(task.threadId);
+  });
+
+  it('reuses the existing "task" thread on a second run (no re-mint)', async () => {
+    const entry = makeGlobalEntry('Global reuse');
+    await executeTask(entry, {
+      buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+    });
+    const firstThreadId = store.getTask(entry.task.id)!.threadId;
+    expect(firstThreadId).to.not.equal(null);
+
+    // Re-enqueue the same task for a second run.
+    store.patchTask(entry.task.id, { status: 'ready' });
+    store.enqueueTask(entry.task.id);
+    const secondEntry = store.dequeueNext()! as QueueEntryWithTask;
+    expect(secondEntry.task.threadId).to.equal(firstThreadId);
+
+    await executeTask(secondEntry, {
+      buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+    });
+
+    const task = store.getTask(entry.task.id)!;
+    expect(task.threadId).to.equal(firstThreadId);
+    // Still exactly one 'task' thread for this task.
+    const matching = threadStore
+      .listThreads({ type: 'task' })
+      .filter((t) => t.title === 'Global reuse');
+    expect(matching).to.have.lengthOf(1);
   });
 
   it('writes start and end task_run_marker rows bracketing the run', async () => {
