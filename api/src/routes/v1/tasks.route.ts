@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import type { TaskListFilters, TaskStatus } from '../../services/workspace-store.js';
 import { getTaskScheduler } from '../../services/task-scheduler.js';
+import { getCheckpointer } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
 import {
   listTasksHandler,
@@ -112,8 +113,12 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(result.data);
 });
 
-tasksRouter.delete('/:id', (req: Request, res: Response) => {
-  const result = deleteTaskHandler(getWorkspaceStore(), req.params['id'] as string);
+tasksRouter.delete('/:id', async (req: Request, res: Response) => {
+  const result = await deleteTaskHandler(
+    getWorkspaceStore(),
+    getCheckpointer(),
+    req.params['id'] as string,
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

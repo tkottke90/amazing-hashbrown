@@ -8,6 +8,7 @@ import type {
   TaskListFilters,
   TriggerType,
 } from '../../services/workspace-store.js';
+import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { getFileTree } from '../../services/workspace-files.js';
@@ -144,12 +145,54 @@ export function patchTaskHandler(
   return ok(task);
 }
 
-export function deleteTaskHandler(
+// Bounded wait after aborting a running task, polling until its queue row
+// leaves the running state (executeTask's catch completes it asynchronously).
+const ABORT_WAIT_INTERVAL_MS = 25;
+const ABORT_WAIT_TIMEOUT_MS = 5_000;
+
+async function waitForRunToStop(store: WorkspaceStore, taskId: string): Promise<void> {
+  const deadline = Date.now() + ABORT_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const entry = store.listQueue().find((e) => e.taskId === taskId && e.status === 'running');
+    if (!entry) return;
+    await new Promise((resolve) => setTimeout(resolve, ABORT_WAIT_INTERVAL_MS));
+  }
+}
+
+export async function deleteTaskHandler(
   store: WorkspaceStore,
+  checkpointer: SqliteSaver,
   id: string,
-): HandlerResult<{ deleted: true }> {
+): Promise<HandlerResult<{ deleted: true }>> {
+  const task = store.getTask(id);
+  if (!task) return notFound(`Task ${id} not found`);
+
+  // If the task is mid-run, request cancellation via the same abort path
+  // cancelTaskHandler uses, then wait (bounded) for executeTask to land the
+  // terminal state before cascading — deleting the thread out from under a
+  // live run would leave the run writing into a deleted thread.
+  if (task.status === 'running') {
+    const running = store.getRunningEntry(task.workspaceId ?? 'inbox');
+    if (running && running.taskId === id) {
+      const abortEntry = getTaskAbort(running.id);
+      if (abortEntry) {
+        setAbortIntent(running.id, 'cancel');
+        abortEntry.controller.abort();
+        await waitForRunToStop(store, id);
+      }
+      // No live abort entry — the run is un-abortable (e.g. the e2e noop
+      // executor); proceed with the cascade rather than blocking deletion.
+    }
+    // No live abort entry — the run is un-abortable (e.g. the e2e noop
+    // executor); proceed with the cascade rather than blocking deletion.
+  }
+
   const deleted = store.deleteTask(id);
   if (!deleted) return notFound(`Task ${id} not found`);
+
+  // Compose LangGraph checkpointer deletion, same as deleteThreadHandler.
+  if (task.threadId) await checkpointer.deleteThread(task.threadId);
+
   return ok({ deleted: true });
 }
 

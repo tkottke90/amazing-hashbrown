@@ -13,12 +13,16 @@ import {
   patchTaskHandler,
   enqueueTaskHandler,
   cancelTaskHandler,
+  deleteTaskHandler,
   pauseTaskHandler,
   takeOverTaskHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
 } from './tasks.handlers.js';
 import { registerTaskAbort, getTaskAbort, clearTaskAbort } from '../../agents/active-task-abort.js';
+import { ThreadStore } from '../../services/thread-store.js';
+import { setThreadStoreForTaskCascade } from '../../services/workspace-store.js';
+import type { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 
 class ThrowingChatModel extends BaseChatModel {
   _llmType() {
@@ -686,6 +690,108 @@ describe('routes/v1/tasks.handlers', () => {
       if (result.ok) {
         expect(result.data).to.deep.equal([{ step: 'Write migration scripts', done: false }]);
       }
+    });
+  });
+
+  describe('deleteTaskHandler()', () => {
+    let store: WorkspaceStore;
+    let threadStore: ThreadStore;
+    let dir: string;
+    let deletedThreadIds: string[];
+
+    function makeCheckpointer() {
+      deletedThreadIds = [];
+      return {
+        deleteThread: async (threadId: string) => {
+          deletedThreadIds.push(threadId);
+        },
+      } as unknown as SqliteSaver;
+    }
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-delete-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      threadStore = new ThreadStore(db);
+      setThreadStoreForTaskCascade(threadStore);
+    });
+
+    afterEach(() => {
+      setThreadStoreForTaskCascade(null);
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeRunningTask() {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()!;
+      return { task, entry };
+    }
+
+    it('404s for a nonexistent task', async () => {
+      const result = await deleteTaskHandler(store, makeCheckpointer(), 'does-not-exist');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('deleting an idle task with a thread cascades: task row, thread rows, and LangGraph checkpoint all go', async () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { threadId: 'task-thread-1' });
+      threadStore.upsertThreadOnFirstMessage('task-thread-1', 'Task thread', 'task');
+      threadStore.insertMessage('task-thread-1', {
+        id: 'msg-1',
+        kind: 'user',
+        payload: { text: 'hello' },
+      });
+
+      const result = await deleteTaskHandler(store, makeCheckpointer(), task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal({ deleted: true });
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(threadStore.getThreadMeta('task-thread-1')).to.equal(null);
+      expect(deletedThreadIds).to.deep.equal(['task-thread-1']);
+    });
+
+    it('deleting a task with thread_id = null succeeds and never calls the checkpointer', async () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+
+      const result = await deleteTaskHandler(store, makeCheckpointer(), task.id);
+
+      expect(result.ok).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(deletedThreadIds).to.deep.equal([]);
+    });
+
+    it('aborts a running task with a registered abort entry, waits for the run to land, then cascades', async () => {
+      const { task, entry } = makeRunningTask();
+      const controller = registerTaskAbort(entry.id);
+      store.patchTask(task.id, { threadId: 'task-thread-2' });
+      threadStore.upsertThreadOnFirstMessage('task-thread-2', 'Task thread', 'task');
+
+      // Simulate executeTask's catch completing the queue entry asynchronously
+      // once the abort fires, so waitForRunToStop resolves quickly.
+      const p = deleteTaskHandler(store, makeCheckpointer(), task.id);
+      store.completeQueueEntry(entry.id, 'cancelled');
+      const result = await p;
+
+      expect(result.ok).to.equal(true);
+      expect(getTaskAbort(entry.id)!.intent).to.equal('cancel');
+      expect(controller.signal.aborted).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(threadStore.getThreadMeta('task-thread-2')).to.equal(null);
+      expect(deletedThreadIds).to.deep.equal(['task-thread-2']);
+      clearTaskAbort(entry.id);
+    });
+
+    it('proceeds with the cascade for a running task with no abort entry (un-abortable run)', async () => {
+      const { task } = makeRunningTask();
+
+      const result = await deleteTaskHandler(store, makeCheckpointer(), task.id);
+
+      expect(result.ok).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(deletedThreadIds).to.deep.equal([]);
     });
   });
 });

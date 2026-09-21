@@ -1,6 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
+import type { ThreadStore } from './thread-store.js';
+
+// Late-bound to dodge an import cycle: thread-store.ts does not import
+// workspace-store.ts, but boot order and test harnesses may construct a
+// WorkspaceStore without a ThreadStore present. Returns null instead of
+// throwing so deleteTask degrades to the pre-cascade behavior.
+let _threadStoreForCascade: ThreadStore | null = null;
+export function setThreadStoreForTaskCascade(store: ThreadStore | null): void {
+  _threadStoreForCascade = store;
+}
+function getThreadStoreSafe(): ThreadStore | null {
+  return _threadStoreForCascade;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1089,7 +1102,29 @@ export class WorkspaceStore extends BaseStore {
     return this.getTask(id);
   }
 
+  // Deletes the task row and, when the task has its own dedicated thread
+  // (minted lazily by task execution — see task-execution.ts), hard-deletes
+  // that thread's rows (thread + messages) in the same call. The thread is
+  // deleted FIRST: if thread deletion fails, the task row is left intact so
+  // we never end up with a task whose thread is half-deleted. Does NOT touch
+  // the LangGraph checkpointer — ThreadStore has no knowledge of LangGraph;
+  // the handler layer composes that call separately (see deleteThreadHandler).
   deleteTask(id: string): boolean {
+    const task = this.getTask(id);
+    if (!task) return false;
+
+    const threadStore = getThreadStoreSafe();
+    if (threadStore && task.threadId) {
+      const deleted = threadStore.deleteThread(task.threadId);
+      if (!deleted) return false; // abort with the task intact
+    }
+
+    // Clear any leftover task_queue rows for this task first: task_queue.task_id
+    // has an FK to tasks(id), so the task DELETE below would otherwise fail with
+    // a constraint violation when queue rows remain (e.g. entries left behind by
+    // an aborted run). Same pattern as deleteWorkspace's cascade (line ~742).
+    this.db.prepare(`DELETE FROM task_queue WHERE task_id = ?`).run(id);
+
     const result = this.db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
     return result.changes > 0;
   }

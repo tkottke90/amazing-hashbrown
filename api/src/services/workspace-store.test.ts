@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { WorkspaceStore } from './workspace-store.js';
+import { ThreadStore } from './thread-store.js';
+import { WorkspaceStore, setThreadStoreForTaskCascade } from './workspace-store.js';
 
 describe('services/workspace-store', () => {
   describe('recoverRunningQueueEntries() (crash recovery, runs in the constructor)', () => {
@@ -582,6 +583,70 @@ describe('services/workspace-store', () => {
       expect(pending.map((t) => t.id)).to.deep.equal([task.id]);
       // Draining is destructive — a second call returns nothing left.
       expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.deep.equal([]);
+    });
+  });
+
+  describe('deleteTask() — thread cascade', () => {
+    let store: WorkspaceStore;
+    let threadStore: ThreadStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-delete-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      threadStore = new ThreadStore(db);
+      setThreadStoreForTaskCascade(threadStore);
+    });
+
+    afterEach(() => {
+      setThreadStoreForTaskCascade(null);
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('deleting an idle task with a thread removes both the task row and the thread rows (messages included)', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const threadId = 'task-thread-1';
+      store.patchTask(task.id, { threadId });
+      threadStore.upsertThreadOnFirstMessage(threadId, 'Task thread', 'task');
+      threadStore.insertMessage(threadId, {
+        id: 'msg-1',
+        kind: 'user',
+        payload: { text: 'hello' },
+      });
+
+      expect(store.deleteTask(task.id)).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(threadStore.getThreadMeta(threadId)).to.equal(null);
+    });
+
+    it('deleting a task with thread_id = null works unchanged', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      expect(store.deleteTask(task.id)).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
+    });
+
+    it('deleting a nonexistent task returns false', () => {
+      expect(store.deleteTask('nope')).to.equal(false);
+    });
+
+    it('thread-deletion failure leaves the task row intact', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const threadId = 'task-thread-2';
+      store.patchTask(task.id, { threadId });
+      threadStore.upsertThreadOnFirstMessage(threadId, 'Task thread', 'task');
+
+      // Simulate a ThreadStore whose deleteThread fails.
+      setThreadStoreForTaskCascade({
+        deleteThread: () => false,
+      } as unknown as ThreadStore);
+
+      expect(store.deleteTask(task.id)).to.equal(false);
+      expect(store.getTask(task.id)).to.not.equal(null);
+      // Restore the real store to confirm cascade works after failure.
+      setThreadStoreForTaskCascade(threadStore);
+      expect(store.deleteTask(task.id)).to.equal(true);
+      expect(store.getTask(task.id)).to.equal(null);
     });
   });
 });

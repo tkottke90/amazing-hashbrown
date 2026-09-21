@@ -5,7 +5,8 @@ import { bootObservability } from './services/observability.js';
 import { bootShellAudit, getShellAuditWriter } from './services/shell-audit.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
-import { bootThreadStore } from './services/thread-store.js';
+import { bootThreadStore, getThreadStore } from './services/thread-store.js';
+import { setThreadStoreForTaskCascade } from './services/workspace-store.js';
 import { bootToolSettingsStore, getToolSettingsStore } from './services/tool-settings-store.js';
 import { TOOL_CATALOG } from './agents/tool-catalog.js';
 import { bootWorkspaceStore, getWorkspaceStore } from './services/workspace-store.js';
@@ -41,6 +42,7 @@ app.logger.info('Usage tracking booted');
 bootEvaluations(db);
 app.logger.info('Evaluations booted');
 bootThreadStore(db);
+setThreadStoreForTaskCascade(getThreadStore()); // deleteTask hard-cascades to its task thread
 app.logger.info('Thread store booted');
 bootToolSettingsStore(db);
 getToolSettingsStore().seedCatalogDefaults(TOOL_CATALOG);
