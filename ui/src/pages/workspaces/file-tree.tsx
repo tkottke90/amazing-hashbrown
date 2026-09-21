@@ -22,10 +22,8 @@ import {
   fileTreeError,
   fileTreeLoading,
   expandedFolders,
-  selectedFolderPath,
   loadFileTree,
   toggleFolder,
-  selectFolder,
   openFile,
   uploadFiles,
   createDirectory,
@@ -159,19 +157,32 @@ function CreateEntryModal({
 }
 
 // The 3 actions (upload / new file / new folder) targeting `dir` — rendered
-// both in the tree header (dir: '', always visible) and on a selected
-// folder row (dir: that folder's path, only while selected).
+// both in the tree header (dir: '', alwaysVisible) and on every directory
+// row (dir: that folder's path, revealed on hover/focus unless alwaysVisible
+// is set). Deliberately no `pointer-events-none` paired with the opacity-0
+// hover-hidden state: Playwright's click() actionability check runs before
+// it moves the mouse, so gating pointer-events behind real :hover would
+// require every e2e interaction to call .hover() first just to avoid a
+// false "not clickable" failure. Opacity-only hiding avoids that flakiness
+// for the minor cost of a technically-clickable-if-invisible button.
 function FolderActionIcons({
   workspaceId,
   dir,
   onUploadClick,
+  alwaysVisible = false,
 }: {
   workspaceId: string;
   dir: string;
   onUploadClick: (dir: string) => void;
+  alwaysVisible?: boolean;
 }) {
   return (
-    <span class="flex shrink-0 items-center gap-0.5">
+    <span
+      class={cn(
+        'flex shrink-0 items-center gap-0.5',
+        !alwaysVisible && 'opacity-0 focus-within:opacity-100 group-hover:opacity-100',
+      )}
+    >
       <button
         type="button"
         data-testid="folder-action-upload"
@@ -234,17 +245,13 @@ function FileTreeRow({
 }) {
   const isDir = node.type === 'dir';
   const isExpanded = isDir && expandedFolders.value.has(node.path);
-  const isSelected = isDir && selectedFolderPath.value === node.path;
 
   return (
     <div>
       <div
         data-testid="file-tree-row"
         data-path={node.path}
-        class={cn(
-          'flex w-full items-center gap-1 rounded px-1.5 py-1 text-sm hover:bg-muted',
-          isSelected && 'bg-muted',
-        )}
+        class="group flex w-full items-center gap-1 rounded px-1.5 py-1 text-sm hover:bg-muted"
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
       >
         {isDir ? (
@@ -272,7 +279,7 @@ function FileTreeRow({
         <button
           type="button"
           class="flex min-w-0 flex-1 items-center gap-1 text-left"
-          onClick={() => (isDir ? selectFolder(node.path) : void openFile(workspaceId, node))}
+          onClick={() => (isDir ? toggleFolder(node.path) : void openFile(workspaceId, node))}
         >
           {isDir ? (
             <Folder class="size-3.5 shrink-0 text-muted-foreground" />
@@ -286,7 +293,7 @@ function FileTreeRow({
           {node.gitStatus && <GitStatusBadge status={node.gitStatus} />}
           {node.category === 'unsupported' && <UnsupportedBadge />}
           {node.oversize && <OversizeBadge />}
-          {isSelected && (
+          {isDir && (
             <FolderActionIcons
               workspaceId={workspaceId}
               dir={node.path}
@@ -369,7 +376,12 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
           {tree?.branch ? `git · ${tree.branch}` : ''}
         </span>
         <div class="flex shrink-0 items-center gap-1">
-          <FolderActionIcons workspaceId={workspaceId} dir="" onUploadClick={triggerUpload} />
+          <FolderActionIcons
+            workspaceId={workspaceId}
+            dir=""
+            onUploadClick={triggerUpload}
+            alwaysVisible
+          />
           <button
             type="button"
             aria-label="Refresh file tree"

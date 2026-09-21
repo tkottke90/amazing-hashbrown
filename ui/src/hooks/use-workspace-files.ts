@@ -19,7 +19,6 @@ export const fileTree = signal<FileTreeResponse | null>(null);
 export const fileTreeLoading = signal(false);
 export const fileTreeError = signal<string | null>(null);
 export const expandedFolders = signal<Set<string>>(new Set());
-export const selectedFolderPath = signal<string | null>(null); // null = workspace root
 
 export interface OpenTab {
   path: string;
@@ -64,13 +63,6 @@ export function toggleFolder(path: string): void {
   expandedFolders.value = next;
 }
 
-// Clicking the same already-selected folder again clears the selection back
-// to root — there's no separate "deselect" affordance since clicking any
-// file also clears it (see openFile below).
-export function selectFolder(path: string): void {
-  selectedFolderPath.value = selectedFolderPath.value === path ? null : path;
-}
-
 function expandFolder(path: string): void {
   if (!path || expandedFolders.value.has(path)) return;
   expandedFolders.value = new Set(expandedFolders.value).add(path);
@@ -91,8 +83,6 @@ function findNode(nodes: FileNode[], path: string): FileNode | null {
 }
 
 export async function openFile(workspaceId: string, node: FileNode): Promise<void> {
-  selectedFolderPath.value = null;
-
   const existing = openTabs.value.find((t) => t.path === node.path);
   if (existing) {
     activeTabPath.value = node.path;
@@ -283,7 +273,6 @@ export function resetWorkspaceFilesState(): void {
   fileTreeLoading.value = false;
   fileTreeError.value = null;
   expandedFolders.value = new Set();
-  selectedFolderPath.value = null;
   openTabs.value = [];
   activeTabPath.value = null;
 }

@@ -23,8 +23,6 @@ import {
   saveTab,
   discardTab,
   closeTab,
-  selectFolder,
-  selectedFolderPath,
   expandedFolders,
   fileTree,
   uploadFiles,
@@ -340,39 +338,6 @@ describe('use-workspace-files — closeTab', () => {
     closeTab('a.ts');
 
     expect(openTabs.value).toHaveLength(0);
-  });
-});
-
-describe('use-workspace-files — selectFolder / clearing selection', () => {
-  afterEach(() => {
-    resetWorkspaceFilesState();
-    jest.clearAllMocks();
-  });
-
-  it('selects a folder path', () => {
-    selectFolder('src');
-    expect(selectedFolderPath.value).toBe('src');
-  });
-
-  it('deselects when the already-selected folder is selected again', () => {
-    selectFolder('src');
-    selectFolder('src');
-    expect(selectedFolderPath.value).toBeNull();
-  });
-
-  it('switches selection to a different folder without needing to deselect first', () => {
-    selectFolder('src');
-    selectFolder('docs');
-    expect(selectedFolderPath.value).toBe('docs');
-  });
-
-  it('openFile() clears any folder selection, even for a file it fails to open', async () => {
-    selectFolder('src');
-    mockFetchFileContent.mockRejectedValue(new Error('network error'));
-
-    await openFile('ws-1', makeNode('a.ts', 'text'));
-
-    expect(selectedFolderPath.value).toBeNull();
   });
 });
 

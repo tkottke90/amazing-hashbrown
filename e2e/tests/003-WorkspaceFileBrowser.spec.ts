@@ -156,9 +156,9 @@ export const WorkspaceFileBrowser: TestSuite = {
         // page, same workspace, matching how a real user would keep working
         // in the tab they already have open.
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
-        // The chevron expands/collapses; clicking the row itself now
-        // selects it for file actions instead (see the new upload/create
-        // steps at the end of this suite).
+        // Both the chevron and the folder name toggle expand/collapse —
+        // hovering the row is what reveals its action icons instead (see
+        // the upload/create steps at the end of this suite).
         await fileRow(page, 'src').getByTestId('file-tree-chevron').click();
         await expect(fileRow(page, 'src/module.txt')).toBeVisible();
 
@@ -172,6 +172,14 @@ export const WorkspaceFileBrowser: TestSuite = {
         // Expansion is module-level state in the hook, not tied to the
         // FilesTab component's own mount lifecycle — it should still be
         // expanded without clicking "src" again.
+        await expect(fileRow(page, 'src/module.txt')).toBeVisible();
+
+        // Clicking the folder name itself (not just the chevron) toggles
+        // the same expand/collapse state.
+        await fileRow(page, 'src').click();
+        await expect(fileRow(page, 'src/module.txt')).not.toBeVisible();
+
+        await fileRow(page, 'src').click();
         await expect(fileRow(page, 'src/module.txt')).toBeVisible();
       },
     },
@@ -615,9 +623,8 @@ export const WorkspaceFileBrowser: TestSuite = {
       },
     },
     {
-      action: 'Select a nested folder, then upload a file into it',
-      expectedOutcome:
-        'The uploaded file appears nested under the selected folder, not at the root',
+      action: 'Hover a nested folder, then upload a file into it',
+      expectedOutcome: 'The uploaded file appears nested under the hovered folder, not at the root',
       test: async ({ page }, testInfo) => {
         const ws = await createWorkspace(page, {
           name: `fb-upload-nested-${Date.now()}`,
@@ -630,9 +637,8 @@ export const WorkspaceFileBrowser: TestSuite = {
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await openFilesTab(page, ws.id);
 
-        // Selecting a folder (clicking its name/icon, not the chevron) is
-        // what reveals its own action icons.
-        await fileRow(page, 'sub').click();
+        // Hovering a folder row is what reveals its own action icons.
+        await fileRow(page, 'sub').hover();
         const chooserPromise = page.waitForEvent('filechooser');
         await fileRow(page, 'sub').getByTestId('folder-action-upload').click();
         const chooser = await chooserPromise;
@@ -714,9 +720,9 @@ export const WorkspaceFileBrowser: TestSuite = {
       },
     },
     {
-      action: 'Create a new folder inside a selected folder via the "New folder" modal',
+      action: 'Create a new folder inside a folder revealed by hover via the "New folder" modal',
       expectedOutcome:
-        'The new folder appears nested under the selected parent, and the parent is expanded to show it without needing a manual expand click',
+        'The new folder appears nested under the hovered parent, and the parent is expanded to show it without needing a manual expand click',
       test: async ({ page }, testInfo) => {
         const ws = await createWorkspace(page, {
           name: `fb-new-folder-${Date.now()}`,
@@ -729,16 +735,16 @@ export const WorkspaceFileBrowser: TestSuite = {
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await openFilesTab(page, ws.id);
 
-        // Selecting "sub" (collapsed by default) reveals its own action
+        // Hovering "sub" (collapsed by default) reveals its own action
         // icons; creating a folder inside it should expand "sub" itself
         // (the parent of the new folder) — not the new folder, which is
         // empty and starts collapsed like any other fresh folder.
-        await fileRow(page, 'sub').click();
+        await fileRow(page, 'sub').hover();
         await fileRow(page, 'sub').getByTestId('folder-action-new-folder').click();
-        // With "sub" selected, BOTH the header's and "sub" row's own New
-        // Folder forms are mounted at once (each modal's content lives
-        // where its trigger is, not portalled), so a page-wide form/
-        // placeholder filter still matches two. Scope to the "sub" row
+        // Every directory row's New File/New Folder forms are always
+        // mounted in the DOM (only hidden via CSS opacity until hover —
+        // see file-tree.tsx), so a page-wide form/placeholder filter would
+        // match one per row plus the header. Scope to the "sub" row
         // itself, which contains only its own modal's form.
         const newFolderForm = fileRow(page, 'sub').locator('form', {
           has: page.getByPlaceholder('Folder name'),

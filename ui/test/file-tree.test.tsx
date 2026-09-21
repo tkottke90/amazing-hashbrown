@@ -2,12 +2,7 @@ import { render, screen, fireEvent, within, waitFor } from '@testing-library/pre
 
 import { FileTree } from '@/pages/workspaces/file-tree';
 import { ThemeProvider } from '@/hooks/use-theme';
-import {
-  fileTree,
-  fileTreeError,
-  expandedFolders,
-  selectedFolderPath,
-} from '@/hooks/use-workspace-files';
+import { fileTree, fileTreeError, expandedFolders } from '@/hooks/use-workspace-files';
 import type { FileTreeResponse } from '@/services/workspace-files-api';
 
 jest.mock('@/hooks/use-workspace-files', () => ({
@@ -64,7 +59,6 @@ describe('FileTree', () => {
     fileTree.value = null;
     fileTreeError.value = null;
     expandedFolders.value = new Set();
-    selectedFolderPath.value = null;
     jest.clearAllMocks();
   });
 
@@ -97,49 +91,15 @@ describe('FileTree', () => {
     expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
   });
 
-  it('selects a folder on click (name/icon area), without expanding it', () => {
+  it('expands/collapses via clicking the folder name too, same as the chevron', () => {
     fileTree.value = treeWithFolder;
     renderTree();
 
     fireEvent.click(screen.getByText('src'));
-    expect(selectedFolderPath.value).toBe('src');
-    expect(screen.queryByText('index.ts')).not.toBeInTheDocument(); // still collapsed
-    expect(rowFor('src')).toHaveClass('bg-muted');
-  });
-
-  it('clicking an already-selected folder deselects it back to root', () => {
-    fileTree.value = treeWithFolder;
-    renderTree();
+    expect(screen.getByText('index.ts')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('src'));
-    expect(selectedFolderPath.value).toBe('src');
-
-    fireEvent.click(screen.getByText('src'));
-    expect(selectedFolderPath.value).toBeNull();
-    expect(rowFor('src')).not.toHaveClass('bg-muted');
-  });
-
-  it("clicking the chevron doesn't change the current folder selection", () => {
-    fileTree.value = treeWithFolder;
-    renderTree();
-
-    fireEvent.click(screen.getByText('src'));
-    expect(selectedFolderPath.value).toBe('src');
-
-    fireEvent.click(within(rowFor('src')).getByTestId('file-tree-chevron'));
-    expect(selectedFolderPath.value).toBe('src'); // unaffected by the expand toggle
-    expect(screen.getByText('index.ts')).toBeInTheDocument(); // did expand
-  });
-
-  it('clicking a file opens it and clears any folder selection', () => {
-    fileTree.value = treeWithFolder;
-    renderTree();
-
-    fireEvent.click(screen.getByText('src'));
-    expect(selectedFolderPath.value).toBe('src');
-
-    fireEvent.click(screen.getByText('README.md'));
-    expect(selectedFolderPath.value).toBeNull();
+    expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
   });
 
   it('renders M/A git-status badges on files that have a gitStatus', () => {
@@ -206,21 +166,26 @@ describe('FileTree', () => {
       expect(within(header).getByTestId('folder-action-new-folder')).toBeInTheDocument();
     });
 
-    it('does not render action icons on an unselected folder row', () => {
+    // Icons are always present in the DOM for every directory row — they're
+    // hidden by default and revealed via a CSS `group-hover`/`focus-within`
+    // rule (ui/src/pages/workspaces/file-tree.tsx), not conditionally
+    // rendered. jsdom doesn't run a layout/paint engine, so it can't confirm
+    // the hover-reveal itself; that's covered in
+    // e2e/tests/003-WorkspaceFileBrowser.spec.ts, which runs a real browser.
+    it('renders the 3 action icons in the DOM for every directory row', () => {
       fileTree.value = treeWithFolder;
       renderTree();
 
-      expect(rowFor('src').querySelector('[data-testid="folder-action-upload"]')).toBeNull();
-    });
-
-    it('renders action icons on the selected folder row only', () => {
-      fileTree.value = treeWithFolder;
-      renderTree();
-
-      fireEvent.click(screen.getByText('src'));
       expect(within(rowFor('src')).getByTestId('folder-action-upload')).toBeInTheDocument();
       expect(within(rowFor('src')).getByTestId('folder-action-new-file')).toBeInTheDocument();
       expect(within(rowFor('src')).getByTestId('folder-action-new-folder')).toBeInTheDocument();
+    });
+
+    it('does not render action icons on a file row', () => {
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      expect(rowFor('README.md').querySelector('[data-testid="folder-action-upload"]')).toBeNull();
     });
 
     it('clicking the upload icon opens the shared file picker, and selecting files uploads to that folder', async () => {
@@ -228,7 +193,6 @@ describe('FileTree', () => {
       fileTree.value = treeWithFolder;
       renderTree();
 
-      fireEvent.click(screen.getByText('src'));
       const uploadIcon = within(rowFor('src')).getByTestId('folder-action-upload');
       const input = screen.getByTestId('file-upload-input') as HTMLInputElement;
       const clickSpy = jest.spyOn(input, 'click');
@@ -277,12 +241,11 @@ describe('FileTree', () => {
       await waitFor(() => expect(createFileMock).toHaveBeenCalledWith('ws-1', '', 'new.txt'));
     });
 
-    it('submitting the selected row\'s "New folder" form calls createDirectory with that folder', async () => {
+    it('submitting a folder row\'s "New folder" form calls createDirectory with that folder', async () => {
       createDirectoryMock.mockResolvedValue({ ok: true, path: 'src/child' });
       fileTree.value = treeWithFolder;
       renderTree();
 
-      fireEvent.click(screen.getByText('src'));
       const row = rowFor('src');
       const input = within(row).getByPlaceholderText('Folder name');
       fireEvent.input(input, { target: { value: 'child' } });
