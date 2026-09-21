@@ -32,6 +32,8 @@ import {
   finalizeAssistant,
   failAssistant,
   recordTaskRunMarker,
+  recordTaskPointerMessage,
+  type TaskPointerOutcome,
 } from './thread-message-writer.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
@@ -389,6 +391,41 @@ export async function executeTask(
       'end',
       finalOutcome,
     );
+    // Completion pointer into the ORIGINATING conversation (Step 3 of the
+    // task-threads plan): navigation-only link to the task thread, written
+    // only for terminal/blocking outcomes. resolveOriginThreadId returns
+    // null when there's nothing to attach to (no workspace thread yet, or
+    // origin deleted) — skip silently, matching the spec's failure rules.
+    // The pointer write itself is failure-tolerant (see
+    // thread-message-writer.ts) and task.threadId is always set by now
+    // (Step 1 mints it before the run starts), but guard anyway: a pointer
+    // must never fail the run.
+    if (finalOutcome !== 'cancelled') {
+      const pointerOutcome: TaskPointerOutcome | null =
+        finalOutcome === 'blocked' ? 'waiting_on_user' : finalOutcome;
+      if (pointerOutcome) {
+        try {
+          const originThreadId = resolveOriginThreadId(store, threadStore, {
+            workspaceId: task.workspaceId,
+            parentThreadId: task.parentThreadId,
+          });
+          // `task` is a snapshot taken before the run — its threadId field
+          // doesn't reflect the patch above, so use the minted `threadId`.
+          if (originThreadId && threadId) {
+            recordTaskPointerMessage(
+              threadStore,
+              originThreadId,
+              randomUUID(),
+              task.title,
+              pointerOutcome,
+              threadId,
+            );
+          }
+        } catch (err) {
+          logger.error('task pointer message failed', { taskId: task.id, err });
+        }
+      }
+    }
     clearActiveSseWriter(threadId);
     drainPendingTurns(threadId);
     clearTaskAbort(entry.id);

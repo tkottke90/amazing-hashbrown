@@ -343,3 +343,45 @@ export function recordSubAgentMarker(
     }).seq;
   });
 }
+
+// Completion pointer: a short, navigation-only message written into the
+// ORIGINATING conversation (workspace chat thread, or the creating thread
+// for global tasks) when a task reaches a terminal/blocking outcome —
+// docs/superpowers/specs/2026-09-17-task-threads-design.md §2. Full
+// activity stays in the task's own thread; the pointer just links to it.
+// Failure-tolerant like every writer here (safe() above): a failed
+// notification write must never fail the task itself.
+export type TaskPointerOutcome = 'done' | 'failed' | 'paused' | 'waiting_on_user';
+
+function pointerText(taskTitle: string, outcome: TaskPointerOutcome): string {
+  switch (outcome) {
+    case 'done':
+      return `Task '${taskTitle}' finished \u2713 — View thread`;
+    case 'failed':
+      return `Task '${taskTitle}' failed \u2717`;
+    case 'paused':
+      return `Task '${taskTitle}' paused \u23F8`;
+    case 'waiting_on_user':
+      return `Task '${taskTitle}' needs your input \u23F8 — awaiting your input`;
+  }
+}
+
+export function recordTaskPointerMessage(
+  store: ThreadStore,
+  originThreadId: string,
+  id: string,
+  taskTitle: string,
+  outcome: TaskPointerOutcome,
+  taskThreadId: string,
+): number | null {
+  return safe(originThreadId, 'recordTaskPointerMessage', () => {
+    return store.insertMessage(originThreadId, {
+      id,
+      kind: 'task_pointer',
+      payload: {
+        text: pointerText(taskTitle, outcome),
+        taskThreadId,
+      },
+    }).seq;
+  });
+}

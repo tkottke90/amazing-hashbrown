@@ -611,5 +611,126 @@ describe('agents/task-execution', () => {
 
       expect(resolveOriginThreadId(store, threadStore, task)).to.equal(null);
     });
+
+    describe('completion pointer messages (Step 3)', () => {
+      it('writes a task_pointer into the parent thread when a global task completes', async () => {
+        const parentId = randomUUID();
+        threadStore.upsertThreadOnFirstMessage(parentId, 'Origin chat', 'chat');
+        const task = store.createTask({
+          title: 'Build thing',
+          assignedTo: 'agent',
+          parentThreadId: parentId,
+        });
+        store.patchTask(task.id, { status: 'ready' });
+        store.enqueueTask(task.id);
+        const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        });
+
+        const pointers = threadStore
+          .getThreadMessages(parentId)
+          .filter((m) => m.kind === 'task_pointer');
+        expect(pointers).to.have.length(1);
+        const payload = pointers[0]!.payload as Record<string, unknown>;
+        expect(payload.text).to.equal("Task 'Build thing' finished \u2713 — View thread");
+        expect(payload.taskThreadId).to.equal(store.getTask(task.id)!.threadId);
+      });
+
+      it('writes a pointer into the workspace chat thread for a workspace-scoped task', async () => {
+        const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+        const wsThreadId = randomUUID();
+        threadStore.upsertThreadOnFirstMessage(wsThreadId, 'Ws chat', 'workspace-chat');
+        store.patchWorkspace(workspace.id, { threadId: wsThreadId });
+        const task = store.createTask({
+          title: 'Ws task',
+          assignedTo: 'agent',
+          workspaceId: workspace.id,
+        });
+        store.patchTask(task.id, { status: 'ready' });
+        store.enqueueTask(task.id);
+        const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_FAILED_EVENTS)),
+        });
+
+        const pointers = threadStore
+          .getThreadMessages(wsThreadId)
+          .filter((m) => m.kind === 'task_pointer');
+        expect(pointers).to.have.length(1);
+        expect((pointers[0]!.payload as Record<string, unknown>).text).to.equal(
+          "Task 'Ws task' failed \u2717",
+        );
+      });
+
+      it('does not write a pointer when the origin thread is missing', async () => {
+        const entry = makeGlobalEntry('Orphan task');
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        });
+
+        // No parentThreadId, no workspace → resolveOriginThreadId is null →
+        // no task_pointer anywhere.
+        const task = store.getTask(entry.task.id)!;
+        const pointers = threadStore
+          .getThreadMessages(task.threadId!)
+          .filter((m) => m.kind === 'task_pointer');
+        expect(pointers).to.have.length(0);
+      });
+
+      it('does not write a pointer for a cancelled task', async () => {
+        const parentId = randomUUID();
+        threadStore.upsertThreadOnFirstMessage(parentId, 'Origin chat', 'chat');
+        const task = store.createTask({
+          title: 'Cancel me',
+          assignedTo: 'agent',
+          parentThreadId: parentId,
+        });
+        store.patchTask(task.id, { status: 'ready' });
+        store.enqueueTask(task.id);
+        const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(
+            fakeAbortingAgent(entry.id, 'cancel', [
+              { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
+            ]),
+          ),
+        });
+
+        expect(store.getTask(task.id)!.status).to.equal('cancelled');
+        const pointers = threadStore
+          .getThreadMessages(parentId)
+          .filter((m) => m.kind === 'task_pointer');
+        expect(pointers).to.have.length(0);
+      });
+
+      it('maps waiting_on_user to the awaiting-input pointer variant', async () => {
+        const parentId = randomUUID();
+        threadStore.upsertThreadOnFirstMessage(parentId, 'Origin chat', 'chat');
+        const task = store.createTask({
+          title: 'Needs input',
+          assignedTo: 'agent',
+          parentThreadId: parentId,
+        });
+        store.patchTask(task.id, { status: 'ready' });
+        store.enqueueTask(task.id);
+        const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+        const agent = fakeAgent([], { kind: 'free_text', question: 'Which one?' });
+        await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+        expect(store.getTask(task.id)!.status).to.equal('waiting_on_user');
+        const pointers = threadStore
+          .getThreadMessages(parentId)
+          .filter((m) => m.kind === 'task_pointer');
+        expect(pointers).to.have.length(1);
+        expect((pointers[0]!.payload as Record<string, unknown>).text).to.equal(
+          "Task 'Needs input' needs your input \u23F8 — awaiting your input",
+        );
+      });
+    });
   });
 });
