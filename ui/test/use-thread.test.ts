@@ -7,9 +7,12 @@ jest.mock('@/lib/sse', () => ({
 import * as sse from '@/lib/sse';
 import {
   useThreadInstance,
+  switchThread,
+  threads,
   _resetThreadInstancesForTests,
   type ThreadInstance,
 } from '@/hooks/use-thread';
+import { providers, defaultProviderName } from '@/hooks/use-providers';
 
 const mockConsumeSsePost = sse.consumeSsePost as jest.MockedFunction<typeof sse.consumeSsePost>;
 
@@ -37,6 +40,9 @@ afterEach(() => {
   _resetThreadInstancesForTests();
   jest.clearAllMocks();
   global.fetch = originalFetch;
+  providers.value = [];
+  defaultProviderName.value = '';
+  threads.value = [];
 });
 
 describe('use-thread — continuation-bubble splitting', () => {
@@ -233,5 +239,120 @@ describe('use-thread — wiki_updated handling', () => {
       wikiName: 'homelab',
       path: 'entities/router.md',
     });
+  });
+});
+
+describe('use-thread — persisted model restore on hydrate (#195)', () => {
+  it('applies a persisted provider/model from the hydrate() response', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], provider: 'ollama', model: 'llama3.2' }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t10');
+    await thread.hydrate();
+
+    expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
+    expect(thread.modelHydrated.value).toBe(true);
+  });
+
+  it('overrides whatever activeThreadModel already holds once the persisted model is known', async () => {
+    const thread = newThread('t11');
+    thread.setThreadModel('guessed-default-provider', 'guessed-default-model');
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], provider: 'ollama', model: 'llama3.2' }),
+    }) as unknown as typeof fetch;
+
+    await thread.hydrate();
+
+    expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
+  });
+
+  it('leaves activeThreadModel null and marks modelHydrated when the thread has no persisted model', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t12');
+    await thread.hydrate();
+
+    expect(thread.activeThreadModel.value).toBeNull();
+    expect(thread.modelHydrated.value).toBe(true);
+  });
+
+  it('marks modelHydrated even when hydrate() fails outright', async () => {
+    const rejectedFetch = jest.fn().mockRejectedValue(new Error('network down'));
+    global.fetch = rejectedFetch as unknown as typeof fetch;
+
+    const thread = newThread('t12b');
+    await thread.hydrate();
+
+    expect(thread.activeThreadModel.value).toBeNull();
+    expect(thread.modelHydrated.value).toBe(true);
+  });
+
+  it('does not apply a default before modelHydrated is true, even when providers are already loaded', () => {
+    providers.value = [
+      { name: 'openai', type: 'openai', defaultModel: 'gpt-4o', models: [{ id: 'gpt-4o' }] },
+    ];
+    defaultProviderName.value = 'openai';
+
+    const thread = newThread('t13');
+
+    expect(thread.modelHydrated.value).toBe(false);
+    expect(thread.activeThreadModel.value).toBeNull();
+  });
+
+  it('fills in the default once modelHydrated is true and no persisted model exists', async () => {
+    providers.value = [
+      { name: 'openai', type: 'openai', defaultModel: 'gpt-4o', models: [{ id: 'gpt-4o' }] },
+    ];
+    defaultProviderName.value = 'openai';
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t14');
+    await thread.hydrate();
+
+    expect(thread.activeThreadModel.value).toEqual({ provider: 'openai', model: 'gpt-4o' });
+  });
+});
+
+describe('use-thread — switchThread model handling', () => {
+  it('pre-fills the model chip optimistically from the sidebar list, then hydrate() confirms it', async () => {
+    threads.value = [
+      {
+        id: 't15',
+        title: 'Test thread',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        forkedFromThreadId: null,
+        forkedFromSeq: null,
+        type: 'chat',
+        afterAgentState: { status: 'idle' },
+        links: {
+          self: '/api/v1/threads/t15',
+          afterAgentStatus: '/api/v1/threads/t15/after-agent-status',
+        },
+        provider: 'ollama',
+        model: 'llama3.2',
+      },
+    ];
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], provider: 'ollama', model: 'llama3.2' }),
+    }) as unknown as typeof fetch;
+
+    await switchThread('t15');
+
+    const thread = newThread('t15');
+    expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
   });
 });

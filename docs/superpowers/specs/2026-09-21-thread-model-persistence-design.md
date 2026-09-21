@@ -125,7 +125,7 @@ Per `AGENTS.md`, application code ships with tests in the same PR.
 
 **Playwright E2E** (`@user-workflow` or `@functional`): mock
 `/api/v1/providers` and `/api/v1/threads/:id` via `page.route()` with the
-provider-list response resolving *before* the thread-detail response —
+provider-list response resolving _before_ the thread-detail response —
 the ordering that caused the original bug — and assert the model chip
 shows the thread's persisted model after reload, not the default. Forcing
 this ordering matters because a fast local run might not otherwise
