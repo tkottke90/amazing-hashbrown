@@ -5,9 +5,14 @@ import {
   fetchFileTree,
   fetchFileContent,
   saveFile,
+  uploadFiles as uploadFilesApi,
+  createDirectory as createDirectoryApi,
+  createFile as createFileApi,
   FileFetchError,
   type FileTreeResponse,
   type FileNode,
+  type UploadResult,
+  type CreateEntryResult,
 } from '@/services/workspace-files-api';
 
 export const fileTree = signal<FileTreeResponse | null>(null);
@@ -56,6 +61,25 @@ export function toggleFolder(path: string): void {
     next.add(path);
   }
   expandedFolders.value = next;
+}
+
+function expandFolder(path: string): void {
+  if (!path || expandedFolders.value.has(path)) return;
+  expandedFolders.value = new Set(expandedFolders.value).add(path);
+}
+
+// Depth-first search of the (nested) tree for a node by its relative path —
+// needed after creating a new file, since the create-file response doesn't
+// carry a content URL (see createFile() below for why).
+function findNode(nodes: FileNode[], path: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNode(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 export async function openFile(workspaceId: string, node: FileNode): Promise<void> {
@@ -195,6 +219,50 @@ export function closeTab(path: string): void {
     const remaining = openTabs.value;
     activeTabPath.value = remaining.length > 0 ? remaining[remaining.length - 1]!.path : null;
   }
+}
+
+export async function uploadFiles(
+  workspaceId: string,
+  dir: string,
+  files: FileList | File[],
+): Promise<UploadResult> {
+  const result = await uploadFilesApi(workspaceId, dir, files);
+  if (result.ok) {
+    void loadFileTree(workspaceId, { force: true });
+  }
+  return result;
+}
+
+export async function createDirectory(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  const result = await createDirectoryApi(workspaceId, dir, name);
+  if (result.ok) {
+    expandFolder(dir);
+    await loadFileTree(workspaceId, { force: true });
+  }
+  return result;
+}
+
+export async function createFile(
+  workspaceId: string,
+  dir: string,
+  name: string,
+): Promise<CreateEntryResult> {
+  const result = await createFileApi(workspaceId, dir, name);
+  if (result.ok) {
+    expandFolder(dir);
+    await loadFileTree(workspaceId, { force: true });
+    // The create-file response doesn't carry a content URL (that's built
+    // server-side from the tree walk, not this endpoint) — find the fresh
+    // node in the just-reloaded tree instead of duplicating the URL-building
+    // logic here.
+    const node = fileTree.value ? findNode(fileTree.value.entries, result.path) : null;
+    if (node) await openFile(workspaceId, node);
+  }
+  return result;
 }
 
 // Test-only: signals are module-level singletons, so every describe block
