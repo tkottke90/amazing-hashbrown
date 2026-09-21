@@ -140,12 +140,24 @@ same technique `task-execution.ts`'s catch block already uses via
   if (controller.signal.aborted) {
     failAssistant(threadStore, threadId, segmentId, partialContent, turnSentAt, partialThought,
       'Stopped.', 'cancelled');
-    return; // not rethrown — this isn't a failure
+    throw new ClassifiedTurnError('Stopped.', 'cancelled');
   }
 
   // ...unchanged genuine-error path (GraphRecursionError, classifyChatError, etc.)
 }
 ```
+
+Rethrowing via the existing `ClassifiedTurnError` (rather than swallowing with an early `return`)
+matters for one reason: the Stop request and the original turn are two separate HTTP
+request/response cycles. `res.status(202).json(...)` in the Stop route only answers *that*
+request — it never touches whatever connection is actually attached to the running turn (which
+could, in principle, be a different tab than the one that clicked Stop, e.g. the same workspace
+thread open in two tabs). Rethrowing lets each route's *existing* outer catch block do what it
+already does for every other classified failure: write a `stream_error` SSE event to the
+turn's own `res`, so whatever client is actually still listening to it — not necessarily the one
+that clicked Stop — sees the turn end instead of hanging at "streaming" forever. This needs no new
+route-layer code; `ClassifiedTurnError`'s `category` already round-trips into `errorCategory` on
+that event today for every other error path.
 
 This needs one new value on the shared `ChatErrorCategory` enum
 (`lib/llm-common-types/src/chat/sse-events.ts`): `'cancelled'`. It's consumed exactly like every
