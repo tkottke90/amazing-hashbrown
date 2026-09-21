@@ -9,7 +9,7 @@ import {
   writeSseEvent,
   ClassifiedTurnError,
 } from '../../agents/wiki-stream-handler.js';
-import type { SseWriter } from '../../agents/active-sse-writer.js';
+import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { serializeError } from '../../config/logger.js';
 import { wikiUploadRouter } from './wiki-upload.route.js';
@@ -271,6 +271,16 @@ wikiRouter.post('/chat/:threadId/hitl', async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+// POST /api/v1/wiki/chat/:threadId/stop — explicit cancel, see
+// docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
+// Plain JSON endpoint, not SSE: the turn it targets is a separate,
+// already-open request/response; this one just aborts it and returns.
+wikiRouter.post('/chat/:threadId/stop', (req, res) => {
+  const { threadId } = req.params as { threadId: string };
+  const { status, body } = stopTurnResponse(threadId);
+  res.status(status).json(body);
 });
 
 // POST /api/v1/wiki/chat/:threadId/retry

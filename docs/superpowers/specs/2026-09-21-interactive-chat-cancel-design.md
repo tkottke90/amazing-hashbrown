@@ -71,7 +71,11 @@ added to the same module, keyed the same way as the existing writer map:
 ```ts
 const _controllers = new Map<string, AbortController>();
 
-export function setActiveSseWriter(threadId: string, writer: SseWriter, controller?: AbortController): void {
+export function setActiveSseWriter(
+  threadId: string,
+  writer: SseWriter,
+  controller?: AbortController,
+): void {
   _writers.set(threadId, writer);
   if (controller) _controllers.set(threadId, controller);
 }
@@ -149,10 +153,10 @@ same technique `task-execution.ts`'s catch block already uses via
 
 Rethrowing via the existing `ClassifiedTurnError` (rather than swallowing with an early `return`)
 matters for one reason: the Stop request and the original turn are two separate HTTP
-request/response cycles. `res.status(202).json(...)` in the Stop route only answers *that*
+request/response cycles. `res.status(202).json(...)` in the Stop route only answers _that_
 request — it never touches whatever connection is actually attached to the running turn (which
 could, in principle, be a different tab than the one that clicked Stop, e.g. the same workspace
-thread open in two tabs). Rethrowing lets each route's *existing* outer catch block do what it
+thread open in two tabs). Rethrowing lets each route's _existing_ outer catch block do what it
 already does for every other classified failure: write a `stream_error` SSE event to the
 turn's own `res`, so whatever client is actually still listening to it — not necessarily the one
 that clicked Stop — sees the turn end instead of hanging at "streaming" forever. This needs no new
@@ -196,12 +200,12 @@ the mutex exactly as it does for any other error today.
 
 ## Error handling
 
-| Case | Behavior |
-| --- | --- |
-| Stop arrives after the turn already finished naturally | Registry entry is already cleared → 409, harmless |
-| Stop clicked twice | Second call either 409s (already cleared) or calls `.abort()` on an already-aborted controller — a no-op |
-| Stop hits a thread currently owned by an automated task run | `task-execution.ts` never registers a controller here, so `getActiveTurnAbort` returns `undefined` → 409. Task cancellation stays exclusively `#86`'s `/tasks/:id/cancel` route |
-| Provider call hangs indefinitely, client never disconnects or clicks Stop | Bounded by the new `timeoutMs` safety net, not by this design's cancel path |
+| Case                                                                      | Behavior                                                                                                                                                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stop arrives after the turn already finished naturally                    | Registry entry is already cleared → 409, harmless                                                                                                                               |
+| Stop clicked twice                                                        | Second call either 409s (already cleared) or calls `.abort()` on an already-aborted controller — a no-op                                                                        |
+| Stop hits a thread currently owned by an automated task run               | `task-execution.ts` never registers a controller here, so `getActiveTurnAbort` returns `undefined` → 409. Task cancellation stays exclusively `#86`'s `/tasks/:id/cancel` route |
+| Provider call hangs indefinitely, client never disconnects or clicks Stop | Bounded by the new `timeoutMs` safety net, not by this design's cancel path                                                                                                     |
 
 ---
 

@@ -739,6 +739,14 @@ export async function resolveAttachmentForTurn(
 
 // ---- Public handlers ----
 
+// Test-only seam — mirrors task-execution.ts's ExecuteTaskDeps: getChatAgent()
+// caches a real agent built against a real provider, which a unit test
+// driving a fake aborting event stream cannot exercise directly. Defaults to
+// the real implementation everywhere except tests.
+export interface ChatStreamDeps {
+  getChatAgent?: typeof getChatAgent;
+}
+
 export async function streamChatToSse(
   res: Response,
   threadId: string,
@@ -748,7 +756,9 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
   attachmentId?: string,
+  deps: ChatStreamDeps = {},
 ): Promise<void> {
+  const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
 
@@ -759,7 +769,7 @@ export async function streamChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const { agent, systemPrompt } = await resolveChatAgent(effectiveProvider, effectiveModel);
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
@@ -814,7 +824,8 @@ export async function streamChatToSse(
     resolvedModel,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -842,6 +853,7 @@ export async function streamChatToSse(
               afterAgentEnabled: afterAgent,
             },
             recursionLimit: env.agent?.recursionLimit ?? 100,
+            signal: controller.signal,
           },
         );
 
@@ -859,6 +871,7 @@ export async function streamChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -885,6 +898,20 @@ export async function streamChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -925,7 +952,9 @@ export async function resumeChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  deps: ChatStreamDeps = {},
 ): Promise<void> {
+  const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
 
   const threadMeta = threadStore.getThreadMeta(threadId);
@@ -935,7 +964,7 @@ export async function resumeChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const { agent, systemPrompt } = await resolveChatAgent(effectiveProvider, effectiveModel);
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
@@ -982,7 +1011,8 @@ export async function resumeChatToSse(
     resolvedModel,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -1005,6 +1035,7 @@ export async function resumeChatToSse(
             model: effectiveModel,
             afterAgentEnabled: afterAgent,
           },
+          signal: controller.signal,
         });
 
         return pipeEvents(
@@ -1021,6 +1052,7 @@ export async function resumeChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -1047,6 +1079,20 @@ export async function resumeChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -1092,7 +1138,9 @@ export async function retryChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  deps: ChatStreamDeps = {},
 ): Promise<void> {
+  const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
 
   const threadMeta = threadStore.getThreadMeta(threadId);
@@ -1102,7 +1150,7 @@ export async function retryChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const { agent, systemPrompt } = await getChatAgent(effectiveProvider, effectiveModel);
+  const { agent, systemPrompt } = await resolveChatAgent(effectiveProvider, effectiveModel);
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
@@ -1143,7 +1191,8 @@ export async function retryChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -1166,6 +1215,7 @@ export async function retryChatToSse(
             model: effectiveModel,
             afterAgentEnabled: afterAgent,
           },
+          signal: controller.signal,
         });
 
         return pipeEvents(
@@ -1182,6 +1232,7 @@ export async function retryChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -1208,6 +1259,20 @@ export async function retryChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';

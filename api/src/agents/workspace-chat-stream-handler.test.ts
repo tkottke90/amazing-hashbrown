@@ -3,20 +3,29 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { logger } from '../config/logger.js';
-import { bootThreadStore } from '../services/thread-store.js';
+import { configManager } from '../config/env.js';
+import { bootThreadStore, getThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, bootWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootTaskScheduler } from '../services/task-scheduler.js';
-import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import {
+  setActiveSseWriter,
+  clearActiveSseWriter,
+  getActiveSseWriter,
+  getActiveTurnAbort,
+} from './active-sse-writer.js';
+import { ClassifiedTurnError } from './stream-handler.js';
+import { recordAssistantStart } from './thread-message-writer.js';
 import {
   streamWorkspaceChatToSse,
   resumeWorkspaceChatToSse,
   retryWorkspaceChatToSse,
   buildWorkspaceContext,
+  type WorkspaceChatStreamDeps,
 } from './workspace-chat-stream-handler.js';
 
 // Monkey-patches one logger method to record calls while forwarding to the
@@ -108,6 +117,219 @@ describe('agents/workspace-chat-stream-handler — concurrency guard', () => {
     const emitted = events();
     expect(emitted).to.have.length(1);
     expect(emitted[0]!.type).to.equal('stream_error');
+  });
+});
+
+// Regression coverage for issue #196: an interactive workspace-chat turn
+// that's explicitly Stopped (via the new /stop route calling
+// stopActiveTurn(), which aborts the controller registered here) must
+// persist a 'cancelled' row and actually release the active-sse-writer
+// mutex — the reported symptom was this exact thread staying stuck
+// rejecting new turns with "This workspace has a task running".
+describe('agents/workspace-chat-stream-handler — abort handling', () => {
+  const TEST_PROVIDER = 'workspace-chat-abort-test-provider';
+  let dir: string;
+  let workspaceStore: WorkspaceStore;
+  let workspace: Workspace;
+  let threadId: string;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type RawEvent = Record<string, any>;
+
+  // Mirrors task-execution.test.ts's fakeAbortingAgent: looks up the REAL
+  // controller streamWorkspaceChatToSse/etc. already registered via
+  // setActiveSseWriter(threadId, sink, controller), aborts it itself, then
+  // throws — no ordering race with the code under test's own registration.
+  function fakeAbortingAgent(tid: string, eventsBeforeAbort: RawEvent[] = []) {
+    return {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      streamEvents: (): AsyncIterable<any> => {
+        async function* gen() {
+          for (const e of eventsBeforeAbort) yield e;
+          const controller = getActiveTurnAbort(tid);
+          if (!controller) throw new Error('test setup error: no controller registered');
+          controller.abort();
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        }
+        return gen();
+      },
+      graph: {
+        getState: async () => ({
+          tasks: [],
+          config: { configurable: { checkpoint_id: 'cp-test' } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  function fakeThrowingAgent(eventsBeforeThrow: RawEvent[] = []) {
+    return {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      streamEvents: (): AsyncIterable<any> => {
+        async function* gen() {
+          for (const e of eventsBeforeThrow) yield e;
+          throw new Error('simulated stream failure');
+        }
+        return gen();
+      },
+      graph: {
+        getState: async () => ({
+          tasks: [],
+          config: { configurable: { checkpoint_id: 'cp-test' } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  function depsFor(agent: unknown): WorkspaceChatStreamDeps {
+    return {
+      getWorkspaceChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+    };
+  }
+
+  async function expectClassifiedTurnError(promise: Promise<void>): Promise<ClassifiedTurnError> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).to.be.instanceOf(ClassifiedTurnError);
+      return err as ClassifiedTurnError;
+    }
+    throw new Error('expected the handler to throw');
+  }
+
+  before(() => {
+    configManager.set('providers', [
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', TEST_PROVIDER);
+  });
+
+  after(() => {
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
+  });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'workspace-chat-stream-abort-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    workspaceStore = new WorkspaceStore(db);
+    bootWorkspaceStore(db);
+    bootThreadStore(db);
+    bootTaskScheduler();
+
+    threadId = randomUUID();
+    workspace = workspaceStore.createWorkspace({ name: 'W', location: '/tmp/w' });
+    workspace = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+  });
+
+  afterEach(() => {
+    clearActiveSseWriter(threadId);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('streamWorkspaceChatToSse persists a cancelled turn and releases the mutex when aborted mid-stream', async () => {
+    const { res } = fakeRes();
+
+    const err = await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        res,
+        workspace,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeAbortingAgent(threadId)),
+      ),
+    );
+    expect(err.category).to.equal('cancelled');
+
+    // The literal regression test for #196.
+    expect(getActiveSseWriter(threadId)).to.equal(undefined);
+    expect(getActiveTurnAbort(threadId)).to.equal(undefined);
+
+    const persisted = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'assistant' && m.status === 'error');
+    expect(persisted, 'expected a persisted error-status assistant row').to.not.equal(undefined);
+    expect((persisted!.payload as { errorCategory?: string }).errorCategory).to.equal('cancelled');
+  });
+
+  it('streamWorkspaceChatToSse still fails normally (not cancelled) when the stream throws without being aborted', async () => {
+    const { res } = fakeRes();
+
+    const err = await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        res,
+        workspace,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeThrowingAgent()),
+      ),
+    );
+    expect(err.category).to.not.equal('cancelled');
+    expect(getActiveSseWriter(threadId)).to.equal(undefined);
+  });
+
+  it('resumeWorkspaceChatToSse persists a cancelled turn and releases the mutex when aborted mid-stream', async () => {
+    getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'workspace-chat');
+    recordAssistantStart(getThreadStore(), threadId, randomUUID(), new Date().toISOString());
+    const { res } = fakeRes();
+
+    const err = await expectClassifiedTurnError(
+      resumeWorkspaceChatToSse(
+        res,
+        workspace,
+        threadId,
+        'no-such-prompt',
+        'yes',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeAbortingAgent(threadId)),
+      ),
+    );
+    expect(err.category).to.equal('cancelled');
+    expect(getActiveSseWriter(threadId)).to.equal(undefined);
+  });
+
+  it('retryWorkspaceChatToSse persists a cancelled turn and releases the mutex when aborted mid-stream', async () => {
+    getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'workspace-chat');
+    const failedId = randomUUID();
+    recordAssistantStart(getThreadStore(), threadId, failedId, new Date().toISOString());
+    getThreadStore().updateMessage(threadId, failedId, {
+      status: 'error',
+      payload: { content: '' },
+    });
+    const { res } = fakeRes();
+
+    const err = await expectClassifiedTurnError(
+      retryWorkspaceChatToSse(
+        res,
+        workspace,
+        threadId,
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeAbortingAgent(threadId)),
+      ),
+    );
+    expect(err.category).to.equal('cancelled');
+    expect(getActiveSseWriter(threadId)).to.equal(undefined);
   });
 });
 

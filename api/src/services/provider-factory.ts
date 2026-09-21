@@ -52,6 +52,9 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       if (!config.baseUrl) {
         throw new Error(`Provider "${config.name}" (ollama) requires baseUrl`);
       }
+      // timeoutMs is not wired for Ollama — ChatOllama's client has no
+      // equivalent constructor option. Known gap, deliberately deferred;
+      // see the design doc referenced on ProviderSchema.timeoutMs.
       return new ChatOllama({ model: resolvedModel, baseUrl: config.baseUrl });
     case 'openai':
       if (!config.apiKey) {
@@ -62,6 +65,7 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       return new ChatOpenAI({
         model: resolvedModel,
         apiKey: config.apiKey,
+        timeout: config.timeoutMs,
         configuration: {
           baseURL: config.baseUrl,
           fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
@@ -73,7 +77,15 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
           `Provider "${config.name}" has no apiKey — will rely on ANTHROPIC_API_KEY environment variable`,
         );
       }
-      return new ChatAnthropic({ model: resolvedModel, apiKey: config.apiKey });
+      return new ChatAnthropic({
+        model: resolvedModel,
+        apiKey: config.apiKey,
+        // ChatAnthropic has no top-level `timeout` constructor field (unlike
+        // ChatOpenAI) — it forwards `clientOptions` straight to the
+        // underlying @anthropic-ai/sdk client, which is where `timeout`
+        // actually lives.
+        clientOptions: { timeout: config.timeoutMs },
+      });
   }
 }
 

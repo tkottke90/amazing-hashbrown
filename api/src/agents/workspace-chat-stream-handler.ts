@@ -130,6 +130,15 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
   };
 }
 
+// Test-only seam — mirrors stream-handler.ts's ChatStreamDeps and
+// task-execution.ts's ExecuteTaskDeps: getWorkspaceChatAgent() caches a real
+// agent built against a real provider, which a unit test driving a fake
+// aborting event stream cannot exercise directly. Defaults to the real
+// implementation everywhere except tests.
+export interface WorkspaceChatStreamDeps {
+  getWorkspaceChatAgent?: typeof getWorkspaceChatAgent;
+}
+
 export async function streamWorkspaceChatToSse(
   res: Response,
   workspace: Workspace,
@@ -139,7 +148,9 @@ export async function streamWorkspaceChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
+  const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
   const sink: SseWriter = (event) => {
@@ -169,7 +180,7 @@ export async function streamWorkspaceChatToSse(
 
   const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
-  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+  const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
@@ -216,7 +227,8 @@ export async function streamWorkspaceChatToSse(
     resolvedModel,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -240,6 +252,7 @@ export async function streamWorkspaceChatToSse(
               afterAgentEnabled: afterAgent,
             },
             recursionLimit: env.agent?.recursionLimit ?? 100,
+            signal: controller.signal,
           },
         );
 
@@ -257,6 +270,7 @@ export async function streamWorkspaceChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -294,6 +308,20 @@ export async function streamWorkspaceChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -335,7 +363,9 @@ export async function resumeWorkspaceChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
+  const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
   const sink: SseWriter = (event) => {
@@ -359,7 +389,7 @@ export async function resumeWorkspaceChatToSse(
 
   const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
-  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+  const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
@@ -416,7 +446,8 @@ export async function resumeWorkspaceChatToSse(
     resolvedModel,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -438,6 +469,7 @@ export async function resumeWorkspaceChatToSse(
             model: effectiveModel,
             afterAgentEnabled: afterAgent,
           },
+          signal: controller.signal,
         });
 
         return pipeEvents(
@@ -454,6 +486,7 @@ export async function resumeWorkspaceChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -491,6 +524,20 @@ export async function resumeWorkspaceChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -530,7 +577,9 @@ export async function retryWorkspaceChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
+  const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
   const sink: SseWriter = (event) => {
@@ -554,7 +603,7 @@ export async function retryWorkspaceChatToSse(
 
   const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
-  const { agent, systemPrompt } = await getWorkspaceChatAgent(
+  const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
@@ -605,7 +654,8 @@ export async function retryWorkspaceChatToSse(
     obsConfig.spanOutputPreviewChars,
   );
 
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const {
@@ -627,6 +677,7 @@ export async function retryWorkspaceChatToSse(
             model: effectiveModel,
             afterAgentEnabled: afterAgent,
           },
+          signal: controller.signal,
         });
 
         return pipeEvents(
@@ -643,6 +694,7 @@ export async function retryWorkspaceChatToSse(
       {
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
+        signal: controller.signal,
       },
     );
 
@@ -680,6 +732,20 @@ export async function retryWorkspaceChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';

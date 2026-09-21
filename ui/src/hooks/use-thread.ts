@@ -701,6 +701,11 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   function stopGeneration(): void {
     _abortController?.abort();
     _abortController = null;
+    // Best-effort, fire-and-forget — tells the server to actually cancel
+    // the in-flight turn (see docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md).
+    // The local UI state below already updates synchronously regardless of
+    // how/whether this resolves, so nothing here needs to await it.
+    fetch(`${endpointBase}/${threadId}/stop`, { method: 'POST' }).catch(() => {});
     if (_currentAssistantId) {
       messages.value = messages.value.map((m) =>
         m.kind === 'assistant' && m.id === _currentAssistantId ? { ...m, status: 'done' } : m,

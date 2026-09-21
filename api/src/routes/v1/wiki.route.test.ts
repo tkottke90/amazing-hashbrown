@@ -1,10 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, before, after } from 'mocha';
+import { randomUUID } from 'node:crypto';
+import { describe, it, before, after, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
-import { buildMergedGraph } from './wiki.route.js';
+import { startTestServer } from '@/tests/utilities/http-test-server.js';
+import { buildMergedGraph, wikiRouter } from './wiki.route.js';
+import { setActiveSseWriter, clearActiveSseWriter } from '../../agents/active-sse-writer.js';
 
 describe('routes/v1/wiki.route buildMergedGraph', () => {
   let dir: string;
@@ -92,5 +95,54 @@ describe('routes/v1/wiki.route buildMergedGraph', () => {
     const graph = await buildMergedGraph(brokenRegistry);
     expect(graph.nodes.some((n) => n.domainId === 'homelab')).to.equal(true);
     expect(graph.nodes.some((n) => n.domainId === 'missing')).to.equal(false);
+  });
+});
+
+// Covers the new POST /chat/:threadId/stop route — see
+// docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md. Thin
+// wiring around active-sse-writer.ts's stopTurnResponse(), which already
+// has exhaustive unit coverage in active-sse-writer.test.ts; this proves
+// the actual registered Express route delegates to it correctly.
+describe('routes/v1/wiki.route — POST /chat/:threadId/stop', () => {
+  let baseUrl: string;
+  let close: () => Promise<void>;
+  let threadId: string;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(wikiRouter, '/api/v1/wiki'));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  afterEach(() => {
+    clearActiveSseWriter(threadId);
+  });
+
+  it('returns 409 when nothing is active for the thread', async () => {
+    threadId = randomUUID();
+    const res = await fetch(`${baseUrl}/chat/${threadId}/stop`, { method: 'POST' });
+    expect(res.status).to.equal(409);
+    expect(await res.json()).to.deep.equal({ error: 'No active turn for this thread' });
+  });
+
+  it('returns 409 for a task-owned thread (writer set, no controller)', async () => {
+    threadId = randomUUID();
+    setActiveSseWriter(threadId, () => {});
+    const res = await fetch(`${baseUrl}/chat/${threadId}/stop`, { method: 'POST' });
+    expect(res.status).to.equal(409);
+  });
+
+  it('returns 202 and aborts the controller for a chat-owned thread', async () => {
+    threadId = randomUUID();
+    const controller = new AbortController();
+    setActiveSseWriter(threadId, () => {}, controller);
+
+    const res = await fetch(`${baseUrl}/chat/${threadId}/stop`, { method: 'POST' });
+
+    expect(res.status).to.equal(202);
+    expect(await res.json()).to.deep.equal({ ok: true });
+    expect(controller.signal.aborted).to.equal(true);
   });
 });
