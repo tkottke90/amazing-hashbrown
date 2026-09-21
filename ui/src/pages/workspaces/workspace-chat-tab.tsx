@@ -1,5 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
+import { Download } from 'lucide-preact';
 import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
@@ -126,14 +127,26 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
         <div class="border-t border-border p-3">
           <div class="mb-2 flex items-center justify-between">
             {isBusy ? <span class="text-xs text-muted-foreground">Summarising…</span> : <span />}
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={isBusy}
-              onClick={() => void handleSummarizeClick()}
-            >
-              Summarise
-            </Button>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(`/api/v1/threads/${workspace.threadId}/report`, '_blank')
+                }
+                title="Generate thread report"
+                class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+              >
+                <Download class="size-3.5" />
+              </button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isBusy}
+                onClick={() => void handleSummarizeClick()}
+              >
+                Summarise
+              </Button>
+            </div>
           </div>
           <ChatInput
             value={inputValue.value}
