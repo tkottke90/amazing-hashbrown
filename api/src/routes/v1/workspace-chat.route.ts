@@ -8,7 +8,7 @@ import {
   resolveAllowedWikiId,
 } from '../../agents/workspace-chat-stream-handler.js';
 import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
-import type { SseWriter } from '../../agents/active-sse-writer.js';
+import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
 import { resolveHitlPrompt } from '../../agents/thread-message-writer.js';
 import { getWorkspaceChatAgent } from '../../agents/chat-agent.js';
@@ -196,6 +196,19 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   } finally {
     res.end();
   }
+});
+
+// Explicit cancel — see docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
+// Plain JSON endpoint, not SSE: the turn it targets is a separate,
+// already-open request/response; this one just aborts it and returns.
+// Resolves the workspace first (matching every other route in this file)
+// so a stop request against an unresolvable workspace 404s consistently,
+// rather than silently 409ing as if a turn simply weren't running.
+workspaceChatRouter.post('/:threadId/stop', (req: Request, res: Response) => {
+  const { threadId } = req.params as { threadId: string };
+  if (!resolveWorkspaceForThread(req, res)) return;
+  const { status, body } = stopTurnResponse(threadId);
+  res.status(status).json(body);
 });
 
 workspaceChatRouter.post('/:threadId/retry', async (req: Request, res: Response) => {

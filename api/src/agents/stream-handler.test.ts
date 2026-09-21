@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,8 @@ import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { ToolMessage } from '@langchain/core/messages';
-import { ThreadStore } from '../services/thread-store.js';
+import { ThreadStore, bootThreadStore } from '../services/thread-store.js';
+import { configManager } from '../config/env.js';
 import {
   pipeEvents,
   finalizeTurn,
@@ -16,10 +18,15 @@ import {
   extractPartialAssistantState,
   drainAndRecordWikiUpdates,
   resolveAttachmentForTurn,
+  streamChatToSse,
+  resumeChatToSse,
+  retryChatToSse,
+  type ChatStreamDeps,
 } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
 import { queueWikiUpdate } from './after-agent.js';
 import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
+import { getActiveSseWriter, getActiveTurnAbort } from './active-sse-writer.js';
 
 const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
 
@@ -1130,6 +1137,224 @@ describe('agents/stream-handler', () => {
         filename: 'notes.txt',
         mimeType: 'text/plain',
         included: true,
+      });
+    });
+  });
+
+  // Regression coverage for issue #196: an interactive chat turn that's
+  // explicitly Stopped (via the new /stop route calling stopActiveTurn(),
+  // which aborts the controller registered here) must persist a 'cancelled'
+  // row and — critically — actually release the active-sse-writer mutex,
+  // rather than leaving the thread stuck rejecting new turns forever.
+  describe('streamChatToSse / resumeChatToSse / retryChatToSse — abort handling', () => {
+    const TEST_PROVIDER = 'stream-handler-abort-test-provider';
+    let store: ThreadStore;
+    let dir: string;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type RawEvent = Record<string, any>;
+
+    // Mirrors task-execution.test.ts's fakeAbortingAgent: looks up the REAL
+    // controller streamChatToSse/etc. already registered via
+    // setActiveSseWriter(threadId, sink, controller) — not a signal passed
+    // into this fake — so there's no ordering race between test setup and
+    // the code under test's own registration.
+    function fakeAbortingAgent(threadId: string, eventsBeforeAbort: RawEvent[] = []) {
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        streamEvents: (): AsyncIterable<any> => {
+          async function* gen() {
+            for (const e of eventsBeforeAbort) yield e;
+            const controller = getActiveTurnAbort(threadId);
+            if (!controller) throw new Error('test setup error: no controller registered');
+            controller.abort();
+            throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    // Regression guard: confirms the new `if (controller.signal.aborted)`
+    // branch doesn't accidentally swallow a genuine failure that happens to
+    // arrive on the same turn (the controller here is never aborted).
+    function fakeThrowingAgent(eventsBeforeThrow: RawEvent[] = []) {
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        streamEvents: (): AsyncIterable<any> => {
+          async function* gen() {
+            for (const e of eventsBeforeThrow) yield e;
+            throw new Error('simulated stream failure');
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    function depsFor(agent: unknown): ChatStreamDeps {
+      return {
+        getChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+      };
+    }
+
+    before(() => {
+      dir = mkdtempSync(join(tmpdir(), 'stream-handler-abort-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new ThreadStore(db);
+      bootThreadStore(db);
+      configManager.set('providers', [
+        {
+          name: TEST_PROVIDER,
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'test-model',
+        },
+      ]);
+      configManager.set('defaultProvider', TEST_PROVIDER);
+    });
+
+    after(() => {
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Both branches (aborted and genuinely failed) persist to the DB and
+    // rethrow a ClassifiedTurnError rather than writing their own
+    // stream_error SSE event — that conversion happens one layer up, in
+    // each route file's own catch block (see chat.route.ts). So these tests
+    // assert against the thrown error and the persisted row directly,
+    // rather than against fakeRes()'s captured events.
+    async function expectClassifiedTurnError(promise: Promise<void>): Promise<ClassifiedTurnError> {
+      try {
+        await promise;
+      } catch (err) {
+        expect(err).to.be.instanceOf(ClassifiedTurnError);
+        return err as ClassifiedTurnError;
+      }
+      throw new Error('expected streamChatToSse (or resume/retry) to throw');
+    }
+
+    describe('streamChatToSse', () => {
+      it('persists a cancelled turn and releases the mutex when the turn is aborted mid-stream', async () => {
+        const threadId = randomUUID();
+        const { res } = fakeRes();
+
+        const err = await expectClassifiedTurnError(
+          streamChatToSse(
+            res,
+            threadId,
+            'hello',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            depsFor(fakeAbortingAgent(threadId)),
+          ),
+        );
+        expect(err.category).to.equal('cancelled');
+
+        // The literal regression test for #196: the mutex must not still be
+        // held once the aborted turn has finished unwinding.
+        expect(getActiveSseWriter(threadId)).to.equal(undefined);
+        expect(getActiveTurnAbort(threadId)).to.equal(undefined);
+
+        const persisted = store
+          .getThreadMessages(threadId)
+          .find((m) => m.kind === 'assistant' && m.status === 'error');
+        expect(persisted, 'expected a persisted error-status assistant row').to.not.equal(
+          undefined,
+        );
+        expect((persisted!.payload as { errorCategory?: string }).errorCategory).to.equal(
+          'cancelled',
+        );
+      });
+
+      it('still fails normally (not cancelled) when the stream throws without being aborted', async () => {
+        const threadId = randomUUID();
+        const { res } = fakeRes();
+
+        const err = await expectClassifiedTurnError(
+          streamChatToSse(
+            res,
+            threadId,
+            'hello',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            depsFor(fakeThrowingAgent()),
+          ),
+        );
+        expect(err.category).to.not.equal('cancelled');
+        expect(getActiveSseWriter(threadId)).to.equal(undefined);
+      });
+    });
+
+    describe('resumeChatToSse', () => {
+      it('persists a cancelled turn and releases the mutex when the turn is aborted mid-stream', async () => {
+        const threadId = randomUUID();
+        store.upsertThreadOnFirstMessage(threadId, 'hello');
+        recordAssistantStart(store, threadId, randomUUID(), new Date().toISOString());
+        const { res } = fakeRes();
+
+        const err = await expectClassifiedTurnError(
+          resumeChatToSse(
+            res,
+            threadId,
+            'no-such-prompt',
+            'yes',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(fakeAbortingAgent(threadId)),
+          ),
+        );
+        expect(err.category).to.equal('cancelled');
+        expect(getActiveSseWriter(threadId)).to.equal(undefined);
+      });
+    });
+
+    describe('retryChatToSse', () => {
+      it('persists a cancelled turn and releases the mutex when the turn is aborted mid-stream', async () => {
+        const threadId = randomUUID();
+        store.upsertThreadOnFirstMessage(threadId, 'hello');
+        const failedId = randomUUID();
+        recordAssistantStart(store, threadId, failedId, new Date().toISOString());
+        store.updateMessage(threadId, failedId, { status: 'error', payload: { content: '' } });
+        const { res } = fakeRes();
+
+        const err = await expectClassifiedTurnError(
+          retryChatToSse(
+            res,
+            threadId,
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(fakeAbortingAgent(threadId)),
+          ),
+        );
+        expect(err.category).to.equal('cancelled');
+        expect(getActiveSseWriter(threadId)).to.equal(undefined);
       });
     });
   });

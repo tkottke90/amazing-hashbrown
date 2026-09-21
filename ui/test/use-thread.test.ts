@@ -215,6 +215,27 @@ describe('use-thread — sendMessage attachmentId', () => {
   });
 });
 
+// Issue #196: stopGeneration() must actually reach the server (a fetch to
+// the new /stop route), not just abort the local fetch — see
+// docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
+describe('use-thread — stopGeneration', () => {
+  it("fires a fire-and-forget POST to the thread's /stop endpoint", () => {
+    const thread = newThread('t10');
+    thread.stopGeneration();
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/chat/t10/stop', { method: 'POST' });
+  });
+
+  it('does not throw when the stop request itself fails', () => {
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(new Error('network down')) as unknown as typeof fetch;
+
+    const thread = newThread('t11');
+    expect(() => thread.stopGeneration()).not.toThrow();
+  });
+});
+
 describe('use-thread — wiki_updated handling', () => {
   it('creates a wiki_update message carrying pageTitle, pageKind, wikiName, and path from the event', async () => {
     respondWith([

@@ -100,6 +100,35 @@ describe('services/provider-factory', () => {
         expect(() => createProviderFromConfig(noKey)).to.not.throw();
       }
     });
+
+    describe('timeoutMs safety net', () => {
+      it('passes timeoutMs through as the top-level timeout on ChatOpenAI', () => {
+        const agent = createProviderFromConfig({ ...openaiConfig, timeoutMs: 5000 }) as ChatOpenAI;
+        expect(agent.timeout).to.equal(5000);
+      });
+
+      it('leaves ChatOpenAI.timeout undefined when timeoutMs is not configured', () => {
+        const agent = createProviderFromConfig(openaiConfig) as ChatOpenAI;
+        expect(agent.timeout).to.equal(undefined);
+      });
+
+      it('passes timeoutMs through as clientOptions.timeout on ChatAnthropic (no top-level timeout field exists on this class)', () => {
+        const agent = createProviderFromConfig({
+          ...anthropicConfig,
+          timeoutMs: 5000,
+        }) as ChatAnthropic;
+        expect(agent.clientOptions.timeout).to.equal(5000);
+      });
+
+      it('leaves ChatAnthropic.clientOptions.timeout undefined when timeoutMs is not configured', () => {
+        const agent = createProviderFromConfig(anthropicConfig) as ChatAnthropic;
+        expect(agent.clientOptions.timeout).to.equal(undefined);
+      });
+
+      it('does not throw for ollama when timeoutMs is set (known gap — not wired for this provider type)', () => {
+        expect(() => createProviderFromConfig({ ...ollamaConfig, timeoutMs: 5000 })).to.not.throw();
+      });
+    });
   });
 
   describe('createProvider()', () => {

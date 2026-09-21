@@ -8,6 +8,7 @@ import {
   CloudOff,
   WifiOff,
   AlertTriangle,
+  CircleStop,
   ChevronDown,
   ChevronRight,
 } from 'lucide-preact';
@@ -59,6 +60,15 @@ const CATEGORY_INFO: Record<ChatErrorCategory, { icon: typeof AlertTriangle; mes
   unknown: {
     icon: AlertTriangle,
     message: GENERIC_MESSAGE,
+  },
+  // Not a failure — the turn was explicitly stopped (Stop button, or a
+  // provider timeout after the turn was abandoned). Deliberately styled
+  // the same as every other category here (icon + message row) rather
+  // than a distinct "success"-flavored look, since this still renders in
+  // the same error-bubble slot as a genuine failure.
+  cancelled: {
+    icon: CircleStop,
+    message: 'Stopped before finishing.',
   },
 };
 

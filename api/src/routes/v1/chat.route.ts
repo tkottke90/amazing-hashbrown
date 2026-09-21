@@ -6,7 +6,7 @@ import {
   writeSseEvent,
   ClassifiedTurnError,
 } from '../../agents/stream-handler.js';
-import type { SseWriter } from '../../agents/active-sse-writer.js';
+import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { serializeError } from '../../config/logger.js';
 
@@ -102,6 +102,15 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+// Explicit cancel — see docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
+// Plain JSON endpoint, not SSE: the turn it targets is a separate,
+// already-open request/response; this one just aborts it and returns.
+chatRouter.post('/:threadId/stop', (req, res) => {
+  const { threadId } = req.params as { threadId: string };
+  const { status, body } = stopTurnResponse(threadId);
+  res.status(status).json(body);
 });
 
 chatRouter.post('/:threadId/retry', async (req, res) => {
