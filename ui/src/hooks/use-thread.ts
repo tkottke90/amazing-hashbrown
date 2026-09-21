@@ -193,6 +193,10 @@ export interface ThreadInstance {
   isStreaming: Signal<boolean>;
   pendingHitlId: Signal<string | null>;
   activeThreadModel: Signal<{ provider: string; model: string } | null>;
+  // True once hydrate() has settled at least once (success, failure, or
+  // network error) — the auto-fill effect gates on this so it never guesses
+  // a default before we've actually asked whether a persisted model exists.
+  modelHydrated: Signal<boolean>;
   // Populated only for a workspace-chat instance — the global chat instance
   // simply never receives summarizing_start/summarizing_end events, since
   // only the workspace-chat backend route emits them.
@@ -255,6 +259,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const isStreaming = signal(false);
   const pendingHitlId = signal<string | null>(null);
   const activeThreadModel = signal<{ provider: string; model: string } | null>(null);
+  const modelHydrated = signal(false);
   const isSummarizing = signal(false);
   const summaryPath = signal<string | null>(null);
   const isWaitingForProvider = signal(false);
@@ -275,12 +280,14 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   }
 
   // Auto-fills the model chip whenever this thread has no explicit model
-  // choice yet — never overrides a manual pick or a hydrated thread's
-  // persisted model, since the guard is purely "currently null". One
-  // instance per thread, so this runs once per thread rather than once
+  // choice yet — never overrides a manual pick. Also gated on modelHydrated
+  // so this can't win a race against hydrate() and stamp in a default
+  // before we've actually asked whether a persisted model exists (#195);
+  // hydrate() itself is what applies a persisted model, unconditionally.
+  // One instance per thread, so this runs once per thread rather than once
   // globally, matching each thread's own model selection being independent.
   effect(() => {
-    if (activeThreadModel.value !== null) return;
+    if (!modelHydrated.value || activeThreadModel.value !== null) return;
     const selection = pickDefaultModelSelection(providers.value, defaultProviderName.value);
     if (selection) setThreadModel(selection.provider, selection.model);
   });
@@ -288,10 +295,15 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   async function hydrate(): Promise<void> {
     try {
       const res = await fetch(readUrl);
-      if (!res.ok) return; // 404 (fresh thread) or any other failure — start empty, not an error
+      if (!res.ok) {
+        modelHydrated.value = true;
+        return; // 404 (fresh thread) or any other failure — start empty, not an error
+      }
       const data = (await res.json()) as {
         messages: unknown[];
         summaryPath?: string | null;
+        provider?: string | null;
+        model?: string | null;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
@@ -300,9 +312,17 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         const last = hydrated[hydrated.length - 1];
         pendingHitlId.value =
           last && last.kind === 'hitl_prompt' && last.status === 'pending' ? last.promptId : null;
+        // Unconditional: overrides a default the auto-fill effect may
+        // already have guessed while this fetch was in flight — this
+        // response is the authoritative source for the thread's model.
+        if (data.provider && data.model) {
+          activeThreadModel.value = { provider: data.provider, model: data.model };
+        }
+        modelHydrated.value = true;
       });
     } catch {
       // leave messages empty — the thread may just not have loaded yet
+      modelHydrated.value = true;
     }
   }
 
@@ -718,6 +738,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     isStreaming,
     pendingHitlId,
     activeThreadModel,
+    modelHydrated,
     isSummarizing,
     summaryPath,
     isWaitingForProvider,
