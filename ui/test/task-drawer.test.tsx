@@ -322,18 +322,28 @@ describe('TaskDrawer — Depends on section', () => {
 
     renderDrawer({ ...baseTask, status: 'pending' });
 
-    const select = await screen.findByTestId('task-dependency-select');
-    fireEvent.change(select, { target: { value: 'task-other' } });
+    const select = (await screen.findByTestId('task-dependency-select')) as HTMLSelectElement;
+    // Select the option directly (rather than fireEvent.change's
+    // target.value shortcut) — setting `selected` on the actual <option> is
+    // what a real user pick does, and reliably updates select.value/change
+    // through Preact's controlled-select re-render before we read it back.
+    const option = within(select).getByRole('option', {
+      name: 'The other task',
+    }) as HTMLOptionElement;
+    option.selected = true;
+    fireEvent.change(select);
 
     // Wait for the selection to actually take (and the Add button to become
     // enabled) before interacting further — the Add button is disabled until
     // a task is selected, so a click that races the re-render is a no-op.
-    const addButton = screen.getByRole('button', { name: 'Add' });
-    await waitFor(() => expect(addButton).not.toBeDisabled());
+    // Re-query fresh on every poll rather than checking a captured element:
+    // a stale reference would never reflect a re-render that swapped the
+    // underlying DOM node.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled());
 
     fireEvent.click(screen.getByLabelText('Require success'));
     fireEvent.click(screen.getByLabelText('OK if paused'));
-    fireEvent.click(addButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() =>
       expect(mockAddTaskDependency).toHaveBeenCalledWith('task-1', 'task-other', {
