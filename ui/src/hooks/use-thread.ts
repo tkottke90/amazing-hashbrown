@@ -318,7 +318,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         let pendingHitl: (typeof hydrated)[number] | undefined;
         for (let i = hydrated.length - 1; i >= 0; i--) {
           const m = hydrated[i];
-          if (m.kind === 'hitl_prompt' && m.status === 'pending') {
+          if (m && m.kind === 'hitl_prompt' && m.status === 'pending') {
             pendingHitl = m;
             break;
           }
