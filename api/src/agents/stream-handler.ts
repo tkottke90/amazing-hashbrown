@@ -573,7 +573,10 @@ export async function finalizeTurn(
       threadStore,
       threadId,
       msgId,
-      interrupt,
+      // LangGraph's own Interrupt type carries more than { value: unknown }
+      // (id, resumable, etc.) — dispatchHitlPrompt only ever reads .value,
+      // so it declares the narrower structural shape it actually needs.
+      interrupt as { value: unknown },
       content,
       turnSentAt,
       assistantSeq,

@@ -169,7 +169,9 @@ export async function executeTask(
   // a mid-stream throw, the same way the graceful (non-throwing) path does.
   let agent: ChatAgent | undefined;
   let config: { configurable: { thread_id: string; workspaceId?: string } } | undefined;
-  let assistantSeq: number | undefined;
+  // number | null (not | undefined) to match recordAssistantStart's return
+  // type and finalizeTurn/dispatchHitlPrompt's own assistantSeq param type.
+  let assistantSeq: number | null = null;
 
   try {
     recordTaskRunMarker(threadStore, threadId, randomUUID(), task.id, task.title, 'start');
@@ -386,10 +388,12 @@ export async function executeTask(
             threadStore,
             threadId,
             partialState.segmentId,
-            stateInterrupt,
+            // See stream-handler.ts's matching cast — dispatchHitlPrompt
+            // only reads .value off LangGraph's own Interrupt type.
+            stateInterrupt as { value: unknown },
             partialState.content,
             turnSentAt,
-            assistantSeq ?? null,
+            assistantSeq,
             null,
             task.id,
           );
