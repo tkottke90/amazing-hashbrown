@@ -298,7 +298,14 @@ describe('TaskDrawer — Depends on section', () => {
     fireEvent.click(screen.getByLabelText('Remove dependency on "The other task"'));
 
     await waitFor(() => expect(mockRemoveTaskDependency).toHaveBeenCalledWith('task-1', 1));
-    await waitFor(() => expect(screen.queryByText('The other task')).not.toBeInTheDocument());
+    // "The other task" legitimately reappears as a picker <option> once it's no
+    // longer excluded as an existing dependency — assert the removed list item
+    // specifically, not the text anywhere in the document.
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText('Remove dependency on "The other task"'),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it('adds a new dependency with the chosen requireSuccess/whileBlocked flags', async () => {
@@ -315,13 +322,18 @@ describe('TaskDrawer — Depends on section', () => {
 
     renderDrawer({ ...baseTask, status: 'pending' });
 
-    await waitFor(() => expect(screen.getByTestId('task-dependency-select')).toBeInTheDocument());
-    fireEvent.change(screen.getByTestId('task-dependency-select'), {
-      target: { value: 'task-other' },
-    });
+    const select = await screen.findByTestId('task-dependency-select');
+    fireEvent.change(select, { target: { value: 'task-other' } });
+
+    // Wait for the selection to actually take (and the Add button to become
+    // enabled) before interacting further — the Add button is disabled until
+    // a task is selected, so a click that races the re-render is a no-op.
+    const addButton = screen.getByRole('button', { name: 'Add' });
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
     fireEvent.click(screen.getByLabelText('Require success'));
     fireEvent.click(screen.getByLabelText('OK if paused'));
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(addButton);
 
     await waitFor(() =>
       expect(mockAddTaskDependency).toHaveBeenCalledWith('task-1', 'task-other', {
