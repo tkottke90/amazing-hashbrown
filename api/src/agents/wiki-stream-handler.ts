@@ -10,6 +10,7 @@ import {
   pipeEvents,
   finalizeTurn,
   extractPartialAssistantState,
+  recoverThrownInterrupt,
   ClassifiedTurnError,
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
@@ -124,6 +125,20 @@ export async function streamWikiChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -255,6 +270,20 @@ export async function resumeWikiChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -388,6 +417,20 @@ export async function retryWikiChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,

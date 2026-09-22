@@ -19,7 +19,7 @@ import { registerTaskAbort, getTaskAbort, clearTaskAbort } from './active-task-a
 import {
   pipeEvents,
   finalizeTurn,
-  dispatchHitlPrompt,
+  recoverThrownInterrupt,
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
 } from './stream-handler.js';
@@ -364,67 +364,39 @@ export async function executeTask(
       // off state returned from pipeEvents/finalizeTurn — but LangGraph can
       // also raise it as a thrown GraphInterrupt mid-stream, which pipeEvents
       // forwards as a PipeEventsError preserving `.name` (see
-      // stream-handler.ts). Recover the same way: finalize the partial
-      // assistant turn, then re-query checkpoint state for the interrupt
-      // LangGraph still parked there, and dispatch it exactly like the
-      // graceful path would have.
+      // stream-handler.ts). recoverThrownInterrupt recovers the same way
+      // every other turn handler (chat, workspace chat, wiki chat, headless
+      // notifications) does — see that function's own comment.
       logger.info('task-execution: run interrupted (thrown GraphInterrupt)', { taskId: task.id });
-      let handled = false;
-      if (partialState && turnSentAt !== undefined && agent && config) {
-        finalizeAssistant(
-          threadStore,
-          threadId,
-          partialState.segmentId,
-          partialState.content,
-          partialState.thoughtContent,
-          turnSentAt,
-          null,
-        );
-        const state = await agent.graph.getState(config);
-        const stateInterrupt = state.tasks?.[0]?.interrupts?.[0];
-        if (stateInterrupt) {
-          const { interrupted } = dispatchHitlPrompt(
-            sink,
-            threadStore,
-            threadId,
-            partialState.segmentId,
-            // See stream-handler.ts's matching cast — dispatchHitlPrompt
-            // only reads .value off LangGraph's own Interrupt type.
-            stateInterrupt as { value: unknown },
-            partialState.content,
-            turnSentAt,
-            assistantSeq,
-            null,
-            task.id,
-          );
-          if (interrupted) {
-            finalOutcome = 'waiting_on_user';
-            // completeQueueEntry() mirrors its outcome onto tasks.status too
-            // — it must run BEFORE patchTask here, or it would clobber
-            // waiting_on_user straight back to 'done' (same ordering as the
-            // graceful branch above).
-            store.completeQueueEntry(entry.id, 'done');
-            store.patchTask(task.id, { status: 'waiting_on_user', assignedTo: 'user' });
-            handled = true;
-          }
-          // else: dispatchHitlPrompt's own catch already marked the row
-          // 'error' and emitted stream_error — don't touch it again below.
-        } else {
-          // Name matched but checkpoint has no interrupt — safety net, not
-          // the expected path. Nothing has failed the row yet.
-          failAssistant(
-            threadStore,
-            threadId,
-            partialState.segmentId,
-            partialState.content,
-            turnSentAt,
-            partialState.thoughtContent,
-            'Lost the approval prompt after an interrupt.',
-            'unknown',
-          );
-        }
-      }
-      if (!handled) {
+      const recovered =
+        partialState && turnSentAt !== undefined && agent && config
+          ? await recoverThrownInterrupt(
+              err,
+              sink,
+              threadStore,
+              agent,
+              config,
+              threadId,
+              partialState.segmentId,
+              turnSentAt,
+              assistantSeq,
+              null,
+              task.id,
+            )
+          : null;
+      if (recovered?.interrupted) {
+        finalOutcome = 'waiting_on_user';
+        // completeQueueEntry() mirrors its outcome onto tasks.status too —
+        // it must run BEFORE patchTask here, or it would clobber
+        // waiting_on_user straight back to 'done' (same ordering as the
+        // graceful branch above).
+        store.completeQueueEntry(entry.id, 'done');
+        store.patchTask(task.id, { status: 'waiting_on_user', assignedTo: 'user' });
+      } else {
+        // recovered === {interrupted: false} means recoverThrownInterrupt's
+        // own failAssistant/dispatchHitlPrompt already marked the row
+        // 'error' — recovered === null means the guard above never ran it.
+        // Either way, the queue entry still needs closing out.
         await finishFailedRun('Failed to record the approval prompt.');
       }
     } else {

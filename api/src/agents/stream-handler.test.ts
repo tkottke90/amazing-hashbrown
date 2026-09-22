@@ -10,6 +10,7 @@ import { ThreadStore } from '../services/thread-store.js';
 import {
   pipeEvents,
   finalizeTurn,
+  recoverThrownInterrupt,
   makeLiveSseWriter,
   PipeEventsError,
   ClassifiedTurnError,
@@ -661,6 +662,172 @@ describe('agents/stream-handler', () => {
       const emitted = events();
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(true);
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+  });
+
+  // Regression coverage for the bug where LangGraph's interrupt() escapes
+  // as a thrown GraphInterrupt mid-stream (rather than completing gracefully
+  // with the interrupt parked in checkpoint state) and every caller's own
+  // catch block — chat, workspace chat, wiki chat, task execution, headless
+  // notification turns — dumped the raw error instead of a HITL prompt. See
+  // this function's own comment in stream-handler.ts.
+  describe('recoverThrownInterrupt', () => {
+    const TEST_CONFIG = { configurable: { thread_id: 't1' } };
+
+    function graphInterruptError(segmentId: string, content: string, thoughtContent = '') {
+      return new PipeEventsError(
+        Object.assign(new Error('Interrupted'), { name: 'GraphInterrupt' }),
+        segmentId,
+        content,
+        thoughtContent,
+      );
+    }
+
+    it('returns null for a non-GraphInterrupt error, leaving the caller to handle it', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      const { sink } = fakeSink();
+      const agent = stubAgent(null);
+
+      const result = await recoverThrownInterrupt(
+        new Error('boom'),
+        sink,
+        store,
+        agent,
+        TEST_CONFIG,
+        't1',
+        'msg1',
+        new Date().toISOString(),
+        null,
+        null,
+      );
+
+      expect(result).to.equal(null);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('finalizes the partial assistant turn and dispatches a hitl_prompt for a shell_approval interrupt', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      recordAssistantStart(store, 't1', 'seg-1', TEST_SENT_AT);
+      const { sink, events } = fakeSink();
+      const agent = stubAgent({
+        kind: 'shell_approval',
+        command: 'ls -la',
+        reason: 'inspect the workspace',
+      });
+
+      const result = await recoverThrownInterrupt(
+        graphInterruptError('seg-1', 'Running the command...'),
+        sink,
+        store,
+        agent,
+        TEST_CONFIG,
+        't1',
+        'seg-1',
+        TEST_SENT_AT,
+        null,
+        null,
+      );
+
+      expect(result?.interrupted).to.equal(true);
+      const emitted = events();
+      expect(emitted.some((e) => e.type === 'hitl_prompt' && e.kind === 'shell_approval')).to.equal(
+        true,
+      );
+
+      const assistantRow = store
+        .getThreadMessages('t1')
+        .find((m) => m.id === 'seg-1' && m.kind === 'assistant');
+      expect(assistantRow?.status).to.equal('done');
+      expect((assistantRow?.payload as Record<string, unknown>).content).to.equal(
+        'Running the command...',
+      );
+      const hitlRow = store.getThreadMessages('t1').find((m) => m.kind === 'hitl_prompt');
+      expect(hitlRow, 'expected a persisted hitl_prompt row').to.not.equal(undefined);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('fails the row and returns interrupted:false when checkpoint state has no interrupt (safety net)', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      recordAssistantStart(store, 't1', 'seg-2', TEST_SENT_AT);
+      const { sink } = fakeSink();
+      const agent = stubAgent(null); // name matched but nothing parked in state
+
+      const result = await recoverThrownInterrupt(
+        graphInterruptError('seg-2', 'partial'),
+        sink,
+        store,
+        agent,
+        TEST_CONFIG,
+        't1',
+        'seg-2',
+        TEST_SENT_AT,
+        null,
+        null,
+      );
+
+      expect(result?.interrupted).to.equal(false);
+      const assistantRow = store
+        .getThreadMessages('t1')
+        .find((m) => m.id === 'seg-2' && m.kind === 'assistant');
+      expect(assistantRow?.status).to.equal('error');
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns interrupted:false and emits stream_error when the hitl_prompt fails to persist', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      recordAssistantStart(store, 't1', 'seg-3', TEST_SENT_AT);
+      const { sink, events } = fakeSink();
+      const agent = stubAgent({ kind: 'shell_approval', command: 'ls', reason: 'list' });
+      store.close(); // recordHitlPrompt will throw against a closed DB
+
+      const result = await recoverThrownInterrupt(
+        graphInterruptError('seg-3', 'partial'),
+        sink,
+        store,
+        agent,
+        TEST_CONFIG,
+        't1',
+        'seg-3',
+        TEST_SENT_AT,
+        null,
+        null,
+      );
+
+      expect(result?.interrupted).to.equal(false);
+      const emitted = events();
+      expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
+      expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('threads taskId through to the persisted hitl_prompt row', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      recordAssistantStart(store, 't1', 'seg-4', TEST_SENT_AT);
+      const { sink } = fakeSink();
+      const agent = stubAgent({ kind: 'shell_approval', command: 'ls', reason: 'list' });
+
+      await recoverThrownInterrupt(
+        graphInterruptError('seg-4', 'partial'),
+        sink,
+        store,
+        agent,
+        TEST_CONFIG,
+        't1',
+        'seg-4',
+        TEST_SENT_AT,
+        null,
+        null,
+        'task-123',
+      );
+
+      const hitlRow = store.getThreadMessages('t1').find((m) => m.kind === 'hitl_prompt');
+      expect((hitlRow?.payload as Record<string, unknown>).taskId).to.equal('task-123');
       rmSync(dir, { recursive: true });
     });
   });

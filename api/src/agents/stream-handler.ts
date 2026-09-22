@@ -463,6 +463,76 @@ export function dispatchHitlPrompt(
   return { interrupted: true };
 }
 
+// Recovers a GraphInterrupt thrown mid-stream — LangGraph's own interrupt()
+// control-flow signal, which pipeEvents forwards as a PipeEventsError
+// preserving `.name` (see that class's own comment) — the same way the
+// graceful, stream-completed-normally path above already does: finalize
+// whatever partial content streamed before the throw, re-query checkpoint
+// state for the interrupt LangGraph still parked there, and dispatch it via
+// dispatchHitlPrompt. Returns null when `err` isn't a GraphInterrupt at all,
+// so the caller's own catch block falls through to its existing error
+// handling unchanged. Every turn handler that calls pipeEvents/finalizeTurn
+// (chat, workspace chat, wiki chat, task execution, headless notification
+// turns) binds shell_exec and is exposed to this same failure mode, so this
+// is the one place that recovery logic is written.
+export async function recoverThrownInterrupt(
+  err: unknown,
+  sink: SseWriter,
+  threadStore: ThreadStore,
+  agent: AgentWithGraph,
+  config: { configurable: { thread_id: string; workspaceId?: string } },
+  threadId: string,
+  msgId: string,
+  turnSentAt: string,
+  assistantSeq: number | null,
+  userSeq: number | null,
+  taskId?: string,
+): Promise<{ interrupted: boolean } | null> {
+  if ((err as Error)?.name !== 'GraphInterrupt') return null;
+
+  const partialState = extractPartialAssistantState(err, msgId);
+  finalizeAssistant(
+    threadStore,
+    threadId,
+    partialState.segmentId,
+    partialState.content,
+    partialState.thoughtContent,
+    turnSentAt,
+    null,
+  );
+
+  const state = await agent.graph.getState(config);
+  const interrupt = state.tasks?.[0]?.interrupts?.[0];
+  if (!interrupt) {
+    // Name matched but checkpoint has no interrupt — safety net, not the
+    // expected path.
+    failAssistant(
+      threadStore,
+      threadId,
+      partialState.segmentId,
+      partialState.content,
+      turnSentAt,
+      partialState.thoughtContent,
+      'Lost the approval prompt after an interrupt.',
+      'unknown',
+    );
+    return { interrupted: false };
+  }
+
+  return dispatchHitlPrompt(
+    sink,
+    threadStore,
+    threadId,
+    partialState.segmentId,
+    interrupt as { value: unknown },
+    partialState.content,
+    turnSentAt,
+    assistantSeq,
+    userSeq,
+    taskId,
+  );
+}
+
 export async function finalizeTurn(
   sink: SseWriter,
   threadStore: ThreadStore,
@@ -920,6 +990,20 @@ export async function streamChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -1082,6 +1166,20 @@ export async function resumeChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -1243,6 +1341,20 @@ export async function retryChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
