@@ -45,15 +45,17 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</image>');
       expect(result).to.include('<search_skills>');
       expect(result).to.include('</search_skills>');
+      expect(result).to.include('<create_tasks>');
+      expect(result).to.include('</create_tasks>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(11);
-      expect(closes).to.equal(11);
+      expect(opens).to.equal(12);
+      expect(closes).to.equal(12);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, image, search_skills, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, image, search_skills, create_tasks, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
@@ -65,6 +67,7 @@ describe('agents/system-prompt', () => {
       const shellTagIndex = result.indexOf('<shell_execution>');
       const imageTagIndex = result.indexOf('<image>');
       const searchSkillsTagIndex = result.indexOf('<search_skills>');
+      const createTasksTagIndex = result.indexOf('<create_tasks>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
@@ -76,6 +79,7 @@ describe('agents/system-prompt', () => {
       expect(shellTagIndex).to.be.greaterThan(-1);
       expect(imageTagIndex).to.be.greaterThan(-1);
       expect(searchSkillsTagIndex).to.be.greaterThan(-1);
+      expect(createTasksTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
@@ -86,7 +90,8 @@ describe('agents/system-prompt', () => {
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
       expect(shellTagIndex).to.be.lessThan(imageTagIndex);
       expect(imageTagIndex).to.be.lessThan(searchSkillsTagIndex);
-      expect(searchSkillsTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(searchSkillsTagIndex).to.be.lessThan(createTasksTagIndex);
+      expect(createTasksTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes notation guidance explaining / for skills and # for required tools', () => {
@@ -539,6 +544,7 @@ describe('agents/system-prompt', () => {
       'shell_exec',
       'upload_image',
       'search_skills',
+      'create_tasks',
       'ask_user',
     ]);
 
@@ -554,6 +560,7 @@ describe('agents/system-prompt', () => {
         'shell_execution',
         'image',
         'search_skills',
+        'create_tasks',
         'ask_user_routing',
       ]) {
         expect(result).to.include(`<${tag}>`);
@@ -637,6 +644,18 @@ describe('agents/system-prompt', () => {
       const available = new Set(['search_skills']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.include('<search_skills>');
+    });
+
+    it('removes create_tasks when create_tasks is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<create_tasks>');
+    });
+
+    it('keeps create_tasks when create_tasks is available', () => {
+      const available = new Set(['create_tasks']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<create_tasks>');
     });
 
     it('removes ask_user_routing when ask_user is unavailable', () => {

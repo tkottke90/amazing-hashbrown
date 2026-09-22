@@ -1263,6 +1263,94 @@ rather than calling it with no argument and filtering the full list yourself aft
 no-argument call for when the user asks broadly, without naming a topic — "what skills do you have
 available?", "what can you do?" — where there's nothing yet to narrow by.`;
 
+// Motivated by auto-eval round 1 of suites/task-creation.yaml (2026-09-22,
+// local/Lemonade/Ornith/Digital Ocean, judge local), run right after
+// bin/eval.ts's evalTools gained create_tasks (it was missing entirely,
+// same class of gap as SEARCH_SKILLS_SECTION's neighboring entry — see
+// bin/eval.ts's own comment on that addition). With the tool actually
+// reachable, three of the four models (local, Lemonade, Digital Ocean)
+// correctly called create_tasks for tc-002-tracker-url-passed-not-retyped
+// but left trackerUrl blank or empty despite the GitHub issue URL already
+// sitting in the conversation from an earlier web_fetch — local's own
+// reasoningContent even concluded "No tracker URL? Probably none" right
+// after restating the fetched issue's content. Ornith, the one model that
+// already threaded the URL through correctly, was inferring it purely from
+// the tool's own schema description. No section anywhere in this file
+// mentioned create_tasks before this one. Added a worked example matching
+// tc-002's own scenario shape (a prior web_fetch of a specific issue URL,
+// followed by approval) per interpreting-results.md §3, and restated the
+// tool's own "only after approval, not mid-brainstorm" restraint explicitly
+// here too — tc-001-no-premature-creation currently passes only because no
+// section discusses create_tasks at all, and documenting the tool without
+// repeating that restraint risked teaching models to reach for it earlier
+// than intended.
+//
+// Round 2 (same suite, same providers, run right after the fix above):
+// local and Digital Ocean now pass cleanly. Lemonade and Ornith regressed
+// on tc-002 specifically — both moved from "called create_tasks with a
+// missing field" (round 1's failure) to not calling it at all, second-
+// guessing whether the user's "yes, let's go with that plan" really
+// authorized action: Lemonade asked the user to confirm scope before
+// queuing anything ("I'm asking you to confirm how to name and scope each
+// task"), and Ornith doubted whether the fetched issue was even "the plan"
+// being referenced at all ("this doesn't seem to be what the user was
+// referring to... I don't have any record of discussing a plan with
+// them") despite that plan sitting right there in priorTurns. This reads as
+// the over-generalization interpreting-results.md §3 warns about: emphasizing
+// "call it only once approved" without also addressing what already counts
+// as approval nudged both models toward treating a real approval message as
+// insufficient. Added a third paragraph making explicit what
+// ASK_USER_SECTION already establishes elsewhere in this prompt — an
+// outright instruction is the decision, not something to check back on —
+// applied to this tool's specific shape (approval message + a plan already
+// in hand from an earlier turn or tool result).
+//
+// Round 3 (same suite, same providers, run right after the fix above):
+// local, Ornith, and Digital Ocean now all pass cleanly, including Ornith's
+// round-2 regression — confirming that was the over-generalization gap, not
+// a capability ceiling. Lemonade still fails tc-002, but in a third, distinct
+// shape: it now stops asking about scope/context and instead declines to
+// act because the fetched issue text ("Issue #42: Refactor auth. Plan:
+// migration, handler, tests.") "feels too brief" and it doesn't want to
+// "hallucinate" task details from what it read as a placeholder. This is
+// the same underlying trait IMAGE_SECTION already documented for Lemonade
+// specifically (tools-002 in suites/tool-calling.yaml: refusing seeded image
+// bytes as "looking like a placeholder") showing up against a different
+// tool's terse-but-complete result. Since the wording change between rounds
+// 2 and 3 demonstrably changed Lemonade's behavior (stopped asking about
+// scope) rather than reproducing the identical failure, this isn't yet the
+// two-rounds-unchanged signature interpreting-results.md §5 flags as a
+// ceiling — added a fourth paragraph applying IMAGE_SECTION's own "don't
+// second-guess a tool's result as fake or a placeholder" framing to this
+// tool's shape explicitly.
+const CREATE_TASKS_SECTION = `create_tasks turns an approved plan into a batch of queued tasks that run autonomously, one after
+another. Call it only once the user has actually approved a plan — while still exploring options
+together ("maybe split it into a migration step and a handler step, what do you think?"), keep
+discussing instead; calling create_tasks mid-brainstorm jumps ahead of a decision the user hasn't
+made yet.
+
+When the plan being approved is tied to a GitHub issue or PR URL already established earlier in the
+conversation — mentioned by the user, or returned by an earlier web_fetch — pass that exact URL as
+trackerUrl instead of leaving it blank or re-typing/paraphrasing the issue into each task's
+description. For example, if an earlier web_fetch of https://github.com/octo/repo/issues/42 returned
+that issue's plan and the user now says "yes, let's go with that — set up the tasks," call
+create_tasks with trackerUrl: "https://github.com/octo/repo/issues/42" copied verbatim, not a fresh
+description of the issue typed from memory.
+
+Once the user has approved, don't ask them to restate, confirm, or scope the plan further — the same
+"an outright instruction is the decision" rule ask_user_routing already applies elsewhere applies
+here too. A plan already sitting in the conversation from an earlier turn or tool result, paired with
+a plain approval like "yes, let's go with that plan," is together enough to act on immediately: build
+the task batch from what's already in hand and call create_tasks, rather than pausing to ask which
+plan they meant or how much detail each task should include.
+
+A terse tool result is still real, complete content to build from — not a placeholder to distrust or
+ask about, the same way an image tool's returned bytes are real (see the image section above). A
+fetched issue reading just "Issue #42: Refactor auth. Plan: migration, handler, tests." is genuinely
+everything there is, not truncated or faked, and is exactly what the approved plan refers to: map it
+straight onto task titles — migration, handler, tests — rather than declining to act because the
+description feels too brief to be trusted.`;
+
 interface HarnessSection {
   tag: string;
   content: string;
@@ -1315,6 +1403,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
     tag: 'search_skills',
     content: SEARCH_SKILLS_SECTION,
     requiresAnyOf: ['search_skills'],
+  },
+  {
+    tag: 'create_tasks',
+    content: CREATE_TASKS_SECTION,
+    requiresAnyOf: ['create_tasks'],
   },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...
