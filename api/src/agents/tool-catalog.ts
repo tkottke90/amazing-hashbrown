@@ -106,7 +106,8 @@ export const TOOL_CATALOG: CatalogEntry[] = [
   {
     toolId: 'create_tasks',
     name: 'Create Tasks',
-    description: 'Create a batch of queued tasks for the agent to run autonomously, one after another.',
+    description:
+      'Create a batch of queued tasks for the agent to run autonomously, one after another.',
     category: 'built-in',
     alwaysOn: false,
   },

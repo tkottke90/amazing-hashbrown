@@ -74,7 +74,7 @@ describe('agents/tools/create-tasks', () => {
 
   it('rejects an empty batch', async () => {
     const result = await makeCreateTasksTool().invoke({ tasks: [] }, invokeConfig(workspaceId));
-    expect(String(result)).to.include('at least one task');
+    expect(String(result)).to.include('At least one task');
     expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
   });
 
@@ -148,7 +148,10 @@ describe('agents/tools/create-tasks', () => {
     );
 
     const result = await makeCreateTasksTool(undefined, registry).invoke(
-      { trackerUrl: 'https://github.com/owner/repo/issues/42', tasks: [{ title: 'a' }, { title: 'b' }] },
+      {
+        trackerUrl: 'https://github.com/owner/repo/issues/42',
+        tasks: [{ title: 'a' }, { title: 'b' }],
+      },
       invokeConfig(workspaceId),
     );
     const parsed = JSON.parse(String(result)) as { created: { id: string }[] };

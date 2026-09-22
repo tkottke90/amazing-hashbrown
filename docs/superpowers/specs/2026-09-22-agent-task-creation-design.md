@@ -48,7 +48,7 @@ No schema changes. Every field this feature needs already exists on `Task`/`NewT
 
 `WorkspaceStore.createTasks(inputs: NewTaskInput[]): Task[]` — new method alongside the existing single-row `createTask()`. Reuses `createTask()`'s per-row insert logic (including the existing R14 auto-enqueue behavior for `assignedTo: 'agent'` + `status: 'ready'` rows), wrapped in one SQLite transaction so the batch is all-or-nothing: either every row (and its matching `task_queue` entry) is created, or none is.
 
-*Implementation-planning note:* this assumes the underlying sqlite wrapper (`SqliteDatabase` from `@tkottke90/llm-common-types/db`) exposes a synchronous transaction API the way `better-sqlite3`'s `db.transaction()` does. This should be confirmed against the actual library during implementation planning, before the atomic-batch guarantee is assumed to hold.
+_Implementation-planning note:_ this assumes the underlying sqlite wrapper (`SqliteDatabase` from `@tkottke90/llm-common-types/db`) exposes a synchronous transaction API the way `better-sqlite3`'s `db.transaction()` does. This should be confirmed against the actual library during implementation planning, before the atomic-batch guarantee is assumed to hold.
 
 ### New tool: `create_tasks`
 
@@ -80,30 +80,31 @@ Added to `STATIC_CHAT_TOOLS` in `chat-agent.ts` — built-in (always available),
 
 ### Execution (unchanged)
 
-Nothing about how a task *runs* changes. Newly created tasks enqueue behind any already-running/pending work in that workspace's existing FIFO queue (`dequeueNext()`), execute one at a time via the existing `executeTask()`/`buildTaskAgent()` pipeline, and post into the workspace's persistent chat thread with `task_run_marker` banners exactly as today. The `plan` checklist, if set, is visible to that task's own run as part of its context but is not separately queued, cancelled, or resumed — it's scoped to that one task's execution, distinct from the coarser task-to-task boundaries the batch itself provides.
+Nothing about how a task _runs_ changes. Newly created tasks enqueue behind any already-running/pending work in that workspace's existing FIFO queue (`dequeueNext()`), execute one at a time via the existing `executeTask()`/`buildTaskAgent()` pipeline, and post into the workspace's persistent chat thread with `task_run_marker` banners exactly as today. The `plan` checklist, if set, is visible to that task's own run as part of its context but is not separately queued, cancelled, or resumed — it's scoped to that one task's execution, distinct from the coarser task-to-task boundaries the batch itself provides.
 
 ---
 
 ## Error Handling & Edge Cases
 
-| Case | Behavior |
-|---|---|
-| `tasks` array is empty | Reject before any DB access — "at least one task is required." |
-| A task entry fails validation (no `title`, or empty string) | Validate the whole batch up front. Any invalid entry fails the entire call, naming which entry and why — no partial batch. |
-| Batch exceeds 20 tasks | Reject with a clear message. Guards against a model over-decomposing a plan, not a real workflow limit. |
-| `trackerUrl` given but unresolvable (bad URL, wrong host, network/auth failure) | Whole call fails, no tasks created — a broken link never silently downgrades to "create the tasks anyway." |
-| `workspaceId` from context no longer exists (workspace deleted mid-conversation) | Reject with a not-found error, mirroring the existing `tasks.handlers.ts` pattern. No tasks created. |
-| DB failure partway through the transaction | Whole transaction rolls back — no partial batch, no orphaned ids returned to the model. |
-| Workspace already has running/pending tasks | No special handling — new tasks enqueue at the back of that workspace's existing FIFO queue; they do not jump ahead of in-flight work. |
-| Same GitHub issue linked across multiple batches | Allowed, no dedup — matches today's manual Task Drawer behavior (no uniqueness constraint on tracker links). |
-| Model calls `create_tasks` twice in one turn | No idempotency guard — two batches get created. Reviewable/deletable via the Task Drawer like any other task; not worth engineering around. |
-| Any failure above | Returned as the tool's own return value (a plain error string the model can relay), not an interrupt/HITL pause — creation was explicitly decided to need no confirmation gate. |
+| Case                                                                             | Behavior                                                                                                                                                                        |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tasks` array is empty                                                           | Reject before any DB access — "at least one task is required."                                                                                                                  |
+| A task entry fails validation (no `title`, or empty string)                      | Validate the whole batch up front. Any invalid entry fails the entire call, naming which entry and why — no partial batch.                                                      |
+| Batch exceeds 20 tasks                                                           | Reject with a clear message. Guards against a model over-decomposing a plan, not a real workflow limit.                                                                         |
+| `trackerUrl` given but unresolvable (bad URL, wrong host, network/auth failure)  | Whole call fails, no tasks created — a broken link never silently downgrades to "create the tasks anyway."                                                                      |
+| `workspaceId` from context no longer exists (workspace deleted mid-conversation) | Reject with a not-found error, mirroring the existing `tasks.handlers.ts` pattern. No tasks created.                                                                            |
+| DB failure partway through the transaction                                       | Whole transaction rolls back — no partial batch, no orphaned ids returned to the model.                                                                                         |
+| Workspace already has running/pending tasks                                      | No special handling — new tasks enqueue at the back of that workspace's existing FIFO queue; they do not jump ahead of in-flight work.                                          |
+| Same GitHub issue linked across multiple batches                                 | Allowed, no dedup — matches today's manual Task Drawer behavior (no uniqueness constraint on tracker links).                                                                    |
+| Model calls `create_tasks` twice in one turn                                     | No idempotency guard — two batches get created. Reviewable/deletable via the Task Drawer like any other task; not worth engineering around.                                     |
+| Any failure above                                                                | Returned as the tool's own return value (a plain error string the model can relay), not an interrupt/HITL pause — creation was explicitly decided to need no confirmation gate. |
 
 ---
 
 ## Testing
 
 **Unit** (`workspace-store.test.ts`, `create-tasks.tool.test.ts`):
+
 - `createTasks()`: creates all rows + matching `task_queue` entries in one transaction; a failure partway through rolls back everything; returns created rows in input order.
 - Tool: maps `plan: string[]` → `PlanStep[]` with `done: false`; stamps `assignedTo: 'agent'`, `status: 'ready'`, `origin: 'user'`, `triggerType: 'chat'`; rejects (no store call) on missing `workspaceId`, empty `tasks`, over-cap batch, or any invalid title; calls `getTaskScheduler().wake()` exactly once per batch.
 
@@ -112,6 +113,7 @@ Nothing about how a task *runs* changes. Newly created tasks enqueue behind any 
 **Orchestration** (`chat-agent.test.ts`): `create_tasks` is present in the workspace-chat/task-agent tool list and absent from the plain chat-agent's tool list.
 
 **Evaluations** (new `suites/task-creation.yaml`, per this repo's EDD rule for new LLM-facing tools):
+
 - `tool-call`: given an approved design discussion and a "let's get started," the model calls `create_tasks` with a sensible, ordered batch.
 - `tool-call` (negative): mid-brainstorm, before the user has approved anything, the model does not call `create_tasks` prematurely.
 - `tool-sequence`: a GitHub issue URL present in the conversation is passed as `trackerUrl` rather than re-typed into `description` from memory.
