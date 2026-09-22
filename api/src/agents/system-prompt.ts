@@ -1242,6 +1242,27 @@ If you don't yet have image bytes at all, produce them first with whatever image
 available, then follow up with upload_image once that call returns — the two steps happen in order,
 not as one call.`;
 
+// Motivated by auto-eval round 2 of suites/tool-calling.yaml (2026-09-22,
+// Lemonade/Digital Ocean, judge local, after round 1's evalTools fix made
+// search_skills reachable at all — see IMAGE_SECTION's neighboring entry for
+// that history). Both models correctly called search_skills for
+// tools-004-search-skills-keyword ("Do you have any skills for summarizing
+// content?") but passed no keyword — Lemonade's reasoning explicitly chose
+// to "list all skills, then see if any are related to summarizing" instead
+// of narrowing the call itself. No section anywhere in this file mentioned
+// search_skills before this one, so the tool's own schema description
+// ("Call with no argument to list all skills") was the model's only
+// guidance, and it says nothing about the keyword-narrowing case. Added a
+// worked contrastive pair straight from this suite's own two scenarios
+// (tools-003's bare "what skills do you have" vs. tools-004's topic-named
+// "skills for summarizing") per interpreting-results.md §3.
+const SEARCH_SKILLS_SECTION = `search_skills looks up installed skills by name, description, or slash command. When the user's
+question names a specific topic or task — "do you have anything for summarizing content?", "any
+skills for X?" — pass that topic as the keyword argument so the search itself narrows the results,
+rather than calling it with no argument and filtering the full list yourself afterward. Reserve the
+no-argument call for when the user asks broadly, without naming a topic — "what skills do you have
+available?", "what can you do?" — where there's nothing yet to narrow by.`;
+
 interface HarnessSection {
   tag: string;
   content: string;
@@ -1290,6 +1311,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'rlm', content: RLM_SECTION, requiresAnyOf: ['rlm_query'] },
   { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION, requiresAnyOf: ['shell_exec'] },
   { tag: 'image', content: IMAGE_SECTION, requiresAnyOf: ['upload_image'] },
+  {
+    tag: 'search_skills',
+    content: SEARCH_SKILLS_SECTION,
+    requiresAnyOf: ['search_skills'],
+  },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...
 ];
