@@ -332,6 +332,137 @@ interface AgentWithGraph {
   graph: Pick<ChatAgent['graph'], 'getState'>;
 }
 
+// Given an interrupt already sitting in checkpoint state, persists a
+// kind-appropriate hitl_prompt row (shell_approval / recursion_limit_warning
+// / ask_user's yes_no|multiple_choice|free_text) and emits the matching live
+// `hitl_prompt` SSE event. On failure to persist, marks the assistant row
+// `msgId` as errored and emits `stream_error` — callers must treat a
+// `{interrupted: false}` return as a real failure, never a waiting_on_user
+// state. Shared by finalizeTurn's graceful (stream-completed-normally) path
+// below and by task-execution.ts's GraphInterrupt catch branch, which
+// recovers an interrupt LangGraph left parked in checkpoint state after
+// pipeEvents throws instead of completing normally — see that file's own
+// comment on why a thrown interrupt needs the same handling as a returned one.
+export function dispatchHitlPrompt(
+  sink: SseWriter,
+  threadStore: ThreadStore,
+  threadId: string,
+  msgId: string,
+  interrupt: { value: unknown },
+  content: string,
+  turnSentAt: string,
+  assistantSeq: number | null,
+  userSeq: number | null,
+  taskId?: string,
+): { interrupted: boolean } {
+  const interruptValue = interrupt.value as Record<string, unknown>;
+  const promptId = randomUUID();
+
+  try {
+    if (interruptValue.kind === 'shell_approval') {
+      const { command, reason } = interruptValue as { command: string; reason?: string };
+      const question = 'Approve command execution?';
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'shell_approval',
+        command,
+        reason,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'shell_approval',
+        command,
+        reason,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    } else if (interruptValue.kind === 'recursion_limit_warning') {
+      const { question, choices, stepsUsed, recursionLimit } = interruptValue as {
+        question: string;
+        choices: string[];
+        stepsUsed: number;
+        recursionLimit: number;
+      };
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        stepsUsed,
+        recursionLimit,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        stepsUsed,
+        recursionLimit,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    } else {
+      const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
+        interruptValue as {
+          question: string;
+          kind: 'yes_no' | 'multiple_choice' | 'free_text';
+          choices?: string[];
+          allowFreeText?: boolean;
+          approveLabel?: string;
+          approveType?: 'primary' | 'secondary' | 'destructive';
+          rejectLabel?: string;
+        };
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    }
+  } catch (err) {
+    logger.error('dispatchHitlPrompt: failed to persist HITL prompt', {
+      threadId,
+      err: serializeError(err),
+    });
+    failAssistant(threadStore, threadId, msgId, content, turnSentAt);
+    writeSseEvent(sink, { type: 'stream_error', error: 'Failed to save approval prompt' });
+    // The interrupt could not be durably recorded, so there is no prompt
+    // for the user to ever answer — a caller must treat this as a plain
+    // failure, not a real waiting_on_user state.
+    return { interrupted: false };
+  }
+  return { interrupted: true };
+}
+
 export async function finalizeTurn(
   sink: SseWriter,
   threadStore: ThreadStore,
@@ -437,112 +568,18 @@ export async function finalizeTurn(
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
   if (interrupt) {
-    const interruptValue = interrupt.value as Record<string, unknown>;
-    const promptId = randomUUID();
-
-    try {
-      if (interruptValue.kind === 'shell_approval') {
-        const { command, reason } = interruptValue as { command: string; reason?: string };
-        const question = 'Approve command execution?';
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: 'shell_approval',
-          command,
-          reason,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind: 'shell_approval',
-          command,
-          reason,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      } else if (interruptValue.kind === 'recursion_limit_warning') {
-        const { question, choices, stepsUsed, recursionLimit } = interruptValue as {
-          question: string;
-          choices: string[];
-          stepsUsed: number;
-          recursionLimit: number;
-        };
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: 'multiple_choice',
-          choices,
-          allowFreeText: true,
-          stepsUsed,
-          recursionLimit,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind: 'multiple_choice',
-          choices,
-          allowFreeText: true,
-          stepsUsed,
-          recursionLimit,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      } else {
-        const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
-          interruptValue as {
-            question: string;
-            kind: 'yes_no' | 'multiple_choice' | 'free_text';
-            choices?: string[];
-            allowFreeText?: boolean;
-            approveLabel?: string;
-            approveType?: 'primary' | 'secondary' | 'destructive';
-            rejectLabel?: string;
-          };
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: kind,
-          choices,
-          allowFreeText,
-          approveLabel,
-          approveType,
-          rejectLabel,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind,
-          choices,
-          allowFreeText,
-          approveLabel,
-          approveType,
-          rejectLabel,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      }
-    } catch (err) {
-      logger.error('finalizeTurn: failed to persist HITL prompt', {
-        threadId,
-        err: serializeError(err),
-      });
-      failAssistant(threadStore, threadId, msgId, content, turnSentAt);
-      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to save approval prompt' });
-      // The interrupt could not be durably recorded, so there is no prompt
-      // for the user to ever answer — a caller must treat this as a plain
-      // failure, not a real waiting_on_user state.
-      return { interrupted: false };
-    }
-    return { interrupted: true };
+    return dispatchHitlPrompt(
+      sink,
+      threadStore,
+      threadId,
+      msgId,
+      interrupt,
+      content,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+      taskId,
+    );
   } else {
     // Ollama can silently truncate/return nothing when the context window is
     // exceeded, rather than throwing — this heuristic re-routes that case

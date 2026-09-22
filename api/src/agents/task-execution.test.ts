@@ -61,6 +61,35 @@ function fakeThrowingAgent(eventsBeforeThrow: RawEvent[]) {
   } as any;
 }
 
+// Mirrors fakeThrowingAgent, but the thrown error carries name:
+// 'GraphInterrupt' — simulating LangGraph raising interrupt() as a thrown
+// exception mid-stream rather than completing normally with it parked in
+// checkpoint state. getState() reports interruptValue as the parked
+// interrupt (or none, for the safety-net case where the name matches but
+// no interrupt is actually found).
+function fakeGraphInterruptAgent(
+  eventsBeforeThrow: RawEvent[],
+  interruptValue: Record<string, unknown> | null,
+) {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamEvents: (): AsyncIterable<any> => {
+      async function* gen() {
+        for (const e of eventsBeforeThrow) yield e;
+        throw Object.assign(new Error('Interrupted by shell_approval'), { name: 'GraphInterrupt' });
+      }
+      return gen();
+    },
+    graph: {
+      getState: async () => ({
+        tasks: interruptValue ? [{ interrupts: [{ value: interruptValue }] }] : [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
 // The generator aborts the real controller registered by executeTask's own
 // registerTaskAbort() call and sets the intent, then throws — this
 // sidesteps any ordering race between the test and that real call, since
@@ -529,6 +558,82 @@ describe('agents/task-execution', () => {
         .getThreadMessages(task.threadId!)
         .filter((m) => m.kind === 'sub_agent_marker');
       expect(markers).to.have.length(0);
+    });
+  });
+
+  describe('GraphInterrupt escaping as a thrown exception (regression)', () => {
+    // Reproduces the production bug: shell_exec's interrupt() call surfaces
+    // as a thrown GraphInterrupt mid-stream (not a graceful pipeEvents
+    // return), which used to fall into the generic catch-all and mark the
+    // task 'failed' — silently losing the approval request. See this
+    // branch's own comment in task-execution.ts for the fix.
+    it('sets waiting_on_user and persists the approval prompt on a shell_approval-shaped GraphInterrupt', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeGraphInterruptAgent(
+        [{ event: 'on_chat_model_stream', data: { chunk: { content: 'Running the command...' } } }],
+        { kind: 'shell_approval', command: 'npm install', reason: 'Install dependencies' },
+      );
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('waiting_on_user');
+      expect(task.assignedTo).to.equal('user');
+      // The queue entry itself is done — off the scheduler's plate — same as
+      // the graceful (non-throwing) interrupt path.
+      expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+
+      const messages = threadStore.getThreadMessages(task.threadId!);
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect(hitlRow, 'expected a persisted hitl_prompt row').to.not.equal(undefined);
+      const payload = hitlRow!.payload as Record<string, unknown>;
+      expect(payload.taskId).to.equal(task.id);
+      expect(payload.promptKind).to.equal('shell_approval');
+      expect(payload.command).to.equal('npm install');
+
+      // The pre-interrupt partial content must be preserved, not discarded —
+      // asserted as a prefix rather than an exact match since flushDelta
+      // withholds a small safety margin of trailing text in case it's a
+      // split <think> tag boundary (see stream-handler.ts's SAFE_MARGIN).
+      const assistantRow = messages.find((m) => m.kind === 'assistant' && m.status === 'done');
+      expect(assistantRow, 'expected the partial assistant turn to be finalized').to.not.equal(
+        undefined,
+      );
+      const partialContent = (assistantRow!.payload as Record<string, unknown>).content as string;
+      expect(partialContent.length).to.be.greaterThan(0);
+      expect('Running the command...').to.include(partialContent);
+    });
+
+    it('records the end task_run_marker with outcome waiting_on_user', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeGraphInterruptAgent([], { kind: 'shell_approval', command: 'ls' });
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      const markers = threadStore
+        .getThreadMessages(task.threadId!)
+        .filter((m) => m.kind === 'task_run_marker');
+      const end = markers.find((m) => (m.payload as Record<string, unknown>).phase === 'end');
+      expect(end, 'expected an end marker').to.not.equal(undefined);
+      expect((end!.payload as Record<string, unknown>).outcome).to.equal('waiting_on_user');
+    });
+
+    it('falls back to failed (without throwing) when the error name matches but checkpoint state has no interrupt', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeGraphInterruptAgent([], null);
+
+      let threw = false;
+      try {
+        await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      } catch {
+        threw = true;
+      }
+      expect(threw).to.equal(false);
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('failed');
+      expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
     });
   });
 });

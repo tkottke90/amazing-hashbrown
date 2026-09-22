@@ -19,11 +19,12 @@ import { registerTaskAbort, getTaskAbort, clearTaskAbort } from './active-task-a
 import {
   pipeEvents,
   finalizeTurn,
+  dispatchHitlPrompt,
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
-import { buildTaskAgent, type WorkspaceChatContext } from './chat-agent.js';
+import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
 import {
@@ -163,24 +164,32 @@ export async function executeTask(
   // this turn left 'pending' to 'interrupted').
   let msgId: string | undefined;
   let turnSentAt: string | undefined;
+  // Also hoisted (see above) — needed by the catch block's GraphInterrupt
+  // branch to re-query checkpoint state and re-dispatch a HITL prompt after
+  // a mid-stream throw, the same way the graceful (non-throwing) path does.
+  let agent: ChatAgent | undefined;
+  let config: { configurable: { thread_id: string; workspaceId?: string } } | undefined;
+  let assistantSeq: number | undefined;
 
   try {
     recordTaskRunMarker(threadStore, threadId, randomUUID(), task.id, task.title, 'start');
     drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
-    const { agent } = await buildAgent(
-      task,
-      undefined,
-      undefined,
-      workspaceScope
-        ? {
-            workspaceContext: workspaceScope.workspaceContext,
-            allowedWikiId: workspaceScope.allowedWikiId,
-          }
-        : undefined,
-    );
+    agent = (
+      await buildAgent(
+        task,
+        undefined,
+        undefined,
+        workspaceScope
+          ? {
+              workspaceContext: workspaceScope.workspaceContext,
+              allowedWikiId: workspaceScope.allowedWikiId,
+            }
+          : undefined,
+      )
+    ).agent;
 
-    const config = {
+    config = {
       configurable: {
         thread_id: threadId,
         ...(workspaceScope ? { workspaceId: workspaceScope.workspace.id } : {}),
@@ -189,7 +198,7 @@ export async function executeTask(
     msgId = randomUUID();
     turnSentAt = new Date().toISOString();
     const startedAt = Date.now();
-    const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+    assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
     // A resume_answer set by the /hitl route's task re-enqueue branch means
     // this run continues a previously-interrupted checkpoint — consumed
@@ -208,20 +217,23 @@ export async function executeTask(
     // so a bare variable would narrow to `null` at the check below.
     const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
 
-    // Local consts — msgId/turnSentAt are outer `let`s just assigned above,
-    // but TS can't carry that narrowing into an async closure passed to
-    // withSlot() (it could in principle run after a later reassignment), so
-    // it widens both back to `string | undefined` inside the closure.
+    // Local consts — msgId/turnSentAt/agent/config are outer `let`s just
+    // assigned above, but TS can't carry that narrowing into an async
+    // closure passed to withSlot() (it could in principle run after a later
+    // reassignment), so it widens them back to their unnarrowed types inside
+    // the closure.
     const resolvedMsgId = msgId;
     const resolvedTurnSentAt = turnSentAt;
+    const resolvedAgent = agent;
+    const resolvedConfig = config;
 
     const { content, thoughtContent, finalSegmentId, hadToolCall } =
       await getProviderQueue().withSlot(
         env.defaultProvider,
         'async',
         async () => {
-          const rawStream = agent.streamEvents(input, {
-            ...config,
+          const rawStream = resolvedAgent.streamEvents(input, {
+            ...resolvedConfig,
             version: 'v2',
             recursionLimit: env.agent?.recursionLimit ?? 100,
             signal: controller.signal,
@@ -315,6 +327,17 @@ export async function executeTask(
     // the genuine-failure and aborted-run branches below.
     const partialState = msgId !== undefined ? extractPartialAssistantState(err, msgId) : undefined;
 
+    // Shared terminal bookkeeping for "this run ends in a real failure" —
+    // used by the generic catch-all AND the GraphInterrupt branch's own
+    // safety-net fallback, so neither leaves the queue entry stuck.
+    const finishFailedRun = async (notifyMessage: string): Promise<void> => {
+      finalOutcome = 'failed';
+      store.completeQueueEntry(entry.id, 'failed');
+      if (task.origin === 'agent') {
+        await deliverSubAgentCompletion(task, 'failed', notifyMessage);
+      }
+    };
+
     if (intent === 'cancel') {
       logger.info('task-execution: run cancelled', { taskId: task.id });
       finalOutcome = 'cancelled';
@@ -334,6 +357,72 @@ export async function executeTask(
       logger.info('task-execution: run taken over', { taskId: task.id });
       finalOutcome = 'cancelled';
       store.detachQueueEntry(entry.id);
+    } else if ((err as Error).name === 'GraphInterrupt') {
+      // The graceful (non-throwing) path handles an interrupt by reading it
+      // off state returned from pipeEvents/finalizeTurn — but LangGraph can
+      // also raise it as a thrown GraphInterrupt mid-stream, which pipeEvents
+      // forwards as a PipeEventsError preserving `.name` (see
+      // stream-handler.ts). Recover the same way: finalize the partial
+      // assistant turn, then re-query checkpoint state for the interrupt
+      // LangGraph still parked there, and dispatch it exactly like the
+      // graceful path would have.
+      logger.info('task-execution: run interrupted (thrown GraphInterrupt)', { taskId: task.id });
+      let handled = false;
+      if (partialState && turnSentAt !== undefined && agent && config) {
+        finalizeAssistant(
+          threadStore,
+          threadId,
+          partialState.segmentId,
+          partialState.content,
+          partialState.thoughtContent,
+          turnSentAt,
+          null,
+        );
+        const state = await agent.graph.getState(config);
+        const stateInterrupt = state.tasks?.[0]?.interrupts?.[0];
+        if (stateInterrupt) {
+          const { interrupted } = dispatchHitlPrompt(
+            sink,
+            threadStore,
+            threadId,
+            partialState.segmentId,
+            stateInterrupt,
+            partialState.content,
+            turnSentAt,
+            assistantSeq ?? null,
+            null,
+            task.id,
+          );
+          if (interrupted) {
+            finalOutcome = 'waiting_on_user';
+            // completeQueueEntry() mirrors its outcome onto tasks.status too
+            // — it must run BEFORE patchTask here, or it would clobber
+            // waiting_on_user straight back to 'done' (same ordering as the
+            // graceful branch above).
+            store.completeQueueEntry(entry.id, 'done');
+            store.patchTask(task.id, { status: 'waiting_on_user', assignedTo: 'user' });
+            handled = true;
+          }
+          // else: dispatchHitlPrompt's own catch already marked the row
+          // 'error' and emitted stream_error — don't touch it again below.
+        } else {
+          // Name matched but checkpoint has no interrupt — safety net, not
+          // the expected path. Nothing has failed the row yet.
+          failAssistant(
+            threadStore,
+            threadId,
+            partialState.segmentId,
+            partialState.content,
+            turnSentAt,
+            partialState.thoughtContent,
+            'Lost the approval prompt after an interrupt.',
+            'unknown',
+          );
+        }
+      }
+      if (!handled) {
+        await finishFailedRun('Failed to record the approval prompt.');
+      }
     } else {
       logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
       finalOutcome = 'failed';
@@ -362,10 +451,7 @@ export async function executeTask(
           );
         }
       }
-      store.completeQueueEntry(entry.id, 'failed');
-      if (task.origin === 'agent') {
-        await deliverSubAgentCompletion(task, 'failed', (err as Error)?.message ?? 'Run failed.');
-      }
+      await finishFailedRun((err as Error)?.message ?? 'Run failed.');
     }
 
     // For an aborted run (any of the three intents), the streaming
