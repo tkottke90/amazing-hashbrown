@@ -141,6 +141,10 @@ function fakePreAbortedAgent() {
         if (options.signal?.aborted) {
           throw Object.assign(new Error('aborted'), { name: 'AbortError' });
         }
+        // Only reached if this fake is ever used with a not-yet-aborted
+        // signal, which no current test does — kept so this stays a real
+        // generator (require-yield) rather than an always-throwing stub.
+        yield { event: 'on_chat_model_stream', data: { chunk: { content: '' } } };
       }
       return gen();
     },
