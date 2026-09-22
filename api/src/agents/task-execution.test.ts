@@ -11,8 +11,13 @@ import {
   type Task,
   type TaskQueueEntry,
 } from '../services/workspace-store.js';
-import { getActiveSseWriter } from './active-sse-writer.js';
+import {
+  getActiveSseWriter,
+  setActiveSseWriter,
+  clearActiveSseWriter,
+} from './active-sse-writer.js';
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
+import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, type QueueEntryWithTask } from './task-execution.js';
 import type { buildTaskAgent } from './chat-agent.js';
 
@@ -111,6 +116,31 @@ function fakeAbortingAgent(
         // reject/interrupt a real streamEvents() call mid-flight).
         abortEntry.controller.abort();
         throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+      return gen();
+    },
+    graph: {
+      getState: async () => ({
+        tasks: [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+// Checks options.signal.aborted the moment streamEvents() is invoked, rather
+// than yielding first — mimics a real controller that was already aborted
+// *before* the deferred run started (see the thread-mutex serialization
+// describe block below), unlike fakeAbortingAgent which aborts mid-stream.
+function fakePreAbortedAgent() {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamEvents: (_input: unknown, options: { signal?: AbortSignal }): AsyncIterable<any> => {
+      async function* gen() {
+        if (options.signal?.aborted) {
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        }
       }
       return gen();
     },
@@ -634,6 +664,128 @@ describe('agents/task-execution', () => {
       const task = store.getTask(entry.task.id)!;
       expect(task.status).to.equal('failed');
       expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+    });
+  });
+
+  // A workspace-scoped task shares its LangGraph checkpoint thread_id with
+  // the workspace's own interactive chat, and dequeueNext()'s per-scope
+  // serialization excludes origin='agent' rows — either way, two runs could
+  // previously race the same thread_id's agent.streamEvents() call and lose
+  // a parked interrupt. executeTask() now checks the same per-thread mutex
+  // (active-sse-writer.ts) every interactive handler already respects, and
+  // defers via runOnceThreadFree() (pending-thread-turns.ts) instead of
+  // racing. See this session's design doc for the full diagnosis.
+  describe('thread-mutex serialization (regression)', () => {
+    // A pre-assigned, known thread id (rather than one executeTask mints
+    // itself) so the mutex can be seeded busy *before* calling executeTask.
+    const THREAD_ID = 'preassigned-thread-for-mutex-test';
+
+    afterEach(() => {
+      clearActiveSseWriter(THREAD_ID);
+    });
+
+    function makeGlobalEntryOnThread(threadId: string, title = 'Global task'): QueueEntryWithTask {
+      const task = store.createTask({ title, assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready', threadId });
+      store.enqueueTask(task.id);
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    it('defers execution until the thread mutex clears, then completes normally', async () => {
+      const entry = makeGlobalEntryOnThread(THREAD_ID);
+      setActiveSseWriter(THREAD_ID, () => {});
+
+      // A global task's own thread-resolution preamble (registerTaskAbort +
+      // the synchronous threadId branch — no `await` in it) runs fully
+      // synchronously, so by the time this call returns its pending
+      // promise, executeTask has already reached the mutex check and
+      // queued itself — no timing hack needed to prove it deferred rather
+      // than racing.
+      const runPromise = executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      // Still held — claimed 'running' by dequeueNext(), but not advanced
+      // any further since runClaimed() hasn't started yet.
+      expect(store.getTask(entry.task.id)!.status).to.equal('running');
+
+      clearActiveSseWriter(THREAD_ID);
+      drainPendingTurns(THREAD_ID);
+      await runPromise;
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+    });
+
+    it('runs immediately with no deferral when the thread mutex is already free', async () => {
+      const entry = makeGlobalEntryOnThread(THREAD_ID);
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      expect(getActiveSseWriter(THREAD_ID)).to.equal(undefined);
+    });
+
+    it('a workspace-scoped origin="agent" sub-agent task also defers when the thread mutex is already held (closes the dequeueNext() scope-exclusion gap)', async () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      store.patchWorkspace(workspace.id, { threadId: THREAD_ID });
+      store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'Do something',
+        parentThreadId: 'parent-thread',
+        dispatchGroupId: 'group-1',
+        workspaceId: workspace.id,
+      });
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+      expect(entry.task.origin).to.equal('agent');
+
+      setActiveSseWriter(THREAD_ID, () => {});
+
+      const runPromise = executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      // Unlike the global-task tests above, a workspace-scoped task's own
+      // thread-resolution has a real await (buildWorkspaceContext reading
+      // the workspace's .hashbrown/summaries dir) before it reaches the
+      // mutex check, so there's no synchronous guarantee it's already
+      // queued the instant this call returns. Give that a moment to settle,
+      // then assert the task is *still* 'running' (not yet 'done') before
+      // freeing the mutex — if this fix regressed and the second task raced
+      // ahead instead of deferring, this assertion (not just the final one)
+      // would catch it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(store.getTask(entry.task.id)!.status).to.equal('running');
+
+      clearActiveSseWriter(THREAD_ID);
+      drainPendingTurns(THREAD_ID);
+      await runPromise;
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+    });
+
+    it('ends cancelled (not failed) when cancelled while still queued behind a busy thread', async () => {
+      const entry = makeGlobalEntryOnThread(THREAD_ID);
+      setActiveSseWriter(THREAD_ID, () => {});
+
+      const runPromise = executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakePreAbortedAgent()),
+      });
+
+      // Cancel while still queued (not yet running) — registerTaskAbort()
+      // already ran synchronously before the mutex check, so the abort
+      // entry exists even though runClaimed() hasn't started yet.
+      const abortEntry = getTaskAbort(entry.id);
+      expect(abortEntry, 'expected an abort entry to exist while queued').to.not.equal(undefined);
+      setAbortIntent(entry.id, 'cancel');
+      abortEntry!.controller.abort();
+
+      clearActiveSseWriter(THREAD_ID);
+      drainPendingTurns(THREAD_ID);
+      await runPromise;
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('cancelled');
     });
   });
 });
