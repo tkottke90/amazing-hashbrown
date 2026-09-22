@@ -32,6 +32,16 @@ const CreateTasksSchema = z.object({
           .array(z.string())
           .optional()
           .describe("Fine-grained checklist steps for this task's own run."),
+        dependsOnIndexes: z
+          .array(z.number().int().nonnegative())
+          .optional()
+          .describe(
+            'Zero-based indexes of other tasks in this SAME batch that must complete before ' +
+              'this one starts (e.g. [0] means "wait for the first task in this list"). Must ' +
+              'reference only earlier tasks in the list. A task with any dependency stays queued ' +
+              '(not started) until they all finish successfully — use this instead of assuming ' +
+              'tasks silently wait for each other.',
+          ),
       }),
     )
     .describe('The batch of tasks to create, in the order they should run.'),
@@ -81,12 +91,13 @@ export function makeCreateTasksTool(store?: WorkspaceStore, registry?: TrackerRe
         }
       }
 
-      const inputs: NewTaskInput[] = tasks.map((t) => ({
+      const inputs: (NewTaskInput & { dependsOnIndexes?: number[] })[] = tasks.map((t) => ({
         workspaceId,
         title: t.title,
         description: t.description ?? null,
         outcome: t.outcome ?? null,
         plan: t.plan ? t.plan.map((step) => ({ step, done: false })) : null,
+        dependsOnIndexes: t.dependsOnIndexes,
         assignedTo: 'agent',
         origin: 'user',
         triggerType: 'chat',

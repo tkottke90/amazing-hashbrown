@@ -189,4 +189,70 @@ describe('agents/tools/create-tasks', () => {
 
     expect(getWorkspaceStore().listTasks({}).length).to.equal(2);
   });
+
+  describe('dependsOnIndexes', () => {
+    it('leaves a dependent task pending (no queue row) while its dependency is not yet done', async () => {
+      const result = await makeCreateTasksTool().invoke(
+        {
+          tasks: [{ title: 'first' }, { title: 'second', dependsOnIndexes: [0] }],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string; title: string }[] };
+      const store = getWorkspaceStore();
+      const second = store.getTask(parsed.created[1]!.id)!;
+
+      expect(second.status).to.equal('pending');
+      expect(store.listQueue().some((q) => q.taskId === second.id)).to.equal(false);
+    });
+
+    it('still creates a task with no dependsOnIndexes ready/enqueued as before (regression guard)', async () => {
+      const result = await makeCreateTasksTool().invoke(
+        { tasks: [{ title: 'only' }] },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string }[] };
+      const store = getWorkspaceStore();
+      const task = store.getTask(parsed.created[0]!.id)!;
+
+      // wake() ran synchronously with no executor registered, so an
+      // otherwise-eligible task gets dequeued straight to 'running'.
+      expect(task.status).to.equal('running');
+    });
+
+    it('rejects the whole batch when an index forward-references a later task', async () => {
+      const result = await makeCreateTasksTool().invoke(
+        {
+          tasks: [
+            { title: 'first', dependsOnIndexes: [1] }, // forward reference
+            { title: 'second' },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('Failed to create tasks');
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
+    });
+
+    it('auto-readies the dependent once its dependency completes, via the scheduler wake', async () => {
+      const store = getWorkspaceStore();
+      const result = await makeCreateTasksTool().invoke(
+        {
+          tasks: [{ title: 'first' }, { title: 'second', dependsOnIndexes: [0] }],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string; title: string }[] };
+      const first = store.getTask(parsed.created[0]!.id)!;
+      const second = store.getTask(parsed.created[1]!.id)!;
+      expect(first.status).to.equal('running'); // dequeued by the no-executor wake()
+      expect(second.status).to.equal('pending');
+
+      const runningEntry = store.listQueue().find((q) => q.taskId === first.id)!;
+      store.completeQueueEntry(runningEntry.id, 'done');
+
+      expect(store.getTask(second.id)!.status).to.equal('ready');
+      expect(store.listQueue().some((q) => q.taskId === second.id)).to.equal(true);
+    });
+  });
 });

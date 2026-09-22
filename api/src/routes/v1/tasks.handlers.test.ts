@@ -15,6 +15,9 @@ import {
   cancelTaskHandler,
   pauseTaskHandler,
   takeOverTaskHandler,
+  listTaskDependenciesHandler,
+  addTaskDependencyHandler,
+  removeTaskDependencyHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
 } from './tasks.handlers.js';
@@ -322,6 +325,53 @@ describe('routes/v1/tasks.handlers', () => {
     });
   });
 
+  describe('patchTaskHandler() — dependency-gate bypass guard', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-dep-gate-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('rejects a direct PATCH to ready on a task blocked by a failed dependency, without touching it', () => {
+      const dependency = store.createTask({ title: 'dep', assignedTo: 'agent' });
+      const entry = store.enqueueTask(dependency.id);
+      const task = store.createTask({ title: 't' });
+      store.addTaskDependency(task.id, dependency.id);
+      store.completeQueueEntry(entry.id, 'failed'); // cascades task -> blocked
+
+      const before = store.getTask(task.id)!;
+      expect(before.status).to.equal('blocked');
+      expect(before.blockedReason).to.equal('dependency_failed');
+
+      const result = patchTaskHandler(store, task.id, { status: 'ready' });
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+      const after = store.getTask(task.id)!;
+      expect(after.status).to.equal('blocked'); // unchanged — not silently re-enqueued
+      expect(store.listQueue().some((q) => q.taskId === task.id)).to.equal(false);
+    });
+
+    it('still allows a plain user-paused blocked task to resume via the existing path', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      const running = store.dequeueNext()!;
+      store.parkQueueEntry(running.id); // blockedReason stays null
+
+      const result = patchTaskHandler(store, task.id, { status: 'ready' });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data!.status).to.equal('ready');
+    });
+  });
+
   describe('cancelTaskHandler()', () => {
     let store: WorkspaceStore;
     let dir: string;
@@ -518,7 +568,7 @@ describe('routes/v1/tasks.handlers', () => {
       expect(store.listQueue().find((e) => e.id === entry.id)).to.equal(undefined);
     });
 
-    it('409s for a task that is done/failed/blocked', () => {
+    it('409s for a task that is done/failed/blocked (plain user-paused, no dependency reason)', () => {
       for (const status of ['done', 'failed', 'blocked'] as const) {
         const task = store.createTask({ title: 't', assignedTo: 'agent' });
         store.patchTask(task.id, { status });
@@ -532,6 +582,229 @@ describe('routes/v1/tasks.handlers', () => {
       const result = takeOverTaskHandler(store, 'does-not-exist');
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('takes over a task blocked by a failed dependency, clearing blockedReason', () => {
+      const dependency = store.createTask({ title: 'dep', assignedTo: 'agent' });
+      const entry = store.enqueueTask(dependency.id);
+      const task = store.createTask({ title: 't' });
+      store.addTaskDependency(task.id, dependency.id);
+      store.completeQueueEntry(entry.id, 'failed'); // cascades task -> blocked
+      expect(store.getTask(task.id)!.blockedReason).to.equal('dependency_failed');
+
+      const result = takeOverTaskHandler(store, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data!.status).to.equal('pending');
+        expect(result.data!.assignedTo).to.equal('user');
+        expect(result.data!.blockedReason).to.equal(null);
+      }
+    });
+  });
+
+  describe('task dependency endpoints (list/add/remove)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-dependencies-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    describe('addTaskDependencyHandler()', () => {
+      it('adds a dependency between two pending tasks in the same workspace', () => {
+        const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+        const a = store.createTask({ title: 'a', workspaceId: ws.id });
+        const b = store.createTask({ title: 'b', workspaceId: ws.id });
+
+        const result = addTaskDependencyHandler(store, b.id, { dependsOnTaskId: a.id });
+
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect(result.data!.taskId).to.equal(b.id);
+          expect(result.data!.dependsOnTaskId).to.equal(a.id);
+          expect(result.data!.requireSuccess).to.equal(true);
+          expect(result.data!.whileBlocked).to.equal(false);
+        }
+      });
+
+      it('accepts explicit requireSuccess/whileBlocked flags', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+
+        const result = addTaskDependencyHandler(store, b.id, {
+          dependsOnTaskId: a.id,
+          requireSuccess: false,
+          whileBlocked: true,
+        });
+
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect(result.data!.requireSuccess).to.equal(false);
+          expect(result.data!.whileBlocked).to.equal(true);
+        }
+      });
+
+      it('404s when the source task does not exist', () => {
+        const a = store.createTask({ title: 'a' });
+        const result = addTaskDependencyHandler(store, 'does-not-exist', {
+          dependsOnTaskId: a.id,
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('404s when the target task does not exist', () => {
+        const b = store.createTask({ title: 'b' });
+        const result = addTaskDependencyHandler(store, b.id, {
+          dependsOnTaskId: 'does-not-exist',
+        });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('400s when dependsOnTaskId is missing', () => {
+        const b = store.createTask({ title: 'b' });
+        const result = addTaskDependencyHandler(store, b.id, {});
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('400s when a task tries to depend on itself', () => {
+        const a = store.createTask({ title: 'a' });
+        const result = addTaskDependencyHandler(store, a.id, { dependsOnTaskId: a.id });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('409s when the source task is not pending', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        store.patchTask(b.id, { status: 'ready' });
+
+        const result = addTaskDependencyHandler(store, b.id, { dependsOnTaskId: a.id });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      });
+
+      it('400s when the two tasks are in different workspaces', () => {
+        const wsA = store.createWorkspace({ name: 'A', location: '/tmp/a' });
+        const wsB = store.createWorkspace({ name: 'B', location: '/tmp/b' });
+        const a = store.createTask({ title: 'a', workspaceId: wsA.id });
+        const b = store.createTask({ title: 'b', workspaceId: wsB.id });
+
+        const result = addTaskDependencyHandler(store, b.id, { dependsOnTaskId: a.id });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+
+      it('400s when the dependency would create a cycle', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        const c = store.createTask({ title: 'c' });
+        // c -> b -> a (c depends on b, b depends on a)
+        store.addTaskDependency(c.id, b.id);
+        store.addTaskDependency(b.id, a.id);
+
+        // Adding a -> c would close the loop: a depends on c depends on b depends on a.
+        const result = addTaskDependencyHandler(store, a.id, { dependsOnTaskId: c.id });
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+      });
+    });
+
+    describe('removeTaskDependencyHandler()', () => {
+      it('removes an existing dependency from a pending task', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        const dep = store.addTaskDependency(b.id, a.id);
+
+        const result = removeTaskDependencyHandler(store, b.id, dep.id);
+
+        expect(result.ok).to.equal(true);
+        expect(store.listTaskDependencies(b.id)).to.deep.equal([]);
+      });
+
+      it('404s for a dependency id that does not belong to this task', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        const c = store.createTask({ title: 'c' });
+        const dep = store.addTaskDependency(b.id, a.id);
+
+        const result = removeTaskDependencyHandler(store, c.id, dep.id);
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
+
+      it('409s when the task is no longer pending', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        const dep = store.addTaskDependency(b.id, a.id);
+        store.patchTask(b.id, { status: 'blocked' }); // simulate a later transition
+
+        const result = removeTaskDependencyHandler(store, b.id, dep.id);
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      });
+
+      it('auto-readies and enqueues an agent-assigned task once its last unmet dependency is removed', () => {
+        const a = store.createTask({ title: 'a' }); // still pending — unsatisfied
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        const dep = store.addTaskDependency(b.id, a.id);
+
+        const result = removeTaskDependencyHandler(store, b.id, dep.id);
+
+        expect(result.ok).to.equal(true);
+        const updated = store.getTask(b.id)!;
+        expect(updated.status).to.equal('ready');
+        expect(store.listQueue().some((q) => q.taskId === b.id)).to.equal(true);
+      });
+
+      it('leaves a user-assigned task pending even once its dependencies clear (R14 gate)', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b', assignedTo: 'user' });
+        const dep = store.addTaskDependency(b.id, a.id);
+
+        removeTaskDependencyHandler(store, b.id, dep.id);
+
+        expect(store.getTask(b.id)!.status).to.equal('pending');
+      });
+
+      it('does not ready the task while another unmet dependency remains', () => {
+        const a = store.createTask({ title: 'a' });
+        const c = store.createTask({ title: 'c' }); // second, still-unmet dependency
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        const depA = store.addTaskDependency(b.id, a.id);
+        store.addTaskDependency(b.id, c.id);
+
+        removeTaskDependencyHandler(store, b.id, depA.id);
+
+        expect(store.getTask(b.id)!.status).to.equal('pending');
+      });
+    });
+
+    describe('listTaskDependenciesHandler()', () => {
+      it('lists what a task depends on', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id);
+
+        const result = listTaskDependenciesHandler(store, b.id);
+        expect(result.ok).to.equal(true);
+        if (result.ok) expect(result.data).to.have.length(1);
+      });
+
+      it('404s for a nonexistent task', () => {
+        const result = listTaskDependenciesHandler(store, 'does-not-exist');
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(404);
+      });
     });
   });
 

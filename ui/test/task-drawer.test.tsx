@@ -13,8 +13,20 @@ jest.mock('@/hooks/use-tasks', () => ({
   resumeTask: (...args: unknown[]) => mockResumeTask(...args),
 }));
 
+const mockListTaskDependencies = jest.fn();
+const mockAddTaskDependency = jest.fn();
+const mockRemoveTaskDependency = jest.fn();
+
+jest.mock('@/services/tasks-api', () => ({
+  ...jest.requireActual('@/services/tasks-api'),
+  listTaskDependencies: (...args: unknown[]) => mockListTaskDependencies(...args),
+  addTaskDependency: (...args: unknown[]) => mockAddTaskDependency(...args),
+  removeTaskDependency: (...args: unknown[]) => mockRemoveTaskDependency(...args),
+}));
+
 import { TaskDrawer } from '@/components/task-drawer';
-import type { Task } from '@/services/tasks-api';
+import { tasks } from '@/hooks/use-tasks';
+import type { Task, TaskDependency } from '@/services/tasks-api';
 
 const baseTask: Task = {
   id: 'task-1',
@@ -31,6 +43,7 @@ const baseTask: Task = {
   trackerType: null,
   trackerId: null,
   plan: null,
+  blockedReason: null,
   createdAt: '2026-08-29T00:00:00.000Z',
   updatedAt: '2026-08-29T00:00:00.000Z',
 };
@@ -46,7 +59,9 @@ function renderDrawer(task: Task) {
 // so it never collides with that unrelated button of the same name.
 function getPanel() {
   const label =
-    screen.queryByText('Running task controls') ?? screen.queryByText('Paused task controls');
+    screen.queryByText('Running task controls') ??
+    screen.queryByText('Paused task controls') ??
+    screen.queryByText('Blocked — a dependency failed');
   if (!label) return null;
   return within(label.parentElement as HTMLElement);
 }
@@ -60,6 +75,18 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+// Every test in this file mounts a TaskDrawer, which always fires this
+// fetch on mount when given an existing task — default it to empty so
+// tests that don't care about dependencies never see an unhandled
+// rejection or a stray "Depends on" list item.
+beforeEach(() => {
+  mockListTaskDependencies.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  tasks.value = [];
+});
 
 describe('TaskDrawer — running task controls', () => {
   afterEach(() => {
@@ -94,6 +121,17 @@ describe('TaskDrawer — running task controls', () => {
     expect(panel.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
     expect(panel.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
     expect(panel.queryByRole('button', { name: 'Take over' })).not.toBeInTheDocument();
+    expect(panel.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+  });
+
+  it('shows only Take over (no Resume) for a task blocked by a failed dependency', () => {
+    renderDrawer({ ...baseTask, status: 'blocked', blockedReason: 'dependency_failed' });
+    expect(screen.getByText('Blocked — a dependency failed')).toBeInTheDocument();
+    expect(screen.queryByText('Paused task controls')).not.toBeInTheDocument();
+    const panel = getPanel()!;
+    expect(panel.getByRole('button', { name: 'Take over' })).toBeInTheDocument();
+    expect(panel.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+    expect(panel.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
     expect(panel.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
   });
 
@@ -222,5 +260,90 @@ describe('TaskDrawer — waiting_on_user banner', () => {
     expect(
       screen.queryByText('This task is waiting on your input — go answer it in chat'),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('TaskDrawer — Depends on section', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+    cleanup();
+  });
+
+  it('renders only for a pending task, not for other statuses', () => {
+    renderDrawer({ ...baseTask, status: 'ready' });
+    expect(screen.queryByText('Depends on')).not.toBeInTheDocument();
+    cleanup();
+
+    renderDrawer({ ...baseTask, status: 'pending' });
+    expect(screen.getByText('Depends on')).toBeInTheDocument();
+  });
+
+  it('lists existing dependencies and lets the user remove one', async () => {
+    const dep: TaskDependency = {
+      id: 1,
+      taskId: 'task-1',
+      dependsOnTaskId: 'task-other',
+      requireSuccess: true,
+      whileBlocked: false,
+      createdAt: '2026-08-29T00:00:00.000Z',
+    };
+    mockListTaskDependencies.mockResolvedValue([dep]);
+    mockRemoveTaskDependency.mockResolvedValue(undefined);
+    tasks.value = [{ ...baseTask, id: 'task-other', title: 'The other task' }];
+
+    renderDrawer({ ...baseTask, status: 'pending' });
+
+    await waitFor(() => expect(screen.getByText('The other task')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Remove dependency on "The other task"'));
+
+    await waitFor(() => expect(mockRemoveTaskDependency).toHaveBeenCalledWith('task-1', 1));
+    await waitFor(() => expect(screen.queryByText('The other task')).not.toBeInTheDocument());
+  });
+
+  it('adds a new dependency with the chosen requireSuccess/whileBlocked flags', async () => {
+    const newDep: TaskDependency = {
+      id: 2,
+      taskId: 'task-1',
+      dependsOnTaskId: 'task-other',
+      requireSuccess: false,
+      whileBlocked: true,
+      createdAt: '2026-08-29T00:00:00.000Z',
+    };
+    mockAddTaskDependency.mockResolvedValue(newDep);
+    tasks.value = [{ ...baseTask, id: 'task-other', title: 'The other task' }];
+
+    renderDrawer({ ...baseTask, status: 'pending' });
+
+    await waitFor(() => expect(screen.getByTestId('task-dependency-select')).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('task-dependency-select'), {
+      target: { value: 'task-other' },
+    });
+    fireEvent.click(screen.getByLabelText('Require success'));
+    fireEvent.click(screen.getByLabelText('OK if paused'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() =>
+      expect(mockAddTaskDependency).toHaveBeenCalledWith('task-1', 'task-other', {
+        requireSuccess: false,
+        whileBlocked: true,
+      }),
+    );
+  });
+
+  it('excludes the task itself and tasks in other workspaces from the picker', () => {
+    tasks.value = [
+      { ...baseTask, id: 'task-1', title: 'Self' },
+      { ...baseTask, id: 'task-other-ws', workspaceId: 'ws-2', title: 'Other workspace' },
+      { ...baseTask, id: 'task-same-ws', workspaceId: null, title: 'Same workspace' },
+    ];
+
+    renderDrawer({ ...baseTask, id: 'task-1', status: 'pending', workspaceId: null });
+
+    const select = screen.getByTestId('task-dependency-select') as HTMLSelectElement;
+    const optionLabels = Array.from(select.options).map((o) => o.textContent);
+    expect(optionLabels).not.toContain('Self');
+    expect(optionLabels).not.toContain('Other workspace');
+    expect(optionLabels).toContain('Same workspace');
   });
 });

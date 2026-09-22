@@ -645,5 +645,261 @@ describe('services/workspace-store', () => {
       expect(store.listTasks({})).to.deep.equal([]);
       expect(store.listQueue()).to.deep.equal([]);
     });
+
+    it('leaves a task with dependsOnIndexes at pending instead of ready/enqueued', () => {
+      const [first, second] = store.createTasks([
+        { title: 'first' },
+        { title: 'second', dependsOnIndexes: [0] },
+      ]);
+
+      expect(first!.status).to.equal('ready');
+      expect(second!.status).to.equal('pending');
+      expect(store.listQueue().some((e) => e.taskId === second!.id)).to.equal(false);
+      const deps = store.listTaskDependencies(second!.id);
+      expect(deps).to.have.length(1);
+      expect(deps[0]!.dependsOnTaskId).to.equal(first!.id);
+    });
+
+    it('rolls back the whole batch if a dependsOnIndexes entry is not an earlier index', () => {
+      expect(() =>
+        store.createTasks([
+          { title: 'first', dependsOnIndexes: [1] }, // forward reference
+          { title: 'second' },
+        ]),
+      ).to.throw(/earlier task/);
+
+      expect(store.listTasks({})).to.deep.equal([]);
+    });
+
+    it('rolls back the whole batch if a dependsOnIndexes entry references itself', () => {
+      expect(() => store.createTasks([{ title: 'first', dependsOnIndexes: [0] }])).to.throw(
+        /earlier task/,
+      );
+
+      expect(store.listTasks({})).to.deep.equal([]);
+    });
+  });
+
+  describe('task dependencies (schema, CRUD, gating)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('round-trips a dependency through add/list/remove', () => {
+      const a = store.createTask({ title: 'a' });
+      const b = store.createTask({ title: 'b' });
+
+      const dep = store.addTaskDependency(b.id, a.id, {
+        requireSuccess: false,
+        whileBlocked: true,
+      });
+      expect(dep.taskId).to.equal(b.id);
+      expect(dep.dependsOnTaskId).to.equal(a.id);
+      expect(dep.requireSuccess).to.equal(false);
+      expect(dep.whileBlocked).to.equal(true);
+
+      expect(store.listTaskDependencies(b.id).map((d) => d.id)).to.deep.equal([dep.id]);
+      expect(store.listDependents(a.id).map((d) => d.id)).to.deep.equal([dep.id]);
+
+      store.removeTaskDependency(dep.id);
+      expect(store.listTaskDependencies(b.id)).to.deep.equal([]);
+      expect(store.listDependents(a.id)).to.deep.equal([]);
+    });
+
+    it('defaults to requireSuccess=true, whileBlocked=false when opts are omitted', () => {
+      const a = store.createTask({ title: 'a' });
+      const b = store.createTask({ title: 'b' });
+      const dep = store.addTaskDependency(b.id, a.id);
+      expect(dep.requireSuccess).to.equal(true);
+      expect(dep.whileBlocked).to.equal(false);
+    });
+
+    describe('isTaskReady()', () => {
+      it('requireSuccess=true: satisfied only when the target is done', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: true });
+
+        expect(store.isTaskReady(b.id)).to.equal(false); // a is still 'pending'
+
+        store.patchTask(a.id, { status: 'blocked' });
+        expect(store.isTaskReady(b.id)).to.equal(false); // blocked doesn't count without whileBlocked
+
+        store.patchTask(a.id, { status: 'failed' });
+        expect(store.isTaskReady(b.id)).to.equal(false); // failed never satisfies requireSuccess
+
+        store.patchTask(a.id, { status: 'done' });
+        expect(store.isTaskReady(b.id)).to.equal(true);
+      });
+
+      it('requireSuccess=false: satisfied by any terminal state', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: false });
+
+        expect(store.isTaskReady(b.id)).to.equal(false);
+
+        for (const status of ['done', 'failed', 'cancelled'] as const) {
+          store.patchTask(a.id, { status });
+          expect(store.isTaskReady(b.id), `status=${status}`).to.equal(true);
+        }
+
+        store.patchTask(a.id, { status: 'blocked' });
+        expect(store.isTaskReady(b.id)).to.equal(false); // not terminal
+      });
+
+      it('whileBlocked=true: the target reaching blocked also satisfies the edge', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: true, whileBlocked: true });
+
+        store.patchTask(a.id, { status: 'blocked' });
+        expect(store.isTaskReady(b.id)).to.equal(true);
+
+        store.patchTask(a.id, { status: 'failed' });
+        expect(store.isTaskReady(b.id)).to.equal(false); // whileBlocked never rescues failed
+      });
+
+      it('requires every edge to be satisfied (AND across multiple dependencies)', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        const c = store.createTask({ title: 'c' });
+        store.addTaskDependency(c.id, a.id);
+        store.addTaskDependency(c.id, b.id);
+
+        store.patchTask(a.id, { status: 'done' });
+        expect(store.isTaskReady(c.id)).to.equal(false); // b not done yet
+
+        store.patchTask(b.id, { status: 'done' });
+        expect(store.isTaskReady(c.id)).to.equal(true);
+      });
+    });
+
+    describe('hasBrokenDependency()', () => {
+      it('is true when a requireSuccess target fails or is cancelled', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: true });
+
+        expect(store.hasBrokenDependency(b.id)).to.equal(false);
+        store.patchTask(a.id, { status: 'failed' });
+        expect(store.hasBrokenDependency(b.id)).to.equal(true);
+      });
+
+      it('is false when requireSuccess is false, even if the target fails', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: false });
+
+        store.patchTask(a.id, { status: 'failed' });
+        expect(store.hasBrokenDependency(b.id)).to.equal(false);
+      });
+    });
+
+    describe('releaseEligibleDependents() via completeQueueEntry/parkQueueEntry', () => {
+      it('auto-readies and enqueues a pending dependent once its dependency completes successfully', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entry = store.enqueueTask(a.id);
+        const b = store.createTask({ title: 'b' }); // stays 'pending'
+        store.addTaskDependency(b.id, a.id);
+
+        store.completeQueueEntry(entry.id, 'done');
+
+        const updatedB = store.getTask(b.id)!;
+        expect(updatedB.status).to.equal('ready');
+        expect(updatedB.assignedTo).to.equal('agent');
+        expect(store.listQueue().some((q) => q.taskId === b.id)).to.equal(true);
+      });
+
+      it('auto-blocks a pending dependent (with a reason) when its required dependency fails', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entry = store.enqueueTask(a.id);
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: true });
+
+        store.completeQueueEntry(entry.id, 'failed');
+
+        const updatedB = store.getTask(b.id)!;
+        expect(updatedB.status).to.equal('blocked');
+        expect(updatedB.blockedReason).to.equal('dependency_failed');
+        expect(store.listQueue().some((q) => q.taskId === b.id)).to.equal(false);
+      });
+
+      it('leaves a pending dependent alone when its dependency merely fails and requireSuccess is false', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entry = store.enqueueTask(a.id);
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: false });
+
+        store.completeQueueEntry(entry.id, 'failed');
+
+        const updatedB = store.getTask(b.id)!;
+        expect(updatedB.status).to.equal('ready'); // satisfied: any terminal state
+      });
+
+      it('releases a whileBlocked dependent when its dependency is paused, via parkQueueEntry', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entry = store.enqueueTask(a.id);
+        store.dequeueNext(); // a -> running, entry -> running
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { whileBlocked: true });
+
+        store.parkQueueEntry(entry.id);
+
+        expect(store.getTask(a.id)!.status).to.equal('blocked');
+        const updatedB = store.getTask(b.id)!;
+        expect(updatedB.status).to.equal('ready');
+      });
+
+      it('leaves an already-released (non-pending) dependent untouched', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entryA = store.enqueueTask(a.id);
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        store.patchTask(b.id, { status: 'running' }); // not 'pending' anymore
+        store.addTaskDependency(b.id, a.id);
+
+        store.completeQueueEntry(entryA.id, 'done');
+
+        expect(store.getTask(b.id)!.status).to.equal('running'); // untouched
+      });
+    });
+
+    describe('deletion cascade', () => {
+      it('deleteTask removes dependency rows on either side', () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id);
+
+        store.deleteTask(a.id);
+
+        expect(store.listDependents(a.id)).to.deep.equal([]);
+        expect(store.listTaskDependencies(b.id)).to.deep.equal([]);
+      });
+
+      it('deleteWorkspace removes dependency rows between tasks in that workspace', () => {
+        const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+        const a = store.createTask({ title: 'a', workspaceId: ws.id });
+        const b = store.createTask({ title: 'b', workspaceId: ws.id });
+        store.addTaskDependency(b.id, a.id);
+
+        store.deleteWorkspace(ws.id);
+
+        expect(store.listDependents(a.id)).to.deep.equal([]);
+      });
+    });
   });
 });
