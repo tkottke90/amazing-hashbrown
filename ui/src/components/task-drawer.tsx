@@ -67,9 +67,21 @@ interface TaskDrawerProps {
   trigger: JSX.Element;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
+  // Called (after closing the drawer) when the user clicks the
+  // waiting_on_user banner's "Go to chat" button — the caller decides what
+  // "go to chat" means (e.g. switching the workspace page's active tab). A
+  // brand-new task (task === null) is never waiting_on_user, so callers that
+  // only ever render TaskDrawer for "Add task" can omit this.
+  onGoToChat?: () => void;
 }
 
-export function TaskDrawer({ task, trigger, defaultWorkspaceId, onSaved }: TaskDrawerProps) {
+export function TaskDrawer({
+  task,
+  trigger,
+  defaultWorkspaceId,
+  onSaved,
+  onGoToChat,
+}: TaskDrawerProps) {
   const isNew = !task;
   return (
     <Drawer
@@ -77,7 +89,12 @@ export function TaskDrawer({ task, trigger, defaultWorkspaceId, onSaved }: TaskD
       title={isNew ? 'New task' : 'Task details'}
       className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
     >
-      <TaskForm task={task} defaultWorkspaceId={defaultWorkspaceId} onSaved={onSaved} />
+      <TaskForm
+        task={task}
+        defaultWorkspaceId={defaultWorkspaceId}
+        onSaved={onSaved}
+        onGoToChat={onGoToChat}
+      />
     </Drawer>
   );
 }
@@ -86,9 +103,10 @@ interface TaskFormProps {
   task?: Task | null;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
+  onGoToChat?: () => void;
 }
 
-function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
+function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormProps) {
   const { close } = useDialog();
 
   const isNew = !task;
@@ -634,6 +652,25 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               )}
             </div>
           )}
+
+        {!isNew && task && liveStatus.value === 'waiting_on_user' && (
+          <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-muted-foreground flex-1">
+              This task is waiting on your input — go answer it in chat
+            </span>
+            <Button
+              size="xs"
+              variant="outline"
+              type="button"
+              onClick={() => {
+                close();
+                onGoToChat?.();
+              }}
+            >
+              Go to chat
+            </Button>
+          </div>
+        )}
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Assigned to</label>

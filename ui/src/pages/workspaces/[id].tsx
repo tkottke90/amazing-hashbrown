@@ -59,11 +59,13 @@ function KanbanColumn({
   taskList,
   workspaceId,
   onSaved,
+  onGoToChat,
 }: {
   status: TaskStatus;
   taskList: Task[];
   workspaceId: string;
   onSaved: () => void;
+  onGoToChat: () => void;
 }) {
   const isDone = status === 'done';
   const isReady = status === 'ready';
@@ -104,6 +106,7 @@ function KanbanColumn({
           task={task}
           defaultWorkspaceId={workspaceId}
           onSaved={onSaved}
+          onGoToChat={onGoToChat}
           trigger={<TaskCard task={task} />}
         />
       ))}
@@ -229,7 +232,15 @@ function OverviewTab({
   );
 }
 
-function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () => void }) {
+function TasksTab({
+  workspaceId,
+  onSaved,
+  onGoToChat,
+}: {
+  workspaceId: string;
+  onSaved: () => void;
+  onGoToChat: () => void;
+}) {
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
   );
@@ -267,6 +278,7 @@ function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () =
             taskList={status === 'failed' ? failedAndCancelled.value : grouped.value[status]}
             workspaceId={workspaceId}
             onSaved={onSaved}
+            onGoToChat={onGoToChat}
           />
         ))}
       </div>
@@ -457,6 +469,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               workspaceId={id}
               onSaved={() => {
                 if (id) void refreshTasks({ workspace_id: id });
+              }}
+              onGoToChat={() => {
+                tab.value = 'chat';
               }}
             />
           )}

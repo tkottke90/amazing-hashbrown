@@ -235,3 +235,79 @@ describe('use-thread — wiki_updated handling', () => {
     });
   });
 });
+
+describe('use-thread — hydrate pendingHitlId', () => {
+  // Regression test: a task-originated pause writes a task_run_marker
+  // ("waiting on you") *after* its hitl_prompt row, so the last message in
+  // the thread is the marker, not the prompt. hydrate() must scan backward
+  // for the last pending hitl_prompt rather than only checking whether the
+  // final message is one, or the sticky answer bar never appears on reload.
+  it('resolves pendingHitlId to a pending hitl_prompt even when a task_run_marker was appended after it', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            kind: 'user',
+            id: 'u1',
+            content: 'do the thing',
+            sentAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            kind: 'hitl_prompt',
+            id: 'h1',
+            promptId: 'prompt-1',
+            question: 'Approve this command?',
+            promptKind: 'shell_approval',
+            status: 'pending',
+          },
+          {
+            kind: 'task_run_marker',
+            id: 'm1',
+            taskId: 'task-1',
+            taskTitle: 'Do the thing',
+            phase: 'end',
+            outcome: 'waiting_on_user',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t10');
+    await thread.hydrate();
+
+    expect(thread.pendingHitlId.value).toBe('prompt-1');
+  });
+
+  it('leaves pendingHitlId null once the pending prompt has already been answered', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            kind: 'hitl_prompt',
+            id: 'h1',
+            promptId: 'prompt-1',
+            question: 'Approve this command?',
+            promptKind: 'shell_approval',
+            status: 'answered',
+            answer: 'yes',
+          },
+          {
+            kind: 'task_run_marker',
+            id: 'm1',
+            taskId: 'task-1',
+            taskTitle: 'Do the thing',
+            phase: 'end',
+            outcome: 'done',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t11');
+    await thread.hydrate();
+
+    expect(thread.pendingHitlId.value).toBeNull();
+  });
+});

@@ -297,9 +297,22 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       batch(() => {
         messages.value = hydrated;
         summaryPath.value = data.summaryPath ?? null;
-        const last = hydrated[hydrated.length - 1];
+        // Scan backward for the last *pending* hitl_prompt rather than only
+        // checking the final message — a task-originated pause appends a
+        // task_run_marker ("waiting on you") after its hitl_prompt row, so
+        // assuming the prompt is always the thread's last message misses it
+        // entirely on reload (it still renders live over SSE, where
+        // pendingHitlId is set directly by the hitl_prompt event handler).
+        let pendingHitl: (typeof hydrated)[number] | undefined;
+        for (let i = hydrated.length - 1; i >= 0; i--) {
+          const m = hydrated[i];
+          if (m.kind === 'hitl_prompt' && m.status === 'pending') {
+            pendingHitl = m;
+            break;
+          }
+        }
         pendingHitlId.value =
-          last && last.kind === 'hitl_prompt' && last.status === 'pending' ? last.promptId : null;
+          pendingHitl && pendingHitl.kind === 'hitl_prompt' ? pendingHitl.promptId : null;
       });
     } catch {
       // leave messages empty — the thread may just not have loaded yet

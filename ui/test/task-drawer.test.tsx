@@ -183,3 +183,44 @@ describe('TaskDrawer — running task controls', () => {
     expect(getPanel()!.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
   });
 });
+
+describe('TaskDrawer — waiting_on_user banner', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders the waiting-on-user banner instead of the ready/running/blocked action panel', () => {
+    renderDrawer({ ...baseTask, status: 'waiting_on_user' });
+
+    expect(getPanel()).toBeNull();
+    expect(
+      screen.getByText('This task is waiting on your input — go answer it in chat'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Go to chat' })).toBeInTheDocument();
+  });
+
+  it('calls onGoToChat when the banner button is clicked', () => {
+    const onGoToChat = jest.fn();
+    render(
+      <TaskDrawer
+        task={{ ...baseTask, status: 'waiting_on_user' }}
+        trigger={<button>Open</button>}
+        onGoToChat={onGoToChat}
+      />,
+    );
+    fireEvent.click(screen.getByText('Open'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to chat' }));
+
+    expect(onGoToChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('still renders the existing action panel, not the banner, for ready/running/blocked tasks (regression guard)', () => {
+    renderDrawer({ ...baseTask, status: 'ready' });
+
+    expect(getPanel()).not.toBeNull();
+    expect(
+      screen.queryByText('This task is waiting on your input — go answer it in chat'),
+    ).not.toBeInTheDocument();
+  });
+});
