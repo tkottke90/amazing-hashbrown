@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ExecFileFn } from './workspace-provision.js';
+import { resolveFilePathUnderWorkspace } from './workspace-location.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -353,4 +354,48 @@ export async function readFileGuarded(absPath: string): Promise<ReadGuardResult>
 // their actual UTF-8 byte size, not their UTF-16 code-unit count.
 export function isContentTooLarge(content: string): boolean {
   return Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES;
+}
+
+// ---------------------------------------------------------------------------
+// Upload / create-entry support
+// ---------------------------------------------------------------------------
+
+// A single path segment — deliberately more permissive than the wiki
+// uploader's slug regex (WIKI_ID_RE in wiki-upload.route.ts), since ordinary
+// filenames like "report v2.docx" must be allowed. Only rejects what would
+// actually be unsafe or meaningless as a leaf name.
+export function isValidLeafName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === '.' || trimmed === '..') return false;
+  return !/[/\\\0]/.test(trimmed);
+}
+
+// dir === '' or undefined resolves to the workspace root itself, since
+// resolveFilePathUnderWorkspace (workspace-location.ts) requires a non-empty
+// relativePath. Otherwise delegates to it for containment, then stats the
+// result to confirm it's actually a directory — a distinct error from
+// "missing" so the route can map each to the right status code.
+export async function resolveTargetDir(
+  workspaceLocation: string,
+  dir: string | undefined,
+): Promise<string> {
+  const target = !dir
+    ? path.resolve(workspaceLocation)
+    : resolveFilePathUnderWorkspace(workspaceLocation, dir);
+  const stats = await stat(target); // ENOENT propagates — caller maps it to 404
+  if (!stats.isDirectory()) {
+    throw new Error(`"${dir}" is not a directory`);
+  }
+  return target;
+}
+
+// Both throw on failure (including EEXIST for a name collision) — the caller
+// maps that to the appropriate HTTP status.
+export async function createDirectoryEntry(absDirPath: string, name: string): Promise<void> {
+  await mkdir(path.join(absDirPath, name), { recursive: false });
+}
+
+export async function createFileEntry(absDirPath: string, name: string): Promise<void> {
+  const handle = await open(path.join(absDirPath, name), 'wx');
+  await handle.close();
 }

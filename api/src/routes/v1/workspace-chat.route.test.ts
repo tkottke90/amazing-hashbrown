@@ -1,33 +1,123 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { startTestServer } from '@/tests/utilities/http-test-server.js';
+import { workspaceChatRouter } from './workspace-chat.route.js';
+import {
+  bootWorkspaceStore,
+  getWorkspaceStore,
+  WorkspaceStore,
+  type Workspace,
+} from '../../services/workspace-store.js';
 import { bootThreadStore, getThreadStore } from '../../services/thread-store.js';
-import { bootWorkspaceStore, getWorkspaceStore } from '../../services/workspace-store.js';
 import { bootTaskScheduler } from '../../services/task-scheduler.js';
 import { recordHitlPrompt } from '../../agents/thread-message-writer.js';
-import { createApp } from '../../app.js';
+import { setActiveSseWriter, clearActiveSseWriter } from '../../agents/active-sse-writer.js';
+
+// Covers the new POST /:threadId/stop route — see
+// docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md. The
+// route delegates to active-sse-writer.ts's stopTurnResponse() (already
+// exhaustively unit-tested in active-sse-writer.test.ts) plus this file's
+// own resolveWorkspaceForThread() gate — this proves both are wired up
+// correctly on the actual registered Express route.
+describe('routes/v1/workspace-chat.route — POST /:threadId/stop', () => {
+  // Mounted with mergeParams under /:id/chat in the real app (see
+  // workspaces.route.ts) — replicate that same nesting here so :id reaches
+  // resolveWorkspaceForThread the same way it does in production.
+  const BASE_PATH = '/api/v1/workspaces/:id/chat';
+
+  let baseUrl: string;
+  let close: () => Promise<void>;
+  let dir: string;
+  let workspaceStore: WorkspaceStore;
+  let workspace: Workspace;
+  let threadId: string;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(workspaceChatRouter, BASE_PATH));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'workspace-chat-route-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    workspaceStore = new WorkspaceStore(db);
+    bootWorkspaceStore(db);
+
+    threadId = 'thread-1';
+    workspace = workspaceStore.createWorkspace({ name: 'W', location: '/tmp/w' });
+    workspace = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+  });
+
+  afterEach(() => {
+    clearActiveSseWriter(threadId);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function stopUrl(workspaceId: string, tid: string): string {
+    return baseUrl.replace(':id', workspaceId) + `/${tid}/stop`;
+  }
+
+  it('returns 404 for an unresolvable workspace before ever touching the turn registry', async () => {
+    const res = await fetch(stopUrl('no-such-workspace', threadId), { method: 'POST' });
+    expect(res.status).to.equal(404);
+  });
+
+  it('returns 409 when nothing is active for the thread', async () => {
+    const res = await fetch(stopUrl(workspace.id, threadId), { method: 'POST' });
+    expect(res.status).to.equal(409);
+    expect(await res.json()).to.deep.equal({ error: 'No active turn for this thread' });
+  });
+
+  it('returns 409 for a task-owned thread (writer set, no controller)', async () => {
+    setActiveSseWriter(threadId, () => {});
+    const res = await fetch(stopUrl(workspace.id, threadId), { method: 'POST' });
+    expect(res.status).to.equal(409);
+  });
+
+  it('returns 202 and aborts the controller for a chat-owned thread', async () => {
+    const controller = new AbortController();
+    setActiveSseWriter(threadId, () => {}, controller);
+
+    const res = await fetch(stopUrl(workspace.id, threadId), { method: 'POST' });
+
+    expect(res.status).to.equal(202);
+    expect(await res.json()).to.deep.equal({ ok: true });
+    expect(controller.signal.aborted).to.equal(true);
+  });
+});
 
 // Orchestration test for the taskId-carrying branch of POST /:threadId/hitl
 // (workspace-chat.route.ts:122-199) — previously had zero test coverage.
-// Exercises the real request -> middleware -> handler -> response pipeline
-// via a real Express app on an ephemeral loopback port (this repo has no
-// supertest dependency installed, so a real listener + the built-in fetch()
-// stands in for it). Deliberately scoped to the taskId branch only: the
-// no-taskId fallback (resumeWorkspaceChatToSse) needs a real/mocked LLM
-// provider to exercise safely over a real HTTP round-trip, which is out of
-// scope here and already covered at the unit level by stream-handler.test.ts
-// and workspace-chat-stream-handler.test.ts.
-describe('routes/v1/workspace-chat.route POST /:threadId/hitl (taskId branch)', () => {
-  let dir: string;
-  let server: Server;
-  let baseUrl: string;
+// Mounted the same way as the POST /:threadId/stop suite above (see
+// http-test-server.ts) — a real registered Express route, not a mocked
+// req/res. Deliberately scoped to the taskId branch only: the no-taskId
+// fallback (resumeWorkspaceChatToSse) needs a real/mocked LLM provider to
+// exercise safely over a real HTTP round-trip, which is out of scope here
+// and already covered at the unit level by stream-handler.test.ts and
+// workspace-chat-stream-handler.test.ts.
+describe('routes/v1/workspace-chat.route — POST /:threadId/hitl (taskId branch)', () => {
+  const BASE_PATH = '/api/v1/workspaces/:id/chat';
 
-  beforeEach(async () => {
+  let baseUrl: string;
+  let close: () => Promise<void>;
+  let dir: string;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(workspaceChatRouter, BASE_PATH));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'workspace-chat-hitl-route-test-'));
     const db = openDatabase(join(dir, 'test.db'));
     bootWorkspaceStore(db);
@@ -36,19 +126,15 @@ describe('routes/v1/workspace-chat.route POST /:threadId/hitl (taskId branch)', 
     // what proves the task was actually re-enqueued rather than just
     // patched in place.
     bootTaskScheduler();
-
-    const app = createApp();
-    await new Promise<void>((resolve) => {
-      server = app.listen(0, () => resolve());
-    });
-    const { port } = server.address() as AddressInfo;
-    baseUrl = `http://127.0.0.1:${port}`;
   });
 
-  afterEach(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+  afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   });
+
+  function hitlUrl(workspaceId: string, tid: string): string {
+    return baseUrl.replace(':id', workspaceId) + `/${tid}/hitl`;
+  }
 
   it('re-enqueues the task with the resume answer instead of resuming an interactive turn', async () => {
     const store = getWorkspaceStore();
@@ -74,7 +160,7 @@ describe('routes/v1/workspace-chat.route POST /:threadId/hitl (taskId branch)', 
       taskId: task.id,
     });
 
-    const res = await fetch(`${baseUrl}/api/v1/workspaces/${workspace.id}/chat/${threadId}/hitl`, {
+    const res = await fetch(hitlUrl(workspace.id, threadId), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ promptId, answer: 'approved' }),
@@ -113,7 +199,7 @@ describe('routes/v1/workspace-chat.route POST /:threadId/hitl (taskId branch)', 
     const threadId = 'thread-2';
     store.patchWorkspace(workspace.id, { threadId });
 
-    const res = await fetch(`${baseUrl}/api/v1/workspaces/${workspace.id}/chat/${threadId}/hitl`, {
+    const res = await fetch(hitlUrl(workspace.id, threadId), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
@@ -122,7 +208,7 @@ describe('routes/v1/workspace-chat.route POST /:threadId/hitl (taskId branch)', 
   });
 
   it('404s when the workspace does not exist', async () => {
-    const res = await fetch(`${baseUrl}/api/v1/workspaces/does-not-exist/chat/thread-x/hitl`, {
+    const res = await fetch(hitlUrl('does-not-exist', 'thread-x'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ promptId: 'p', answer: 'a' }),

@@ -10,6 +10,10 @@ export const ChatErrorCategorySchema = z.enum([
   'unavailable',
   'network',
   'unknown',
+  // Not a failure — the turn was explicitly stopped (Stop button, or a
+  // provider request timeout after a turn was abandoned). See
+  // docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
+  'cancelled',
 ]);
 export type ChatErrorCategory = z.infer<typeof ChatErrorCategorySchema>;
 

@@ -156,7 +156,10 @@ export const WorkspaceFileBrowser: TestSuite = {
         // page, same workspace, matching how a real user would keep working
         // in the tab they already have open.
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
-        await fileRow(page, 'src').click();
+        // Both the chevron and the folder name toggle expand/collapse —
+        // hovering the row is what reveals its action icons instead (see
+        // the upload/create steps at the end of this suite).
+        await fileRow(page, 'src').getByTestId('file-tree-chevron').click();
         await expect(fileRow(page, 'src/module.txt')).toBeVisible();
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
@@ -169,6 +172,14 @@ export const WorkspaceFileBrowser: TestSuite = {
         // Expansion is module-level state in the hook, not tied to the
         // FilesTab component's own mount lifecycle — it should still be
         // expanded without clicking "src" again.
+        await expect(fileRow(page, 'src/module.txt')).toBeVisible();
+
+        // Clicking the folder name itself (not just the chevron) toggles
+        // the same expand/collapse state.
+        await fileRow(page, 'src').click();
+        await expect(fileRow(page, 'src/module.txt')).not.toBeVisible();
+
+        await fileRow(page, 'src').click();
         await expect(fileRow(page, 'src/module.txt')).toBeVisible();
       },
     },
@@ -575,6 +586,177 @@ export const WorkspaceFileBrowser: TestSuite = {
 
         expect(await video.evaluate((el: HTMLMediaElement) => el.muted)).toBe(true);
         expect(await audio.evaluate((el: HTMLMediaElement) => el.muted)).toBe(true);
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Upload a file into the workspace root via the header upload icon',
+      expectedOutcome: 'The uploaded file appears in the tree at the root without a manual refresh',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-upload-root-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-upload-root-${Date.now()}`,
+          git: false,
+        });
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        // Clicking the real icon (rather than calling setInputFiles directly
+        // on the hidden input) is deliberate — it's what actually exercises
+        // the app setting its upload target to root before the native file
+        // input opens.
+        const chooserPromise = page.waitForEvent('filechooser');
+        await page.getByTestId('file-tree-header').getByTestId('folder-action-upload').click();
+        const chooser = await chooserPromise;
+        await chooser.setFiles({
+          name: 'uploaded.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('hello from e2e\n'),
+        });
+
+        await expect(fileRow(page, 'uploaded.txt')).toBeVisible();
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Hover a nested folder, then upload a file into it',
+      expectedOutcome: 'The uploaded file appears nested under the hovered folder, not at the root',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-upload-nested-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-upload-nested-${Date.now()}`,
+          git: false,
+        });
+        await writeFileDirect(ws.location, 'sub/existing.txt', 'already here\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        // Hovering a folder row is what reveals its own action icons.
+        await fileRow(page, 'sub').hover();
+        const chooserPromise = page.waitForEvent('filechooser');
+        await fileRow(page, 'sub').getByTestId('folder-action-upload').click();
+        const chooser = await chooserPromise;
+        await chooser.setFiles({
+          name: 'nested.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('nested content\n'),
+        });
+
+        await fileRow(page, 'sub').getByTestId('file-tree-chevron').click();
+        await expect(fileRow(page, 'sub/nested.txt')).toBeVisible();
+        await expect(fileRow(page, 'nested.txt')).not.toBeVisible(); // not at root
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Upload a file whose name collides with an existing one',
+      expectedOutcome:
+        'The upload is rejected with a visible inline error naming the conflicting file, and the existing file is left untouched',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-upload-collision-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-upload-collision-${Date.now()}`,
+          git: false,
+        });
+        await writeFileDirect(ws.location, 'dup.txt', 'original content\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        const chooserPromise = page.waitForEvent('filechooser');
+        await page.getByTestId('file-tree-header').getByTestId('folder-action-upload').click();
+        const chooser = await chooserPromise;
+        await chooser.setFiles({
+          name: 'dup.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('clobbering content\n'),
+        });
+
+        await expect(page.getByTestId('upload-error')).toBeVisible();
+        await expect(page.getByTestId('upload-error')).toContainText('dup.txt');
+        await expect(fileRow(page, 'dup.txt')).toHaveCount(1);
+        expect(await readFile(`${ws.location}/dup.txt`, 'utf8')).toBe('original content\n');
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Create a new file via the "New file" modal',
+      expectedOutcome: 'The new file appears in the tree and opens as an empty tab',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-new-file-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-new-file-${Date.now()}`,
+          git: false,
+        });
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        await page.getByTestId('file-tree-header').getByTestId('folder-action-new-file').click();
+        // The header always renders both the New File and New Folder forms,
+        // so a bare getByRole('button', { name: 'Create' }) would match two
+        // elements — scope to the <form> that contains this modal's own
+        // input (CreateEntryForm wraps each modal's body in one <form>).
+        const newFileForm = page.locator('form', {
+          has: page.getByPlaceholder('File name (e.g. notes.txt)'),
+        });
+        await newFileForm.getByPlaceholder('File name (e.g. notes.txt)').fill('created.txt');
+        await newFileForm.getByRole('button', { name: 'Create' }).click();
+
+        await expect(fileRow(page, 'created.txt')).toBeVisible();
+        await expect(fileTab(page, 'created.txt')).toBeVisible();
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Create a new folder inside a folder revealed by hover via the "New folder" modal',
+      expectedOutcome:
+        'The new folder appears nested under the hovered parent, and the parent is expanded to show it without needing a manual expand click',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(page, {
+          name: `fb-new-folder-${Date.now()}`,
+          locationRoot: 'temporary',
+          directoryName: `fb-new-folder-${Date.now()}`,
+          git: false,
+        });
+        await writeFileDirect(ws.location, 'sub/existing.txt', 'already here\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        // Hovering "sub" (collapsed by default) reveals its own action
+        // icons; creating a folder inside it should expand "sub" itself
+        // (the parent of the new folder) — not the new folder, which is
+        // empty and starts collapsed like any other fresh folder.
+        await fileRow(page, 'sub').hover();
+        await fileRow(page, 'sub').getByTestId('folder-action-new-folder').click();
+        // Every directory row's New File/New Folder forms are always
+        // mounted in the DOM (only hidden via CSS opacity until hover —
+        // see file-tree.tsx), so a page-wide form/placeholder filter would
+        // match one per row plus the header. Scope to the "sub" row
+        // itself, which contains only its own modal's form.
+        const newFolderForm = fileRow(page, 'sub').locator('form', {
+          has: page.getByPlaceholder('Folder name'),
+        });
+        await newFolderForm.getByPlaceholder('Folder name').fill('child-folder');
+        await newFolderForm.getByRole('button', { name: 'Create' }).click();
+
+        await expect(fileRow(page, 'sub').getByTestId('file-tree-chevron')).toHaveAttribute(
+          'aria-label',
+          'Collapse folder',
+        );
+        await expect(fileRow(page, 'sub/child-folder')).toBeVisible();
 
         await page.request.delete(`/api/v1/workspaces/${ws.id}`);
       },

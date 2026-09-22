@@ -6,7 +6,7 @@ const suite: TestSuite = {
   id: 15,
   name: 'Thread Report',
   description:
-    'Verifies the Generate Thread Report button opens an HTML report in a new browser tab, for both the thread sidebar and the wiki chat header',
+    'Verifies the Generate Thread Report button opens an HTML report in a new browser tab, for the thread sidebar, the wiki chat header, and the workspace chat action bar',
   purpose:
     'Ensure the report button wires up correctly to the API endpoint and that the response is displayed in a new tab without requiring a live database',
   tags: ['@user-workflow'],
@@ -20,6 +20,13 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Click the Generate thread report icon button in the wiki chat header',
+      expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action:
+        'Open a workspace, switch to its Chat tab, and click the Generate thread report icon button',
       expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
       test: () => {},
     },
@@ -113,6 +120,21 @@ async function mockReportEndpoint(
   });
 }
 
+// Workspace Chat generates its thread ID client-side (randomUUID()) after
+// mount, so unlike the other two cases the ID isn't known up front — match
+// any thread ID instead of a fixed one.
+async function mockReportEndpointForAnyThread(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  await page.context().route('**/api/v1/threads/*/report', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: REPORT_HTML,
+    });
+  });
+}
+
 test.describe(
   '@user-workflow',
   {
@@ -155,6 +177,36 @@ test.describe(
 
       await reportPage.waitForLoadState();
       await expect(reportPage.locator('h1')).toHaveText('Thread Report');
+    });
+
+    test('workspace chat: generate report button opens HTML in a new tab', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'e2e-thread-report-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-thread-report-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      await mockReportEndpointForAnyThread(page);
+      await page.goto(`/workspaces/${ws.id}`);
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByRole('button', { name: 'Chat' }).click();
+
+      const newPagePromise = page.context().waitForEvent('page');
+      await page.getByRole('button', { name: 'Generate thread report' }).click();
+      const reportPage = await newPagePromise;
+
+      await reportPage.waitForLoadState();
+      await expect(reportPage.locator('h1')).toHaveText('Thread Report');
+
+      await request.delete(`/api/v1/workspaces/${ws.id}`);
     });
   },
 );

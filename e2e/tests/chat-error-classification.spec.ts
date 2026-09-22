@@ -104,6 +104,30 @@ test.describe(
       ).toBeVisible({ timeout: 15_000 });
     });
 
+    test('a cancelled-category turn (explicit Stop) shows neutral "stopped" copy, not an error message', async ({
+      page,
+    }, testInfo) => {
+      // See docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md
+      // — issue #196. Mocks the same stream_error/errorCategory shape the
+      // server now emits when a turn is deliberately Stopped, since exercising
+      // a real Stop-mid-generation click requires a live LLM (see the
+      // separate @llm spec for that full flow).
+      await mockChatTurnError(page, 'cancelled', 'Stopped.');
+      await page.goto('/');
+
+      await page.locator('[data-slot="textarea"]').fill('Hello');
+      await pauseBeforeAction(page, testInfo);
+      await page.locator('button[aria-label="Send message"]').click();
+
+      const assistantMsg = page.locator('[data-testid="assistant-message"]').last();
+      await expect(assistantMsg.getByText('Stopped before finishing.')).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(
+        assistantMsg.getByText('Something went wrong. Please try again.'),
+      ).not.toBeVisible();
+    });
+
     test('the raw provider message is available behind a "Show details" toggle', async ({
       page,
     }, testInfo) => {

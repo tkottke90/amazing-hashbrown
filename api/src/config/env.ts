@@ -28,6 +28,12 @@ export const ProviderSchema = z.object({
   // providers.route.ts). Consumers (provider-queue.ts) fall back to 1
   // themselves, same pattern as defaultModel/apiKey above.
   maxConcurrency: z.number().int().optional(),
+  // Bounds a single outbound LLM HTTP call (not a whole multi-tool-call
+  // agent turn, which legitimately makes many bounded calls in sequence) —
+  // the safety net for an interactive chat turn nobody ever explicitly
+  // Stops. See docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md §6.
+  // Optional for the same reason maxConcurrency is above.
+  timeoutMs: z.number().int().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;

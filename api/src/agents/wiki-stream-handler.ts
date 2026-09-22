@@ -27,6 +27,16 @@ import {
   recordRetryAttempt,
 } from './thread-message-writer.js';
 
+// Test-only seam — mirrors stream-handler.ts's ChatStreamDeps and
+// workspace-chat-stream-handler.ts's WorkspaceChatStreamDeps:
+// getWikiIngestionAgent() caches a real agent built against a real
+// provider, which a unit test driving a fake aborting event stream cannot
+// exercise directly. Defaults to the real implementation everywhere except
+// tests.
+export interface WikiChatStreamDeps {
+  getWikiIngestionAgent?: typeof getWikiIngestionAgent;
+}
+
 export async function streamWikiChatToSse(
   res: Response,
   threadId: string,
@@ -34,8 +44,10 @@ export async function streamWikiChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  deps: WikiChatStreamDeps = {},
 ): Promise<void> {
-  const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
+  const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = model ?? providerConfig.defaultModel!;
@@ -74,7 +86,8 @@ export async function streamWikiChatToSse(
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(
@@ -88,6 +101,7 @@ export async function streamWikiChatToSse(
           model,
         },
         recursionLimit: env.agent?.recursionLimit ?? 100,
+        signal: controller.signal,
       },
     );
 
@@ -144,6 +158,20 @@ export async function streamWikiChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -183,8 +211,10 @@ export async function resumeWikiChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  deps: WikiChatStreamDeps = {},
 ): Promise<void> {
-  const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
+  const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = model ?? providerConfig.defaultModel!;
@@ -222,7 +252,8 @@ export async function resumeWikiChatToSse(
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(new Command({ resume: answer }), {
@@ -234,6 +265,7 @@ export async function resumeWikiChatToSse(
         model,
       },
       recursionLimit: env.agent?.recursionLimit ?? 100,
+      signal: controller.signal,
     });
 
     const {
@@ -289,6 +321,20 @@ export async function resumeWikiChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
@@ -326,8 +372,10 @@ export async function retryWikiChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  deps: WikiChatStreamDeps = {},
 ): Promise<void> {
-  const { agent, systemPrompt } = await getWikiIngestionAgent(provider, model);
+  const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
+  const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
   const resolvedProvider = providerConfig.name;
   const resolvedModel = model ?? providerConfig.defaultModel!;
@@ -369,7 +417,8 @@ export async function retryWikiChatToSse(
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(null, {
@@ -381,6 +430,7 @@ export async function retryWikiChatToSse(
         model,
       },
       recursionLimit: env.agent?.recursionLimit ?? 100,
+      signal: controller.signal,
     });
 
     const {
@@ -436,6 +486,20 @@ export async function retryWikiChatToSse(
       content: partialContent,
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
+    if (controller.signal.aborted) {
+      turnError = 'Stopped.';
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+    }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';

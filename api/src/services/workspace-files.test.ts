@@ -1,4 +1,12 @@
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -14,7 +22,23 @@ import {
   isContentTooLarge,
   classifyFile,
   getContentType,
+  isValidLeafName,
+  resolveTargetDir,
+  createDirectoryEntry,
+  createFileEntry,
 } from './workspace-files.js';
+
+// This repo has no chai-as-promised — async rejection assertions use a
+// plain try/catch (same idiom as recursion-guard.middleware.test.ts),
+// capturing the error itself so callers can assert on its shape/message.
+async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (err) {
+    return err;
+  }
+  throw new Error('Expected promise to reject, but it resolved');
+}
 
 function makeExecStub(impl?: (...args: Parameters<ExecFileFn>) => unknown) {
   const calls: unknown[][] = [];
@@ -369,6 +393,103 @@ describe('services/workspace-files', () => {
       const content = '€'.repeat(charsNeeded);
       expect(content.length).to.be.lessThan(2 * 1024 * 1024 + 1);
       expect(isContentTooLarge(content)).to.equal(true);
+    });
+  });
+
+  describe('isValidLeafName()', () => {
+    it('accepts ordinary filenames, including spaces and multiple dots', () => {
+      expect(isValidLeafName('report.txt')).to.equal(true);
+      expect(isValidLeafName('report v2.docx')).to.equal(true);
+      expect(isValidLeafName('archive.tar.gz')).to.equal(true);
+    });
+
+    it('rejects empty or whitespace-only names', () => {
+      expect(isValidLeafName('')).to.equal(false);
+      expect(isValidLeafName('   ')).to.equal(false);
+    });
+
+    it('rejects "." and ".."', () => {
+      expect(isValidLeafName('.')).to.equal(false);
+      expect(isValidLeafName('..')).to.equal(false);
+    });
+
+    it('rejects names containing a path separator or null byte', () => {
+      expect(isValidLeafName('a/b')).to.equal(false);
+      expect(isValidLeafName('a\\b')).to.equal(false);
+      expect(isValidLeafName('a\0b')).to.equal(false);
+    });
+  });
+
+  describe('resolveTargetDir()', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-files-target-dir-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('resolves to the workspace root when dir is empty/undefined', async () => {
+      expect(await resolveTargetDir(dir, '')).to.equal(dir);
+      expect(await resolveTargetDir(dir, undefined)).to.equal(dir);
+    });
+
+    it('resolves a nested existing directory', async () => {
+      mkdirSync(join(dir, 'sub'));
+      expect(await resolveTargetDir(dir, 'sub')).to.equal(join(dir, 'sub'));
+    });
+
+    it('rejects (ENOENT) a directory that does not exist', async () => {
+      const err = (await captureRejection(
+        resolveTargetDir(dir, 'missing'),
+      )) as NodeJS.ErrnoException;
+      expect(err.code).to.equal('ENOENT');
+    });
+
+    it('rejects when dir resolves to a file, not a directory', async () => {
+      writeFileSync(join(dir, 'file.txt'), 'x');
+      const err = (await captureRejection(resolveTargetDir(dir, 'file.txt'))) as Error;
+      expect(err.message).to.equal('"file.txt" is not a directory');
+    });
+  });
+
+  describe('createDirectoryEntry() / createFileEntry()', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-files-create-entry-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('creates a new empty directory', async () => {
+      await createDirectoryEntry(dir, 'new-folder');
+      expect(statSync(join(dir, 'new-folder')).isDirectory()).to.equal(true);
+    });
+
+    it('rejects (EEXIST) creating a directory that already exists', async () => {
+      mkdirSync(join(dir, 'existing'));
+      const err = (await captureRejection(
+        createDirectoryEntry(dir, 'existing'),
+      )) as NodeJS.ErrnoException;
+      expect(err.code).to.equal('EEXIST');
+    });
+
+    it('creates a new empty file', async () => {
+      await createFileEntry(dir, 'new-file.txt');
+      expect(readFileSync(join(dir, 'new-file.txt'), 'utf8')).to.equal('');
+    });
+
+    it('rejects (EEXIST) creating a file that already exists', async () => {
+      writeFileSync(join(dir, 'existing.txt'), 'x');
+      const err = (await captureRejection(
+        createFileEntry(dir, 'existing.txt'),
+      )) as NodeJS.ErrnoException;
+      expect(err.code).to.equal('EEXIST');
     });
   });
 });
