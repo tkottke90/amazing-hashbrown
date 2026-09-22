@@ -48,6 +48,7 @@ import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
+import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
 import type { Task } from '../services/workspace-store.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
@@ -261,7 +262,10 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 // spawn_sub_agent and ask_user are hard-excluded there regardless of config,
 // which is what structurally blocks a sub-agent from nesting another
 // spawn_sub_agent call.
-const STATIC_CHAT_TOOLS = [
+// Exported for direct testing (chat-agent.test.ts) — lets a test assert
+// 'create_tasks' is structurally absent from the plain-chat tool list
+// without having to construct a full agent (which needs a real provider).
+export const STATIC_CHAT_TOOLS = [
   askUserTool,
   uploadImageTool,
   wikiSearchTool,
@@ -288,6 +292,20 @@ const STATIC_CHAT_TOOLS = [
 // factories at module load time would hit a circular-import TDZ error.
 function buildGatedTools() {
   return [makeCreateWorkspaceTool(), makeCreateProjectTool()];
+}
+
+// Workspace/task-scoped-only tools — bound wherever workspace or task
+// context exists (buildWorkspaceChatAgent, buildTaskAgent) but never in
+// buildChatAgent (plain chat has no workspaceId to create tasks against)
+// and never in buildSubAgentAgent's candidatePool (a bounded, read-only
+// delegation unit has no business queuing further autonomous work — same
+// reasoning as ask_user/spawn_sub_agent's hard exclusion there, enforced
+// here by omission rather than an explicit denylist, since this pool never
+// includes it as a candidate in the first place). Built fresh per agent
+// construction, not a module-scope constant, for the same reason
+// buildGatedTools() is.
+export function buildWorkspaceScopedTools() {
+  return [makeCreateTasksTool()];
 }
 
 // The four write-capable wiki tools are built fresh per agent construction
@@ -434,6 +452,7 @@ async function buildWorkspaceChatAgent(
     tools: [
       makeShellExecTool(workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),
       ...buildWikiWriteTools(allowedWikiId),
       ...mcpTools,
@@ -574,6 +593,7 @@ export async function buildTaskAgent(
     tools: [
       makeShellExecTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),
       ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
       makeCompleteTaskTool(task.id),

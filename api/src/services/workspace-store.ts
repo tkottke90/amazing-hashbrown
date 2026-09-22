@@ -1157,6 +1157,25 @@ export class WorkspaceStore extends BaseStore {
     })();
   }
 
+  // Creates a batch of ordinary (origin='user') task rows in one
+  // transaction — all rows land or none do. Every row is forced to
+  // status='ready'/assigned_to='agent' and enqueued immediately, mirroring
+  // createSubAgentTask()'s create->patch->enqueue shape rather than trusting
+  // callers to pass the right status/assignedTo combination on NewTaskInput
+  // (which has no status field at all — createTask() alone can only ever
+  // insert 'pending'). Used by the create_tasks chat tool to turn an
+  // approved plan into queued, autonomously-executing work in one call.
+  createTasks(inputs: NewTaskInput[]): Task[] {
+    return this.db.transaction(() => {
+      return inputs.map((input) => {
+        const task = this.createTask(input);
+        this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+        this.enqueueTask(task.id);
+        return this.getTask(task.id)!;
+      });
+    })();
+  }
+
   // All origin='agent' rows sharing dispatchGroupId whose task_queue entry
   // hasn't reached a terminal state yet — used to compute remainingCount for
   // a completion-notification turn (see task-execution.ts's

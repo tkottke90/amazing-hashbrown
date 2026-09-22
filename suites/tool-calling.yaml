@@ -50,6 +50,22 @@ scenarios:
       - path: keyword
         match: exists
 
+  - id: tools-005-create-tasks-after-plan-approved
+    name: Agent calls create_tasks once a plan is approved
+    purpose: >
+      Confirms the agent invokes create_tasks — not just describes the plan
+      — once the user has explicitly approved a multi-step breakdown of
+      work, producing a batch of task entries rather than one giant task.
+    type: tool-call
+    input: >
+      We just agreed on the plan: first add the migration, then write the
+      handler, then add tests. Let's get started — go ahead and set that up
+      as tasks.
+    tool: create_tasks
+    argChecks:
+      - path: tasks
+        match: exists
+
   - id: tools-002-comfyui-then-upload
     name: Agent uploads a previously-generated image via upload_image
     purpose: >

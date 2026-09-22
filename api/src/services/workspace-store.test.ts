@@ -584,4 +584,66 @@ describe('services/workspace-store', () => {
       expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.deep.equal([]);
     });
   });
+
+  describe('createTasks() (batch task creation for the create_tasks agent tool)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-create-tasks-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('creates every row ready/assigned to agent, each with its own queue entry', () => {
+      const tasks = store.createTasks([{ title: 'a' }, { title: 'b' }, { title: 'c' }]);
+
+      expect(tasks).to.have.length(3);
+      for (const task of tasks) {
+        expect(task.status).to.equal('ready');
+        expect(task.assignedTo).to.equal('agent');
+        const entry = store.listQueue().find((e) => e.taskId === task.id);
+        expect(entry).to.not.equal(undefined);
+        expect(entry!.status).to.equal('pending');
+      }
+    });
+
+    it('returns rows in input order, not insertion/alphabetical order', () => {
+      const tasks = store.createTasks([{ title: 'c' }, { title: 'a' }, { title: 'b' }]);
+      expect(tasks.map((t) => t.title)).to.deep.equal(['c', 'a', 'b']);
+    });
+
+    it('round-trips a plan checklist through JSON storage', () => {
+      const [task] = store.createTasks([
+        { title: 'with plan', plan: [{ step: 'write code', done: false }] },
+      ]);
+      expect(task.plan).to.deep.equal([{ step: 'write code', done: false }]);
+    });
+
+    it('stamps tracker fields onto the created row', () => {
+      const [task] = store.createTasks([
+        { title: 'linked', trackerType: 'github', trackerId: 'owner/repo#42' },
+      ]);
+      expect(task.trackerType).to.equal('github');
+      expect(task.trackerId).to.equal('owner/repo#42');
+    });
+
+    it('rolls back the entire batch if any row fails to insert (atomicity)', () => {
+      expect(() =>
+        store.createTasks([
+          { title: 'first' },
+          { title: 'second', workspaceId: 'does-not-exist' }, // FK violation
+          { title: 'third' },
+        ]),
+      ).to.throw();
+
+      expect(store.listTasks({})).to.deep.equal([]);
+      expect(store.listQueue()).to.deep.equal([]);
+    });
+  });
 });

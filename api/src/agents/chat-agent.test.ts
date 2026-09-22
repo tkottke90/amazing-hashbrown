@@ -11,6 +11,8 @@ import {
   buildTaskContextBlock,
   estimateToolsTokens,
   createContextWindowMiddleware,
+  STATIC_CHAT_TOOLS,
+  buildWorkspaceScopedTools,
 } from './chat-agent.js';
 import { logger } from '../config/logger.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
@@ -68,6 +70,16 @@ function makePoisonTool(name: string) {
 }
 
 describe('agents/chat-agent', () => {
+  describe('workspace-scoped tool visibility (create_tasks)', () => {
+    it('buildWorkspaceScopedTools() includes create_tasks', () => {
+      expect(buildWorkspaceScopedTools().some((t) => t.name === 'create_tasks')).to.equal(true);
+    });
+
+    it('STATIC_CHAT_TOOLS (bound in plain chat) never includes create_tasks', () => {
+      expect(STATIC_CHAT_TOOLS.map((t) => t.name)).to.not.include('create_tasks');
+    });
+  });
+
   describe('mcpToolToLangChain()', () => {
     it('preserves the tool name', () => {
       const lc = mcpToolToLangChain(makeMcpTool({ name: 'my_tool' }));

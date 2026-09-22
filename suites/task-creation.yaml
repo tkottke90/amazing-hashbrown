@@ -1,0 +1,48 @@
+suite:
+  id: task-creation
+  name: Agent Task Creation
+  purpose: >
+    Verifies the chat agent uses create_tasks correctly within workspace
+    chat: only after a plan is approved (not mid-brainstorm), and passing a
+    GitHub issue/PR URL already present in the conversation as trackerUrl
+    rather than re-typing it into a task description from memory. See
+    docs/superpowers/specs/2026-09-22-agent-task-creation-design.md.
+  passingThreshold: 1.0
+
+scenarios:
+  - id: tc-001-no-premature-creation
+    name: Agent does not call create_tasks mid-brainstorm before approval
+    purpose: >
+      Given the user is still exploring options and has not approved
+      anything, confirms the agent continues discussing rather than
+      prematurely creating tasks.
+    type: tool-sequence
+    priorTurns:
+      - tool: wiki_search
+        args: { query: 'auth refactor patterns' }
+        result: { text: 'No relevant wiki pages found.' }
+    input: >
+      I'm thinking about how to tackle the auth refactor — maybe split it
+      into a migration step and a handler step? What do you think?
+    tool: '!create_tasks'
+
+  - id: tc-002-tracker-url-passed-not-retyped
+    name: Agent passes a GitHub issue URL as trackerUrl instead of re-describing it
+    purpose: >
+      Given a GitHub issue URL was mentioned earlier in the conversation and
+      the user now approves a plan to work on it, confirms create_tasks is
+      called with that exact URL as trackerUrl rather than the agent
+      re-typing/paraphrasing the issue from memory into each task's
+      description.
+    type: tool-sequence
+    priorTurns:
+      - tool: web_fetch
+        args: { url: 'https://github.com/octo/repo/issues/42' }
+        result: { text: 'Issue #42: Refactor auth. Plan: migration, handler, tests.' }
+    input: >
+      Yes, let's go with that plan — set up the tasks.
+    tool: create_tasks
+    argChecks:
+      - path: trackerUrl
+        match: equals
+        value: 'https://github.com/octo/repo/issues/42'
