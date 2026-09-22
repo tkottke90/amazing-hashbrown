@@ -35,6 +35,7 @@ import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebas
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
+import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
@@ -71,6 +72,14 @@ const evalTools = [
   wikiRegisterDomainTool,
   webFetchTool,
   getToolKeyTool,
+  // Part of STATIC_CHAT_TOOLS in production (chat-agent.ts) but was missing
+  // here — auto-eval round 1 of suites/tool-calling.yaml (2026-09-22)
+  // against local/Lemonade/Ornith/Digital Ocean found all four models never
+  // once mentioned search_skills among their own enumerated tool lists when
+  // asked "what skills do you have," which only makes sense if it genuinely
+  // wasn't bound. Confirmed against chat-agent.ts's STATIC_CHAT_TOOLS array
+  // (line ~280), where searchSkillsTool is unconditionally included.
+  searchSkillsTool,
   // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware).
   // create-workspace-project.yaml now exercises that real gating directly
   // via each scenario's `gatedSkill` field (see runner.ts and

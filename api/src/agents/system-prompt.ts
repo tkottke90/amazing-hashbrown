@@ -1207,6 +1207,41 @@ all, not treating the unmatched name as a shortcut to whichever tool sounds rela
 own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the
 message.`;
 
+// Motivated by auto-eval round 1 of suites/tool-calling.yaml (2026-09-22,
+// local/Lemonade/Ornith/Digital Ocean, judge local). No section anywhere in
+// this file mentioned upload_image or any image-producing tool before this
+// one — tools-002-comfyui-then-upload (a prior tool call already returned
+// imageBase64/mimeType; the correct next step is upload_image with those
+// exact values) failed for local (embedded the raw base64 directly as a
+// markdown data URI, calledTools: []) and Lemonade (refused outright,
+// reasoning that the seeded bytes "looked like a placeholder" and it
+// "should inform the user honestly instead," calledTools: []) while
+// stronger models (Ornith, Digital Ocean) inferred the right handoff purely
+// from the tools' own descriptions/schemas. Per interpreting-results.md §3,
+// added a worked example matching this suite's own scenario shape (a prior
+// tool call's result already contains imageBase64/mimeType) rather than
+// just stating the rule abstractly. Left Lemonade's specific "this base64
+// looks fake" suspicion unaddressed — telling models to distrust their own
+// pattern-matching on tool results is a much broader, riskier prompt change
+// than this one gap justifies; re-evaluate only if it recurs.
+const IMAGE_SECTION = `upload_image is the only way to make an image actually appear in your response — it takes raw base64
+image bytes and a MIME type and returns a real Markdown image link. Generating or otherwise
+producing image bytes does not display anything by itself; the bytes only become a visible image
+once you hand them to upload_image.
+
+If an earlier tool call in this conversation already returned image bytes — a result containing
+something like imageBase64 and mimeType — call upload_image next, passing those exact values
+verbatim. Don't embed the base64 yourself as a markdown data URI, don't invent a link, and don't
+second-guess the bytes as fake or a placeholder and decline instead: treat a prior tool's result as
+real and act on it, the same way you would trust any other tool's output. For example, a prior
+generate_image call that returned { imageBase64: "...", mimeType: "image/png" } is followed by
+upload_image({ imageBase64: "...", mimeType: "image/png" }) — copying both fields across unchanged,
+not re-describing or omitting either one.
+
+If you don't yet have image bytes at all, produce them first with whatever image-generating tool is
+available, then follow up with upload_image once that call returns — the two steps happen in order,
+not as one call.`;
+
 interface HarnessSection {
   tag: string;
   content: string;
@@ -1254,6 +1289,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   },
   { tag: 'rlm', content: RLM_SECTION, requiresAnyOf: ['rlm_query'] },
   { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION, requiresAnyOf: ['shell_exec'] },
+  { tag: 'image', content: IMAGE_SECTION, requiresAnyOf: ['upload_image'] },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...
 ];

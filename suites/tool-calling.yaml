@@ -9,18 +9,28 @@ suite:
 
 scenarios:
   - id: tools-001-upload-image
-    name: Agent calls upload_image to embed a generated image
+    name: Agent calls generate_image to kick off a from-scratch image request
     purpose: >
-      Confirms the agent invokes the upload_image tool — not just claims to —
-      when asked to produce and embed an image, and that the call includes a
-      mimeType argument.
+      Confirms the agent invokes generate_image — not just claims to — when
+      asked to produce and embed an image with no image bytes already in the
+      conversation. Originally asserted upload_image directly, but that's
+      unsatisfiable on a cold-start turn: upload_image requires real
+      imageBase64 bytes that only exist after generate_image (or an
+      equivalent image-producing tool) has actually run, and this eval
+      harness only inspects a single turn's tool_calls (see bin/eval.ts's
+      evalTools comment; it never executes bound tools). All four models
+      (local, Lemonade, Ornith, Digital Ocean) independently called
+      generate_image first in auto-eval round 1 (2026-09-22) — corroborating
+      that this is the correct first move, not a model gap. tools-002 is the
+      companion scenario that tests the actual upload_image handoff, seeded
+      with a prior generate_image result via priorTurns.
     type: tool-call
     input: >
       Generate a small solid red square image and embed it in your response
       using your image tool.
-    tool: upload_image
+    tool: generate_image
     argChecks:
-      - path: mimeType
+      - path: prompt
         match: exists
 
   - id: tools-003-search-skills-no-keyword
@@ -50,21 +60,19 @@ scenarios:
       - path: keyword
         match: exists
 
-  - id: tools-005-create-tasks-after-plan-approved
-    name: Agent calls create_tasks once a plan is approved
-    purpose: >
-      Confirms the agent invokes create_tasks — not just describes the plan
-      — once the user has explicitly approved a multi-step breakdown of
-      work, producing a batch of task entries rather than one giant task.
-    type: tool-call
-    input: >
-      We just agreed on the plan: first add the migration, then write the
-      handler, then add tests. Let's get started — go ahead and set that up
-      as tasks.
-    tool: create_tasks
-    argChecks:
-      - path: tasks
-        match: exists
+  # tools-005-create-tasks-after-plan-approved: removed in auto-eval round 1
+  # (2026-09-22). create_tasks is deliberately absent from the plain-chat
+  # tool set both in production (chat-agent.ts: "'create_tasks' is
+  # structurally absent from the plain-chat tool list" — it's only bound via
+  # buildWorkspaceScopedTools() in buildWorkspaceChatAgent/buildTaskAgent)
+  # and in this harness's evalTools (bin/eval.ts, which mirrors plain chat).
+  # No wording change can make a model call a tool it was never given, so
+  # this scenario could never pass under the current harness regardless of
+  # the system prompt. suites/task-creation.yaml already covers create_tasks
+  # correctly, explicitly scoped to workspace chat (see its purpose text and
+  # docs/superpowers/specs/2026-09-22-agent-task-creation-design.md), with
+  # both a positive and a premature-creation negative case — this scenario
+  # was a redundant, mis-scoped duplicate of that coverage.
 
   - id: tools-002-comfyui-then-upload
     name: Agent uploads a previously-generated image via upload_image
