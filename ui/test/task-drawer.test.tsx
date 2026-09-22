@@ -331,7 +331,9 @@ describe('TaskDrawer — Depends on section', () => {
       name: 'The other task',
     }) as HTMLOptionElement;
     option.selected = true;
+    expect(select.value).toBe('task-other');
     fireEvent.change(select);
+    expect(select.value).toBe('task-other');
 
     // Wait for the selection to actually take (and the Add button to become
     // enabled) before interacting further — the Add button is disabled until
