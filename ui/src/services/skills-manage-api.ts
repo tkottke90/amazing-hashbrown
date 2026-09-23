@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 // Admin/management client for the Skills settings panel. Kept independent
 // from ui/src/services/skills-api.ts (the narrower, enabled-only contract
 // used by the chat slash-command autocomplete) — separate concerns, per the
@@ -79,15 +81,6 @@ export class SkillsApiError extends Error {
     super(message);
     this.name = 'SkillsApiError';
   }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new SkillsApiError(body.error ?? `Request failed: ${res.status}`, res.status);
-  }
-  return res.json() as Promise<T>;
 }
 
 function skillUrl(name: string): string {

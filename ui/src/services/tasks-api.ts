@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export type TaskStatus =
   'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
 
@@ -73,15 +75,6 @@ export interface CreateTaskInput {
 export interface TaskFilters {
   workspace_id?: string | null;
   status?: TaskStatus;
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function fetchTasks(filters: TaskFilters = {}): Promise<Task[]> {
