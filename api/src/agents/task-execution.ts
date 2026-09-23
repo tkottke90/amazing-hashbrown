@@ -314,11 +314,12 @@ export async function executeTask(
         // sub-agent-flavored notion of "waiting" to deliver a notification
         // about.
         finalOutcome = 'waiting_on_user';
-        // completeQueueEntry() mirrors its outcome onto tasks.status too — it
-        // must run BEFORE patchTask here, or it would clobber waiting_on_user
-        // straight back to 'done'.
-        store.completeQueueEntry(entry.id, 'done');
-        store.patchTask(task.id, { status: 'waiting_on_user', assignedTo: 'user' });
+        // Parks the queue row rather than closing it out — see
+        // parkQueueEntryForHitl()'s own comment: keeping the row alive at
+        // its original queue position is what lets the eventual resume
+        // (workspace-chat.route.ts's /hitl task branch) avoid the
+        // queue-position starvation a fresh enqueueTask() call would cause.
+        store.parkQueueEntryForHitl(entry.id);
       } else {
         // The agent stopped without calling complete_task or ask_user — e.g.
         // it trailed off, or hit GraphRecursionError inside pipeEvents/
@@ -407,12 +408,9 @@ export async function executeTask(
             : null;
         if (recovered?.interrupted) {
           finalOutcome = 'waiting_on_user';
-          // completeQueueEntry() mirrors its outcome onto tasks.status too —
-          // it must run BEFORE patchTask here, or it would clobber
-          // waiting_on_user straight back to 'done' (same ordering as the
-          // graceful branch above).
-          store.completeQueueEntry(entry.id, 'done');
-          store.patchTask(task.id, { status: 'waiting_on_user', assignedTo: 'user' });
+          // Parks the row rather than closing it — see parkQueueEntryForHitl()'s
+          // own comment (same reasoning as the graceful branch above).
+          store.parkQueueEntryForHitl(entry.id);
         } else {
           // recovered === {interrupted: false} means recoverThrownInterrupt's
           // own failAssistant/dispatchHitlPrompt already marked the row

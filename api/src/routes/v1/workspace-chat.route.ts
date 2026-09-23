@@ -154,7 +154,22 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
         assignedTo: 'agent',
         resumeAnswer: answer,
       });
-      getWorkspaceStore().enqueueTask(taskId);
+      // Reactivate the row task-execution.ts parked (parkQueueEntryForHitl())
+      // at ITS ORIGINAL queue position, rather than enqueueTask()'s always-
+      // append-to-the-back — a fresh row here is exactly what lets every
+      // sibling task still pending in this scope queue-jump a task that
+      // already started and is merely waiting on this answer.
+      const parked = getWorkspaceStore()
+        .listQueue()
+        .find((e) => e.taskId === taskId && e.status === 'paused');
+      if (parked) {
+        getWorkspaceStore().resumePausedEntry(parked.id);
+      } else {
+        // Defensive fallback — a HITL-answered task should always have a
+        // parked row, but don't leave it un-resumable if that invariant is
+        // somehow violated.
+        getWorkspaceStore().enqueueTask(taskId);
+      }
       getTaskScheduler().wake();
       res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
     } catch (err) {

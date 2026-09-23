@@ -136,7 +136,7 @@ describe('routes/v1/workspace-chat.route — POST /:threadId/hitl (taskId branch
     return baseUrl.replace(':id', workspaceId) + `/${tid}/hitl`;
   }
 
-  it('re-enqueues the task with the resume answer instead of resuming an interactive turn', async () => {
+  it("resumes the task's parked queue row (its original position) with the resume answer, instead of resuming an interactive turn", async () => {
     const store = getWorkspaceStore();
     const threadStore = getThreadStore();
 
@@ -147,10 +147,15 @@ describe('routes/v1/workspace-chat.route — POST /:threadId/hitl (taskId branch
 
     const task = store.createTask({
       title: 'Do the thing',
-      assignedTo: 'user',
+      assignedTo: 'agent',
       workspaceId: workspace.id,
     });
-    store.patchTask(task.id, { status: 'waiting_on_user' });
+    store.patchTask(task.id, { status: 'ready' });
+    // Mirrors task-execution.ts's interrupt path: the queue row is parked
+    // (not closed), which is what this test proves the /hitl route reuses
+    // rather than enqueueing a fresh one.
+    const parkedEntry = store.enqueueTask(task.id);
+    store.parkQueueEntryForHitl(parkedEntry.id);
 
     const promptId = 'prompt-1';
     recordHitlPrompt(threadStore, threadId, promptId, {
@@ -187,10 +192,53 @@ describe('routes/v1/workspace-chat.route — POST /:threadId/hitl (taskId branch
     const queueEntry = store.listQueue().find((q) => q.taskId === task.id);
     expect(queueEntry, 'expected the task to be re-enqueued').to.not.equal(undefined);
     expect(queueEntry!.status).to.equal('running');
+    // The SAME row (its original queue position) was reused — not a fresh
+    // one appended to the back, which is exactly the starvation bug this
+    // fixes (see workspace-store.test.ts's HITL park/resume suite).
+    expect(queueEntry!.id).to.equal(parkedEntry.id);
 
     const promptRow = threadStore.getMessage(threadId, promptId)!;
     expect(promptRow.status).to.equal('answered');
     expect((promptRow.payload as Record<string, unknown>).answer).to.equal('approved');
+  });
+
+  it('falls back to enqueueTask() when a HITL-answered task has no parked queue row (defensive)', async () => {
+    const store = getWorkspaceStore();
+    const threadStore = getThreadStore();
+
+    const workspace = store.createWorkspace({ name: 'W1b', location: '/tmp/w1b' });
+    const threadId = 'thread-1b';
+    store.patchWorkspace(workspace.id, { threadId });
+    threadStore.upsertThreadOnFirstMessage(threadId, 'W1b', 'workspace-chat');
+
+    const task = store.createTask({
+      title: 'Do the thing',
+      assignedTo: 'user',
+      workspaceId: workspace.id,
+    });
+    store.patchTask(task.id, { status: 'waiting_on_user' });
+    // Deliberately no parked queue row — the invariant parkQueueEntryForHitl()
+    // normally guarantees is violated here on purpose.
+
+    const promptId = 'prompt-1b';
+    recordHitlPrompt(threadStore, threadId, promptId, {
+      question: 'Approve command execution?',
+      promptKind: 'shell_approval',
+      command: 'ls -la',
+      taskId: task.id,
+    });
+
+    const res = await fetch(hitlUrl(workspace.id, threadId), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ promptId, answer: 'approved' }),
+    });
+    expect(res.status).to.equal(200);
+    await res.text();
+
+    const queueEntry = store.listQueue().find((q) => q.taskId === task.id);
+    expect(queueEntry, 'expected a fresh queue row via the fallback').to.not.equal(undefined);
+    expect(queueEntry!.status).to.equal('running');
   });
 
   it('rejects with 400 when promptId or answer is missing, without touching any task', async () => {

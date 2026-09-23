@@ -275,9 +275,13 @@ describe('agents/task-execution', () => {
     expect(task.status).to.equal('waiting_on_user');
     expect(task.assignedTo).to.equal('user');
 
-    // The queue entry itself is done — off the scheduler's plate — even
-    // though the task is not; task_queue has no waiting_on_user status.
-    expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+    // The queue row is parked, not closed — it keeps its original queue
+    // position (parkQueueEntryForHitl()) so a resume via the /hitl route
+    // can't be queue-jumped by a sibling task that hasn't started yet.
+    const queueEntry = store.listQueue().find((q) => q.id === entry.id);
+    expect(queueEntry, 'expected the queue row to still exist, parked').to.not.equal(undefined);
+    expect(queueEntry!.status).to.equal('paused');
+    expect(queueEntry!.pauseReason).to.equal('chat');
 
     // The persisted hitl_prompt row carries taskId, so the /hitl route can
     // re-enqueue this exact task instead of resuming an interactive turn.
@@ -613,9 +617,12 @@ describe('agents/task-execution', () => {
       const task = store.getTask(entry.task.id)!;
       expect(task.status).to.equal('waiting_on_user');
       expect(task.assignedTo).to.equal('user');
-      // The queue entry itself is done — off the scheduler's plate — same as
-      // the graceful (non-throwing) interrupt path.
-      expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+      // The queue row is parked, not closed — same as the graceful
+      // (non-throwing) interrupt path.
+      const queueEntry = store.listQueue().find((q) => q.id === entry.id);
+      expect(queueEntry, 'expected the queue row to still exist, parked').to.not.equal(undefined);
+      expect(queueEntry!.status).to.equal('paused');
+      expect(queueEntry!.pauseReason).to.equal('chat');
 
       const messages = threadStore.getThreadMessages(task.threadId!);
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
