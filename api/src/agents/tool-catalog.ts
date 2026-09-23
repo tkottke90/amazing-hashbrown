@@ -97,6 +97,13 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: false,
   },
   {
+    toolId: 'activate_skill',
+    name: 'Activate Skill',
+    description: 'Self-activate a self-callable skill, unlocking the tools it gates.',
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
     toolId: 'complete_task',
     name: 'Complete Task',
     description: 'Mark an automated task run as finished. Required for task runs to terminate.',
@@ -192,5 +199,30 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     category: 'skill-gated',
     alwaysOn: false,
     skillCommand: 'create-project',
+  },
+  {
+    toolId: 'find_file',
+    name: 'Find File',
+    description:
+      'Find files in the workspace by name/glob pattern. Unlocked by the "file-ops" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'file-ops',
+  },
+  {
+    toolId: 'read_file',
+    name: 'Read File',
+    description: 'Read a file\'s contents from the workspace. Unlocked by the "file-ops" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'file-ops',
+  },
+  {
+    toolId: 'edit_file',
+    name: 'Edit File',
+    description: 'Replace an exact string in a workspace file. Unlocked by the "file-ops" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'file-ops',
   },
 ];

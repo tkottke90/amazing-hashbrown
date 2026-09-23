@@ -20,6 +20,7 @@ async function callBeforeAgent(middleware: any, state: { messages: any[] }): Pro
 const REGISTRATIONS = [
   { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
   { skillCommand: 'create-project', toolNames: ['create_project'] },
+  { skillCommand: 'file-ops', toolNames: ['find_file', 'read_file', 'edit_file'] },
 ];
 
 describe('agents/skill-expansion.middleware', () => {
@@ -44,6 +45,12 @@ describe('agents/skill-expansion.middleware', () => {
       name: 'search-skills',
       description: 'Not a gated skill.',
       body: 'Just some other skill body.',
+    });
+    await manager.create({
+      name: 'file-ops',
+      description: 'Find, read, and edit workspace files.',
+      body: 'Call find_file/read_file/edit_file as needed.',
+      metadata: { selfCallable: 'true' },
     });
   });
 
@@ -108,5 +115,16 @@ describe('agents/skill-expansion.middleware', () => {
       activeGatedSkill?: string | null;
     };
     expect(second.activeGatedSkill).to.equal('create-project');
+  });
+
+  it('opens the file-ops gate the same way as any other registered gated skill', async () => {
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const result = (await callBeforeAgent(middleware, makeState('/file-ops find the config'))) as {
+      messages: HumanMessage[];
+      activeGatedSkill?: string | null;
+    };
+
+    expect(result.activeGatedSkill).to.equal('file-ops');
+    expect(result.messages[0]!.content).to.include('find_file/read_file/edit_file');
   });
 });

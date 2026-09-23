@@ -42,14 +42,15 @@ A single generic gateway tool — not one bespoke "activate" tool per skill — 
     },
   })
   ```
-  — mirroring `create_workspace.tool.ts`'s existing `Command`-based state write (today used to *close* a gate; here used to *open* one). Because this is a tool result, not a plain-text final answer, the ReAct loop continues automatically into a model call that already sees the newly gated tools via `skillGatedToolsMiddleware` — no new graph-control-flow work is needed for this to work.
+  — mirroring `create_workspace.tool.ts`'s existing `Command`-based state write (today used to _close_ a gate; here used to _open_ one). Because this is a tool result, not a plain-text final answer, the ReAct loop continues automatically into a model call that already sees the newly gated tools via `skillGatedToolsMiddleware` — no new graph-control-flow work is needed for this to work.
 - On an invalid or non-self-callable name: returns a plain string listing the valid self-callable skill names (same shape as `search_skills`'s no-match message and the existing "`Skill "/x" not found — use search_skills`" text in `skill-expansion.middleware.ts`) — not an exception, and no state change.
 - Registered in `TOOL_CATALOG` as `category: 'built-in'`, `alwaysOn: true` — it must be visible before any skill is active, since it's the only way one becomes active.
 
 **Why not have the assistant self-trigger via plain text** (e.g. widening `skill-expansion.middleware.ts` to also scan the latest assistant message for a leading `/command`, avoiding a new tool entirely) — considered and rejected:
+
 - The graph doesn't continue after a plain-text assistant message with no tool call; that's treated as the final answer and streamed to the user as-is. Making a text-triggered version work would require new loop-continuation control flow between model calls within a turn, which doesn't exist today.
 - Free text has no structural constraint the way a tool call does; requiring the model to reproduce `/skill-name` byte-exact in a message that starts with nothing else is a harder target for a weak local model to hit reliably than a one-field tool call, not an easier one.
-- It also forces the model to suppress normal narration (the parser requires the message to *start* with `/`), and introduces a false-positive risk that doesn't exist on the human side: an assistant's real answer that happens to start with `/` (a path, a snippet) could be misparsed as a failed skill invocation and have its actual content silently replaced.
+- It also forces the model to suppress normal narration (the parser requires the message to _start_ with `/`), and introduces a false-positive risk that doesn't exist on the human side: an assistant's real answer that happens to start with `/` (a path, a snippet) could be misparsed as a failed skill invocation and have its actual content silently replaced.
 - The presumed token savings (prose in the system prompt vs. a tiny schema) aren't guaranteed either — a policy description in prose is not obviously smaller than a one-field enum/string schema.
 
 ### 3.2 `file-ops` skill (new, self-callable)
@@ -102,11 +103,12 @@ To make "is this tool causing problems for this model" answerable with data rath
 
 A second, related question: is `file-ops` actually displacing file work the model would otherwise have done through `shell_exec`? Unlike §3.5, this requires **classifying free-text shell commands**, which is inherently a heuristic, not an exact count — flagged here explicitly so the resulting numbers are read as a directional signal, not a precise measurement.
 
-- **Classification happens once, at write time, inside `ShellAuditStore.write()`** (`shell-audit.ts`) — not re-derived per query with fragile `LIKE` clauses. A small pure classifier function takes `entry.command` and returns three independent booleans, not a single category: a real-world `shell_exec` command is frequently a chain (`cat file.txt && sed -i 's/x/y/' file.txt`, `find . -name '*.ts' | xargs grep foo`) mixing a read, a write, and/or an unrelated action in one call. A single enum column would force one bucket per call and silently lose that a command did more than one kind of thing; three booleans let a single row be `is_file_read = true` and `is_file_write = true` at once, and `is_other = true` records that the command also contained a fragment that wasn't classified as file read/write (distinct from simply "neither read nor write matched" — a command can be a real file read *and* also do something else in the same chain).
+- **Classification happens once, at write time, inside `ShellAuditStore.write()`** (`shell-audit.ts`) — not re-derived per query with fragile `LIKE` clauses. A small pure classifier function takes `entry.command` and returns three independent booleans, not a single category: a real-world `shell_exec` command is frequently a chain (`cat file.txt && sed -i 's/x/y/' file.txt`, `find . -name '*.ts' | xargs grep foo`) mixing a read, a write, and/or an unrelated action in one call. A single enum column would force one bucket per call and silently lose that a command did more than one kind of thing; three booleans let a single row be `is_file_read = true` and `is_file_write = true` at once, and `is_other = true` records that the command also contained a fragment that wasn't classified as file read/write (distinct from simply "neither read nor write matched" — a command can be a real file read _and_ also do something else in the same chain).
   - Approach: split the command on shell separators (`&&`, `||`, `;`, `|`), classify each fragment by its leading verb/redirection operator against known read verbs (`cat`, `head`, `tail`, `less`, `more`, a bare `find`) and write verbs/operators (`patch`, `sed -i`, `tee`, `cp`, `mv`, `touch`, `rm`, `>`, `>>`), and set each boolean true if any fragment matched that bucket.
   - No changes needed to `@tkottke90/shell-executor`'s `AuditEntry` type — the classifier runs entirely inside this repo's own `ShellAuditStore.write()`, using the `command` text `AuditEntry` already carries.
 - **`shell_audit_log` migration** (new version, following the existing version-17 migration in `shell-audit.ts`): three new columns, `is_file_read INTEGER NOT NULL DEFAULT 0`, `is_file_write INTEGER NOT NULL DEFAULT 0`, `is_other INTEGER NOT NULL DEFAULT 0` — booleans-as-integers, matching the existing `trust_all` column's convention in the same table.
 - **`v_file_tool_adoption` view** (same DB as `v_tool_friction` — confirmed both `bootObservability(db)` and `bootShellAudit(db)` share one `db` instance, `index.ts:34,36` — so this view can compare the two tables directly):
+
   ```sql
   CREATE VIEW IF NOT EXISTS v_file_tool_adoption AS
   SELECT
@@ -128,7 +130,9 @@ A second, related question: is `file-ops` actually displacing file work the mode
   FROM shell_audit_log a
   GROUP BY date(a.timestamp);
   ```
+
   One row per `(date, source)`, so `file-ops` vs. `shell_exec` read/write counts sit side by side for the same day — a fallback ratio, not just a raw count.
+
 - **`GET /api/v1/metrics/file-tool-adoption`** — a second handler on the same `metricsRouter` (§3.5), same `from`/`to` convention, response `{ from, to, rows: [{ date, source, readCount, writeCount }] }`.
 - **Explicitly out of scope:** no UI, same as §3.5. Also out of scope: tuning the classifier's verb list beyond a reasonable starting set — it's expected to need refinement once there's real `shell_audit_log` data to check it against.
 
@@ -153,7 +157,7 @@ A second, related question: is `file-ops` actually displacing file work the mode
 
 - Unit tests per tool (`find-file.tool.test.ts`, `read-file.tool.test.ts`, `edit-file.tool.test.ts`, `activate-skill.tool.test.ts`): happy path, no-match/empty result, path-traversal attempt, and (for `edit_file`) the non-unique-match rejection.
 - Extend `skill-gated-tools.middleware.test.ts` and `skill-expansion.middleware.test.ts` with cases for the new `file-ops` registration entry, following the existing test shapes for `create-workspace`/`create-project`.
-- New eval suite `suites/file-ops.yaml`, using the `gatedSkill` scenario field the `2026-08-27` hardening design already added to the eval harness for exactly this purpose: scenarios covering (a) activating `file-ops` then calling `find_file`, (b) `edit_file` receiving an ambiguous `old_string`, (c) confirming the three file tools are *absent* when `file-ops` has not been activated in that scenario's state.
+- New eval suite `suites/file-ops.yaml`, using the `gatedSkill` scenario field the `2026-08-27` hardening design already added to the eval harness for exactly this purpose: scenarios covering (a) activating `file-ops` then calling `find_file`, (b) `edit_file` receiving an ambiguous `old_string`, (c) confirming the three file tools are _absent_ when `file-ops` has not been activated in that scenario's state.
 - `ToolFrictionStore`/`v_tool_friction` gets the same unit-test treatment `CostStore`/`v_usage` already has (migration applies, view returns expected aggregates against seeded spans).
 - Shell-command classifier (§3.6): unit tests per bucket — a pure read command, a pure write command, an unrecognized/`other` command, and (the case motivating three independent booleans) a chained command mixing read and write in one call (`cat file.txt && sed -i ... file.txt`), asserting both booleans land `true` on the same row.
 - `v_file_tool_adoption` view gets the same treatment as `v_tool_friction` — seeded rows in both `observability_spans` and `shell_audit_log`, asserting the view's per-`(date, source)` counts match.
