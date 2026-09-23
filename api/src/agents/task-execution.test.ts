@@ -205,6 +205,32 @@ const COMPLETE_TASK_FAILED_EVENTS: RawEvent[] = [
   { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-2', data: { output: 'ok' } },
 ];
 
+// The real shape LangChain's on_tool_start callback event reports for a
+// StructuredTool — args JSON-stringified under a literal `input` key —
+// captured verbatim from production thread_messages rows (a manual test run
+// against PR #200), not a guess. See tapCompleteTask's own comment for why
+// this differs from the flat shape above and why it silently broke task
+// completion end-to-end until parseCompleteTaskInput() was added.
+const COMPLETE_TASK_DONE_EVENTS_WRAPPED: RawEvent[] = [
+  {
+    event: 'on_tool_start',
+    name: 'complete_task',
+    run_id: 'ct-3',
+    data: { input: { input: '{"outcome":"done","summary":"Wrote the page."}' } },
+  },
+  { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-3', data: { output: 'ok' } },
+];
+
+const COMPLETE_TASK_FAILED_EVENTS_WRAPPED: RawEvent[] = [
+  {
+    event: 'on_tool_start',
+    name: 'complete_task',
+    run_id: 'ct-4',
+    data: { input: { input: '{"outcome":"failed","summary":"Could not find the domain."}' } },
+  },
+  { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-4', data: { output: 'ok' } },
+];
+
 describe('agents/task-execution', () => {
   let db: ReturnType<typeof openDatabase>;
   let store: WorkspaceStore;
@@ -264,6 +290,43 @@ describe('agents/task-execution', () => {
     const task = store.getTask(entry.task.id)!;
     expect(task.status).to.equal('failed');
   });
+
+  // Regression: production thread_messages rows for a real task run showed
+  // complete_task genuinely called (and its own tool output confirming
+  // "marked done"), yet the task ended up 'failed' — because on_tool_start's
+  // real event shape wraps the args as { input: '{"outcome":...}' }, not the
+  // flat { outcome, summary } object task-execution.ts assumed. Without
+  // parseCompleteTaskInput() unwrapping it, completeTaskBox.current stayed
+  // null and the task silently fell into the "stopped without calling
+  // complete_task" branch below — the same fate for every task across two
+  // separate manual test runs, regardless of what the model actually did.
+  it(
+    'marks the task done when complete_task is called with the real (args-wrapped-as-JSON-' +
+      'string) event shape LangChain actually reports',
+    async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS_WRAPPED)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('done');
+    },
+  );
+
+  it(
+    'marks the task failed when complete_task is called with outcome "failed" in the real ' +
+      '(args-wrapped-as-JSON-string) event shape',
+    async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_FAILED_EVENTS_WRAPPED)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('failed');
+    },
+  );
 
   // Regression: workspace-chat's shared checkpoint thread means
   // agent.graph.getState() can report a pending interrupt left over from

@@ -49,6 +49,41 @@ interface CompleteTaskCall {
   summary: string;
 }
 
+// LangChain's on_tool_start callback event reports a StructuredTool's
+// arguments JSON-stringified under a literal `input` key — e.g.
+// { input: '{"outcome":"done","summary":"..."}' } — rather than the flat
+// { outcome, summary } object complete_task's own schema declares. This is a
+// callback-event artifact from LangChain's original single-string Tool
+// interface (predating StructuredTool), not something specific to this tool
+// or provider: every tool call recorded in this codebase's thread_messages
+// shows the same wrapping (confirmed against production thread_messages rows
+// for shell_exec and create_tasks too, both of which have equally flat
+// schemas). Those tools are unaffected because LangChain re-parses/coerces
+// the arguments before actually invoking the tool function — tapCompleteTask
+// is the one place in this codebase that inspects a tool's arguments
+// straight off the raw stream event instead of through its real, validated
+// invocation, which is what made it uniquely exposed to this. Handles the
+// flat shape too, in case a future LangChain version reports it directly.
+function parseCompleteTaskInput(raw: unknown): Partial<CompleteTaskCall> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.outcome === 'string') {
+    return obj as Partial<CompleteTaskCall>;
+  }
+  if (typeof obj.input === 'string') {
+    try {
+      const parsed = JSON.parse(obj.input) as unknown;
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Partial<CompleteTaskCall>;
+      }
+    } catch {
+      // Malformed JSON from the model — fall through to undefined, same as
+      // no call at all, rather than throwing out of the tapped stream.
+    }
+  }
+  return undefined;
+}
+
 // Wraps the raw LangGraph event stream, capturing complete_task's call
 // arguments as a side effect while yielding every event through unchanged —
 // pipeEvents itself needs no changes to support this (it already has its own
@@ -62,7 +97,7 @@ async function* tapCompleteTask(
 ): AsyncGenerator<any> {
   for await (const evt of stream) {
     if (evt.event === 'on_tool_start' && evt.name === 'complete_task') {
-      const input = evt.data?.input as Partial<CompleteTaskCall> | undefined;
+      const input = parseCompleteTaskInput(evt.data?.input);
       if (input?.outcome) {
         onComplete({ outcome: input.outcome, summary: input.summary ?? '' });
       }
