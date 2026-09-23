@@ -1,6 +1,7 @@
 import { getWorkspaceStore, type Task, type TaskQueueEntry } from './workspace-store.js';
 import { logger } from '../config/logger.js';
 import { broadcast } from './broadcast.js';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 
 // Runs one dequeued task to completion (or to a waiting_on_user pause) and
 // mirrors the outcome onto tasks/task_queue — see task-execution.ts's
@@ -99,7 +100,17 @@ export class TaskScheduler {
       .listQueue()
       .map((entry) => ({ ...entry, task: store.getTask(entry.taskId) ?? null }));
     const running = store.getRunningEntries();
-    broadcast({ type: 'task_queue_update', queue, running });
+    // AppBroadcastEventSchema types each entry's `task` as a loose
+    // Record<string, unknown> (no shared Task Zod schema exists in
+    // lib/llm-common-types yet) — Task itself has no index signature, so TS
+    // rejects the structural assignment even though the real shape is a
+    // superset. Same trust boundary as ui/src/hooks/use-live-events.ts's
+    // matching cast on the read side.
+    broadcast({
+      type: 'task_queue_update',
+      queue,
+      running,
+    } as unknown as AppBroadcastEvent);
   }
 }
 
