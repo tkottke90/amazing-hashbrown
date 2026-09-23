@@ -1448,16 +1448,23 @@ export class WorkspaceStore extends BaseStore {
     })[];
     if (pending.length === 0) return null;
 
-    // origin='agent' (spawn_sub_agent) rows never occupy or contend for a
-    // scope slot — see docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
+    // A scope is occupied by a 'running' task_queue row, or by a task still
+    // sitting at 'waiting_on_user' — the interrupt (HITL approval) path in
+    // task-execution.ts closes the queue row ('done') before the task
+    // itself settles at 'waiting_on_user', so checking task_queue.status
+    // alone would read the scope as free the instant that row closes, even
+    // though the task is only paused, not finished, and still owns the
+    // scope's shared thread. Sourcing straight from `tasks` catches both
+    // cases without a join. origin='agent' (spawn_sub_agent) rows never
+    // occupy or contend for a scope slot — see
+    // docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
     const runningScopes = new Set(
       (
         this.db
           .prepare(
-            `SELECT COALESCE(tasks.workspace_id, 'inbox') AS scope
-             FROM task_queue
-             JOIN tasks ON tasks.id = task_queue.task_id
-             WHERE task_queue.status = 'running' AND tasks.origin != 'agent'`,
+            `SELECT COALESCE(workspace_id, 'inbox') AS scope
+             FROM tasks
+             WHERE status IN ('running', 'waiting_on_user') AND origin != 'agent'`,
           )
           .all() as { scope: string }[]
       ).map((r) => r.scope),
