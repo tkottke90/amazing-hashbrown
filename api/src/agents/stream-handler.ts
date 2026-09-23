@@ -564,6 +564,21 @@ export async function finalizeTurn(
   // of resuming an interactive turn. Existing callers omit it; behavior is
   // unchanged for them.
   taskId?: string,
+  // Set only by task-execution.ts, only when complete_task already fired
+  // earlier in this same stream (see tapCompleteTask/completeTaskBox there).
+  // agent.graph.getState() reads state for the whole shared thread, not just
+  // this run, so it can still report a pending interrupt here even though
+  // the task itself is already finished — e.g. the model does one more
+  // tool call needing approval right after calling complete_task. Since
+  // task-execution.ts always gives completeTaskBox priority over
+  // `interrupted` once both are true, dispatching that interrupt as a live
+  // hitl_prompt would durably show the user a prompt with no queue row ever
+  // able to back it (parkQueueEntryForHitl is only reached on the
+  // `interrupted`-wins branch) — exactly what let a later, stale /hitl
+  // answer silently re-run an already-completed task. Discarding it here,
+  // before it's ever written or shown, is what keeps that queue row's
+  // completion the only thing task-execution.ts has to reconcile.
+  discardInterrupt = false,
 ): Promise<{ interrupted: boolean }> {
   const durationMs = Date.now() - startedAt;
   const config = { configurable: { thread_id: threadId } };
@@ -637,7 +652,15 @@ export async function finalizeTurn(
 
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
-  if (interrupt) {
+  if (interrupt && discardInterrupt) {
+    logger.warn(
+      'finalizeTurn: discarding a pending interrupt found after complete_task already ' +
+        'completed this run — no hitl_prompt will be dispatched for it',
+      { threadId, taskId },
+    );
+  }
+
+  if (interrupt && !discardInterrupt) {
     return dispatchHitlPrompt(
       sink,
       threadStore,
