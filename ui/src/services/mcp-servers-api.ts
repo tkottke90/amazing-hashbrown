@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 // Standalone types mirroring @tkottke90/tools-manager's McpServerConfig shape
 // (ui/ has no dependency on that package — provider-modal.tsx's ProviderConfig
 // is the established precedent for this).
@@ -35,15 +37,6 @@ export interface McpCapabilities {
 }
 
 export type TestConnectionResult = McpCapabilities;
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
 
 export async function fetchMcpServers(): Promise<McpServer[]> {
   return request<McpServer[]>('/api/v1/mcp-servers');
