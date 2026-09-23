@@ -323,17 +323,18 @@ describe('TaskDrawer — Depends on section', () => {
     renderDrawer({ ...baseTask, status: 'pending' });
 
     const select = (await screen.findByTestId('task-dependency-select')) as HTMLSelectElement;
-    // Select the option directly (rather than fireEvent.change's
-    // target.value shortcut) — setting `selected` on the actual <option> is
-    // what a real user pick does, and reliably updates select.value/change
-    // through Preact's controlled-select re-render before we read it back.
     const option = within(select).getByRole('option', {
       name: 'The other task',
     }) as HTMLOptionElement;
     option.selected = true;
-    expect(select.value).toBe('task-other');
-    fireEvent.change(select);
-    expect(select.value).toBe('task-other');
+    // @testing-library/preact's fireEvent.change wrapper never reaches this
+    // listener because the drawer mounts inside @tkottke90/preact-dialog's
+    // Drawer (a Radix-adjacent primitive) — see the identical, already
+    // root-caused issue and workaround in chat-input.test.tsx's
+    // fireFileInputChange. Dispatching the native event directly, bypassing
+    // the wrapper, is what a real browser does on selection and is what
+    // actually reaches Preact's onChange here.
+    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 
     // Wait for the selection to actually take (and the Add button to become
     // enabled) before interacting further — the Add button is disabled until
