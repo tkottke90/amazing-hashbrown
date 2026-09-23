@@ -241,6 +241,62 @@ describe('routes/v1/workspace-chat.route — POST /:threadId/hitl (taskId branch
     expect(queueEntry!.status).to.equal('running');
   });
 
+  // Regression: an orphaned hitl_prompt (see task-execution.test.ts's own
+  // regression case — finalizeTurn can dispatch one for a task whose run
+  // already completed via complete_task in the same stream) has no parked
+  // queue row behind it, same as the defensive-fallback case above. But
+  // unlike that case, the task here is genuinely finished (status 'done'),
+  // not actually waiting on this answer at all. The "no parked row -> enqueue
+  // fresh" fallback used to fire for this too, silently re-running an
+  // already-completed task from scratch — exactly the bug the manual test
+  // run surfaced (a task correctly marked done, then clobbered back to
+  // failed by a duplicate run triggered off this exact stale prompt).
+  it('does not re-enqueue an already-finished task when a stale/orphaned hitl_prompt is answered', async () => {
+    const store = getWorkspaceStore();
+    const threadStore = getThreadStore();
+
+    const workspace = store.createWorkspace({ name: 'W1c', location: '/tmp/w1c' });
+    const threadId = 'thread-1c';
+    store.patchWorkspace(workspace.id, { threadId });
+    threadStore.upsertThreadOnFirstMessage(threadId, 'W1c', 'workspace-chat');
+
+    const task = store.createTask({
+      title: 'Do the thing',
+      assignedTo: 'agent',
+      workspaceId: workspace.id,
+    });
+    store.patchTask(task.id, { status: 'ready' });
+    const entry = store.enqueueTask(task.id);
+    store.completeQueueEntry(entry.id, 'done');
+    // Task is genuinely finished — no parked row, and never will be one.
+    expect(store.getTask(task.id)!.status).to.equal('done');
+
+    const promptId = 'prompt-1c';
+    recordHitlPrompt(threadStore, threadId, promptId, {
+      question: 'Approve command execution?',
+      promptKind: 'shell_approval',
+      command: 'ls -la',
+      taskId: task.id,
+    });
+
+    const res = await fetch(hitlUrl(workspace.id, threadId), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ promptId, answer: 'approved' }),
+    });
+    expect(res.status).to.equal(200);
+    await res.text();
+
+    const updatedTask = store.getTask(task.id)!;
+    expect(updatedTask.status, 'a finished task must not be reopened by a stale answer').to.equal(
+      'done',
+    );
+    const queueEntry = store.listQueue().find((q) => q.taskId === task.id);
+    expect(queueEntry, 'no fresh queue row should ever be created for a finished task').to.equal(
+      undefined,
+    );
+  });
+
   it('rejects with 400 when promptId or answer is missing, without touching any task', async () => {
     const store = getWorkspaceStore();
     const workspace = store.createWorkspace({ name: 'W2', location: '/tmp/w2' });

@@ -265,6 +265,50 @@ describe('agents/task-execution', () => {
     expect(task.status).to.equal('failed');
   });
 
+  // Regression: workspace-chat's shared checkpoint thread means
+  // agent.graph.getState() can report a pending interrupt left over from
+  // extra tool-call activity in the *same* run that also called
+  // complete_task (e.g. the model does one more shell_exec — a redundant
+  // verification step — right after declaring the task done). finalizeTurn()
+  // unconditionally dispatches any interrupt it finds in post-stream state,
+  // before task-execution.ts ever gets to check completeTaskBox — so without
+  // this fix, a real hitl_prompt row gets durably written and shown to the
+  // user for a task that has already completed, with no parked queue row
+  // ever backing it (parkQueueEntryForHitl is only called in the `else if
+  // (interrupted)` branch, which completeTaskBox.current already won). That
+  // orphaned, un-park-able prompt is exactly what later lets a stale /hitl
+  // answer re-enqueue an already-finished task — see workspace-chat.route.ts's
+  // own regression test for that half of the bug.
+  it(
+    'does not leave a dangling hitl_prompt when complete_task fires and the final ' +
+      'graph state also reports a pending interrupt from the same run',
+    async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAgent(COMPLETE_TASK_DONE_EVENTS, {
+        kind: 'shell_approval',
+        command: 'ls -la',
+        reason: 'redundant verification after completion',
+      });
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      // The real completion must still win — this isn't in question.
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('done');
+      const queueEntry = store.listQueue().find((q) => q.id === entry.id);
+      expect(queueEntry).to.equal(undefined); // 'done' entries fall out of the active-status filter
+
+      // The bug: a hitl_prompt row for this same, already-completed task
+      // must not be left sitting there for the user to click later.
+      const messages = threadStore.getThreadMessages(task.threadId!);
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect(
+        hitlRow,
+        'expected no orphaned hitl_prompt row once complete_task has already won',
+      ).to.equal(undefined);
+    },
+  );
+
   it('sets waiting_on_user (and reassigns to the user) on an ask_user-shaped interrupt', async () => {
     const entry = makeGlobalEntry();
     const agent = fakeAgent([], { kind: 'free_text', question: 'Which domain should I use?' });
