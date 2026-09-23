@@ -98,6 +98,40 @@ To make "is this tool causing problems for this model" answerable with data rath
 - **`GET /api/v1/metrics/tool-friction`** — new `metricsRouter` (`api/src/routes/v1/metrics.route.ts`) mounted at `/metrics` in `routes/v1/index.ts`, paired with plain handler functions in `metrics.handlers.ts` (same route+handlers split as `skills.route.ts`/`skills.handlers.ts`, `workspaces.route.ts`/`workspaces.handlers.ts`). The router owns the `/metrics` namespace rather than being named after this one metric, so a future metrics endpoint is "add a handler, register it here" rather than "add another one-off router file." `GET /tool-friction` accepts `from`/`to` (default last 30 days, same convention as `usage.route.ts`) and an optional `toolName` filter; response shape mirrors `usage.route.ts`'s: `{ from, to, rows: [{ toolName, date, callCount, errorCount }], totals }`.
 - **Explicitly out of scope:** any UI for this data — no dashboard card, no tool-settings-drawer badge. The endpoint exists for direct/manual pulls only; a UI is a separate future decision.
 
+### 3.6 Shell-vs-tool file-op adoption metric
+
+A second, related question: is `file-ops` actually displacing file work the model would otherwise have done through `shell_exec`? Unlike §3.5, this requires **classifying free-text shell commands**, which is inherently a heuristic, not an exact count — flagged here explicitly so the resulting numbers are read as a directional signal, not a precise measurement.
+
+- **Classification happens once, at write time, inside `ShellAuditStore.write()`** (`shell-audit.ts`) — not re-derived per query with fragile `LIKE` clauses. A small pure classifier function takes `entry.command` and returns three independent booleans, not a single category: a real-world `shell_exec` command is frequently a chain (`cat file.txt && sed -i 's/x/y/' file.txt`, `find . -name '*.ts' | xargs grep foo`) mixing a read, a write, and/or an unrelated action in one call. A single enum column would force one bucket per call and silently lose that a command did more than one kind of thing; three booleans let a single row be `is_file_read = true` and `is_file_write = true` at once, and `is_other = true` records that the command also contained a fragment that wasn't classified as file read/write (distinct from simply "neither read nor write matched" — a command can be a real file read *and* also do something else in the same chain).
+  - Approach: split the command on shell separators (`&&`, `||`, `;`, `|`), classify each fragment by its leading verb/redirection operator against known read verbs (`cat`, `head`, `tail`, `less`, `more`, a bare `find`) and write verbs/operators (`patch`, `sed -i`, `tee`, `cp`, `mv`, `touch`, `rm`, `>`, `>>`), and set each boolean true if any fragment matched that bucket.
+  - No changes needed to `@tkottke90/shell-executor`'s `AuditEntry` type — the classifier runs entirely inside this repo's own `ShellAuditStore.write()`, using the `command` text `AuditEntry` already carries.
+- **`shell_audit_log` migration** (new version, following the existing version-17 migration in `shell-audit.ts`): three new columns, `is_file_read INTEGER NOT NULL DEFAULT 0`, `is_file_write INTEGER NOT NULL DEFAULT 0`, `is_other INTEGER NOT NULL DEFAULT 0` — booleans-as-integers, matching the existing `trust_all` column's convention in the same table.
+- **`v_file_tool_adoption` view** (same DB as `v_tool_friction` — confirmed both `bootObservability(db)` and `bootShellAudit(db)` share one `db` instance, `index.ts:34,36` — so this view can compare the two tables directly):
+  ```sql
+  CREATE VIEW IF NOT EXISTS v_file_tool_adoption AS
+  SELECT
+    date(s.started_at)                                             AS date,
+    'file-ops'                                                     AS source,
+    SUM(CASE WHEN s.name IN ('find_file','read_file') THEN 1 ELSE 0 END) AS read_count,
+    SUM(CASE WHEN s.name = 'edit_file' THEN 1 ELSE 0 END)          AS write_count
+  FROM observability_spans s
+  WHERE s.type = 'tool-call' AND s.name IN ('find_file', 'read_file', 'edit_file')
+  GROUP BY date(s.started_at)
+
+  UNION ALL
+
+  SELECT
+    date(a.timestamp)                                              AS date,
+    'shell_exec'                                                   AS source,
+    SUM(CASE WHEN a.is_file_read  = 1 THEN 1 ELSE 0 END)          AS read_count,
+    SUM(CASE WHEN a.is_file_write = 1 THEN 1 ELSE 0 END)          AS write_count
+  FROM shell_audit_log a
+  GROUP BY date(a.timestamp);
+  ```
+  One row per `(date, source)`, so `file-ops` vs. `shell_exec` read/write counts sit side by side for the same day — a fallback ratio, not just a raw count.
+- **`GET /api/v1/metrics/file-tool-adoption`** — a second handler on the same `metricsRouter` (§3.5), same `from`/`to` convention, response `{ from, to, rows: [{ date, source, readCount, writeCount }] }`.
+- **Explicitly out of scope:** no UI, same as §3.5. Also out of scope: tuning the classifier's verb list beyond a reasonable starting set — it's expected to need refinement once there's real `shell_audit_log` data to check it against.
+
 ## 4. Data flow
 
 1. Model decides it needs file access, calls `activate_skill({ name: 'file-ops' })`.
@@ -121,7 +155,9 @@ To make "is this tool causing problems for this model" answerable with data rath
 - Extend `skill-gated-tools.middleware.test.ts` and `skill-expansion.middleware.test.ts` with cases for the new `file-ops` registration entry, following the existing test shapes for `create-workspace`/`create-project`.
 - New eval suite `suites/file-ops.yaml`, using the `gatedSkill` scenario field the `2026-08-27` hardening design already added to the eval harness for exactly this purpose: scenarios covering (a) activating `file-ops` then calling `find_file`, (b) `edit_file` receiving an ambiguous `old_string`, (c) confirming the three file tools are *absent* when `file-ops` has not been activated in that scenario's state.
 - `ToolFrictionStore`/`v_tool_friction` gets the same unit-test treatment `CostStore`/`v_usage` already has (migration applies, view returns expected aggregates against seeded spans).
-- `metrics.handlers.ts`'s handler function(s) get orchestration-level tests via `supertest`, matching `usage.route.ts`'s existing test coverage shape.
+- Shell-command classifier (§3.6): unit tests per bucket — a pure read command, a pure write command, an unrecognized/`other` command, and (the case motivating three independent booleans) a chained command mixing read and write in one call (`cat file.txt && sed -i ... file.txt`), asserting both booleans land `true` on the same row.
+- `v_file_tool_adoption` view gets the same treatment as `v_tool_friction` — seeded rows in both `observability_spans` and `shell_audit_log`, asserting the view's per-`(date, source)` counts match.
+- `metrics.handlers.ts`'s handler function(s) get orchestration-level tests via `supertest`, matching `usage.route.ts`'s existing test coverage shape — covering both `/tool-friction` and `/file-tool-adoption`.
 - `npm test` / `npm run lint` / `npx prettier --check .` before pushing, per repo convention.
 
 ## 7. Out of scope / non-goals
