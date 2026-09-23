@@ -1528,6 +1528,41 @@ export class WorkspaceStore extends BaseStore {
     }
   }
 
+  // HITL approval pause: parks the row (status 'paused', tagged
+  // pause_reason 'chat' — the existing 'chat'/'user' pauseReason union was
+  // already carrying this case in reserve) and lands the task at
+  // 'waiting_on_user'/'user', not 'blocked' — this is a different pause
+  // than parkQueueEntry's user-initiated one. Deliberately does NOT call
+  // releaseEligibleDependents(): a dependency edge is only satisfied by
+  // 'blocked' (whileBlocked) or a terminal state, neither of which applies
+  // to a task merely waiting on an approval answer.
+  //
+  // Keeping the row alive (rather than completeQueueEntry()'s 'done', which
+  // discards it) is what lets the eventual resume reuse resumePausedEntry()
+  // below instead of enqueueTask() — a fresh enqueueTask() call always
+  // appends at the back of the queue, which lets every task still pending
+  // in the same scope cut in front of a task that already started and is
+  // merely waiting on a human answer. See
+  // docs/superpowers/specs/2026-09-22-task-dependencies-design.md's related
+  // discussion of scope occupancy for the same underlying failure mode.
+  parkQueueEntryForHitl(id: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`,
+      )
+      .run(now, id);
+    const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
+      { task_id: string } | undefined;
+    if (row) {
+      this.db
+        .prepare(
+          `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ?`,
+        )
+        .run(now, row.task_id);
+    }
+  }
+
   // Queue-only cleanup for a take-over: retires the row but deliberately
   // never touches `tasks` — the take-over route handler already committed
   // tasks.status/assigned_to synchronously before this runs (see
@@ -1539,11 +1574,16 @@ export class WorkspaceStore extends BaseStore {
       .run(now, id);
   }
 
-  // Used by the user-Resume path (task-drawer's Resume button, via
-  // patchTaskHandler's blocked -> ready branch). Deliberately leaves
-  // pause_reason/paused_at in place (not cleared) so task-execution.ts can
-  // still see pausedAt on the next dequeue and send a continuation-flavored
-  // kickoff message instead of a fresh-start one.
+  // Generic "reactivate a parked row at its original queue position" —
+  // used by both the user-Resume path (task-drawer's Resume button, via
+  // patchTaskHandler's blocked -> ready branch) and the HITL-answer path
+  // (parkQueueEntryForHitl() above's counterpart), which is exactly why
+  // this stays generic rather than baking in either caller's own
+  // tasks.status transition. Deliberately leaves pause_reason/paused_at in
+  // place (not cleared) so task-execution.ts can still see pausedAt on the
+  // next dequeue and send a continuation-flavored kickoff message instead
+  // of a fresh-start one — harmless for the HITL case, whose input is
+  // driven by task.resumeAnswer instead once that's set.
   resumePausedEntry(id: string): void {
     this.db.prepare(`UPDATE task_queue SET status = 'pending' WHERE id = ?`).run(id);
   }

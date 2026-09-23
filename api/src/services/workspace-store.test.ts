@@ -504,6 +504,100 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('HITL park/resume (parkQueueEntryForHitl / resumePausedEntry) — no queue-position starvation', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-hitl-park-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeQueuedTask(title: string, workspaceId?: string | null) {
+      const task = store.createTask({ title, workspaceId, assignedTo: 'agent' });
+      return store.enqueueTask(task.id);
+    }
+
+    it('parks the row (paused, pause_reason chat) and lands the task at waiting_on_user, not blocked', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const entry = makeQueuedTask('Task', workspace.id);
+      const dequeued = store.dequeueNext()!;
+      expect(dequeued.id).to.equal(entry.id);
+
+      store.parkQueueEntryForHitl(dequeued.id);
+
+      const task = store.getTask(dequeued.taskId)!;
+      expect(task.status).to.equal('waiting_on_user');
+      expect(task.assignedTo).to.equal('user');
+
+      const queueEntry = store.listQueue().find((q) => q.id === dequeued.id)!;
+      expect(queueEntry.status).to.equal('paused');
+      expect(queueEntry.pauseReason).to.equal('chat');
+    });
+
+    it('does not release a pending dependent — waiting_on_user satisfies no dependency edge, not even whileBlocked', () => {
+      const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+      store.patchTask(a.id, { status: 'ready' });
+      const entry = store.enqueueTask(a.id);
+      const b = store.createTask({ title: 'b' }); // stays 'pending'
+      store.addTaskDependency(b.id, a.id, { whileBlocked: true });
+
+      store.dequeueNext();
+      store.parkQueueEntryForHitl(entry.id);
+
+      expect(store.getTask(b.id)!.status).to.equal('pending');
+    });
+
+    it("a HITL-parked task keeps its original queue position across resume — a later sibling can't cut in front of it", () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const first = makeQueuedTask('First task', workspace.id);
+      const second = makeQueuedTask('Second task', workspace.id);
+
+      const dequeued = store.dequeueNext()!;
+      expect(dequeued.id).to.equal(first.id);
+
+      // First task hits an approval interrupt.
+      store.parkQueueEntryForHitl(dequeued.id);
+      expect(store.dequeueNext()).to.equal(null); // scope still occupied
+
+      // The human answers the prompt — mirrors the /hitl route's task
+      // branch (workspace-chat.route.ts), minus resumeAnswer, which this
+      // store-level test has no reason to thread through.
+      store.patchTask(dequeued.taskId, { status: 'ready', assignedTo: 'agent' });
+      store.resumePausedEntry(dequeued.id);
+
+      // The SAME row, at its original position, is what comes back — not a
+      // fresh row appended behind "Second task".
+      const next = store.dequeueNext()!;
+      expect(next.id).to.equal(dequeued.id);
+      expect(next.id).not.to.equal(second.id);
+    });
+
+    it('contrast: the old completeQueueEntry + enqueueTask pattern lets a later sibling starve the resumed task', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const first = makeQueuedTask('First task', workspace.id);
+      const second = makeQueuedTask('Second task', workspace.id);
+
+      const dequeued = store.dequeueNext()!;
+      store.completeQueueEntry(dequeued.id, 'done');
+      store.patchTask(dequeued.taskId, { status: 'waiting_on_user', assignedTo: 'user' });
+
+      store.patchTask(dequeued.taskId, { status: 'ready', assignedTo: 'agent' });
+      const resumedEntry = store.enqueueTask(dequeued.taskId); // fresh row, back of the queue
+
+      // "Second task"'s original (earlier) position beats the resumed
+      // task's brand-new (later) one — this is the starvation bug.
+      const next = store.dequeueNext()!;
+      expect(next.id).to.equal(second.id);
+      expect(next.id).not.to.equal(resumedEntry.id);
+    });
+  });
+
   describe("sub-agent tooling columns and helpers (origin='agent' — issue #161, migration 27)", () => {
     let db: ReturnType<typeof openDatabase>;
     let store: WorkspaceStore;
