@@ -430,6 +430,80 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('scope guard vs. a paused (waiting_on_user) task in the same scope', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-scope-pause-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeQueuedTask(title: string, workspaceId?: string | null) {
+      const task = store.createTask({ title, workspaceId, assignedTo: 'agent' });
+      return store.enqueueTask(task.id);
+    }
+
+    // Reproduces the reported cascading-failure bug: task-execution.ts's
+    // interrupt (HITL approval) path closes the queue row ('done') before
+    // the task itself settles at 'waiting_on_user' — see that file's
+    // `store.completeQueueEntry(entry.id, 'done')` immediately followed by
+    // `store.patchTask(task.id, { status: 'waiting_on_user', ... })`. Until
+    // the fix, dequeueNext()'s scope-occupancy check only looks at
+    // task_queue.status = 'running', so it reads the workspace scope as free
+    // the instant that queue row closes — even though the task is only
+    // paused, not actually finished — and immediately dispatches the next
+    // queued task onto the *same* workspace thread the paused task is still
+    // mid-conversation on.
+    it('does not dequeue a second task in the same workspace while the first is waiting_on_user', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const first = makeQueuedTask('First task', workspace.id);
+      makeQueuedTask('Second task', workspace.id);
+
+      const dequeued = store.dequeueNext()!;
+      expect(dequeued.id).to.equal(first.id);
+
+      // Mirrors task-execution.ts's interrupt path exactly: the queue row
+      // closes out even though the task is only pausing, not finishing.
+      store.completeQueueEntry(dequeued.id, 'done');
+      store.patchTask(dequeued.taskId, { status: 'waiting_on_user', assignedTo: 'user' });
+
+      // The workspace scope must still read as occupied — "Second task"
+      // must not be dispatched onto the same thread while "First task" is
+      // still mid-approval, unresolved.
+      expect(store.dequeueNext()).to.equal(null);
+    });
+
+    it('frees the scope again once the paused task is actually resumed and completes', () => {
+      const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const first = makeQueuedTask('First task', workspace.id);
+      const second = makeQueuedTask('Second task', workspace.id);
+
+      const dequeued = store.dequeueNext()!;
+      expect(dequeued.id).to.equal(first.id);
+      store.completeQueueEntry(dequeued.id, 'done');
+      store.patchTask(dequeued.taskId, { status: 'waiting_on_user', assignedTo: 'user' });
+      expect(store.dequeueNext()).to.equal(null);
+
+      // The user answers the approval prompt — mirrors the /hitl route's
+      // task re-enqueue branch (workspace-chat.route.ts): the task goes
+      // back to 'ready'/'agent' and a fresh queue row is enqueued.
+      store.patchTask(dequeued.taskId, { status: 'ready', assignedTo: 'agent' });
+      const resumed = store.enqueueTask(dequeued.taskId);
+
+      // Now that the paused task is no longer waiting_on_user, the scope is
+      // free again — one of the two pending rows (resumed "First task" or
+      // still-queued "Second task") should dispatch.
+      const next = store.dequeueNext()!;
+      expect([resumed.id, second.id]).to.include(next.id);
+    });
+  });
+
   describe("sub-agent tooling columns and helpers (origin='agent' — issue #161, migration 27)", () => {
     let db: ReturnType<typeof openDatabase>;
     let store: WorkspaceStore;
