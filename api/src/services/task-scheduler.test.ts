@@ -11,6 +11,8 @@ import {
   type TaskQueueEntry,
 } from './workspace-store.js';
 import { TaskScheduler } from './task-scheduler.js';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
+import { registerBroadcastClient, unregisterBroadcastClient } from './broadcast.js';
 
 // Flushes enough microtask turns for a chain of `await this.executor(...)` →
 // `catch`/`finally` → `this.wake()` → (possibly) another dispatch to settle,
@@ -149,6 +151,70 @@ describe('services/task-scheduler', () => {
 
       expect(() => s.wake()).to.not.throw();
       expect(store.getRunningEntry('inbox')).to.not.equal(null);
+    });
+  });
+
+  // Real registry (broadcast.ts), not a stubbed import — every wake() call
+  // ends with emitQueueUpdate(), so a plain registered client sees exactly
+  // what a connected browser tab would.
+  describe('emitQueueUpdate / broadcast wiring', () => {
+    let received: AppBroadcastEvent[];
+    let writer: (event: AppBroadcastEvent) => void;
+
+    beforeEach(() => {
+      received = [];
+      writer = (event) => received.push(event);
+      registerBroadcastClient(writer);
+    });
+
+    afterEach(() => {
+      unregisterBroadcastClient(writer);
+    });
+
+    it("broadcasts a task_queue_update reflecting the store's current state after an enqueue", () => {
+      const queued = makeQueuedTask('Broadcast task');
+
+      scheduler.wake();
+
+      const updates = received.filter(
+        (e): e is Extract<AppBroadcastEvent, { type: 'task_queue_update' }> =>
+          e.type === 'task_queue_update',
+      );
+      expect(updates.length).to.be.greaterThan(0);
+      const last = updates[updates.length - 1]!;
+      expect(last.running.some((e) => e.id === queued.id)).to.equal(true);
+    });
+
+    it('enriches each queue entry with its task record (regression: sidebar/Kanban read entry.task directly)', () => {
+      // Both tasks share the inbox scope: dequeueNext() claims scopes
+      // one-at-a-time and tick() drains every *eligible* scope in a single
+      // wake(), so a second task only stays 'pending' (landing in the
+      // broadcast's `queue` array rather than `running`) if it's in the
+      // *same* scope as a still-running entry — a different scope would be
+      // dequeued too, in the same wake() (see the "dispatches tasks in
+      // different scopes concurrently" test above).
+      makeQueuedTask('First inbox task');
+      const secondQueued = makeQueuedTask('Second inbox task');
+      const s = new TaskScheduler(() => new Promise<void>(() => {}));
+
+      s.wake();
+
+      const updates = received.filter(
+        (e): e is Extract<AppBroadcastEvent, { type: 'task_queue_update' }> =>
+          e.type === 'task_queue_update',
+      );
+      const last = updates[updates.length - 1]!;
+      const queueEntry = last.queue.find((e) => e.id === secondQueued.id);
+      expect(queueEntry, 'expected the still-pending entry in queue').to.not.equal(undefined);
+      expect(queueEntry!.task).to.not.equal(null);
+      expect((queueEntry!.task as { title: string }).title).to.equal('Second inbox task');
+    });
+
+    it('broadcasts without throwing even with no connected clients', () => {
+      unregisterBroadcastClient(writer);
+      makeQueuedTask('No clients');
+
+      expect(() => scheduler.wake()).to.not.throw();
     });
   });
 });

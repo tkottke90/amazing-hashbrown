@@ -49,3 +49,35 @@ export const ChatSSEEventSchema = z.discriminatedUnion('type', [
 ]);
 
 export type ChatSSEEvent = z.infer<typeof ChatSSEEventSchema>;
+
+export const TaskQueueEntrySchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  status: z.enum(['pending', 'running', 'paused', 'done', 'failed', 'cancelled']),
+  position: z.number(),
+  enqueuedAt: z.string(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  recoveryAttempts: z.number(),
+  pauseReason: z.enum(['chat', 'user']).nullable(),
+  pausedAt: z.string().nullable(),
+});
+export type TaskQueueEntry = z.infer<typeof TaskQueueEntrySchema>;
+
+export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('task_queue_update'),
+    queue: z.array(
+      TaskQueueEntrySchema.extend({ task: z.record(z.string(), z.unknown()).nullable() }),
+    ),
+    running: z.array(TaskQueueEntrySchema.extend({ task: z.record(z.string(), z.unknown()) })),
+  }),
+  z.object({ type: z.literal('hitl_prompt'), threadId: z.string(), taskId: z.string() }),
+  z.object({
+    type: z.literal('task_completed'),
+    threadId: z.string(),
+    taskId: z.string(),
+    outcome: z.enum(['done', 'failed', 'cancelled']),
+  }),
+]);
+export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

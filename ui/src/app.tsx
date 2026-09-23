@@ -5,6 +5,7 @@ import { ToastContainer } from '@/components/toast-container';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { activeThreadId } from '@/hooks/use-thread';
 import { activeGuard } from '@/hooks/use-settings-guard';
+import { connectLiveEvents } from '@/hooks/use-live-events';
 import { ChatRoot } from '@/pages/chat';
 import { SettingsView } from '@/pages/settings';
 import { WikiView } from '@/pages/wiki';
@@ -32,6 +33,14 @@ export function App() {
     }
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  // Standing app-level SSE connection — opened once for the tab's whole
+  // lifetime, independent of whatever page/workspace is active. See
+  // use-live-events.ts and docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md.
+  useEffect(() => {
+    const es = connectLiveEvents();
+    return () => es.close();
   }, []);
 
   return (

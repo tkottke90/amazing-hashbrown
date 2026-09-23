@@ -35,6 +35,7 @@ import {
 } from './thread-message-writer.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import { drainPendingTurns, runOnceThreadFree } from './pending-thread-turns.js';
+import { broadcast } from '../services/broadcast.js';
 
 export type QueueEntryWithTask = TaskQueueEntry & { task: Task };
 
@@ -516,6 +517,23 @@ export async function executeTask(
         'end',
         finalOutcome,
       );
+      // Single choke point for the live-events broadcast (see
+      // docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md) —
+      // finalOutcome is already assigned by every branch above (both the
+      // graceful try-block outcomes and all five catch-block cases), so this
+      // covers every run without touching any of those branches themselves.
+      // 'blocked' (a user-initiated pause, not a HITL wait) deliberately
+      // broadcasts neither event: the task_queue_update from wake() already
+      // reflects it, and there's no thread-side content to react to.
+      if (finalOutcome === 'waiting_on_user') {
+        broadcast({ type: 'hitl_prompt', threadId, taskId: task.id });
+      } else if (
+        finalOutcome === 'done' ||
+        finalOutcome === 'failed' ||
+        finalOutcome === 'cancelled'
+      ) {
+        broadcast({ type: 'task_completed', threadId, taskId: task.id, outcome: finalOutcome });
+      }
       clearActiveSseWriter(threadId);
       drainPendingTurns(threadId);
       clearTaskAbort(entry.id);

@@ -20,6 +20,8 @@ import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-ab
 import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, type QueueEntryWithTask } from './task-execution.js';
 import type { buildTaskAgent } from './chat-agent.js';
+import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawEvent = Record<string, any>;
@@ -904,6 +906,108 @@ describe('agents/task-execution', () => {
       await runPromise;
 
       expect(store.getTask(entry.task.id)!.status).to.equal('cancelled');
+    });
+  });
+
+  // Regression coverage for the live-events broadcast hook added to
+  // executeTask()'s finally block (see
+  // docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md) — a
+  // separate describe block re-driving the same fake-agent scenarios as the
+  // tests above, purely to assert the right broadcast() call, so a
+  // broadcast-wiring regression doesn't get buried inside an unrelated
+  // assertion. Uses the real registry (broadcast.ts), same as
+  // task-scheduler.test.ts's equivalent coverage, rather than stubbing the
+  // module import.
+  describe('broadcast wiring (live events)', () => {
+    let received: AppBroadcastEvent[];
+    let writer: (event: AppBroadcastEvent) => void;
+
+    beforeEach(() => {
+      received = [];
+      writer = (event) => received.push(event);
+      registerBroadcastClient(writer);
+    });
+
+    afterEach(() => {
+      unregisterBroadcastClient(writer);
+    });
+
+    it('broadcasts task_completed with outcome "done" when complete_task succeeds', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'done' },
+      ]);
+    });
+
+    it('broadcasts task_completed with outcome "failed" when complete_task reports failure', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_FAILED_EVENTS)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
+      ]);
+    });
+
+    it('broadcasts task_completed with outcome "failed" when the agent stops without calling complete_task', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAgent([
+        { event: 'on_chat_model_stream', data: { chunk: { content: 'Still thinking...' } } },
+      ]);
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
+      ]);
+    });
+
+    it('broadcasts hitl_prompt on a graceful (non-throwing) interrupt', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAgent([], { kind: 'free_text', question: 'Which domain?' });
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
+      ]);
+    });
+
+    it('broadcasts hitl_prompt on a thrown GraphInterrupt', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeGraphInterruptAgent([], { kind: 'shell_approval', command: 'ls' });
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
+      ]);
+    });
+
+    it('broadcasts task_completed with outcome "cancelled" on a cancel-intent abort', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAbortingAgent(entry.id, 'cancel');
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'cancelled' },
+      ]);
+    });
+
+    it('does not broadcast anything on a pause-intent abort ("blocked" has no thread-side content)', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAbortingAgent(entry.id, 'pause');
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(received).to.deep.equal([]);
     });
   });
 });
