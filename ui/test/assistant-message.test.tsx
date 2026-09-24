@@ -135,6 +135,20 @@ describe('AssistantMessage — error rendering', () => {
   });
 });
 
+describe('AssistantMessage — content-less non-error turns', () => {
+  it('does not show the generic error message for a done turn with empty content', () => {
+    // Regression test: answering a task-originated HITL prompt ends its SSE
+    // stream with stream_done and no assistant content at all (the real
+    // turn runs later, asynchronously, once the scheduler picks the task
+    // back up) — this used to render as "Something went wrong" even though
+    // nothing failed.
+    render(<AssistantMessage message={baseMessage({ status: 'done', content: '' })} />);
+
+    expect(screen.queryByText('Something went wrong. Please try again.')).not.toBeInTheDocument();
+    expect(screen.getByText('No response for this turn.')).toBeInTheDocument();
+  });
+});
+
 describe('AssistantMessage — metrics row', () => {
   it('renders duration, tok/s, cost, and token breakdown together', () => {
     render(
