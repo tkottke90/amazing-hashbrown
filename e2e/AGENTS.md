@@ -201,6 +201,7 @@ implementation details that change without notice.
 | `inbox-task-row`           | `ui/src/pages/inbox/index.tsx`                      | Table row for an inbox task; pair with `data-task-id`                                         |
 | `resource-card`            | `ui/src/components/resource-card-message.tsx`       | Targeting the resource card rendered after /create-workspace or /create-project               |
 | `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx`       | The card's Open control, navigating to `/workspaces/:id`                                      |
+| `task-run-marker`          | `ui/src/components/task-run-marker-message.tsx`     | The "Automated task started/completed/…" banner bracketing a task's run in a thread           |
 | `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
 | `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered node `<circle>` elements                                        |
 | `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |
