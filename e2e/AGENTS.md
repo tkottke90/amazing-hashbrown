@@ -29,6 +29,26 @@ default when `CI` is not set).
 After a run, open `e2e/playwright-report/index.html` for the HTML report with
 traces and screenshots.
 
+### The task scheduler is a no-op under Playwright's own API server
+
+`playwright.config.ts`'s `webServer` entry for the API sets
+`E2E_NOOP_TASK_EXECUTOR=true` (see `api/src/index.ts`), which swaps in a task
+executor that dequeues a task and then never resolves — on purpose, so
+`task-queue-widget.spec.ts` can hold a task at `status: running` for the
+length of a test without needing a real LLM.
+
+This env var only applies to a server Playwright itself spawns. Locally,
+`reuseExistingServer: !process.env['CI']` means Playwright attaches to an
+already-running server on `:3000` instead of spawning its own — but if none
+is up yet, it launches one with the no-op executor baked in. If you're
+manually testing (or running a suite like `CreateTasks.ts` below) and expect
+a task to actually run to completion — start `npm run dev:api` yourself
+first, in its own terminal, before running the Playwright suite. Otherwise
+every task you create will dequeue, log `Task scheduler: starting task`, and
+then simply sit at `running` forever, with no further activity of any kind —
+easy to mistake for a real backend hang (see git history on this file's
+neighbor `task-execution.ts` for a full postmortem of exactly that).
+
 ## Tag conventions
 
 Two independent tag axes are used in this package. Both are applied to
@@ -66,6 +86,49 @@ hits the real GitHub API and skips itself with a descriptive reason when
 `skip: () => condition ? 'reason' : false` (see below). Locally this means
 the suite just no-ops without those env vars; in CI, adding the
 corresponding secrets is what turns it on.
+
+### Manual test suites (`@llm @local`)
+
+A suite tagged with both `@llm` and `@local` (`CUSTOM_TAGS.LLM` +
+`CUSTOM_TAGS.LOCAL` from `e2e/lib/tags.ts`) is never run in CI or
+unattended — it drives a real LLM against a real running dev server and
+pauses for a human to click Send, so provider/model can be swapped in the UI
+mid-run. Reach for this pattern instead of a one-off manual click-through
+whenever a feature is hard to fully exercise through `page.route()` mocking
+(e.g. the actual, non-deterministic tool-calling/reasoning behavior of a real
+model) — a checked-in suite means the next person (or agent) investigating a
+report against this feature can reproduce the exact same scenario instead of
+re-improvising it, and gets the CDP/log-capture tooling below for free.
+
+`e2e/tests/workspace/CreateTasks.ts` (the `CreateTask` suite, built with
+`@tkottke90/playwrite-test-runner` — see below) is the canonical example:
+worth reading end to end before writing a new one. Notable pieces:
+
+- **`waitForManualSend()`** fills the chat input, then waits for the Send
+  button to flip to Stop — driven by an actual human clicking Send in the
+  browser, not by the test — so a person can switch provider/model in the UI
+  first. `MANUAL_SEND_TIMEOUT_MS` (10 minutes) bounds that wait.
+- **The `beforeEach` CDP hook** opens a `Network.enable` CDP session and logs
+  every frame the browser actually receives on the standing SSE channel
+  (`GET /api/v1/events`), via `Network.eventSourceMessageReceived`. This was
+  built specifically because regular Network-tab inspection doesn't show
+  individual SSE frames well, and `use-live-events.ts` silently drops any
+  frame that fails schema validation with no console output — so "no
+  console errors" never rules that out as a cause. Copy this hook wholesale
+  into a new suite any time you need to see exactly what arrived over that
+  channel, with exact content and timing. Chromium-only (CDP).
+- Requires a real dev server already running (see the no-op task executor
+  note above) — `npm run dev:api` and `npm run dev:ui` in their own
+  terminals — since Playwright's own spawned API server can't drive a real
+  agent turn at all (no LLM provider is configured for it in CI-safe runs)
+  and, separately, won't ever let a dequeued task actually execute.
+- Run it directly with Playwright's CLI, filtering by name (its registered
+  test title is `[100] Auto Task Generation @user-workflow @llm @local` —
+  the tags are embedded in the title itself, per the tag convention above)
+  rather than via `npm run test:e2e*`, which both exclude `@llm`/`@local` by
+  design:
+  `npx playwright test -g "Auto Task Generation" --project=chromium-user-workflow`
+  from `e2e/`.
 
 ## The newer `@tkottke90/playwrite-test-runner` pattern
 
