@@ -187,6 +187,13 @@ export async function executeTask(
   // LangGraph checkpoint thread_id, which can lose a parked interrupt. See
   // this function's own module-level doc and pending-thread-turns.ts.
   const runClaimed = async (): Promise<void> => {
+    // Diagnostic for the "task shows running but nothing ever happens" class
+    // of bug: this is the one line that proves runOnceThreadFree() actually
+    // invoked this closure, as opposed to it still sitting queued in
+    // pending-thread-turns.ts waiting for a drainPendingTurns() that never
+    // comes. Cheap enough to leave in permanently.
+    logger.info('task-execution: claimed thread, starting run', { taskId: task.id, threadId });
+
     // No live SSE connection drives this run (the scheduler invoked it, not
     // an HTTP request) — this sink only matters as (a) the concurrency mutex
     // workspace-chat-stream-handler.ts checks via getActiveSseWriter, and (b)

@@ -1,4 +1,5 @@
 import { getActiveSseWriter } from './active-sse-writer.js';
+import { logger } from '../config/logger.js';
 
 // A spawn_sub_agent completion notification (see sub-agent-notification.ts)
 // can't simply drop what it wants to say if the parent thread's per-thread
@@ -31,9 +32,11 @@ const _queues = new Map<string, PendingTurn[]>();
 // never awaits delivery.
 export function enqueuePendingTurn(threadId: string, run: PendingTurn): void {
   if (!getActiveSseWriter(threadId)) {
+    logger.info('pending-thread-turns: thread free, running immediately', { threadId });
     void run();
     return;
   }
+  logger.info('pending-thread-turns: thread busy, deferring turn', { threadId });
   const queue = _queues.get(threadId);
   if (queue) {
     queue.push(run);
@@ -50,7 +53,10 @@ export function drainPendingTurns(threadId: string): void {
   if (!queue || queue.length === 0) return;
   const next = queue.shift();
   if (queue.length === 0) _queues.delete(threadId);
-  if (next) void next();
+  if (next) {
+    logger.info('pending-thread-turns: draining next queued turn', { threadId });
+    void next();
+  }
 }
 
 // Awaitable variant of enqueuePendingTurn — for a caller that must not
