@@ -1,4 +1,4 @@
-import { APIRequestContext, Locator, Page, expect } from "@playwright/test";
+import { APIRequestContext, Locator, Page, expect } from '@playwright/test';
 
 export interface CreatedWorkspace {
   id: string;
@@ -8,7 +8,7 @@ export interface CreatedWorkspace {
 export async function createWorkspace(
   request: APIRequestContext,
   data: Record<string, unknown>,
-  createdLocations: string[]
+  createdLocations: string[],
 ): Promise<CreatedWorkspace> {
   const res = await request.post('/api/v1/workspaces', { data });
   expect(res.status()).toBe(201);
@@ -17,7 +17,10 @@ export async function createWorkspace(
   return { id: ws.id, location: ws.location };
 }
 
-export async function deleteWorkspace(request: APIRequestContext, workspaceId: string): Promise<void> {
+export async function deleteWorkspace(
+  request: APIRequestContext,
+  workspaceId: string,
+): Promise<void> {
   const res = await request.delete(`/api/v1/workspaces/${workspaceId}`);
   expect(res.status()).toBe(204);
 }

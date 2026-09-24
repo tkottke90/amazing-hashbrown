@@ -46,7 +46,7 @@ async function waitForManualSend(
 // anything — the create_tasks tool should only fire after the follow-up
 // prompt below explicitly asks for it.
 const FIRST_PROMPT =
-  "I want to scaffold a simple Express.js + TypeScript app in this workspace — package.json, " +
+  'I want to scaffold a simple Express.js + TypeScript app in this workspace — package.json, ' +
   'tsconfig.json, folder structure, and a basic src/index.ts with one route. Skip any npm ' +
   "install, just get the files in place. Let's talk through the plan before you do anything.";
 
@@ -57,8 +57,7 @@ const SECOND_PROMPT = 'That looks good — go ahead and set that up as tasks.';
 export const CreateTask: TestSuite = {
   id: 100,
   name: 'Auto Task Generation',
-  purpose:
-    'To manually test the workspace task creation process - Never used with CI tests',
+  purpose: 'To manually test the workspace task creation process - Never used with CI tests',
   tag: [TAGS.UserWorkflow, CUSTOM_TAGS.LLM, CUSTOM_TAGS.LOCAL],
   recordVideo: true,
   beforeAll: async ({ request }) => {
@@ -69,12 +68,16 @@ export const CreateTask: TestSuite = {
     workspaceName = `task-create-${sha}`;
 
     // Create a dedicated workspace for the test
-    workspace = await createWorkspace(request, {
-      name: workspaceName,
-      locationRoot: 'temporary',
-      directoryName: `auto-create-task-${Date.now()}`,
-      git: true,
-    }, createdLocations);
+    workspace = await createWorkspace(
+      request,
+      {
+        name: workspaceName,
+        locationRoot: 'temporary',
+        directoryName: `auto-create-task-${Date.now()}`,
+        git: true,
+      },
+      createdLocations,
+    );
   },
   afterAll: async ({ request }) => {
     if (workspace?.id) {
@@ -119,8 +122,7 @@ export const CreateTask: TestSuite = {
     },
     {
       slow: true,
-      action:
-        'Fill in the chat input with the First Prompt, then wait for a human to click Send',
+      action: 'Fill in the chat input with the First Prompt, then wait for a human to click Send',
       expectedOutcome:
         'Once Send is clicked the message goes out, and the Send button reappears once the agent responds',
       test: async ({ page }, testInfo) => {
@@ -139,8 +141,7 @@ export const CreateTask: TestSuite = {
     },
     {
       slow: true,
-      action:
-        'Fill in the chat input with the Second Prompt, then wait for a human to click Send',
+      action: 'Fill in the chat input with the Second Prompt, then wait for a human to click Send',
       expectedOutcome:
         'The create_tasks tool call appears in the chat, then the Send button reappears',
       test: async ({ page }, testInfo) => {
@@ -163,14 +164,13 @@ export const CreateTask: TestSuite = {
       expectedOutcome: 'The Tasks tab label shows a count greater than zero',
       test: async ({ page }, testInfo) => {
         await pauseForVideo(page, CreateTask, testInfo);
-        await expect(
-          page.getByRole('button', { name: /Tasks \([1-9][0-9]*\)/ }),
-        ).toBeVisible();
+        await expect(page.getByRole('button', { name: /Tasks \([1-9][0-9]*\)/ })).toBeVisible();
       },
     },
     {
       action: 'Check the chat history for an "Automated task started" message',
-      expectedOutcome: 'The marker appears, signalling the created tasks were automatically picked up',
+      expectedOutcome:
+        'The marker appears, signalling the created tasks were automatically picked up',
       test: async ({ page }, testInfo) => {
         await pauseForVideo(page, CreateTask, testInfo);
         await expect(
