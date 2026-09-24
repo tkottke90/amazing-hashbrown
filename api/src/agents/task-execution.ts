@@ -153,17 +153,7 @@ export async function executeTask(
         threadStore.upsertThreadOnFirstMessage(threadId, workspace.name, 'workspace-chat');
       }
       const allowedWikiId = resolveAllowedWikiId(store, workspace.id);
-      // Diagnostic bracket for the same investigation as the log added to
-      // runClaimed() below — narrows whether a stuck task is hanging on this
-      // specific await (buildWorkspaceContext, which itself conditionally
-      // awaits getWikiRegistry()) versus somewhere else in this try block.
-      logger.info('task-execution: resolving workspace context', {
-        taskId: task.id,
-        workspaceId: workspace.id,
-        wikiId: workspace.wikiId,
-      });
       const workspaceContext = await buildWorkspaceContext(workspace);
-      logger.info('task-execution: workspace context resolved', { taskId: task.id });
       workspaceScope = { workspace, workspaceContext, allowedWikiId };
     } else {
       // A global task has no shared chat surface to inline into — it gets
