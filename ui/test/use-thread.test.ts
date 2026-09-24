@@ -9,6 +9,7 @@ import {
   useThreadInstance,
   switchThread,
   threads,
+  hasThreadInstance,
   _resetThreadInstancesForTests,
   type ThreadInstance,
 } from '@/hooks/use-thread';
@@ -43,6 +44,18 @@ afterEach(() => {
   providers.value = [];
   defaultProviderName.value = '';
   threads.value = [];
+});
+
+describe('use-thread — hasThreadInstance', () => {
+  it('returns false for a thread id useThreadInstance() has never been called with', () => {
+    expect(hasThreadInstance('never-visited')).toBe(false);
+  });
+
+  it('returns true once useThreadInstance() has been called for that thread id', () => {
+    useThreadInstance('thread-x');
+
+    expect(hasThreadInstance('thread-x')).toBe(true);
+  });
 });
 
 describe('use-thread — continuation-bubble splitting', () => {

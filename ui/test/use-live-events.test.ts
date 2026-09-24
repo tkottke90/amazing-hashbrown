@@ -9,15 +9,16 @@ jest.mock('@/hooks/use-tasks', () => ({
 
 const mockHydrate = jest.fn();
 const mockUseThreadInstance = jest.fn(() => ({ hydrate: mockHydrate }));
+const mockHasThreadInstance = jest.fn(() => false);
 
 jest.mock('@/hooks/use-thread', () => ({
   ...jest.requireActual('@/hooks/use-thread'),
   useThreadInstance: (...args: unknown[]) => mockUseThreadInstance(...args),
+  hasThreadInstance: (...args: unknown[]) => mockHasThreadInstance(...args),
 }));
 
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { tasks, queueState } from '@/hooks/use-tasks';
-import { activeThreadId } from '@/hooks/use-thread';
 import type { Task } from '@/services/tasks-api';
 
 // jsdom has no real EventSource — a minimal fake that captures the handlers
@@ -76,9 +77,10 @@ describe('hooks/use-live-events', () => {
     mockRefreshTasks.mockClear();
     mockHydrate.mockClear();
     mockUseThreadInstance.mockClear();
+    mockHasThreadInstance.mockClear();
+    mockHasThreadInstance.mockReturnValue(false);
     tasks.value = [];
     queueState.value = { queue: [], running: [] };
-    activeThreadId.value = 'thread-inactive';
   });
 
   function currentSource(): FakeEventSource {
@@ -137,6 +139,14 @@ describe('hooks/use-live-events', () => {
     expect(mockRefreshQueue).not.toHaveBeenCalled();
   });
 
+  it('refetches the task list on task_queue_update, so brand-new tasks (e.g. from create_tasks) are picked up', () => {
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'task_queue_update', queue: [], running: [] });
+
+    expect(mockRefreshTasks).toHaveBeenCalledTimes(1);
+  });
+
   it('patches the matching task to the given outcome on task_completed, leaving others untouched', () => {
     tasks.value = [
       makeTask({ id: 'task-1', status: 'running' }),
@@ -164,18 +174,48 @@ describe('hooks/use-live-events', () => {
     expect(tasks.value.find((t) => t.id === 'task-1')!.status).toBe('waiting_on_user');
   });
 
-  it('rehydrates the thread only when the event matches the currently active thread', () => {
+  it('rehydrates the thread only when a ThreadInstance already exists for it (mounted this session)', () => {
     tasks.value = [makeTask({ id: 'task-1' })];
-    activeThreadId.value = 'thread-A';
     connectLiveEvents();
 
+    mockHasThreadInstance.mockReturnValue(false);
     currentSource().emit({ type: 'hitl_prompt', threadId: 'thread-B', taskId: 'task-1' });
     expect(mockUseThreadInstance).not.toHaveBeenCalled();
     expect(mockHydrate).not.toHaveBeenCalled();
 
+    mockHasThreadInstance.mockReturnValue(true);
     currentSource().emit({ type: 'hitl_prompt', threadId: 'thread-A', taskId: 'task-1' });
     expect(mockUseThreadInstance).toHaveBeenCalledWith('thread-A');
     expect(mockHydrate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rehydrates the thread on task_started when a ThreadInstance already exists for it', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+
+    currentSource().emit({ type: 'task_started', threadId: 'thread-A', taskId: 'task-1' });
+
+    expect(mockUseThreadInstance).toHaveBeenCalledWith('thread-A');
+    expect(mockHydrate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not rehydrate on task_started when no ThreadInstance exists for that thread', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(false);
+
+    currentSource().emit({ type: 'task_started', threadId: 'thread-A', taskId: 'task-1' });
+
+    expect(mockUseThreadInstance).not.toHaveBeenCalled();
+    expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it('does not patch task status on task_started (task is already running)', () => {
+    tasks.value = [makeTask({ id: 'task-1', status: 'running' })];
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'task_started', threadId: 'thread-A', taskId: 'task-1' });
+
+    expect(tasks.value.find((t) => t.id === 'task-1')!.status).toBe('running');
   });
 
   it('silently ignores a payload that fails schema validation', () => {

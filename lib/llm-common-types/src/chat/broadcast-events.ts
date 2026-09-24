@@ -45,6 +45,18 @@ const HitlPromptBroadcastSchema = z.object({
   taskId: z.string(),
 });
 
+// Fired right after task-execution.ts durably writes the 'start'
+// task_run_marker row — the only signal that a task has begun running,
+// letting a client with that thread already open (global chat or a
+// workspace Chat tab) hydrate it live instead of only on next reload. Not
+// fired for the dependency-blocked pending -> blocked transition, which
+// never reaches executeTask() at all.
+const TaskStartedSchema = z.object({
+  type: z.literal('task_started'),
+  threadId: z.string(),
+  taskId: z.string(),
+});
+
 const TaskCompletedSchema = z.object({
   type: z.literal('task_completed'),
   threadId: z.string(),
@@ -55,6 +67,7 @@ const TaskCompletedSchema = z.object({
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
+  TaskStartedSchema,
   TaskCompletedSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

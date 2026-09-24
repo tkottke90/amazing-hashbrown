@@ -940,6 +940,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'done' },
       ]);
     });
@@ -952,6 +953,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
       ]);
     });
@@ -965,6 +967,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
       ]);
     });
@@ -976,6 +979,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
       ]);
     });
@@ -987,6 +991,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
       ]);
     });
@@ -998,16 +1003,20 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
         { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'cancelled' },
       ]);
     });
 
-    it('does not broadcast anything on a pause-intent abort ("blocked" has no thread-side content)', async () => {
+    it('broadcasts task_started but no terminal event on a pause-intent abort ("blocked" has no thread-side content)', async () => {
       const entry = makeGlobalEntry();
       const agent = fakeAbortingAgent(entry.id, 'pause');
       await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
-      expect(received).to.deep.equal([]);
+      const task = store.getTask(entry.task.id)!;
+      expect(received).to.deep.equal([
+        { type: 'task_started', threadId: task.threadId, taskId: task.id },
+      ]);
     });
   });
 });

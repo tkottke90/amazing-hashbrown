@@ -73,6 +73,7 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     running: z.array(TaskQueueEntrySchema.extend({ task: z.record(z.string(), z.unknown()) })),
   }),
   z.object({ type: z.literal('hitl_prompt'), threadId: z.string(), taskId: z.string() }),
+  z.object({ type: z.literal('task_started'), threadId: z.string(), taskId: z.string() }),
   z.object({
     type: z.literal('task_completed'),
     threadId: z.string(),

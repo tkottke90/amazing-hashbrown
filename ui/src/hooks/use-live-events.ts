@@ -1,6 +1,6 @@
 import { AppBroadcastEventSchema, type AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import { tasks, queueState, refreshQueue, refreshTasks } from './use-tasks';
-import { activeThreadId, useThreadInstance } from './use-thread';
+import { hasThreadInstance, useThreadInstance } from './use-thread';
 import type { QueueState, TaskStatus } from '../services/tasks-api';
 
 // Opens the standing app-level SSE channel (GET /api/v1/events) — unlike
@@ -52,12 +52,26 @@ function handleEvent(event: AppBroadcastEvent): void {
       // at the wire boundary; the specific Task sub-shape is trusted the
       // same way any other same-origin API response's body is.
       queueState.value = { queue: event.queue, running: event.running } as unknown as QueueState;
+      // Also covers brand-new tasks (e.g. from create_tasks): patchTaskStatus
+      // below can only patch an id already in `tasks.value`, never insert
+      // one, and task_queue_update fires on essentially every task lifecycle
+      // transition app-wide — including right after new tasks are created
+      // and enqueued — so this is the cheap, general "Tasks(N) count" fix.
+      void refreshTasks();
       return;
     case 'task_completed':
       patchTaskStatus(event.taskId, event.outcome, event.threadId);
       return;
     case 'hitl_prompt':
       patchTaskStatus(event.taskId, 'waiting_on_user', event.threadId);
+      return;
+    case 'task_started':
+      // No task-list status change here (still 'running', same as before) —
+      // just rehydrate an already-open thread so the "Automated task
+      // started" marker appears live instead of only on next reload.
+      if (hasThreadInstance(event.threadId)) {
+        void useThreadInstance(event.threadId).hydrate();
+      }
       return;
   }
 }
@@ -70,7 +84,12 @@ function handleEvent(event: AppBroadcastEvent): void {
 function patchTaskStatus(taskId: string, status: TaskStatus, threadId: string): void {
   tasks.value = tasks.value.map((t) => (t.id === taskId ? { ...t, status } : t));
 
-  if (activeThreadId.value === threadId) {
+  // hasThreadInstance(), not "is this the active thread" — the workspace
+  // Chat tab (workspace-chat-tab.tsx) calls useThreadInstance() directly and
+  // never touches activeThreadId (that signal is only ever set by the
+  // global /chat page), so gating on it left every workspace-scoped thread
+  // — the primary task-execution surface — unable to rehydrate live.
+  if (hasThreadInstance(threadId)) {
     // Safe to call outside any component/hook context — switchThread()
     // already does exactly this (use-thread.ts).
     void useThreadInstance(threadId).hydrate();

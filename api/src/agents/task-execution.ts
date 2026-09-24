@@ -224,6 +224,11 @@ export async function executeTask(
 
     try {
       recordTaskRunMarker(threadStore, threadId, randomUUID(), task.id, task.title, 'start');
+      // Fires for every run that actually starts, including one that
+      // immediately pauses (blocked) or aborts mid-stream — distinct from
+      // the dependency-blocked pending -> blocked transition, which never
+      // reaches executeTask() at all and so never fires this.
+      broadcast({ type: 'task_started', threadId, taskId: task.id });
       drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
       agent = (

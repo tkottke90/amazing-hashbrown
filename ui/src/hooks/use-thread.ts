@@ -794,6 +794,19 @@ export function _resetThreadInstancesForTests(): void {
   _instances.clear();
 }
 
+// Whether useThreadInstance() has ever been called for this thread id in this
+// session — the correct generalization of "is this thread currently relevant
+// to some UI surface," covering both the global chat page and the workspace
+// Chat tab (workspace-chat-tab.tsx), unlike activeThreadId which only the
+// former ever sets. _instances never evicts, so this can occasionally be true
+// for a thread the user has since navigated away from; accepted as the same
+// pragmatic "cheap refetch over precise live-append" tradeoff the rest of
+// this design already makes. See
+// docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md.
+export function hasThreadInstance(threadId: string): boolean {
+  return _instances.has(threadId);
+}
+
 // ---- Thread CRUD (sidebar actions, global chat only) ----
 
 export async function switchThread(id: string): Promise<void> {
