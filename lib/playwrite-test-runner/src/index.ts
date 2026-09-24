@@ -1,4 +1,4 @@
-import { Page, test, TestDetails, TestInfo } from '@playwright/test';
+import { APIRequestContext, Page, test, TestDetails, TestInfo } from '@playwright/test';
 
 export { TAGS } from './tags.js';
 
@@ -51,8 +51,12 @@ export interface TestSuite extends BaseTestProps {
   name: string;
   purpose: string;
   steps: TestStep[];
-  beforeAll?: TestAction<{ page: Page }>;
-  afterAll?: TestAction<{ page: Page }>;
+  // Playwright creates `page`/`context` fresh per test and refuses to hand
+  // them to beforeAll/afterAll — only the disposable `request` fixture works
+  // there (see https://aka.ms/playwright/reuse-page). beforeEach/afterEach
+  // run per-test, so they still get a real `page`.
+  beforeAll?: TestAction<{ request: APIRequestContext }>;
+  afterAll?: TestAction<{ request: APIRequestContext }>;
   beforeEach?: TestAction<{ page: Page }>;
   afterEach?: TestAction<{ page: Page }>;
   startingPage?: string;
