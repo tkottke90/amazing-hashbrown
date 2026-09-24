@@ -60,6 +60,44 @@ export const CreateTask: TestSuite = {
   purpose: 'To manually test the workspace task creation process - Never used with CI tests',
   tag: [TAGS.UserWorkflow, CUSTOM_TAGS.LLM, CUSTOM_TAGS.LOCAL],
   recordVideo: true,
+  // Diagnostic: logs every frame the browser actually receives on the
+  // standing live-events channel (GET /api/v1/events), with exact content
+  // and timing. Regular Network-tab inspection doesn't show individual SSE
+  // frames well, and the app's own client code silently drops a frame that
+  // fails schema validation (by design — see use-live-events.ts) with no
+  // console output, so "no console errors" doesn't rule that out. CDP's
+  // dedicated eventSourceMessageReceived event is the only way to see what
+  // actually arrived over the wire without modifying app source. Chromium
+  // only (CDP), which is this suite's default project.
+  beforeEach: async ({ page }) => {
+    const client = await page.context().newCDPSession(page);
+    await client.send('Network.enable');
+
+    const sseRequestIds = new Set<string>();
+
+    client.on('Network.responseReceived', (event) => {
+      if (event.response.url.endsWith('/api/v1/events')) {
+        sseRequestIds.add(event.requestId);
+        console.log(
+          `[SSE /api/v1/events] connected (status ${event.response.status}) at ${new Date().toISOString()}`,
+        );
+      }
+    });
+
+    client.on('Network.eventSourceMessageReceived', (event) => {
+      if (!sseRequestIds.has(event.requestId)) return;
+      console.log(
+        `[SSE /api/v1/events] frame at ${new Date().toISOString()} — event: ${event.eventName || '(default)'}, data: ${event.data}`,
+      );
+    });
+
+    client.on('Network.loadingFailed', (event) => {
+      if (!sseRequestIds.has(event.requestId)) return;
+      console.log(
+        `[SSE /api/v1/events] connection failed at ${new Date().toISOString()} — ${event.errorText}`,
+      );
+    });
+  },
   beforeAll: async ({ request }) => {
     // Get the current commit sha
     const sha = execSync('git rev-parse --short HEAD').toString().trim();
