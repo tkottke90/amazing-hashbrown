@@ -212,8 +212,19 @@ export function suiteRunner(suite: TestSuite): void {
   if (suite.recordVideo === true) test.use({ video: 'on' });
   else if (suite.recordVideo === false) test.use({ video: 'off' });
 
+  // Suite tags must be embedded directly in the registered test title —
+  // Playwright's --grep/--grep-invert filter which tests actually run by
+  // matching against the title collected at this synchronous registration
+  // step, before any test body executes. suiteAnnotations() below also
+  // pushes suite.tag onto test.info().tags, but that happens inside the
+  // running test body, which is too late to affect CLI filtering — it only
+  // feeds the HTML report's own tag display. Without this, a suite tagged
+  // e.g. @llm/@local still runs under `--grep-invert "@llm|@local"`, since
+  // its title never contained those substrings in the first place.
+  const titleTags = suite.tag && suite.tag.length > 0 ? ` ${suite.tag.join(' ')}` : '';
+
   // Create a test for the suite
-  test(`[${suite.id}] ${suite.name}`, async ({ page }) => {
+  test(`[${suite.id}] ${suite.name}${titleTags}`, async ({ page }) => {
     // Set Metadata
     suiteAnnotations(suite);
 
