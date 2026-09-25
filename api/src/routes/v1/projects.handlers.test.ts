@@ -67,16 +67,16 @@ describe('routes/v1/projects.handlers', () => {
       expect(index).to.contain('status: active');
     });
 
-    it('destroys the wiki domain when the DB insert fails (no orphaned directories)', async () => {
+    it('rolls back the wiki domain and the workspace directory when the DB insert fails [orchestration]', async () => {
       const failing = Object.create(store) as WorkspaceStore;
       failing.createProject = () => {
         throw new Error('boom');
       };
 
-      // The workspace directory is created before the injected failure and the
-      // handler intentionally leaves it in place — clean it up ourselves.
       const directoryName = `wiki-rollback-${randomUUID()}`;
-      workspaceDirs.push(join(tmpdir(), 'projects', directoryName));
+      const location = join(tmpdir(), 'projects', directoryName);
+      // Safety net only — the handler itself must remove the directory.
+      workspaceDirs.push(location);
 
       const result = await createProjectHandler(
         failing,
@@ -98,6 +98,63 @@ describe('routes/v1/projects.handlers', () => {
       const wikiDirs = readdirSync(wikiRoot).filter((entry) => entry.startsWith('project-'));
       expect(wikiDirs, 'no orphaned project wiki directory should remain').to.have.length(0);
       expect(store.listProjects()).to.have.length(0);
+      expect(
+        existsSync(location),
+        'workspace directory should be rolled back so the slug can be reused',
+      ).to.equal(false);
+    });
+
+    it('removes the workspace directory when wiki domain creation fails [orchestration]', async () => {
+      const failingRegistry = Object.create(registry) as WikiRegistry;
+      failingRegistry.create = async () => {
+        throw new Error('wiki boom');
+      };
+      const directoryName = `wiki-create-fail-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+
+      const result = await createProjectHandler(
+        store,
+        { name: 'My Project', locationRoot: 'temporary', directoryName, winCondition: 'It ships' },
+        failingRegistry,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(500);
+        expect(result.error, 'the rollback must not mask the original error').to.include(
+          'wiki boom',
+        );
+      }
+      expect(
+        existsSync(location),
+        'workspace directory should be rolled back so the slug can be reused',
+      ).to.equal(false);
+      expect(store.listProjects()).to.have.length(0);
+    });
+
+    it('allows retrying the same slug after a failed create [orchestration]', async () => {
+      const failing = Object.create(store) as WorkspaceStore;
+      failing.createProject = () => {
+        throw new Error('boom');
+      };
+      const directoryName = `retry-after-fail-${randomUUID()}`;
+      workspaceDirs.push(join(tmpdir(), 'projects', directoryName));
+      const body = {
+        name: 'Retry Project',
+        locationRoot: 'temporary',
+        directoryName,
+        winCondition: 'It ships',
+      };
+
+      const first = await createProjectHandler(failing, body, registry);
+      expect(first.ok).to.equal(false);
+
+      const second = await createProjectHandler(store, body, registry);
+      expect(
+        second.ok,
+        `retry should succeed once the failed attempt cleaned up: ${!second.ok ? second.error : ''}`,
+      ).to.equal(true);
     });
 
     it('returns 400 when locationRoot is missing', async () => {

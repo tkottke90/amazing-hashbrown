@@ -46,6 +46,19 @@ function serverError(error: string): HandlerFailure {
 }
 
 /** Routing text for the project wiki domain: lowercase, hyphen-separated. */
+// Best-effort rollback of a directory this request created. A failed rm is
+// logged, never thrown, so it can't mask the error that triggered the rollback.
+async function rollbackDirectory(location: string): Promise<void> {
+  try {
+    await rm(location, { recursive: true, force: true });
+  } catch (err) {
+    logger.warn('createProject rollback: failed to remove workspace directory', {
+      location,
+      err: String(err),
+    });
+  }
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -138,6 +151,7 @@ export async function createProjectHandler(
       metadata: { type: 'ephemeral', status: 'active' },
     });
   } catch (err) {
+    await rollbackDirectory(location);
     return serverError(err instanceof Error ? err.message : String(err));
   }
 
@@ -148,7 +162,8 @@ export async function createProjectHandler(
   try {
     result = store.createProject({ ...body, location, id, wikiId: domainId } as NewProjectInput);
   } catch (err) {
-    // Roll back the wiki domain so no orphaned directory is left behind.
+    // Roll back the wiki domain and the workspace directory so nothing is
+    // orphaned and the same slug can be retried.
     try {
       await reg.destroy(domainId);
     } catch (destroyErr) {
@@ -157,6 +172,7 @@ export async function createProjectHandler(
         err: String(destroyErr),
       });
     }
+    await rollbackDirectory(location);
     return serverError(err instanceof Error ? err.message : String(err));
   }
   const created = result as {
