@@ -63,6 +63,16 @@ const suite: TestSuite = {
       expectedOutcome: 'Generated steps appear and persist after closing/reopening the drawer',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action:
+        'Open a saved task, check a plan step server-side behind the open drawer (as the task ' +
+        'agent would), then edit only the title and save',
+      expectedOutcome:
+        'The title change saves and the server-side checked step survives — saving an unrelated ' +
+        'field no longer overwrites plan progress (issue #203)',
+      test: () => {},
+    },
   ],
 };
 
@@ -277,6 +287,68 @@ test.describe(
       await expect(reopenedSavedPlanSteps.last().locator('input[type="text"]')).toHaveValue(
         'Persisted generated step',
       );
+    });
+
+    test('saving an unrelated field does not overwrite plan progress made while the drawer was open', async ({
+      page,
+      request,
+    }, testInfo) => {
+      // Unique per run — a fixed directory name 409s on a local re-run
+      // against the same dev database.
+      const wsName = `plan-no-clobber-ws-${Date.now()}`;
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: { name: wsName, locationRoot: 'temporary', directoryName: wsName },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      const plan = [
+        { step: 'Write the code', done: false },
+        { step: 'Write the tests', done: false },
+      ];
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'No clobber task', workspaceId: ws.id, plan },
+      });
+      expect(taskRes.status(), 'Expect the task to be created with a plan').toBe(201);
+      const task = await taskRes.json();
+
+      await page.goto(`/workspaces/${ws.id}`);
+      await page.getByRole('button', { name: /tasks/i }).click();
+
+      const taskCard = page
+        .locator('[data-column="pending"] [data-testid="task-card"]')
+        .filter({ hasText: 'No clobber task' });
+      await expect(taskCard).toBeVisible();
+
+      await pauseBeforeAction(page, testInfo);
+      await taskCard.click();
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer.locator('[data-testid="plan-step"]')).toHaveCount(2);
+
+      // Step 1 gets checked server-side while the drawer is open — the same
+      // store write the task agent's update_plan tool makes.
+      const checkRes = await request.patch(`/api/v1/tasks/${task.id}`, {
+        data: { plan: [{ ...plan[0], done: true }, plan[1]] },
+      });
+      expect(checkRes.status()).toBe(200);
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.locator('input[placeholder="Task title"]').fill('No clobber task (renamed)');
+      await drawer.getByRole('button', { name: 'Save changes' }).click();
+      await expect(page.locator('dialog[open]')).not.toBeVisible();
+
+      const savedRes = await request.get(`/api/v1/tasks/${task.id}`);
+      const saved = await savedRes.json();
+      expect(saved.title, 'Expect the title edit to have been saved').toBe(
+        'No clobber task (renamed)',
+      );
+      expect(
+        saved.plan,
+        'Expect the step checked behind the open drawer to survive the save',
+      ).toEqual([
+        { step: 'Write the code', done: true },
+        { step: 'Write the tests', done: false },
+      ]);
     });
   },
 );

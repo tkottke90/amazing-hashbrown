@@ -25,8 +25,8 @@ const suite: TestSuite = {
   name: 'Live Task Events',
   description:
     'Verifies the standing SSE channel (GET /api/v1/events) drives live UI updates for the ' +
-    'Tasks(N) count, the task_started chat banner, and the hitl_prompt chat banner — without ' +
-    'requiring a page reload',
+    'Tasks(N) count, the task_started chat banner, the hitl_prompt chat banner, and an open ' +
+    "task drawer's plan checklist — without requiring a page reload",
   purpose:
     'Defend the three live-broadcast fixes (refreshTasks() on task_queue_update, the new ' +
     'task_started event, and the hasThreadInstance() rehydrate gate replacing the ' +
@@ -53,6 +53,16 @@ const suite: TestSuite = {
         "Open a workspace's Chat tab, then deliver a mocked hitl_prompt SSE frame for its thread",
       expectedOutcome:
         'The "Automated task waiting on you" marker and the pending HITL prompt both appear live',
+      test: () => {},
+    },
+    {
+      tags: ['@smoke'],
+      action:
+        "Open a task's drawer, check a plan step server-side, then deliver a mocked " +
+        'task_plan_updated SSE frame for that task',
+      expectedOutcome:
+        'The open drawer checks the step off and advances its progress count without a reload ' +
+        '(issue #203)',
       test: () => {},
     },
   ],
@@ -376,6 +386,65 @@ test.describe(
       await expect(endMarker).toContainText('Automated task waiting on you:');
       await expect(endMarker).toContainText(taskTitle);
       await expect(page.getByText(question, { exact: true })).toBeVisible();
+    });
+
+    test('task_plan_updated broadcast checks off a plan step live in an open task drawer', async ({
+      page,
+      request,
+    }, testInfo) => {
+      // Unique per run — a fixed directory name 409s on a local re-run
+      // against the same dev database.
+      const wsId = await createWorkspace(request, `live-events-plan-updated-ws-${Date.now()}`);
+      const plan = [
+        { step: 'Write the code', done: false },
+        { step: 'Write the tests', done: false },
+      ];
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'Live plan task', workspaceId: wsId, plan },
+      });
+      expect(taskRes.status(), 'Expect the task to be created with a plan').toBe(201);
+      const task = await taskRes.json();
+      const updatedPlan = [{ ...plan[0], done: true }, plan[1]];
+
+      const eventsGate = deferredGate();
+      await page.route('**/api/v1/events', async (route: Route) => {
+        await eventsGate.promise;
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+          body: `data: ${JSON.stringify({ type: 'task_plan_updated', taskId: task.id, plan: updatedPlan })}\n\n`,
+        });
+      });
+
+      await page.goto(`/workspaces/${wsId}`);
+      await page.getByRole('button', { name: /tasks/i }).click();
+      const taskCard = page
+        .locator('[data-column="pending"] [data-testid="task-card"]')
+        .filter({ hasText: 'Live plan task' });
+      await expect(taskCard).toBeVisible();
+      await taskCard.click();
+
+      const planSection = page.locator('dialog[open] [data-testid="task-plan"]');
+      const steps = planSection.locator('[data-testid="plan-step"]');
+      await expect(steps).toHaveCount(2);
+      await expect(steps.nth(0)).toHaveAttribute('data-done', 'false');
+      await expect(planSection.getByText('0 of 2 steps')).toBeVisible();
+
+      // Mirror what the task agent's update_plan tool does: persist the
+      // change, then broadcast it. Persisting first keeps the server
+      // consistent with the frame, so the channel's own reconnect refetch
+      // (es.onopen -> refreshTasks()) can't race the frame back to stale data.
+      const persistRes = await request.patch(`/api/v1/tasks/${task.id}`, {
+        data: { plan: updatedPlan },
+      });
+      expect(persistRes.status()).toBe(200);
+
+      await pauseBeforeAction(page, testInfo);
+      eventsGate.release();
+
+      await expect(steps.nth(0)).toHaveAttribute('data-done', 'true');
+      await expect(steps.nth(0).locator('[data-testid="plan-step-checkbox"]')).toBeChecked();
+      await expect(planSection.getByText('1 of 2 steps')).toBeVisible();
     });
   },
 );
