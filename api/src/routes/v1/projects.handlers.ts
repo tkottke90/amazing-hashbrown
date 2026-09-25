@@ -12,7 +12,9 @@ import {
   isLocationRoot,
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
+  DirectoryExistsError,
 } from '../../services/workspace-location.js';
+import { toWorkspaceResponse, type WorkspaceResponse } from './workspace-response.js';
 import {
   provisionDependencyIsolation,
   provisionGitRepository,
@@ -52,7 +54,7 @@ export function slugify(input: string): string {
 }
 
 export function listProjectsHandler(store: WorkspaceStore) {
-  return ok(store.listProjects());
+  return ok(store.listProjects().map((ws) => toWorkspaceResponse(ws)));
 }
 
 export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
@@ -60,7 +62,7 @@ export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
   const project = store.getProject(workspaceId);
   if (!project) return notFound(`Project for workspace ${workspaceId} not found`);
-  return ok({ ...workspace, project });
+  return ok(toWorkspaceResponse({ ...workspace, project }));
 }
 
 export async function createProjectHandler(
@@ -70,7 +72,7 @@ export async function createProjectHandler(
   execFileFn?: ExecFileFn,
 ): Promise<
   HandlerResult<{
-    workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+    workspace: WorkspaceResponse<NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>>;
     project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
   }>
 > {
@@ -92,6 +94,7 @@ export async function createProjectHandler(
     location = resolveWorkspaceLocation(body.locationRoot, body.directoryName);
     await createWorkspaceDirectory(location);
   } catch (err) {
+    if (err instanceof DirectoryExistsError) return conflict(err.message);
     return badRequest(err instanceof Error ? err.message : String(err));
   }
 
@@ -156,12 +159,11 @@ export async function createProjectHandler(
     }
     return serverError(err instanceof Error ? err.message : String(err));
   }
-  return ok(
-    result as {
-      workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
-      project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
-    },
-  );
+  const created = result as {
+    workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+    project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
+  };
+  return ok({ ...created, workspace: toWorkspaceResponse(created.workspace) });
 }
 
 export function patchProjectHandler(
@@ -178,7 +180,7 @@ export function patchProjectHandler(
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
   const project = store.patchProject(workspaceId, patch);
   if (!project) return notFound(`Project for workspace ${workspaceId} not found`);
-  return ok({ ...workspace, project });
+  return ok(toWorkspaceResponse({ ...workspace, project }));
 }
 
 export function closeProjectHandler(

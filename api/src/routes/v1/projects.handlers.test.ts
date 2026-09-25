@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -10,6 +10,8 @@ import { WorkspaceStore } from '../../services/workspace-store.js';
 import type { ExecFileFn } from '../../services/workspace-provision.js';
 import {
   createProjectHandler,
+  getProjectHandler,
+  listProjectsHandler,
   patchProjectHandler,
   closeProjectHandler,
   snapshotProjectHandler,
@@ -169,6 +171,45 @@ describe('routes/v1/projects.handlers', () => {
       }
       // Confirm the conflict was caught before an ephemeral wiki was provisioned.
       expect(registry.list()).to.have.length(1);
+    });
+
+    it('returns 409 naming the leftover directory before provisioning a wiki [unit]', async () => {
+      const directoryName = `leftover-project-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+      mkdirSync(location, { recursive: true });
+
+      const result = await createProjectHandler(
+        store,
+        { name: 'Collides', locationRoot: 'temporary', directoryName, winCondition: 'It ships' },
+        registry,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(409);
+        expect(result.error, 'the user needs the path to clean it up').to.include(location);
+      }
+      expect(registry.list(), 'no wiki should be provisioned for a failed create').to.have.length(
+        0,
+      );
+    });
+
+    it('returns the created workspace with managedLocation set [unit]', async () => {
+      const result = await createProjectHandler(
+        store,
+        {
+          name: 'Managed Project',
+          locationRoot: 'temporary',
+          directoryName: `managed-project-${randomUUID()}`,
+          winCondition: 'It ships',
+        },
+        registry,
+      );
+      expect(result.ok, `expected success, got: ${JSON.stringify(result)}`).to.equal(true);
+      if (!result.ok) return;
+      workspaceDirs.push(result.data.workspace.location);
+      expect(result.data.workspace.managedLocation).to.equal(true);
     });
 
     it('still returns 400 when winCondition is missing (pre-existing check, unaffected)', async () => {
@@ -378,6 +419,37 @@ describe('routes/v1/projects.handlers', () => {
       expect(existsSync(location)).to.equal(false);
       expect(registry.list(), 'no wiki domain should have been created').to.have.length(0);
       expect(store.listProjects()).to.have.length(0);
+    });
+  });
+
+  describe('managedLocation on project responses', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'projects-handlers-managed-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('includes managedLocation on get, list and patch [unit]', () => {
+      const { workspace } = store.createProject({
+        id: randomUUID(),
+        name: 'Legacy Project',
+        location: join(dir, 'repo'),
+        winCondition: 'It ships',
+      });
+
+      const got = getProjectHandler(store, workspace.id);
+      const listed = listProjectsHandler(store);
+      const patched = patchProjectHandler(store, workspace.id, { winCondition: 'Changed' });
+
+      expect(got.ok && got.data.managedLocation).to.equal(false);
+      expect(listed.ok && listed.data.map((p) => p.managedLocation)).to.deep.equal([false]);
+      expect(patched.ok && 'managedLocation' in patched.data).to.equal(true);
     });
   });
 

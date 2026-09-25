@@ -11,6 +11,8 @@ import type { ExecFileFn } from '../../services/workspace-provision.js';
 import {
   createWorkspaceHandler,
   deleteWorkspaceHandler,
+  getWorkspaceHandler,
+  listWorkspacesHandler,
   patchWorkspaceHandler,
   cleanupDependenciesHandler,
 } from './workspaces.handlers.js';
@@ -84,6 +86,34 @@ describe('routes/v1/workspaces.handlers', () => {
         expect(result.status).to.equal(400);
         expect(result.error).to.include('Invalid directoryName');
       }
+    });
+
+    describe('directory collision (409)', () => {
+      const workspaceDirs: string[] = [];
+
+      afterEach(() => {
+        for (const wsDir of workspaceDirs.splice(0))
+          rmSync(wsDir, { recursive: true, force: true });
+      });
+
+      it('returns 409 naming the leftover directory when the slug is already taken on disk [unit]', async () => {
+        const directoryName = `leftover-${randomUUID()}`;
+        const location = join(tmpdir(), 'projects', directoryName);
+        workspaceDirs.push(location);
+        mkdirSync(location, { recursive: true });
+
+        const result = await createWorkspaceHandler(store, {
+          name: 'Collides On Disk',
+          locationRoot: 'temporary',
+          directoryName,
+        });
+
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(409);
+          expect(result.error, 'the user needs the path to clean it up').to.include(location);
+        }
+      });
     });
 
     describe('name uniqueness (409)', () => {
@@ -441,7 +471,7 @@ describe('routes/v1/workspaces.handlers', () => {
         wikiId: domainId,
       });
 
-      const result = await deleteWorkspaceHandler(store, id, registry);
+      const result = await deleteWorkspaceHandler(store, id, registry, [join(dir, 'root')]);
       expect(result.ok).to.equal(true);
       expect(store.getWorkspace(id)).to.equal(null);
       expect(existsSync(join(wikiRoot, domainId)), 'wiki directory should be removed').to.equal(
@@ -458,7 +488,7 @@ describe('routes/v1/workspaces.handlers', () => {
         wikiId: 'manual-wiki',
       });
 
-      const result = await deleteWorkspaceHandler(store, ws.id, registry);
+      const result = await deleteWorkspaceHandler(store, ws.id, registry, [join(dir, 'root')]);
       expect(result.ok).to.equal(true);
       expect(existsSync(join(wikiRoot, 'manual-wiki')), 'wiki directory should survive').to.equal(
         true,
@@ -466,10 +496,127 @@ describe('routes/v1/workspaces.handlers', () => {
       expect(registry.list().map((w) => w.id)).to.deep.equal(['manual-wiki']);
     });
 
+    it('removes the workspace directory when it sits under a managed root [orchestration]', async () => {
+      const root = join(dir, 'root');
+      const location = join(root, 'ws');
+      mkdirSync(location, { recursive: true });
+      writeFileSync(join(location, 'notes.md'), 'data');
+      const ws = store.createWorkspace({ name: 'Managed', location });
+
+      const result = await deleteWorkspaceHandler(store, ws.id, registry, [root]);
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.directory).to.deep.equal({ removed: true, path: location });
+      expect(existsSync(location), 'deleting a workspace should remove its directory').to.equal(
+        false,
+      );
+    });
+
+    it('deletes the workspace but keeps and reports a directory outside the managed roots [orchestration]', async () => {
+      const location = join(dir, 'elsewhere', 'ws');
+      mkdirSync(location, { recursive: true });
+      writeFileSync(join(location, 'keep.txt'), 'data');
+      const ws = store.createWorkspace({ name: 'Legacy', location });
+
+      const result = await deleteWorkspaceHandler(store, ws.id, registry, [join(dir, 'root')]);
+
+      expect(result.ok, 'an unmanaged directory must not block the delete').to.equal(true);
+      if (result.ok) {
+        expect(result.data.directory).to.deep.equal({
+          removed: false,
+          path: location,
+          reason: 'outside-managed-roots',
+        });
+      }
+      expect(store.getWorkspace(ws.id)).to.equal(null);
+      expect(
+        existsSync(join(location, 'keep.txt')),
+        'files outside the managed roots must never be deleted',
+      ).to.equal(true);
+    });
+
+    it('allows recreating a workspace with the same slug after deleting it (#204) [orchestration]', async () => {
+      const directoryName = `recreate-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      try {
+        const first = await createWorkspaceHandler(store, {
+          name: 'Recreate Me',
+          locationRoot: 'temporary',
+          directoryName,
+        });
+        expect(first.ok).to.equal(true);
+        if (!first.ok) return;
+
+        const deleted = await deleteWorkspaceHandler(store, first.data.id, registry);
+        expect(deleted.ok).to.equal(true);
+
+        const second = await createWorkspaceHandler(store, {
+          name: 'Recreate Me',
+          locationRoot: 'temporary',
+          directoryName,
+        });
+        expect(
+          second.ok,
+          `recreate should succeed once the old directory is gone: ${!second.ok ? second.error : ''}`,
+        ).to.equal(true);
+      } finally {
+        rmSync(location, { recursive: true, force: true });
+      }
+    });
+
     it('returns 404 for an unknown workspace id', async () => {
       const result = await deleteWorkspaceHandler(store, 'does-not-exist', registry);
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('managedLocation on workspace responses', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspaces-handlers-managed-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // tmpdir()/projects is the default temporary root, so a direct child of it
+    // is managed; the mkdtemp dir itself is not a root, so a child of it isn't.
+    const managedPath = () => join(tmpdir(), 'projects', `managed-${randomUUID()}`);
+
+    it('marks a workspace under a managed root as managed on get [unit]', () => {
+      const ws = store.createWorkspace({ name: 'Managed', location: managedPath() });
+      const result = getWorkspaceHandler(store, ws.id);
+      expect(result.ok && result.data.managedLocation).to.equal(true);
+    });
+
+    it('marks a legacy out-of-root workspace as unmanaged on get [unit]', () => {
+      const ws = store.createWorkspace({ name: 'Legacy', location: join(dir, 'repo') });
+      const result = getWorkspaceHandler(store, ws.id);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.managedLocation).to.equal(false);
+    });
+
+    it('includes managedLocation on every listed workspace [unit]', () => {
+      store.createWorkspace({ name: 'Managed', location: managedPath() });
+      store.createWorkspace({ name: 'Legacy', location: join(dir, 'repo') });
+      const result = listWorkspacesHandler(store);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const byName = Object.fromEntries(result.data.map((w) => [w.name, w.managedLocation]));
+        expect(byName).to.deep.equal({ Managed: true, Legacy: false });
+      }
+    });
+
+    it('keeps managedLocation on a patched workspace so the UI never loses it [unit]', () => {
+      const ws = store.createWorkspace({ name: 'Managed', location: managedPath() });
+      const result = patchWorkspaceHandler(store, ws.id, { name: 'Renamed' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.managedLocation).to.equal(true);
     });
   });
 
