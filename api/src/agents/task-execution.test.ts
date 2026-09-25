@@ -8,6 +8,7 @@ import { bootThreadStore, getThreadStore, type ThreadStore } from '../services/t
 import {
   WorkspaceStore,
   bootWorkspaceStore,
+  getWorkspaceStore,
   type Task,
   type TaskQueueEntry,
 } from '../services/workspace-store.js';
@@ -19,7 +20,8 @@ import {
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, type QueueEntryWithTask } from './task-execution.js';
-import type { buildTaskAgent } from './chat-agent.js';
+import type { buildTaskAgent, TaskAgentHooks } from './chat-agent.js';
+import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 
@@ -181,10 +183,48 @@ function fakeCapturingAgent(events: RawEvent[], capture: { input: unknown }) {
   } as any;
 }
 
+// Completion is decided by the complete_task tool itself (it can reject a
+// "done" call — see complete-task.tool.ts), which reports acceptance through
+// buildTaskAgent's onTaskComplete hook. The fake agents above only replay
+// stream events, so this wraps each one: whenever it replays complete_task's
+// on_tool_start, the *real* complete_task tool is invoked with those args,
+// wired exactly the way buildTaskAgent wires it (getPlan from the store,
+// onAccepted = the hook). That keeps the accept/nudge logic real rather than
+// re-implemented here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (async () => ({ agent, systemPrompt: 'test' })) as any;
+  return (async (
+    task: Task,
+    _provider?: string,
+    _model?: string,
+    _workspaceScope?: unknown,
+    hooks?: TaskAgentHooks,
+  ) => {
+    const completeTask = makeCompleteTaskTool(task.id, {
+      getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
+      onAccepted: hooks?.onTaskComplete,
+    });
+    return {
+      agent: {
+        ...agent,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        streamEvents: (...args: any[]): AsyncIterable<RawEvent> => {
+          const inner: AsyncIterable<RawEvent> = agent.streamEvents(...args);
+          async function* gen() {
+            for await (const e of inner) {
+              if (e.event === 'on_tool_start' && e.name === 'complete_task') {
+                await completeTask.invoke(e.data.input);
+              }
+              yield e;
+            }
+          }
+          return gen();
+        },
+      },
+      systemPrompt: 'test',
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any;
 }
 
 const COMPLETE_TASK_DONE_EVENTS: RawEvent[] = [
@@ -205,32 +245,6 @@ const COMPLETE_TASK_FAILED_EVENTS: RawEvent[] = [
     data: { input: { outcome: 'failed', summary: 'Could not find the domain.' } },
   },
   { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-2', data: { output: 'ok' } },
-];
-
-// The real shape LangChain's on_tool_start callback event reports for a
-// StructuredTool — args JSON-stringified under a literal `input` key —
-// captured verbatim from production thread_messages rows (a manual test run
-// against PR #200), not a guess. See tapCompleteTask's own comment for why
-// this differs from the flat shape above and why it silently broke task
-// completion end-to-end until parseCompleteTaskInput() was added.
-const COMPLETE_TASK_DONE_EVENTS_WRAPPED: RawEvent[] = [
-  {
-    event: 'on_tool_start',
-    name: 'complete_task',
-    run_id: 'ct-3',
-    data: { input: { input: '{"outcome":"done","summary":"Wrote the page."}' } },
-  },
-  { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-3', data: { output: 'ok' } },
-];
-
-const COMPLETE_TASK_FAILED_EVENTS_WRAPPED: RawEvent[] = [
-  {
-    event: 'on_tool_start',
-    name: 'complete_task',
-    run_id: 'ct-4',
-    data: { input: { input: '{"outcome":"failed","summary":"Could not find the domain."}' } },
-  },
-  { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-4', data: { output: 'ok' } },
 ];
 
 describe('agents/task-execution', () => {
@@ -293,42 +307,61 @@ describe('agents/task-execution', () => {
     expect(task.status).to.equal('failed');
   });
 
-  // Regression: production thread_messages rows for a real task run showed
-  // complete_task genuinely called (and its own tool output confirming
-  // "marked done"), yet the task ended up 'failed' — because on_tool_start's
-  // real event shape wraps the args as { input: '{"outcome":...}' }, not the
-  // flat { outcome, summary } object task-execution.ts assumed. Without
-  // parseCompleteTaskInput() unwrapping it, completeTaskBox.current stayed
-  // null and the task silently fell into the "stopped without calling
-  // complete_task" branch below — the same fate for every task across two
-  // separate manual test runs, regardless of what the model actually did.
-  it(
-    'marks the task done when complete_task is called with the real (args-wrapped-as-JSON-' +
-      'string) event shape LangChain actually reports',
-    async () => {
+  describe('plan nudge (issue #203)', () => {
+    const UNCHECKED_PLAN = [
+      { step: 'Write the code', done: true },
+      { step: 'Write the tests', done: false },
+    ];
+
+    function completeTaskCall(runId: string): RawEvent[] {
+      return [
+        {
+          event: 'on_tool_start',
+          name: 'complete_task',
+          run_id: runId,
+          data: { input: { outcome: 'done', summary: 'Shipped it.' } },
+        },
+        { event: 'on_tool_end', name: 'complete_task', run_id: runId, data: { output: 'ok' } },
+      ];
+    }
+
+    it('fails a run whose only "done" call was nudged — the agent never confirmed completion [orchestration]', async () => {
       const entry = makeGlobalEntry();
+      store.patchTask(entry.task.id, { plan: UNCHECKED_PLAN });
+
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS_WRAPPED)),
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(completeTaskCall('ct-a'))),
       });
 
-      const task = store.getTask(entry.task.id)!;
-      expect(task.status).to.equal('done');
-    },
-  );
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+    });
 
-  it(
-    'marks the task failed when complete_task is called with outcome "failed" in the real ' +
-      '(args-wrapped-as-JSON-string) event shape',
-    async () => {
+    it('completes a run once the agent repeats "done" after the nudge [orchestration]', async () => {
       const entry = makeGlobalEntry();
+      store.patchTask(entry.task.id, { plan: UNCHECKED_PLAN });
+
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_FAILED_EVENTS_WRAPPED)),
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeAgent([...completeTaskCall('ct-a'), ...completeTaskCall('ct-b')]),
+        ),
       });
 
-      const task = store.getTask(entry.task.id)!;
-      expect(task.status).to.equal('failed');
-    },
-  );
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+    });
+
+    it('completes on the first "done" when every plan step is already checked [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      store.patchTask(entry.task.id, {
+        plan: UNCHECKED_PLAN.map((p) => ({ ...p, done: true })),
+      });
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(completeTaskCall('ct-a'))),
+      });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+    });
+  });
 
   // Regression: workspace-chat's shared checkpoint thread means
   // agent.graph.getState() can report a pending interrupt left over from

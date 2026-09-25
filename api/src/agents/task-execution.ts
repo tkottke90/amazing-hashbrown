@@ -34,6 +34,7 @@ import {
   recordTaskRunMarker,
 } from './thread-message-writer.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
+import type { CompleteTaskCall } from './tools/complete-task.tool.js';
 import { drainPendingTurns, runOnceThreadFree } from './pending-thread-turns.js';
 import { broadcast } from '../services/broadcast.js';
 
@@ -43,68 +44,6 @@ interface WorkspaceScope {
   workspace: Workspace;
   workspaceContext: WorkspaceChatContext;
   allowedWikiId?: string;
-}
-
-interface CompleteTaskCall {
-  outcome: 'done' | 'failed';
-  summary: string;
-}
-
-// LangChain's on_tool_start callback event reports a StructuredTool's
-// arguments JSON-stringified under a literal `input` key — e.g.
-// { input: '{"outcome":"done","summary":"..."}' } — rather than the flat
-// { outcome, summary } object complete_task's own schema declares. This is a
-// callback-event artifact from LangChain's original single-string Tool
-// interface (predating StructuredTool), not something specific to this tool
-// or provider: every tool call recorded in this codebase's thread_messages
-// shows the same wrapping (confirmed against production thread_messages rows
-// for shell_exec and create_tasks too, both of which have equally flat
-// schemas). Those tools are unaffected because LangChain re-parses/coerces
-// the arguments before actually invoking the tool function — tapCompleteTask
-// is the one place in this codebase that inspects a tool's arguments
-// straight off the raw stream event instead of through its real, validated
-// invocation, which is what made it uniquely exposed to this. Handles the
-// flat shape too, in case a future LangChain version reports it directly.
-function parseCompleteTaskInput(raw: unknown): Partial<CompleteTaskCall> | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const obj = raw as Record<string, unknown>;
-  if (typeof obj.outcome === 'string') {
-    return obj as Partial<CompleteTaskCall>;
-  }
-  if (typeof obj.input === 'string') {
-    try {
-      const parsed = JSON.parse(obj.input) as unknown;
-      if (parsed && typeof parsed === 'object') {
-        return parsed as Partial<CompleteTaskCall>;
-      }
-    } catch {
-      // Malformed JSON from the model — fall through to undefined, same as
-      // no call at all, rather than throwing out of the tapped stream.
-    }
-  }
-  return undefined;
-}
-
-// Wraps the raw LangGraph event stream, capturing complete_task's call
-// arguments as a side effect while yielding every event through unchanged —
-// pipeEvents itself needs no changes to support this (it already has its own
-// on_tool_start/on_tool_end handling and just doesn't report back which
-// tools were called).
-async function* tapCompleteTask(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  stream: AsyncIterable<any>,
-  onComplete: (result: CompleteTaskCall) => void,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): AsyncGenerator<any> {
-  for await (const evt of stream) {
-    if (evt.event === 'on_tool_start' && evt.name === 'complete_task') {
-      const input = parseCompleteTaskInput(evt.data?.input);
-      if (input?.outcome) {
-        onComplete({ outcome: input.outcome, summary: input.summary ?? '' });
-      }
-    }
-    yield evt;
-  }
 }
 
 function buildKickoffMessage(task: Task, entry: QueueEntryWithTask): string {
@@ -238,6 +177,15 @@ export async function executeTask(
       broadcast({ type: 'task_started', threadId, taskId: task.id });
       drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
+      // Filled only by an *accepted* complete_task call — the tool itself
+      // decides acceptance (it rejects the first "done" while plan steps are
+      // unchecked; see complete-task.tool.ts) and reports it through
+      // onTaskComplete. A boxed value rather than a bare `let` — TS's
+      // control-flow narrowing can't see the reassignment happening inside
+      // the callback, so a bare variable would narrow to `null` at the check
+      // below. Last accepted call wins.
+      const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
+
       agent = (
         await buildAgent(
           task,
@@ -249,6 +197,11 @@ export async function executeTask(
                 allowedWikiId: workspaceScope.allowedWikiId,
               }
             : undefined,
+          {
+            onTaskComplete: (call) => {
+              completeTaskBox.current = call;
+            },
+          },
         )
       ).agent;
 
@@ -274,11 +227,6 @@ export async function executeTask(
       const input = resumeAnswer
         ? new Command({ resume: resumeAnswer })
         : { messages: [{ role: 'human', content: buildKickoffMessage(task, entry) }] };
-
-      // A boxed value rather than a bare `let` — TS's control-flow narrowing
-      // can't see the reassignment happening inside tapCompleteTask's callback,
-      // so a bare variable would narrow to `null` at the check below.
-      const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
 
       // Local consts — msgId/turnSentAt/agent/config are outer `let`s just
       // assigned above, but TS can't carry that narrowing into an async
@@ -306,14 +254,10 @@ export async function executeTask(
                 afterAgentEnabled: undefined,
               },
             });
-            const tapped = tapCompleteTask(rawStream, (result) => {
-              completeTaskBox.current = result;
-            });
-
             return pipeEvents(
               sink,
               resolvedMsgId,
-              tapped,
+              rawStream,
               threadStore,
               threadId,
               resolvedTurnSentAt,
@@ -342,9 +286,9 @@ export async function executeTask(
         env.defaultProvider,
         undefined,
         task.id,
-        // completeTaskBox is already populated by now — pipeEvents (and the
-        // tapCompleteTask wrapper around it) fully drained the stream before
-        // this call, above. When it's set, this run's own outcome is already
+        // completeTaskBox is already populated by now — complete_task's tool
+        // body (which fires onTaskComplete) runs inside the stream that
+        // pipeEvents fully drained before this call, above. When it's set, this run's own outcome is already
         // decided; a pending interrupt finalizeTurn finds in the shared
         // thread's checkpoint state past this point is not this run's to
         // dispatch as a live prompt — see finalizeTurn's own comment on
