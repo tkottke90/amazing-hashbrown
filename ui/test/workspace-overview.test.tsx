@@ -16,6 +16,7 @@ const baseWorkspace: Workspace = {
   description: null,
   goal: null,
   location: '/tmp/projects/my-project',
+  managedLocation: true,
   remoteUrl: null,
   javascript: false,
   python: false,
