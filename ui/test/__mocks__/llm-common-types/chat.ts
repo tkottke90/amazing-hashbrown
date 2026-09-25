@@ -80,5 +80,10 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     taskId: z.string(),
     outcome: z.enum(['done', 'failed', 'cancelled']),
   }),
+  z.object({
+    type: z.literal('task_plan_updated'),
+    taskId: z.string(),
+    plan: z.array(z.object({ step: z.string(), done: z.boolean() })),
+  }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;
