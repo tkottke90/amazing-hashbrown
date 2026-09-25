@@ -81,7 +81,15 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Delete workspace navigates back to list and removes entry',
-      expectedOutcome: 'Workspace absent from list after deletion',
+      expectedOutcome:
+        'Confirm dialog warns the directory will be permanently deleted; workspace absent from list after deletion',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Recreate a workspace with the same directory slug right after deleting it',
+      expectedOutcome:
+        'Creation succeeds (201) because deleting the workspace also removed its directory (issue #204)',
       test: () => {},
     },
   ],
@@ -166,7 +174,7 @@ test.describe(
       const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
       expect(workspaceId).toBeTruthy();
       const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
-      expect(delRes.status()).toBe(204);
+      expect(delRes.status()).toBe(200);
     });
 
     test('creates a workspace with both isolation checkboxes checked and shows both chips on the detail page', async ({
@@ -207,7 +215,7 @@ test.describe(
       const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
       expect(workspaceId).toBeTruthy();
       const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
-      expect(delRes.status()).toBe(204);
+      expect(delRes.status()).toBe(200);
     });
 
     test('creates a workspace with neither isolation checkbox checked and shows neither chip', async ({
@@ -281,7 +289,7 @@ test.describe(
       const workspaceId = page.url().match(/\/workspaces\/([^/]+)$/)?.[1];
       expect(workspaceId).toBeTruthy();
       const delRes = await request.delete(`/api/v1/workspaces/${workspaceId}`);
-      expect(delRes.status()).toBe(204);
+      expect(delRes.status()).toBe(200);
     });
 
     test('project creation registers a wiki domain and deletion removes it', async ({
@@ -309,7 +317,7 @@ test.describe(
 
       // Deleting the workspace destroys the domain again
       const delRes = await request.delete(`/api/v1/workspaces/${proj.workspace.id}`);
-      expect(delRes.status()).toBe(204);
+      expect(delRes.status()).toBe(200);
 
       const afterRes = await request.get('/api/v1/wiki/domains');
       const after = (await afterRes.json()) as Array<{ id: string }>;
@@ -542,15 +550,36 @@ test.describe(
       await page.goto(`/workspaces/${ws.id}`);
       await pauseBeforeAction(page, testInfo);
 
-      // Accept the browser confirm dialog
-      page.on('dialog', (d) => d.accept());
+      // Capture the confirm text before accepting it — it must tell the user
+      // the directory on disk is going away, and where it is.
+      let confirmMessage = '';
+      page.on('dialog', (d) => {
+        confirmMessage = d.message();
+        void d.accept();
+      });
       await page.getByRole('button', { name: 'Delete' }).click();
 
       // Should navigate back to /workspaces
       await page.waitForURL('/workspaces');
+      expect(confirmMessage).toContain('permanently deletes');
+      expect(confirmMessage).toContain(ws.location);
 
       // Workspace should no longer appear in the list
       await expect(page.getByRole('link', { name: 'e2e-delete-ws' })).not.toBeVisible();
+
+      // Issue #204: the same slug must be reusable right away, since the
+      // delete removed the directory rather than orphaning it.
+      const recreateRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'e2e-delete-ws',
+          locationRoot: 'temporary',
+          directoryName: 'e2e-delete-ws',
+        },
+      });
+      expect(recreateRes.status()).toBe(201);
+      const recreated = await recreateRes.json();
+      const cleanupRes = await request.delete(`/api/v1/workspaces/${recreated.id}`);
+      expect(cleanupRes.status()).toBe(200);
     });
   },
 );
