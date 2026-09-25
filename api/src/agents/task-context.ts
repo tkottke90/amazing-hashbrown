@@ -40,7 +40,20 @@ export function buildTaskContextBlock(ctx: TaskContext, hasAskUser = true): stri
 
   lines.push(
     '',
-    (hasPlan ? 'Call update_plan to mark each plan step done as you complete it. ' : '') +
+    (hasPlan
+      ? 'Call update_plan to mark each plan step done as you complete it. The moment a step\'s ' +
+        'deliverable is finished — a file written, a command that verifies it passing — your ' +
+        'very next tool call is update_plan for that step, before starting the next step\'s ' +
+        'work or moving on in any other way. Trust a tool result already shown earlier in this ' +
+        'conversation: if it already demonstrates a step is done (a passing test run, a file ' +
+        'whose contents already match the plan), check that step off directly rather than ' +
+        're-running the same check again just to confirm something you can already see. This ' +
+        'applies just as much right after complete_task rejects a "done" call for unchecked ' +
+        'steps: if the work those steps needed already ran and succeeded earlier in this same ' +
+        'conversation, respond with update_plan checking them off directly — the nudge is ' +
+        'asking you to update the checklist to match reality, not asking you to redo the work ' +
+        'or repeat a check you already have the answer to. '
+      : '') +
       'When the outcome has been met, or you cannot proceed further, call complete_task with ' +
       'outcome ("done" or "failed") and a summary.' +
       (hasAskUser

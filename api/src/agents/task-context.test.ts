@@ -95,6 +95,36 @@ describe('agents/task-context', () => {
       expect(block).to.include('update_plan');
     });
 
+    it('tells the agent to check a step off immediately, before starting the next step (eval task-plan-progress round 2) [unit]', () => {
+      const block = buildTaskContextBlock({
+        title: 'T',
+        description: null,
+        outcome: null,
+        plan: PLAN,
+      });
+      expect(block).to.include('your very next tool call is update_plan');
+    });
+
+    it('tells the agent to trust a tool result already shown rather than re-verifying it (eval task-plan-progress round 2) [unit]', () => {
+      const block = buildTaskContextBlock({
+        title: 'T',
+        description: null,
+        outcome: null,
+        plan: PLAN,
+      });
+      expect(block).to.include('Trust a tool result already shown earlier in this conversation');
+    });
+
+    it('names the complete_task nudge case explicitly for trusting prior results (eval task-plan-progress round 2) [unit]', () => {
+      const block = buildTaskContextBlock({
+        title: 'T',
+        description: null,
+        outcome: null,
+        plan: PLAN,
+      });
+      expect(block).to.include('right after complete_task rejects a "done" call');
+    });
+
     it('never mentions update_plan for a task with a null plan — the tool would have nothing to update [unit]', () => {
       const block = buildTaskContextBlock({
         title: 'T',
