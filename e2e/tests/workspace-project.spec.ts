@@ -1,6 +1,9 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { writeFileDirect } from '../lib/workspace-files.js';
 
 const suite: TestSuite = {
   id: 16,
@@ -82,7 +85,7 @@ const suite: TestSuite = {
       tags: ['@user-workflow'],
       action: 'Delete workspace navigates back to list and removes entry',
       expectedOutcome:
-        'Confirm dialog warns the directory will be permanently deleted; workspace absent from list after deletion',
+        'Confirm dialog warns the directory will be permanently deleted; workspace absent from list, GET returns 404, and its directory (including nested files) is gone from disk',
       test: () => {},
     },
     {
@@ -547,6 +550,12 @@ test.describe(
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
 
+      // Seed real, nested content so the delete must be recursive — an empty
+      // directory would let a non-recursive removal pass unnoticed.
+      const seededFile = path.join(ws.location, 'nested', 'notes.md');
+      await writeFileDirect(ws.location, 'nested/notes.md', '# notes');
+      expect(existsSync(seededFile), 'seeded file should exist before the delete').toBe(true);
+
       await page.goto(`/workspaces/${ws.id}`);
       await pauseBeforeAction(page, testInfo);
 
@@ -566,6 +575,15 @@ test.describe(
 
       // Workspace should no longer appear in the list
       await expect(page.getByRole('link', { name: 'e2e-delete-ws' })).not.toBeVisible();
+
+      // Check the real state directly rather than trusting the UI or the
+      // DELETE response: the DB row is gone and so is the directory on disk.
+      const getRes = await request.get(`/api/v1/workspaces/${ws.id}`);
+      expect(getRes.status()).toBe(404);
+      expect(
+        existsSync(ws.location),
+        'workspace directory and its contents must be removed from disk',
+      ).toBe(false);
 
       // Issue #204: the same slug must be reusable right away, since the
       // delete removed the directory rather than orphaning it.
