@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export type CanonicalState = 'pending' | 'in_progress' | 'done' | 'cancelled';
 
 export interface AuthField {
@@ -29,15 +31,6 @@ export interface GithubVerifyResult {
   canCreate: boolean;
   tokenType: 'classic' | 'fine-grained' | 'unknown';
   error?: string;
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function listTrackers(): Promise<Tracker[]> {

@@ -1,24 +1,18 @@
 import { getWorkspaceStore, type Task, type TaskQueueEntry } from './workspace-store.js';
 import { logger } from '../config/logger.js';
-
-// Broadcast callback registered by stream-handler so the scheduler can emit
-// queue update events into all active SSE connections without importing the
-// full stream-handler tree (which would create a circular dependency).
-type BroadcastFn = (eventJson: string) => void;
-let _broadcast: BroadcastFn | null = null;
-
-export function registerQueueBroadcast(fn: BroadcastFn): void {
-  _broadcast = fn;
-}
+import { broadcast } from './broadcast.js';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 
 // Runs one dequeued task to completion (or to a waiting_on_user pause) and
 // mirrors the outcome onto tasks/task_queue — see task-execution.ts's
 // executeTask(), the real implementation. Injected via the constructor
-// (bootTaskScheduler()) rather than imported directly here, for the same
-// reason registerQueueBroadcast() above exists as a callback instead of an
-// import: task-execution.ts imports pipeEvents/finalizeTurn from
-// stream-handler.ts, which already imports getTaskScheduler() from this
-// file — a direct import here would complete that cycle.
+// (bootTaskScheduler()) rather than imported directly here: task-execution.ts
+// imports pipeEvents/finalizeTurn from stream-handler.ts, which already
+// imports getTaskScheduler() from this file — a direct import here would
+// complete that cycle. (broadcast.ts above has no such constraint — it's a
+// standalone module outside that import chain — which is exactly why it can
+// be imported directly instead of needing the same callback-injection
+// treatment.)
 export type TaskExecutor = (entry: TaskQueueEntry & { task: Task }) => Promise<void>;
 
 // Event-driven, not polling: the scheduler only does work in response to a
@@ -94,13 +88,29 @@ export class TaskScheduler {
     }
   }
 
+  // Enriches each entry with its task record the same way getQueueHandler()
+  // does for the REST endpoint (tasks.handlers.ts) — the frontend's
+  // QueueState type requires it (ui/src/services/tasks-api.ts), and the
+  // sidebar/Kanban queue widgets already read entry.task directly
+  // (thread-sidebar.tsx). Skipping this would silently blank those widgets
+  // the moment a broadcast replaced their last polled/fetched value.
   private emitQueueUpdate(): void {
-    if (!_broadcast) return;
     const store = getWorkspaceStore();
-    const queue = store.listQueue();
+    const queue = store
+      .listQueue()
+      .map((entry) => ({ ...entry, task: store.getTask(entry.taskId) ?? null }));
     const running = store.getRunningEntries();
-    const payload = { queue, running };
-    _broadcast(JSON.stringify({ type: 'task_queue_update', data: payload }));
+    // AppBroadcastEventSchema types each entry's `task` as a loose
+    // Record<string, unknown> (no shared Task Zod schema exists in
+    // lib/llm-common-types yet) — Task itself has no index signature, so TS
+    // rejects the structural assignment even though the real shape is a
+    // superset. Same trust boundary as ui/src/hooks/use-live-events.ts's
+    // matching cast on the read side.
+    broadcast({
+      type: 'task_queue_update',
+      queue,
+      running,
+    } as unknown as AppBroadcastEvent);
   }
 }
 

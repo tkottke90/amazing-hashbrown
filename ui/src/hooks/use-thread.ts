@@ -309,9 +309,22 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       batch(() => {
         messages.value = hydrated;
         summaryPath.value = data.summaryPath ?? null;
-        const last = hydrated[hydrated.length - 1];
+        // Scan backward for the last *pending* hitl_prompt rather than only
+        // checking the final message — a task-originated pause appends a
+        // task_run_marker ("waiting on you") after its hitl_prompt row, so
+        // assuming the prompt is always the thread's last message misses it
+        // entirely on reload (it still renders live over SSE, where
+        // pendingHitlId is set directly by the hitl_prompt event handler).
+        let pendingHitl: (typeof hydrated)[number] | undefined;
+        for (let i = hydrated.length - 1; i >= 0; i--) {
+          const m = hydrated[i];
+          if (m && m.kind === 'hitl_prompt' && m.status === 'pending') {
+            pendingHitl = m;
+            break;
+          }
+        }
         pendingHitlId.value =
-          last && last.kind === 'hitl_prompt' && last.status === 'pending' ? last.promptId : null;
+          pendingHitl && pendingHitl.kind === 'hitl_prompt' ? pendingHitl.promptId : null;
         // Unconditional: overrides a default the auto-fill effect may
         // already have guessed while this fetch was in flight — this
         // response is the authoritative source for the thread's model.
@@ -779,6 +792,19 @@ export function useThreadInstance(
 // useThreadInstance() with the same thread id.
 export function _resetThreadInstancesForTests(): void {
   _instances.clear();
+}
+
+// Whether useThreadInstance() has ever been called for this thread id in this
+// session — the correct generalization of "is this thread currently relevant
+// to some UI surface," covering both the global chat page and the workspace
+// Chat tab (workspace-chat-tab.tsx), unlike activeThreadId which only the
+// former ever sets. _instances never evicts, so this can occasionally be true
+// for a thread the user has since navigated away from; accepted as the same
+// pragmatic "cheap refetch over precise live-append" tradeoff the rest of
+// this design already makes. See
+// docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md.
+export function hasThreadInstance(threadId: string): boolean {
+  return _instances.has(threadId);
 }
 
 // ---- Thread CRUD (sidebar actions, global chat only) ----

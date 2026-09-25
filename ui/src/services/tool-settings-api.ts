@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 // Standalone types mirroring api/src/agents/tool-config.ts's
 // ResolvedToolSettingItem shape (ui/ has no dependency on the api package —
 // same rationale as mcp-servers-api.ts's McpServerConfig mirror).
@@ -62,15 +64,6 @@ export interface ThreadToolItem extends ToolSettingItem {
 export interface ThreadToolsResponse {
   customized: boolean;
   tools: ThreadToolItem[];
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 // ---- Global (Settings > Tools) --------------------------------------------

@@ -332,6 +332,207 @@ interface AgentWithGraph {
   graph: Pick<ChatAgent['graph'], 'getState'>;
 }
 
+// Given an interrupt already sitting in checkpoint state, persists a
+// kind-appropriate hitl_prompt row (shell_approval / recursion_limit_warning
+// / ask_user's yes_no|multiple_choice|free_text) and emits the matching live
+// `hitl_prompt` SSE event. On failure to persist, marks the assistant row
+// `msgId` as errored and emits `stream_error` — callers must treat a
+// `{interrupted: false}` return as a real failure, never a waiting_on_user
+// state. Shared by finalizeTurn's graceful (stream-completed-normally) path
+// below and by task-execution.ts's GraphInterrupt catch branch, which
+// recovers an interrupt LangGraph left parked in checkpoint state after
+// pipeEvents throws instead of completing normally — see that file's own
+// comment on why a thrown interrupt needs the same handling as a returned one.
+export function dispatchHitlPrompt(
+  sink: SseWriter,
+  threadStore: ThreadStore,
+  threadId: string,
+  msgId: string,
+  interrupt: { value: unknown },
+  content: string,
+  turnSentAt: string,
+  assistantSeq: number | null,
+  userSeq: number | null,
+  taskId?: string,
+): { interrupted: boolean } {
+  const interruptValue = interrupt.value as Record<string, unknown>;
+  const promptId = randomUUID();
+
+  try {
+    if (interruptValue.kind === 'shell_approval') {
+      const { command, reason } = interruptValue as { command: string; reason?: string };
+      const question = 'Approve command execution?';
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'shell_approval',
+        command,
+        reason,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'shell_approval',
+        command,
+        reason,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    } else if (interruptValue.kind === 'recursion_limit_warning') {
+      const { question, choices, stepsUsed, recursionLimit } = interruptValue as {
+        question: string;
+        choices: string[];
+        stepsUsed: number;
+        recursionLimit: number;
+      };
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        stepsUsed,
+        recursionLimit,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        stepsUsed,
+        recursionLimit,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    } else {
+      const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
+        interruptValue as {
+          question: string;
+          kind: 'yes_no' | 'multiple_choice' | 'free_text';
+          choices?: string[];
+          allowFreeText?: boolean;
+          approveLabel?: string;
+          approveType?: 'primary' | 'secondary' | 'destructive';
+          rejectLabel?: string;
+        };
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind,
+        choices,
+        allowFreeText,
+        approveLabel,
+        approveType,
+        rejectLabel,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
+    }
+  } catch (err) {
+    logger.error('dispatchHitlPrompt: failed to persist HITL prompt', {
+      threadId,
+      err: serializeError(err),
+    });
+    failAssistant(threadStore, threadId, msgId, content, turnSentAt);
+    writeSseEvent(sink, { type: 'stream_error', error: 'Failed to save approval prompt' });
+    // The interrupt could not be durably recorded, so there is no prompt
+    // for the user to ever answer — a caller must treat this as a plain
+    // failure, not a real waiting_on_user state.
+    return { interrupted: false };
+  }
+  return { interrupted: true };
+}
+
+// Recovers a GraphInterrupt thrown mid-stream — LangGraph's own interrupt()
+// control-flow signal, which pipeEvents forwards as a PipeEventsError
+// preserving `.name` (see that class's own comment) — the same way the
+// graceful, stream-completed-normally path above already does: finalize
+// whatever partial content streamed before the throw, re-query checkpoint
+// state for the interrupt LangGraph still parked there, and dispatch it via
+// dispatchHitlPrompt. Returns null when `err` isn't a GraphInterrupt at all,
+// so the caller's own catch block falls through to its existing error
+// handling unchanged. Every turn handler that calls pipeEvents/finalizeTurn
+// (chat, workspace chat, wiki chat, task execution, headless notification
+// turns) binds shell_exec and is exposed to this same failure mode, so this
+// is the one place that recovery logic is written.
+export async function recoverThrownInterrupt(
+  err: unknown,
+  sink: SseWriter,
+  threadStore: ThreadStore,
+  agent: AgentWithGraph,
+  config: { configurable: { thread_id: string; workspaceId?: string } },
+  threadId: string,
+  msgId: string,
+  turnSentAt: string,
+  assistantSeq: number | null,
+  userSeq: number | null,
+  taskId?: string,
+): Promise<{ interrupted: boolean } | null> {
+  if ((err as Error)?.name !== 'GraphInterrupt') return null;
+
+  const partialState = extractPartialAssistantState(err, msgId);
+  finalizeAssistant(
+    threadStore,
+    threadId,
+    partialState.segmentId,
+    partialState.content,
+    partialState.thoughtContent,
+    turnSentAt,
+    null,
+  );
+
+  const state = await agent.graph.getState(config);
+  const interrupt = state.tasks?.[0]?.interrupts?.[0];
+  if (!interrupt) {
+    // Name matched but checkpoint has no interrupt — safety net, not the
+    // expected path.
+    failAssistant(
+      threadStore,
+      threadId,
+      partialState.segmentId,
+      partialState.content,
+      turnSentAt,
+      partialState.thoughtContent,
+      'Lost the approval prompt after an interrupt.',
+      'unknown',
+    );
+    return { interrupted: false };
+  }
+
+  return dispatchHitlPrompt(
+    sink,
+    threadStore,
+    threadId,
+    partialState.segmentId,
+    interrupt as { value: unknown },
+    partialState.content,
+    turnSentAt,
+    assistantSeq,
+    userSeq,
+    taskId,
+  );
+}
+
 export async function finalizeTurn(
   sink: SseWriter,
   threadStore: ThreadStore,
@@ -363,6 +564,21 @@ export async function finalizeTurn(
   // of resuming an interactive turn. Existing callers omit it; behavior is
   // unchanged for them.
   taskId?: string,
+  // Set only by task-execution.ts, only when complete_task already fired
+  // earlier in this same stream (see tapCompleteTask/completeTaskBox there).
+  // agent.graph.getState() reads state for the whole shared thread, not just
+  // this run, so it can still report a pending interrupt here even though
+  // the task itself is already finished — e.g. the model does one more
+  // tool call needing approval right after calling complete_task. Since
+  // task-execution.ts always gives completeTaskBox priority over
+  // `interrupted` once both are true, dispatching that interrupt as a live
+  // hitl_prompt would durably show the user a prompt with no queue row ever
+  // able to back it (parkQueueEntryForHitl is only reached on the
+  // `interrupted`-wins branch) — exactly what let a later, stale /hitl
+  // answer silently re-run an already-completed task. Discarding it here,
+  // before it's ever written or shown, is what keeps that queue row's
+  // completion the only thing task-execution.ts has to reconcile.
+  discardInterrupt = false,
 ): Promise<{ interrupted: boolean }> {
   const durationMs = Date.now() - startedAt;
   const config = { configurable: { thread_id: threadId } };
@@ -436,113 +652,30 @@ export async function finalizeTurn(
 
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
 
-  if (interrupt) {
-    const interruptValue = interrupt.value as Record<string, unknown>;
-    const promptId = randomUUID();
+  if (interrupt && discardInterrupt) {
+    logger.warn(
+      'finalizeTurn: discarding a pending interrupt found after complete_task already ' +
+        'completed this run — no hitl_prompt will be dispatched for it',
+      { threadId, taskId },
+    );
+  }
 
-    try {
-      if (interruptValue.kind === 'shell_approval') {
-        const { command, reason } = interruptValue as { command: string; reason?: string };
-        const question = 'Approve command execution?';
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: 'shell_approval',
-          command,
-          reason,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind: 'shell_approval',
-          command,
-          reason,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      } else if (interruptValue.kind === 'recursion_limit_warning') {
-        const { question, choices, stepsUsed, recursionLimit } = interruptValue as {
-          question: string;
-          choices: string[];
-          stepsUsed: number;
-          recursionLimit: number;
-        };
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: 'multiple_choice',
-          choices,
-          allowFreeText: true,
-          stepsUsed,
-          recursionLimit,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind: 'multiple_choice',
-          choices,
-          allowFreeText: true,
-          stepsUsed,
-          recursionLimit,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      } else {
-        const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
-          interruptValue as {
-            question: string;
-            kind: 'yes_no' | 'multiple_choice' | 'free_text';
-            choices?: string[];
-            allowFreeText?: boolean;
-            approveLabel?: string;
-            approveType?: 'primary' | 'secondary' | 'destructive';
-            rejectLabel?: string;
-          };
-        const seq = recordHitlPrompt(threadStore, threadId, promptId, {
-          question,
-          promptKind: kind,
-          choices,
-          allowFreeText,
-          approveLabel,
-          approveType,
-          rejectLabel,
-          ...(taskId ? { taskId } : {}),
-        });
-        writeSseEvent(sink, {
-          type: 'hitl_prompt',
-          messageId: msgId,
-          promptId,
-          question,
-          kind,
-          choices,
-          allowFreeText,
-          approveLabel,
-          approveType,
-          rejectLabel,
-          seq,
-          ...(assistantSeq !== null ? { assistantSeq } : {}),
-          ...(userSeq !== null ? { userSeq } : {}),
-        });
-      }
-    } catch (err) {
-      logger.error('finalizeTurn: failed to persist HITL prompt', {
-        threadId,
-        err: serializeError(err),
-      });
-      failAssistant(threadStore, threadId, msgId, content, turnSentAt);
-      writeSseEvent(sink, { type: 'stream_error', error: 'Failed to save approval prompt' });
-      // The interrupt could not be durably recorded, so there is no prompt
-      // for the user to ever answer — a caller must treat this as a plain
-      // failure, not a real waiting_on_user state.
-      return { interrupted: false };
-    }
-    return { interrupted: true };
+  if (interrupt && !discardInterrupt) {
+    return dispatchHitlPrompt(
+      sink,
+      threadStore,
+      threadId,
+      msgId,
+      // LangGraph's own Interrupt type carries more than { value: unknown }
+      // (id, resumable, etc.) — dispatchHitlPrompt only ever reads .value,
+      // so it declares the narrower structural shape it actually needs.
+      interrupt as { value: unknown },
+      content,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+      taskId,
+    );
   } else {
     // Ollama can silently truncate/return nothing when the context window is
     // exceeded, rather than throwing — this heuristic re-routes that case
@@ -893,6 +1026,20 @@ export async function streamChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -1074,6 +1221,20 @@ export async function resumeChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -1254,6 +1415,20 @@ export async function retryChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,

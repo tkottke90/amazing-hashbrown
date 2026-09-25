@@ -119,8 +119,18 @@ export function AssistantMessage({ message, className, onRetry, onFork }: Assist
                 </div>
               )}
             </>
-          ) : (
+          ) : isError ? (
             <ChatErrorDetail category={message.errorCategory} detail={message.error} />
+          ) : (
+            // A turn can legitimately finish with no assistant content and no
+            // error — e.g. answering a task-originated HITL prompt just
+            // re-enqueues the task for the scheduler to pick back up (see
+            // workspace-chat.route.ts's taskId branch), which ends the SSE
+            // stream with stream_done and never streams any text at all.
+            // Falling into the error-detail branch here used to render the
+            // generic "Something went wrong" message for this entirely
+            // successful, content-less turn.
+            <span className="text-muted-foreground">No response for this turn.</span>
           )}
         </div>
       </div>

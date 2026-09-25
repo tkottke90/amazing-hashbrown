@@ -35,8 +35,10 @@ import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebas
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
+import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
+import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
@@ -71,6 +73,14 @@ const evalTools = [
   wikiRegisterDomainTool,
   webFetchTool,
   getToolKeyTool,
+  // Part of STATIC_CHAT_TOOLS in production (chat-agent.ts) but was missing
+  // here — auto-eval round 1 of suites/tool-calling.yaml (2026-09-22)
+  // against local/Lemonade/Ornith/Digital Ocean found all four models never
+  // once mentioned search_skills among their own enumerated tool lists when
+  // asked "what skills do you have," which only makes sense if it genuinely
+  // wasn't bound. Confirmed against chat-agent.ts's STATIC_CHAT_TOOLS array
+  // (line ~280), where searchSkillsTool is unconditionally included.
+  searchSkillsTool,
   // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware).
   // create-workspace-project.yaml now exercises that real gating directly
   // via each scenario's `gatedSkill` field (see runner.ts and
@@ -81,6 +91,20 @@ const evalTools = [
   // as an option regardless of whether it opts into gating.
   makeCreateWorkspaceTool(),
   makeCreateProjectTool(),
+  // Workspace-scoped in production (buildWorkspaceScopedTools() in
+  // chat-agent.ts) — bound in buildWorkspaceChatAgent/buildTaskAgent, never
+  // buildChatAgent, unlike every other tool in this list which mirrors
+  // STATIC_CHAT_TOOLS/buildGatedTools() (the plain-chat set). Included here
+  // unconditionally anyway, same reasoning as searchSkillsTool above: this
+  // harness has no separate workspace-scoped tool list, and
+  // suites/task-creation.yaml (2026-09-22) is deliberately scoped to
+  // workspace chat and needs create_tasks actually offered to be a
+  // meaningful test — auto-eval round 1 against all four configured
+  // providers found every model reasoning its way around the missing tool
+  // (creating wiki pages, asking clarifying questions, checking for
+  // existing tasks via shell_exec) rather than ever seeing create_tasks as
+  // an option, confirming it genuinely wasn't bound.
+  makeCreateTasksTool(),
   fakeGenerateImageTool,
 ];
 

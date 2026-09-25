@@ -130,8 +130,31 @@ export interface Task {
   parentThreadId: string | null;
   dispatchGroupId: string | null;
   role: string | null;
+  // Set when status is 'blocked' because a required dependency (see
+  // TaskDependency below) failed or was cancelled — distinct from a plain
+  // user-initiated pause, which carries no reason here (see task_queue's own
+  // pause_reason instead). Cleared to null on any transition out of 'blocked'.
+  blockedReason: 'dependency_failed' | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// An edge in the task dependency graph: `taskId` cannot become 'ready' until
+// `dependsOnTaskId` satisfies this edge's rule. See isTaskReady()/
+// hasBrokenDependency()/releaseEligibleDependents() below for the gating
+// logic, and docs/superpowers/specs/2026-09-22-task-dependencies-design.md
+// for the full design.
+export interface TaskDependency {
+  id: number;
+  taskId: string;
+  dependsOnTaskId: string;
+  // true: satisfied only when the target reaches 'done'; 'failed'/'cancelled'
+  // permanently breaks this edge. false: satisfied by any terminal state.
+  requireSuccess: boolean;
+  // true: the target reaching 'blocked' (human-paused) also satisfies this
+  // edge, in addition to whatever requireSuccess implies.
+  whileBlocked: boolean;
+  createdAt: string;
 }
 
 export interface NewTaskInput {
@@ -169,6 +192,7 @@ export interface PatchTaskInput {
   plan?: PlanStep[] | null;
   threadId?: string | null;
   resumeAnswer?: string | null;
+  blockedReason?: 'dependency_failed' | null;
 }
 
 export interface TaskQueueEntry {
@@ -246,8 +270,18 @@ interface RawTaskRow {
   parent_thread_id: string | null;
   dispatch_group_id: string | null;
   role: string | null;
+  blocked_reason: 'dependency_failed' | null;
   created_at: string;
   updated_at: string;
+}
+
+interface RawTaskDependencyRow {
+  id: number;
+  task_id: string;
+  depends_on_task_id: string;
+  require_success: number;
+  while_blocked: number;
+  created_at: string;
 }
 
 interface RawQueueRow {
@@ -325,8 +359,20 @@ function mapTask(row: RawTaskRow): Task {
     parentThreadId: row.parent_thread_id,
     dispatchGroupId: row.dispatch_group_id,
     role: row.role,
+    blockedReason: row.blocked_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapTaskDependency(row: RawTaskDependencyRow): TaskDependency {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    dependsOnTaskId: row.depends_on_task_id,
+    requireSuccess: row.require_success === 1,
+    whileBlocked: row.while_blocked === 1,
+    createdAt: row.created_at,
   };
 }
 
@@ -366,6 +412,9 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // Tool Management — issue #171 — see thread-store.ts's own comment.
 // 30=ToolSettingsStore (drops tool_settings.enabled/default_include —
 // moved to config.yaml, for the 2026-09-13 tool settings redesign).
+// 31=WorkspaceStore (task_dependencies table, tasks.blocked_reason column,
+// for the task-dependency-gating feature — see
+// docs/superpowers/specs/2026-09-22-task-dependencies-design.md).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -500,6 +549,34 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE tasks ADD COLUMN parent_thread_id TEXT;
       ALTER TABLE tasks ADD COLUMN dispatch_group_id TEXT;
       ALTER TABLE tasks ADD COLUMN role TEXT;
+    `,
+  },
+  {
+    version: 31,
+    // task_dependencies gates a task from auto-ready/enqueue until its
+    // dependencies are satisfied (see isTaskReady()/releaseEligibleDependents()
+    // below). REFERENCES tasks(id) is safe here (unlike a REFERENCES column
+    // added via ALTER TABLE, per the version 23 comment above) since this is
+    // a fresh CREATE TABLE, not an ALTER. blocked_reason carries why a task
+    // is 'blocked' when that's due to a broken dependency — distinct from
+    // task_queue.pause_reason, which only exists for a task that actually
+    // reached 'running' and then got paused (a dependency-blocked task never
+    // gets that far, so has no queue row to carry a reason on). See
+    // docs/superpowers/specs/2026-09-22-task-dependencies-design.md.
+    sql: `
+      CREATE TABLE IF NOT EXISTS task_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        depends_on_task_id TEXT NOT NULL REFERENCES tasks(id),
+        require_success INTEGER NOT NULL DEFAULT 1,
+        while_blocked INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(task_id, depends_on_task_id),
+        CHECK(task_id != depends_on_task_id)
+      );
+      CREATE INDEX idx_task_dependencies_task_id ON task_dependencies(task_id);
+      CREATE INDEX idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
+      ALTER TABLE tasks ADD COLUMN blocked_reason TEXT;
     `,
   },
 ];
@@ -728,6 +805,13 @@ export class WorkspaceStore extends BaseStore {
           `DELETE FROM task_queue WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
         )
         .run(id);
+      this.db
+        .prepare(
+          `DELETE FROM task_dependencies
+           WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)
+              OR depends_on_task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
+        )
+        .run(id, id);
       this.db.prepare(`DELETE FROM tasks WHERE workspace_id = ?`).run(id);
       this.db.prepare(`DELETE FROM projects WHERE workspace_id = ?`).run(id);
       return this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
@@ -1074,6 +1158,10 @@ export class WorkspaceStore extends BaseStore {
       sets.push('resume_answer = ?');
       values.push(patch.resumeAnswer);
     }
+    if (patch.blockedReason !== undefined) {
+      sets.push('blocked_reason = ?');
+      values.push(patch.blockedReason);
+    }
 
     if (sets.length === 0) return this.getTask(id);
 
@@ -1089,8 +1177,124 @@ export class WorkspaceStore extends BaseStore {
   }
 
   deleteTask(id: string): boolean {
+    this.db
+      .prepare(`DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?`)
+      .run(id, id);
     const result = this.db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
     return result.changes > 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Task dependencies
+  //
+  // A task with one or more rows here (task_id = this task) cannot become
+  // 'ready' until every row is satisfied — see isTaskReady()/
+  // hasBrokenDependency()/releaseEligibleDependents(). Called from exactly
+  // two choke points (completeQueueEntry, parkQueueEntry below) rather than
+  // scattered call sites. See
+  // docs/superpowers/specs/2026-09-22-task-dependencies-design.md.
+  // -------------------------------------------------------------------------
+
+  addTaskDependency(
+    taskId: string,
+    dependsOnTaskId: string,
+    opts: { requireSuccess?: boolean; whileBlocked?: boolean } = {},
+  ): TaskDependency {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `INSERT INTO task_dependencies (task_id, depends_on_task_id, require_success, while_blocked, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        taskId,
+        dependsOnTaskId,
+        opts.requireSuccess === false ? 0 : 1,
+        opts.whileBlocked ? 1 : 0,
+        now,
+      );
+    const row = this.db
+      .prepare(`SELECT * FROM task_dependencies WHERE id = ?`)
+      .get(Number(result.lastInsertRowid)) as RawTaskDependencyRow;
+    return mapTaskDependency(row);
+  }
+
+  removeTaskDependency(id: number): void {
+    this.db.prepare(`DELETE FROM task_dependencies WHERE id = ?`).run(id);
+  }
+
+  // Outgoing — what this task depends on.
+  listTaskDependencies(taskId: string): TaskDependency[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM task_dependencies WHERE task_id = ?`)
+      .all(taskId) as RawTaskDependencyRow[];
+    return rows.map(mapTaskDependency);
+  }
+
+  // Incoming — who depends on this task.
+  listDependents(taskId: string): TaskDependency[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM task_dependencies WHERE depends_on_task_id = ?`)
+      .all(taskId) as RawTaskDependencyRow[];
+    return rows.map(mapTaskDependency);
+  }
+
+  private loadDependencyEdges(
+    taskId: string,
+  ): Array<{ dep: TaskDependency; targetStatus: TaskStatus }> {
+    const rows = this.db
+      .prepare(
+        `SELECT task_dependencies.*, tasks.status AS target_status
+         FROM task_dependencies
+         JOIN tasks ON tasks.id = task_dependencies.depends_on_task_id
+         WHERE task_dependencies.task_id = ?`,
+      )
+      .all(taskId) as (RawTaskDependencyRow & { target_status: TaskStatus })[];
+    return rows.map((row) => ({ dep: mapTaskDependency(row), targetStatus: row.target_status }));
+  }
+
+  private isEdgeSatisfied(dep: TaskDependency, targetStatus: TaskStatus): boolean {
+    if (dep.whileBlocked && targetStatus === 'blocked') return true;
+    if (dep.requireSuccess) return targetStatus === 'done';
+    return targetStatus === 'done' || targetStatus === 'failed' || targetStatus === 'cancelled';
+  }
+
+  isTaskReady(taskId: string): boolean {
+    return this.loadDependencyEdges(taskId).every(({ dep, targetStatus }) =>
+      this.isEdgeSatisfied(dep, targetStatus),
+    );
+  }
+
+  // A requireSuccess edge whose target is failed/cancelled can never become
+  // satisfied (a task never leaves a terminal state on its own) — distinct
+  // from isTaskReady() returning false, which just means "not yet".
+  hasBrokenDependency(taskId: string): boolean {
+    return this.loadDependencyEdges(taskId).some(
+      ({ dep, targetStatus }) =>
+        dep.requireSuccess && (targetStatus === 'failed' || targetStatus === 'cancelled'),
+    );
+  }
+
+  // Re-evaluates every task waiting on changedTaskId, called right after
+  // changedTaskId itself transitions to a status dependents might care about
+  // (done/failed/cancelled via completeQueueEntry, or blocked via
+  // parkQueueEntry). A dependent already past 'pending' was already released
+  // (or taken over) earlier and is left alone here.
+  releaseEligibleDependents(changedTaskId: string): void {
+    for (const dependency of this.listDependents(changedTaskId)) {
+      const dependentTask = this.getTask(dependency.taskId);
+      if (!dependentTask || dependentTask.status !== 'pending') continue;
+
+      if (this.hasBrokenDependency(dependency.taskId)) {
+        this.patchTask(dependency.taskId, {
+          status: 'blocked',
+          blockedReason: 'dependency_failed',
+        });
+      } else if (this.isTaskReady(dependency.taskId)) {
+        this.patchTask(dependency.taskId, { status: 'ready', assignedTo: 'agent' });
+        this.enqueueTask(dependency.taskId);
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1157,6 +1361,52 @@ export class WorkspaceStore extends BaseStore {
     })();
   }
 
+  // Creates a batch of ordinary (origin='user') task rows in one
+  // transaction — all rows land or none do. Every row is forced to
+  // status='ready'/assigned_to='agent' and enqueued immediately, mirroring
+  // createSubAgentTask()'s create->patch->enqueue shape rather than trusting
+  // callers to pass the right status/assignedTo combination on NewTaskInput
+  // (which has no status field at all — createTask() alone can only ever
+  // insert 'pending'). Used by the create_tasks chat tool to turn an
+  // approved plan into queued, autonomously-executing work in one call.
+  // dependsOnIndexes references another task by its position in this same
+  // `inputs` array (not a real task id, which doesn't exist until after the
+  // insert below) — only earlier indices are allowed, which alone rules out
+  // any cycle within one batch without needing a graph traversal. A task
+  // with one or more dependencies is left at createTask()'s default
+  // 'pending' instead of being readied/enqueued — see
+  // releaseEligibleDependents() for how it's later picked up once its
+  // dependencies are satisfied.
+  createTasks(inputs: (NewTaskInput & { dependsOnIndexes?: number[] })[]): Task[] {
+    return this.db.transaction(() => {
+      inputs.forEach((input, i) => {
+        for (const depIndex of input.dependsOnIndexes ?? []) {
+          if (!Number.isInteger(depIndex) || depIndex < 0 || depIndex >= i) {
+            throw new Error(
+              `Task ${i + 1}'s dependsOnIndexes must reference an earlier task in the same batch (got index ${depIndex}).`,
+            );
+          }
+        }
+      });
+
+      const created = inputs.map((input) => this.createTask(input));
+
+      inputs.forEach((input, i) => {
+        for (const depIndex of input.dependsOnIndexes ?? []) {
+          this.addTaskDependency(created[i]!.id, created[depIndex]!.id);
+        }
+      });
+
+      return created.map((task) => {
+        if (this.listTaskDependencies(task.id).length === 0) {
+          this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+          this.enqueueTask(task.id);
+        }
+        return this.getTask(task.id)!;
+      });
+    })();
+  }
+
   // All origin='agent' rows sharing dispatchGroupId whose task_queue entry
   // hasn't reached a terminal state yet — used to compute remainingCount for
   // a completion-notification turn (see task-execution.ts's
@@ -1198,16 +1448,23 @@ export class WorkspaceStore extends BaseStore {
     })[];
     if (pending.length === 0) return null;
 
-    // origin='agent' (spawn_sub_agent) rows never occupy or contend for a
-    // scope slot — see docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
+    // A scope is occupied by a 'running' task_queue row, or by a task still
+    // sitting at 'waiting_on_user' — the interrupt (HITL approval) path in
+    // task-execution.ts closes the queue row ('done') before the task
+    // itself settles at 'waiting_on_user', so checking task_queue.status
+    // alone would read the scope as free the instant that row closes, even
+    // though the task is only paused, not finished, and still owns the
+    // scope's shared thread. Sourcing straight from `tasks` catches both
+    // cases without a join. origin='agent' (spawn_sub_agent) rows never
+    // occupy or contend for a scope slot — see
+    // docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
     const runningScopes = new Set(
       (
         this.db
           .prepare(
-            `SELECT COALESCE(tasks.workspace_id, 'inbox') AS scope
-             FROM task_queue
-             JOIN tasks ON tasks.id = task_queue.task_id
-             WHERE task_queue.status = 'running' AND tasks.origin != 'agent'`,
+            `SELECT COALESCE(workspace_id, 'inbox') AS scope
+             FROM tasks
+             WHERE status IN ('running', 'waiting_on_user') AND origin != 'agent'`,
           )
           .all() as { scope: string }[]
       ).map((r) => r.scope),
@@ -1244,6 +1501,7 @@ export class WorkspaceStore extends BaseStore {
       this.db
         .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)
         .run(outcome, now, entry.task_id);
+      this.releaseEligibleDependents(entry.task_id);
     }
   }
 
@@ -1263,6 +1521,45 @@ export class WorkspaceStore extends BaseStore {
       this.db
         .prepare(`UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?`)
         .run(now, row.task_id);
+      // Only a whileBlocked edge can be satisfied by this transition —
+      // isTaskReady()'s per-edge check already handles that; a plain
+      // requireSuccess edge just isn't satisfied yet.
+      this.releaseEligibleDependents(row.task_id);
+    }
+  }
+
+  // HITL approval pause: parks the row (status 'paused', tagged
+  // pause_reason 'chat' — the existing 'chat'/'user' pauseReason union was
+  // already carrying this case in reserve) and lands the task at
+  // 'waiting_on_user'/'user', not 'blocked' — this is a different pause
+  // than parkQueueEntry's user-initiated one. Deliberately does NOT call
+  // releaseEligibleDependents(): a dependency edge is only satisfied by
+  // 'blocked' (whileBlocked) or a terminal state, neither of which applies
+  // to a task merely waiting on an approval answer.
+  //
+  // Keeping the row alive (rather than completeQueueEntry()'s 'done', which
+  // discards it) is what lets the eventual resume reuse resumePausedEntry()
+  // below instead of enqueueTask() — a fresh enqueueTask() call always
+  // appends at the back of the queue, which lets every task still pending
+  // in the same scope cut in front of a task that already started and is
+  // merely waiting on a human answer. See
+  // docs/superpowers/specs/2026-09-22-task-dependencies-design.md's related
+  // discussion of scope occupancy for the same underlying failure mode.
+  parkQueueEntryForHitl(id: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE task_queue SET status = 'paused', pause_reason = 'chat', paused_at = ? WHERE id = ?`,
+      )
+      .run(now, id);
+    const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
+      { task_id: string } | undefined;
+    if (row) {
+      this.db
+        .prepare(
+          `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ?`,
+        )
+        .run(now, row.task_id);
     }
   }
 
@@ -1277,11 +1574,16 @@ export class WorkspaceStore extends BaseStore {
       .run(now, id);
   }
 
-  // Used by the user-Resume path (task-drawer's Resume button, via
-  // patchTaskHandler's blocked -> ready branch). Deliberately leaves
-  // pause_reason/paused_at in place (not cleared) so task-execution.ts can
-  // still see pausedAt on the next dequeue and send a continuation-flavored
-  // kickoff message instead of a fresh-start one.
+  // Generic "reactivate a parked row at its original queue position" —
+  // used by both the user-Resume path (task-drawer's Resume button, via
+  // patchTaskHandler's blocked -> ready branch) and the HITL-answer path
+  // (parkQueueEntryForHitl() above's counterpart), which is exactly why
+  // this stays generic rather than baking in either caller's own
+  // tasks.status transition. Deliberately leaves pause_reason/paused_at in
+  // place (not cleared) so task-execution.ts can still see pausedAt on the
+  // next dequeue and send a continuation-flavored kickoff message instead
+  // of a fresh-start one — harmless for the HITL case, whose input is
+  // driven by task.resumeAnswer instead once that's set.
   resumePausedEntry(id: string): void {
     this.db.prepare(`UPDATE task_queue SET status = 'pending' WHERE id = ?`).run(id);
   }

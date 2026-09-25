@@ -1,4 +1,4 @@
-import { Page, test, TestDetails, TestInfo } from '@playwright/test';
+import { APIRequestContext, Page, test, TestDetails, TestInfo } from '@playwright/test';
 
 export { TAGS } from './tags.js';
 
@@ -51,8 +51,12 @@ export interface TestSuite extends BaseTestProps {
   name: string;
   purpose: string;
   steps: TestStep[];
-  beforeAll?: TestAction<{ page: Page }>;
-  afterAll?: TestAction<{ page: Page }>;
+  // Playwright creates `page`/`context` fresh per test and refuses to hand
+  // them to beforeAll/afterAll — only the disposable `request` fixture works
+  // there (see https://aka.ms/playwright/reuse-page). beforeEach/afterEach
+  // run per-test, so they still get a real `page`.
+  beforeAll?: TestAction<{ request: APIRequestContext }>;
+  afterAll?: TestAction<{ request: APIRequestContext }>;
   beforeEach?: TestAction<{ page: Page }>;
   afterEach?: TestAction<{ page: Page }>;
   startingPage?: string;
@@ -101,6 +105,15 @@ function addTestMarkers(step: BaseTestProps): void {
   test.fail(...parseTestMarker(step.fail || false, 'fail'));
 }
 
+// TestDetails['tag'] (inherited by both TestSuite and TestStep) is
+// `string | string[] | undefined` — spreading a bare string directly (as
+// this file used to do in two places) iterates its individual characters
+// instead of treating it as one tag. Normalizes either shape to an array.
+function toTagArray(tag: BaseTestProps['tag']): string[] {
+  if (!tag) return [];
+  return Array.isArray(tag) ? tag : [tag];
+}
+
 /**
  * Configure the Test Step level tags and annotations.  This ensures all the metadata for
  * a test are captured as annotations.  This also handles de-duping the tags
@@ -108,11 +121,12 @@ function addTestMarkers(step: BaseTestProps): void {
  * @param suite The suite the test is a part of
  */
 function testAnnotations(step: TestStep, suite: TestSuite) {
-  const tags = step.tag ? (Array.isArray(step.tag) ? step.tag : [step.tag]) : [];
+  const tags = toTagArray(step.tag);
+  const suiteTags = toTagArray(suite.tag);
 
   // Filter out any tags that are already present in the suite's tags to avoid duplication. Suite
   // level tags are applied to any tests inside of the suite, so we don't want to duplicate them at the step level.
-  test.info().tags.push(...tags.filter((tag) => !suite.tag?.includes(tag)));
+  test.info().tags.push(...tags.filter((tag) => !suiteTags.includes(tag)));
 
   test.info().annotations.push({ type: `step.action`, description: step.action });
   test.info().annotations.push({ type: 'step.expectedOutcome', description: step.expectedOutcome });
@@ -129,7 +143,7 @@ function testAnnotations(step: TestStep, suite: TestSuite) {
  * })
  */
 function suiteAnnotations(suite: TestSuite) {
-  test.info().tags.push(...(suite.tag ?? []));
+  test.info().tags.push(...toTagArray(suite.tag));
 
   test.info().annotations.push({ type: 'suite.id', description: String(suite.id) });
   test.info().annotations.push({ type: 'suite.name', description: suite.name });
@@ -208,8 +222,20 @@ export function suiteRunner(suite: TestSuite): void {
   if (suite.recordVideo === true) test.use({ video: 'on' });
   else if (suite.recordVideo === false) test.use({ video: 'off' });
 
+  // Suite tags must be embedded directly in the registered test title —
+  // Playwright's --grep/--grep-invert filter which tests actually run by
+  // matching against the title collected at this synchronous registration
+  // step, before any test body executes. suiteAnnotations() below also
+  // pushes suite.tag onto test.info().tags, but that happens inside the
+  // running test body, which is too late to affect CLI filtering — it only
+  // feeds the HTML report's own tag display. Without this, a suite tagged
+  // e.g. @llm/@local still runs under `--grep-invert "@llm|@local"`, since
+  // its title never contained those substrings in the first place.
+  const suiteTitleTags = toTagArray(suite.tag);
+  const titleTags = suiteTitleTags.length > 0 ? ` ${suiteTitleTags.join(' ')}` : '';
+
   // Create a test for the suite
-  test(`[${suite.id}] ${suite.name}`, async ({ page }) => {
+  test(`[${suite.id}] ${suite.name}${titleTags}`, async ({ page }) => {
     // Set Metadata
     suiteAnnotations(suite);
 

@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export interface GitStatus {
   branch: string | null;
   upstream: string | null;
@@ -10,15 +12,6 @@ export interface GitStatus {
 export interface GitBranches {
   local: string[];
   remote: string[];
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function fetchGitStatus(workspaceId: string): Promise<GitStatus> {

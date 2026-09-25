@@ -17,6 +17,7 @@ import {
   pauseTask,
   takeOverTask,
   resumeTask,
+  tasks,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
 import type {
@@ -25,6 +26,12 @@ import type {
   TriggerType,
   PlanStep,
   CreateTaskInput,
+  TaskDependency,
+} from '@/services/tasks-api';
+import {
+  listTaskDependencies,
+  addTaskDependency,
+  removeTaskDependency,
 } from '@/services/tasks-api';
 import {
   listTrackers,
@@ -67,9 +74,21 @@ interface TaskDrawerProps {
   trigger: JSX.Element;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
+  // Called (after closing the drawer) when the user clicks the
+  // waiting_on_user banner's "Go to chat" button — the caller decides what
+  // "go to chat" means (e.g. switching the workspace page's active tab). A
+  // brand-new task (task === null) is never waiting_on_user, so callers that
+  // only ever render TaskDrawer for "Add task" can omit this.
+  onGoToChat?: () => void;
 }
 
-export function TaskDrawer({ task, trigger, defaultWorkspaceId, onSaved }: TaskDrawerProps) {
+export function TaskDrawer({
+  task,
+  trigger,
+  defaultWorkspaceId,
+  onSaved,
+  onGoToChat,
+}: TaskDrawerProps) {
   const isNew = !task;
   return (
     <Drawer
@@ -77,7 +96,12 @@ export function TaskDrawer({ task, trigger, defaultWorkspaceId, onSaved }: TaskD
       title={isNew ? 'New task' : 'Task details'}
       className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
     >
-      <TaskForm task={task} defaultWorkspaceId={defaultWorkspaceId} onSaved={onSaved} />
+      <TaskForm
+        task={task}
+        defaultWorkspaceId={defaultWorkspaceId}
+        onSaved={onSaved}
+        onGoToChat={onGoToChat}
+      />
     </Drawer>
   );
 }
@@ -86,9 +110,10 @@ interface TaskFormProps {
   task?: Task | null;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
+  onGoToChat?: () => void;
 }
 
-function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
+function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormProps) {
   const { close } = useDialog();
 
   const isNew = !task;
@@ -122,6 +147,13 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
   const error = useSignal('');
   const actionLoading = useSignal<'pause' | 'take-over' | 'cancel' | 'resume' | null>(null);
   const actionError = useSignal('');
+
+  const dependencies = useSignal<TaskDependency[]>([]);
+  const selectedDependsOnId = useSignal('');
+  const newRequireSuccess = useSignal(true);
+  const newWhileBlocked = useSignal(false);
+  const dependencyActionLoading = useSignal(false);
+  const dependencyError = useSignal('');
 
   const trackerType = useSignal<string | null>(task?.trackerType ?? null);
   const trackerId = useSignal<string | null>(task?.trackerId ?? null);
@@ -168,6 +200,68 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
     const ws = workspaces.value.find((w) => w.id === workspaceId.value);
     createRepo.value = parseGithubRepo(ws?.remoteUrl);
   }, [workspaceId.value]);
+
+  useEffect(() => {
+    if (!task) return;
+    void listTaskDependencies(task.id)
+      .then((result) => {
+        dependencies.value = result;
+      })
+      .catch(() => {
+        // best-effort — the section just starts empty if this fails
+      });
+  }, []);
+
+  // Same-workspace tasks this one could depend on, excluding itself and
+  // anything already added — the server re-validates workspace match and
+  // cycles regardless, this is just to keep the picker from offering an
+  // obviously-invalid choice.
+  const dependencyCandidates = useComputed(() =>
+    tasks.value.filter(
+      (t) =>
+        t.id !== task?.id &&
+        (t.workspaceId ?? null) === (task?.workspaceId ?? null) &&
+        !dependencies.value.some((d) => d.dependsOnTaskId === t.id),
+    ),
+  );
+
+  function dependencyTitle(dep: TaskDependency): string {
+    return tasks.value.find((t) => t.id === dep.dependsOnTaskId)?.title ?? dep.dependsOnTaskId;
+  }
+
+  async function handleAddDependency() {
+    if (!task || !selectedDependsOnId.value) return;
+    dependencyActionLoading.value = true;
+    dependencyError.value = '';
+    try {
+      const dep = await addTaskDependency(task.id, selectedDependsOnId.value, {
+        requireSuccess: newRequireSuccess.value,
+        whileBlocked: newWhileBlocked.value,
+      });
+      dependencies.value = [...dependencies.value, dep];
+      selectedDependsOnId.value = '';
+      newRequireSuccess.value = true;
+      newWhileBlocked.value = false;
+    } catch (err) {
+      dependencyError.value = err instanceof Error ? err.message : 'Failed to add dependency.';
+    } finally {
+      dependencyActionLoading.value = false;
+    }
+  }
+
+  async function handleRemoveDependency(dep: TaskDependency) {
+    if (!task) return;
+    dependencyActionLoading.value = true;
+    dependencyError.value = '';
+    try {
+      await removeTaskDependency(task.id, dep.id);
+      dependencies.value = dependencies.value.filter((d) => d.id !== dep.id);
+    } catch (err) {
+      dependencyError.value = err instanceof Error ? err.message : 'Failed to remove dependency.';
+    } finally {
+      dependencyActionLoading.value = false;
+    }
+  }
 
   function handleTrackerTypeChange(value: string) {
     trackerType.value = value || null;
@@ -583,9 +677,13 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
             liveStatus.value === 'blocked') && (
             <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
               <span class="text-xs text-muted-foreground flex-1">
-                {liveStatus.value === 'blocked' ? 'Paused task controls' : 'Running task controls'}
+                {liveStatus.value === 'blocked'
+                  ? task.blockedReason === 'dependency_failed'
+                    ? 'Blocked — a dependency failed'
+                    : 'Paused task controls'
+                  : 'Running task controls'}
               </span>
-              {liveStatus.value === 'blocked' && (
+              {liveStatus.value === 'blocked' && task.blockedReason !== 'dependency_failed' && (
                 <Button
                   size="xs"
                   variant="outline"
@@ -607,7 +705,9 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
                   {actionLoading.value === 'pause' ? 'Pausing…' : 'Pause'}
                 </Button>
               )}
-              {(liveStatus.value === 'ready' || liveStatus.value === 'running') && (
+              {(liveStatus.value === 'ready' ||
+                liveStatus.value === 'running' ||
+                (liveStatus.value === 'blocked' && task.blockedReason === 'dependency_failed')) && (
                 <Button
                   size="xs"
                   variant="outline"
@@ -634,6 +734,109 @@ function TaskForm({ task, defaultWorkspaceId, onSaved }: TaskFormProps) {
               )}
             </div>
           )}
+
+        {!isNew && task && liveStatus.value === 'waiting_on_user' && (
+          <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-muted-foreground flex-1">
+              This task is waiting on your input — go answer it in chat
+            </span>
+            <Button
+              size="xs"
+              variant="outline"
+              type="button"
+              onClick={() => {
+                close();
+                onGoToChat?.();
+              }}
+            >
+              Go to chat
+            </Button>
+          </div>
+        )}
+
+        {!isNew && task && liveStatus.value === 'pending' && (
+          <div class="flex flex-col gap-2 border border-border rounded-lg p-3">
+            <label class="text-xs font-medium text-muted-foreground">Depends on</label>
+
+            {dependencies.value.length > 0 && (
+              <ul class="flex flex-col gap-1">
+                {dependencies.value.map((dep) => (
+                  <li
+                    key={dep.id}
+                    class="flex items-center gap-2 text-sm bg-muted/50 rounded px-2 py-1"
+                  >
+                    <span class="flex-1 truncate">{dependencyTitle(dep)}</span>
+                    {!dep.requireSuccess && (
+                      <span class="text-[10px] text-muted-foreground shrink-0">any outcome</span>
+                    )}
+                    {dep.whileBlocked && (
+                      <span class="text-[10px] text-muted-foreground shrink-0">or paused</span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={dependencyActionLoading.value}
+                      onClick={() => void handleRemoveDependency(dep)}
+                      class="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-destructive transition-colors"
+                      aria-label={`Remove dependency on "${dependencyTitle(dep)}"`}
+                    >
+                      <X class="size-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <select
+                data-testid="task-dependency-select"
+                value={selectedDependsOnId.value}
+                onChange={(e) => {
+                  selectedDependsOnId.value = (e.target as HTMLSelectElement).value;
+                }}
+                class="flex-1 min-w-[10rem] border border-input rounded-lg px-2 py-1 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+              >
+                <option value="">Select a task…</option>
+                {dependencyCandidates.value.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+              <label class="flex items-center gap-1 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={newRequireSuccess.value}
+                  onChange={(e) => {
+                    newRequireSuccess.value = (e.target as HTMLInputElement).checked;
+                  }}
+                />
+                Require success
+              </label>
+              <label class="flex items-center gap-1 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={newWhileBlocked.value}
+                  onChange={(e) => {
+                    newWhileBlocked.value = (e.target as HTMLInputElement).checked;
+                  }}
+                />
+                OK if paused
+              </label>
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                disabled={!selectedDependsOnId.value || dependencyActionLoading.value}
+                onClick={() => void handleAddDependency()}
+              >
+                Add
+              </Button>
+            </div>
+            {dependencyError.value && (
+              <p class="text-xs text-destructive">{dependencyError.value}</p>
+            )}
+          </div>
+        )}
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Assigned to</label>

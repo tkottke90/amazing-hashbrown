@@ -103,6 +103,14 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     category: 'built-in',
     alwaysOn: true,
   },
+  {
+    toolId: 'create_tasks',
+    name: 'Create Tasks',
+    description:
+      'Create a batch of queued tasks for the agent to run autonomously, one after another.',
+    category: 'built-in',
+    alwaysOn: false,
+  },
 
   // ── Wiki (always available — core to the platform) ───────────────────
   {

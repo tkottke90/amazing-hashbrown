@@ -15,6 +15,9 @@ import {
   cancelTaskHandler,
   pauseTaskHandler,
   takeOverTaskHandler,
+  listTaskDependenciesHandler,
+  addTaskDependencyHandler,
+  removeTaskDependencyHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
 } from './tasks.handlers.js';
@@ -161,6 +164,50 @@ tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
   }
   getTaskScheduler().wake();
   res.status(200).json(result.data);
+});
+
+tasksRouter.get('/:id/dependencies', (req: Request, res: Response) => {
+  const result = listTaskDependenciesHandler(getWorkspaceStore(), req.params['id'] as string);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+tasksRouter.post('/:id/dependencies', (req: Request, res: Response) => {
+  const result = addTaskDependencyHandler(
+    getWorkspaceStore(),
+    req.params['id'] as string,
+    req.body as Record<string, unknown>,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(201).json(result.data);
+});
+
+tasksRouter.delete('/:id/dependencies/:dependencyId', (req: Request, res: Response) => {
+  const dependencyId = Number(req.params['dependencyId']);
+  if (!Number.isInteger(dependencyId)) {
+    res.status(400).json({ error: 'dependencyId must be an integer' });
+    return;
+  }
+  const result = removeTaskDependencyHandler(
+    getWorkspaceStore(),
+    req.params['id'] as string,
+    dependencyId,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  // Removing a dependency may have just made the task ready/enqueued (see
+  // removeTaskDependencyHandler) — wake the scheduler immediately rather
+  // than waiting on the next unrelated trigger, same as the PATCH route.
+  getTaskScheduler().wake();
+  res.status(204).end();
 });
 
 tasksRouter.post('/:id/generate-plan', async (req: Request, res: Response) => {

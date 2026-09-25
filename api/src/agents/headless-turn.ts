@@ -9,7 +9,7 @@ import {
   clearActiveSseWriter,
   type SseWriter,
 } from './active-sse-writer.js';
-import { pipeEvents, finalizeTurn } from './stream-handler.js';
+import { pipeEvents, finalizeTurn, recoverThrownInterrupt } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
 
@@ -69,18 +69,22 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
   };
   setActiveSseWriter(threadId, sink);
 
-  try {
-    const msgId = randomUUID();
-    const turnSentAt = new Date().toISOString();
-    const startedAt = Date.now();
-    const assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+  // Hoisted above the try block so the catch block below can still reach
+  // them to recover a thrown GraphInterrupt — see task-execution.ts's own
+  // identical hoisting for the rationale.
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+  const config = {
+    configurable: {
+      thread_id: threadId,
+      ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
+    },
+  };
+  let assistantSeq: number | null = null;
 
-    const config = {
-      configurable: {
-        thread_id: threadId,
-        ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
-      },
-    };
+  try {
+    const startedAt = Date.now();
+    assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
 
     const { content, thoughtContent, finalSegmentId, hadToolCall } =
       await getProviderQueue().withSlot(provider, 'sync', async () => {
@@ -115,10 +119,25 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       taskId,
     );
   } catch (err) {
-    logger.error('headless-turn: notification turn failed', {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
       threadId,
-      err: serializeError(err),
-    });
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+      taskId,
+    );
+    if (!recovered) {
+      logger.error('headless-turn: notification turn failed', {
+        threadId,
+        err: serializeError(err),
+      });
+    }
   } finally {
     clearActiveSseWriter(threadId);
     drainPendingTurns(threadId);

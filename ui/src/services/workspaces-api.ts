@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export interface Workspace {
   id: string;
   name: string;
@@ -76,15 +78,6 @@ export interface PatchWorkspaceInput {
   threadId?: string;
   summaryPath?: string;
   lastSummarizedMessageId?: string;
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {

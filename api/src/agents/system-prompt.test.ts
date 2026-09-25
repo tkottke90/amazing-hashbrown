@@ -41,15 +41,21 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</rlm>');
       expect(result).to.include('<shell_execution>');
       expect(result).to.include('</shell_execution>');
+      expect(result).to.include('<image>');
+      expect(result).to.include('</image>');
+      expect(result).to.include('<search_skills>');
+      expect(result).to.include('</search_skills>');
+      expect(result).to.include('<create_tasks>');
+      expect(result).to.include('</create_tasks>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(9);
-      expect(closes).to.equal(9);
+      expect(opens).to.equal(12);
+      expect(closes).to.equal(12);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, image, search_skills, create_tasks, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
@@ -59,6 +65,9 @@ describe('agents/system-prompt', () => {
       const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
       const rlmTagIndex = result.indexOf('<rlm>');
       const shellTagIndex = result.indexOf('<shell_execution>');
+      const imageTagIndex = result.indexOf('<image>');
+      const searchSkillsTagIndex = result.indexOf('<search_skills>');
+      const createTasksTagIndex = result.indexOf('<create_tasks>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
@@ -68,6 +77,9 @@ describe('agents/system-prompt', () => {
       expect(wikiIngestTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(shellTagIndex).to.be.greaterThan(-1);
+      expect(imageTagIndex).to.be.greaterThan(-1);
+      expect(searchSkillsTagIndex).to.be.greaterThan(-1);
+      expect(createTasksTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
@@ -76,7 +88,10 @@ describe('agents/system-prompt', () => {
       expect(webFetchTagIndex).to.be.lessThan(wikiIngestTagIndex);
       expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
-      expect(shellTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(shellTagIndex).to.be.lessThan(imageTagIndex);
+      expect(imageTagIndex).to.be.lessThan(searchSkillsTagIndex);
+      expect(searchSkillsTagIndex).to.be.lessThan(createTasksTagIndex);
+      expect(createTasksTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes notation guidance explaining / for skills and # for required tools', () => {
@@ -527,6 +542,9 @@ describe('agents/system-prompt', () => {
       'web_fetch',
       'rlm_query',
       'shell_exec',
+      'upload_image',
+      'search_skills',
+      'create_tasks',
       'ask_user',
     ]);
 
@@ -540,6 +558,9 @@ describe('agents/system-prompt', () => {
         'wiki_ingest',
         'rlm',
         'shell_execution',
+        'image',
+        'search_skills',
+        'create_tasks',
         'ask_user_routing',
       ]) {
         expect(result).to.include(`<${tag}>`);
@@ -599,6 +620,42 @@ describe('agents/system-prompt', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.not.include('<shell_execution>');
+    });
+
+    it('removes image when upload_image is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<image>');
+    });
+
+    it('keeps image when upload_image is available', () => {
+      const available = new Set(['upload_image']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<image>');
+    });
+
+    it('removes search_skills when search_skills is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<search_skills>');
+    });
+
+    it('keeps search_skills when search_skills is available', () => {
+      const available = new Set(['search_skills']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<search_skills>');
+    });
+
+    it('removes create_tasks when create_tasks is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<create_tasks>');
+    });
+
+    it('keeps create_tasks when create_tasks is available', () => {
+      const available = new Set(['create_tasks']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<create_tasks>');
     });
 
     it('removes ask_user_routing when ask_user is unavailable', () => {

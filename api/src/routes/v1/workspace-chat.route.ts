@@ -148,13 +148,48 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   if (taskId) {
     setSseHeaders(res);
     try {
+      const store = getWorkspaceStore();
+      const task = store.getTask(taskId);
+      const parked = store.listQueue().find((e) => e.taskId === taskId && e.status === 'paused');
+
+      // A task that isn't actually waiting on an answer anymore (already
+      // done/failed/cancelled/running, or deleted) means this prompt is
+      // stale — most often an interrupt finalizeTurn found in the shared
+      // thread's checkpoint state after the task's own run had already
+      // completed via complete_task in the same stream (see
+      // stream-handler.ts's discardInterrupt, which now stops that prompt
+      // from ever being dispatched in the first place — this is the
+      // belt-and-suspenders half, for a stale prompt that predates that fix
+      // or an answer that arrives late for any other reason). Resolve the
+      // prompt for bookkeeping so it stops rendering as a live card, but
+      // never let a stale answer reopen or re-run a task that has already
+      // moved on — that's exactly what let a duplicate run clobber an
+      // already-'done' task's status.
+      if (!parked && task?.status !== 'waiting_on_user') {
+        resolveHitlPrompt(getThreadStore(), threadId, promptId, answer);
+        res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
+        return;
+      }
+
       resolveHitlPrompt(getThreadStore(), threadId, promptId, answer);
-      getWorkspaceStore().patchTask(taskId, {
+      store.patchTask(taskId, {
         status: 'ready',
         assignedTo: 'agent',
         resumeAnswer: answer,
       });
-      getWorkspaceStore().enqueueTask(taskId);
+      // Reactivate the row task-execution.ts parked (parkQueueEntryForHitl())
+      // at ITS ORIGINAL queue position, rather than enqueueTask()'s always-
+      // append-to-the-back — a fresh row here is exactly what lets every
+      // sibling task still pending in this scope queue-jump a task that
+      // already started and is merely waiting on this answer.
+      if (parked) {
+        store.resumePausedEntry(parked.id);
+      } else {
+        // Defensive fallback — task.status === 'waiting_on_user' (checked
+        // above) confirms this task really is waiting on this exact answer,
+        // just missing its parked row somehow; don't leave it un-resumable.
+        store.enqueueTask(taskId);
+      }
       getTaskScheduler().wake();
       res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
     } catch (err) {
