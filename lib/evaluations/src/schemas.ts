@@ -201,6 +201,20 @@ export const SuiteSchema = z.object({
     // suites/after-agent.yaml, suites/thread-titles.yaml) — attaching it
     // there would test a combination that never happens in production.
     appliesHarnessSystemPrompt: z.boolean().default(true),
+    // Suite-level simulated automated-task run. When set, bin/eval.ts renders
+    // it through the real buildTaskContextBlock() (api/src/agents/
+    // task-context.ts) and passes that as buildSystemPrompt()'s context
+    // block — the same prompt a task-execution run sees, rather than a
+    // hand-copied string that could drift from production. Every existing
+    // suite omits this and is unaffected. See suites/task-plan-progress.yaml.
+    simulatedTask: z
+      .object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        outcome: z.string().optional(),
+        plan: z.array(z.object({ step: z.string(), done: z.boolean() })).optional(),
+      })
+      .optional(),
   }),
   scenarios: z.array(ScenarioSchema).min(1),
 });

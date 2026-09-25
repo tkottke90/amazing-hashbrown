@@ -545,6 +545,44 @@ describe('SuiteSchema', () => {
     );
   });
 
+  it('accepts an optional simulatedTask with a plan, so a suite can put a task-run context block in the prompt', () => {
+    const result = SuiteSchema.parse({
+      suite: {
+        id: 's1',
+        name: 'Suite 1',
+        purpose: 'Purpose',
+        simulatedTask: {
+          title: 'Ship it',
+          outcome: 'Shipped',
+          plan: [{ step: 'Write code', done: false }],
+        },
+      },
+      scenarios: [minimalScenario],
+    });
+    assert.deepEqual(result.suite.simulatedTask, {
+      title: 'Ship it',
+      outcome: 'Shipped',
+      plan: [{ step: 'Write code', done: false }],
+    });
+  });
+
+  it('omits simulatedTask by default, leaving existing suites on the plain chat prompt', () => {
+    const result = SuiteSchema.parse({
+      suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedTask, undefined);
+  });
+
+  it('throws on a simulatedTask with no title, since the task prompt always names the task', () => {
+    assert.throws(() =>
+      SuiteSchema.parse({
+        suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose', simulatedTask: { title: '' } },
+        scenarios: [minimalScenario],
+      }),
+    );
+  });
+
   it('defaults appliesHarnessSystemPrompt to true', () => {
     const result = SuiteSchema.parse({
       suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },

@@ -1,0 +1,141 @@
+suite:
+  id: task-plan-progress
+  name: Task Plan Progress
+  purpose: >
+    Verifies an automated task run keeps its plan checklist honest: the agent
+    checks steps off with update_plan as it finishes the work, only calls
+    complete_task once its steps are checked, and heeds complete_task's
+    one-time nudge about unchecked steps instead of retrying completion
+    blindly. Issue #203 traced a real run that did all the work, called
+    complete_task "done", and left every plan step unchecked. See
+    docs/superpowers/specs/2026-09-25-task-plan-progress-design.md.
+  passingThreshold: 1.0
+  # Rendered through the real buildTaskContextBlock() — the prompt snapshot a
+  # task run sees at start, so every step is unchecked here and progress
+  # within the run is conveyed by the seeded update_plan results below.
+  simulatedTask:
+    title: Add a greet() helper
+    description: Add a small greet(name) helper to the project with test coverage.
+    outcome: src/greet.ts exports greet(name) and its unit test passes.
+    plan:
+      - step: Create src/greet.ts exporting greet(name) that returns "Hello, <name>!"
+        done: false
+      - step: Add a unit test for greet in src/greet.test.ts
+        done: false
+      - step: Run the test suite and confirm it passes
+        done: false
+
+scenarios:
+  - id: bug-203-marks-step-after-work
+    name: Agent checks off a plan step right after finishing its work
+    purpose: >
+      The core of issue #203 — a plan step's work being finished must be
+      reflected in the stored checklist. Confirms that once the agent has
+      written src/greet.ts (step 1's whole deliverable), its next action is
+      to mark step 1 done via update_plan rather than moving on silently and
+      leaving the checklist stale for the human watching the Task Drawer.
+    type: tool-sequence
+    input: 'Begin work on this task now: Add a greet() helper.'
+    priorTurns:
+      - tool: shell_exec
+        args:
+          {
+            command: "printf 'export function greet(name: string) {\\n  return `Hello, ${name}!`;\\n}\\n' > src/greet.ts && cat src/greet.ts",
+          }
+        result:
+          {
+            exitCode: 0,
+            stdout: "export function greet(name: string) {\n  return `Hello, ${name}!`;\n}\n",
+            stderr: '',
+          }
+    tool: update_plan
+    argChecks:
+      - path: updates.0.step
+        match: equals
+        value: 1
+      - path: updates.0.done
+        match: equals
+        value: true
+
+  - id: bug-203-completes-after-all-checked
+    name: Agent calls complete_task once every plan step is checked
+    purpose: >
+      Checking steps off must not replace finishing the run. Once update_plan
+      reports all three steps [x] and the outcome is met, confirms the agent
+      ends the run with complete_task "done" instead of trailing off (which
+      task-execution records as a failed run).
+    type: tool-sequence
+    input: 'Begin work on this task now: Add a greet() helper.'
+    priorTurns:
+      - tool: shell_exec
+        args: { command: 'npm test -- src/greet.test.ts' }
+        result: { exitCode: 0, stdout: "1 passing (4ms)\n", stderr: '' }
+      - tool: update_plan
+        args:
+          { updates: [{ step: 1, done: true }, { step: 2, done: true }, { step: 3, done: true }] }
+        result:
+          {
+            text: "Plan updated:\n1. [x] Create src/greet.ts exporting greet(name) that returns \"Hello, <name>!\"\n2. [x] Add a unit test for greet in src/greet.test.ts\n3. [x] Run the test suite and confirm it passes",
+          }
+    tool: complete_task
+    argChecks:
+      - path: outcome
+        match: equals
+        value: done
+
+  - id: bug-203-heeds-nudge
+    name: Agent checks off finished steps after complete_task's nudge
+    purpose: >
+      complete_task rejects the first "done" call while plan steps are
+      unchecked, telling the agent to mark finished steps with update_plan.
+      The nudge only helps if the model acts on it: confirms that when the
+      work for every step is already done, the agent responds by checking
+      the steps off rather than immediately re-calling complete_task, which
+      would be accepted but leave the checklist stale — the exact failure
+      from issue #203.
+    type: tool-sequence
+    input: 'Begin work on this task now: Add a greet() helper.'
+    priorTurns:
+      - tool: update_plan
+        args: { updates: [{ step: 1, done: true }] }
+        result:
+          {
+            text: "Plan updated:\n1. [x] Create src/greet.ts exporting greet(name) that returns \"Hello, <name>!\"\n2. [ ] Add a unit test for greet in src/greet.test.ts\n3. [ ] Run the test suite and confirm it passes",
+          }
+      - tool: shell_exec
+        args: { command: 'npm test -- src/greet.test.ts' }
+        result: { exitCode: 0, stdout: "1 passing (4ms)\n", stderr: '' }
+      - tool: complete_task
+        args: { outcome: done, summary: 'Added greet() with a passing unit test.' }
+        result:
+          {
+            text: "Not completed: steps 2, 3 are still unchecked. Mark them done with update_plan if you finished them, or call complete_task again if they were intentionally skipped.\n1. [x] Create src/greet.ts exporting greet(name) that returns \"Hello, <name>!\"\n2. [ ] Add a unit test for greet in src/greet.test.ts\n3. [ ] Run the test suite and confirm it passes",
+          }
+    tool: update_plan
+
+  - id: bug-203-no-premature-complete
+    name: Agent does not complete the task with plan steps still unfinished
+    purpose: >
+      A checklist is only meaningful if "done" means the plan was carried
+      out. With only step 1 finished and checked, and no test written or
+      run yet, confirms the agent keeps working instead of calling
+      complete_task — which would end the run with two thirds of the plan
+      undone.
+    type: tool-sequence
+    input: 'Begin work on this task now: Add a greet() helper.'
+    priorTurns:
+      - tool: shell_exec
+        args: { command: 'cat src/greet.ts' }
+        result:
+          {
+            exitCode: 0,
+            stdout: "export function greet(name: string) {\n  return `Hello, ${name}!`;\n}\n",
+            stderr: '',
+          }
+      - tool: update_plan
+        args: { updates: [{ step: 1, done: true }] }
+        result:
+          {
+            text: "Plan updated:\n1. [x] Create src/greet.ts exporting greet(name) that returns \"Hello, <name>!\"\n2. [ ] Add a unit test for greet in src/greet.test.ts\n3. [ ] Run the test suite and confirm it passes",
+          }
+    tool: '!complete_task'
