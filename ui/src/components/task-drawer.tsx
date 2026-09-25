@@ -58,6 +58,10 @@ function parseGithubRepo(remoteUrl: string | null | undefined): string {
   return match ? `${match[1]}/${match[2]}` : '';
 }
 
+function plansEqual(a: PlanStep[], b: PlanStep[]): boolean {
+  return a.length === b.length && a.every((s, i) => s.step === b[i]?.step && s.done === b[i]?.done);
+}
+
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
   ready: 'Ready',
@@ -141,6 +145,17 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   const dueAt = useSignal(task?.dueAt ? task.dueAt.slice(0, 10) : '');
   const workspaceId = useSignal<string | null>(task?.workspaceId ?? defaultWorkspaceId ?? null);
   const planSteps = useSignal<PlanStep[]>(task?.plan ?? []);
+  // True once the user makes a plan change that only persists on Save (add,
+  // edit text, delete). Toggling a step and appending AI-generated steps
+  // already persist immediately via updatePlan(), so they never mark the
+  // plan dirty. Save only sends `plan` for an existing task when this is set
+  // — otherwise saving an unrelated field would overwrite every step the
+  // agent checked off since the drawer opened (issue #203).
+  const planDirty = useSignal(false);
+  // Set when the stored plan changes (e.g. the task agent's update_plan)
+  // while the user has unsaved plan edits — the local edits are kept and a
+  // notice warns that saving will overwrite the agent's progress.
+  const planConflict = useSignal(false);
   const generatingPlan = useSignal(false);
   const generatePlanError = useSignal('');
   const saving = useSignal(false);
@@ -419,11 +434,36 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
     }
   }
 
+  // This task's plan as the app currently knows it server-side — kept live by
+  // the task_plan_updated broadcast (use-live-events.ts) and by every
+  // patchTask() response. undefined when the task isn't in the loaded list.
+  const storedPlan = useComputed(() =>
+    task ? tasks.value.find((t) => t.id === task.id)?.plan : undefined,
+  );
+  const lastAppliedPlan = useRef<PlanStep[]>(task?.plan ?? []);
+
+  useEffect(() => {
+    const incoming = storedPlan.value;
+    if (incoming === undefined) return;
+    const next = incoming ?? [];
+    if (plansEqual(next, lastAppliedPlan.current)) return;
+    lastAppliedPlan.current = next;
+    // Our own toggle/generate write echoing back through patchTask() — the
+    // drawer already shows it, so it's neither news nor a conflict.
+    if (plansEqual(next, planSteps.value)) return;
+    if (planDirty.value) {
+      planConflict.value = true;
+    } else {
+      planSteps.value = next;
+    }
+  }, [storedPlan.value]);
+
   const completedCount = useComputed(() => planSteps.value.filter((s) => s.done).length);
   const totalCount = useComputed(() => planSteps.value.length);
   const planContainerRef = useRef<HTMLDivElement>(null);
 
   function addStep() {
+    planDirty.value = true;
     planSteps.value = [...planSteps.value, { step: '', done: false }];
     setTimeout(() => {
       const inputs =
@@ -437,6 +477,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
     const current = next[idx];
     if (!current) return;
     next[idx] = { ...current, step: text };
+    planDirty.value = true;
     planSteps.value = next;
   }
 
@@ -452,6 +493,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   }
 
   function removeStep(idx: number) {
+    planDirty.value = true;
     planSteps.value = planSteps.value.filter((_, i) => i !== idx);
   }
 
@@ -497,10 +539,12 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
         triggerType: triggerType.value,
         dueAt: dueAt.value || null,
         workspaceId: workspaceId.value,
-        plan: planSteps.value.filter((s) => s.step.trim()),
         trackerType: trackerType.value,
         trackerId: trackerId.value,
       };
+      if (isNew || planDirty.value) {
+        patch.plan = planSteps.value.filter((s) => s.step.trim());
+      }
 
       let saved: Task;
       if (isNew) {
@@ -581,6 +625,16 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
               )}
             </button>
           </div>
+          {planConflict.value && (
+            <p
+              role="status"
+              data-testid="plan-conflict-notice"
+              class="text-xs text-amber-600 dark:text-amber-400"
+            >
+              The agent updated this plan while you were editing. Saving will overwrite its
+              progress.
+            </p>
+          )}
           <div class="border border-border rounded-lg overflow-hidden">
             {totalCount.value > 0 && (
               <div class="px-3 py-2 border-b border-border bg-muted/30">
