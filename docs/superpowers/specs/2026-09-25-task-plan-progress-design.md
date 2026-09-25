@@ -74,6 +74,11 @@ The checklist rendering is a small exported helper (`formatPlanChecklist(plan)`)
 prompt block, `update_plan`'s return value and `complete_task`'s rejection message, so all three
 show the agent the same format.
 
+`TaskContext`, `buildTaskContextBlock()` and `formatPlanChecklist()` move out of `chat-agent.ts`
+into a new side-effect-free module, `api/src/agents/task-context.ts` (re-exported from
+`chat-agent.ts` for existing importers). `chat-agent.ts` constructs the ToolsManager and loads MCP
+config at import time; `bin/eval.ts` needs the real prompt builder without those side effects.
+
 ### 2. `update_plan` tool
 
 New file `api/src/agents/tools/update-plan.tool.ts`:
@@ -204,8 +209,12 @@ Local patch, no refetch — same pattern as `patchTaskStatus`.
 
 **`ui/src/components/task-drawer.tsx`:**
 
-- **`planDirty` signal**, `false` on open, set `true` by every user-initiated plan mutation:
-  toggle, add, edit text, delete, append generated steps.
+Existing behavior to preserve: toggling a checkbox (`toggleStep`) and appending AI-generated steps
+(`handleGeneratePlan`) already persist immediately via `updatePlan()` (`ui/src/hooks/use-tasks.ts`)
+for an existing task. Only adding a step, editing step text and deleting a step wait for Save.
+
+- **`planDirty` signal**, `false` on open, set `true` only by the deferred mutations: add, edit
+  text, delete. Toggle and generate are already persisted, so they don't mark the plan dirty.
 - **No clobber:** when patching an existing task, Save includes `plan` only if `planDirty` is true.
   Creating a new task always includes `plan` (unchanged).
 - **Live sync:** an effect reads this task's entry from `tasks.value`. When its `plan` differs from
@@ -263,7 +272,7 @@ Each scenario carries a `purpose` explaining why the behavior matters.
 - `complete-task.tool.test.ts` `[unit]`: `failed` always accepted; `done` with all steps checked
   accepted; `done` with unchecked steps rejected once (lists those steps, `onAccepted` not called)
   then accepted on the second call; no `getPlan` → today's behavior.
-- `chat-agent.test.ts` `[unit]` (`buildTaskContextBlock`): plan rendered with `[x]/[ ]` and 1-based
+- `task-context.test.ts` `[unit]` (`buildTaskContextBlock`, moved from `chat-agent.test.ts`): plan rendered with `[x]/[ ]` and 1-based
   numbers; no plan section for null/empty; sub-agent variant unchanged.
 - `task-execution.test.ts` `[orchestration]`: existing completion tests reworked to drive completion
   via the `onTaskComplete` hook instead of fake `on_tool_start` events; a nudged-then-stopped run
@@ -287,16 +296,18 @@ Each scenario carries a `purpose` explaining why the behavior matters.
 
 ## Files touched
 
-| File                                                   | Change                                                                 |
-| ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `api/src/agents/chat-agent.ts`                         | `TaskContext.plan`, plan rendering, `buildTaskAgent` hooks + new tools |
-| `api/src/agents/tools/update-plan.tool.ts` (new)       | `update_plan` tool                                                     |
-| `api/src/agents/tools/complete-task.tool.ts`           | options, nudge-once, `onAccepted`                                      |
-| `api/src/agents/task-execution.ts`                     | remove stream tap, use hook                                            |
-| `api/src/agents/tool-catalog.ts`                       | `update_plan` entry                                                    |
-| `lib/llm-common-types/src/chat/broadcast-events.ts`    | `task_plan_updated` event                                              |
-| `lib/evaluations/src/schemas.ts`, `bin/eval.ts`        | `simulatedTask`, eval tools                                            |
-| `suites/task-plan-progress.yaml` (new)                 | eval suite                                                             |
-| `ui/src/hooks/use-live-events.ts`                      | handle `task_plan_updated`                                             |
-| `ui/src/components/task-drawer.tsx`                    | `planDirty`, conditional plan save, live sync, notice                  |
-| tests adjacent to each of the above; the two E2E specs |                                                                        |
+| File                                                   | Change                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `api/src/agents/task-context.ts` (new)                 | `TaskContext.plan`, `buildTaskContextBlock`, `formatPlanChecklist` |
+| `api/src/agents/chat-agent.ts`                         | re-exports, `buildTaskAgent` hooks + new tools                     |
+| `api/src/agents/tools/update-plan.tool.ts` (new)       | `update_plan` tool                                                 |
+| `api/src/agents/tools/complete-task.tool.ts`           | options, nudge-once, `onAccepted`                                  |
+| `api/src/agents/task-execution.ts`                     | remove stream tap, use hook                                        |
+| `api/src/agents/tool-catalog.ts`                       | `update_plan` entry                                                |
+| `lib/llm-common-types/src/chat/broadcast-events.ts`    | `task_plan_updated` event                                          |
+| `lib/evaluations/src/schemas.ts`, `bin/eval.ts`        | `simulatedTask`, eval tools                                        |
+| `suites/task-plan-progress.yaml` (new)                 | eval suite                                                         |
+| `ui/src/hooks/use-live-events.ts`                      | handle `task_plan_updated`                                         |
+| `ui/src/components/task-drawer.tsx`                    | `planDirty`, conditional plan save, live sync, notice              |
+| `ui/test/__mocks__/llm-common-types/chat.ts`           | mirror `task_plan_updated` in the Jest mock of the shared schema   |
+| tests adjacent to each of the above; the two E2E specs |                                                                    |
