@@ -288,11 +288,12 @@ export async function executeTask(
         task.id,
         // completeTaskBox is already populated by now — complete_task's tool
         // body (which fires onTaskComplete) runs inside the stream that
-        // pipeEvents fully drained before this call, above. When it's set, this run's own outcome is already
-        // decided; a pending interrupt finalizeTurn finds in the shared
-        // thread's checkpoint state past this point is not this run's to
-        // dispatch as a live prompt — see finalizeTurn's own comment on
-        // discardInterrupt.
+        // pipeEvents fully drained before this call, above (see
+        // complete-task.tool.integration.test.ts). When it's set, this run's
+        // own outcome is already decided; a pending interrupt finalizeTurn
+        // finds in the shared thread's checkpoint state past this point is
+        // not this run's to dispatch as a live prompt — see finalizeTurn's
+        // own comment on discardInterrupt.
         Boolean(completeTaskBox.current),
       );
 
