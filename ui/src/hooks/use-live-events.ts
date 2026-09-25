@@ -65,6 +65,15 @@ function handleEvent(event: AppBroadcastEvent): void {
     case 'hitl_prompt':
       patchTaskStatus(event.taskId, 'waiting_on_user', event.threadId);
       return;
+    case 'task_plan_updated':
+      // The task agent's update_plan tool checked (or unchecked) plan steps.
+      // Local patch, no refetch — the event carries the whole updated plan.
+      // An open Task Drawer watches this task's entry and picks it up (see
+      // task-drawer.tsx's storedPlan effect).
+      tasks.value = tasks.value.map((t) =>
+        t.id === event.taskId ? { ...t, plan: event.plan } : t,
+      );
+      return;
     case 'task_started':
       // No task-list status change here (still 'running', same as before) —
       // just rehydrate an already-open thread so the "Automated task

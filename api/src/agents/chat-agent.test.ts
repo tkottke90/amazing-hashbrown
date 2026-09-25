@@ -8,7 +8,6 @@ import {
   invalidateChatAgent,
   invalidateWorkspaceChatAgent,
   buildWikiWriteTools,
-  buildTaskContextBlock,
   estimateToolsTokens,
   createContextWindowMiddleware,
   STATIC_CHAT_TOOLS,
@@ -185,59 +184,6 @@ describe('agents/chat-agent', () => {
       const a = buildWikiWriteTools('wiki-a');
       const b = buildWikiWriteTools('wiki-b');
       expect(a[0]).to.not.equal(b[0]);
-    });
-  });
-
-  describe('buildTaskContextBlock()', () => {
-    it('always states the task title and the complete_task/ask_user instruction', () => {
-      const block = buildTaskContextBlock({
-        title: 'Summarize the inbox',
-        description: null,
-        outcome: null,
-      });
-      expect(block).to.include('"Summarize the inbox"');
-      expect(block).to.include('complete_task');
-      expect(block).to.include('ask_user');
-    });
-
-    it('includes the description when present', () => {
-      const block = buildTaskContextBlock({
-        title: 'T',
-        description: 'Read every unread email and summarize it.',
-        outcome: null,
-      });
-      expect(block).to.include('Read every unread email and summarize it.');
-    });
-
-    it('omits a description line when absent', () => {
-      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
-      expect(block).to.not.include('Description:');
-    });
-
-    it('includes the outcome when present', () => {
-      const block = buildTaskContextBlock({
-        title: 'T',
-        description: null,
-        outcome: 'A markdown summary page exists in the wiki.',
-      });
-      expect(block).to.include('A markdown summary page exists in the wiki.');
-    });
-
-    it('omits an outcome line when absent', () => {
-      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
-      expect(block).to.not.include('Outcome to reach:');
-    });
-
-    it('omits the ask_user instruction and states no one is available when hasAskUser is false (sub-agent runs — issue #161)', () => {
-      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null }, false);
-      expect(block).to.include('complete_task');
-      expect(block).to.not.include('ask_user');
-      expect(block).to.include('No one is available');
-    });
-
-    it('still includes the ask_user instruction by default (ordinary task runs, regression)', () => {
-      const block = buildTaskContextBlock({ title: 'T', description: null, outcome: null });
-      expect(block).to.include('ask_user');
     });
   });
 

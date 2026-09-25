@@ -165,6 +165,28 @@ describe('hooks/use-live-events', () => {
     expect(tasks.value.find((t) => t.id === 'task-2')!.status).toBe('running');
   });
 
+  it("patches the matching task's plan on task_plan_updated, so agent progress shows without a refetch (issue #203) [unit]", () => {
+    tasks.value = [
+      makeTask({ id: 'task-1', plan: [{ step: 'Write code', done: false }] }),
+      makeTask({ id: 'task-2', plan: [{ step: 'Other', done: false }] }),
+    ];
+    connectLiveEvents();
+
+    currentSource().emit({
+      type: 'task_plan_updated',
+      taskId: 'task-1',
+      plan: [{ step: 'Write code', done: true }],
+    });
+
+    expect(tasks.value.find((t) => t.id === 'task-1')!.plan).toEqual([
+      { step: 'Write code', done: true },
+    ]);
+    expect(tasks.value.find((t) => t.id === 'task-2')!.plan).toEqual([
+      { step: 'Other', done: false },
+    ]);
+    expect(mockRefreshTasks).not.toHaveBeenCalled();
+  });
+
   it('patches the matching task to waiting_on_user on hitl_prompt', () => {
     tasks.value = [makeTask({ id: 'task-1', status: 'running' })];
     connectLiveEvents();

@@ -4,6 +4,8 @@ const mockCancelTask = jest.fn();
 const mockPauseTask = jest.fn();
 const mockTakeOverTask = jest.fn();
 const mockResumeTask = jest.fn();
+const mockPatchTask = jest.fn();
+const mockUpdatePlan = jest.fn();
 
 jest.mock('@/hooks/use-tasks', () => ({
   ...jest.requireActual('@/hooks/use-tasks'),
@@ -11,6 +13,8 @@ jest.mock('@/hooks/use-tasks', () => ({
   pauseTask: (...args: unknown[]) => mockPauseTask(...args),
   takeOverTask: (...args: unknown[]) => mockTakeOverTask(...args),
   resumeTask: (...args: unknown[]) => mockResumeTask(...args),
+  patchTask: (...args: unknown[]) => mockPatchTask(...args),
+  updatePlan: (...args: unknown[]) => mockUpdatePlan(...args),
 }));
 
 const mockListTaskDependencies = jest.fn();
@@ -370,5 +374,126 @@ describe('TaskDrawer — Depends on section', () => {
     expect(optionLabels).not.toContain('Self');
     expect(optionLabels).not.toContain('Other workspace');
     expect(optionLabels).toContain('Same workspace');
+  });
+});
+
+describe('TaskDrawer — plan sync with the task agent (issue #203)', () => {
+  const plannedTask: Task = {
+    ...baseTask,
+    plan: [
+      { step: 'Write the code', done: false },
+      { step: 'Write the tests', done: false },
+    ],
+  };
+
+  beforeEach(() => {
+    mockPatchTask.mockImplementation(async (_id: string, patch: Partial<Task>) => ({
+      ...plannedTask,
+      ...patch,
+    }));
+    mockUpdatePlan.mockResolvedValue(plannedTask);
+    tasks.value = [plannedTask];
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Simulates the task_plan_updated broadcast (or any patchTask response)
+  // landing in the shared task list while the drawer is open.
+  function receiveStoredPlan(plan: Task['plan']) {
+    tasks.value = tasks.value.map((t) => (t.id === plannedTask.id ? { ...t, plan } : t));
+  }
+
+  function checkboxes() {
+    return screen.getAllByTestId('plan-step-checkbox') as HTMLInputElement[];
+  }
+
+  it('leaves plan out of the save when the user never edited it, so agent progress is not overwritten [unit]', async () => {
+    renderDrawer(plannedTask);
+    fireEvent.input(screen.getByPlaceholderText('Task title'), {
+      target: { value: 'Renamed task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mockPatchTask).toHaveBeenCalledTimes(1));
+    const patch = mockPatchTask.mock.calls[0][1];
+    expect(patch.title).toBe('Renamed task');
+    expect(patch).not.toHaveProperty('plan');
+  });
+
+  it('includes plan in the save after the user edits a step [unit]', async () => {
+    renderDrawer(plannedTask);
+    fireEvent.input(screen.getByLabelText('Plan step 2'), {
+      target: { value: 'Write the unit tests' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mockPatchTask).toHaveBeenCalledTimes(1));
+    expect(mockPatchTask.mock.calls[0][1].plan).toEqual([
+      { step: 'Write the code', done: false },
+      { step: 'Write the unit tests', done: false },
+    ]);
+  });
+
+  it('includes plan in the save after the user removes a step [unit]', async () => {
+    renderDrawer(plannedTask);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove step' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mockPatchTask).toHaveBeenCalledTimes(1));
+    expect(mockPatchTask.mock.calls[0][1].plan).toEqual([{ step: 'Write the code', done: false }]);
+  });
+
+  it('checks off steps live when the agent updates the plan while the drawer is open [unit]', async () => {
+    renderDrawer(plannedTask);
+    expect(checkboxes().map((c) => c.checked)).toEqual([false, false]);
+
+    receiveStoredPlan([
+      { step: 'Write the code', done: true },
+      { step: 'Write the tests', done: false },
+    ]);
+
+    await waitFor(() => expect(checkboxes().map((c) => c.checked)).toEqual([true, false]));
+    expect(screen.getByText('1 of 2 steps')).toBeInTheDocument();
+    expect(screen.queryByTestId('plan-conflict-notice')).not.toBeInTheDocument();
+  });
+
+  it('keeps unsaved plan edits and warns when the agent updates the plan underneath them [unit]', async () => {
+    renderDrawer(plannedTask);
+    fireEvent.input(screen.getByLabelText('Plan step 2'), {
+      target: { value: 'Write the unit tests' },
+    });
+
+    receiveStoredPlan([
+      { step: 'Write the code', done: true },
+      { step: 'Write the tests', done: false },
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('plan-conflict-notice')).toBeInTheDocument());
+    expect(screen.getByTestId('plan-conflict-notice')).toHaveTextContent(
+      'Saving will overwrite its progress',
+    );
+    expect((screen.getByLabelText('Plan step 2') as HTMLInputElement).value).toBe(
+      'Write the unit tests',
+    );
+    expect(checkboxes()[0].checked).toBe(false);
+  });
+
+  it("does not flag the drawer's own toggle echoing back from the server as an agent conflict [unit]", async () => {
+    renderDrawer(plannedTask);
+    // Unsaved text edit first, so a false conflict would be visible.
+    fireEvent.input(screen.getByLabelText('Plan step 2'), {
+      target: { value: 'Write the unit tests' },
+    });
+    fireEvent.click(checkboxes()[0]);
+    expect(mockUpdatePlan).toHaveBeenCalledTimes(1);
+
+    // The toggle's own write lands in the task list with exactly what the
+    // drawer already shows.
+    receiveStoredPlan(mockUpdatePlan.mock.calls[0][1]);
+
+    await waitFor(() => expect(checkboxes()[0].checked).toBe(true));
+    expect(screen.queryByTestId('plan-conflict-notice')).not.toBeInTheDocument();
   });
 });

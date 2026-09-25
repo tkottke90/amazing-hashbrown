@@ -39,6 +39,9 @@ import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js'
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.js';
+import { makeCompleteTaskTool } from '../api/src/agents/tools/complete-task.tool.js';
+import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js';
+import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
@@ -105,6 +108,14 @@ const evalTools = [
   // existing tasks via shell_exec) rather than ever seeing create_tasks as
   // an option, confirming it genuinely wasn't bound.
   makeCreateTasksTool(),
+  // Task-run-only in production (buildTaskAgent in chat-agent.ts), closed
+  // over the running task's id. Included unconditionally for the same reason
+  // as makeCreateTasksTool above: suites/task-plan-progress.yaml needs both
+  // actually offered to be meaningful. 'eval-task' is a placeholder id —
+  // tool-call/tool-sequence scenarios only inspect response.tool_calls and
+  // never execute the tool, so no task with that id needs to exist.
+  makeUpdatePlanTool('eval-task'),
+  makeCompleteTaskTool('eval-task'),
   fakeGenerateImageTool,
 ];
 
@@ -266,10 +277,24 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     // scenarios model a different production code path (after-agent.ts,
     // generateTitleHandler) that never attaches this prompt in real usage.
     const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
+    const simulatedTask = suite?.suite.simulatedTask;
     const systemPrompt =
       suite?.suite.appliesHarnessSystemPrompt === false
         ? undefined
-        : buildSystemPrompt(suite?.suite.simulatedUserInstructions);
+        : buildSystemPrompt(
+            suite?.suite.simulatedUserInstructions,
+            // suite.simulatedTask (see suites/task-plan-progress.yaml) puts
+            // the real task-run context block into the prompt, the same way
+            // buildTaskAgent() does in production.
+            simulatedTask
+              ? buildTaskContextBlock({
+                  title: simulatedTask.title,
+                  description: simulatedTask.description ?? null,
+                  outcome: simulatedTask.outcome ?? null,
+                  plan: simulatedTask.plan ?? null,
+                })
+              : undefined,
+          );
 
     const result = await runEval({
       suiteId,

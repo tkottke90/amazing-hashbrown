@@ -64,10 +64,23 @@ const TaskCompletedSchema = z.object({
   outcome: z.enum(['done', 'failed', 'cancelled']),
 });
 
+// Fired by the task agent's update_plan tool after it persists a plan
+// change, carrying the whole updated plan so the Kanban board and an open
+// Task Drawer can patch their copy without a refetch. Not fired for the
+// human PATCH /tasks/:id path — the only viewer of that change is the
+// drawer that made it. See
+// docs/superpowers/specs/2026-09-25-task-plan-progress-design.md §5.
+const TaskPlanUpdatedSchema = z.object({
+  type: z.literal('task_plan_updated'),
+  taskId: z.string(),
+  plan: z.array(z.object({ step: z.string(), done: z.boolean() })),
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
   TaskStartedSchema,
   TaskCompletedSchema,
+  TaskPlanUpdatedSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;
