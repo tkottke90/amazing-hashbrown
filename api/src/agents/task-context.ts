@@ -41,9 +41,9 @@ export function buildTaskContextBlock(ctx: TaskContext, hasAskUser = true): stri
   lines.push(
     '',
     (hasPlan
-      ? 'Call update_plan to mark each plan step done as you complete it. The moment a step\'s ' +
+      ? "Call update_plan to mark each plan step done as you complete it. The moment a step's " +
         'deliverable is finished — a file written, a command that verifies it passing — your ' +
-        'very next tool call is update_plan for that step, before starting the next step\'s ' +
+        "very next tool call is update_plan for that step, before starting the next step's " +
         'work or moving on in any other way. Trust a tool result already shown earlier in this ' +
         'conversation: if it already demonstrates a step is done (a passing test run, a file ' +
         'whose contents already match the plan), check that step off directly rather than ' +
