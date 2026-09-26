@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TextEllipsis } from '@/components/text-ellipsis';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { fetchSkills, type SkillInfo } from '@/services/skills-api';
+import { CardBadge } from '@/components/card-badge';
 import { fetchThreadTools, type ThreadToolItem } from '@/services/tool-settings-api';
 import {
   uploadArtifact,
@@ -75,6 +76,12 @@ export interface ChatInputProps {
    * attachment id in the send call and to clear it once sent.
    */
   onAttachmentChange?: (attachment: StagedAttachment | null) => void;
+  /**
+   * Scopes the slash-command menu to a workspace: its own .agents/skills are
+   * listed (badged "repo") alongside the global skills. Omit for the global
+   * skill list.
+   */
+  workspaceId?: string;
 }
 
 export interface ChatInputChipProps extends JSX.HTMLAttributes<HTMLSpanElement> {
@@ -140,6 +147,7 @@ export function ChatInput({
   onModelSelect,
   threadId,
   onAttachmentChange,
+  workspaceId,
 }: ChatInputProps) {
   const canSend = !disabled && !isGenerating && value.trim().length > 0;
 
@@ -457,7 +465,7 @@ export function ChatInput({
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchSkills(query)
+      fetchSkills(query, workspaceId)
         .then((results) => {
           menuItems.value = results;
           menuOpen.value = results.length > 0;
@@ -568,7 +576,14 @@ export function ChatInput({
                 menuIndex.value = i;
               }}
             >
-              <div className="font-mono text-sm font-semibold">{skill.slashCommand}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm font-semibold">{skill.slashCommand}</span>
+                {skill.source === 'repo' && (
+                  <CardBadge variant="violet">
+                    {skill.overrides ? 'repo · overrides global' : 'repo'}
+                  </CardBadge>
+                )}
+              </div>
               <div className="text-xs text-muted-foreground max-w-[70ch]">{skill.description}</div>
             </div>
           ))}

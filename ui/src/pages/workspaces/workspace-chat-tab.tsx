@@ -162,6 +162,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
             activeModel={thread.activeThreadModel.value?.model}
             onModelSelect={thread.setThreadModel}
             threadId={workspace.threadId}
+            workspaceId={workspace.id}
             onAttachmentChange={(attachment) => {
               stagedAttachment.value = attachment;
             }}
