@@ -19,6 +19,7 @@ export async function startTestServer(
   basePath: string,
 ): Promise<{ baseUrl: string; close: () => Promise<void> }> {
   const app = express();
+  app.use(express.json());
   app.use(basePath, router);
   const server = createServer(app);
 

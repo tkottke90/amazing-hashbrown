@@ -112,6 +112,24 @@ export function patchTaskHandler(
     );
   }
 
+  // A task blocked by a failed required dependency never had a queue row
+  // (it was never enqueued in the first place — see
+  // WorkspaceStore.releaseEligibleDependents()), so the blocked->ready
+  // Resume logic below would otherwise silently re-enqueue it via its "no
+  // paused row" fallback, even though the dependency is still broken.
+  // Take-over (which reassigns to the human and clears blockedReason) is
+  // the only way out of this state — checked here, before the patch below
+  // ever touches the row, not after.
+  if (
+    current.status === 'blocked' &&
+    current.blockedReason === 'dependency_failed' &&
+    patch.status === 'ready'
+  ) {
+    return conflict(
+      'This task is blocked on a failed dependency — use take-over instead of resuming it directly.',
+    );
+  }
+
   const { regenerateWebhookToken, ...rest } = patch;
   const triggerConfig = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken });
   const task = store.patchTask(id, { ...rest, triggerConfig });
@@ -246,14 +264,31 @@ export function takeOverTaskHandler(
 ): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
-  if (task.status !== 'ready' && task.status !== 'running') {
+  // A plain user-paused 'blocked' task (blockedReason === null) already has
+  // its own escape hatch — Resume, via patchTaskHandler's blocked->ready
+  // branch, which reuses the paused task_queue row. Take-over only needs to
+  // additionally handle a 'blocked' task with no such row at all: one
+  // blocked by a failed dependency (see WorkspaceStore.releaseEligibleDependents()),
+  // which Resume can't reach (there's nothing paused to resume). Narrowing
+  // to that specific case avoids silently orphaning a real paused queue row
+  // that only Resume/Cancel currently know how to close out.
+  const canTakeOverBlocked =
+    task.status === 'blocked' && task.blockedReason === 'dependency_failed';
+  if (task.status !== 'ready' && task.status !== 'running' && !canTakeOverBlocked) {
     return conflict(`Task is ${task.status}, cannot take over`);
   }
 
   // Commit the reassignment FIRST, synchronously — this is what guarantees
   // executeTask's async catch can never clobber it, no matter how the
-  // abort resolves.
-  const updated = store.patchTask(taskId, { status: 'pending', assignedTo: 'user' })!;
+  // abort resolves. blockedReason is cleared unconditionally: a dependency-
+  // blocked task taken over here is now back to 'pending' with no active
+  // blocker, and a stale reason must not linger if this same task gets
+  // blocked again later for a different cause.
+  const updated = store.patchTask(taskId, {
+    status: 'pending',
+    assignedTo: 'user',
+    blockedReason: null,
+  })!;
 
   if (task.status === 'running') {
     const running = store.getRunningEntry(task.workspaceId ?? 'inbox');
@@ -275,6 +310,110 @@ export function takeOverTaskHandler(
   }
 
   return ok(updated);
+}
+
+// ---------------------------------------------------------------------------
+// Task dependencies (manual "depends on" management — see
+// docs/superpowers/specs/2026-09-22-task-dependencies-design.md)
+// ---------------------------------------------------------------------------
+
+// Would adding an edge fromTaskId -> toTaskId (fromTaskId depends on
+// toTaskId) create a cycle? True iff toTaskId can already (transitively)
+// reach fromTaskId via existing depends_on_task_id edges — i.e. toTaskId
+// already, directly or indirectly, depends on fromTaskId.
+function wouldCreateCycle(store: WorkspaceStore, fromTaskId: string, toTaskId: string): boolean {
+  const visited = new Set<string>();
+  const stack = [toTaskId];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === fromTaskId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const dep of store.listTaskDependencies(current)) {
+      stack.push(dep.dependsOnTaskId);
+    }
+  }
+  return false;
+}
+
+export function listTaskDependenciesHandler(
+  store: WorkspaceStore,
+  taskId: string,
+): HandlerResult<ReturnType<WorkspaceStore['listTaskDependencies']>> {
+  const task = store.getTask(taskId);
+  if (!task) return notFound(`Task ${taskId} not found`);
+  return ok(store.listTaskDependencies(taskId));
+}
+
+export function addTaskDependencyHandler(
+  store: WorkspaceStore,
+  taskId: string,
+  body: { dependsOnTaskId?: unknown; requireSuccess?: unknown; whileBlocked?: unknown },
+): HandlerResult<ReturnType<WorkspaceStore['addTaskDependency']>> {
+  const task = store.getTask(taskId);
+  if (!task) return notFound(`Task ${taskId} not found`);
+
+  const { dependsOnTaskId } = body;
+  if (!dependsOnTaskId || typeof dependsOnTaskId !== 'string') {
+    return badRequest('dependsOnTaskId is required');
+  }
+  if (dependsOnTaskId === taskId) {
+    return badRequest('A task cannot depend on itself');
+  }
+
+  const target = store.getTask(dependsOnTaskId);
+  if (!target) return notFound(`Task ${dependsOnTaskId} not found`);
+
+  // Editable only while the task itself hasn't started yet — once
+  // ready/running/etc. its dependency list is locked (Take-over is the way
+  // back to 'pending' for a dependency-blocked task; see patchTaskHandler
+  // and takeOverTaskHandler above).
+  if (task.status !== 'pending') {
+    return conflict('Dependencies can only be added while the task is pending');
+  }
+
+  if ((task.workspaceId ?? null) !== (target.workspaceId ?? null)) {
+    return badRequest('A task can only depend on another task in the same workspace');
+  }
+
+  if (wouldCreateCycle(store, taskId, dependsOnTaskId)) {
+    return badRequest('That dependency would create a cycle');
+  }
+
+  const dependency = store.addTaskDependency(taskId, dependsOnTaskId, {
+    requireSuccess: typeof body.requireSuccess === 'boolean' ? body.requireSuccess : undefined,
+    whileBlocked: typeof body.whileBlocked === 'boolean' ? body.whileBlocked : undefined,
+  });
+  return ok(dependency);
+}
+
+export function removeTaskDependencyHandler(
+  store: WorkspaceStore,
+  taskId: string,
+  dependencyId: number,
+): HandlerResult<{ deleted: true }> {
+  const task = store.getTask(taskId);
+  if (!task) return notFound(`Task ${taskId} not found`);
+  const existing = store.listTaskDependencies(taskId).find((d) => d.id === dependencyId);
+  if (!existing) return notFound(`Dependency ${dependencyId} not found on task ${taskId}`);
+  if (task.status !== 'pending') {
+    return conflict('Dependencies can only be removed while the task is pending');
+  }
+  store.removeTaskDependency(dependencyId);
+
+  // Removing a dependency can only make the task MORE ready, never less —
+  // unlike releaseEligibleDependents() (fired when a *target* changes
+  // status), nothing else re-checks this task when one of its own edges is
+  // deleted, so if that was its last unmet dependency it would otherwise sit
+  // at 'pending' forever. Only auto-enqueue if the task is agent-managed —
+  // R14's own rule (see patchTaskHandler above): a user-assigned task is
+  // never auto-run regardless of its dependency state.
+  if (task.assignedTo === 'agent' && store.isTaskReady(taskId)) {
+    store.patchTask(taskId, { status: 'ready' });
+    store.enqueueTask(taskId);
+  }
+
+  return ok({ deleted: true });
 }
 
 // ---------------------------------------------------------------------------

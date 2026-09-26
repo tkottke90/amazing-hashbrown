@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export interface FileNode {
   name: string;
   path: string; // relative to workspace root, forward-slash separated
@@ -25,15 +27,6 @@ export class FileFetchError extends Error {
     super(message);
     this.name = 'FileFetchError';
   }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 // The file-content endpoint responds with text/plain, not JSON — this can't

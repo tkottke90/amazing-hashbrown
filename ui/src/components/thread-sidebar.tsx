@@ -261,6 +261,9 @@ export function ThreadSidebar() {
 
   useEffect(() => {
     refreshThreadList();
+    // Initial load only — the standing live-events connection
+    // (use-live-events.ts, opened once in app.tsx) pushes task_queue_update
+    // events from here on, replacing what used to be a 10s poll.
     void refreshQueue();
     void Promise.all([
       fetchTasks({ workspace_id: null, status: 'pending' }),
@@ -270,9 +273,6 @@ export function ThreadSidebar() {
         inboxCount.value = pending.length + ready.length;
       })
       .catch(() => {});
-
-    const queueInterval = setInterval(() => void refreshQueue(), 10_000);
-    return () => clearInterval(queueInterval);
   }, []);
 
   return (

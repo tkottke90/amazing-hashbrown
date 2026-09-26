@@ -3,10 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, afterEach } from 'mocha';
 import { expect } from 'chai';
-import { TrackerRegistry, bootTrackerRegistry, getTrackerRegistry } from './tracker-registry.js';
+import {
+  TrackerRegistry,
+  bootTrackerRegistry,
+  getTrackerRegistry,
+  resolveTrackerUrlAnyAdapter,
+} from './tracker-registry.js';
 import type { TrackerAdapter } from './tracker-adapter.js';
 
-function fakeAdapter(type: string): TrackerAdapter {
+function fakeAdapter(type: string, overrides: Partial<TrackerAdapter> = {}): TrackerAdapter {
   return {
     type,
     displayName: type,
@@ -25,6 +30,7 @@ function fakeAdapter(type: string): TrackerAdapter {
     updateState: async () => {
       throw new Error('not implemented');
     },
+    ...overrides,
   };
 }
 
@@ -57,6 +63,97 @@ describe('services/tracker-registry', () => {
       registry.register(second);
       expect(registry.list()).to.have.length(1);
       expect(registry.get('dup')).to.equal(second);
+    });
+  });
+
+  describe('resolveTrackerUrlAnyAdapter()', () => {
+    it('returns the first adapter whose resolveUrl() resolves', async () => {
+      const registry = new TrackerRegistry();
+      registry.register(
+        fakeAdapter('a', {
+          resolveUrl: async () => {
+            throw new Error('wrong host');
+          },
+        }),
+      );
+      registry.register(
+        fakeAdapter('b', {
+          resolveUrl: async (url) => ({
+            id: 'owner/repo#1',
+            url,
+            title: 'Found it',
+            state: 'pending',
+            trackerState: 'open',
+          }),
+        }),
+      );
+
+      const result = await resolveTrackerUrlAnyAdapter(registry, 'https://example.com/issues/1');
+      expect(result.type).to.equal('b');
+      expect(result.item.title).to.equal('Found it');
+    });
+
+    it('is order-independent — the matching adapter is found regardless of registration order', async () => {
+      const registry = new TrackerRegistry();
+      registry.register(
+        fakeAdapter('b', {
+          resolveUrl: async (url) => ({
+            id: 'owner/repo#1',
+            url,
+            title: 'Found it',
+            state: 'pending',
+            trackerState: 'open',
+          }),
+        }),
+      );
+      registry.register(
+        fakeAdapter('a', {
+          resolveUrl: async () => {
+            throw new Error('wrong host');
+          },
+        }),
+      );
+
+      const result = await resolveTrackerUrlAnyAdapter(registry, 'https://example.com/issues/1');
+      expect(result.type).to.equal('b');
+    });
+
+    it('rejects naming the url and every attempted adapter when none resolve', async () => {
+      const registry = new TrackerRegistry();
+      registry.register(
+        fakeAdapter('a', {
+          resolveUrl: async () => {
+            throw new Error('wrong host');
+          },
+        }),
+      );
+      registry.register(
+        fakeAdapter('b', {
+          resolveUrl: async () => {
+            throw new Error('404');
+          },
+        }),
+      );
+
+      try {
+        await resolveTrackerUrlAnyAdapter(registry, 'https://nope.example.com/1');
+        expect.fail('expected resolveTrackerUrlAnyAdapter to reject');
+      } catch (err) {
+        const message = (err as Error).message;
+        expect(message).to.include('https://nope.example.com/1');
+        expect(message).to.include('a: wrong host');
+        expect(message).to.include('b: 404');
+      }
+    });
+
+    it('rejects with a distinct message when no adapters are registered at all', async () => {
+      const registry = new TrackerRegistry();
+      try {
+        await resolveTrackerUrlAnyAdapter(registry, 'https://example.com/1');
+        expect.fail('expected resolveTrackerUrlAnyAdapter to reject');
+      } catch (err) {
+        expect((err as Error).message).to.include('no tracker adapters are registered');
+      }
     });
   });
 

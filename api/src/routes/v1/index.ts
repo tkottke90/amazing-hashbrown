@@ -17,6 +17,7 @@ import { triggersRouter } from './triggers.route.js';
 import { mcpServersRouter } from './mcp-servers.route.js';
 import { toolSettingsRouter } from './tool-settings.route.js';
 import { metricsRouter } from './metrics.route.js';
+import { eventsRouter } from './events.route.js';
 
 export const v1Router = Router();
 
@@ -33,6 +34,7 @@ v1Router.use('/skills', skillsRouter);
 v1Router.use('/workspaces', workspacesRouter);
 v1Router.use('/projects', projectsRouter);
 v1Router.use('/tasks', tasksRouter);
+v1Router.use('/events', eventsRouter);
 v1Router.use('/trackers', trackersRouter);
 v1Router.use('/triggers', triggersRouter);
 v1Router.use('/mcp-servers', mcpServersRouter);

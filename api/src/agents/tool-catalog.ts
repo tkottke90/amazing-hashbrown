@@ -22,8 +22,9 @@ export interface CatalogEntry {
   // Always available to every thread regardless of global/thread settings —
   // wiki tools per the design's "cannot disable wiki tools" requirement,
   // plus complete_task, which a task run needs to be able to call to
-  // terminate at all (it isn't a user-facing choice the way the rest of
-  // this catalog is).
+  // terminate at all, and update_plan, which keeps the task's plan checklist
+  // honest (neither is a user-facing choice the way the rest of this
+  // catalog is).
   alwaysOn: boolean;
   // Set only for skill-gated entries — cross-references
   // GATED_SKILL_REGISTRATIONS's skillCommand, so the read-only UI row can
@@ -109,6 +110,22 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     description: 'Mark an automated task run as finished. Required for task runs to terminate.',
     category: 'built-in',
     alwaysOn: true,
+  },
+  {
+    toolId: 'update_plan',
+    name: 'Update Plan',
+    description:
+      "Check off steps in an automated task's plan as the agent completes them. Task runs only.",
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
+    toolId: 'create_tasks',
+    name: 'Create Tasks',
+    description:
+      'Create a batch of queued tasks for the agent to run autonomously, one after another.',
+    category: 'built-in',
+    alwaysOn: false,
   },
 
   // ── Wiki (always available — core to the platform) ───────────────────

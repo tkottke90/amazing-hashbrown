@@ -9,6 +9,7 @@ import {
   useThreadInstance,
   switchThread,
   threads,
+  hasThreadInstance,
   _resetThreadInstancesForTests,
   type ThreadInstance,
 } from '@/hooks/use-thread';
@@ -43,6 +44,18 @@ afterEach(() => {
   providers.value = [];
   defaultProviderName.value = '';
   threads.value = [];
+});
+
+describe('use-thread — hasThreadInstance', () => {
+  it('returns false for a thread id useThreadInstance() has never been called with', () => {
+    expect(hasThreadInstance('never-visited')).toBe(false);
+  });
+
+  it('returns true once useThreadInstance() has been called for that thread id', () => {
+    useThreadInstance('thread-x');
+
+    expect(hasThreadInstance('thread-x')).toBe(true);
+  });
 });
 
 describe('use-thread — continuation-bubble splitting', () => {
@@ -263,6 +276,82 @@ describe('use-thread — wiki_updated handling', () => {
   });
 });
 
+describe('use-thread — hydrate pendingHitlId', () => {
+  // Regression test: a task-originated pause writes a task_run_marker
+  // ("waiting on you") *after* its hitl_prompt row, so the last message in
+  // the thread is the marker, not the prompt. hydrate() must scan backward
+  // for the last pending hitl_prompt rather than only checking whether the
+  // final message is one, or the sticky answer bar never appears on reload.
+  it('resolves pendingHitlId to a pending hitl_prompt even when a task_run_marker was appended after it', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            kind: 'user',
+            id: 'u1',
+            content: 'do the thing',
+            sentAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            kind: 'hitl_prompt',
+            id: 'h1',
+            promptId: 'prompt-1',
+            question: 'Approve this command?',
+            promptKind: 'shell_approval',
+            status: 'pending',
+          },
+          {
+            kind: 'task_run_marker',
+            id: 'm1',
+            taskId: 'task-1',
+            taskTitle: 'Do the thing',
+            phase: 'end',
+            outcome: 'waiting_on_user',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t10');
+    await thread.hydrate();
+
+    expect(thread.pendingHitlId.value).toBe('prompt-1');
+  });
+
+  it('leaves pendingHitlId null once the pending prompt has already been answered', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            kind: 'hitl_prompt',
+            id: 'h1',
+            promptId: 'prompt-1',
+            question: 'Approve this command?',
+            promptKind: 'shell_approval',
+            status: 'answered',
+            answer: 'yes',
+          },
+          {
+            kind: 'task_run_marker',
+            id: 'm1',
+            taskId: 'task-1',
+            taskTitle: 'Do the thing',
+            phase: 'end',
+            outcome: 'done',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t11');
+    await thread.hydrate();
+
+    expect(thread.pendingHitlId.value).toBeNull();
+  });
+});
+
 describe('use-thread — persisted model restore on hydrate (#195)', () => {
   it('applies a persisted provider/model from the hydrate() response', async () => {
     global.fetch = jest.fn().mockResolvedValue({
@@ -270,7 +359,7 @@ describe('use-thread — persisted model restore on hydrate (#195)', () => {
       json: async () => ({ messages: [], provider: 'ollama', model: 'llama3.2' }),
     }) as unknown as typeof fetch;
 
-    const thread = newThread('t10');
+    const thread = newThread('t10b');
     await thread.hydrate();
 
     expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });

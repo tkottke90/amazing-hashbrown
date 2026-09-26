@@ -21,8 +21,22 @@ import {
 import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
 import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
-import type { Task, TaskStatus } from '@/services/tasks-api';
-import type { Workspace } from '@/services/workspaces-api';
+import type { Task, TaskStatus, TaskDependency } from '@/services/tasks-api';
+import { listTaskDependencies } from '@/services/tasks-api';
+import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
+import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
+import { showToast } from '@/lib/toast';
+import { buildDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
+
+// Mirrors WorkspaceStore.isTaskReady()'s per-edge rule (workspace-store.ts)
+// — kept deliberately simple since this only drives a cosmetic Kanban badge,
+// never the actual gating (the server is the sole source of truth for that).
+function isDependencySatisfied(dep: TaskDependency, targetStatus: TaskStatus | undefined): boolean {
+  if (!targetStatus) return true; // target no longer exists — don't block the UI on stale data
+  if (dep.whileBlocked && targetStatus === 'blocked') return true;
+  if (dep.requireSuccess) return targetStatus === 'done';
+  return targetStatus === 'done' || targetStatus === 'failed' || targetStatus === 'cancelled';
+}
 
 type DetailTab = 'overview' | 'tasks' | 'files' | 'chat';
 
@@ -59,11 +73,13 @@ function KanbanColumn({
   taskList,
   workspaceId,
   onSaved,
+  onGoToChat,
 }: {
   status: TaskStatus;
   taskList: Task[];
   workspaceId: string;
   onSaved: () => void;
+  onGoToChat: () => void;
 }) {
   const isDone = status === 'done';
   const isReady = status === 'ready';
@@ -104,6 +120,7 @@ function KanbanColumn({
           task={task}
           defaultWorkspaceId={workspaceId}
           onSaved={onSaved}
+          onGoToChat={onGoToChat}
           trigger={<TaskCard task={task} />}
         />
       ))}
@@ -115,9 +132,47 @@ function KanbanColumn({
 // components (preactjs/preact#3297). Dialog.tsx clones the trigger element and
 // attaches a ref to wire up the click→showModal handler; without forwardRef
 // that ref is silently discarded and the drawer never opens.
-const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function TaskCard({ task }, ref) {
+export const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function TaskCard(
+  { task },
+  ref,
+) {
   const isRunning = task.status === 'running';
   const isDone = task.status === 'done';
+
+  // Titles of this task's not-yet-satisfied dependencies, alphabetical — a
+  // pending task with no dependencies (the common case) never fetches at
+  // all. Only relevant while 'pending': once a task is readied/enqueued its
+  // dependencies (if any) were already satisfied.
+  const waitingOn = useSignal<string[]>([]);
+
+  useEffect(() => {
+    if (task.status !== 'pending') {
+      waitingOn.value = [];
+      return;
+    }
+    let cancelled = false;
+    void listTaskDependencies(task.id)
+      .then((deps) => {
+        if (cancelled) return;
+        const unmetTitles = deps
+          .filter((dep) => {
+            const target = tasks.value.find((t) => t.id === dep.dependsOnTaskId);
+            return !isDependencySatisfied(dep, target?.status);
+          })
+          .map(
+            (dep) =>
+              tasks.value.find((t) => t.id === dep.dependsOnTaskId)?.title ?? dep.dependsOnTaskId,
+          )
+          .sort((a, b) => a.localeCompare(b));
+        waitingOn.value = unmetTitles;
+      })
+      .catch(() => {
+        // best-effort — the badge just doesn't show if this fails
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.status, task.id]);
 
   return (
     <button
@@ -148,6 +203,12 @@ const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function TaskCard
         <p class="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
           <Calendar class="size-3" />
           {new Date(task.dueAt).toLocaleDateString()}
+        </p>
+      )}
+      {waitingOn.value.length > 0 && (
+        <p class="text-[10px] text-muted-foreground mt-1 truncate">
+          Waiting on: {waitingOn.value[0]}
+          {waitingOn.value.length > 1 && ` +${waitingOn.value.length - 1} more`}
         </p>
       )}
     </button>
@@ -229,7 +290,15 @@ function OverviewTab({
   );
 }
 
-function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () => void }) {
+function TasksTab({
+  workspaceId,
+  onSaved,
+  onGoToChat,
+}: {
+  workspaceId: string;
+  onSaved: () => void;
+  onGoToChat: () => void;
+}) {
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
   );
@@ -267,6 +336,7 @@ function TasksTab({ workspaceId, onSaved }: { workspaceId: string; onSaved: () =
             taskList={status === 'failed' ? failedAndCancelled.value : grouped.value[status]}
             workspaceId={workspaceId}
             onSaved={onSaved}
+            onGoToChat={onGoToChat}
           />
         ))}
       </div>
@@ -316,8 +386,29 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   const isTerminal = projectStatus === 'closed' || projectStatus === 'abandoned';
 
   async function handleDelete() {
-    if (!confirm(`Delete workspace "${ws.name}"? This cannot be undone.`)) return;
-    await deleteWorkspace(ws.id);
+    // Only a managed directory is deleted, so only then does local-only git
+    // work matter. A failed status check never blocks the delete — the
+    // confirm just goes without the git warning.
+    let gitStatus: GitStatus | null = null;
+    if (ws.git && ws.managedLocation) {
+      gitStatus = await fetchGitStatus(ws.id).catch(() => null);
+    }
+    if (!confirm(buildDeleteConfirmMessage(ws, gitStatus))) return;
+
+    let directory: DirectoryRemovalResult;
+    try {
+      ({ directory } = await deleteWorkspace(ws.id));
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to delete workspace');
+      return;
+    }
+    if (!directory.removed) {
+      const message =
+        directory.reason === 'rm-failed'
+          ? `Workspace deleted, but its directory could not be removed: ${directory.path}`
+          : `Workspace deleted. Its directory was left on disk: ${directory.path}`;
+      showToast('error', message, 10000);
+    }
     route('/workspaces');
   }
 
@@ -457,6 +548,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               workspaceId={id}
               onSaved={() => {
                 if (id) void refreshTasks({ workspace_id: id });
+              }}
+              onGoToChat={() => {
+                tab.value = 'chat';
               }}
             />
           )}

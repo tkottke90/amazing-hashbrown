@@ -18,6 +18,7 @@ import {
   finalizeTurn,
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
+  recoverThrownInterrupt,
   ClassifiedTurnError,
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
@@ -303,6 +304,20 @@ export async function streamWorkspaceChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      userSeq,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -519,6 +534,20 @@ export async function resumeWorkspaceChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,
@@ -727,6 +756,20 @@ export async function retryWorkspaceChatToSse(
       resolvedModel,
     );
   } catch (err) {
+    const recovered = await recoverThrownInterrupt(
+      err,
+      sink,
+      threadStore,
+      agent,
+      config,
+      threadId,
+      msgId,
+      turnSentAt,
+      assistantSeq,
+      null,
+    );
+    if (recovered) return;
+
     const {
       segmentId,
       content: partialContent,

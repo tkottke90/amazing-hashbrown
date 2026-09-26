@@ -50,9 +50,12 @@ import { activateSkillTool } from './tools/activate-skill.tool.js';
 import { makeFindFileTool } from './tools/find-file.tool.js';
 import { makeReadFileTool } from './tools/read-file.tool.js';
 import { makeEditFileTool } from './tools/edit-file.tool.js';
-import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
+import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
+import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
-import type { Task } from '../services/workspace-store.js';
+import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
+import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
+import { buildTaskContextBlock } from './task-context.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
 // connection every other store uses. SqliteSaver accepts the connection
@@ -265,7 +268,10 @@ export function mcpToolToLangChain(t: RegisteredTool) {
 // spawn_sub_agent and ask_user are hard-excluded there regardless of config,
 // which is what structurally blocks a sub-agent from nesting another
 // spawn_sub_agent call.
-const STATIC_CHAT_TOOLS = [
+// Exported for direct testing (chat-agent.test.ts) — lets a test assert
+// 'create_tasks' is structurally absent from the plain-chat tool list
+// without having to construct a full agent (which needs a real provider).
+export const STATIC_CHAT_TOOLS = [
   askUserTool,
   uploadImageTool,
   wikiSearchTool,
@@ -306,6 +312,20 @@ function buildGatedTools(workspaceLocation?: string) {
     );
   }
   return tools;
+}
+
+// Workspace/task-scoped-only tools — bound wherever workspace or task
+// context exists (buildWorkspaceChatAgent, buildTaskAgent) but never in
+// buildChatAgent (plain chat has no workspaceId to create tasks against)
+// and never in buildSubAgentAgent's candidatePool (a bounded, read-only
+// delegation unit has no business queuing further autonomous work — same
+// reasoning as ask_user/spawn_sub_agent's hard exclusion there, enforced
+// here by omission rather than an explicit denylist, since this pool never
+// includes it as a candidate in the first place). Built fresh per agent
+// construction, not a module-scope constant, for the same reason
+// buildGatedTools() is.
+export function buildWorkspaceScopedTools() {
+  return [makeCreateTasksTool()];
 }
 
 // The four write-capable wiki tools are built fresh per agent construction
@@ -452,6 +472,7 @@ async function buildWorkspaceChatAgent(
     tools: [
       makeShellExecTool(workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildWorkspaceScopedTools(),
       ...buildGatedTools(workspaceContext.location),
       ...buildWikiWriteTools(allowedWikiId),
       ...mcpTools,
@@ -535,37 +556,22 @@ export function invalidateChatAgent(): void {
 // fresh per run is correct, not wasteful. See task-execution.ts.
 // ---------------------------------------------------------------------------
 
-interface TaskContext {
-  title: string;
-  description: string | null;
-  outcome: string | null;
-}
-
-// Exported for direct testing (see buildWikiWriteTools() above for the same
-// rationale) — buildTaskAgent() itself calls createProvider()/createAgent(),
-// which needs a real provider config to exercise end-to-end. hasAskUser is
-// false for buildSubAgentAgent below — a sub-agent's tool list never
-// includes ask_user, so telling it to call one would be actively wrong.
-export function buildTaskContextBlock(ctx: TaskContext, hasAskUser = true): string {
-  const lines = [`You are running an automated task: "${ctx.title}".`];
-  if (ctx.description) lines.push(`Description: ${ctx.description}`);
-  if (ctx.outcome) lines.push(`Outcome to reach: ${ctx.outcome}`);
-  lines.push(
-    '',
-    'When the outcome has been met, or you cannot proceed further, call complete_task with ' +
-      'outcome ("done" or "failed") and a summary.' +
-      (hasAskUser
-        ? ' If you need information only the user can provide, call ask_user — the run will ' +
-          'pause and resume once they answer.'
-        : ' No one is available to answer questions during this run — do your best with the ' +
-          'information you have and report what you could not determine in your summary.'),
-  );
-  return lines.join('\n');
-}
+// TaskContext / buildTaskContextBlock() / formatPlanChecklist() live in
+// task-context.ts (side-effect-free, so bin/eval.ts can import them without
+// this module's import-time setup) — re-exported here for existing importers.
+export { buildTaskContextBlock, formatPlanChecklist, type TaskContext } from './task-context.js';
 
 export interface TaskWorkspaceScope {
   workspaceContext: WorkspaceChatContext;
   allowedWikiId?: string;
+}
+
+export interface TaskAgentHooks {
+  // Fired by complete_task only for an accepted call (see
+  // complete-task.tool.ts's nudge-once rule) — task-execution.ts's single
+  // source of truth for "this run completed". Callers that don't track
+  // completion (sub-agent-notification.ts) simply omit it.
+  onTaskComplete?: (call: CompleteTaskCall) => void;
 }
 
 export async function buildTaskAgent(
@@ -573,6 +579,7 @@ export async function buildTaskAgent(
   provider?: string,
   model?: string,
   workspaceScope?: TaskWorkspaceScope,
+  hooks?: TaskAgentHooks,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
@@ -581,6 +588,7 @@ export async function buildTaskAgent(
     title: task.title,
     description: task.description,
     outcome: task.outcome,
+    plan: task.plan,
   });
   const contextBlock = workspaceScope
     ? `${buildWorkspaceContextBlock(workspaceScope.workspaceContext)}\n\n${taskBlock}`
@@ -592,9 +600,16 @@ export async function buildTaskAgent(
     tools: [
       makeShellExecTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildWorkspaceScopedTools(),
       ...buildGatedTools(workspaceScope?.workspaceContext.location),
       ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
-      makeCompleteTaskTool(task.id),
+      makeCompleteTaskTool(task.id, {
+        // Read at call time so steps update_plan checked earlier in this
+        // same run count toward complete_task's unchecked-steps nudge.
+        getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
+        onAccepted: hooks?.onTaskComplete,
+      }),
+      makeUpdatePlanTool(task.id),
       ...mcpTools,
     ],
     systemPrompt,

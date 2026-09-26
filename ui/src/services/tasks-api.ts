@@ -1,3 +1,5 @@
+import { request } from '@/utils/fetch.utils';
+
 export type TaskStatus =
   'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
 
@@ -23,8 +25,20 @@ export interface Task {
   trackerType: string | null;
   trackerId: string | null;
   plan: PlanStep[] | null;
+  // Set when status is 'blocked' because a required dependency failed —
+  // distinct from a plain user-initiated pause, which leaves this null.
+  blockedReason: 'dependency_failed' | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskDependency {
+  id: number;
+  taskId: string;
+  dependsOnTaskId: string;
+  requireSuccess: boolean;
+  whileBlocked: boolean;
+  createdAt: string;
 }
 
 export interface TaskQueueEntry {
@@ -61,15 +75,6 @@ export interface CreateTaskInput {
 export interface TaskFilters {
   workspace_id?: string | null;
   status?: TaskStatus;
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function fetchTasks(filters: TaskFilters = {}): Promise<Task[]> {
@@ -133,6 +138,28 @@ export async function resumeTask(id: string): Promise<Task> {
 
 export async function generatePlan(taskId: string): Promise<PlanStep[]> {
   return request<PlanStep[]>(`/api/v1/tasks/${taskId}/generate-plan`, { method: 'POST' });
+}
+
+export async function listTaskDependencies(taskId: string): Promise<TaskDependency[]> {
+  return request<TaskDependency[]>(`/api/v1/tasks/${taskId}/dependencies`);
+}
+
+export async function addTaskDependency(
+  taskId: string,
+  dependsOnTaskId: string,
+  opts: { requireSuccess?: boolean; whileBlocked?: boolean } = {},
+): Promise<TaskDependency> {
+  return request<TaskDependency>(`/api/v1/tasks/${taskId}/dependencies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dependsOnTaskId, ...opts }),
+  });
+}
+
+export async function removeTaskDependency(taskId: string, dependencyId: number): Promise<void> {
+  // A 204 No Content response has no JSON body to parse — same reason
+  // deleteTask() above bypasses request() and calls fetch() directly.
+  await fetch(`/api/v1/tasks/${taskId}/dependencies/${dependencyId}`, { method: 'DELETE' });
 }
 
 export async function generatePlanForNewTask(input: {

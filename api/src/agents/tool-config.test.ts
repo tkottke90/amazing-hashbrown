@@ -251,6 +251,11 @@ describe('agents/tool-config', () => {
         'wiki_register_domain',
         'create_workspace',
         'create_project',
+        // A new catalog entry, not in the legacy SUB_AGENT_TOOLS list, so it
+        // defaults subAgent:false the same way shell_exec/ask_user do — a
+        // bounded, read-only sub-agent run has no business queuing further
+        // autonomous work. See chat-agent.ts's buildWorkspaceScopedTools().
+        'create_tasks',
       ];
       for (const id of expectedExcluded) {
         expect(ids.has(id), `expected getSubAgentToolIds() to exclude ${id}`).to.equal(false);

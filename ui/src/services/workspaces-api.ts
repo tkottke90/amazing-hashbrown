@@ -1,9 +1,15 @@
+import { request } from '@/utils/fetch.utils';
+
 export interface Workspace {
   id: string;
   name: string;
   description: string | null;
   goal: string | null;
   location: string;
+  // True when `location` is a direct child of a managed root, i.e. deleting
+  // the workspace will also delete its directory. Legacy free-form locations
+  // are false and are left on disk.
+  managedLocation: boolean;
   remoteUrl: string | null;
   javascript: boolean;
   python: boolean;
@@ -78,15 +84,6 @@ export interface PatchWorkspaceInput {
   lastSummarizedMessageId?: string;
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
 export async function fetchWorkspaces(): Promise<Workspace[]> {
   return request<Workspace[]>('/api/v1/workspaces');
 }
@@ -107,8 +104,18 @@ export async function patchWorkspace(id: string, patch: PatchWorkspaceInput): Pr
   });
 }
 
-export async function deleteWorkspace(id: string): Promise<void> {
-  await fetch(`/api/v1/workspaces/${id}`, { method: 'DELETE' });
+export type DirectoryRemovalResult =
+  | { removed: true; path: string }
+  | { removed: false; path: string; reason: 'outside-managed-roots' }
+  | { removed: false; path: string; reason: 'rm-failed'; error: string };
+
+export interface DeleteWorkspaceResult {
+  deleted: true;
+  directory: DirectoryRemovalResult;
+}
+
+export async function deleteWorkspace(id: string): Promise<DeleteWorkspaceResult> {
+  return request<DeleteWorkspaceResult>(`/api/v1/workspaces/${id}`, { method: 'DELETE' });
 }
 
 export async function fetchProjects(): Promise<WorkspaceWithProject[]> {

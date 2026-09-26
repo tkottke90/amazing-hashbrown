@@ -40,6 +40,10 @@ describe('agents/tool-access', () => {
     expect(ALWAYS_ON_TOOL_IDS.has('web_fetch')).to.equal(false);
   });
 
+  it('ALWAYS_ON_TOOL_IDS contains update_plan, so a customized thread tool set cannot strip it from a task run (issue #203) [unit]', () => {
+    expect(ALWAYS_ON_TOOL_IDS.has('update_plan')).to.equal(true);
+  });
+
   it('a non-customized thread uses live global defaults plus alwaysOn tools', () => {
     getThreadStore().upsertThreadOnFirstMessage('t1', 'hi');
     const toolsConfig: Record<string, ToolEntry> = {

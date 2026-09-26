@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import type {
+  Workspace,
   WorkspaceStore,
   NewWorkspaceInput,
   PatchWorkspaceInput,
@@ -10,7 +11,12 @@ import {
   isLocationRoot,
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
+  DirectoryExistsError,
+  managedRoots,
+  removeWorkspaceDirectory,
+  type DirectoryRemovalResult,
 } from '../../services/workspace-location.js';
+import { toWorkspaceResponse, type WorkspaceResponse } from './workspace-response.js';
 import {
   provisionDependencyIsolation,
   provisionGitRepository,
@@ -42,23 +48,23 @@ function conflict(error: string): HandlerFailure {
 }
 
 export function listWorkspacesHandler(store: WorkspaceStore) {
-  return ok(store.listWorkspaces());
+  return ok(store.listWorkspaces().map((ws) => toWorkspaceResponse(ws)));
 }
 
 export function getWorkspaceHandler(
   store: WorkspaceStore,
   id: string,
-): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
+): HandlerResult<WorkspaceResponse<Workspace>> {
   const ws = store.getWorkspace(id);
   if (!ws) return notFound(`Workspace ${id} not found`);
-  return ok(ws);
+  return ok(toWorkspaceResponse(ws));
 }
 
 export async function createWorkspaceHandler(
   store: WorkspaceStore,
   body: Record<string, unknown>,
   execFileFn?: ExecFileFn,
-): Promise<HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>>> {
+): Promise<HandlerResult<WorkspaceResponse<Workspace>>> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
   if (!isLocationRoot(body.locationRoot)) {
     return badRequest('locationRoot must be "projects" or "temporary"');
@@ -75,6 +81,7 @@ export async function createWorkspaceHandler(
     location = resolveWorkspaceLocation(body.locationRoot, body.directoryName);
     await createWorkspaceDirectory(location);
   } catch (err) {
+    if (err instanceof DirectoryExistsError) return conflict(err.message);
     return badRequest(err instanceof Error ? err.message : String(err));
   }
 
@@ -108,14 +115,14 @@ export async function createWorkspaceHandler(
   // NewWorkspaceInput — the leftover locationRoot/directoryName keys are
   // harmless to pass through alongside the resolved `location`.
   const ws = store.createWorkspace({ ...body, location } as NewWorkspaceInput);
-  return ok(ws);
+  return ok(toWorkspaceResponse(ws));
 }
 
 export function patchWorkspaceHandler(
   store: WorkspaceStore,
   id: string,
   patch: PatchWorkspaceInput,
-): HandlerResult<ReturnType<WorkspaceStore['getWorkspace']>> {
+): HandlerResult<WorkspaceResponse<Workspace>> {
   // A project's wiki domain is provisioned automatically and lives for the
   // project's lifetime — the pointer to it must not change underneath it.
   if (patch.wikiId !== undefined && store.getProject(id)) {
@@ -130,24 +137,25 @@ export function patchWorkspaceHandler(
     invalidateWorkspaceChatAgent(id);
   }
 
-  return ok(ws);
+  return ok(toWorkspaceResponse(ws));
 }
 
 export async function deleteWorkspaceHandler(
   store: WorkspaceStore,
   id: string,
   registry?: WikiRegistry,
-): Promise<HandlerResult<{ deleted: true }>> {
+  roots: string[] = managedRoots(),
+): Promise<HandlerResult<{ deleted: true; directory: DirectoryRemovalResult }>> {
   const workspace = store.getWorkspace(id);
   const project = store.getProject(id);
   const deleted = store.deleteWorkspace(id);
-  if (!deleted) return notFound(`Workspace ${id} not found`);
+  if (!deleted || !workspace) return notFound(`Workspace ${id} not found`);
 
   // Project-provisioned wikis die with the workspace. DB rows go first: a
   // failed filesystem delete is recoverable, the reverse is not — so wiki
   // destruction is best-effort and never fails the request. A manually-set
   // wikiId on a project-less workspace is left alone.
-  if (project && workspace?.wikiId) {
+  if (project && workspace.wikiId) {
     try {
       const reg = registry ?? (await getWikiRegistry());
       await reg.destroy(workspace.wikiId);
@@ -159,7 +167,19 @@ export async function deleteWorkspaceHandler(
       });
     }
   }
-  return ok({ deleted: true });
+
+  // The workspace directory follows the same DB-first, best-effort rule, and
+  // is only ever removed when it sits directly under a managed root — a
+  // legacy free-form location may be the user's own repository. The outcome
+  // is returned (not just logged) so the UI can warn about a leftover path.
+  const directory = await removeWorkspaceDirectory(workspace.location, roots);
+  if (!directory.removed) {
+    logger.warn('deleteWorkspace: workspace directory not removed', {
+      workspaceId: id,
+      ...directory,
+    });
+  }
+  return ok({ deleted: true, directory });
 }
 
 export type CleanupDependenciesResult =

@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrite-test-runner';
-
 import {
   writeFileDirect,
   initGitRepo,
@@ -15,6 +14,14 @@ import {
   makeReadOnly,
   removeWorkspaceDir,
 } from '../lib/workspace-files.js';
+import { CreateTask } from './workspace/CreateTasks.js';
+import {
+  createWorkspace,
+  editorPane,
+  fileRow,
+  fileTab,
+  openFilesTab,
+} from './workspace/utilities.js';
 
 // Every workspace this suite creates, so test.afterAll (below) can remove
 // its on-disk directory — DELETE /api/v1/workspaces/:id only deletes the DB
@@ -35,35 +42,6 @@ let editWorkspace: CreatedWorkspace | null = null;
 // Populated by the media-preview steps, read by the mute-toggle step that
 // reuses the same workspace/tabs.
 let mediaWorkspace: CreatedWorkspace | null = null;
-
-async function createWorkspace(
-  page: Page,
-  data: Record<string, unknown>,
-): Promise<CreatedWorkspace> {
-  const res = await page.request.post('/api/v1/workspaces', { data });
-  expect(res.status()).toBe(201);
-  const ws = (await res.json()) as { id: string; location: string };
-  createdLocations.push(ws.location);
-  return { id: ws.id, location: ws.location };
-}
-
-async function openFilesTab(page: Page, workspaceId: string): Promise<void> {
-  await page.goto(`/workspaces/${workspaceId}`);
-  await page.getByRole('button', { name: 'Files' }).click();
-  await expect(page.getByTestId('file-tree')).toBeVisible();
-}
-
-function fileRow(page: Page, relativePath: string): Locator {
-  return page.locator(`[data-testid="file-tree-row"][data-path="${relativePath}"]`);
-}
-
-function fileTab(page: Page, relativePath: string): Locator {
-  return page.locator(`[data-testid="file-tab"][data-path="${relativePath}"]`);
-}
-
-function editorPane(page: Page, relativePath: string): Locator {
-  return page.locator(`[data-testid="file-editor-pane"][data-path="${relativePath}"]`);
-}
 
 // Focuses the CodeMirror editor for the given (already-open, already-active)
 // tab, selects the whole document (CodeMirror's default keymap binds Mod-a
@@ -106,12 +84,16 @@ export const WorkspaceFileBrowser: TestSuite = {
         // comment on why steps share a single test rather than one each).
         test.setTimeout(240_000);
 
-        const ws = await createWorkspace(page, {
-          name: `fb-git-tree-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-git-tree-${Date.now()}`,
-          git: true,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-git-tree-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-git-tree-${Date.now()}`,
+            git: true,
+          },
+          createdLocations,
+        );
 
         // Real git setup on the real workspace directory — commit a
         // baseline (README.md + a nested src/module.txt), then make an
@@ -187,11 +169,15 @@ export const WorkspaceFileBrowser: TestSuite = {
       action: 'Point a workspace at a directory that no longer exists on disk, then open Files',
       expectedOutcome: 'The tree panel shows a clear error state instead of crashing',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-missing-dir-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-missing-dir-${Date.now()}`,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-missing-dir-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-missing-dir-${Date.now()}`,
+          },
+          createdLocations,
+        );
 
         // Delete the workspace's own directory out from under it — the API
         // created it on workspace creation, so this genuinely reproduces
@@ -213,12 +199,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'The tree loads fully with no branch label in the header and no status badges on any file',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-no-git-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-no-git-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-no-git-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-no-git-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
         await writeFileDirect(ws.location, 'readme.txt', 'plain workspace, no git\n');
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
@@ -236,12 +226,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'Both open as tabs in the tab bar; the correct content is shown for whichever tab is active',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-edit-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-edit-${Date.now()}`,
-          git: true,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-edit-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-edit-${Date.now()}`,
+            git: true,
+          },
+          createdLocations,
+        );
 
         initGitRepo(ws.location);
         await writeFileDirect(ws.location, 'alpha.txt', 'Alpha content\n');
@@ -469,12 +463,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'The tree loads; the unsupported-extension file shows the amber unsupported badge, and the oversized text file shows the distinct oversize badge',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-media-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-media-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-media-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-media-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
 
         await writeImageFile(ws.location, 'image.png');
         await writeAudioFile(ws.location, 'audio.mp3');
@@ -594,12 +592,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       action: 'Upload a file into the workspace root via the header upload icon',
       expectedOutcome: 'The uploaded file appears in the tree at the root without a manual refresh',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-upload-root-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-upload-root-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-upload-root-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-upload-root-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await openFilesTab(page, ws.id);
@@ -626,12 +628,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       action: 'Hover a nested folder, then upload a file into it',
       expectedOutcome: 'The uploaded file appears nested under the hovered folder, not at the root',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-upload-nested-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-upload-nested-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-upload-nested-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-upload-nested-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
         await writeFileDirect(ws.location, 'sub/existing.txt', 'already here\n');
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
@@ -660,12 +666,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'The upload is rejected with a visible inline error naming the conflicting file, and the existing file is left untouched',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-upload-collision-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-upload-collision-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-upload-collision-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-upload-collision-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
         await writeFileDirect(ws.location, 'dup.txt', 'original content\n');
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
@@ -692,12 +702,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       action: 'Create a new file via the "New file" modal',
       expectedOutcome: 'The new file appears in the tree and opens as an empty tab',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-new-file-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-new-file-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-new-file-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-new-file-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
         await openFilesTab(page, ws.id);
@@ -724,12 +738,16 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'The new folder appears nested under the hovered parent, and the parent is expanded to show it without needing a manual expand click',
       test: async ({ page }, testInfo) => {
-        const ws = await createWorkspace(page, {
-          name: `fb-new-folder-${Date.now()}`,
-          locationRoot: 'temporary',
-          directoryName: `fb-new-folder-${Date.now()}`,
-          git: false,
-        });
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-new-folder-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-new-folder-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
         await writeFileDirect(ws.location, 'sub/existing.txt', 'already here\n');
 
         await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
@@ -771,3 +789,4 @@ test.afterAll(async () => {
 });
 
 suiteRunner(WorkspaceFileBrowser);
+suiteRunner(CreateTask);
