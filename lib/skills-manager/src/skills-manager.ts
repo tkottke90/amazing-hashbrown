@@ -24,13 +24,33 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 const NAME_MAX = 64;
 const SKILL_FILE = 'SKILL.md';
 
+export interface ChildOptions {
+  source: string; // label stamped on the child's summaries (e.g. 'repo')
+  reserved?: string[]; // names the child may never serve; the parent's version always wins
+}
+
 export class SkillsManager {
   private readonly skillsRoot: string;
-  private readonly source: string = 'global';
   private readonly cache: Map<string, SkillSummary> = new Map();
+  private source = 'global';
+  private parent: SkillsManager | null = null;
+  private reserved: ReadonlySet<string> = new Set();
 
   constructor(skillsRoot: string) {
     this.skillsRoot = skillsRoot;
+  }
+
+  // Layers a read-only directory over this manager. Reads resolve the
+  // child's own skills first and fall through to this manager; every write
+  // and script-execution method on the child throws. The child is unbooted —
+  // call boot() before use. Nothing is cached across calls to createChild, so
+  // a fresh child always reflects the directory's current contents.
+  createChild(skillsRoot: string, options: ChildOptions): SkillsManager {
+    const child = new SkillsManager(skillsRoot);
+    child.parent = this;
+    child.source = options.source;
+    child.reserved = new Set(options.reserved ?? []);
+    return child;
   }
 
   setExecutor(executor: ShellExecutor): void {
@@ -63,6 +83,13 @@ export class SkillsManager {
           skipped.push({ dir, reason: 'name-mismatch' });
           return;
         }
+        if (this.reserved.has(summary.name)) {
+          skipped.push({ dir, reason: 'reserved' });
+          return;
+        }
+        // A disabled child skill is treated as absent so the parent's
+        // same-named skill shows through.
+        if (this.parent && !summary.enabled) return;
         this.cache.set(summary.name, { ...summary, source: this.source });
       }),
     );
@@ -71,11 +98,18 @@ export class SkillsManager {
   }
 
   list(): SkillSummary[] {
-    return Array.from(this.cache.values());
+    const own = Array.from(this.cache.values());
+    if (!this.parent) return own;
+    const inherited = this.parent.list();
+    const parentNames = new Set(inherited.map((s) => s.name));
+    return [
+      ...inherited.filter((s) => !this.cache.has(s.name)),
+      ...own.map((s) => (parentNames.has(s.name) ? { ...s, overrides: true } : s)),
+    ];
   }
 
   search(keyword?: string): SkillSummary[] {
-    const all = Array.from(this.cache.values()).filter((s) => s.enabled);
+    const all = this.list().filter((s) => s.enabled);
     if (!keyword) return all;
     const q = keyword.toLowerCase();
     return all.filter(
@@ -87,18 +121,21 @@ export class SkillsManager {
   }
 
   async lookup(name: string): Promise<string> {
-    this.assertExists(name);
+    const owner = this.owner(name);
+    if (owner !== this) return owner.lookup(name);
     const raw = await readFile(join(this.skillsRoot, name, SKILL_FILE), 'utf8');
     const { body } = parse(raw);
     return body;
   }
 
   async load(name: string): Promise<Skill> {
-    this.assertExists(name);
+    const owner = this.owner(name);
+    if (owner !== this) return owner.load(name);
     return readFullSkill(join(this.skillsRoot, name));
   }
 
   async create(input: CreateSkillInput): Promise<Skill> {
+    this.assertWritable();
     const { name, description, body, license, compatibility, metadata, allowedTools } = input;
     if (!name || name.length > NAME_MAX || !NAME_RE.test(name)) {
       throw new Error(
@@ -134,6 +171,7 @@ export class SkillsManager {
   }
 
   async edit(name: string, changes: EditSkillInput): Promise<Skill> {
+    this.assertWritable();
     this.assertExists(name);
     const skillPath = join(this.skillsRoot, name);
     const skillFilePath = join(skillPath, SKILL_FILE);
@@ -171,6 +209,7 @@ export class SkillsManager {
   }
 
   async delete(name: string): Promise<void> {
+    this.assertWritable();
     this.assertExists(name);
     await rm(join(this.skillsRoot, name), { recursive: true, force: true });
     this.cache.delete(name);
@@ -181,12 +220,14 @@ export class SkillsManager {
     scriptFile: string,
     context?: Record<string, unknown>,
   ): Promise<unknown> {
+    this.assertWritable();
     this.assertExists(name);
     const scriptPath = join(this.skillsRoot, name, 'scripts', scriptFile);
     return runJsScript(scriptPath, context);
   }
 
   async runPythonScript(name: string, scriptFile: string, args?: string[]): Promise<ScriptResult> {
+    this.assertWritable();
     this.assertExists(name);
     const skillPath = join(this.skillsRoot, name);
     const scriptPath = join(skillPath, 'scripts', scriptFile);
@@ -198,7 +239,8 @@ export class SkillsManager {
     dir: 'scripts' | 'references' | 'evals',
     basename: string,
   ): Promise<string> {
-    this.assertExists(name);
+    const owner = this.owner(name);
+    if (owner !== this) return owner.readFile(name, dir, basename);
     return readFile(join(this.skillsRoot, name, dir, basename), 'utf8');
   }
 
@@ -208,6 +250,7 @@ export class SkillsManager {
     basename: string,
     content: string,
   ): Promise<void> {
+    this.assertWritable();
     this.assertExists(name);
     const dirPath = join(this.skillsRoot, name, dir);
     await mkdir(dirPath, { recursive: true });
@@ -219,12 +262,14 @@ export class SkillsManager {
     dir: 'scripts' | 'references' | 'evals',
     basename: string,
   ): Promise<void> {
+    this.assertWritable();
     this.assertExists(name);
     await rm(join(this.skillsRoot, name, dir, basename));
   }
 
   async loadEvals(name: string): Promise<EvalSuite> {
-    this.assertExists(name);
+    const owner = this.owner(name);
+    if (owner !== this) return owner.loadEvals(name);
     const evalsPath = join(this.skillsRoot, name, 'evals', 'evals.json');
     let raw: string;
     try {
@@ -236,6 +281,7 @@ export class SkillsManager {
   }
 
   async saveEvals(name: string, suite: EvalSuite): Promise<void> {
+    this.assertWritable();
     this.assertExists(name);
     const evalsDir = join(this.skillsRoot, name, 'evals');
     await mkdir(evalsDir, { recursive: true });
@@ -245,6 +291,24 @@ export class SkillsManager {
   private assertExists(name: string): void {
     if (!this.cache.has(name)) {
       throw new Error(`Skill "${name}" not found`);
+    }
+  }
+
+  // The manager whose directory holds `name`: this one first, then up the
+  // parent chain. Throws the usual not-found error when no manager has it.
+  private owner(name: string): SkillsManager {
+    if (this.cache.has(name)) return this;
+    if (this.parent) return this.parent.owner(name);
+    throw new Error(`Skill "${name}" not found`);
+  }
+
+  // Child managers serve someone else's directory (e.g. a cloned repo): they
+  // never write to it, never write through to the parent, and never execute
+  // scripts. Called as the first statement of every such method so no path is
+  // built and the runner is never reached.
+  private assertWritable(): void {
+    if (this.parent) {
+      throw new Error(`Skill manager for ${this.skillsRoot} is read-only`);
     }
   }
 }
