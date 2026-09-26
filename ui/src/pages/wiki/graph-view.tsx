@@ -5,6 +5,8 @@ import * as d3Selection from 'd3-selection';
 import * as d3Zoom from 'd3-zoom';
 import * as d3Drag from 'd3-drag';
 import type { D3ZoomEvent } from 'd3-zoom';
+import { LocateFixed } from 'lucide-preact';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { graphData, enabledDomainIds, domains, loadPage } from '@/pages/wiki/use-wiki';
 import {
   buildGraphData,
@@ -14,6 +16,7 @@ import {
   type D3Edge,
 } from './build-graph-data';
 import { getDomainColor } from './domain-filter';
+import { GRAPH_SCALE_EXTENT, circleBounds, computeFitTransform } from './fit-transform';
 
 // ---- Hover card ----
 
@@ -43,6 +46,10 @@ export function GraphView({ onOpenInEditor }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const hoveredNode = useSignal<HoveredNode | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set by the render effect so the Recenter button always acts on what's
+  // currently drawn (the nodes, zoom behaviour and radii of the last render).
+  const recenterRef = useRef<(() => void) | null>(null);
+  const hasNodes = useSignal(false);
 
   function cancelClose() {
     if (closeTimerRef.current !== null) {
@@ -117,7 +124,7 @@ export function GraphView({ onOpenInEditor }: Props) {
     // Zoom
     const zoom = d3Zoom
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.2, 4])
+      .scaleExtent(GRAPH_SCALE_EXTENT)
       .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
         g.attr('transform', String(event.transform));
       });
@@ -227,9 +234,33 @@ export function GraphView({ onOpenInEditor }: Props) {
         nodeSel.attr('cx', (d: D3Node) => d.x ?? 0).attr('cy', (d: D3Node) => d.y ?? 0);
       });
 
+    // Zoom-to-fit for the Recenter button. The graph deliberately ignores
+    // container resizes (no redraw while panels are dragged), so this is the
+    // manual way back after resizing, panning or zooming away. Going through
+    // zoom.transform keeps d3-zoom's internal state in sync, so the next
+    // wheel/drag continues from the fitted view.
+    hasNodes.value = nodes.length > 0;
+    recenterRef.current = () => {
+      const bounds = circleBounds(
+        nodes.map((n) => ({
+          x: n.x ?? 0,
+          y: n.y ?? 0,
+          r: nodeRadius(n.edgeCount ?? 0, maxEdges),
+        })),
+      );
+      if (!bounds) return;
+      const { k, x, y } = computeFitTransform({
+        bounds,
+        width: svg.clientWidth,
+        height: svg.clientHeight,
+      });
+      sel.call(zoom.transform, d3Zoom.zoomIdentity.translate(x, y).scale(k));
+    };
+
     return () => {
       simulation.stop();
       cancelClose();
+      recenterRef.current = null;
     };
   }, [graphData.value, enabledDomainIds.value]);
 
@@ -287,6 +318,19 @@ export function GraphView({ onOpenInEditor }: Props) {
           </button>
         </div>
       )}
+
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label="Recenter graph"
+          disabled={!hasNodes.value}
+          onClick={() => recenterRef.current?.()}
+          className="absolute bottom-3 right-3 z-10 flex items-center justify-center rounded border border-border bg-background p-1.5 text-muted-foreground shadow-sm transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        >
+          <LocateFixed className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>Recenter graph</TooltipContent>
+      </Tooltip>
 
       {graphData.value.nodes.length === 0 && (
         <div class="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
