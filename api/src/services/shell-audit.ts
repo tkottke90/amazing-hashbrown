@@ -7,7 +7,7 @@ import { classifyShellCommand } from './shell-command-classifier.js';
 // (see BaseStore's migration doc) — 32 was the next free number as of the
 // second migration below (ObservabilityStore: 1,5,7,9; CostStore: 2;
 // EvaluationsStore: 3,6,8; thread-store: 4,10-16,29; tool-settings-store:
-// 28,30; workspace-store: 18-27; friction-store: 31).
+// 28,30; workspace-store: 18-27,31; friction-store: 33).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 17,

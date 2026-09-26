@@ -29,13 +29,17 @@ export interface ToolFrictionFilters {
 // base ObservabilityStore.
 //
 // Version numbers must be unique across ALL features sharing this database
-// (see BaseStore's migration doc) — 31 was the next free number as of this
+// (see BaseStore's migration doc) — 33 was the next free number as of this
 // migration (ObservabilityStore: 1,5,7,9; CostStore: 2; EvaluationsStore: 3,6,8;
 // thread-store: 4,10-16,29; tool-settings-store: 28,30; workspace-store:
-// 18-27; shell-audit: 17,32).
+// 18-27,31; shell-audit: 17,32). This originally used version 31 too, which
+// collided with workspace-store.ts's task_dependencies migration (also 31,
+// added concurrently on main) — whichever store's runMigrations() ran first
+// silently "claimed" 31 in the shared schema_migrations table, so the other
+// migration's SQL never ran at all. Renumbered to 33 to fix it.
 const MIGRATIONS: DbMigration[] = [
   {
-    version: 31,
+    version: 33,
     sql: `
       CREATE VIEW IF NOT EXISTS v_tool_friction AS
       SELECT
