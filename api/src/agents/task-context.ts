@@ -152,7 +152,9 @@ export function buildRunKickoff(input: RunKickoffInput): string {
       '',
       `Previous run — #${previous.runNumber}, ${when}${previous.status}:`,
       `"${previous.summary ?? 'No summary was recorded.'}"`,
-      `For full details call: read_task_run(${JSON.stringify({ runId: previous.id })})`,
+      `If that summary alone isn't enough to do this run's work, call ` +
+        `read_task_run(${JSON.stringify({ runId: previous.id })}) before anything else — ` +
+        `don't guess at the details or start re-deriving them yourself.`,
     );
     const shown = earlier.slice(0, EARLIER_RUNS_SHOWN);
     if (shown.length > 0) {

@@ -210,7 +210,9 @@ describe('agents/task-context', () => {
           '',
           'Previous run — #2, 2026-09-12 09:00 UTC, done:',
           '"Summary 2."',
-          'For full details call: read_task_run({"runId":"run-2"})',
+          "If that summary alone isn't enough to do this run's work, call " +
+            'read_task_run({"runId":"run-2"}) before anything else — ' +
+            "don't guess at the details or start re-deriving them yourself.",
           '',
           'Earlier runs: #1 run-1 (failed)',
         ].join('\n'),
