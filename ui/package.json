@@ -37,6 +37,7 @@
     "preact-iso": "^2.8.1",
     "radix-ui": "1.6.1",
     "react-markdown": "10.1.0",
+    "react-resizable-panels": "4.13.3",
     "rehype-highlight": "7.0.2",
     "remark-gfm": "4.0.1",
     "shadcn": "4.13.0",
