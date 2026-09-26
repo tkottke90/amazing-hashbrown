@@ -1,28 +1,29 @@
 # Repository Agent Skills (`.agents/skills/`)
 
 Design for [issue #193](https://github.com/tkottke90/amazing-hashbrown/issues/193):
-honor Agent Skills shipped inside a workspace's attached git repository.
+honor Agent Skills shipped inside a workspace's directory (typically its
+attached git repository).
 
 ## Problem
 
 A workspace with a git remote is cloned into `workspace.location`
-(`workspace-provision.ts`). If that repository ships Agent Skills, the agent
-ignores them: skills come from exactly one global directory
+(`workspace-provision.ts`). If that repository — or any workspace directory —
+ships Agent Skills, the agent ignores them: skills come from exactly one global directory
 (`env.skillsRoot`), served by a single `SkillsManager` singleton
 (`api/src/services/skills-manager.ts`). Repo owners have no way to give the
 agent codebase-specific slash commands.
 
 ## Decisions (and where they deviate from the issue)
 
-| Topic                | Decision                                                                                                                                                                                                                                              |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discovery path       | `<workspace.location>/.agents/skills/<name>/SKILL.md`. The issue says `.agents/<name>/`; the ecosystem convention (and this repo's own dev skills) is `.agents/skills/`. Scanning `.agents/` directly would collide with other tooling's files there. |
-| Which workspaces     | Only workspaces with a non-empty `remoteUrl` (any git remote, not only GitHub). This is a product-scope gate, **not** a security control — skills are read from the local clone, not the GitHub API.                                                  |
-| Trust / capabilities | **Instructions only.** Repo skills expand as slash commands and appear in `search_skills`. Their `scripts/` are never executable through `SkillsManager`. No opt-in step.                                                                             |
-| Name collisions      | Repo skill wins, **except** reserved names (every gated-skill command in `gated-skill-registrations.ts`), where the global skill always wins and the repo skill is skipped.                                                                           |
-| Visibility           | Slash menu only: a `repo` badge, plus `overrides global` when a repo skill replaces a global one. Skipped skills are logged server-side as warnings.                                                                                                  |
-| Architecture         | Parent/child `SkillsManager`s: `skillsManager.createChild(dir, options)` returns a read-only child that resolves its own directory first and falls through to the parent.                                                                             |
-| Freshness            | No caching. A child is created and booted per request, so git sync, branch checkout, and hand edits in the clone are reflected immediately.                                                                                                           |
+| Topic                | Decision                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Discovery path       | `<workspace.location>/.agents/skills/<name>/SKILL.md`. The issue says `.agents/<name>/`; the ecosystem convention (and this repo's own dev skills) is `.agents/skills/`. Scanning `.agents/` directly would collide with other tooling's files there.                                                                                                                                |
+| Which workspaces     | Every workspace with a `location`, regardless of `remoteUrl`. The issue scopes this to GitHub-attached workspaces, but skills are read from local disk, not the GitHub API, so a `remoteUrl` gate would add no security (a stranger's cloned repo passes it; a hand-built local directory fails it) and would silently ignore skills in local-only or later-`git init`ed workspaces. |
+| Trust / capabilities | **Instructions only.** Repo skills expand as slash commands and appear in `search_skills`. Their `scripts/` are never executable through `SkillsManager`. No opt-in step.                                                                                                                                                                                                            |
+| Name collisions      | Repo skill wins, **except** reserved names (every gated-skill command in `gated-skill-registrations.ts`), where the global skill always wins and the repo skill is skipped.                                                                                                                                                                                                          |
+| Visibility           | Slash menu only: a `repo` badge, plus `overrides global` when a repo skill replaces a global one. Skipped skills are logged server-side as warnings.                                                                                                                                                                                                                                 |
+| Architecture         | Parent/child `SkillsManager`s: `skillsManager.createChild(dir, options)` returns a read-only child that resolves its own directory first and falls through to the parent.                                                                                                                                                                                                            |
+| Freshness            | No caching. A child is created and booted per request, so git sync, branch checkout, and hand edits in the clone are reflected immediately.                                                                                                                                                                                                                                          |
 
 ### Why instructions-only removes the need for a trust gate
 
@@ -102,9 +103,9 @@ parent's same-named skill shows through. "Disabled" means "not there".
 
 The single owner of the policy:
 
-1. Load the workspace from the store on every call (so `remoteUrl` /
-   `location` edits take effect immediately). Unknown id → `NotFound`.
-2. Empty `remoteUrl` → return the global `skillsManager` (identical to today).
+1. Load the workspace from the store on every call (so `location` edits take
+   effect immediately). Unknown id → `NotFound`.
+2. Empty `location` → return the global `skillsManager` (identical to today).
 3. Otherwise build
    `skillsManager.createChild(join(location, '.agents', 'skills'), { source: 'repo', reserved })`,
    `await child.boot()`, log each `skipped` entry at warn level (workspace id,
@@ -189,8 +190,9 @@ Tags per root `AGENTS.md`. Unit unless marked.
 
 ### API (Mocha)
 
-- `resolveWorkspaceSkills`: no `remoteUrl` → global skills only; with
-  `remoteUrl` → repo skill visible with `source: 'repo'`; unknown workspace →
+- `resolveWorkspaceSkills`: workspace without `.agents/skills` → global skills
+  only; workspace with `.agents/skills` and **no** `remoteUrl` → repo skill
+  visible with `source: 'repo'` (no remote gate); unknown workspace →
   `NotFound`; repo `create-project` never replaces the global one.
 - Expansion middleware with a fake `getSkills`: a repo skill body is
   expanded; `getSkills` is not invoked for a non-slash message; repo
@@ -216,7 +218,9 @@ exercises real provisioning and discovery without network access or mocks.
    created and cloned.
 2. Type `/` in the workspace chat → `/hello-repo` is listed with a `repo`
    badge.
-3. Create a workspace with no remote, type `/` → `/hello-repo` is not listed.
+3. Create a workspace with no remote (so no `.agents/skills/`), type `/` →
+   `/hello-repo` is not listed — repo skills stay scoped to the workspace that
+   ships them.
 4. Cleanup: delete both workspaces (also on failure).
 
 ### Evaluations — none, deliberately
