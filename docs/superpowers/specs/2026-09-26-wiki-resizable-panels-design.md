@@ -29,7 +29,6 @@ with the layout remembered across reloads and a one-click way back to the defaul
 - A **Reset layout** icon button in the canvas header that restores both splits to their defaults
 - Double-clicking a separator resets that split to its default
 - Keyboard resizing of separators (arrow keys) with correct ARIA `separator` semantics
-- Graph view re-centres its force layout when its container is resized
 
 **Out of scope:**
 
@@ -37,6 +36,7 @@ with the layout remembered across reloads and a one-click way back to the defaul
 - Server-side / cross-browser persistence of layout
 - Mobile layout (the desktop layout is already hidden below `md`; unchanged)
 - Vertical splits, adding or rearranging panels
+- Re-centring the graph on resize — `GraphView` keeps ignoring container size changes (§5.4)
 - `TODO_LIST.md` changes — this item is not tracked there and must not be added
 
 **Constraints:**
@@ -102,7 +102,6 @@ panel that declares one, which must be `files` for the inner separator.
 | `ui/src/pages/wiki/use-wiki-layout.ts` | **New.** Group/panel IDs, default layouts, `loadLayout`, `saveLayout`, `clearLayout`, `layoutResetCount` signal, `resetWikiLayout()`, `documentDefaultLayout(groupWidthPx)`. Page-scoped per `ui/AGENTS.md`.                              |
 | `ui/src/pages/wiki/index.tsx`          | Replace the `65fr 35fr` grid with the outer group; add the Reset layout icon button to the canvas header's right-hand cluster.                                                                                                            |
 | `ui/src/pages/wiki/document-view.tsx`  | Replace the `w-56 shrink-0` sidebar + `flex-1` editor row with the inner group.                                                                                                                                                           |
-| `ui/src/pages/wiki/graph-view.tsx`     | Add a `ResizeObserver` inside the existing render effect (§5.4).                                                                                                                                                                          |
 | `ui/package.json`                      | Add `react-resizable-panels` (pinned exact, matching the repo's pinning style).                                                                                                                                                           |
 
 ---
@@ -153,20 +152,15 @@ Document view. Calls `resetWikiLayout()`:
 Remounting groups via a `key` was rejected: remounting the outer group would reset `IngestionChat`
 and restart the graph simulation.
 
-### 5.4 Graph resize
+### 5.4 Graph view ignores resizes (deliberate)
 
-`graph-view.tsx` currently reads `svg.clientWidth` / `clientHeight` once per render effect, so the
-force layout stays centred on stale dimensions after any resize. Inside the existing effect:
-
-- Observe the SVG with a `ResizeObserver`, coalescing callbacks to one per animation frame and
-  ignoring callbacks where the size hasn't changed (including the initial observation).
-- On a real change: recompute `computeDomainAnchors(...)` for the new width/height, repoint the
-  `x` / `y` forces at the new anchors (and the `width / 2`, `height / 2` fallbacks), then
-  `simulation.alpha(0.3).restart()`.
-- Leave the zoom/pan transform untouched; nodes drift to the new centre rather than snapping.
-- Disconnect the observer and cancel any pending frame in the effect's existing cleanup.
-
-This also fixes the existing behaviour on browser window resize.
+`graph-view.tsx` reads `svg.clientWidth` / `clientHeight` once per render effect and is **not
+changed**. Dragging the canvas|chat separator resizes the SVG element, but the force layout keeps
+the centre and domain anchors it computed on its last render — no redraw or simulation reheat while
+dragging. The graph lays out for the current size whenever its effect next runs: on mount
+(including every switch back from Document view), on graph data refresh, and on domain filter
+changes. Users can pan/zoom to reframe in between. This matches today's behaviour on browser window
+resize.
 
 ---
 
@@ -197,13 +191,7 @@ UI developer tests live in `ui/test/` (repo convention for the `ui` workspace). 
 - `documentDefaultLayout(width)` converts 224px correctly at a typical width and clamps at extreme
   widths (e.g. 300px and 4000px).
 
-### 7.2 Jest — `ui/test/wiki-graph-view-resize.test.tsx` `[unit]`
-
-Using the `MockResizeObserver` pattern from `chat-message-scroll-wrapper.test.tsx`: render
-`GraphView`, fire a resize with new dimensions, and assert the simulation's `x`/`y` force targets
-move to the new anchors and the simulation is reheated.
-
-### 7.3 Playwright — `e2e/tests/wiki-resizable-panels.spec.ts` (`@smoke`, `@user-workflow`)
+### 7.2 Playwright — `e2e/tests/wiki-resizable-panels.spec.ts` (`@smoke`, `@user-workflow`)
 
 `TestSuite` pattern; `page.route()` mocks for wiki endpoints as in `wiki-graph.spec.ts`; CI-safe
 (no `@llm`). Assertions compare `boundingBox()` widths with a few pixels' tolerance.
@@ -226,5 +214,7 @@ move to the new anchors and the simulation is reheated.
   dependencies and relies on hooks and refs that `preact/compat` supports; `radix-ui` and
   `react-markdown` already run through the same alias. Verify with `npm run build` (tsc + vite) and
   the E2E suite before building on it; if it fails, fall back to the hand-rolled approach in §3.
-- **Simulation jitter during drag.** Reheating on every animation frame while dragging may look
-  busy. If so, lower the reheat alpha or reheat only once the size has been stable for ~100ms.
+- **Off-centre graph after resizing.** Because `GraphView` ignores resizes (§5.4), widening the
+  chat can leave the graph laid out for a wider canvas, with some nodes partly out of view until
+  the user pans or the graph re-renders. Accepted trade-off; re-centring can be added later without
+  touching the panel code.
