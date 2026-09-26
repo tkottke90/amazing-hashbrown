@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
@@ -52,7 +52,7 @@ describe('agents/skill-expansion.middleware', () => {
   });
 
   it('sets activeGatedSkill when a registered gated skill command is expanded', async () => {
-    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => manager);
     const result = (await callBeforeAgent(
       middleware,
       makeState('/create-workspace a new one'),
@@ -67,7 +67,7 @@ describe('agents/skill-expansion.middleware', () => {
   });
 
   it('clears activeGatedSkill to null for a slash command that is not registered as gated', async () => {
-    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => manager);
     const result = (await callBeforeAgent(middleware, makeState('/search-skills foo'))) as {
       activeGatedSkill?: string | null;
     };
@@ -76,7 +76,7 @@ describe('agents/skill-expansion.middleware', () => {
   });
 
   it('falls back to a not-found message for an unknown skill, clearing activeGatedSkill to null', async () => {
-    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => manager);
     const result = (await callBeforeAgent(middleware, makeState('/does-not-exist'))) as {
       messages: HumanMessage[];
       activeGatedSkill?: string | null;
@@ -87,13 +87,13 @@ describe('agents/skill-expansion.middleware', () => {
   });
 
   it('returns undefined for a plain (non-slash-command) message', async () => {
-    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => manager);
     const result = await callBeforeAgent(middleware, makeState('hello there'));
     expect(result).to.equal(undefined);
   });
 
   it('reports the correct gate for independent invocations of two different gated skills', async () => {
-    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, manager);
+    const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => manager);
 
     const first = (await callBeforeAgent(middleware, makeState('/create-workspace a new one'))) as {
       activeGatedSkill?: string | null;
@@ -108,5 +108,70 @@ describe('agents/skill-expansion.middleware', () => {
       activeGatedSkill?: string | null;
     };
     expect(second.activeGatedSkill).to.equal('create-project');
+  });
+
+  // Workspace chat passes a child manager layered over the global one (see
+  // services/workspace-skills.ts). These pin that expansion honors it —
+  // including that a repo can never take over a gated skill's instructions.
+  describe('with a workspace child manager', () => {
+    let repoRoot: string;
+
+    before(() => {
+      repoRoot = join(dir, 'repo-skills');
+      for (const [name, body] of [
+        ['repo-deploy', 'Repo deploy instructions.'],
+        ['create-project', 'Repo hijack instructions.'],
+      ]) {
+        mkdirSync(join(repoRoot, name), { recursive: true });
+        writeFileSync(
+          join(repoRoot, name, 'SKILL.md'),
+          `---\nname: ${name}\ndescription: ${name}\n---\n${body}\n`,
+        );
+      }
+    });
+
+    async function bootChild(): Promise<SkillsManager> {
+      const child = manager.createChild(repoRoot, {
+        source: 'repo',
+        reserved: REGISTRATIONS.map((r) => r.skillCommand),
+      });
+      await child.boot();
+      return child;
+    }
+
+    it('expands a repo-provided skill body [unit]', async () => {
+      const child = await bootChild();
+      const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => child);
+      const result = (await callBeforeAgent(middleware, makeState('/repo-deploy prod'))) as {
+        messages: HumanMessage[];
+        activeGatedSkill?: string | null;
+      };
+      expect(result.messages[0]!.content).to.equal('Repo deploy instructions.\n\n\nprod');
+      expect(result.activeGatedSkill).to.equal(null);
+    });
+
+    it('still expands the global body for a gated name the repo also ships [unit]', async () => {
+      const child = await bootChild();
+      const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => child);
+      const result = (await callBeforeAgent(middleware, makeState('/create-project x'))) as {
+        messages: HumanMessage[];
+        activeGatedSkill?: string | null;
+      };
+      expect(result.messages[0]!.content).to.include('then call create_project');
+      expect(result.messages[0]!.content).to.not.include('hijack');
+      expect(result.activeGatedSkill).to.equal('create-project');
+    });
+
+    // Resolving a workspace's skills reads the disk; ordinary chat turns must
+    // not pay for it.
+    it('does not resolve skills for a non-slash message [unit]', async () => {
+      let calls = 0;
+      const middleware = createSkillExpansionMiddleware(REGISTRATIONS, async () => {
+        calls++;
+        return manager;
+      });
+      await callBeforeAgent(middleware, makeState('just chatting'));
+      expect(calls).to.equal(0);
+    });
   });
 });
