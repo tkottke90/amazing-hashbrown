@@ -104,7 +104,8 @@ parent's same-named skill shows through. "Disabled" means "not there".
 The single owner of the policy:
 
 1. Load the workspace from the store on every call (so `location` edits take
-   effect immediately). Unknown id → `NotFound`.
+   effect immediately). Unknown id → `null` (the api has no `NotFound`
+   error class; callers map `null` themselves — see below).
 2. Empty `location` → return the global `skillsManager` (identical to today).
 3. Otherwise build
    `skillsManager.createChild(join(location, '.agents', 'skills'), { source: 'repo', reserved })`,
@@ -114,7 +115,9 @@ The single owner of the policy:
    (`gated-skill-registrations.ts`, mapped to `skillCommand`), so future gated
    skills are protected automatically.
 
-Return type: `Pick<SkillsManager, 'list' | 'search' | 'lookup'>`.
+Return type: `Promise<SkillReader | null>`, where
+`SkillReader = Pick<SkillsManager, 'list' | 'search' | 'lookup'>`. `list()` and
+`search()` are synchronous; only `lookup()` is async.
 
 ### Consumers become factories
 
@@ -128,9 +131,16 @@ instead, mirroring the existing `makeShellExecTool(location)` pattern:
   ordinary turns never touch disk.
 - `makeSearchSkillsTool(getSkills)` — replaces the static `searchSkillsTool`
   entry in `STATIC_CHAT_TOOLS`.
-- `buildWorkspaceChatAgent`, `buildTaskAgent`, and `buildSubAgentAgent`
-  (all receive a workspace) pass `() => resolveWorkspaceSkills(workspace.id)`.
-  Agents with no workspace pass `async () => skillsManager`.
+- `buildWorkspaceChatAgent` (now given the `workspaceId` by
+  `getWorkspaceChatAgent`), `buildTaskAgent`, and `buildSubAgentAgent` (both
+  via `task.workspaceId`) pass
+  `async () => (await resolveWorkspaceSkills(id)) ?? skillsManager` — an
+  unknown workspace falls back to the global skills instead of failing the
+  turn. Agents with no workspace pass `async () => skillsManager`.
+- `buildSubAgentAgent` has no expansion or gating middleware; it only gets the
+  workspace-aware `search_skills` in its candidate tool pool.
+- A global `searchSkillsTool` instance is still exported for callers with no
+  workspace (`bin/eval.ts`).
 - The per-workspace agent cache (`workspaceId:provider:model`) caches the
   closure, not the skills, so each invocation still reads fresh from disk.
 
@@ -141,6 +151,7 @@ what that hook's runtime argument exposes.
 ### Route — `GET /api/v1/workspaces/:id/skills?q=`
 
 Returns `{ skills: SkillSummary[] }` from `resolveWorkspaceSkills(id).search(q)`
+(the handler maps a `null` resolve to the per-file `notFound()` result)
 — same query semantics and response shape as `GET /api/v1/skills`, plus the
 `source` / `overrides` fields. Unknown workspace → 404. The global
 `/api/v1/skills` routes are unchanged.
@@ -193,24 +204,26 @@ Tags per root `AGENTS.md`. Unit unless marked.
 - `resolveWorkspaceSkills`: workspace without `.agents/skills` → global skills
   only; workspace with `.agents/skills` and **no** `remoteUrl` → repo skill
   visible with `source: 'repo'` (no remote gate); unknown workspace →
-  `NotFound`; repo `create-project` never replaces the global one.
+  `null`; repo `create-project` never replaces the global one.
 - Expansion middleware with a fake `getSkills`: a repo skill body is
   expanded; `getSkills` is not invoked for a non-slash message; repo
   `/create-project` still expands the global body and sets
   `activeGatedSkill`.
 - `makeSearchSkillsTool` returns the merged list.
-- Route `[orchestration]` (supertest): 200 with `source` tags; 404 for an
+- Route `[orchestration]` (`startTestServer` + `fetch`; the api has no
+  supertest): 200 with `source` tags; 404 for an
   unknown workspace.
 
 ### UI (Jest)
 
 - `ChatInput` with `workspaceId` fetches the workspace endpoint and renders
   the `repo` / `overrides global` badges; without it, fetches the global
-  endpoint.
+  endpoint. Badges reuse the shared `CardBadge` component; menu items carry
+  `data-slot="chat-input-slash-menu-item"` for E2E targeting.
 
 ### E2E (Playwright, `@user-workflow`, CI-safe, no LLM)
 
-Fixture: a local bare git repository containing
+Fixture: a local git repository (`initGitRepo` + `commitAll`) containing
 `.agents/skills/hello-repo/SKILL.md`. `git clone` accepts a local path, so this
 exercises real provisioning and discovery without network access or mocks.
 

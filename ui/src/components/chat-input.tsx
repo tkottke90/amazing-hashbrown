@@ -567,6 +567,7 @@ export function ChatInput({
           {menuItems.value.map((skill, i) => (
             <div
               key={skill.name}
+              data-slot="chat-input-slash-menu-item"
               className={cn('cursor-pointer px-3 py-2', i === menuIndex.value && 'bg-accent')}
               onMouseDown={(e) => {
                 e.preventDefault();
