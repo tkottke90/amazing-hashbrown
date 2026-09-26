@@ -602,3 +602,67 @@ describe('ChatInput — #tool-name autocomplete', () => {
     expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
   });
 });
+
+// The workspace chat's slash menu lists the workspace's own repo skills
+// (.agents/skills) alongside global ones, badged so users can tell which
+// /command they're about to run — see
+// docs/superpowers/specs/2026-09-26-repo-agent-skills-design.md.
+describe('ChatInput — slash-command menu skill source', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function mockSkills(skills: unknown[]) {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ skills }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  const SKILLS = [
+    { name: 'global-skill', slashCommand: '/global-skill', description: 'G', source: 'global' },
+    { name: 'repo-skill', slashCommand: '/repo-skill', description: 'R', source: 'repo' },
+    {
+      name: 'shadow',
+      slashCommand: '/shadow',
+      description: 'S',
+      source: 'repo',
+      overrides: true,
+    },
+  ];
+
+  it('queries the workspace skills endpoint when given a workspaceId', async () => {
+    const fetchMock = mockSkills(SKILLS);
+    render(<ControlledChatInput workspaceId="ws-1" />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '/re' } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/workspaces/ws-1/skills?q=re');
+  });
+
+  it('queries the global skills endpoint without a workspaceId', async () => {
+    const fetchMock = mockSkills(SKILLS.slice(0, 1));
+    render(<ControlledChatInput />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '/gl' } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/skills?q=gl');
+  });
+
+  it('badges repo skills, marks overrides, and leaves global skills unbadged', async () => {
+    mockSkills(SKILLS);
+    render(<ControlledChatInput workspaceId="ws-1" />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '/' } });
+
+    await waitFor(() => expect(screen.getByText('/repo-skill')).toBeInTheDocument());
+    const menu = document.querySelector('[data-slot="chat-input-slash-menu"]')!;
+    const badges = Array.from(menu.querySelectorAll('[data-slot="card-badge"]')).map(
+      (b) => b.textContent,
+    );
+    expect(badges).toEqual(['repo', 'repo · overrides global']);
+  });
+});

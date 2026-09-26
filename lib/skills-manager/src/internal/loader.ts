@@ -25,7 +25,9 @@ export async function scanSkillsRoot(root: string): Promise<string[]> {
   return names;
 }
 
-export async function readFrontmatter(skillPath: string): Promise<SkillSummary> {
+export type LoadedSummary = Omit<SkillSummary, 'source' | 'overrides'>;
+
+export async function readFrontmatter(skillPath: string): Promise<LoadedSummary> {
   const raw = await readFile(join(skillPath, SKILL_FILE), 'utf8');
   const { data } = parse(raw);
   const fm = validateFrontmatter(data);
