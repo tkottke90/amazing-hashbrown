@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { APIError as AnthropicAPIError } from '@anthropic-ai/sdk';
 import { APIError as OpenAIAPIError } from 'openai';
 import { classifyChatError } from './error-classification.js';
+import { PipeEventsError } from './stream-handler.js';
 
 // Ollama's ResponseError class (dist/*.cjs's `class ResponseError extends
 // Error { constructor(error, status_code) { ... this.error = error;
@@ -277,6 +278,45 @@ describe('agents/error-classification', () => {
       const result = classifyChatError('a plain string was thrown', 'anthropic');
       expect(result.category).to.equal('unknown');
       expect(result.message).to.equal('a plain string was thrown');
+    });
+  });
+
+  // Every real provider failure reaches classifyChatError wrapped in
+  // pipeEvents()'s PipeEventsError, which only copies message/name — the SDK's
+  // structured status/type/code live on the wrapped original. Without
+  // unwrapping, every mid-stream failure classified as 'unknown'.
+  describe('classifyChatError — PipeEventsError-wrapped errors', () => {
+    it('classifies a wrapped OpenAI 403 as auth [unit]', () => {
+      const source = new OpenAIAPIError(403, {}, 'Forbidden', new Headers());
+      const wrapped = new PipeEventsError(source, 'seg-1', 'partial', '');
+      expect(
+        classifyChatError(wrapped, 'openai').category,
+        'the wrapper must not hide the SDK error status from the classifier',
+      ).to.equal('auth');
+    });
+
+    it('classifies a wrapped Anthropic rate_limit_error as rate_limit [unit]', () => {
+      const source = new AnthropicAPIError(
+        429,
+        { type: 'rate_limit_error' },
+        'rate limited',
+        new Headers(),
+        'rate_limit_error',
+      );
+      const wrapped = new PipeEventsError(source, 'seg-1', '', '');
+      expect(classifyChatError(wrapped, 'anthropic').category).to.equal('rate_limit');
+    });
+
+    it('classifies a wrapped network failure as network [unit]', () => {
+      const source = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+      const wrapped = new PipeEventsError(source, 'seg-1', '', '');
+      expect(classifyChatError(wrapped, 'ollama').category).to.equal('network');
+    });
+
+    it('keeps the original error message for a wrapped error [unit]', () => {
+      const source = new OpenAIAPIError(403, {}, 'Forbidden', new Headers());
+      const wrapped = new PipeEventsError(source, 'seg-1', '', '');
+      expect(classifyChatError(wrapped, 'openai').message).to.equal(source.message);
     });
   });
 });

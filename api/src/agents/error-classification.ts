@@ -1,4 +1,5 @@
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import type { ProviderConfig } from '../config/env.js';
 
 // Maps a thrown turn-ending error to one of the user-facing categories the
 // chat UI renders instead of a generic "Something went wrong" message — see
@@ -22,6 +23,18 @@ interface LooseApiError {
   name?: string;
   message?: string;
   cause?: { code?: string };
+}
+
+// stream-handler.ts's PipeEventsError wraps anything thrown mid-stream and
+// keeps the original on `sourceError` — classify that, not the wrapper, which
+// has lost the SDK's status/type/code fields. Duck-typed rather than an
+// instanceof check so this module doesn't import stream-handler.ts (which
+// imports this one).
+function unwrapSourceError(err: unknown): unknown {
+  if (err instanceof Error && 'sourceError' in err) {
+    return (err as { sourceError: unknown }).sourceError;
+  }
+  return err;
 }
 
 function messageOf(err: unknown): string {
@@ -101,18 +114,26 @@ function classifyOllamaError(err: unknown): ChatErrorCategory {
   return 'unknown';
 }
 
-export function classifyChatError(err: unknown, provider?: string): ClassifiedChatError {
-  const message = messageOf(err);
-  const networkCategory = classifyNetworkError(err);
+// Takes the provider's `type` (the SDK family), never its configured `name` —
+// a user-named provider (e.g. an OpenAI-compatible endpoint named "glm")
+// still throws that SDK's error shape. Typed as the enum so passing a name
+// is a compile error rather than a silent fall-through to 'unknown'.
+export function classifyChatError(
+  err: unknown,
+  providerType?: ProviderConfig['type'],
+): ClassifiedChatError {
+  const source = unwrapSourceError(err);
+  const message = messageOf(source);
+  const networkCategory = classifyNetworkError(source);
   if (networkCategory) return { category: networkCategory, message };
 
-  switch (provider) {
+  switch (providerType) {
     case 'anthropic':
-      return { category: classifyAnthropicError(err), message };
+      return { category: classifyAnthropicError(source), message };
     case 'openai':
-      return { category: classifyOpenAIError(err), message };
+      return { category: classifyOpenAIError(source), message };
     case 'ollama':
-      return { category: classifyOllamaError(err), message };
+      return { category: classifyOllamaError(source), message };
     default:
       return { category: 'unknown', message };
   }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
-import { env } from '../config/env.js';
+import { env, type ProviderConfig } from '../config/env.js';
 import { getThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
@@ -26,6 +26,7 @@ import {
 import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { resolveProviderConfig } from '../services/provider-factory.js';
 import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
 import {
   recordAssistantStart,
@@ -44,6 +45,17 @@ interface WorkspaceScope {
   workspace: Workspace;
   workspaceContext: WorkspaceChatContext;
   allowedWikiId?: string;
+}
+
+// Task runs always use the default provider. classifyChatError() needs its
+// type, not its name — resolved inside a try because this runs on the failure
+// path, where a misconfigured default provider must not throw a second time.
+function defaultProviderType(): ProviderConfig['type'] | undefined {
+  try {
+    return resolveProviderConfig(env.defaultProvider).type;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildKickoffMessage(task: Task, entry: QueueEntryWithTask): string {
@@ -434,7 +446,7 @@ export async function executeTask(
               null,
             );
           } else {
-            const classified = classifyChatError(err, env.defaultProvider);
+            const classified = classifyChatError(err, defaultProviderType());
             failAssistant(
               threadStore,
               threadId,
