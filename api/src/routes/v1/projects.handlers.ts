@@ -12,7 +12,9 @@ import {
   isLocationRoot,
   resolveWorkspaceLocation,
   createWorkspaceDirectory,
+  DirectoryExistsError,
 } from '../../services/workspace-location.js';
+import { toWorkspaceResponse, type WorkspaceResponse } from './workspace-response.js';
 import {
   provisionDependencyIsolation,
   provisionGitRepository,
@@ -44,6 +46,19 @@ function serverError(error: string): HandlerFailure {
 }
 
 /** Routing text for the project wiki domain: lowercase, hyphen-separated. */
+// Best-effort rollback of a directory this request created. A failed rm is
+// logged, never thrown, so it can't mask the error that triggered the rollback.
+async function rollbackDirectory(location: string): Promise<void> {
+  try {
+    await rm(location, { recursive: true, force: true });
+  } catch (err) {
+    logger.warn('createProject rollback: failed to remove workspace directory', {
+      location,
+      err: String(err),
+    });
+  }
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -52,7 +67,7 @@ export function slugify(input: string): string {
 }
 
 export function listProjectsHandler(store: WorkspaceStore) {
-  return ok(store.listProjects());
+  return ok(store.listProjects().map((ws) => toWorkspaceResponse(ws)));
 }
 
 export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
@@ -60,7 +75,7 @@ export function getProjectHandler(store: WorkspaceStore, workspaceId: string) {
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
   const project = store.getProject(workspaceId);
   if (!project) return notFound(`Project for workspace ${workspaceId} not found`);
-  return ok({ ...workspace, project });
+  return ok(toWorkspaceResponse({ ...workspace, project }));
 }
 
 export async function createProjectHandler(
@@ -70,7 +85,7 @@ export async function createProjectHandler(
   execFileFn?: ExecFileFn,
 ): Promise<
   HandlerResult<{
-    workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+    workspace: WorkspaceResponse<NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>>;
     project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
   }>
 > {
@@ -92,6 +107,7 @@ export async function createProjectHandler(
     location = resolveWorkspaceLocation(body.locationRoot, body.directoryName);
     await createWorkspaceDirectory(location);
   } catch (err) {
+    if (err instanceof DirectoryExistsError) return conflict(err.message);
     return badRequest(err instanceof Error ? err.message : String(err));
   }
 
@@ -135,6 +151,7 @@ export async function createProjectHandler(
       metadata: { type: 'ephemeral', status: 'active' },
     });
   } catch (err) {
+    await rollbackDirectory(location);
     return serverError(err instanceof Error ? err.message : String(err));
   }
 
@@ -145,7 +162,8 @@ export async function createProjectHandler(
   try {
     result = store.createProject({ ...body, location, id, wikiId: domainId } as NewProjectInput);
   } catch (err) {
-    // Roll back the wiki domain so no orphaned directory is left behind.
+    // Roll back the wiki domain and the workspace directory so nothing is
+    // orphaned and the same slug can be retried.
     try {
       await reg.destroy(domainId);
     } catch (destroyErr) {
@@ -154,14 +172,14 @@ export async function createProjectHandler(
         err: String(destroyErr),
       });
     }
+    await rollbackDirectory(location);
     return serverError(err instanceof Error ? err.message : String(err));
   }
-  return ok(
-    result as {
-      workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
-      project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
-    },
-  );
+  const created = result as {
+    workspace: NonNullable<ReturnType<WorkspaceStore['getWorkspace']>>;
+    project: NonNullable<ReturnType<WorkspaceStore['getProject']>>;
+  };
+  return ok({ ...created, workspace: toWorkspaceResponse(created.workspace) });
 }
 
 export function patchProjectHandler(
@@ -178,7 +196,7 @@ export function patchProjectHandler(
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
   const project = store.patchProject(workspaceId, patch);
   if (!project) return notFound(`Project for workspace ${workspaceId} not found`);
-  return ok({ ...workspace, project });
+  return ok(toWorkspaceResponse({ ...workspace, project }));
 }
 
 export function closeProjectHandler(

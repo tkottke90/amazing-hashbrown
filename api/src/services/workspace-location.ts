@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../config/env.js';
 
@@ -65,6 +65,13 @@ export function resolveFilePathUnderWorkspace(
   return resolved;
 }
 
+export class DirectoryExistsError extends Error {
+  constructor(public readonly path: string) {
+    super(`A directory already exists at ${path} — choose a different name or remove it`);
+    this.name = 'DirectoryExistsError';
+  }
+}
+
 export async function createWorkspaceDirectory(location: string): Promise<void> {
   // The root (env.projectsRoot / env.tempProjectsRoot) may not exist yet on
   // a fresh install, so ensure it's there before creating the leaf
@@ -77,8 +84,48 @@ export async function createWorkspaceDirectory(location: string): Promise<void> 
     await mkdir(location, { recursive: false });
   } catch (err) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EEXIST') {
-      throw new Error('A directory already exists at this location — choose a different name');
+      throw new DirectoryExistsError(location);
     }
     throw err;
+  }
+}
+
+export function managedRoots(): string[] {
+  return [env.projectsRoot, env.tempProjectsRoot];
+}
+
+// A location is "managed" only when it is a direct child of one of the
+// roots — exactly the shape resolveWorkspaceLocation() produces. The root
+// itself, anything nested deeper, and anything outside are all unmanaged.
+// This is the safety boundary for the recursive delete below: workspaces
+// created before locationRoot existed may point at a user's real repository.
+export function isManagedLocation(location: string, roots: string[]): boolean {
+  if (!location) return false;
+  const parent = path.dirname(path.resolve(location));
+  return roots.some((root) => path.resolve(root) === parent);
+}
+
+export type DirectoryRemovalResult =
+  | { removed: true; path: string }
+  | { removed: false; path: string; reason: 'outside-managed-roots' }
+  | { removed: false; path: string; reason: 'rm-failed'; error: string };
+
+// Best-effort removal of a workspace's directory. Never throws: an unmanaged
+// location is refused without touching the filesystem, and an rm failure is
+// reported rather than raised so the caller can surface it as a warning.
+// `force` makes an already-missing directory a success, and rm() lstat()s the
+// target, so a symlinked location removes the link rather than its target.
+export async function removeWorkspaceDirectory(
+  location: string,
+  roots: string[] = managedRoots(),
+): Promise<DirectoryRemovalResult> {
+  if (!isManagedLocation(location, roots)) {
+    return { removed: false, path: location, reason: 'outside-managed-roots' };
+  }
+  try {
+    await rm(location, { recursive: true, force: true });
+    return { removed: true, path: location };
+  } catch (err) {
+    return { removed: false, path: location, reason: 'rm-failed', error: String(err) };
   }
 }

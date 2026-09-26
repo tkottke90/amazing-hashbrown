@@ -64,7 +64,7 @@ workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
-  res.status(204).end();
+  res.json(result.data);
 });
 
 workspacesRouter.post('/:id/cleanup-dependencies', async (req: Request, res: Response) => {

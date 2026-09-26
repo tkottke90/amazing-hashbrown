@@ -6,6 +6,7 @@ import type {
   CleanupDependenciesInput,
   CleanupDependenciesResult,
   CompleteCloseResult,
+  DeleteWorkspaceResult,
 } from '@/services/workspaces-api';
 import {
   fetchWorkspaces,
@@ -62,10 +63,11 @@ export async function patchWorkspace(id: string, patch: PatchWorkspaceInput): Pr
   if (currentWorkspace.value?.id === id) currentWorkspace.value = updated;
 }
 
-export async function deleteWorkspace(id: string): Promise<void> {
-  await apiDeleteWorkspace(id);
+export async function deleteWorkspace(id: string): Promise<DeleteWorkspaceResult> {
+  const result = await apiDeleteWorkspace(id);
   workspaces.value = workspaces.value.filter((w) => w.id !== id);
   projects.value = projects.value.filter((p) => p.id !== id);
+  return result;
 }
 
 export async function closeProject(

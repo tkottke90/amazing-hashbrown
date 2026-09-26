@@ -22,7 +22,10 @@ export async function deleteWorkspace(
   workspaceId: string,
 ): Promise<void> {
   const res = await request.delete(`/api/v1/workspaces/${workspaceId}`);
-  expect(res.status()).toBe(204);
+  expect(res.status()).toBe(200);
+  // Workspaces created through the API always live under a managed root, so
+  // their directory must be gone after the delete (issue #204).
+  expect((await res.json()).directory.removed).toBe(true);
 }
 
 export async function openFilesTab(page: Page, workspaceId: string): Promise<void> {

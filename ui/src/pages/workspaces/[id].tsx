@@ -23,7 +23,10 @@ import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
 import type { Task, TaskStatus, TaskDependency } from '@/services/tasks-api';
 import { listTaskDependencies } from '@/services/tasks-api';
-import type { Workspace } from '@/services/workspaces-api';
+import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
+import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
+import { showToast } from '@/lib/toast';
+import { buildDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
 
 // Mirrors WorkspaceStore.isTaskReady()'s per-edge rule (workspace-store.ts)
 // — kept deliberately simple since this only drives a cosmetic Kanban badge,
@@ -383,8 +386,29 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   const isTerminal = projectStatus === 'closed' || projectStatus === 'abandoned';
 
   async function handleDelete() {
-    if (!confirm(`Delete workspace "${ws.name}"? This cannot be undone.`)) return;
-    await deleteWorkspace(ws.id);
+    // Only a managed directory is deleted, so only then does local-only git
+    // work matter. A failed status check never blocks the delete — the
+    // confirm just goes without the git warning.
+    let gitStatus: GitStatus | null = null;
+    if (ws.git && ws.managedLocation) {
+      gitStatus = await fetchGitStatus(ws.id).catch(() => null);
+    }
+    if (!confirm(buildDeleteConfirmMessage(ws, gitStatus))) return;
+
+    let directory: DirectoryRemovalResult;
+    try {
+      ({ directory } = await deleteWorkspace(ws.id));
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to delete workspace');
+      return;
+    }
+    if (!directory.removed) {
+      const message =
+        directory.reason === 'rm-failed'
+          ? `Workspace deleted, but its directory could not be removed: ${directory.path}`
+          : `Workspace deleted. Its directory was left on disk: ${directory.path}`;
+      showToast('error', message, 10000);
+    }
     route('/workspaces');
   }
 
