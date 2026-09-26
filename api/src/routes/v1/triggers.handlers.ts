@@ -24,7 +24,7 @@ export function triggerWebhookHandler(
   const alreadyActive = store.listQueue().some((entry) => entry.taskId === task.id);
   if (alreadyActive) return conflict(`Task "${task.title}" is already queued or running`);
 
-  const result = enqueueTaskHandler(store, task.id);
+  const result = enqueueTaskHandler(store, task.id, { triggerSource: 'webhook' });
   if (!result.ok) return result;
   return ok(result.data);
 }

@@ -195,6 +195,10 @@ export interface PatchTaskInput {
   blockedReason?: 'dependency_failed' | null;
 }
 
+// What started one run (task_queue row) of a task — drives run labels and,
+// for the cron trigger, which runs count toward its iteration budget.
+export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' | 'agent';
+
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
@@ -206,6 +210,26 @@ export interface TaskQueueEntry {
   recoveryAttempts: number;
   pauseReason: 'chat' | 'user' | null;
   pausedAt: string | null;
+  // Each queue row is one run of its task, with its own 'task'-type thread
+  // (minted on the run's first start, reused on resume) and a persisted
+  // one-line summary once it settles — see
+  // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §1.
+  threadId: string | null;
+  summary: string | null;
+  triggerSource: TriggerSource;
+  scheduledFor: string | null;
+}
+
+// One run of a task as the run-history surfaces see it (drawer, kickoff
+// message, read_task_run) — a TaskQueueEntry plus its 1-based position
+// among all of that task's runs.
+export interface TaskRun extends TaskQueueEntry {
+  runNumber: number;
+}
+
+export interface EnqueueOptions {
+  triggerSource?: TriggerSource;
+  scheduledFor?: string | null;
 }
 
 export interface TaskListFilters {
@@ -295,6 +319,10 @@ interface RawQueueRow {
   recovery_attempts: number;
   pause_reason: 'chat' | 'user' | null;
   paused_at: string | null;
+  thread_id: string | null;
+  summary: string | null;
+  trigger_source: TriggerSource;
+  scheduled_for: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +416,10 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
     recoveryAttempts: row.recovery_attempts,
     pauseReason: row.pause_reason,
     pausedAt: row.paused_at,
+    threadId: row.thread_id,
+    summary: row.summary,
+    triggerSource: row.trigger_source,
+    scheduledFor: row.scheduled_for,
   };
 }
 
@@ -415,6 +447,10 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 31=WorkspaceStore (task_dependencies table, tasks.blocked_reason column,
 // for the task-dependency-gating feature — see
 // docs/superpowers/specs/2026-09-22-task-dependencies-design.md).
+// 32=WorkspaceStore (task_queue.thread_id/summary/trigger_source/
+// scheduled_for — one thread + persisted summary per run, for the cron
+// task triggers feature — see
+// docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -579,6 +615,32 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE tasks ADD COLUMN blocked_reason TEXT;
     `,
   },
+  {
+    version: 32,
+    // Every run now gets its own thread. Rows still open when this migration
+    // runs ('running' from a crash, or 'paused' on a user pause / HITL
+    // answer) already have a LangGraph checkpoint in the thread the old
+    // resolution used — the workspace's shared thread, or the task's own
+    // thread — so they're backfilled with it, and resume exactly where they
+    // left off. Finished rows keep thread_id NULL: they predate per-run
+    // threads and are excluded from run history's transcript links.
+    sql: `
+      ALTER TABLE task_queue ADD COLUMN thread_id TEXT;
+      ALTER TABLE task_queue ADD COLUMN summary TEXT;
+      ALTER TABLE task_queue ADD COLUMN trigger_source TEXT NOT NULL DEFAULT 'manual';
+      ALTER TABLE task_queue ADD COLUMN scheduled_for TEXT;
+      UPDATE task_queue
+         SET thread_id = (
+           SELECT COALESCE(workspaces.thread_id, tasks.thread_id)
+             FROM tasks
+             LEFT JOIN workspaces ON workspaces.id = tasks.workspace_id
+            WHERE tasks.id = task_queue.task_id
+         )
+       WHERE status IN ('running', 'paused');
+      CREATE INDEX IF NOT EXISTS idx_task_queue_task_id ON task_queue(task_id);
+      CREATE INDEX IF NOT EXISTS idx_task_queue_thread_id ON task_queue(thread_id);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -638,7 +700,7 @@ export class WorkspaceStore extends BaseStore {
       `UPDATE task_queue SET status = 'pending', started_at = NULL, recovery_attempts = recovery_attempts + 1 WHERE id = ?`,
     );
     const giveUp = this.db.prepare(
-      `UPDATE task_queue SET status = 'failed', finished_at = ? WHERE id = ?`,
+      `UPDATE task_queue SET status = 'failed', finished_at = ?, summary = 'Run failed after crash recovery.' WHERE id = ?`,
     );
     const mirrorReady = this.db.prepare(
       `UPDATE tasks SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'running'`,
@@ -1039,14 +1101,24 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapTask(row) : null;
   }
 
-  // A global (workspaceId=null) task's own dedicated thread, minted lazily
-  // on its first run — see task-execution.ts. Used to resolve a sub-agent
-  // completion notification's parent agent when the parent thread is
-  // type='task'.
+  // The task that owns a type='task' thread — used to resolve a sub-agent
+  // completion notification's parent agent when the parent thread is one.
+  // Every run now has its own thread (task_queue.thread_id); tasks.thread_id
+  // is only still consulted for legacy threads minted before per-run
+  // threads existed.
   getTaskByThreadId(threadId: string): Task | null {
-    const row = this.db.prepare(`SELECT * FROM tasks WHERE thread_id = ?`).get(threadId) as
+    const row = this.db
+      .prepare(
+        `SELECT tasks.* FROM task_queue
+         JOIN tasks ON tasks.id = task_queue.task_id
+         WHERE task_queue.thread_id = ?
+         LIMIT 1`,
+      )
+      .get(threadId) as RawTaskRow | undefined;
+    if (row) return mapTask(row);
+    const legacy = this.db.prepare(`SELECT * FROM tasks WHERE thread_id = ?`).get(threadId) as
       RawTaskRow | undefined;
-    return row ? mapTask(row) : null;
+    return legacy ? mapTask(legacy) : null;
   }
 
   findTaskByWebhookToken(token: string): Task | null {
@@ -1310,7 +1382,7 @@ export class WorkspaceStore extends BaseStore {
     return rows.map(mapQueueEntry);
   }
 
-  enqueueTask(taskId: string): TaskQueueEntry {
+  enqueueTask(taskId: string, opts: EnqueueOptions = {}): TaskQueueEntry {
     const id = randomUUID();
     const now = new Date().toISOString();
     const posRow = this.db
@@ -1322,13 +1394,72 @@ export class WorkspaceStore extends BaseStore {
 
     this.db
       .prepare(
-        `INSERT INTO task_queue (id, task_id, status, position, enqueued_at)
-         VALUES (?, ?, 'pending', ?, ?)`,
+        `INSERT INTO task_queue (id, task_id, status, position, enqueued_at, trigger_source, scheduled_for)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
       )
-      .run(id, taskId, position, now);
+      .run(id, taskId, position, now, opts.triggerSource ?? 'manual', opts.scheduledFor ?? null);
 
     const row = this.db.prepare(`SELECT * FROM task_queue WHERE id = ?`).get(id) as RawQueueRow;
     return mapQueueEntry(row);
+  }
+
+  getQueueEntry(id: string): TaskQueueEntry | null {
+    const row = this.db.prepare(`SELECT * FROM task_queue WHERE id = ?`).get(id) as
+      RawQueueRow | undefined;
+    return row ? mapQueueEntry(row) : null;
+  }
+
+  // Records the thread a run executes in — set once, on the run's first
+  // start (see task-execution.ts); a resumed run reuses it.
+  setQueueEntryThread(id: string, threadId: string): void {
+    this.db.prepare(`UPDATE task_queue SET thread_id = ? WHERE id = ?`).run(threadId, id);
+  }
+
+  // The one-line outcome of a settled run — complete_task's own summary, or
+  // a system-written one for a run that never called it. Surfaced by run
+  // history and the next run's kickoff message.
+  setQueueEntrySummary(id: string, summary: string): void {
+    this.db.prepare(`UPDATE task_queue SET summary = ? WHERE id = ?`).run(summary, id);
+  }
+
+  // Every run of a task, newest first. runNumber is the run's 1-based
+  // position in enqueue order across ALL of the task's runs, so it stays
+  // stable no matter which page is requested.
+  listTaskRuns(taskId: string, opts: { limit?: number; offset?: number } = {}): TaskRun[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT task_queue.*, ROW_NUMBER() OVER (ORDER BY enqueued_at ASC, rowid ASC) AS run_number
+           FROM task_queue WHERE task_id = ?
+         )
+         ORDER BY run_number DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(taskId, opts.limit ?? -1, opts.offset ?? 0) as (RawQueueRow & { run_number: number })[];
+    return rows.map((row) => ({ ...mapQueueEntry(row), runNumber: row.run_number }));
+  }
+
+  getTaskRun(runId: string): TaskRun | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT task_queue.*, ROW_NUMBER() OVER (
+             PARTITION BY task_id ORDER BY enqueued_at ASC, rowid ASC
+           ) AS run_number
+           FROM task_queue
+           WHERE task_id = (SELECT task_id FROM task_queue WHERE id = ?)
+         )
+         WHERE id = ?`,
+      )
+      .get(runId, runId) as (RawQueueRow & { run_number: number }) | undefined;
+    return row ? { ...mapQueueEntry(row), runNumber: row.run_number } : null;
+  }
+
+  getTaskRunByThreadId(threadId: string): TaskRun | null {
+    const row = this.db
+      .prepare(`SELECT id FROM task_queue WHERE thread_id = ? LIMIT 1`)
+      .get(threadId) as { id: string } | undefined;
+    return row ? this.getTaskRun(row.id) : null;
   }
 
   // Creates one origin='agent' task row (spawn_sub_agent's dispatch unit)
@@ -1356,7 +1487,7 @@ export class WorkspaceStore extends BaseStore {
         role: input.role,
       });
       this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
-      this.enqueueTask(task.id);
+      this.enqueueTask(task.id, { triggerSource: 'agent' });
       return this.getTask(task.id)!;
     })();
   }
@@ -1400,7 +1531,7 @@ export class WorkspaceStore extends BaseStore {
       return created.map((task) => {
         if (this.listTaskDependencies(task.id).length === 0) {
           this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
-          this.enqueueTask(task.id);
+          this.enqueueTask(task.id, { triggerSource: 'chat' });
         }
         return this.getTask(task.id)!;
       });

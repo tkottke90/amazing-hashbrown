@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
   WorkspaceStore,
+  EnqueueOptions,
   NewTaskInput,
   PatchTaskInput,
   PlanStep,
@@ -184,10 +185,11 @@ export function getQueueHandler(store: WorkspaceStore) {
 export function enqueueTaskHandler(
   store: WorkspaceStore,
   taskId: string,
+  opts: EnqueueOptions = {},
 ): HandlerResult<ReturnType<WorkspaceStore['enqueueTask']>> {
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
-  const entry = store.enqueueTask(taskId);
+  const entry = store.enqueueTask(taskId, opts);
   // Keep tasks.status in sync with the fact that this task is now queued —
   // mirrors the same invariant patchTaskHandler enforces for the R14 path.
   if (task.status !== 'ready') {

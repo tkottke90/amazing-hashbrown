@@ -105,6 +105,16 @@ describe('shared-database migrations (cross-store)', () => {
     expect(projectColumns).to.include('snapshot_path');
     expect(projectColumns).to.include('close_progress');
 
+    const queueColumns = (
+      db.prepare('PRAGMA table_info(task_queue)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(queueColumns).to.include.members([
+      'thread_id',
+      'summary',
+      'trigger_source',
+      'scheduled_for',
+    ]);
+
     db.close();
   });
 });
