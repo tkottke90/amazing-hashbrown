@@ -1,9 +1,11 @@
 import { useSignal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { BookOpen, Plus, FileText, Loader2 } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { useGroupRef } from 'react-resizable-panels';
 import {
   domains,
   activeDomainId,
@@ -15,6 +17,18 @@ import {
 import { fetchPage } from '@/services/wiki-api';
 import { sendWikiMessage } from '@/pages/wiki/use-wiki-ingestion';
 import { PAGE_TYPE_ICON, PAGE_TYPE_LABELS } from './page-type-icons';
+import {
+  DOCUMENT_GROUP_ID,
+  DOCUMENT_SEPARATOR_ID,
+  DOC_PANEL_ID,
+  FILES_PANEL_ID,
+  DOCUMENT_SIZES,
+  clearLayout,
+  documentDefaultLayout,
+  loadLayout,
+  persistOnUserChange,
+  useLayoutReset,
+} from './use-wiki-layout';
 
 const METADATA_FILES = [
   { path: 'SCHEMA.md', title: 'Schema' },
@@ -115,6 +129,11 @@ export function DocumentView({ chatInputRef }: Props) {
   const metadataView = useSignal(false);
   const metadataLoading = useSignal(false);
   const metadataSections = useSignal<{ title: string; content: string }[]>([]);
+  const groupRef = useGroupRef();
+  const groupElementRef = useRef<HTMLDivElement>(null);
+  useLayoutReset(groupRef, () => documentDefaultLayout(groupElementRef.current?.clientWidth ?? 0), {
+    afterNextFrame: true,
+  });
 
   const domainId = activeDomainId.value;
   const allDomains = domains.value;
@@ -186,9 +205,21 @@ export function DocumentView({ chatInputRef }: Props) {
   }
 
   return (
-    <div class="flex h-full min-h-0">
+    <ResizablePanelGroup
+      id={DOCUMENT_GROUP_ID}
+      groupRef={groupRef}
+      elementRef={groupElementRef}
+      defaultLayout={loadLayout(DOCUMENT_GROUP_ID)}
+      onLayoutChanged={persistOnUserChange(DOCUMENT_GROUP_ID)}
+      className="min-h-0"
+    >
       {/* Sidebar */}
-      <div class="flex w-56 shrink-0 flex-col border-r border-border">
+      <ResizablePanel
+        id={FILES_PANEL_ID}
+        {...DOCUMENT_SIZES.files}
+        className="flex flex-col"
+        style={{ overflow: 'hidden' }}
+      >
         {/* Domain selector */}
         <div class="border-b border-border p-2">
           <select
@@ -278,10 +309,20 @@ export function DocumentView({ chatInputRef }: Props) {
             </div>
           )}
         </div>
-      </div>
+      </ResizablePanel>
+
+      <ResizableHandle
+        id={DOCUMENT_SEPARATOR_ID}
+        onDblClick={() => clearLayout(DOCUMENT_GROUP_ID)}
+      />
 
       {/* Editor / Metadata panel */}
-      <div class="flex min-w-0 flex-1 flex-col">
+      <ResizablePanel
+        id={DOC_PANEL_ID}
+        {...DOCUMENT_SIZES.document}
+        className="flex flex-col"
+        style={{ overflow: 'hidden' }}
+      >
         {metadataView.value ? (
           <>
             {/* Metadata header — read-only, no edit controls */}
@@ -387,7 +428,7 @@ export function DocumentView({ chatInputRef }: Props) {
             Select a page from the sidebar
           </div>
         )}
-      </div>
-    </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 }

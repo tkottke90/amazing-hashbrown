@@ -1,4 +1,6 @@
 import { Layout } from '@/components/layout';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTitle } from '@/hooks/use-title';
 import { DocumentView } from '@/pages/wiki/document-view';
 import { DomainFilter } from '@/pages/wiki/domain-filter';
@@ -14,7 +16,21 @@ import {
   refreshPages,
 } from '@/pages/wiki/use-wiki';
 import { hydrateWikiThread, wikiThreadId } from '@/pages/wiki/use-wiki-ingestion';
-import { Monitor } from 'lucide-preact';
+import {
+  CANVAS_PANEL_ID,
+  CHAT_PANEL_ID,
+  OUTER_DEFAULT_LAYOUT,
+  OUTER_GROUP_ID,
+  OUTER_SEPARATOR_ID,
+  OUTER_SIZES,
+  clearLayout,
+  loadLayout,
+  persistOnUserChange,
+  resetWikiLayout,
+  useLayoutReset,
+} from '@/pages/wiki/use-wiki-layout';
+import { Columns3, Monitor } from 'lucide-preact';
+import { useGroupRef } from 'react-resizable-panels';
 import { useLocation } from 'preact-iso';
 import { useEffect, useRef } from 'preact/hooks';
 
@@ -23,6 +39,8 @@ export function WikiView(_props: { path?: string }) {
   const { setPageTitle } = useTitle('Wiki');
   const { query, route } = useLocation();
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const outerGroupRef = useGroupRef();
+  useLayoutReset(outerGroupRef, () => OUTER_DEFAULT_LAYOUT);
 
   // Derive view state from URL — default is 'graph' when param is absent or unrecognised.
   const canvasView = query.view === 'document' ? 'document' : 'graph';
@@ -90,59 +108,91 @@ export function WikiView(_props: { path?: string }) {
           </p>
         </div>
 
-        {/* Desktop two-column layout */}
-        <div class="hidden h-full md:grid" style={{ gridTemplateColumns: '65fr 35fr' }}>
-          {/* Canvas column */}
-          <div class="flex min-h-0 flex-col overflow-hidden">
-            {/* Canvas header */}
-            <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-              <div class="flex items-center gap-1 rounded border border-border text-xs">
-                <button
-                  type="button"
-                  onClick={handleGraphViewClick}
-                  class={`px-2.5 py-1 transition-colors ${
-                    canvasView === 'graph'
-                      ? 'bg-muted text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Graph
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDocumentViewClick}
-                  class={`px-2.5 py-1 transition-colors ${
-                    canvasView === 'document'
-                      ? 'bg-muted text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Document
-                </button>
+        {/* Desktop two-column layout — canvas | chat, resizable */}
+        <div class="hidden h-full md:block">
+          <ResizablePanelGroup
+            id={OUTER_GROUP_ID}
+            groupRef={outerGroupRef}
+            defaultLayout={loadLayout(OUTER_GROUP_ID)}
+            onLayoutChanged={persistOnUserChange(OUTER_GROUP_ID)}
+          >
+            {/* Canvas column */}
+            <ResizablePanel
+              id={CANVAS_PANEL_ID}
+              {...OUTER_SIZES.canvas}
+              className="flex min-h-0 flex-col"
+              style={{ overflow: 'hidden' }}
+            >
+              {/* Canvas header */}
+              <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
+                <div class="flex items-center gap-1 rounded border border-border text-xs">
+                  <button
+                    type="button"
+                    onClick={handleGraphViewClick}
+                    class={`px-2.5 py-1 transition-colors ${
+                      canvasView === 'graph'
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Graph
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDocumentViewClick}
+                    class={`px-2.5 py-1 transition-colors ${
+                      canvasView === 'document'
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Document
+                  </button>
+                </div>
+
+                <div class="flex min-w-0 items-center gap-2">
+                  {canvasView === 'graph' && (
+                    <>
+                      <DomainFilter />
+                      {graphRefreshing.value && (
+                        <div class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+                      )}
+                    </>
+                  )}
+                  <Tooltip>
+                    <TooltipTrigger
+                      type="button"
+                      aria-label="Reset layout"
+                      onClick={resetWikiLayout}
+                      className="flex shrink-0 items-center justify-center rounded border border-border p-1 text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <Columns3 className="size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Reset layout</TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
 
-              {canvasView === 'graph' && (
-                <div class="flex min-w-0 items-center gap-2">
-                  <DomainFilter />
-                  {graphRefreshing.value && (
-                    <div class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-                  )}
-                </div>
-              )}
-            </div>
+              {/* Canvas body */}
+              <div class="min-h-0 flex-1">
+                {canvasView === 'graph' ? (
+                  <GraphView onOpenInEditor={handleOpenInEditor} />
+                ) : (
+                  <DocumentView chatInputRef={chatInputRef} />
+                )}
+              </div>
+            </ResizablePanel>
 
-            {/* Canvas body */}
-            <div class="min-h-0 flex-1">
-              {canvasView === 'graph' ? (
-                <GraphView onOpenInEditor={handleOpenInEditor} />
-              ) : (
-                <DocumentView chatInputRef={chatInputRef} />
-              )}
-            </div>
-          </div>
+            <ResizableHandle
+              id={OUTER_SEPARATOR_ID}
+              onDblClick={() => clearLayout(OUTER_GROUP_ID)}
+            />
 
-          {/* Chat column */}
-          <IngestionChat chatInputRef={chatInputRef} />
+            {/* Chat column */}
+            <ResizablePanel id={CHAT_PANEL_ID} {...OUTER_SIZES.chat} style={{ overflow: 'hidden' }}>
+              <IngestionChat chatInputRef={chatInputRef} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
       </div>
     </Layout>
