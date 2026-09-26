@@ -28,7 +28,7 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
-import { searchSkillsTool } from './tools/search-skills.tool.js';
+import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getToolKeyTool } from './tools/get-tool-key.tool.js';
@@ -55,6 +55,8 @@ import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
+import { skillsManager } from '../services/skills-manager.js';
+import { resolveWorkspaceSkills, type SkillReader } from '../services/workspace-skills.js';
 import { buildTaskContextBlock } from './task-context.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
@@ -234,7 +236,6 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
   });
 }
 
-const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 
 // Binds by boundName, not name — name is bare and not guaranteed unique
@@ -283,11 +284,29 @@ export const STATIC_CHAT_TOOLS = [
   webFetchTool,
   getToolKeyTool,
   rlmQueryTool,
-  searchSkillsTool,
   searchConversationTool,
   spawnSubAgentTool,
   activateSkillTool,
 ];
+
+// Skill sources. search_skills and slash-command expansion are built per
+// agent (not shared singletons) because what they read depends on the
+// agent's scope: plain chat sees the global skills; anything scoped to a
+// workspace also sees that workspace's .agents/skills (resolved fresh on each
+// call — see services/workspace-skills.ts). An unknown or missing workspace
+// falls back to the global skills rather than failing the turn.
+type SkillSource = () => Promise<SkillReader>;
+
+const globalSkills: SkillSource = async () => skillsManager;
+
+function workspaceSkills(workspaceId: string | null | undefined): SkillSource {
+  if (!workspaceId) return globalSkills;
+  return async () => (await resolveWorkspaceSkills(workspaceId)) ?? skillsManager;
+}
+
+function buildSkillTools(skills: SkillSource) {
+  return [makeSearchSkillsTool(skills)];
+}
 
 // Skill-gated tools — see GATED_SKILL_REGISTRATIONS below. Graph-registered
 // like STATIC_CHAT_TOOLS (so ToolNode can execute them), but hidden from the
@@ -378,6 +397,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     tools: [
       makeShellExecTool(),
       ...STATIC_CHAT_TOOLS,
+      ...buildSkillTools(globalSkills),
       ...buildGatedTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,
@@ -389,7 +409,7 @@ async function buildChatAgent(provider?: string, model?: string) {
         env.agent?.recursionLimit ?? 100,
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
-      skillExpansionMiddleware,
+      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, globalSkills),
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
@@ -455,6 +475,7 @@ function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
 }
 
 async function buildWorkspaceChatAgent(
+  workspaceId: string,
   workspaceContext: WorkspaceChatContext,
   provider?: string,
   model?: string,
@@ -462,6 +483,7 @@ async function buildWorkspaceChatAgent(
 ) {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
+  const skills = workspaceSkills(workspaceId);
 
   const systemPrompt = buildSystemPrompt(
     getAgentInstructions(),
@@ -472,6 +494,7 @@ async function buildWorkspaceChatAgent(
     tools: [
       makeShellExecTool(workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(workspaceContext.location),
       ...buildWikiWriteTools(allowedWikiId),
@@ -484,7 +507,7 @@ async function buildWorkspaceChatAgent(
         env.agent?.recursionLimit ?? 100,
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
-      skillExpansionMiddleware,
+      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
@@ -513,7 +536,7 @@ export async function getWorkspaceChatAgent(
   if (!_workspaceAgents.has(key)) {
     _workspaceAgents.set(
       key,
-      await buildWorkspaceChatAgent(workspaceContext, provider, model, allowedWikiId),
+      await buildWorkspaceChatAgent(workspaceId, workspaceContext, provider, model, allowedWikiId),
     );
   }
   return _workspaceAgents.get(key)!;
@@ -594,12 +617,14 @@ export async function buildTaskAgent(
     ? `${buildWorkspaceContextBlock(workspaceScope.workspaceContext)}\n\n${taskBlock}`
     : taskBlock;
   const systemPrompt = buildSystemPrompt(getAgentInstructions(), contextBlock);
+  const skills = workspaceSkills(task.workspaceId);
 
   const agent = createAgent({
     model: llm,
     tools: [
       makeShellExecTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
+      ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(workspaceScope?.workspaceContext.location),
       ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
@@ -619,7 +644,7 @@ export async function buildTaskAgent(
         env.agent?.recursionLimit ?? 100,
         env.agent?.recursionWarnThreshold ?? 0.75,
       ),
-      skillExpansionMiddleware,
+      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
@@ -701,6 +726,7 @@ export async function buildSubAgentAgent(
   const mcpTools = await loadMcpTools();
   const candidatePool = [
     ...STATIC_CHAT_TOOLS,
+    ...buildSkillTools(workspaceSkills(task.workspaceId)),
     ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
     makeShellExecTool(workspaceScope?.workspaceContext.location),
     ...mcpTools,

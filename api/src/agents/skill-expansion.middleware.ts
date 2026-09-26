@@ -16,9 +16,15 @@ import {
 // when the expanded command matches a registered gated skill, this also sets
 // activeGatedSkill so that middleware's wrapModelCall exposes the matching
 // tool(s) starting on this same turn.
+//
+// `getSkills` resolves the skill source per invocation rather than taking a
+// fixed manager, so workspace agents can serve that workspace's
+// .agents/skills (see services/workspace-skills.ts) and pick up edits
+// without rebuilding the agent. It's only called for slash commands, so
+// ordinary chat turns never touch the disk.
 export function createSkillExpansionMiddleware(
   registrations: SkillGatedToolRegistration[],
-  manager: Pick<SkillsManager, 'lookup'> = defaultSkillsManager,
+  getSkills: () => Promise<Pick<SkillsManager, 'lookup'>> = async () => defaultSkillsManager,
 ) {
   return createMiddleware({
     name: 'SkillExpansionMiddleware',
@@ -52,6 +58,7 @@ export function createSkillExpansionMiddleware(
       // on the gate staying open across non-slash-command turns.
       let activeGatedSkill: string | null;
       try {
+        const manager = await getSkills();
         const body = await manager.lookup(commandName);
         expanded = args ? `${body}\n\n${args}` : body;
         activeGatedSkill = registrations.some((r) => r.skillCommand === commandName)
