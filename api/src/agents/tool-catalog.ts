@@ -113,6 +113,14 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: true,
   },
   {
+    toolId: 'read_task_run',
+    name: 'Read Task Run',
+    description:
+      'Read the transcript of an earlier run of the same automated task. Task runs only, and only once a previous run exists.',
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
     toolId: 'create_tasks',
     name: 'Create Tasks',
     description:

@@ -1,0 +1,76 @@
+suite:
+  id: scheduled-task-runs
+  name: Repeated Task Runs — Previous-Run History
+  purpose: >
+    Every task run now starts in a fresh thread with a clean plan, so the
+    only continuity between runs of the same task is the kickoff message: the
+    previous run's one-line summary plus the exact read_task_run call that
+    opens its full transcript. Verifies the agent uses that call when the
+    summary alone can't answer what the task needs, and does not waste a
+    turn re-reading history the summary already covers. See
+    docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §3.
+  passingThreshold: 1.0
+  simulatedTask:
+    title: Weekly dependency audit
+    description: >
+      Run a dependency audit on the project and report which high-severity
+      advisories are NEW since the previous run. Advisories that were
+      already present last run should be listed separately as "still open".
+    outcome: >
+      A report listing new high-severity advisories separately from ones
+      that were already open in the previous run.
+
+scenarios:
+  - id: str-001-reads-previous-run-when-summary-lacks-detail
+    name: Agent opens the previous run's transcript when the summary lacks the detail it needs
+    purpose: >
+      The task can only be done by comparing against the previous run's
+      specific advisory list, and the summary deliberately gives only a
+      count. If the agent doesn't follow the kickoff's read_task_run
+      instruction it will either guess or report everything as new — the
+      exact failure per-run threads introduce, since the old shared thread
+      no longer carries last week's output.
+    type: tool-call
+    input: |
+      Begin work on this task now: Weekly dependency audit.
+      This is run #3 (started manually).
+
+      Previous run — #2, 2026-09-19 09:00 UTC, done:
+      "Audit complete: found 3 high-severity advisories (package names and advisory ids are in the run transcript)."
+      For full details call: read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"})
+
+      Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
+    tool: read_task_run
+    argChecks:
+      - path: runId
+        match: equals
+        value: 6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90
+
+  - id: str-002-skips-history-when-summary-suffices
+    name: Agent does not re-read a previous run whose summary already answers the question
+    purpose: >
+      read_task_run costs a turn and context. When the previous summary
+      already says there was nothing open, there is nothing to compare
+      against, so the agent should get on with the audit (it has just
+      inspected the project) rather than reflexively opening the old
+      transcript because the kickoff offered it.
+    type: tool-sequence
+    input: |
+      Begin work on this task now: Weekly dependency audit.
+      This is run #3 (started manually).
+
+      Previous run — #2, 2026-09-19 09:00 UTC, done:
+      "Audit complete: 0 advisories of any severity; nothing was open."
+      For full details call: read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"})
+
+      Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
+    priorTurns:
+      - tool: shell_exec
+        args: { command: 'cat package.json' }
+        result:
+          {
+            exitCode: 0,
+            stdout: '{ "name": "demo", "dependencies": { "express": "4.19.0", "lodash": "4.17.21" } }',
+            stderr: '',
+          }
+    tool: '!read_task_run'
