@@ -322,15 +322,21 @@ function buildSkillTools(skills: SkillSource) {
 // chat (unlike create_workspace/create_project, which don't touch the
 // filesystem directly and so need no such scoping).
 function buildGatedTools(workspaceLocation?: string) {
-  const tools = [makeCreateWorkspaceTool(), makeCreateProjectTool()];
-  if (workspaceLocation) {
-    tools.push(
-      makeFindFileTool(workspaceLocation),
-      makeReadFileTool(workspaceLocation),
-      makeEditFileTool(workspaceLocation),
-    );
-  }
-  return tools;
+  return [
+    makeCreateWorkspaceTool(),
+    makeCreateProjectTool(),
+    // TypeScript infers this whole array literal's element type from every
+    // branch at once — building it incrementally with tools.push(...) after
+    // the fact would type the array from only the first two elements and
+    // then reject pushing a differently-typed tool.
+    ...(workspaceLocation
+      ? [
+          makeFindFileTool(workspaceLocation),
+          makeReadFileTool(workspaceLocation),
+          makeEditFileTool(workspaceLocation),
+        ]
+      : []),
+  ];
 }
 
 // Workspace/task-scoped-only tools — bound wherever workspace or task
