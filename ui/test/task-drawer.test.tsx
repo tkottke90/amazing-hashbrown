@@ -20,9 +20,17 @@ jest.mock('@/hooks/use-tasks', () => ({
 const mockListTaskDependencies = jest.fn();
 const mockAddTaskDependency = jest.fn();
 const mockRemoveTaskDependency = jest.fn();
+const mockFetchTaskRuns = jest.fn((_id: string): Promise<TaskRun[]> => Promise.resolve([]));
+const mockRoute = jest.fn();
+
+jest.mock('preact-iso', () => ({
+  ...jest.requireActual('preact-iso'),
+  useLocation: () => ({ url: '/', path: '/', query: {}, route: mockRoute }),
+}));
 
 jest.mock('@/services/tasks-api', () => ({
   ...jest.requireActual('@/services/tasks-api'),
+  fetchTaskRuns: (id: string) => mockFetchTaskRuns(id),
   listTaskDependencies: (...args: unknown[]) => mockListTaskDependencies(...args),
   addTaskDependency: (...args: unknown[]) => mockAddTaskDependency(...args),
   removeTaskDependency: (...args: unknown[]) => mockRemoveTaskDependency(...args),
@@ -30,7 +38,7 @@ jest.mock('@/services/tasks-api', () => ({
 
 import { TaskDrawer } from '@/components/task-drawer';
 import { tasks } from '@/hooks/use-tasks';
-import type { Task, TaskDependency } from '@/services/tasks-api';
+import type { Task, TaskDependency, TaskRun } from '@/services/tasks-api';
 
 const baseTask: Task = {
   id: 'task-1',
@@ -50,6 +58,22 @@ const baseTask: Task = {
   blockedReason: null,
   createdAt: '2026-08-29T00:00:00.000Z',
   updatedAt: '2026-08-29T00:00:00.000Z',
+};
+
+const runFixture: TaskRun = {
+  id: 'run-1',
+  taskId: 'task-1',
+  status: 'done',
+  position: 1,
+  enqueuedAt: '2026-09-25T00:00:00.000Z',
+  startedAt: '2026-09-25T00:00:00.000Z',
+  finishedAt: '2026-09-25T00:05:00.000Z',
+  recoveryAttempts: 0,
+  threadId: 'run-thread-1',
+  summary: 'All good.',
+  triggerSource: 'manual',
+  scheduledFor: null,
+  runNumber: 1,
 };
 
 function renderDrawer(task: Task) {
@@ -232,13 +256,45 @@ describe('TaskDrawer — waiting_on_user banner', () => {
   });
 
   it('renders the waiting-on-user banner instead of the ready/running/blocked action panel', () => {
-    renderDrawer({ ...baseTask, status: 'waiting_on_user' });
+    render(
+      <TaskDrawer
+        task={{ ...baseTask, status: 'waiting_on_user' }}
+        trigger={<button>Open</button>}
+        onGoToChat={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Open'));
 
     expect(getPanel()).toBeNull();
     expect(
-      screen.getByText('This task is waiting on your input — go answer it in chat'),
+      screen.getByText(/This task is waiting on your input — answer it in chat or in the run/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Go to chat' })).toBeInTheDocument();
+  });
+
+  it('offers only the run for an Inbox task, which has no chat to go to [unit]', () => {
+    renderDrawer({ ...baseTask, status: 'waiting_on_user' });
+
+    expect(screen.getByText(/answer it in the run/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Go to chat' })).not.toBeInTheDocument();
+  });
+
+  it('opens the paused run that is asking the question [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      {
+        ...runFixture,
+        id: 'run-2',
+        runNumber: 2,
+        status: 'paused',
+        threadId: 'run-thread-2',
+      },
+      { ...runFixture },
+    ]);
+    renderDrawer({ ...baseTask, status: 'waiting_on_user' });
+
+    fireEvent.click(await screen.findByTestId('task-waiting-open-run'));
+
+    expect(mockRoute).toHaveBeenCalledWith('/chat/run-thread-2');
   });
 
   it('calls onGoToChat when the banner button is clicked', () => {
@@ -261,9 +317,44 @@ describe('TaskDrawer — waiting_on_user banner', () => {
     renderDrawer({ ...baseTask, status: 'ready' });
 
     expect(getPanel()).not.toBeNull();
-    expect(
-      screen.queryByText('This task is waiting on your input — go answer it in chat'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/This task is waiting on your input/)).not.toBeInTheDocument();
+  });
+});
+
+describe('TaskDrawer — run history', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+    cleanup();
+  });
+
+  it('lists runs newest first with their source, outcome and summary [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      { ...runFixture, id: 'run-2', runNumber: 2, status: 'failed', summary: 'Timed out.' },
+      { ...runFixture },
+    ]);
+    renderDrawer({ ...baseTask, status: 'done' });
+
+    const rows = await screen.findAllByTestId('task-run-history-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Run #2 · Manual · failed');
+    expect(rows[0]).toHaveTextContent('Timed out.');
+    expect(rows[1]).toHaveTextContent('Run #1');
+    expect(mockFetchTaskRuns).toHaveBeenCalledWith('task-1');
+  });
+
+  it('opens a run transcript from its row [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([{ ...runFixture }]);
+    renderDrawer({ ...baseTask, status: 'done' });
+
+    fireEvent.click(await screen.findByTestId('task-run-history-row'));
+
+    expect(mockRoute).toHaveBeenCalledWith('/chat/run-thread-1');
+  });
+
+  it('shows nothing for a task that has never run [unit]', async () => {
+    renderDrawer({ ...baseTask, status: 'pending' });
+    await waitFor(() => expect(mockFetchTaskRuns).toHaveBeenCalled());
+    expect(screen.queryByTestId('task-run-history')).not.toBeInTheDocument();
   });
 });
 

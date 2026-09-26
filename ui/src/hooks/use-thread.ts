@@ -2,6 +2,7 @@ import { signal, batch, computed, effect } from '@preact/signals';
 import type { Signal } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
+import type { TriggerSource } from '../services/tasks-api';
 import { consumeSsePost } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
@@ -81,11 +82,27 @@ export interface ThreadSummary {
   updatedAt: string;
   forkedFromThreadId: string | null;
   forkedFromSeq: number | null;
-  type: 'chat' | 'wiki' | 'workspace-chat';
+  type: ThreadType;
   afterAgentState: AfterAgentState;
   links: { self: string; afterAgentStatus: string };
   provider: string | null;
   model: string | null;
+}
+
+// 'task' is one automated task run's own thread — opened read-only (see
+// components/task-run-view.tsx), never listed in the chat sidebar.
+export type ThreadType = 'chat' | 'wiki' | 'workspace-chat' | 'task';
+
+// Which run of which task a 'task' thread records — returned with the
+// thread by GET /api/v1/threads/:id.
+export interface TaskRunInfo {
+  taskId: string;
+  taskTitle: string;
+  workspaceId: string | null;
+  runId: string;
+  runNumber: number;
+  status: string;
+  triggerSource: TriggerSource;
 }
 
 export const threads = signal<ThreadSummary[]>([]);
@@ -208,6 +225,10 @@ export interface ThreadInstance {
   // is released before the outbound call's response finishes streaming.
   isWaitingForProvider: Signal<boolean>;
   waitingProviderName: Signal<string | null>;
+  // Filled by hydrate(): null until then, and for a thread that doesn't
+  // exist yet. taskRun is only set on a 'task' (automated run) thread.
+  threadType: Signal<ThreadType | null>;
+  taskRun: Signal<TaskRunInfo | null>;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
   sendMessage: (content: string, attachmentId?: string) => Promise<void>;
@@ -264,6 +285,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const summaryPath = signal<string | null>(null);
   const isWaitingForProvider = signal(false);
   const waitingProviderName = signal<string | null>(null);
+  const threadType = signal<ThreadType | null>(null);
+  const taskRun = signal<TaskRunInfo | null>(null);
 
   let _currentAssistantId: string | null = null;
   let _currentUserId: string | null = null;
@@ -304,10 +327,14 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         summaryPath?: string | null;
         provider?: string | null;
         model?: string | null;
+        type?: ThreadType;
+        taskRun?: TaskRunInfo;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
         messages.value = hydrated;
+        threadType.value = data.type ?? null;
+        taskRun.value = data.taskRun ?? null;
         summaryPath.value = data.summaryPath ?? null;
         // Scan backward for the last *pending* hitl_prompt rather than only
         // checking the final message — a task-originated pause appends a
@@ -761,6 +788,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     summaryPath,
     isWaitingForProvider,
     waitingProviderName,
+    threadType,
+    taskRun,
     setThreadModel,
     hydrate,
     sendMessage,

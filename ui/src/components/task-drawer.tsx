@@ -20,6 +20,9 @@ import {
   tasks,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
+import { TaskRunHistory, useTaskRuns, waitingRun } from '@/components/task-run-history';
+import { runPath } from '@/lib/task-runs';
+import { useLocation } from 'preact-iso';
 import type {
   Task,
   TaskStatus,
@@ -442,6 +445,14 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   );
   const lastAppliedPlan = useRef<PlanStep[]>(task?.plan ?? []);
 
+  // Run history refetches whenever the task's status moves — from this
+  // drawer's own actions (liveStatus) or a live broadcast (the tasks list).
+  const storedStatus = useComputed(() =>
+    task ? tasks.value.find((t) => t.id === task.id)?.status : undefined,
+  );
+  const runs = useTaskRuns(task?.id ?? null, `${liveStatus.value}:${storedStatus.value}`);
+  const { route } = useLocation();
+
   useEffect(() => {
     const incoming = storedPlan.value;
     if (incoming === undefined) return;
@@ -792,19 +803,37 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
         {!isNew && task && liveStatus.value === 'waiting_on_user' && (
           <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
             <span class="text-xs text-muted-foreground flex-1">
-              This task is waiting on your input — go answer it in chat
+              This task is waiting on your input —{' '}
+              {onGoToChat ? 'answer it in chat or in the run' : 'answer it in the run'}
             </span>
-            <Button
-              size="xs"
-              variant="outline"
-              type="button"
-              onClick={() => {
-                close();
-                onGoToChat?.();
-              }}
-            >
-              Go to chat
-            </Button>
+            {onGoToChat && (
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  close();
+                  onGoToChat();
+                }}
+              >
+                Go to chat
+              </Button>
+            )}
+            {waitingRun(runs.value) && (
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                data-testid="task-waiting-open-run"
+                onClick={() => {
+                  const run = waitingRun(runs.value)!;
+                  close();
+                  route(runPath(run.threadId!));
+                }}
+              >
+                Open run
+              </Button>
+            )}
           </div>
         )}
 
@@ -1012,6 +1041,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
               </div>
             ))}
         </div>
+
+        {!isNew && <TaskRunHistory runs={runs.value} onOpen={close} />}
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Tracker</label>

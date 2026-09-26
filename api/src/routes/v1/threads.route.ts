@@ -35,6 +35,7 @@ function taskRunFor(threadId: string): TaskRunSummary | null {
   return {
     taskId: task.id,
     taskTitle: task.title,
+    workspaceId: task.workspaceId,
     runId: run.id,
     runNumber: run.runNumber,
     status: run.status,

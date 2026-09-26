@@ -5,6 +5,9 @@ export type TaskStatus =
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 
+// What started one run of a task.
+export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' | 'agent';
+
 export interface PlanStep {
   step: string;
   done: boolean;
@@ -50,6 +53,17 @@ export interface TaskQueueEntry {
   startedAt: string | null;
   finishedAt: string | null;
   recoveryAttempts: number;
+  // Each queue row is one run with its own thread (null until it first
+  // starts, or for a run recorded before per-run threads existed).
+  threadId: string | null;
+  summary: string | null;
+  triggerSource: TriggerSource;
+  scheduledFor: string | null;
+}
+
+// One run of a task, as the drawer's run history lists it.
+export interface TaskRun extends TaskQueueEntry {
+  runNumber: number;
 }
 
 export interface QueueState {
@@ -114,6 +128,10 @@ export async function deleteTask(id: string): Promise<void> {
 
 export async function fetchQueue(): Promise<QueueState> {
   return request<QueueState>('/api/v1/tasks/queue');
+}
+
+export async function fetchTaskRuns(id: string, limit = 20): Promise<TaskRun[]> {
+  return request<TaskRun[]>(`/api/v1/tasks/${id}/runs?limit=${limit}`);
 }
 
 export async function enqueueTask(id: string): Promise<TaskQueueEntry> {

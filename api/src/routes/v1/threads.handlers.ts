@@ -57,6 +57,8 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
 export interface TaskRunSummary {
   taskId: string;
   taskTitle: string;
+  // null for an Inbox task — where the run view links back to.
+  workspaceId: string | null;
   runId: string;
   runNumber: number;
   status: string;

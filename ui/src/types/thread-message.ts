@@ -1,4 +1,5 @@
 import type { HitlKind, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import type { TriggerSource } from '@/services/tasks-api';
 
 export type AssistantStatus = 'streaming' | 'done' | 'error';
 export type ToolCallStatus = 'pending' | 'done' | 'interrupted';
@@ -77,6 +78,11 @@ export type ThreadMessage =
       reason?: string;
       stepsUsed?: number;
       recursionLimit?: number;
+      // Set on a prompt raised by an automated task run. A workspace run's
+      // prompt is also copied into the workspace chat; the copy carries the
+      // run's thread, so the card can link to the full run.
+      taskId?: string;
+      runThreadId?: string;
       status: HitlStatus;
       answer?: string;
       seq?: number;
@@ -129,6 +135,11 @@ export type ThreadMessage =
       taskTitle: string;
       phase: 'start' | 'end';
       outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked';
+      // Which run this marker brackets — absent on markers written before
+      // each run got its own thread.
+      runThreadId?: string;
+      runNumber?: number;
+      triggerSource?: TriggerSource;
       seq?: number;
     };
 
