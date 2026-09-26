@@ -215,6 +215,36 @@ describe('routes/v1/threads.handlers', () => {
       });
       expect(msg).to.not.have.property('payload');
     });
+
+    it("includes which run of which task a run thread records, for the run view's header [unit]", () => {
+      store.upsertThreadOnFirstMessage('run-thread', 'Audit — run #2', 'task');
+      const taskRun = {
+        taskId: 'task-1',
+        taskTitle: 'Audit',
+        runId: 'run-1',
+        runNumber: 2,
+        status: 'done',
+        triggerSource: 'manual',
+      };
+
+      const result = getThreadHandler(store, 'run-thread', { taskRunFor: () => taskRun });
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.taskRun).to.deep.equal(taskRun);
+    });
+
+    it('never attaches run info to an ordinary chat thread [unit]', () => {
+      store.upsertThreadOnFirstMessage('plain', 'Chat');
+      let asked = false;
+      const result = getThreadHandler(store, 'plain', {
+        taskRunFor: () => {
+          asked = true;
+          return null;
+        },
+      });
+      expect(asked).to.equal(false);
+      if (result.ok) expect(result.data).to.not.have.property('taskRun');
+    });
   });
 
   describe('renameThreadHandler', () => {
@@ -292,6 +322,12 @@ describe('routes/v1/threads.handlers', () => {
       store.close();
       checkpointDb.close();
       rmSync(dir, { recursive: true });
+    });
+
+    it('refuses to fork an automated run thread, which is a read-only record [unit]', async () => {
+      store.upsertThreadOnFirstMessage('run-thread', 'Run #1', 'task');
+      const result = await forkThreadHandler(store, checkpointer, 'run-thread', 1);
+      expect(result).to.deep.include({ ok: false, status: 409 });
     });
 
     it('returns 400 for a non-positive atSeq', async () => {

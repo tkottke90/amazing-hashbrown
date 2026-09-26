@@ -9,8 +9,20 @@ import {
 import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { serializeError } from '../../config/logger.js';
+import { respondIfTaskPrompt } from './task-prompt-answer.js';
 
 export const chatRouter = Router();
+
+// An automated task run's thread is a read-only record of what the agent
+// did: the only thing a user can do in it is answer the run's own prompts
+// (/hitl). A chat message, retry or fork would race the live run on the
+// same LangGraph checkpoint. See
+// docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §4.
+function rejectIfTaskRunThread(threadId: string, res: import('express').Response): boolean {
+  if (getThreadStore().getThreadMeta(threadId)?.type !== 'task') return false;
+  res.status(409).json({ error: 'Automated run threads are read-only' });
+  return true;
+}
 
 function setSseHeaders(res: import('express').Response): void {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -41,6 +53,7 @@ chatRouter.post('/:threadId', async (req, res) => {
     res.status(400).json({ error: 'threadId and content are required' });
     return;
   }
+  if (rejectIfTaskRunThread(threadId, res)) return;
 
   setSseHeaders(res);
   const startedAt = Date.now();
@@ -86,6 +99,10 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
     return;
   }
 
+  // An Inbox task run's prompt is answered from its run thread through this
+  // route — re-queue the task rather than resuming it as a chat turn.
+  if (respondIfTaskPrompt(req, res, { threadId, promptId, answer })) return;
+
   setSseHeaders(res);
   const startedAt = Date.now();
 
@@ -125,6 +142,8 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
     res.status(400).json({ error: 'threadId is required' });
     return;
   }
+
+  if (rejectIfTaskRunThread(threadId, res)) return;
 
   if (!getThreadStore().resolveRetryTarget(threadId)) {
     res.status(400).json({ error: 'Thread has no retryable (failed) turn' });

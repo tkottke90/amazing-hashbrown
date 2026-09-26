@@ -625,6 +625,22 @@ describe('agents/task-execution', () => {
     });
   });
 
+  it("copies a workspace run's question into the workspace chat so it can be answered there [orchestration]", async () => {
+    const { entry, workspaceId } = makeWorkspaceEntry();
+    const agent = fakeAgent([], { kind: 'free_text', question: 'Which branch?' });
+
+    await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+    const chatThread = store.getWorkspace(workspaceId)!.threadId!;
+    const copy = threadStore.getThreadMessages(chatThread).find((m) => m.kind === 'hitl_prompt');
+    expect(copy, 'expected the question in the workspace chat').to.not.equal(undefined);
+    expect(copy!.payload).to.include({
+      question: 'Which branch?',
+      taskId: entry.task.id,
+      runThreadId: runThreadOf(entry),
+    });
+  });
+
   describe('run summaries and clean slate', () => {
     it("persists complete_task's summary on the run [orchestration]", async () => {
       const entry = makeGlobalEntry();

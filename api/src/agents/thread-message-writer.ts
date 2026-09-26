@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ThreadStore } from '../services/thread-store.js';
 import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
@@ -217,6 +218,15 @@ export interface HitlPromptFields {
   // apart from a plain chat one and re-enqueue the task instead of resuming
   // an interactive turn.
   taskId?: string;
+  // A task run's prompt is recorded in the run's own thread and, for a
+  // workspace task, copied into the workspace chat so the user can answer it
+  // where they already are. The two copies point at each other so answering
+  // either resolves both (see mirrorPendingTaskPrompts below and
+  // tasks.handlers.ts's answerTaskPrompt).
+  runThreadId?: string; // on the copy: the run thread holding the original
+  sourcePromptId?: string; // on the copy: the original's promptId
+  mirrorThreadId?: string; // on the original: where the copy lives
+  mirrorPromptId?: string; // on the original: the copy's promptId
 }
 
 export function recordHitlPrompt(
@@ -257,6 +267,50 @@ export function resolveHitlPrompt(
     status: 'answered',
     payload: { ...payload, answer },
   });
+}
+
+// Copies every still-unanswered task prompt in a run thread into another
+// thread (a workspace's chat) under its own promptId, linking the two copies
+// both ways. Skips prompts already copied, so calling it again after a later
+// interrupt only copies the new one. Best-effort like the other marker
+// writers: a failed copy leaves the original answerable from the run view.
+export function mirrorPendingTaskPrompts(
+  store: ThreadStore,
+  runThreadId: string,
+  targetThreadId: string,
+): void {
+  safe(runThreadId, 'mirrorPendingTaskPrompts', () => {
+    const pending = store
+      .getThreadMessages(runThreadId)
+      .filter((m) => m.kind === 'hitl_prompt' && m.status === 'pending');
+    for (const prompt of pending) {
+      const payload = (prompt.payload ?? {}) as Record<string, unknown>;
+      if (!payload.taskId || payload.mirrorPromptId) continue;
+      const copyId = randomUUID();
+      store.insertMessage(targetThreadId, {
+        id: copyId,
+        kind: 'hitl_prompt',
+        status: 'pending',
+        payload: { ...payload, promptId: copyId, runThreadId, sourcePromptId: prompt.id },
+      });
+      store.updateMessage(runThreadId, prompt.id, {
+        payload: { ...payload, mirrorThreadId: targetThreadId, mirrorPromptId: copyId },
+      });
+    }
+  });
+}
+
+// The other copy of a mirrored task prompt, if this one has one.
+export function linkedPromptCopy(
+  payload: Record<string, unknown>,
+): { threadId: string; promptId: string } | null {
+  if (typeof payload.mirrorThreadId === 'string' && typeof payload.mirrorPromptId === 'string') {
+    return { threadId: payload.mirrorThreadId, promptId: payload.mirrorPromptId };
+  }
+  if (typeof payload.runThreadId === 'string' && typeof payload.sourcePromptId === 'string') {
+    return { threadId: payload.runThreadId, promptId: payload.sourcePromptId };
+  }
+  return null;
 }
 
 export function recordWikiUpdate(

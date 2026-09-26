@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ThreadStore } from '../services/thread-store.js';
@@ -17,6 +17,8 @@ import {
   resolveHitlPrompt,
   recordWikiUpdate,
   recordResourceCard,
+  mirrorPendingTaskPrompts,
+  linkedPromptCopy,
 } from './thread-message-writer.js';
 
 function makeStore(): { store: ThreadStore; dir: string } {
@@ -509,6 +511,91 @@ describe('agents/thread-message-writer', () => {
         location: '/tmp/projects/my-project',
         workspaceId: 'ws-2',
       });
+    });
+  });
+
+  describe('mirrorPendingTaskPrompts / linkedPromptCopy', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    beforeEach(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('run', 'Run #1', 'task');
+      store.upsertThreadOnFirstMessage('chat', 'Workspace', 'workspace-chat');
+    });
+    afterEach(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    const payloadOf = (threadId: string, id: string) =>
+      store.getMessage(threadId, id)!.payload as Record<string, unknown>;
+
+    it('copies a pending task prompt into the chat thread and links the two copies both ways [unit]', () => {
+      recordHitlPrompt(store, 'run', 'p1', {
+        question: 'Deploy now?',
+        promptKind: 'yes_no',
+        taskId: 'task-1',
+      });
+
+      mirrorPendingTaskPrompts(store, 'run', 'chat');
+
+      const copies = store.getThreadMessages('chat').filter((m) => m.kind === 'hitl_prompt');
+      expect(copies).to.have.length(1);
+      const copy = copies[0]!;
+      expect(copy.status).to.equal('pending');
+      expect(copy.payload).to.include({
+        question: 'Deploy now?',
+        taskId: 'task-1',
+        promptId: copy.id,
+        runThreadId: 'run',
+        sourcePromptId: 'p1',
+      });
+      expect(payloadOf('run', 'p1')).to.include({
+        mirrorThreadId: 'chat',
+        mirrorPromptId: copy.id,
+      });
+
+      // Either copy leads to the other.
+      expect(linkedPromptCopy(payloadOf('run', 'p1'))).to.deep.equal({
+        threadId: 'chat',
+        promptId: copy.id,
+      });
+      expect(linkedPromptCopy(copy.payload as Record<string, unknown>)).to.deep.equal({
+        threadId: 'run',
+        promptId: 'p1',
+      });
+    });
+
+    it('never copies the same prompt twice, so a later interrupt only adds its own card [unit]', () => {
+      recordHitlPrompt(store, 'run', 'p1', { question: 'A?', promptKind: 'yes_no', taskId: 't' });
+      mirrorPendingTaskPrompts(store, 'run', 'chat');
+      recordHitlPrompt(store, 'run', 'p2', { question: 'B?', promptKind: 'yes_no', taskId: 't' });
+      mirrorPendingTaskPrompts(store, 'run', 'chat');
+
+      const questions = store
+        .getThreadMessages('chat')
+        .filter((m) => m.kind === 'hitl_prompt')
+        .map((m) => (m.payload as Record<string, unknown>).question);
+      expect(questions).to.deep.equal(['A?', 'B?']);
+    });
+
+    it('skips answered prompts and prompts that did not come from a task [unit]', () => {
+      recordHitlPrompt(store, 'run', 'plain', { question: 'Chat?', promptKind: 'yes_no' });
+      recordHitlPrompt(store, 'run', 'done', {
+        question: 'Old?',
+        promptKind: 'yes_no',
+        taskId: 't',
+      });
+      resolveHitlPrompt(store, 'run', 'done', 'yes');
+
+      mirrorPendingTaskPrompts(store, 'run', 'chat');
+
+      expect(store.getThreadMessages('chat')).to.have.length(0);
+    });
+
+    it('reports no linked copy for an unmirrored prompt [unit]', () => {
+      expect(linkedPromptCopy({ taskId: 't', question: 'q' })).to.equal(null);
     });
   });
 });

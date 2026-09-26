@@ -10,13 +10,12 @@ import {
 import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
 import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
-import { resolveHitlPrompt } from '../../agents/thread-message-writer.js';
 import { getWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getThreadStore } from '../../services/thread-store.js';
-import { getTaskScheduler } from '../../services/task-scheduler.js';
 import { getThreadHandler } from './threads.handlers.js';
+import { respondIfTaskPrompt } from './task-prompt-answer.js';
 import { serializeError } from '../../config/logger.js';
 
 // Mounted at workspacesRouter.use('/:id/chat', workspaceChatRouter) — :id is
@@ -137,74 +136,9 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   const workspace = resolveWorkspaceForThread(req, res);
   if (!workspace) return;
 
-  // A prompt raised by an automated task run (task-execution.ts) carries
-  // taskId in its payload — re-enqueue the task instead of resuming an
-  // interactive turn, so the scheduler (not this HTTP request) drives the
-  // agent forward. See docs/superpowers/specs/2026-08-27-automated-task-execution-design.md §6.
-  const existingPrompt = getThreadStore().getMessage(threadId, promptId);
-  const taskId = (existingPrompt?.payload as Record<string, unknown> | undefined)?.['taskId'] as
-    string | undefined;
-
-  if (taskId) {
-    setSseHeaders(res);
-    try {
-      const store = getWorkspaceStore();
-      const task = store.getTask(taskId);
-      const parked = store.listQueue().find((e) => e.taskId === taskId && e.status === 'paused');
-
-      // A task that isn't actually waiting on an answer anymore (already
-      // done/failed/cancelled/running, or deleted) means this prompt is
-      // stale — most often an interrupt finalizeTurn found in the shared
-      // thread's checkpoint state after the task's own run had already
-      // completed via complete_task in the same stream (see
-      // stream-handler.ts's discardInterrupt, which now stops that prompt
-      // from ever being dispatched in the first place — this is the
-      // belt-and-suspenders half, for a stale prompt that predates that fix
-      // or an answer that arrives late for any other reason). Resolve the
-      // prompt for bookkeeping so it stops rendering as a live card, but
-      // never let a stale answer reopen or re-run a task that has already
-      // moved on — that's exactly what let a duplicate run clobber an
-      // already-'done' task's status.
-      if (!parked && task?.status !== 'waiting_on_user') {
-        resolveHitlPrompt(getThreadStore(), threadId, promptId, answer);
-        res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
-        return;
-      }
-
-      resolveHitlPrompt(getThreadStore(), threadId, promptId, answer);
-      store.patchTask(taskId, {
-        status: 'ready',
-        assignedTo: 'agent',
-        resumeAnswer: answer,
-      });
-      // Reactivate the row task-execution.ts parked (parkQueueEntryForHitl())
-      // at ITS ORIGINAL queue position, rather than enqueueTask()'s always-
-      // append-to-the-back — a fresh row here is exactly what lets every
-      // sibling task still pending in this scope queue-jump a task that
-      // already started and is merely waiting on this answer.
-      if (parked) {
-        store.resumePausedEntry(parked.id);
-      } else {
-        // Defensive fallback — task.status === 'waiting_on_user' (checked
-        // above) confirms this task really is waiting on this exact answer,
-        // just missing its parked row somehow; don't leave it un-resumable.
-        store.enqueueTask(taskId);
-      }
-      getTaskScheduler().wake();
-      res.write(`data: ${JSON.stringify({ type: 'stream_done', durationMs: 0 })}\n\n`);
-    } catch (err) {
-      req.logger.error('Workspace chat HITL task re-enqueue error', { err: serializeError(err) });
-      const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
-      writeSseEvent(toSink(res), {
-        type: 'stream_error',
-        error: String(err),
-        ...(errorCategory ? { errorCategory } : {}),
-      });
-    } finally {
-      res.end();
-    }
-    return;
-  }
+  // A prompt raised by an automated task run is answered by re-queueing the
+  // task, not by resuming an interactive turn — see respondIfTaskPrompt.
+  if (respondIfTaskPrompt(req, res, { threadId, promptId, answer })) return;
 
   setSseHeaders(res);
   const startedAt = Date.now();

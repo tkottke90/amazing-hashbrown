@@ -12,6 +12,7 @@ import {
   deleteTaskHandler,
   getQueueHandler,
   enqueueTaskHandler,
+  listTaskRunsHandler,
   cancelTaskHandler,
   pauseTaskHandler,
   takeOverTaskHandler,
@@ -122,6 +123,24 @@ tasksRouter.delete('/:id', (req: Request, res: Response) => {
     return;
   }
   res.status(204).end();
+});
+
+// A task's run history, newest first. limit/offset page through it.
+tasksRouter.get('/:id/runs', (req: Request, res: Response) => {
+  const { limit, offset } = req.query as { limit?: string; offset?: string };
+  const parse = (v: string | undefined) => {
+    const n = v === undefined ? NaN : Number.parseInt(v, 10);
+    return Number.isInteger(n) && n >= 0 ? n : undefined;
+  };
+  const result = listTaskRunsHandler(getWorkspaceStore(), req.params['id'] as string, {
+    limit: parse(limit),
+    offset: parse(offset),
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {

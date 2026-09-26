@@ -20,7 +20,11 @@ import {
   removeTaskDependencyHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
+  answerTaskPrompt,
+  listTaskRunsHandler,
 } from './tasks.handlers.js';
+import { ThreadStore } from '../../services/thread-store.js';
+import { recordHitlPrompt, mirrorPendingTaskPrompts } from '../../agents/thread-message-writer.js';
 import { registerTaskAbort, getTaskAbort, clearTaskAbort } from '../../agents/active-task-abort.js';
 
 class ThrowingChatModel extends BaseChatModel {
@@ -959,6 +963,146 @@ describe('routes/v1/tasks.handlers', () => {
       if (result.ok) {
         expect(result.data).to.deep.equal([{ step: 'Write migration scripts', done: false }]);
       }
+    });
+  });
+
+  describe('answerTaskPrompt() — shared task HITL answering (cron task triggers design §4)', () => {
+    let store: WorkspaceStore;
+    let threads: ThreadStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-answer-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      threads = new ThreadStore(db);
+      threads.upsertThreadOnFirstMessage('run-thread', 'Run #1', 'task');
+      threads.upsertThreadOnFirstMessage('chat-thread', 'Workspace', 'workspace-chat');
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // A workspace task run parked on a question, with the question copied
+    // into the workspace chat — the state task-execution.ts leaves behind.
+    function waitingRun() {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready' });
+      const entry = store.enqueueTask(task.id);
+      store.setQueueEntryThread(entry.id, 'run-thread');
+      store.parkQueueEntryForHitl(entry.id);
+      recordHitlPrompt(threads, 'run-thread', 'original', {
+        question: 'Proceed?',
+        promptKind: 'yes_no',
+        taskId: task.id,
+      });
+      mirrorPendingTaskPrompts(threads, 'run-thread', 'chat-thread');
+      const copyId = threads.getThreadMessages('chat-thread')[0]!.id;
+      return { task, entry, copyId };
+    }
+
+    it('leaves an ordinary chat prompt to the chat route [unit]', () => {
+      recordHitlPrompt(threads, 'chat-thread', 'plain', { question: 'q', promptKind: 'yes_no' });
+      expect(
+        answerTaskPrompt(store, threads, {
+          threadId: 'chat-thread',
+          promptId: 'plain',
+          answer: 'y',
+        }),
+      ).to.equal('not_task');
+      expect(threads.getMessage('chat-thread', 'plain')!.status).to.equal('pending');
+    });
+
+    it('resumes the parked run when answered from the workspace chat copy, and resolves both copies [unit]', () => {
+      const { task, entry, copyId } = waitingRun();
+
+      const outcome = answerTaskPrompt(store, threads, {
+        threadId: 'chat-thread',
+        promptId: copyId,
+        answer: 'yes',
+      });
+
+      expect(outcome).to.equal('resumed');
+      expect(store.getTask(task.id)).to.include({ status: 'ready', resumeAnswer: 'yes' });
+      expect(store.getQueueEntry(entry.id)!.status, 'the same row, back at its position').to.equal(
+        'pending',
+      );
+      expect(threads.getMessage('chat-thread', copyId)!.status).to.equal('answered');
+      expect(threads.getMessage('run-thread', 'original')!.status).to.equal('answered');
+    });
+
+    it('resolves the workspace chat copy too when answered from the run view [unit]', () => {
+      const { copyId } = waitingRun();
+      answerTaskPrompt(store, threads, {
+        threadId: 'run-thread',
+        promptId: 'original',
+        answer: 'no',
+      });
+      expect(threads.getMessage('chat-thread', copyId)!.status).to.equal('answered');
+    });
+
+    it('does not re-run a task that has already moved on, but still clears both cards [unit]', () => {
+      const { task, entry, copyId } = waitingRun();
+      store.completeQueueEntry(entry.id, 'done');
+
+      const outcome = answerTaskPrompt(store, threads, {
+        threadId: 'chat-thread',
+        promptId: copyId,
+        answer: 'yes',
+      });
+
+      expect(outcome).to.equal('stale');
+      expect(store.getTask(task.id)!.status).to.equal('done');
+      expect(store.listQueue().filter((q) => q.taskId === task.id)).to.have.length(0);
+      expect(threads.getMessage('run-thread', 'original')!.status).to.equal('answered');
+    });
+
+    it('continues in the run thread that raised the prompt when the parked row is missing [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'user' });
+      store.patchTask(task.id, { status: 'waiting_on_user' });
+      recordHitlPrompt(threads, 'run-thread', 'original', {
+        question: 'q',
+        promptKind: 'yes_no',
+        taskId: task.id,
+      });
+      mirrorPendingTaskPrompts(threads, 'run-thread', 'chat-thread');
+      const copyId = threads.getThreadMessages('chat-thread')[0]!.id;
+
+      answerTaskPrompt(store, threads, { threadId: 'chat-thread', promptId: copyId, answer: 'y' });
+
+      const fresh = store.listQueue().find((q) => q.taskId === task.id)!;
+      expect(fresh.threadId, 'the interrupt lives in the run thread checkpoint').to.equal(
+        'run-thread',
+      );
+    });
+  });
+
+  describe('listTaskRunsHandler()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-runs-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("returns a task's runs newest first [unit]", () => {
+      const task = store.createTask({ title: 't' });
+      store.completeQueueEntry(store.enqueueTask(task.id).id, 'done');
+      store.enqueueTask(task.id);
+      const result = listTaskRunsHandler(store, task.id);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.map((r) => r.runNumber)).to.deep.equal([2, 1]);
+    });
+
+    it('404s for an unknown task so the drawer can tell "gone" from "no runs yet" [unit]', () => {
+      const result = listTaskRunsHandler(store, 'missing');
+      expect(result).to.deep.include({ ok: false, status: 404 });
     });
   });
 });

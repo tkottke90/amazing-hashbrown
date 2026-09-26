@@ -35,6 +35,7 @@ import {
   finalizeAssistant,
   failAssistant,
   recordTaskRunMarker,
+  mirrorPendingTaskPrompts,
   type TaskRunMarkerRun,
 } from './thread-message-writer.js';
 import { buildRunKickoff, type PreviousRun } from './task-context.js';
@@ -431,6 +432,7 @@ export async function executeTask(
         // (workspace-chat.route.ts's /hitl task branch) avoid the
         // queue-position starvation a fresh enqueueTask() call would cause.
         store.parkQueueEntryForHitl(entry.id);
+        if (mirrorThreadId) mirrorPendingTaskPrompts(threadStore, threadId, mirrorThreadId);
       } else {
         // The agent stopped without calling complete_task or ask_user — e.g.
         // it trailed off, or hit GraphRecursionError inside pipeEvents/
@@ -527,6 +529,7 @@ export async function executeTask(
           // Parks the row rather than closing it — see parkQueueEntryForHitl()'s
           // own comment (same reasoning as the graceful branch above).
           store.parkQueueEntryForHitl(entry.id);
+          if (mirrorThreadId) mirrorPendingTaskPrompts(threadStore, threadId, mirrorThreadId);
         } else {
           // recovered === {interrupted: false} means recoverThrownInterrupt's
           // own failAssistant/dispatchHitlPrompt already marked the row
