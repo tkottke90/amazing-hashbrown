@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, it, after } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { ObservabilityStore, CostStore } from '@tkottke90/observability';
+import { ObservabilityStore, CostStore, ToolFrictionStore } from '@tkottke90/observability';
 import { EvaluationsStore } from '@tkottke90/evaluations';
 import { ThreadStore } from './services/thread-store.js';
 import { ShellAuditStore } from './services/shell-audit.js';
@@ -37,6 +37,7 @@ describe('shared-database migrations (cross-store)', () => {
     // used here, so their return values only need to exist, not be retained.
     new ObservabilityStore(db);
     new CostStore(db);
+    new ToolFrictionStore(db);
     new EvaluationsStore(db);
     new ThreadStore(db);
     new ShellAuditStore(db);
@@ -62,6 +63,7 @@ describe('shared-database migrations (cross-store)', () => {
       'projects',
       'tasks',
       'task_queue',
+      'task_dependencies',
     ];
     for (const table of expectedTables) {
       expect(tables, `expected table "${table}" in: ${JSON.stringify(tables)}`).to.include(table);

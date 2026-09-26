@@ -148,4 +148,23 @@ Steps:
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
   },
+  {
+    name: 'file-ops',
+    description: 'Find, read, and edit files in the current workspace.',
+    // metadata.selfCallable marks this skill as one the model may activate
+    // itself via the activate_skill tool, without a human typing a slash
+    // command first — see activate-skill.tool.ts. This is a deliberate,
+    // per-skill opt-in (set here for this built-in skill; a user can set the
+    // same metadata field on their own custom skill through the skill
+    // editor), not something every gated skill gets automatically.
+    metadata: { selfCallable: 'true' },
+    body: `You have access to find_file, read_file, and edit_file now that this skill is active. Not every one of these three may be present — a user can disable any of them individually — so check what's actually offered before assuming all three exist.
+
+Use them instead of shell_exec for locating, reading, or modifying a file in this workspace:
+- find_file — locate files by name/glob pattern (e.g. "*.ts", "**/*.test.ts").
+- read_file — read a file's full contents by path.
+- edit_file — replace an exact block of text in a file (old_string -> new_string). old_string must match exactly once in the file; if it doesn't, make it more specific with surrounding context rather than guessing at a shorter match.
+
+Once this skill is active it stays active for the rest of this conversation — you do not need to call activate_skill again for a later file operation in the same thread, unless a new slash command elsewhere resets it.`,
+  },
 ];

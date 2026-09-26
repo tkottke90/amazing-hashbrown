@@ -6,6 +6,10 @@ export type { StartTraceParams, EndTraceParams } from './store.js';
 export { CostStore } from './cost-store.js';
 export type { ProviderCostRecord, InsertCostRecord, UsageRow, UsageFilters } from './cost-store.js';
 
+// Tool friction store
+export { ToolFrictionStore } from './friction-store.js';
+export type { ToolFrictionRow, ToolFrictionFilters } from './friction-store.js';
+
 // Utilities
 export { buildSpanTree } from './tree.js';
 

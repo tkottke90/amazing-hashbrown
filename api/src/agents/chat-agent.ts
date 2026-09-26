@@ -46,6 +46,10 @@ import { syncMcpToolStatus } from './mcp-tool-status.js';
 import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
+import { activateSkillTool } from './tools/activate-skill.tool.js';
+import { makeFindFileTool } from './tools/find-file.tool.js';
+import { makeReadFileTool } from './tools/read-file.tool.js';
+import { makeEditFileTool } from './tools/edit-file.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
 import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
@@ -282,6 +286,7 @@ export const STATIC_CHAT_TOOLS = [
   rlmQueryTool,
   searchConversationTool,
   spawnSubAgentTool,
+  activateSkillTool,
 ];
 
 // Skill sources. search_skills and slash-command expansion are built per
@@ -311,8 +316,27 @@ function buildSkillTools(skills: SkillSource) {
 // buildWikiWriteTools() below: create-workspace.tool.ts's own import chain
 // leads back to this file (via workspaces.handlers.ts), so calling the
 // factories at module load time would hit a circular-import TDZ error.
-function buildGatedTools() {
-  return [makeCreateWorkspaceTool(), makeCreateProjectTool()];
+// workspaceLocation is only present for workspace/task agents (see call
+// sites below) — find_file/read_file/edit_file are only bound when it's
+// given, since there's no safe workspace root to scope them to in plain
+// chat (unlike create_workspace/create_project, which don't touch the
+// filesystem directly and so need no such scoping).
+function buildGatedTools(workspaceLocation?: string) {
+  return [
+    makeCreateWorkspaceTool(),
+    makeCreateProjectTool(),
+    // TypeScript infers this whole array literal's element type from every
+    // branch at once — building it incrementally with tools.push(...) after
+    // the fact would type the array from only the first two elements and
+    // then reject pushing a differently-typed tool.
+    ...(workspaceLocation
+      ? [
+          makeFindFileTool(workspaceLocation),
+          makeReadFileTool(workspaceLocation),
+          makeEditFileTool(workspaceLocation),
+        ]
+      : []),
+  ];
 }
 
 // Workspace/task-scoped-only tools — bound wherever workspace or task
@@ -478,7 +502,7 @@ async function buildWorkspaceChatAgent(
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
-      ...buildGatedTools(),
+      ...buildGatedTools(workspaceContext.location),
       ...buildWikiWriteTools(allowedWikiId),
       ...mcpTools,
     ],
@@ -608,7 +632,7 @@ export async function buildTaskAgent(
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
-      ...buildGatedTools(),
+      ...buildGatedTools(workspaceScope?.workspaceContext.location),
       ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
       makeCompleteTaskTool(task.id, {
         // Read at call time so steps update_plan checked earlier in this
