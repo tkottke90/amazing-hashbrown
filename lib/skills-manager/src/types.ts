@@ -24,6 +24,20 @@ export interface SkillSummary {
   slashCommand: string;
   enabled: boolean;
   largeDesc: boolean; // true when description.length > DESCRIPTION_MAX (1024)
+  source: string; // label of the manager that owns the skill ('global' for a root manager)
+  overrides?: boolean; // true on a child manager's skill that shadows a same-named parent skill
+}
+
+export type SkipReason = 'invalid-frontmatter' | 'name-mismatch' | 'reserved';
+
+export interface SkippedSkill {
+  dir: string; // directory name under the manager's root
+  reason: SkipReason;
+  detail?: string; // validation message for invalid-frontmatter
+}
+
+export interface BootResult {
+  skipped: SkippedSkill[];
 }
 
 export interface CreateSkillInput {

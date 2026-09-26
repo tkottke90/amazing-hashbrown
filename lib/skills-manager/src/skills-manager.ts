@@ -16,6 +16,8 @@ import type {
   EditSkillInput,
   ScriptResult,
   EvalSuite,
+  BootResult,
+  SkippedSkill,
 } from './types.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -24,6 +26,7 @@ const SKILL_FILE = 'SKILL.md';
 
 export class SkillsManager {
   private readonly skillsRoot: string;
+  private readonly source: string = 'global';
   private readonly cache: Map<string, SkillSummary> = new Map();
 
   constructor(skillsRoot: string) {
@@ -34,19 +37,37 @@ export class SkillsManager {
     setRunnerExecutor(executor);
   }
 
-  async boot(): Promise<void> {
+  // Rebuilds the in-memory index from disk. Skills that can't be served are
+  // left out and reported (never thrown) so one broken SKILL.md can't hide
+  // the rest of the directory.
+  async boot(): Promise<BootResult> {
     this.cache.clear();
-    const names = await scanSkillsRoot(this.skillsRoot);
+    const skipped: SkippedSkill[] = [];
+    const dirs = await scanSkillsRoot(this.skillsRoot);
     await Promise.all(
-      names.map(async (name) => {
+      dirs.map(async (dir) => {
+        let summary;
         try {
-          const summary = await readFrontmatter(join(this.skillsRoot, name));
-          this.cache.set(summary.name, summary);
-        } catch {
-          // malformed skill — skip silently on boot
+          summary = await readFrontmatter(join(this.skillsRoot, dir));
+        } catch (err) {
+          skipped.push({
+            dir,
+            reason: 'invalid-frontmatter',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          return;
         }
+        // Every path lookup is built from the skill name, so a name that
+        // differs from its directory would list fine and then fail on use.
+        if (summary.name !== dir) {
+          skipped.push({ dir, reason: 'name-mismatch' });
+          return;
+        }
+        this.cache.set(summary.name, { ...summary, source: this.source });
       }),
     );
+    skipped.sort((a, b) => a.dir.localeCompare(b.dir));
+    return { skipped };
   }
 
   list(): SkillSummary[] {
@@ -107,6 +128,7 @@ export class SkillsManager {
       slashCommand: skill.slashCommand,
       enabled: skill.enabled,
       largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
+      source: this.source,
     });
     return skill;
   }
@@ -143,6 +165,7 @@ export class SkillsManager {
       slashCommand: skill.slashCommand,
       enabled: skill.enabled,
       largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
+      source: this.source,
     });
     return skill;
   }
