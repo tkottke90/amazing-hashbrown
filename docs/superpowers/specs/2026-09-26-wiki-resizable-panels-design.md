@@ -1,7 +1,7 @@
 # Wiki Resizable Panels — Design
 
 **Date:** 2026-09-26
-**Status:** Draft — pending review
+**Status:** Approved
 **Depends on:** LLM Wiki UI & Direct Authoring Tools (complete — this picks up its deferred "Drag-to-resize split panel" item)
 
 ---
@@ -81,23 +81,33 @@ Two nested horizontal groups:
 ```
 index.tsx
 └─ Group id="wiki-outer"
-   ├─ Panel id="canvas"    defaultSize "65"  minSize 400 (px)
+   ├─ Panel id="wiki-canvas"  defaultSize "65%"  minSize 400 (px)
    │    header: [Graph|Document]  …  [DomainFilter (graph only)] [Reset layout]
    │    body:   GraphView | DocumentView
    │                          └─ Group id="wiki-document"
-   │                             ├─ Panel id="files"     defaultSize 224 (px)  minSize 160 (px)  maxSize "40"
+   │                             ├─ Panel id="wiki-files"  defaultSize 224 (px)  minSize 160 (px)  maxSize "40%"
    │                             ├─ Separator
-   │                             └─ Panel id="document"  minSize 320 (px)  (no defaultSize)
+   │                             └─ Panel id="wiki-doc"    minSize 320 (px)  (no defaultSize)
    ├─ Separator
-   └─ Panel id="chat"      defaultSize "35"  minSize 280 (px)  maxSize "60"
+   └─ Panel id="wiki-chat"    defaultSize "35%"  minSize 280 (px)  maxSize "60%"
 ```
+
+Panel and separator ids are namespaced (`wiki-canvas`, `wiki-outer-separator`, …) because the
+library writes them into the DOM as `id` and `data-testid`; bare `chat` / `document` are too
+generic to be safely unique on the page.
+
+**Percentages must carry an explicit `%`.** Before its first layout pass the library renders
+`defaultSize` straight into `flex-basis`, where a bare `"65"` is invalid CSS. The panels then start
+content-sized, the group's width is measured from them (607px instead of 1024px in testing), every
+pixel constraint is derived from that wrong width, and the separators stop responding. Found during
+implementation; reproduced in both the Vite dev server and a production build.
 
 Nesting matches the existing component structure (the file list belongs to `DocumentView`) and is
 how VSCode composes its layout; flattening to one three-column group would force Graph view to
 handle a column it doesn't have.
 
-`document` deliberately has no `defaultSize`: v4's double-click reset resizes the first adjacent
-panel that declares one, which must be `files` for the inner separator.
+`wiki-doc` deliberately has no `defaultSize`: v4's double-click reset resizes the first adjacent
+panel that declares one, which must be `wiki-files` for the inner separator.
 
 ### 4.1 Files
 
@@ -107,6 +117,7 @@ panel that declares one, which must be `files` for the inner separator.
 | `ui/src/pages/wiki/use-wiki-layout.ts` | **New.** Group/panel IDs, default layouts, `loadLayout`, `saveLayout`, `clearLayout`, `layoutResetCount` signal, `resetWikiLayout()`, `documentDefaultLayout(groupWidthPx)`. Page-scoped per `ui/AGENTS.md`.                              |
 | `ui/src/pages/wiki/index.tsx`          | Replace the `65fr 35fr` grid with the outer group; add the Reset layout icon button to the canvas header's right-hand cluster.                                                                                                            |
 | `ui/src/pages/wiki/document-view.tsx`  | Replace the `w-56 shrink-0` sidebar + `flex-1` editor row with the inner group.                                                                                                                                                           |
+| `ui/src/pages/wiki/ingestion-chat.tsx` | Drop the root `border-l` — the separator now draws the line between canvas and chat.                                                                                                                                                      |
 | `ui/src/pages/wiki/graph-view.tsx`     | Add the Recenter graph button; keep the effect's `zoom` behaviour and node data reachable from its click handler via refs (§5.5). No resize handling.                                                                                     |
 | `ui/src/pages/wiki/fit-transform.ts`   | **New.** Pure `computeFitTransform(...)` (§5.5).                                                                                                                                                                                          |
 | `ui/package.json`                      | Add `react-resizable-panels` (pinned exact, matching the repo's pinning style).                                                                                                                                                           |
@@ -143,18 +154,27 @@ saved and the old width would return on reload. Each `Separator` therefore also 
 
 ### 5.3 Reset layout button
 
-Icon button (lucide `RotateCcw`, with `aria-label="Reset layout"` and a tooltip) in the
+Icon button (lucide `Columns3`, with `aria-label="Reset layout"` and a tooltip) in the
 canvas header's right-hand cluster — next to `DomainFilter` in Graph view, alone on the right in
-Document view. Calls `resetWikiLayout()`:
+Document view. The icon is `Columns3`, not `RotateCcw`: the Wiki Chat header already uses
+`RotateCcw` for "New conversation" a few hundred pixels away, and the two must not be confused.
+Calls `resetWikiLayout()`:
 
 1. `clearLayout` for **both** keys (covers the unmounted `wiki-document` group).
 2. Increment `layoutResetCount`.
 3. Each **mounted** group has an effect on `layoutResetCount` (ignoring its initial value) that calls
    `groupRef.current.setLayout(...)`:
-   - outer: `{ canvas: 65, chat: 35 }`
+   - outer: `{ "wiki-canvas": 65, "wiki-chat": 35 }`, applied immediately.
    - document: `documentDefaultLayout(groupElement.clientWidth)` — converts the 224px default to a
-     percentage, clamped so `files` stays within its 160px minimum and 40% maximum and `document`
-     keeps its 320px minimum.
+     percentage, clamped so the file list stays within its 160px minimum and 40% maximum and the
+     document keeps its 320px minimum. Applied **one animation frame later**: both groups reset in
+     the same commit and the nested document group's effect runs first, so measuring immediately
+     would convert 224px against the canvas's pre-reset (possibly squeezed) width and leave the file
+     list at the wrong size once the canvas grows back.
+
+The file list uses the library's default `preserve-relative-size` behaviour. `preserve-pixel-size`
+was tried and rejected: the library's resize observer re-applies it against its stale previous group
+width after the deferred reset, undoing the reset.
 
 Remounting groups via a `key` was rejected: remounting the outer group would reset `IngestionChat`
 and restart the graph simulation.
@@ -185,9 +205,10 @@ it fixes every way of getting lost (panned away, zoomed out, canvas resized). Th
 
 **Mechanics:**
 
-- The render effect already creates the `zoom` behaviour and the node array; store them in refs
-  (`zoomRef`, `nodesRef`) so the click handler can reach them. The refs are refreshed each time the
-  effect re-runs, so they always match what's drawn.
+- The render effect already creates the `zoom` behaviour and the node array; it stores a
+  `recenter()` closure over them in a ref (`recenterRef`) so the click handler can reach them. The
+  ref is refreshed each time the effect re-runs and cleared in its cleanup, so it always matches
+  what's drawn.
 - On click: compute node bounds from the nodes' current `x`/`y` expanded by each node's radius,
   call `computeFitTransform(...)`, then `select(svg).call(zoom.transform, transform)`. Going through
   `zoom.transform` keeps d3-zoom's internal state in sync, so the next wheel/drag continues from
@@ -250,15 +271,18 @@ UI developer tests live in `ui/test/` (repo convention for the `ui` workspace). 
 4. Drag the files|document separator → file list widens; persists across reload.
 5. From **Graph** view, click Reset layout, then switch to Document → both splits at defaults
    (65/35, file list ≈224px). Guards the unmounted-group reset path.
-6. After dragging, double-click a separator → resets, and **stays reset after reload**. Guards the
+6. In **Document** view, widen the chat until the file list is squeezed below its default, then
+   click Reset layout → both splits at defaults. Guards the same-tick reset ordering in §5.3
+   (verified to fail without the one-frame deferral).
+7. After dragging, double-click a separator → resets, and **stays reset after reload**. Guards the
    `isUserInteraction` workaround in §5.2.
-7. Focus a separator and press ArrowLeft → it resizes (keyboard accessibility).
-8. In Graph view, wait for node positions to settle, drag the empty canvas to pan the nodes out of
+8. Focus a separator and press ArrowLeft → it resizes (keyboard accessibility).
+9. In Graph view, wait for node positions to settle, drag the empty canvas to pan the nodes out of
    view, click **Recenter graph** → every rendered node's bounding box lies inside the SVG's
    bounding box.
-9. Widen the chat panel so the graph canvas shrinks, click **Recenter graph** → every node is
-   inside the (now narrower) SVG. Guards the resize trade-off in §5.4.
-10. Filter every domain off → Recenter graph button is disabled.
+10. Widen the chat panel so the graph canvas shrinks, click **Recenter graph** → every node is
+    inside the (now narrower) SVG. Guards the resize trade-off in §5.4.
+11. Filter every domain off → Recenter graph button is disabled.
 
 ---
 
