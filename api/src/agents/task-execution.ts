@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { env, type ProviderConfig } from '../config/env.js';
-import { getThreadStore } from '../services/thread-store.js';
+import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
   type Task,
   type TaskQueueEntry,
+  type TaskRun,
   type Workspace,
+  type WorkspaceStore,
 } from '../services/workspace-store.js';
 import {
   setActiveSseWriter,
@@ -33,7 +35,9 @@ import {
   finalizeAssistant,
   failAssistant,
   recordTaskRunMarker,
+  type TaskRunMarkerRun,
 } from './thread-message-writer.js';
+import { buildRunKickoff, type PreviousRun } from './task-context.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
 import { drainPendingTurns, runOnceThreadFree } from './pending-thread-turns.js';
@@ -58,11 +62,42 @@ function defaultProviderType(): ProviderConfig['type'] | undefined {
   }
 }
 
-function buildKickoffMessage(task: Task, entry: QueueEntryWithTask): string {
-  if (entry.pausedAt) {
-    return `Resume this task — continue from where you left off: ${task.title}.`;
-  }
-  return `Begin work on this task now: ${task.title}.`;
+const FINISHED_RUN: ReadonlySet<TaskRun['status']> = new Set(['done', 'failed', 'cancelled']);
+
+// How far back run history looks for the previous runs a kickoff lists —
+// the kickoff shows at most 4, this just leaves headroom for unfinished or
+// transcript-less rows interleaved with them.
+const RUN_HISTORY_WINDOW = 20;
+
+// Finished earlier runs of this task that have a transcript to read, newest
+// first — what the kickoff message lists and read_task_run can open.
+function previousRunsOf(store: WorkspaceStore, entry: QueueEntryWithTask): PreviousRun[] {
+  return store
+    .listTaskRuns(entry.taskId, { limit: RUN_HISTORY_WINDOW })
+    .filter((r) => r.id !== entry.id && FINISHED_RUN.has(r.status) && r.threadId !== null)
+    .map((r) => ({
+      id: r.id,
+      runNumber: r.runNumber,
+      status: r.status,
+      startedAt: r.startedAt,
+      summary: r.summary,
+    }));
+}
+
+// The workspace's shared chat thread, where a workspace task's run markers
+// are copied so the user sees task activity (and a link to the run) from
+// the chat they already watch. Minted the same way the workspace chat tab
+// would if the workspace has never been chatted in.
+function ensureWorkspaceChatThread(
+  store: WorkspaceStore,
+  threadStore: ThreadStore,
+  workspace: Workspace,
+): string {
+  if (workspace.threadId) return workspace.threadId;
+  const threadId = randomUUID();
+  store.patchWorkspace(workspace.id, { threadId });
+  threadStore.upsertThreadOnFirstMessage(threadId, workspace.name, 'workspace-chat');
+  return threadId;
 }
 
 export interface ExecuteTaskDeps {
@@ -91,6 +126,16 @@ export async function executeTask(
 
   let threadId: string;
   let workspaceScope: WorkspaceScope | undefined;
+  // The workspace chat thread a workspace task's run markers are copied
+  // into — null for an Inbox task, which has no shared chat surface.
+  let mirrorThreadId: string | null = null;
+  // Every run executes in its own 'task' thread, minted on the run's first
+  // start and stored on its queue row. A row that already has one is
+  // continuing (a HITL answer, a user Resume, or a crash-recovery retry)
+  // and must reuse it: its LangGraph checkpoint lives there. See
+  // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §3.
+  const isNewRun = entry.threadId === null;
+  const runNumber = store.getTaskRun(entry.id)?.runNumber ?? 1;
 
   try {
     if (task.workspaceId) {
@@ -98,28 +143,24 @@ export async function executeTask(
       if (!workspace) {
         throw new Error(`Task ${task.id} references missing workspace ${task.workspaceId}`);
       }
-      threadId = workspace.threadId ?? randomUUID();
-      if (!workspace.threadId) {
-        store.patchWorkspace(workspace.id, { threadId });
-        threadStore.upsertThreadOnFirstMessage(threadId, workspace.name, 'workspace-chat');
-      }
       const allowedWikiId = resolveAllowedWikiId(store, workspace.id);
       const workspaceContext = await buildWorkspaceContext(workspace);
       workspaceScope = { workspace, workspaceContext, allowedWikiId };
+      mirrorThreadId = ensureWorkspaceChatThread(store, threadStore, workspace);
+    }
+    if (entry.threadId !== null) {
+      threadId = entry.threadId;
     } else {
-      // A global task has no shared chat surface to inline into — it gets
-      // its own dedicated 'task' thread, minted lazily on first run.
-      threadId = task.threadId ?? randomUUID();
-      if (!task.threadId) {
-        store.patchTask(task.id, { threadId });
-        threadStore.upsertThreadOnFirstMessage(threadId, task.title, 'task');
-      }
+      threadId = randomUUID();
+      threadStore.upsertThreadOnFirstMessage(threadId, `${task.title} — run #${runNumber}`, 'task');
+      store.setQueueEntryThread(entry.id, threadId);
     }
   } catch (err) {
     logger.error('task-execution: thread resolution failed', {
       taskId: task.id,
       err: serializeError(err),
     });
+    store.setQueueEntrySummary(entry.id, 'Failed to resolve an execution thread.');
     store.completeQueueEntry(entry.id, 'failed');
     if (task.origin === 'agent') {
       await deliverSubAgentCompletion(task, 'failed', 'Failed to resolve an execution thread.');
@@ -131,12 +172,57 @@ export async function executeTask(
   // Everything below claims threadId's per-thread mutex (active-sse-writer.ts)
   // and actually streams — wrapped in a closure and run via
   // runOnceThreadFree() rather than inline, so a thread that's already busy
-  // (a live interactive turn still streaming, or another task/sub-agent-task
-  // already running in this same workspace — dequeueNext()'s scope guard
-  // excludes origin='agent' rows, so that case is real) defers instead of
-  // racing a second concurrent agent.streamEvents() call against the same
-  // LangGraph checkpoint thread_id, which can lose a parked interrupt. See
-  // this function's own module-level doc and pending-thread-turns.ts.
+  // defers instead of racing a second concurrent agent.streamEvents() call
+  // against the same LangGraph checkpoint thread_id, which can lose a parked
+  // interrupt. Since every run has its own thread, only a run continuing in
+  // a thread that's still being written to (e.g. a sub-agent completion
+  // notification landing in a waiting parent run) can hit this; it no
+  // longer contends with the workspace chat. See pending-thread-turns.ts.
+  // A new run starts from a clean slate: the plan's steps (the user's own
+  // checklist) all go back to unchecked, and any stale resume answer is
+  // dropped — it belonged to a checkpoint in an earlier run's thread. The
+  // task's description and outcome (its standing instructions and goal) are
+  // never touched.
+  let runTask = task;
+  if (isNewRun) {
+    const resetPlan = task.plan?.some((s) => s.done)
+      ? task.plan.map((s) => ({ ...s, done: false }))
+      : undefined;
+    if (resetPlan || task.resumeAnswer) {
+      runTask =
+        store.patchTask(task.id, {
+          ...(resetPlan ? { plan: resetPlan } : {}),
+          ...(task.resumeAnswer ? { resumeAnswer: null } : {}),
+        }) ?? task;
+    }
+  }
+  const previousRuns = previousRunsOf(store, entry);
+  const markerRun: TaskRunMarkerRun = {
+    runThreadId: threadId,
+    runNumber,
+    triggerSource: entry.triggerSource,
+  };
+  // Every marker/lifecycle event lands in the run's own thread, and is
+  // copied to the workspace chat for a workspace task.
+  const markerThreads = mirrorThreadId ? [threadId, mirrorThreadId] : [threadId];
+  const recordMarker = (
+    phase: 'start' | 'end',
+    outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+  ): void => {
+    for (const target of markerThreads) {
+      recordTaskRunMarker(
+        threadStore,
+        target,
+        randomUUID(),
+        task.id,
+        task.title,
+        phase,
+        outcome,
+        markerRun,
+      );
+    }
+  };
+
   const runClaimed = async (): Promise<void> => {
     // Diagnostic for the "task shows running but nothing ever happens" class
     // of bug: this is the one line that proves runOnceThreadFree() actually
@@ -181,12 +267,14 @@ export async function executeTask(
     let assistantSeq: number | null = null;
 
     try {
-      recordTaskRunMarker(threadStore, threadId, randomUUID(), task.id, task.title, 'start');
+      recordMarker('start');
       // Fires for every run that actually starts, including one that
       // immediately pauses (blocked) or aborts mid-stream — distinct from
       // the dependency-blocked pending -> blocked transition, which never
       // reaches executeTask() at all and so never fires this.
-      broadcast({ type: 'task_started', threadId, taskId: task.id });
+      for (const target of markerThreads) {
+        broadcast({ type: 'task_started', threadId: target, taskId: task.id });
+      }
       drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
       // Filled only by an *accepted* complete_task call — the tool itself
@@ -200,7 +288,7 @@ export async function executeTask(
 
       agent = (
         await buildAgent(
-          task,
+          runTask,
           undefined,
           undefined,
           workspaceScope
@@ -214,6 +302,7 @@ export async function executeTask(
               completeTaskBox.current = call;
             },
           },
+          { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
         )
       ).agent;
 
@@ -232,13 +321,21 @@ export async function executeTask(
       // this run continues a previously-interrupted checkpoint — consumed
       // (cleared) here so a later re-enqueue for a *different* pause doesn't
       // accidentally replay a stale answer.
-      const resumeAnswer = task.resumeAnswer;
+      const resumeAnswer = runTask.resumeAnswer;
       if (resumeAnswer) {
         store.patchTask(task.id, { resumeAnswer: null });
       }
+      const kickoff = buildRunKickoff({
+        title: task.title,
+        resume: entry.pausedAt !== null,
+        runNumber,
+        triggerSource: entry.triggerSource,
+        scheduledFor: entry.scheduledFor,
+        previousRuns,
+      });
       const input = resumeAnswer
         ? new Command({ resume: resumeAnswer })
-        : { messages: [{ role: 'human', content: buildKickoffMessage(task, entry) }] };
+        : { messages: [{ role: 'human', content: kickoff }] };
 
       // Local consts — msgId/turnSentAt/agent/config are outer `let`s just
       // assigned above, but TS can't carry that narrowing into an async
@@ -311,6 +408,7 @@ export async function executeTask(
 
       if (completeTaskBox.current) {
         finalOutcome = completeTaskBox.current.outcome;
+        store.setQueueEntrySummary(entry.id, completeTaskBox.current.summary);
         store.completeQueueEntry(entry.id, completeTaskBox.current.outcome);
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(
@@ -339,13 +437,12 @@ export async function executeTask(
         // finalizeTurn. This is exactly the bug #87 exists to fix: never leave
         // the task stuck in 'running'.
         finalOutcome = 'failed';
+        const stoppedSummary =
+          'Stopped without completing the task (ran out of steps or produced no final action).';
+        store.setQueueEntrySummary(entry.id, stoppedSummary);
         store.completeQueueEntry(entry.id, 'failed');
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(
-            task,
-            'failed',
-            'Stopped without completing the task (ran out of steps or produced no final action).',
-          );
+          await deliverSubAgentCompletion(task, 'failed', stoppedSummary);
         }
       }
     } catch (err) {
@@ -367,8 +464,12 @@ export async function executeTask(
       // Shared terminal bookkeeping for "this run ends in a real failure" —
       // used by the generic catch-all AND the GraphInterrupt branch's own
       // safety-net fallback, so neither leaves the queue entry stuck.
-      const finishFailedRun = async (notifyMessage: string): Promise<void> => {
+      const finishFailedRun = async (
+        notifyMessage: string,
+        summary = notifyMessage,
+      ): Promise<void> => {
         finalOutcome = 'failed';
+        store.setQueueEntrySummary(entry.id, summary);
         store.completeQueueEntry(entry.id, 'failed');
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', notifyMessage);
@@ -378,6 +479,7 @@ export async function executeTask(
       if (intent === 'cancel') {
         logger.info('task-execution: run cancelled', { taskId: task.id });
         finalOutcome = 'cancelled';
+        store.setQueueEntrySummary(entry.id, 'Run cancelled by the user.');
         store.completeQueueEntry(entry.id, 'cancelled');
         // A cancelled sub-agent still counts as a completion for its siblings'
         // remainingCount — nothing else would ever clear it (design's Out-of-
@@ -393,6 +495,7 @@ export async function executeTask(
       } else if (intent === 'take-over') {
         logger.info('task-execution: run taken over', { taskId: task.id });
         finalOutcome = 'cancelled';
+        store.setQueueEntrySummary(entry.id, 'Run taken over by the user.');
         store.detachQueueEntry(entry.id);
       } else if ((err as Error).name === 'GraphInterrupt') {
         // The graceful (non-throwing) path handles an interrupt by reading it
@@ -434,8 +537,12 @@ export async function executeTask(
       } else {
         logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
         finalOutcome = 'failed';
+        const outOfSteps = (err as Error).name === 'GraphRecursionError';
+        const failureSummary = outOfSteps
+          ? 'Ran out of steps before completing this task.'
+          : `Run failed: ${classifyChatError(err, defaultProviderType()).message}`;
         if (partialState && turnSentAt !== undefined) {
-          if ((err as Error).name === 'GraphRecursionError') {
+          if (outOfSteps) {
             finalizeAssistant(
               threadStore,
               threadId,
@@ -459,7 +566,7 @@ export async function executeTask(
             );
           }
         }
-        await finishFailedRun((err as Error)?.message ?? 'Run failed.');
+        await finishFailedRun((err as Error)?.message ?? 'Run failed.', failureSummary);
       }
 
       // For an aborted run (any of the three intents), the streaming
@@ -477,15 +584,7 @@ export async function executeTask(
         );
       }
     } finally {
-      recordTaskRunMarker(
-        threadStore,
-        threadId,
-        randomUUID(),
-        task.id,
-        task.title,
-        'end',
-        finalOutcome,
-      );
+      recordMarker('end', finalOutcome);
       // Single choke point for the live-events broadcast (see
       // docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md) —
       // finalOutcome is already assigned by every branch above (both the
@@ -494,14 +593,21 @@ export async function executeTask(
       // 'blocked' (a user-initiated pause, not a HITL wait) deliberately
       // broadcasts neither event: the task_queue_update from wake() already
       // reflects it, and there's no thread-side content to react to.
-      if (finalOutcome === 'waiting_on_user') {
-        broadcast({ type: 'hitl_prompt', threadId, taskId: task.id });
-      } else if (
-        finalOutcome === 'done' ||
-        finalOutcome === 'failed' ||
-        finalOutcome === 'cancelled'
-      ) {
-        broadcast({ type: 'task_completed', threadId, taskId: task.id, outcome: finalOutcome });
+      for (const target of markerThreads) {
+        if (finalOutcome === 'waiting_on_user') {
+          broadcast({ type: 'hitl_prompt', threadId: target, taskId: task.id });
+        } else if (
+          finalOutcome === 'done' ||
+          finalOutcome === 'failed' ||
+          finalOutcome === 'cancelled'
+        ) {
+          broadcast({
+            type: 'task_completed',
+            threadId: target,
+            taskId: task.id,
+            outcome: finalOutcome,
+          });
+        }
       }
       clearActiveSseWriter(threadId);
       drainPendingTurns(threadId);

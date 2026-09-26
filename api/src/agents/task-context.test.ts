@@ -1,6 +1,12 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { buildTaskContextBlock, formatPlanChecklist } from './task-context.js';
+import {
+  buildRunKickoff,
+  buildTaskContextBlock,
+  formatPlanChecklist,
+  formatRunTime,
+  type PreviousRun,
+} from './task-context.js';
 
 const PLAN = [
   { step: 'Scaffold the route', done: true },
@@ -149,6 +155,128 @@ describe('agents/task-context', () => {
     it('leaves a plan-less block identical to one with no plan field at all (no prompt change for existing tasks) [unit]', () => {
       const base = { title: 'T', description: 'D', outcome: 'O' };
       expect(buildTaskContextBlock({ ...base, plan: [] })).to.equal(buildTaskContextBlock(base));
+    });
+  });
+
+  describe('buildRunKickoff()', () => {
+    const run = (
+      n: number,
+      status = 'done',
+      summary: string | null = `Summary ${n}.`,
+    ): PreviousRun => ({
+      id: `run-${n}`,
+      runNumber: n,
+      status,
+      startedAt: `2026-09-${String(10 + n).padStart(2, '0')}T09:00:00.000Z`,
+      summary,
+    });
+
+    it('keeps the plain begin message for a first run, with nothing to look back at [unit]', () => {
+      expect(
+        buildRunKickoff({
+          title: 'Audit',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+        }),
+      ).to.equal('Begin work on this task now: Audit.');
+    });
+
+    it('resumes without a history block — the thread already holds the run so far [unit]', () => {
+      expect(
+        buildRunKickoff({
+          title: 'Audit',
+          resume: true,
+          runNumber: 3,
+          triggerSource: 'manual',
+          previousRuns: [run(2)],
+        }),
+      ).to.equal('Resume this task — continue from where you left off: Audit.');
+    });
+
+    it("carries the previous run's summary and the exact read_task_run call to open it [unit]", () => {
+      const text = buildRunKickoff({
+        title: 'Audit',
+        resume: false,
+        runNumber: 3,
+        triggerSource: 'manual',
+        previousRuns: [run(2), run(1, 'failed')],
+      });
+      expect(text).to.equal(
+        [
+          'Begin work on this task now: Audit.',
+          'This is run #3 (started manually).',
+          '',
+          'Previous run — #2, 2026-09-12 09:00 UTC, done:',
+          '"Summary 2."',
+          'For full details call: read_task_run({"runId":"run-2"})',
+          '',
+          'Earlier runs: #1 run-1 (failed)',
+        ].join('\n'),
+      );
+    });
+
+    it('lists at most three earlier runs so the kickoff stays short [unit]', () => {
+      const text = buildRunKickoff({
+        title: 'Audit',
+        resume: false,
+        runNumber: 7,
+        triggerSource: 'manual',
+        previousRuns: [run(6), run(5), run(4), run(3), run(2)],
+      });
+      expect(text).to.include('Earlier runs: #5 run-5 (done), #4 run-4 (done), #3 run-3 (done)');
+      expect(text).to.not.include('run-2');
+    });
+
+    it('says so when the previous run recorded no summary [unit]', () => {
+      const text = buildRunKickoff({
+        title: 'Audit',
+        resume: false,
+        runNumber: 2,
+        triggerSource: 'manual',
+        previousRuns: [run(1, 'failed', null)],
+      });
+      expect(text).to.include('"No summary was recorded."');
+    });
+
+    it('names the scheduled time for a scheduled run, in the task timezone [unit]', () => {
+      const text = buildRunKickoff({
+        title: 'Audit',
+        resume: false,
+        runNumber: 1,
+        triggerSource: 'schedule',
+        scheduledFor: '2026-09-26T05:00:00.000Z',
+        timeZone: 'America/Chicago',
+        previousRuns: [],
+      });
+      expect(text).to.include(
+        'This is scheduled run #1 (scheduled for 2026-09-26 00:00 America/Chicago).',
+      );
+      expect(text).to.not.include('catch-up');
+    });
+
+    it('flags a catch-up run so the agent knows it is running late [unit]', () => {
+      const text = buildRunKickoff({
+        title: 'Audit',
+        resume: false,
+        runNumber: 4,
+        triggerSource: 'catch_up',
+        scheduledFor: '2026-09-26T05:00:00.000Z',
+        previousRuns: [],
+      });
+      expect(text).to.include(
+        'This is a catch-up run — the server was offline at the scheduled time.',
+      );
+    });
+  });
+
+  describe('formatRunTime()', () => {
+    it('renders a fixed 24-hour time with the zone name [unit]', () => {
+      expect(formatRunTime('2026-09-26T17:05:00.000Z')).to.equal('2026-09-26 17:05 UTC');
+      expect(formatRunTime('2026-09-26T17:05:00.000Z', 'America/Chicago')).to.equal(
+        '2026-09-26 12:05 America/Chicago',
+      );
     });
   });
 });

@@ -289,6 +289,11 @@ describe('agents/task-execution', () => {
     return { entry: store.dequeueNext()! as QueueEntryWithTask, workspaceId: workspace.id };
   }
 
+  // Every run executes in its own thread, recorded on its queue row.
+  function runThreadOf(entry: QueueEntryWithTask): string {
+    return store.getQueueEntry(entry.id)!.threadId!;
+  }
+
   it('marks the task done when complete_task is called with outcome "done"', async () => {
     const entry = makeGlobalEntry();
     await executeTask(entry, {
@@ -402,7 +407,7 @@ describe('agents/task-execution', () => {
 
       // The bug: a hitl_prompt row for this same, already-completed task
       // must not be left sitting there for the user to click later.
-      const messages = threadStore.getThreadMessages(task.threadId!);
+      const messages = threadStore.getThreadMessages(runThreadOf(entry));
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
       expect(
         hitlRow,
@@ -431,7 +436,7 @@ describe('agents/task-execution', () => {
 
     // The persisted hitl_prompt row carries taskId, so the /hitl route can
     // re-enqueue this exact task instead of resuming an interactive turn.
-    const messages = threadStore.getThreadMessages(task.threadId!);
+    const messages = threadStore.getThreadMessages(runThreadOf(entry));
     const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
     expect(hitlRow, 'expected a persisted hitl_prompt row').to.not.equal(undefined);
     expect((hitlRow!.payload as Record<string, unknown>).taskId).to.equal(task.id);
@@ -476,7 +481,7 @@ describe('agents/task-execution', () => {
     await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
     const task = store.getTask(entry.task.id)!;
-    const messages = threadStore.getThreadMessages(task.threadId!);
+    const messages = threadStore.getThreadMessages(runThreadOf(entry));
     const assistantRow = messages.find((m) => m.kind === 'assistant' && m.status === 'error');
     expect(assistantRow, 'expected a failed assistant row').to.not.equal(undefined);
     const payload = assistantRow!.payload as Record<string, unknown>;
@@ -524,7 +529,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       const assistantRow = threadStore
-        .getThreadMessages(task.threadId!)
+        .getThreadMessages(runThreadOf(entry))
         .find((m) => m.kind === 'assistant' && m.status === 'error');
       expect(assistantRow, 'expected a failed assistant row').to.not.equal(undefined);
       const payload = assistantRow!.payload as Record<string, unknown>;
@@ -535,34 +540,197 @@ describe('agents/task-execution', () => {
     });
   });
 
-  it('mints and persists a dedicated "task" thread for a global task on first run', async () => {
-    const entry = makeGlobalEntry('Global with no thread yet');
-    expect(entry.task.threadId).to.equal(null);
+  describe('one thread per run (cron task triggers design §3)', () => {
+    it('mints a dedicated "task" thread for a new run and records it on the run [orchestration]', async () => {
+      const entry = makeGlobalEntry('Nightly summary');
+      expect(entry.threadId).to.equal(null);
 
-    await executeTask(entry, {
-      buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const threadId = runThreadOf(entry);
+      const summary = threadStore.listThreads({ type: 'task' }).find((t) => t.id === threadId);
+      expect(summary, 'expected a type:"task" thread row').to.not.equal(undefined);
+      expect(summary!.title).to.equal('Nightly summary — run #1');
     });
 
-    const task = store.getTask(entry.task.id)!;
-    expect(task.threadId).to.not.equal(null);
-    const summary = threadStore.listThreads({ type: 'task' }).find((t) => t.id === task.threadId);
-    expect(summary, 'expected a type:"task" thread row').to.not.equal(undefined);
+    it('gives each run of the same task its own thread, so history never accumulates [orchestration]', async () => {
+      const first = makeGlobalEntry();
+      await executeTask(first, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+      store.patchTask(first.task.id, { status: 'ready' });
+      store.enqueueTask(first.task.id);
+      const second = store.dequeueNext()! as QueueEntryWithTask;
+      await executeTask(second, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(runThreadOf(second)).to.not.equal(runThreadOf(first));
+    });
+
+    it('runs a workspace task in its own thread, not the workspace chat thread [orchestration]', async () => {
+      const { entry, workspaceId } = makeWorkspaceEntry();
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const workspaceThread = store.getWorkspace(workspaceId)!.threadId;
+      expect(
+        workspaceThread,
+        'the workspace chat thread is still minted, for markers',
+      ).to.not.equal(null);
+      expect(runThreadOf(entry)).to.not.equal(workspaceThread);
+      const assistantInChat = threadStore
+        .getThreadMessages(workspaceThread!)
+        .filter((m) => m.kind === 'assistant');
+      expect(
+        assistantInChat,
+        'the run transcript must not land in the workspace chat',
+      ).to.have.length(0);
+    });
+
+    it('reuses the run thread when continuing a run that already started (HITL answer / resume) [orchestration]', async () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready' });
+      const queued = store.enqueueTask(task.id);
+      store.setQueueEntryThread(queued.id, 'existing-run-thread');
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(runThreadOf(entry)).to.equal('existing-run-thread');
+    });
+
+    it('copies start/end markers into the workspace chat, linking back to the run [orchestration]', async () => {
+      const { entry, workspaceId } = makeWorkspaceEntry();
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const markers = threadStore
+        .getThreadMessages(store.getWorkspace(workspaceId)!.threadId!)
+        .filter((m) => m.kind === 'task_run_marker')
+        .map((m) => m.payload as Record<string, unknown>);
+      expect(markers.map((m) => m.phase)).to.deep.equal(['start', 'end']);
+      expect(markers[1]).to.include({
+        runThreadId: runThreadOf(entry),
+        runNumber: 1,
+        triggerSource: 'manual',
+        outcome: 'done',
+      });
+    });
   });
 
-  it('reuses (or mints) the workspace thread for a workspace-scoped task', async () => {
-    const { entry, workspaceId } = makeWorkspaceEntry();
-    expect(store.getWorkspace(workspaceId)!.threadId).to.equal(null);
-
-    await executeTask(entry, {
-      buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+  describe('run summaries and clean slate', () => {
+    it("persists complete_task's summary on the run [orchestration]", async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+      expect(store.getQueueEntry(entry.id)!.summary).to.equal('Wrote the page.');
     });
 
-    const workspace = store.getWorkspace(workspaceId)!;
-    expect(workspace.threadId).to.not.equal(null);
-    const summary = threadStore
-      .listThreads({ type: 'workspace-chat' })
-      .find((t) => t.id === workspace.threadId);
-    expect(summary, 'expected a workspace-chat thread row').to.not.equal(undefined);
+    it('writes a system summary for a run that stopped without complete_task [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
+        ),
+      });
+      expect(store.getQueueEntry(entry.id)!.summary).to.match(/^Stopped without completing/);
+    });
+
+    it('writes a classified failure summary when the stream throws [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])) });
+      expect(store.getQueueEntry(entry.id)!.summary).to.match(/^Run failed: /);
+    });
+
+    it('unchecks every plan step for a new run but keeps the steps and the goal [orchestration]', async () => {
+      const task = store.createTask({
+        title: 't',
+        assignedTo: 'agent',
+        outcome: 'Report sent',
+        plan: [
+          { step: 'Gather data', done: true },
+          { step: 'Send report', done: true },
+        ],
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+      let planSeenByAgent: unknown = null;
+
+      await executeTask(entry, {
+        buildTaskAgent: (async (t: Task, ...rest: unknown[]) => {
+          planSeenByAgent = t.plan;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (fakeBuildTaskAgent(fakeAgent([])) as any)(t, ...rest);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      });
+
+      expect(planSeenByAgent).to.deep.equal([
+        { step: 'Gather data', done: false },
+        { step: 'Send report', done: false },
+      ]);
+      expect(store.getTask(task.id)!.outcome, "the goal is the user's, never cleared").to.equal(
+        'Report sent',
+      );
+    });
+  });
+
+  describe('previous-run history in the kickoff', () => {
+    function rerun(taskId: string): QueueEntryWithTask {
+      store.patchTask(taskId, { status: 'ready' });
+      store.enqueueTask(taskId);
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    it("lists the previous run's summary and binds read_task_run on the next run [orchestration]", async () => {
+      const first = makeGlobalEntry('Audit');
+      await executeTask(first, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const second = rerun(first.task.id);
+      const capture: { input: unknown } = { input: null };
+      let binding: unknown = null;
+      await executeTask(second, {
+        buildTaskAgent: (async (...args: unknown[]) => {
+          binding = args[5];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (fakeBuildTaskAgent(fakeCapturingAgent([], capture)) as any)(...args);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      });
+
+      const content = (capture.input as { messages: { content: string }[] }).messages[0]!.content;
+      expect(content).to.include('This is run #2 (started manually).');
+      expect(content).to.include('"Wrote the page."');
+      expect(content).to.include(`read_task_run({"runId":"${first.id}"})`);
+      expect(binding).to.deep.equal({ runId: second.id, hasPreviousRun: true });
+    });
+
+    it('does not bind read_task_run on a first run, which has nothing to read [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      let binding: unknown = null;
+      await executeTask(entry, {
+        buildTaskAgent: (async (...args: unknown[]) => {
+          binding = args[5];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (fakeBuildTaskAgent(fakeAgent([])) as any)(...args);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      });
+      expect(binding).to.deep.equal({ runId: entry.id, hasPreviousRun: false });
+    });
   });
 
   it('writes start and end task_run_marker rows bracketing the run', async () => {
@@ -573,7 +741,7 @@ describe('agents/task-execution', () => {
 
     const task = store.getTask(entry.task.id)!;
     const markers = threadStore
-      .getThreadMessages(task.threadId!)
+      .getThreadMessages(runThreadOf(entry))
       .filter((m) => m.kind === 'task_run_marker');
     expect(markers).to.have.length(2);
     const start = markers.find((m) => (m.payload as Record<string, unknown>).phase === 'start');
@@ -590,7 +758,7 @@ describe('agents/task-execution', () => {
     await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
     const task = store.getTask(entry.task.id)!;
-    expect(getActiveSseWriter(task.threadId!)).to.equal(undefined);
+    expect(getActiveSseWriter(runThreadOf(entry))).to.equal(undefined);
   });
 
   describe('abort handling (cancel / pause / take-over)', () => {
@@ -786,7 +954,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       const markers = threadStore
-        .getThreadMessages(task.threadId!)
+        .getThreadMessages(runThreadOf(entry))
         .filter((m) => m.kind === 'sub_agent_marker');
       expect(markers).to.have.length(0);
     });
@@ -817,7 +985,7 @@ describe('agents/task-execution', () => {
       expect(queueEntry!.status).to.equal('paused');
       expect(queueEntry!.pauseReason).to.equal('chat');
 
-      const messages = threadStore.getThreadMessages(task.threadId!);
+      const messages = threadStore.getThreadMessages(runThreadOf(entry));
       const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
       expect(hitlRow, 'expected a persisted hitl_prompt row').to.not.equal(undefined);
       const payload = hitlRow!.payload as Record<string, unknown>;
@@ -846,7 +1014,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       const markers = threadStore
-        .getThreadMessages(task.threadId!)
+        .getThreadMessages(runThreadOf(entry))
         .filter((m) => m.kind === 'task_run_marker');
       const end = markers.find((m) => (m.payload as Record<string, unknown>).phase === 'end');
       expect(end, 'expected an end marker').to.not.equal(undefined);
@@ -888,10 +1056,13 @@ describe('agents/task-execution', () => {
       clearActiveSseWriter(THREAD_ID);
     });
 
+    // A run that already has its thread (e.g. one continuing after a HITL
+    // answer) — the only way a run's thread can already be busy.
     function makeGlobalEntryOnThread(threadId: string, title = 'Global task'): QueueEntryWithTask {
       const task = store.createTask({ title, assignedTo: 'agent' });
-      store.patchTask(task.id, { status: 'ready', threadId });
-      store.enqueueTask(task.id);
+      store.patchTask(task.id, { status: 'ready' });
+      const queued = store.enqueueTask(task.id);
+      store.setQueueEntryThread(queued.id, threadId);
       return store.dequeueNext()! as QueueEntryWithTask;
     }
 
@@ -931,7 +1102,11 @@ describe('agents/task-execution', () => {
       expect(getActiveSseWriter(THREAD_ID)).to.equal(undefined);
     });
 
-    it('a workspace-scoped origin="agent" sub-agent task also defers when the thread mutex is already held (closes the dequeueNext() scope-exclusion gap)', async () => {
+    it('a workspace-scoped sub-agent run no longer waits on a busy workspace chat thread — it has its own [orchestration]', async () => {
+      // Runs used to execute inside the workspace's shared chat thread, so a
+      // sub-agent (which dequeueNext()'s scope guard doesn't serialize) had
+      // to defer behind a live chat turn. With one thread per run there is
+      // nothing shared left to race on.
       const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
       store.patchWorkspace(workspace.id, { threadId: THREAD_ID });
       store.createSubAgentTask({
@@ -945,28 +1120,12 @@ describe('agents/task-execution', () => {
       expect(entry.task.origin).to.equal('agent');
 
       setActiveSseWriter(THREAD_ID, () => {});
-
-      const runPromise = executeTask(entry, {
+      await executeTask(entry, {
         buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
-      // Unlike the global-task tests above, a workspace-scoped task's own
-      // thread-resolution has a real await (buildWorkspaceContext reading
-      // the workspace's .hashbrown/summaries dir) before it reaches the
-      // mutex check, so there's no synchronous guarantee it's already
-      // queued the instant this call returns. Give that a moment to settle,
-      // then assert the task is *still* 'running' (not yet 'done') before
-      // freeing the mutex — if this fix regressed and the second task raced
-      // ahead instead of deferring, this assertion (not just the final one)
-      // would catch it.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(store.getTask(entry.task.id)!.status).to.equal('running');
-
-      clearActiveSseWriter(THREAD_ID);
-      drainPendingTurns(THREAD_ID);
-      await runPromise;
-
       expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      expect(runThreadOf(entry)).to.not.equal(THREAD_ID);
     });
 
     it('ends cancelled (not failed) when cancelled while still queued behind a busy thread', async () => {
@@ -1024,8 +1183,8 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'done' },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        { type: 'task_completed', threadId: runThreadOf(entry), taskId: task.id, outcome: 'done' },
       ]);
     });
 
@@ -1037,8 +1196,13 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        {
+          type: 'task_completed',
+          threadId: runThreadOf(entry),
+          taskId: task.id,
+          outcome: 'failed',
+        },
       ]);
     });
 
@@ -1051,8 +1215,13 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'failed' },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        {
+          type: 'task_completed',
+          threadId: runThreadOf(entry),
+          taskId: task.id,
+          outcome: 'failed',
+        },
       ]);
     });
 
@@ -1063,8 +1232,8 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        { type: 'hitl_prompt', threadId: runThreadOf(entry), taskId: task.id },
       ]);
     });
 
@@ -1075,8 +1244,8 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'hitl_prompt', threadId: task.threadId, taskId: task.id },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        { type: 'hitl_prompt', threadId: runThreadOf(entry), taskId: task.id },
       ]);
     });
 
@@ -1087,8 +1256,13 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
-        { type: 'task_completed', threadId: task.threadId, taskId: task.id, outcome: 'cancelled' },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        {
+          type: 'task_completed',
+          threadId: runThreadOf(entry),
+          taskId: task.id,
+          outcome: 'cancelled',
+        },
       ]);
     });
 
@@ -1099,7 +1273,7 @@ describe('agents/task-execution', () => {
 
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
-        { type: 'task_started', threadId: task.threadId, taskId: task.id },
+        { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
       ]);
     });
   });

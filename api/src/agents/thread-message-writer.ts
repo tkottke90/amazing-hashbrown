@@ -1,4 +1,5 @@
 import type { ThreadStore } from '../services/thread-store.js';
+import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 
@@ -295,10 +296,20 @@ export function recordResourceCard(
   });
 }
 
-// Brackets an automated task run in its thread — a 'start' marker before the
-// agent begins and an 'end' marker (with the outcome) once it finishes —
-// so the user can tell task-originated activity apart from their own chat
-// turns in a workspace's shared thread. See task-execution.ts.
+// Which run a task_run_marker brackets — lets the UI label it ("Scheduled
+// run #12") and link a workspace chat's copy of the marker to the run's own
+// thread.
+export interface TaskRunMarkerRun {
+  runThreadId: string;
+  runNumber: number;
+  triggerSource: TriggerSource;
+}
+
+// Brackets an automated task run — a 'start' marker before the agent begins
+// and an 'end' marker (with the outcome) once it finishes. Written into the
+// run's own thread, and for a workspace task also copied into the
+// workspace's chat thread, so the user can see task activity (and open the
+// run) from the chat they already watch. See task-execution.ts.
 export function recordTaskRunMarker(
   store: ThreadStore,
   threadId: string,
@@ -307,12 +318,13 @@ export function recordTaskRunMarker(
   taskTitle: string,
   phase: 'start' | 'end',
   outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+  run?: TaskRunMarkerRun,
 ): number | null {
   return safe(threadId, 'recordTaskRunMarker', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'task_run_marker',
-      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}) },
+      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}), ...(run ?? {}) },
     }).seq;
   });
 }

@@ -70,7 +70,9 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await page.locator('button[aria-label="Send message"]').click();
 
-      await expect(page.getByText('This workspace has a task running')).not.toBeVisible();
+      await expect(
+        page.getByText('This workspace chat is busy with another turn'),
+      ).not.toBeVisible();
       await expect(page.getByText('Something went wrong. Please try again.')).not.toBeVisible({
         timeout: 5_000,
       });
