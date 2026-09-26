@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { configManager } from '../config/env.js';
 import { bootThreadStore, getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   WorkspaceStore,
@@ -50,13 +51,16 @@ function fakeAgent(events: RawEvent[], interruptValue: Record<string, unknown> |
   } as any;
 }
 
-function fakeThrowingAgent(eventsBeforeThrow: RawEvent[]) {
+function fakeThrowingAgent(
+  eventsBeforeThrow: RawEvent[],
+  error: Error = new Error('simulated stream failure'),
+) {
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     streamEvents: (): AsyncIterable<any> => {
       async function* gen() {
         for (const e of eventsBeforeThrow) yield e;
-        throw new Error('simulated stream failure');
+        throw error;
       }
       return gen();
     },
@@ -478,10 +482,57 @@ describe('agents/task-execution', () => {
     const payload = assistantRow!.payload as Record<string, unknown>;
     // The thrown error ("simulated stream failure") has no structured
     // status/type/code for classifyChatError to key off, so it resolves to
-    // 'unknown' — this asserts the classification pipeline actually ran
-    // (env.defaultProvider was passed through), not any specific category.
+    // 'unknown' — this asserts the classification pipeline actually ran,
+    // not any specific category.
     expect(payload.error).to.equal('simulated stream failure');
     expect(payload.errorCategory).to.equal('unknown');
+  });
+
+  describe('error classification against the default provider', () => {
+    const NAMED_OPENAI_PROVIDER = 'glm-classification-test-provider';
+
+    beforeEach(() => {
+      // A user-named OpenAI-compatible provider — the name deliberately isn't
+      // 'openai', so classification must key off `type`, not `name`.
+      configManager.set('providers', [
+        {
+          name: NAMED_OPENAI_PROVIDER,
+          type: 'openai',
+          apiKey: 'test-key',
+          defaultModel: 'test-model',
+        },
+      ]);
+      configManager.set('defaultProvider', NAMED_OPENAI_PROVIDER);
+    });
+
+    afterEach(() => {
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+    });
+
+    it('classifies a 403 from a custom-named OpenAI-type default provider as auth [orchestration]', async () => {
+      // Regression: task runs used to pass env.defaultProvider (a provider
+      // *name*) to classifyChatError, which only recognizes provider
+      // *types* — so the category always fell through to 'unknown'.
+      const entry = makeGlobalEntry();
+      const agent = fakeThrowingAgent(
+        [{ event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } }],
+        Object.assign(new Error('403 Forbidden'), { status: 403 }),
+      );
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const task = store.getTask(entry.task.id)!;
+      const assistantRow = threadStore
+        .getThreadMessages(task.threadId!)
+        .find((m) => m.kind === 'assistant' && m.status === 'error');
+      expect(assistantRow, 'expected a failed assistant row').to.not.equal(undefined);
+      const payload = assistantRow!.payload as Record<string, unknown>;
+      expect(
+        payload.errorCategory,
+        'a 403 from an openai-type provider must be classified as auth',
+      ).to.equal('auth');
+    });
   });
 
   it('mints and persists a dedicated "task" thread for a global task on first run', async () => {

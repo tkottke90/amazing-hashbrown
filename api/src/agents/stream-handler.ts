@@ -132,6 +132,10 @@ export class PipeEventsError extends Error {
   readonly segmentId: string;
   readonly partialContent: string;
   readonly partialThought: string;
+  // The original thrown value, untouched — provider SDK errors carry the
+  // structured fields (status/type/code) classifyChatError keys off, which
+  // this wrapper's own message/name copy doesn't preserve.
+  readonly sourceError: unknown;
 
   constructor(
     sourceErr: unknown,
@@ -148,6 +152,7 @@ export class PipeEventsError extends Error {
     this.segmentId = segmentId;
     this.partialContent = partialContent;
     this.partialThought = partialThought;
+    this.sourceError = sourceErr;
   }
 }
 
@@ -1067,7 +1072,7 @@ export async function streamChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -1262,7 +1267,7 @@ export async function resumeChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -1456,7 +1461,7 @@ export async function retryChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,

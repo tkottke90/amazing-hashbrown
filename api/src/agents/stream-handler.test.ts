@@ -1315,6 +1315,7 @@ describe('agents/stream-handler', () => {
   // rather than leaving the thread stuck rejecting new turns forever.
   describe('streamChatToSse / resumeChatToSse / retryChatToSse — abort handling', () => {
     const TEST_PROVIDER = 'stream-handler-abort-test-provider';
+    const NAMED_OPENAI_PROVIDER = 'glm-classification-test-provider';
     let store: ThreadStore;
     let dir: string;
 
@@ -1372,6 +1373,28 @@ describe('agents/stream-handler', () => {
       } as any;
     }
 
+    // Throws the error shape the OpenAI SDK's APIError carries for an HTTP 403
+    // (a numeric `status`, message "403 <body>") on the very first model call.
+    function fakeForbiddenAgent() {
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        streamEvents: (): AsyncIterable<any> => {
+          async function* gen() {
+            yield* [];
+            throw Object.assign(new Error('403 Forbidden'), { status: 403 });
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
     function depsFor(agent: unknown): ChatStreamDeps {
       return {
         getChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
@@ -1388,6 +1411,14 @@ describe('agents/stream-handler', () => {
           name: TEST_PROVIDER,
           type: 'ollama',
           baseUrl: 'http://localhost:11434',
+          defaultModel: 'test-model',
+        },
+        // A user-named OpenAI-compatible provider — the name deliberately isn't
+        // 'openai', so error classification must key off `type`, not `name`.
+        {
+          name: NAMED_OPENAI_PROVIDER,
+          type: 'openai',
+          apiKey: 'test-key',
           defaultModel: 'test-model',
         },
       ]);
@@ -1472,6 +1503,32 @@ describe('agents/stream-handler', () => {
         );
         expect(err.category).to.not.equal('cancelled');
         expect(getActiveSseWriter(threadId)).to.equal(undefined);
+      });
+      it('classifies a 403 from a custom-named OpenAI-type provider as auth [orchestration]', async () => {
+        // Regression: the handler used to pass the provider's configured
+        // *name* to classifyChatError, which only recognizes provider
+        // *types* — so any provider not literally named 'openai' fell
+        // through to 'unknown'.
+        const threadId = randomUUID();
+        const { res } = fakeRes();
+
+        const err = await expectClassifiedTurnError(
+          streamChatToSse(
+            res,
+            threadId,
+            'hello',
+            Date.now(),
+            NAMED_OPENAI_PROVIDER,
+            undefined,
+            undefined,
+            undefined,
+            depsFor(fakeForbiddenAgent()),
+          ),
+        );
+        expect(
+          err.category,
+          'a 403 from an openai-type provider must be classified as auth',
+        ).to.equal('auth');
       });
     });
 

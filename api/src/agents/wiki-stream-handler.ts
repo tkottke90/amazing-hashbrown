@@ -180,7 +180,7 @@ export async function streamWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -343,7 +343,7 @@ export async function resumeWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -508,7 +508,7 @@ export async function retryWikiChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,

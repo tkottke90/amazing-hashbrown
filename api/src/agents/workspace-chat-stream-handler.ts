@@ -345,7 +345,7 @@ export async function streamWorkspaceChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -575,7 +575,7 @@ export async function resumeWorkspaceChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
@@ -797,7 +797,7 @@ export async function retryWorkspaceChatToSse(
       writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
       return;
     }
-    const classified = classifyChatError(err, resolvedProvider);
+    const classified = classifyChatError(err, providerConfig.type);
     turnError = classified.message;
     failAssistant(
       threadStore,
