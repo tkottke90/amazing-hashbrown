@@ -29,6 +29,8 @@ with the layout remembered across reloads and a one-click way back to the defaul
 - A **Reset layout** icon button in the canvas header that restores both splits to their defaults
 - Double-clicking a separator resets that split to its default
 - Keyboard resizing of separators (arrow keys) with correct ARIA `separator` semantics
+- A **Recenter graph** button overlaid on the graph, pinned to its bottom-right corner, that
+  zooms/pans to fit all visible nodes (§5.5)
 
 **Out of scope:**
 
@@ -36,7 +38,10 @@ with the layout remembered across reloads and a one-click way back to the defaul
 - Server-side / cross-browser persistence of layout
 - Mobile layout (the desktop layout is already hidden below `md`; unchanged)
 - Vertical splits, adding or rearranging panels
-- Re-centring the graph on resize — `GraphView` keeps ignoring container size changes (§5.4)
+- Automatic re-centring on resize — `GraphView` keeps ignoring container size changes (§5.4);
+  recentering is manual, via the button
+- Animated recenter transition (would need a new `d3-transition` dependency)
+- Auto-fitting the graph on initial load
 - `TODO_LIST.md` changes — this item is not tracked there and must not be added
 
 **Constraints:**
@@ -102,6 +107,8 @@ panel that declares one, which must be `files` for the inner separator.
 | `ui/src/pages/wiki/use-wiki-layout.ts` | **New.** Group/panel IDs, default layouts, `loadLayout`, `saveLayout`, `clearLayout`, `layoutResetCount` signal, `resetWikiLayout()`, `documentDefaultLayout(groupWidthPx)`. Page-scoped per `ui/AGENTS.md`.                              |
 | `ui/src/pages/wiki/index.tsx`          | Replace the `65fr 35fr` grid with the outer group; add the Reset layout icon button to the canvas header's right-hand cluster.                                                                                                            |
 | `ui/src/pages/wiki/document-view.tsx`  | Replace the `w-56 shrink-0` sidebar + `flex-1` editor row with the inner group.                                                                                                                                                           |
+| `ui/src/pages/wiki/graph-view.tsx`     | Add the Recenter graph button; keep the effect's `zoom` behaviour and node data reachable from its click handler via refs (§5.5). No resize handling.                                                                                     |
+| `ui/src/pages/wiki/fit-transform.ts`   | **New.** Pure `computeFitTransform(...)` (§5.5).                                                                                                                                                                                          |
 | `ui/package.json`                      | Add `react-resizable-panels` (pinned exact, matching the repo's pinning style).                                                                                                                                                           |
 
 ---
@@ -160,7 +167,39 @@ the centre and domain anchors it computed on its last render — no redraw or si
 dragging. The graph lays out for the current size whenever its effect next runs: on mount
 (including every switch back from Document view), on graph data refresh, and on domain filter
 changes. Users can pan/zoom to reframe in between. This matches today's behaviour on browser window
-resize.
+resize — the Recenter graph button (§5.5) is the manual way back.
+
+### 5.5 Recenter graph button
+
+**Placement:** an icon button absolutely positioned at the graph container's bottom-right
+(`absolute bottom-3 right-3`, inside the existing `relative` wrapper in `GraphView`), layered over
+the SVG. Lucide `LocateFixed` icon, `aria-label="Recenter graph"`, tooltip "Recenter graph",
+styled like the canvas header's small bordered buttons. Stays put when the canvas is resized
+because it's anchored to the container, not the SVG content.
+
+**Behaviour — zoom to fit:** sets the d3-zoom transform so every currently rendered node (respecting
+the domain filter) fits inside the SVG's **current** `clientWidth` / `clientHeight` with padding.
+Node positions are untouched and the simulation is **not** reheated — it only moves the view, so
+it fixes every way of getting lost (panned away, zoomed out, canvas resized). The jump is instant
+(no transition, see Out of scope).
+
+**Mechanics:**
+
+- The render effect already creates the `zoom` behaviour and the node array; store them in refs
+  (`zoomRef`, `nodesRef`) so the click handler can reach them. The refs are refreshed each time the
+  effect re-runs, so they always match what's drawn.
+- On click: compute node bounds from the nodes' current `x`/`y` expanded by each node's radius,
+  call `computeFitTransform(...)`, then `select(svg).call(zoom.transform, transform)`. Going through
+  `zoom.transform` keeps d3-zoom's internal state in sync, so the next wheel/drag continues from
+  the fitted view rather than jumping back.
+- `computeFitTransform({ bounds, width, height, padding, scaleExtent })` is a pure function in
+  `fit-transform.ts` returning `{ k, x, y }`:
+  - scale `k = min((width - 2·padding) / boundsWidth, (height - 2·padding) / boundsHeight)`,
+    clamped to the zoom's existing `scaleExtent` `[0.2, 4]`;
+  - translate so the bounds' centre maps to the canvas centre;
+  - zero-width/height bounds (a single node) → keep `k = 1` and just centre it.
+- Padding: 40px.
+- **No nodes rendered** (empty wiki, or every domain filtered off) → button is disabled.
 
 ---
 
@@ -191,7 +230,16 @@ UI developer tests live in `ui/test/` (repo convention for the `ui` workspace). 
 - `documentDefaultLayout(width)` converts 224px correctly at a typical width and clamps at extreme
   widths (e.g. 300px and 4000px).
 
-### 7.2 Playwright — `e2e/tests/wiki-resizable-panels.spec.ts` (`@smoke`, `@user-workflow`)
+### 7.2 Jest — `ui/test/wiki-fit-transform.test.ts` `[unit]`
+
+- Bounds larger than the canvas → scaled down so the padded bounds fit, and centred.
+- Tiny bounds → scale capped at 4; huge bounds → scale floored at 0.2 (matches the zoom extent,
+  so Recenter never produces a zoom level the user couldn't reach by scrolling).
+- Zero-size bounds (single node) → `k = 1`, node centred.
+- Bounds offset far from the origin (panned away) → translate brings their centre to the canvas
+  centre.
+
+### 7.3 Playwright — `e2e/tests/wiki-resizable-panels.spec.ts` (`@smoke`, `@user-workflow`)
 
 `TestSuite` pattern; `page.route()` mocks for wiki endpoints as in `wiki-graph.spec.ts`; CI-safe
 (no `@llm`). Assertions compare `boundingBox()` widths with a few pixels' tolerance.
@@ -205,6 +253,12 @@ UI developer tests live in `ui/test/` (repo convention for the `ui` workspace). 
 6. After dragging, double-click a separator → resets, and **stays reset after reload**. Guards the
    `isUserInteraction` workaround in §5.2.
 7. Focus a separator and press ArrowLeft → it resizes (keyboard accessibility).
+8. In Graph view, wait for node positions to settle, drag the empty canvas to pan the nodes out of
+   view, click **Recenter graph** → every rendered node's bounding box lies inside the SVG's
+   bounding box.
+9. Widen the chat panel so the graph canvas shrinks, click **Recenter graph** → every node is
+   inside the (now narrower) SVG. Guards the resize trade-off in §5.4.
+10. Filter every domain off → Recenter graph button is disabled.
 
 ---
 
@@ -216,5 +270,4 @@ UI developer tests live in `ui/test/` (repo convention for the `ui` workspace). 
   the E2E suite before building on it; if it fails, fall back to the hand-rolled approach in §3.
 - **Off-centre graph after resizing.** Because `GraphView` ignores resizes (§5.4), widening the
   chat can leave the graph laid out for a wider canvas, with some nodes partly out of view until
-  the user pans or the graph re-renders. Accepted trade-off; re-centring can be added later without
-  touching the panel code.
+  the user clicks Recenter graph (§5.5), pans, or the graph re-renders. Accepted trade-off.
