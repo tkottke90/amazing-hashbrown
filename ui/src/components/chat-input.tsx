@@ -585,7 +585,9 @@ export function ChatInput({
                   </CardBadge>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground max-w-[70ch] line-clamp-4">{skill.description}</div>
+              <div className="text-xs text-muted-foreground max-w-[70ch] line-clamp-4">
+                {skill.description}
+              </div>
             </div>
           ))}
         </div>
