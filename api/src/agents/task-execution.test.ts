@@ -480,7 +480,6 @@ describe('agents/task-execution', () => {
 
     await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
-    const task = store.getTask(entry.task.id)!;
     const messages = threadStore.getThreadMessages(runThreadOf(entry));
     const assistantRow = messages.find((m) => m.kind === 'assistant' && m.status === 'error');
     expect(assistantRow, 'expected a failed assistant row').to.not.equal(undefined);
@@ -527,7 +526,6 @@ describe('agents/task-execution', () => {
 
       await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
-      const task = store.getTask(entry.task.id)!;
       const assistantRow = threadStore
         .getThreadMessages(runThreadOf(entry))
         .find((m) => m.kind === 'assistant' && m.status === 'error');
@@ -739,7 +737,6 @@ describe('agents/task-execution', () => {
       buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
     });
 
-    const task = store.getTask(entry.task.id)!;
     const markers = threadStore
       .getThreadMessages(runThreadOf(entry))
       .filter((m) => m.kind === 'task_run_marker');
@@ -757,7 +754,6 @@ describe('agents/task-execution', () => {
 
     await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
-    const task = store.getTask(entry.task.id)!;
     expect(getActiveSseWriter(runThreadOf(entry))).to.equal(undefined);
   });
 
@@ -952,7 +948,6 @@ describe('agents/task-execution', () => {
         buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
-      const task = store.getTask(entry.task.id)!;
       const markers = threadStore
         .getThreadMessages(runThreadOf(entry))
         .filter((m) => m.kind === 'sub_agent_marker');
@@ -1012,7 +1007,6 @@ describe('agents/task-execution', () => {
 
       await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
-      const task = store.getTask(entry.task.id)!;
       const markers = threadStore
         .getThreadMessages(runThreadOf(entry))
         .filter((m) => m.kind === 'task_run_marker');
