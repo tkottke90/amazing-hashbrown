@@ -166,7 +166,7 @@ Workspace tasks still get `workspaceScope` (workspace context block, wiki scope,
 
 #### Clean slate
 
-On a new run (not a resume), before building the agent: `patchTask(id, { plan: null, outcome: null, resumeAnswer: null })`. `description` is never touched.
+On a new run (not a resume), before building the agent, every plan step is set back to unchecked (the steps themselves are kept) and any stale `resumeAnswer` is cleared. `description` and `outcome` are never touched — `outcome` is the task's goal ("Outcome to reach"), and `plan` is the user's own checklist, so clearing either would wipe out what the user wrote.
 
 #### Persisted summary
 
@@ -227,7 +227,7 @@ When a workspace task run raises an `ask_user` interrupt, `finalizeTurn` writes 
 
 #### Server-side read-only enforcement
 
-`POST /chat/:threadId`, `POST /chat/:threadId/retry`, and `POST /threads/:id/fork` return **409** `"Automated run threads are read-only"` for `'task'` threads. The after-agent pipeline skips them.
+`POST /chat/:threadId`, `POST /chat/:threadId/retry`, and `POST /threads/:id/fork` return **409** `"Automated run threads are read-only"` for `'task'` threads. The after-agent pipeline still runs on task runs: it is system-generated (wiki knowledge capture), not a user write, and disabling it would silently drop wiki updates from task work.
 
 #### Entry points
 
@@ -289,9 +289,9 @@ Test types and tags per the root `AGENTS.md`.
 
 ### Orchestration
 
-- `cron-registry.test.ts` with sinon fake timers — fire at time; skip when not `scheduled`; re-arm after fire; `sync()` on edit/delete; boot catch-up fires once then arms; early-wake re-arm; >24.8-day chunking.
-- `task-execution` — new run mints a thread and clears plan/outcome; resume reuses the row's thread; legacy row fallback; summary persisted; `read_task_run` bound only when a prior finished run exists.
-- supertest — 409 on chat/retry/fork for `'task'` threads; `/chat/:id/hitl` on a task prompt re-enqueues instead of resuming a chat turn; `/tasks/:id/runs`; `/triggers/cron/preview`.
+- `cron-registry.test.ts` with an injected clock and timer functions (the repo has no sinon) — fire at time; skip when not `scheduled`; re-arm after fire; `sync()` on edit/delete; boot catch-up fires once then arms; early-wake re-arm; >24.8-day chunking.
+- `task-execution` — new run mints a thread and unchecks the plan; resume reuses the row's thread; summary persisted; `read_task_run` bound only when a prior finished run exists.
+- routes via `startTestServer` (`api/tests/utilities/http-test-server.ts`; the repo has no supertest) — 409 on chat/retry/fork for `'task'` threads; `/chat/:id/hitl` on a task prompt re-enqueues instead of resuming a chat turn; `/tasks/:id/runs`; `/triggers/cron/preview`.
 - Migration test (`db-migrations.test.ts`) for the new `task_queue` columns and the `thread_id` backfill of paused/running rows.
 
 ### UI (Jest)
@@ -309,7 +309,7 @@ Drawer trigger forms for each type; preview valid/invalid/loading states; Save d
 New suite `suites/scheduled-task-runs.yaml`:
 
 - `tool-sequence` — kickoff lists a previous run whose summary lacks a detail the task needs → agent calls `read_task_run` with the exact `runId` from the kickoff.
-- `tool-call` (negative) — summary suffices → agent does **not** call `read_task_run`.
+- negated `tool-sequence` (`tool: '!read_task_run'`) — summary suffices → agent does **not** call `read_task_run`.
 
 ---
 

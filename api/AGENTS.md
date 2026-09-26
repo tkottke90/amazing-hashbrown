@@ -41,6 +41,30 @@ New routes go under `src/routes/v1/`, mounted onto `v1Router` in
 everything hangs off `/api/v1` so future breaking changes can live at
 `/api/v2` without disrupting existing clients.
 
+## Automated task runs
+
+A `task_queue` row is one **run** of a task. Each run executes in its own
+`'task'`-type thread (`task_queue.thread_id`, minted on the run's first start
+by `agents/task-execution.ts` and reused when the run continues after a HITL
+answer or Resume) and records a one-line `summary` and its `trigger_source`
+when it settles. Things to keep in mind when touching this area:
+
+- Never run a task in a shared thread (the workspace chat, an earlier run's
+  thread) — per-run threads are what keep a recurring task's context
+  bounded. A workspace task's start/end markers and pending questions are
+  _copied_ into the workspace chat instead (`recordTaskRunMarker`,
+  `mirrorPendingTaskPrompts`).
+- A new run's kickoff (`buildRunKickoff` in `agents/task-context.ts`) carries
+  the previous run's summary and the exact `read_task_run` call; that tool is
+  bound only when such a run exists, and is never described in the system
+  prompt.
+- Every `/hitl` route delegates task prompts to `answerTaskPrompt`
+  (`routes/v1/tasks.handlers.ts`), which re-queues the task — never resume a
+  task's prompt as an interactive chat turn. Run threads reject chat, retry
+  and fork (409).
+
+See `docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md`.
+
 ## Environment and config
 
 `src/config/env.ts` loads `.env` (see `.env.example`) via `dotenv`, then

@@ -51,7 +51,7 @@ The work ships as **two PRs**:
 ### 1.2 Task execution (`api/src/agents/task-execution.ts`)
 
 - **Thread resolution (`:95-117`).** Use `entry.threadId` if set. Otherwise create a thread with `upsertThreadOnFirstMessage(id, "<title> — run #N", 'task')`, then call `setQueueEntryThread`. Workspace tasks keep `workspaceScope`; drop the use of `workspace.threadId` and `task.threadId`.
-- **Clean slate.** On a new run (no `pausedAt`, no `resumeAnswer`), call `patchTask(id, {plan:null, outcome:null})` before building the agent.
+- **Clean slate.** On a new run (no thread yet), uncheck every plan step and clear a stale `resumeAnswer` before building the agent. `outcome` (the task's goal) and the plan's steps are kept — see the spec's corrected Clean slate section.
 - **Summary persistence at each `completeQueueEntry` call site:**
   - accepted `complete_task` → its `summary`
   - agent trailed off → the existing message
@@ -92,7 +92,7 @@ The work ships as **two PRs**:
 ### 1.5 Keeping run threads read-only (server side)
 
 - `POST /chat/:threadId` and `/retry` (`chat.route.ts:30,116`), and `forkThreadHandler` (`threads.handlers.ts:156`), return 409 when `getThreadMeta(id)?.type === 'task'`.
-- `afterAgentMiddleware` (`chat-agent.ts:85`) skips when the thread is `'task'`.
+- ~~`afterAgentMiddleware` skips `'task'` threads~~ — dropped: after-agent is system-generated wiki capture, not a user write, so it keeps running on task runs (spec corrected).
 - `getThreadHandler` adds `taskRun: {taskId, taskTitle, runNumber, status, triggerSource}` for task threads.
 - `GET /api/v1/tasks/:id/runs` (`tasks.route.ts` plus a handler).
 
