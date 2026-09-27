@@ -6,6 +6,9 @@ import { bootShellAudit, getShellAuditWriter } from './services/shell-audit.js';
 import { bootUsage, seedProviderCosts } from './services/usage.js';
 import { bootEvaluations } from './services/evaluations.js';
 import { bootThreadStore } from './services/thread-store.js';
+import { bootWakeupStore } from './services/wakeup-store.js';
+import { bootWakeupRegistry } from './services/wakeup-registry.js';
+import { deliverWakeup } from './agents/wakeup-delivery.js';
 import { bootToolSettingsStore, getToolSettingsStore } from './services/tool-settings-store.js';
 import { TOOL_CATALOG } from './agents/tool-catalog.js';
 import { bootWorkspaceStore, getWorkspaceStore } from './services/workspace-store.js';
@@ -43,6 +46,8 @@ bootEvaluations(db);
 app.logger.info('Evaluations booted');
 bootThreadStore(db);
 app.logger.info('Thread store booted');
+bootWakeupStore(db);
+app.logger.info('Wake-up store booted');
 bootToolSettingsStore(db);
 getToolSettingsStore().seedCatalogDefaults(TOOL_CATALOG);
 app.logger.info('Tool settings store booted');
@@ -104,6 +109,11 @@ for (const task of getWorkspaceStore().drainPendingSubAgentCrashNotifications())
     app.logger.error('sub-agent crash-recovery notification failed', { taskId: task.id, err });
   });
 }
+
+// After the stores, checkpointer and crash recovery above: a wake-up that
+// came due while the server was down fires now and resumes its thread.
+bootWakeupRegistry({ deliver: deliverWakeup });
+app.logger.info('Wake-up registry started');
 
 app.start();
 

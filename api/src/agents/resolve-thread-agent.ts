@@ -16,9 +16,17 @@ import type { HeadlessAgent } from './headless-turn.js';
 // task-execution.ts only ever gives a workspace-scoped task's run
 // workspace.threadId (type='workspace-chat') instead, so the 'task' branch
 // here never needs a workspace scope.
-export async function resolveThreadAgent(
-  threadId: string,
-): Promise<{ agent: HeadlessAgent; workspaceId?: string; taskId?: string } | null> {
+export interface ResolvedThreadAgent {
+  agent: HeadlessAgent;
+  workspaceId?: string;
+  taskId?: string;
+  // The provider/model the thread's user last chose (chat and workspace
+  // chat) — undefined means the configured default, as for a new thread.
+  provider?: string;
+  model?: string;
+}
+
+export async function resolveThreadAgent(threadId: string): Promise<ResolvedThreadAgent | null> {
   const store = getWorkspaceStore();
   const threadStore = getThreadStore();
   const meta = threadStore.getThreadMeta(threadId);
@@ -28,6 +36,11 @@ export async function resolveThreadAgent(
     });
     return null;
   }
+
+  // A headless turn continues the conversation on the model its user picked,
+  // same as their next interactive message would.
+  const provider = meta.provider ?? undefined;
+  const model = meta.model ?? undefined;
 
   switch (meta.type) {
     case 'workspace-chat': {
@@ -43,11 +56,11 @@ export async function resolveThreadAgent(
       const { agent } = await getWorkspaceChatAgent(
         workspace.id,
         workspaceContext,
-        undefined,
-        undefined,
+        provider,
+        model,
         allowedWikiId,
       );
-      return { agent, workspaceId: workspace.id };
+      return { agent, workspaceId: workspace.id, provider, model };
     }
     case 'task': {
       const parentTask = store.getTaskByThreadId(threadId);
@@ -59,8 +72,8 @@ export async function resolveThreadAgent(
       return { agent, taskId: parentTask.id };
     }
     case 'chat': {
-      const { agent } = await getChatAgent();
-      return { agent };
+      const { agent } = await getChatAgent(provider, model);
+      return { agent, provider, model };
     }
     default:
       logger.warn('resolve-thread-agent: unsupported thread type, dropping turn', {

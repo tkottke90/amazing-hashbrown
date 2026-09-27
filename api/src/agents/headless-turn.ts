@@ -39,6 +39,7 @@ export interface HeadlessTurnParams {
   message: string;
   threadStore: ThreadStore;
   provider?: string;
+  model?: string;
   recursionLimit?: number;
   workspaceId?: string;
   // Set only when this notification is itself about a task-originated
@@ -135,7 +136,14 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
 
   try {
     const startedAt = Date.now();
-    assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+    assistantSeq = recordAssistantStart(
+      threadStore,
+      threadId,
+      msgId,
+      turnSentAt,
+      provider,
+      params.model,
+    );
 
     const { content, thoughtContent, finalSegmentId, hadToolCall } =
       await getProviderQueue().withSlot(
@@ -148,7 +156,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
               ...config,
               version: 'v2',
               recursionLimit,
-              context: { provider, model: undefined, afterAgentEnabled: undefined },
+              context: { provider, model: params.model, afterAgentEnabled: undefined },
               signal: controller.signal,
             },
           );
@@ -172,7 +180,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       null,
       undefined,
       provider,
-      undefined,
+      params.model,
       taskId,
     );
   } catch (err) {

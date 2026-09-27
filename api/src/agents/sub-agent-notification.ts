@@ -76,6 +76,8 @@ export async function deliverSubAgentCompletion(
         threadStore,
         workspaceId: resolved.workspaceId,
         taskId: resolved.taskId,
+        provider: resolved.provider,
+        model: resolved.model,
         source: 'sub_agent',
       }),
     );
