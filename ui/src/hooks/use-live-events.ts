@@ -82,10 +82,18 @@ function handleEvent(event: AppBroadcastEvent): void {
       // it, which already carries everything the turn produced.
       if (hasThreadInstance(event.threadId)) {
         const thread = useThreadInstance(event.threadId);
+        thread.markBackgroundTurn(false);
         if (!thread.isStreaming.value) void thread.hydrate();
       }
       return;
     }
+    case 'thread_turn_started':
+      // A headless turn (wake-up, sub-agent notification) claimed a thread
+      // this tab has loaded — show it busy, with Stop, until it completes.
+      if (hasThreadInstance(event.threadId)) {
+        useThreadInstance(event.threadId).markBackgroundTurn(true);
+      }
+      return;
     case 'task_started':
       // No task-list status change here (still 'running', same as before) —
       // just rehydrate an already-open thread so the "Automated task

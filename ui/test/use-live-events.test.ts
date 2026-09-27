@@ -8,6 +8,7 @@ jest.mock('@/hooks/use-tasks', () => ({
 }));
 
 const mockHydrate = jest.fn();
+const mockMarkBackgroundTurn = jest.fn();
 const mockUseThreadInstance = jest.fn((..._args: unknown[]): unknown => ({ hydrate: mockHydrate }));
 const mockHasThreadInstance = jest.fn(() => false);
 
@@ -243,7 +244,11 @@ describe('hooks/use-live-events', () => {
   it('rehydrates a loaded thread on thread_turn_completed so a headless turn result appears live [unit]', () => {
     connectLiveEvents();
     mockHasThreadInstance.mockReturnValue(true);
-    mockUseThreadInstance.mockReturnValue({ hydrate: mockHydrate, isStreaming: { value: false } });
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
 
     currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
 
@@ -254,10 +259,43 @@ describe('hooks/use-live-events', () => {
   it('does not rehydrate on thread_turn_completed while this tab is still reading its own live stream [unit]', () => {
     connectLiveEvents();
     mockHasThreadInstance.mockReturnValue(true);
-    mockUseThreadInstance.mockReturnValue({ hydrate: mockHydrate, isStreaming: { value: true } });
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: true },
+    });
 
     currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
 
+    expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it('clears the background-turn state on thread_turn_completed [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
+
+    expect(mockMarkBackgroundTurn).toHaveBeenCalledWith(false);
+  });
+
+  it('marks a loaded thread busy on thread_turn_started from a wake-up [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
+
+    currentSource().emit({ type: 'thread_turn_started', threadId: 'thread-A', source: 'wakeup' });
+
+    expect(mockMarkBackgroundTurn).toHaveBeenCalledWith(true);
     expect(mockHydrate).not.toHaveBeenCalled();
   });
 

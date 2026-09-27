@@ -71,6 +71,7 @@ export function ThreadView() {
             <ThreadMessageItem
               key={msg.id}
               message={msg}
+              threadId={activeThreadId.value}
               onHitlAnswer={thread.submitHitlAnswer}
               onRetry={thread.retryTurn}
               onFork={(seq) =>
@@ -93,6 +94,15 @@ export function ThreadView() {
         </div>
       )}
 
+      {thread.backgroundTurnActive.value && (
+        <div
+          data-testid="background-turn-status"
+          class="border-t border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
+        >
+          The agent is working in the background…
+        </div>
+      )}
+
       <div class="border-t border-border p-4">
         <ChatInput
           value={inputValue.value}
@@ -101,7 +111,7 @@ export function ThreadView() {
           }}
           onSend={handleSend}
           onStop={thread.stopGeneration}
-          isGenerating={thread.isStreaming.value}
+          isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}
           disabled={!!thread.pendingHitlId.value}
           providers={providers.value}
           favoriteModels={favoriteModels.value}

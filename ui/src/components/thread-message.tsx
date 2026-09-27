@@ -12,10 +12,15 @@ import { AudioMessage } from './audio-message';
 import { WikiUpdateMessage } from './wiki-update-message';
 import { ResourceCardMessage } from './resource-card-message';
 import { TaskRunMarkerMessage } from './task-run-marker-message';
+import { WakeupCard } from './wakeup-card';
+import { WakeupFiredMarker } from './wakeup-fired-marker';
 import type { ThreadMessage } from '../types/thread-message';
 
 interface ThreadMessageItemProps {
   message: ThreadMessage;
+  // The thread the message belongs to — lets interactive cards (wake-up
+  // Cancel / Trigger now) act on it. Omitted by read-only views.
+  threadId?: string;
   onHitlAnswer: (promptId: string, answer: string) => void;
   onRetry?: () => void;
   onFork?: (seq: number) => void;
@@ -23,6 +28,7 @@ interface ThreadMessageItemProps {
 
 export function ThreadMessageItem({
   message,
+  threadId,
   onHitlAnswer,
   onRetry,
   onFork,
@@ -82,5 +88,11 @@ export function ThreadMessageItem({
 
     case 'task_run_marker':
       return <TaskRunMarkerMessage message={message} />;
+
+    case 'wakeup':
+      return <WakeupCard message={message} threadId={threadId} />;
+
+    case 'wakeup_fired':
+      return <WakeupFiredMarker message={message} />;
   }
 }

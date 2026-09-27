@@ -229,6 +229,14 @@ export interface ThreadInstance {
   // exist yet. taskRun is only set on a 'task' (automated run) thread.
   threadType: Signal<ThreadType | null>;
   taskRun: Signal<TaskRunInfo | null>;
+  // True while a turn this tab is not streaming holds the thread — a timed
+  // wake-up or sub-agent notification turn, or this tab's own turn after
+  // its live stream dropped. Seeded from the server's `activeTurn` on
+  // hydrate, then driven by thread_turn_started/completed broadcasts
+  // (use-live-events.ts). Pages treat it like isStreaming: Stop instead of
+  // Send. See docs/superpowers/specs/2026-09-27-agent-wait-design.md §7.
+  backgroundTurnActive: Signal<boolean>;
+  markBackgroundTurn: (active: boolean) => void;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
   sendMessage: (content: string, attachmentId?: string) => Promise<void>;
@@ -287,6 +295,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const waitingProviderName = signal<string | null>(null);
   const threadType = signal<ThreadType | null>(null);
   const taskRun = signal<TaskRunInfo | null>(null);
+  const backgroundTurnActive = signal(false);
 
   let _currentAssistantId: string | null = null;
   let _currentUserId: string | null = null;
@@ -329,12 +338,15 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         model?: string | null;
         type?: ThreadType;
         taskRun?: TaskRunInfo;
+        activeTurn?: boolean;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
         messages.value = hydrated;
         threadType.value = data.type ?? null;
         taskRun.value = data.taskRun ?? null;
+        // A turn this tab is streaming itself is not a background turn.
+        backgroundTurnActive.value = !isStreaming.value && (data.activeTurn ?? false);
         summaryPath.value = data.summaryPath ?? null;
         // Scan backward for the last *pending* hitl_prompt rather than only
         // checking the final message — a task-originated pause appends a
@@ -628,6 +640,10 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
       return;
     }
     handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'connection_lost' });
+    // Reconcile with the server right away: if the turn already finished
+    // this shows its result; if it is still running, activeTurn marks the
+    // thread busy until thread_turn_completed re-hydrates it.
+    void hydrate();
   }
 
   async function sendMessage(content: string, attachmentId?: string): Promise<void> {
@@ -768,6 +784,11 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     }
   }
 
+  function markBackgroundTurn(active: boolean): void {
+    // This tab's own live stream already reflects its turn.
+    backgroundTurnActive.value = active && !isStreaming.value;
+  }
+
   function stopGeneration(): void {
     _abortController?.abort();
     _abortController = null;
@@ -800,6 +821,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     waitingProviderName,
     threadType,
     taskRun,
+    backgroundTurnActive,
+    markBackgroundTurn,
     setThreadModel,
     hydrate,
     sendMessage,

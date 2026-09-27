@@ -520,3 +520,60 @@ describe('use-thread — stream failures', () => {
     expect(lastAssistant(thread)).not.toMatchObject({ status: 'error' });
   });
 });
+
+describe('use-thread — background turns', () => {
+  function hydrateWith(body: Record<string, unknown>) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], ...body }),
+    }) as unknown as typeof fetch;
+  }
+
+  it('marks the thread busy when loaded mid-turn, so the composer offers Stop [unit]', async () => {
+    hydrateWith({ activeTurn: true });
+    const thread = newThread('t-bg');
+
+    await thread.hydrate();
+
+    expect(thread.backgroundTurnActive.value).toBe(true);
+  });
+
+  it('clears the busy state once the server reports no active turn [unit]', async () => {
+    const thread = newThread('t-bg-done');
+    thread.markBackgroundTurn(true);
+    hydrateWith({ activeTurn: false });
+
+    await thread.hydrate();
+
+    expect(thread.backgroundTurnActive.value).toBe(false);
+  });
+
+  it("never treats this tab's own streaming turn as a background turn [unit]", () => {
+    let release: () => void = () => {};
+    mockConsumeSsePost.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const thread = newThread('t-own');
+    void thread.sendMessage('hello');
+
+    thread.markBackgroundTurn(true);
+
+    expect(thread.backgroundTurnActive.value).toBe(false);
+    release();
+  });
+
+  it('re-hydrates by itself after a dropped stream, picking up a turn still running on the server [orchestration]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('Error in input stream'));
+    hydrateWith({ activeTurn: true });
+    const thread = newThread('t-drop-rehydrate');
+
+    await thread.sendMessage('run the long job');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/threads/t-drop-rehydrate');
+    expect(thread.backgroundTurnActive.value).toBe(true);
+  });
+});
