@@ -11,6 +11,7 @@ import { TOOL_CATALOG } from './agents/tool-catalog.js';
 import { bootWorkspaceStore, getWorkspaceStore } from './services/workspace-store.js';
 import { bootTrackerRegistry } from './services/tracker-registry.js';
 import { bootTaskScheduler } from './services/task-scheduler.js';
+import { bootCronRegistry, getCronRegistry, withCronResync } from './services/cron-registry.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
 import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { startArtifactGc } from './artifacts/artifact-gc.js';
@@ -79,8 +80,14 @@ const taskExecutor = process.env['E2E_NOOP_TASK_EXECUTOR']
   ? () => new Promise<void>(() => {})
   : executeTask;
 
-bootTaskScheduler(taskExecutor);
+// Every run re-syncs its task's cron timer once it settles — a scheduled
+// task usually goes back to 'scheduled' and needs its next fire armed.
+bootTaskScheduler(withCronResync(taskExecutor, getCronRegistry));
 app.logger.info('Task scheduler started');
+
+// After the scheduler: boot catch-up enqueues runs and wakes it.
+bootCronRegistry();
+app.logger.info('Cron registry started');
 
 // Any origin='agent' task the constructor's crash-recovery pass gave up on
 // (see WorkspaceStore.recoverRunningQueueEntries()) is delivered now,

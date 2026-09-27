@@ -10,6 +10,10 @@ import { WorkspaceStore } from '../../services/workspace-store.js';
 import { bootObservability } from '../../services/observability.js';
 import {
   createTaskHandler,
+  deleteTaskHandler,
+  getTaskHandler,
+  listTasksHandler,
+  type TaskResponse,
   patchTaskHandler,
   enqueueTaskHandler,
   cancelTaskHandler,
@@ -638,6 +642,16 @@ describe('routes/v1/tasks.handlers', () => {
         }
       });
 
+      it('rejects depending on a recurring task, which never settles as finished [unit]', () => {
+        const recurring = store.createTask({ title: 'nightly', triggerType: 'cron_repeat' });
+        const b = store.createTask({ title: 'b' });
+
+        const result = addTaskDependencyHandler(store, b.id, { dependsOnTaskId: recurring.id });
+
+        expect(result).to.deep.include({ ok: false, status: 400 });
+        expect(store.listTaskDependencies(b.id)).to.have.length(0);
+      });
+
       it('accepts explicit requireSuccess/whileBlocked flags', () => {
         const a = store.createTask({ title: 'a' });
         const b = store.createTask({ title: 'b' });
@@ -1103,6 +1117,194 @@ describe('routes/v1/tasks.handlers', () => {
     it('404s for an unknown task so the drawer can tell "gone" from "no runs yet" [unit]', () => {
       const result = listTaskRunsHandler(store, 'missing');
       expect(result).to.deep.include({ ok: false, status: 404 });
+    });
+  });
+
+  describe('cron triggers on create/patch (cron task triggers design §1)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-cron-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    const daily = { expression: '0 0 * * *', timezone: 'UTC' };
+
+    it("creates a recurring task straight into 'scheduled' with its config filled in [unit]", () => {
+      const result = createTaskHandler(store, {
+        title: 'Nightly',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data!.status).to.equal('scheduled');
+      expect(result.data!.triggerConfig).to.include({
+        expression: '0 0 * * *',
+        enabled: true,
+        maxConsecutiveFailures: 3,
+        consecutiveFailures: 0,
+      });
+    });
+
+    it('rejects an invalid schedule with 400 and creates nothing [unit]', () => {
+      const result = createTaskHandler(store, {
+        title: 'Bad',
+        triggerType: 'cron_repeat',
+        triggerConfig: { expression: '99 * * * *', timezone: 'UTC' },
+      });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(!result.ok && result.error).to.match(/^Invalid schedule: expression/);
+      expect(store.listTasks()).to.have.length(0);
+    });
+
+    it('requires a config when switching a task onto a schedule [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { triggerType: 'cron_repeat' });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+    });
+
+    it("turning the schedule off takes the task out of 'scheduled' [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      const result = patchTaskHandler(store, id, {
+        triggerConfig: { ...daily, enabled: false },
+        status: 'scheduled', // the drawer resends the status it loaded with
+      });
+      expect(result.ok && result.data!.status).to.equal('pending');
+    });
+
+    it('a patch that does not touch the schedule keeps it, bookkeeping included [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const before = created.ok ? created.data! : null;
+      const result = patchTaskHandler(store, before!.id, { title: 'renamed' });
+      expect(result.ok && result.data!.triggerConfig).to.deep.equal(before!.triggerConfig);
+      expect(result.ok && result.data!.status).to.equal('scheduled');
+    });
+
+    it("switching a scheduled task to manual drops it back to 'pending' [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const result = patchTaskHandler(store, created.ok ? created.data!.id : '', {
+        triggerType: 'manual',
+        triggerConfig: null,
+      });
+      expect(result.ok && result.data!.status).to.equal('pending');
+    });
+
+    it("refuses to put a task without a schedule into 'scheduled', where it would never run [unit]", () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { status: 'scheduled' });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(store.getTask(task.id)!.status).to.equal('pending');
+    });
+
+    it('rejects a one-shot time that has already passed, since it could never fire [unit]', () => {
+      const result = createTaskHandler(store, {
+        title: 'late',
+        triggerType: 'cron_once',
+        triggerConfig: { fireAt: '2020-01-01T00:00:00.000Z', timezone: 'UTC' },
+      });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(!result.ok && result.error).to.match(/fireAt must be in the future/);
+    });
+
+    it('computes a schedule summary on cron task responses, so the UI needs no cron parser [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      for (const task of [
+        created.ok ? created.data : null,
+        (getTaskHandler(store, id) as { data: TaskResponse }).data,
+        (listTasksHandler(store) as { data: TaskResponse[] }).data[0],
+      ]) {
+        expect(task!.schedule).to.include({
+          active: true,
+          iterationCount: 0,
+          inactiveReason: null,
+        });
+        expect(new Date(task!.schedule!.nextFireAt!).getUTCHours()).to.equal(0);
+      }
+    });
+
+    it("reports the newest finished run's outcome for the Kanban last-run badge [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        assignedTo: 'agent',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      const before = getTaskHandler(store, id) as { data: TaskResponse };
+      expect(before.data.schedule!.lastRunOutcome, 'no runs yet').to.equal(null);
+
+      const failed = store.enqueueTask(id);
+      store.dequeueNext();
+      store.completeQueueEntry(failed.id, 'failed');
+      store.enqueueTask(id); // queued, not finished — must not mask the failure
+
+      const after = getTaskHandler(store, id) as { data: TaskResponse };
+      expect(after.data.schedule!.lastRunOutcome).to.equal('failed');
+    });
+
+    it('leaves the schedule summary off tasks that have no schedule [unit]', () => {
+      const created = createTaskHandler(store, { title: 'plain' });
+      expect(created.ok && created.data).to.not.have.property('schedule');
+    });
+
+    it('deletes a task that has run before, taking its run history with it [unit]', () => {
+      const task = store.createTask({ title: 'ran once', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.dequeueNext();
+      store.completeQueueEntry(entry.id, 'done');
+
+      expect(deleteTaskHandler(store, task.id)).to.deep.equal({
+        ok: true,
+        data: { deleted: true },
+      });
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(store.getTaskRun(entry.id)).to.equal(null);
+    });
+
+    it('refuses to delete a task mid-run with 409, leaving it intact [unit]', () => {
+      const task = store.createTask({ title: 'busy', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+
+      expect(deleteTaskHandler(store, task.id)).to.deep.include({ ok: false, status: 409 });
+      expect(store.getTask(task.id)).to.not.equal(null);
+    });
+
+    it('refuses "Run now" with 409 while a run is already queued or running [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      expect(enqueueTaskHandler(store, id).ok).to.equal(true);
+
+      const again = enqueueTaskHandler(store, id);
+      expect(again).to.deep.include({ ok: false, status: 409 });
+      expect(store.listQueue().filter((e) => e.taskId === id)).to.have.length(1);
     });
   });
 });

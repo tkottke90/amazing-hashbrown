@@ -1,4 +1,4 @@
-import type { TriggerSource } from '@/services/tasks-api';
+import type { TriggerSource, TriggerType } from '@/services/tasks-api';
 
 // Shared wording for "what started this run", so the run view header, the
 // run markers in chat and the drawer's run history all say the same thing.
@@ -25,4 +25,17 @@ export function runName(runNumber: number, source?: TriggerSource): string {
 // The read-only run view lives at the normal chat route (see ChatRoot).
 export function runPath(runThreadId: string): string {
   return `/chat/${runThreadId}`;
+}
+
+// What starts a task, as the Inbox and cards name it.
+const TRIGGER_TYPE_LABEL: Record<TriggerType, string> = {
+  manual: 'Manual',
+  chat: 'Chat',
+  webhook: 'Webhook',
+  cron_once: 'Scheduled (once)',
+  cron_repeat: 'Scheduled (repeat)',
+};
+
+export function triggerTypeLabel(type: TriggerType): string {
+  return TRIGGER_TYPE_LABEL[type] ?? type;
 }

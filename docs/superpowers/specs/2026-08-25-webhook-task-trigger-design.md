@@ -20,7 +20,7 @@ Let an external service (CI pipeline, GitHub Action, monitoring alert, Zapier fl
 
 ## Non-goals
 
-- **Cron trigger UI** (`cron_once`/`cron_repeat`). The type selector added here exposes only **Manual** and **Webhook** — cron stays hidden until it gets its own feature work (tracked separately, e.g. [#72](https://github.com/tkottke90/amazing-hashbrown/issues/72)).
+- **Cron trigger UI** (`cron_once`/`cron_repeat`). The type selector added here exposes only **Manual** and **Webhook** — cron stays hidden until it gets its own feature work (tracked separately, e.g. [#72](https://github.com/tkottke90/amazing-hashbrown/issues/72); since shipped, see the [cron task triggers design](./2026-09-26-cron-task-triggers-design.md)).
 - **Any auth beyond the token itself** — confirmed out of scope by the issue's own "Design Needs: None."
 - **Using the webhook request body for anything.** It's accepted (global `express.json()` already parses it) but never read. The issue calls this out explicitly as future context-passing groundwork, not something to build now.
 - **A "requeue on completion" / self-perpetuating task loop.** This is a real pattern the webhook trigger enables in combination with other work, but it depends on task-agent execution actually existing, which it doesn't yet — see [Future work](#future-work).
@@ -143,4 +143,4 @@ No component-level test framework is exercised for `task-drawer.tsx` beyond the 
 
 - **[#87](https://github.com/tkottke90/amazing-hashbrown/issues/87)** wires actual agent execution into the scheduler — today `tick()` marks a dequeued task `running` and stops (explicit `TODO` in `task-scheduler.ts:115-118`). Until this lands, a webhook-enqueued task runs no differently from any other enqueued task: it sits at `running` with nothing acting on it.
 - Once #87 exists, its continuity model is the project **wiki**, not a chat thread — the agent commits findings back to the wiki mid-run, so a task re-enqueued later (by webhook or otherwise) picks up prior context via `wiki.orient()`. This is what would make a "trigger an automation → automation calls back the webhook → task continues" loop actually carry state, with no context-passing needed in the webhook body itself.
-- **[#72](https://github.com/tkottke90/amazing-hashbrown/issues/72)** (cron triggers) already anticipates a closely related pattern — `cron_repeat` enqueuing its own next iteration as the final step of its own execution — which depends on #87 the same way.
+- **[#72](https://github.com/tkottke90/amazing-hashbrown/issues/72)** (cron triggers) originally anticipated `cron_repeat` enqueuing its own next iteration as the final step of its own execution. It shipped differently: an in-process `CronRegistry` arms each schedule, and run-to-run continuity comes from per-run threads, run summaries and the `read_task_run` tool rather than the wiki alone — see the [cron task triggers design](./2026-09-26-cron-task-triggers-design.md).

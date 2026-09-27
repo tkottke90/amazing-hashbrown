@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { forwardRef } from 'preact/compat';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
-import { ChevronRight, Plus, GitBranch, BookOpen, Calendar } from 'lucide-preact';
+import { ChevronRight, Plus, GitBranch, BookOpen, Calendar, Clock } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,8 @@ import {
 import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
 import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
-import type { Task, TaskStatus, TaskDependency } from '@/services/tasks-api';
+import type { Task, TaskStatus, TaskDependency, TaskSchedule } from '@/services/tasks-api';
+import { formatFireTime } from '@/lib/cron-drafts';
 import { listTaskDependencies } from '@/services/tasks-api';
 import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
 import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
@@ -42,6 +43,7 @@ type DetailTab = 'overview' | 'tasks' | 'files' | 'chat';
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
+  scheduled: 'Scheduled',
   ready: 'Ready',
   running: 'Running',
   waiting_on_user: 'Waiting on user',
@@ -60,6 +62,7 @@ const DETAIL_TAB_TITLE_SUFFIX: Record<DetailTab, string> = {
 
 const COLUMN_ORDER: TaskStatus[] = [
   'pending',
+  'scheduled',
   'ready',
   'running',
   'waiting_on_user',
@@ -86,6 +89,7 @@ function KanbanColumn({
   const isRunning = status === 'running';
   const isBlocked = status === 'blocked';
   const isFailed = status === 'failed';
+  const isScheduled = status === 'scheduled';
   const label = status === 'failed' ? 'Failed / Cancelled' : STATUS_LABELS[status];
 
   const columnTasks = status === 'failed' ? [...taskList] : taskList;
@@ -104,7 +108,9 @@ function KanbanColumn({
                   ? 'text-green-600'
                   : isReady
                     ? 'text-amber-600'
-                    : 'text-muted-foreground',
+                    : isScheduled
+                      ? 'text-violet-600'
+                      : 'text-muted-foreground',
           )}
         >
           {label}
@@ -125,6 +131,36 @@ function KanbanColumn({
         />
       ))}
     </div>
+  );
+}
+
+const LAST_RUN_BADGE: Record<NonNullable<TaskSchedule['lastRunOutcome']>, string> = {
+  done: 'bg-green-600/10 text-green-700 dark:text-green-400',
+  failed: 'bg-destructive/10 text-destructive',
+  cancelled: 'bg-muted text-muted-foreground',
+};
+
+// A cron task's card line: when it runs next, and how its last run went.
+function ScheduleCardLine({ schedule }: { schedule: TaskSchedule }) {
+  return (
+    <p
+      data-testid="task-card-schedule"
+      class="text-[10px] text-muted-foreground mt-1 flex items-center gap-1 flex-wrap"
+    >
+      <Clock class="size-3" />
+      {schedule.nextFireAt ? `next: ${formatFireTime(schedule.nextFireAt)}` : 'not scheduled'}
+      {schedule.lastRunOutcome && (
+        <span
+          data-testid="task-card-last-run"
+          class={cn(
+            'rounded-full px-1.5 py-0.5 font-medium',
+            LAST_RUN_BADGE[schedule.lastRunOutcome],
+          )}
+        >
+          last: {schedule.lastRunOutcome}
+        </span>
+      )}
+    </p>
   );
 }
 
@@ -205,6 +241,7 @@ export const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function T
           {new Date(task.dueAt).toLocaleDateString()}
         </p>
       )}
+      {task.schedule && <ScheduleCardLine schedule={task.schedule} />}
       {waitingOn.value.length > 0 && (
         <p class="text-[10px] text-muted-foreground mt-1 truncate">
           Waiting on: {waitingOn.value[0]}
@@ -328,7 +365,7 @@ function TasksTab({
         />
       </div>
 
-      <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
+      <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
         {COLUMN_ORDER.map((status) => (
           <KanbanColumn
             key={status}

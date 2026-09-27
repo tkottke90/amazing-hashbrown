@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { getCronRegistry } from '../../services/cron-registry.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import {
   listWorkspacesHandler,
@@ -65,6 +66,8 @@ workspacesRouter.delete('/:id', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  // The workspace's tasks are gone — drop any cron timers armed for them.
+  getCronRegistry().resyncAll();
   res.json(result.data);
 });
 

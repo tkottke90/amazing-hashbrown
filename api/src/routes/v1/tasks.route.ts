@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import type { TaskListFilters, TaskStatus } from '../../services/workspace-store.js';
 import { getTaskScheduler } from '../../services/task-scheduler.js';
+import { getCronRegistry } from '../../services/cron-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
 import {
   listTasksHandler,
@@ -58,6 +59,7 @@ tasksRouter.post('/', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  getCronRegistry().sync(result.data.id);
   res.status(201).json(result.data);
 });
 
@@ -113,6 +115,9 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
   // immediately rather than waiting on the next unrelated trigger. Cheap and
   // safe to call unconditionally, even when nothing actually changed.
   getTaskScheduler().wake();
+  // A schedule edit, status change or trigger switch — (re-)arm or clear
+  // the task's cron timer. A no-op for non-cron tasks.
+  getCronRegistry().sync(req.params['id'] as string);
   res.json(result.data);
 });
 
@@ -122,6 +127,7 @@ tasksRouter.delete('/:id', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  getCronRegistry().sync(req.params['id'] as string);
   res.status(204).end();
 });
 
@@ -152,6 +158,7 @@ tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {
   // New work is available — let the (event-driven) scheduler know so it can
   // pick it up immediately rather than waiting on the next unrelated trigger.
   getTaskScheduler().wake();
+  getCronRegistry().sync(req.params['id'] as string);
   res.status(201).json(result.data);
 });
 
@@ -162,6 +169,7 @@ tasksRouter.post('/:id/cancel', (req: Request, res: Response) => {
     return;
   }
   getTaskScheduler().wake();
+  getCronRegistry().sync(req.params['id'] as string);
   res.status(200).json(result.data);
 });
 
@@ -172,6 +180,7 @@ tasksRouter.post('/:id/pause', (req: Request, res: Response) => {
     return;
   }
   getTaskScheduler().wake();
+  getCronRegistry().sync(req.params['id'] as string);
   res.status(200).json(result.data);
 });
 
@@ -182,6 +191,7 @@ tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
     return;
   }
   getTaskScheduler().wake();
+  getCronRegistry().sync(req.params['id'] as string);
   res.status(200).json(result.data);
 });
 

@@ -22,6 +22,20 @@ import {
 import { workspaces } from '@/hooks/use-workspaces';
 import { TaskRunHistory, useTaskRuns, waitingRun } from '@/components/task-run-history';
 import { runPath } from '@/lib/task-runs';
+import { CronOnceFields } from '@/components/cron-once-fields';
+import { CronRepeatFields } from '@/components/cron-repeat-fields';
+import { CronPreviewPanel } from '@/components/cron-preview-panel';
+import { ScheduleStatusBanner } from '@/components/schedule-status-banner';
+import { useCronPreview } from '@/hooks/use-cron-preview';
+import {
+  isCronTrigger,
+  onceConfigFrom,
+  onceDraftFrom,
+  repeatConfigFrom,
+  repeatDraftFrom,
+  type CronOnceDraft,
+  type CronRepeatDraft,
+} from '@/lib/cron-drafts';
 import { useLocation } from 'preact-iso';
 import type {
   Task,
@@ -29,6 +43,8 @@ import type {
   TriggerType,
   PlanStep,
   CreateTaskInput,
+  CronOnceConfig,
+  CronPreviewRequest,
   TaskDependency,
 } from '@/services/tasks-api';
 import {
@@ -67,6 +83,7 @@ function plansEqual(a: PlanStep[], b: PlanStep[]): boolean {
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
+  scheduled: 'Scheduled',
   ready: 'Ready',
   running: 'Running',
   waiting_on_user: 'Waiting on user',
@@ -141,6 +158,14 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   const triggerType = useSignal<TriggerType>(task?.triggerType ?? 'manual');
   const webhookToken = useSignal<string | null>(
     (task?.triggerConfig as { webhookToken?: string } | null)?.webhookToken ?? null,
+  );
+  // Each schedule type keeps its own draft, so flipping between them in the
+  // select doesn't lose what was typed.
+  const onceDraft = useSignal<CronOnceDraft>(
+    onceDraftFrom(task?.triggerType === 'cron_once' ? task.triggerConfig : null),
+  );
+  const repeatDraft = useSignal<CronRepeatDraft>(
+    repeatDraftFrom(task?.triggerType === 'cron_repeat' ? task.triggerConfig : null),
   );
   const copied = useSignal(false);
   const regenerating = useSignal(false);
@@ -532,6 +557,41 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
     }
   }
 
+  // A one-shot left at its stored time needs no re-check (and may be in the
+  // past because it already fired — the server keeps it as is).
+  const storedFireAt =
+    task?.triggerType === 'cron_once'
+      ? (task.triggerConfig as CronOnceConfig | null)?.fireAt
+      : null;
+  let previewInput: CronPreviewRequest | null = null;
+  if (triggerType.value === 'cron_repeat' && repeatDraft.value.expression.trim()) {
+    previewInput = {
+      expression: repeatDraft.value.expression.trim(),
+      timezone: repeatDraft.value.timezone.trim(),
+    };
+  } else if (triggerType.value === 'cron_once' && onceDraft.value.fireAt) {
+    const { fireAt, timezone } = onceConfigFrom(onceDraft.value);
+    if (!storedFireAt || new Date(storedFireAt).getTime() !== new Date(fireAt).getTime()) {
+      previewInput = { fireAt, timezone };
+    }
+  }
+  const preview = useCronPreview(previewInput);
+  const scheduleIncomplete =
+    (triggerType.value === 'cron_repeat' && !repeatDraft.value.expression.trim()) ||
+    (triggerType.value === 'cron_once' && !onceDraft.value.fireAt);
+  // Save waits for a valid preview: the server would reject anything else.
+  const scheduleBlocksSave =
+    isCronTrigger(triggerType.value) &&
+    (scheduleIncomplete || (previewInput !== null && preview.value.status !== 'valid'));
+
+  function triggerConfigForSave(): unknown {
+    if (triggerType.value === 'cron_once') return onceConfigFrom(onceDraft.value);
+    if (triggerType.value === 'cron_repeat') return repeatConfigFrom(repeatDraft.value);
+    // Manual / webhook: leave the stored config to the server (it owns the
+    // webhook token, and keeps it across a switch to manual and back).
+    return undefined;
+  }
+
   async function handleSave(e: Event) {
     e.preventDefault();
     if (!title.value.trim()) {
@@ -548,6 +608,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
         outcome: outcome.value.trim() || null,
         assignedTo: assignedTo.value,
         triggerType: triggerType.value,
+        triggerConfig: triggerConfigForSave(),
         dueAt: dueAt.value || null,
         workspaceId: workspaceId.value,
         trackerType: trackerType.value,
@@ -561,7 +622,13 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
       if (isNew) {
         saved = await createTask({ ...patch, title: patch.title! });
       } else {
-        saved = await patchTask(task.id, { ...patch, status: status.value });
+        // 'scheduled' belongs to cron tasks; a task taken off its schedule
+        // goes back to 'pending' (the server settles cron statuses itself).
+        const nextStatus =
+          status.value === 'scheduled' && !isCronTrigger(triggerType.value)
+            ? 'pending'
+            : status.value;
+        saved = await patchTask(task.id, { ...patch, status: nextStatus });
       }
       onSaved?.(saved);
       close();
@@ -959,11 +1026,15 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
                 }}
                 class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               >
-                {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
+                {/* 'scheduled' is set by the server from the task's schedule, so it
+                    is only listed to display a task that already has it. */}
+                {(Object.keys(STATUS_LABELS) as TaskStatus[])
+                  .filter((s) => s !== 'scheduled' || status.value === 'scheduled')
+                  .map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
               </select>
             </div>
           )}
@@ -1000,7 +1071,36 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
           >
             <option value="manual">Manual</option>
             <option value="webhook">Webhook</option>
+            <option value="cron_once">Scheduled (once)</option>
+            <option value="cron_repeat">Scheduled (repeat)</option>
           </select>
+
+          {isCronTrigger(triggerType.value) && (
+            <div class="flex flex-col gap-2 mt-1">
+              {triggerType.value === 'cron_once' ? (
+                <CronOnceFields draft={onceDraft} />
+              ) : (
+                <CronRepeatFields draft={repeatDraft} />
+              )}
+              <CronPreviewPanel state={preview.value} />
+              <ScheduleStatusBanner
+                enabled={
+                  triggerType.value === 'cron_once'
+                    ? onceDraft.value.enabled
+                    : repeatDraft.value.enabled
+                }
+                onEnabledChange={(enabled) => {
+                  if (triggerType.value === 'cron_once') {
+                    onceDraft.value = { ...onceDraft.value, enabled };
+                  } else {
+                    repeatDraft.value = { ...repeatDraft.value, enabled };
+                  }
+                }}
+                schedule={task?.triggerType === triggerType.value ? task.schedule : undefined}
+                config={task?.triggerConfig}
+              />
+            </div>
+          )}
 
           {triggerType.value === 'webhook' &&
             (isNew ? (
@@ -1179,7 +1279,7 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
         <Button type="button" variant="ghost" onClick={() => close()}>
           Cancel
         </Button>
-        <Button type="submit" disabled={saving.value}>
+        <Button type="submit" disabled={saving.value || scheduleBlocksSave}>
           {saving.value ? 'Saving…' : isNew ? 'Create task' : 'Save changes'}
         </Button>
       </div>

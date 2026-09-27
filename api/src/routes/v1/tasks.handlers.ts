@@ -7,9 +7,19 @@ import type {
   PatchTaskInput,
   PlanStep,
   TaskListFilters,
+  TaskStatus,
   TriggerType,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
+import type { Task } from '../../services/workspace-store.js';
+import {
+  describeTaskSchedule,
+  isCronTrigger,
+  resolveCronConfig,
+  statusForSavedSchedule,
+  type CronConfig,
+  type TaskSchedule,
+} from '../../services/cron-config.js';
 import type { ThreadStore } from '../../services/thread-store.js';
 import { linkedPromptCopy, resolveHitlPrompt } from '../../agents/thread-message-writer.js';
 import { getWikiRegistry } from '../../services/wiki.js';
@@ -49,10 +59,15 @@ function conflict(error: string): HandlerFailure {
   return { ok: false, status: 409, error };
 }
 
-// The server is the sole source of truth for a webhook task's token — a
-// client can never set trigger_config.webhookToken directly, even via a
-// generic patch. A token is (re)generated whenever the resulting trigger
-// type is 'webhook' and either none exists yet or regeneration was asked for.
+type TriggerConfigResult = { ok: true; triggerConfig: unknown } | { ok: false; error: string };
+
+// Resolves the trigger_config to store for a create or patch. The server is
+// the sole source of truth for a webhook task's token — a client can never
+// set trigger_config.webhookToken directly, even via a generic patch; a
+// token is (re)generated whenever the resulting trigger type is 'webhook'
+// and either none exists yet or regeneration was asked for. A cron config
+// is validated and merged with its server-owned fields (cron-config.ts).
+// Returns triggerConfig: undefined when nothing about the trigger changes.
 function resolveTriggerConfig(
   current: { triggerType: TriggerType; triggerConfig: unknown } | null,
   incoming: {
@@ -60,41 +75,122 @@ function resolveTriggerConfig(
     triggerConfig?: unknown;
     regenerateWebhookToken?: boolean;
   },
-): unknown {
+  now: Date = new Date(),
+): TriggerConfigResult {
   const resultingType = incoming.triggerType ?? current?.triggerType ?? 'manual';
-  if (resultingType !== 'webhook') return incoming.triggerConfig;
 
-  const existingToken = (current?.triggerConfig as { webhookToken?: string } | null)?.webhookToken;
-  const webhookToken =
-    incoming.regenerateWebhookToken || !existingToken ? randomUUID() : existingToken;
-  return { webhookToken };
+  if (resultingType === 'webhook') {
+    const existingToken = (current?.triggerConfig as { webhookToken?: string } | null)
+      ?.webhookToken;
+    const webhookToken =
+      incoming.regenerateWebhookToken || !existingToken ? randomUUID() : existingToken;
+    return { ok: true, triggerConfig: { webhookToken } };
+  }
+
+  if (isCronTrigger(resultingType)) {
+    const sameType = current?.triggerType === resultingType;
+    // A patch that doesn't touch the schedule keeps the stored config.
+    if (incoming.triggerConfig === undefined && sameType)
+      return { ok: true, triggerConfig: undefined };
+    if (incoming.triggerConfig === undefined) {
+      return { ok: false, error: `triggerConfig is required for a ${resultingType} trigger` };
+    }
+    const resolved = resolveCronConfig(
+      resultingType,
+      sameType ? (current!.triggerConfig as CronConfig) : null,
+      incoming.triggerConfig,
+      now,
+    );
+    return resolved.ok
+      ? { ok: true, triggerConfig: resolved.config }
+      : { ok: false, error: `Invalid schedule: ${resolved.error}` };
+  }
+
+  return { ok: true, triggerConfig: incoming.triggerConfig };
+}
+
+// The status a task should carry once its trigger is saved. 'scheduled'
+// belongs to the cron registry: a cron task that will fire again sits in
+// it, one that won't leaves it, and no other task may be put in it.
+function statusAfterTriggerSave(
+  store: WorkspaceStore,
+  task: { id: string; status: TaskStatus; triggerType: TriggerType; triggerConfig: unknown },
+  now: Date = new Date(),
+): TaskStatus | null {
+  if (isCronTrigger(task.triggerType) && task.triggerConfig) {
+    return statusForSavedSchedule(
+      task.status,
+      task.triggerType,
+      task.triggerConfig as CronConfig,
+      store.countScheduledRuns(task.id),
+      now,
+    );
+  }
+  return task.status === 'scheduled' ? 'pending' : null;
+}
+
+export type RunOutcome = 'done' | 'failed' | 'cancelled';
+
+export type TaskResponse = Task & {
+  schedule?: TaskSchedule & { lastRunOutcome: RunOutcome | null };
+};
+
+const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled']);
+
+// A task as the API returns it: cron tasks carry a computed `schedule`
+// (next fire time, run count, and why it's inactive, if it is) so the UI
+// never needs its own cron parser.
+export function withSchedule(
+  store: WorkspaceStore,
+  task: Task,
+  now: Date = new Date(),
+): TaskResponse {
+  if (!isCronTrigger(task.triggerType) || !task.triggerConfig) return task;
+  // The newest finished run — the Kanban card's last-run badge.
+  const lastRun = store
+    .listTaskRuns(task.id, { limit: 5 })
+    .find((run) => RUN_OUTCOMES.has(run.status));
+  return {
+    ...task,
+    schedule: {
+      ...describeTaskSchedule(
+        task.triggerType,
+        task.triggerConfig as CronConfig,
+        store.countScheduledRuns(task.id),
+        now,
+      ),
+      lastRunOutcome: (lastRun?.status as RunOutcome | undefined) ?? null,
+    },
+  };
 }
 
 export function listTasksHandler(store: WorkspaceStore, filters: TaskListFilters = {}) {
-  return ok(store.listTasks(filters));
+  return ok(store.listTasks(filters).map((task) => withSchedule(store, task)));
 }
 
 export function getTaskHandler(store: WorkspaceStore, id: string) {
   const task = store.getTask(id);
   if (!task) return notFound(`Task ${id} not found`);
-  return ok(task);
+  return ok(withSchedule(store, task));
 }
 
 export function createTaskHandler(
   store: WorkspaceStore,
   body: Partial<NewTaskInput>,
-): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
+): HandlerResult<TaskResponse> {
   if (!body.title || typeof body.title !== 'string') return badRequest('title is required');
-  const triggerConfig = resolveTriggerConfig(null, body);
-  const task = store.createTask({ ...body, triggerConfig } as NewTaskInput);
-  return ok(task);
+  const trigger = resolveTriggerConfig(null, body);
+  if (!trigger.ok) return badRequest(trigger.error);
+  const task = store.createTask({ ...body, triggerConfig: trigger.triggerConfig } as NewTaskInput);
+  const status = statusAfterTriggerSave(store, task);
+  return ok(withSchedule(store, status ? store.patchTask(task.id, { status })! : task));
 }
 
 export function patchTaskHandler(
   store: WorkspaceStore,
   id: string,
   patch: PatchTaskInput & { regenerateWebhookToken?: boolean },
-): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
+): HandlerResult<TaskResponse> {
   const current = store.getTask(id);
   if (!current) return notFound(`Task ${id} not found`);
 
@@ -133,10 +229,24 @@ export function patchTaskHandler(
     );
   }
 
+  const resultingType = patch.triggerType ?? current.triggerType;
+  if (
+    patch.status === 'scheduled' &&
+    patch.status !== current.status &&
+    !isCronTrigger(resultingType)
+  ) {
+    return badRequest("Only a task with a schedule can be 'scheduled'");
+  }
+
   const { regenerateWebhookToken, ...rest } = patch;
-  const triggerConfig = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken });
-  const task = store.patchTask(id, { ...rest, triggerConfig });
+  const trigger = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken });
+  if (!trigger.ok) return badRequest(trigger.error);
+  let task = store.patchTask(id, { ...rest, triggerConfig: trigger.triggerConfig });
   if (!task) return notFound(`Task ${id} not found`);
+  const scheduleStatus = statusAfterTriggerSave(store, task);
+  if (scheduleStatus && scheduleStatus !== task.status) {
+    task = store.patchTask(id, { status: scheduleStatus }) ?? task;
+  }
 
   // A blocked -> ready transition is a Resume: reuse the task's existing
   // paused task_queue row (resumePausedEntry) instead of falling into the
@@ -162,13 +272,18 @@ export function patchTaskHandler(
     if (!alreadyQueued) store.enqueueTask(id);
   }
 
-  return ok(task);
+  return ok(withSchedule(store, task));
 }
 
 export function deleteTaskHandler(
   store: WorkspaceStore,
   id: string,
 ): HandlerResult<{ deleted: true }> {
+  // Deleting under a live run would pull its queue row out from under the
+  // executor — cancel it first.
+  if (store.listQueue().some((entry) => entry.taskId === id)) {
+    return conflict('Task has a queued or running run — cancel it before deleting');
+  }
   const deleted = store.deleteTask(id);
   if (!deleted) return notFound(`Task ${id} not found`);
   return ok({ deleted: true });
@@ -191,6 +306,12 @@ export function enqueueTaskHandler(
 ): HandlerResult<ReturnType<WorkspaceStore['enqueueTask']>> {
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
+  // One active run per task: "Run now" or a webhook while a run is already
+  // queued or running would double it up (and, for a cron task, race its
+  // schedule).
+  if (store.listQueue().some((entry) => entry.taskId === taskId)) {
+    return conflict(`Task "${task.title}" is already queued or running`);
+  }
   const entry = store.enqueueTask(taskId, opts);
   // Keep tasks.status in sync with the fact that this task is now queued —
   // mirrors the same invariant patchTaskHandler enforces for the R14 path.
@@ -436,6 +557,13 @@ export function addTaskDependencyHandler(
 
   const target = store.getTask(dependsOnTaskId);
   if (!target) return notFound(`Task ${dependsOnTaskId} not found`);
+
+  // A recurring task never finishes in the usual sense — it settles back to
+  // 'scheduled' after every run — so a dependency on it would either release
+  // after its first run or never, neither of which is what the user meant.
+  if (target.triggerType === 'cron_repeat') {
+    return badRequest("A recurring task can't be a dependency");
+  }
 
   // Editable only while the task itself hasn't started yet — once
   // ready/running/etc. its dependency list is locked (Take-over is the way

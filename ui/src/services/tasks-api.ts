@@ -1,7 +1,15 @@
 import { request } from '@/utils/fetch.utils';
 
 export type TaskStatus =
-  'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  | 'pending'
+  | 'scheduled'
+  | 'ready'
+  | 'running'
+  | 'waiting_on_user'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 
@@ -12,6 +20,51 @@ export interface PlanStep {
   step: string;
   done: boolean;
 }
+
+// Server-computed state of a cron task's schedule (see the API's
+// describeTaskSchedule): the UI never parses cron expressions itself.
+export type ScheduleInactiveReason = 'disabled' | 'failures' | 'exhausted' | 'expired' | 'fired';
+
+export interface TaskSchedule {
+  nextFireAt: string | null;
+  iterationCount: number;
+  active: boolean;
+  inactiveReason: ScheduleInactiveReason | null;
+  lastRunOutcome: 'done' | 'failed' | 'cancelled' | null;
+}
+
+// trigger_config for the cron trigger types, as stored. The fields after
+// the schedule itself are server-owned bookkeeping.
+export interface CronOnceConfig {
+  fireAt: string;
+  timezone: string;
+  enabled: boolean;
+  enabledAt?: string;
+  lastFiredAt?: string | null;
+}
+
+export interface CronRepeatConfig {
+  expression: string;
+  timezone: string;
+  enabled: boolean;
+  maxIterations: number | null;
+  stopAfter: string | null;
+  maxConsecutiveFailures: number | null;
+  enabledAt?: string;
+  lastFiredAt?: string | null;
+  consecutiveFailures?: number;
+  pausedReason?: 'consecutive_failures' | null;
+}
+
+export interface CronPreview {
+  valid: boolean;
+  error?: string;
+  description: string;
+  nextFireTimes: string[];
+}
+
+export type CronPreviewRequest =
+  { expression: string; timezone: string } | { fireAt: string; timezone: string };
 
 export interface Task {
   id: string;
@@ -33,6 +86,8 @@ export interface Task {
   blockedReason: 'dependency_failed' | null;
   createdAt: string;
   updatedAt: string;
+  // Present on cron tasks only.
+  schedule?: TaskSchedule;
 }
 
 export interface TaskDependency {
@@ -123,7 +178,25 @@ export async function patchTask(
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+  // A 204 has no body for request() to parse, so check the status here —
+  // a refused delete (409 while a run is active) must surface, not vanish.
+  const res = await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Request failed: ${res.status}`);
+  }
+}
+
+export async function previewCron(
+  input: CronPreviewRequest,
+  signal?: AbortSignal,
+): Promise<CronPreview> {
+  return request<CronPreview>('/api/v1/triggers/cron/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  });
 }
 
 export async function fetchQueue(): Promise<QueueState> {

@@ -9,6 +9,8 @@ import { TaskDrawer } from '@/components/task-drawer';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import type { Task } from '@/services/tasks-api';
 import { useTitle } from '@/hooks/use-title';
+import { triggerTypeLabel } from '@/lib/task-runs';
+import { formatFireTime } from '@/lib/cron-drafts';
 
 // forwardRef required so Dialog.tsx can attach its click→showModal ref to the
 // row element (preactjs/preact#3297 silently drops refs on plain functions).
@@ -36,7 +38,14 @@ const TaskRow = forwardRef<HTMLTableRowElement, { task: Task }>(function TaskRow
         )}
       </td>
       <td class="px-4 py-3">
-        <span class="text-xs text-muted-foreground capitalize">{task.triggerType}</span>
+        <span class="text-xs text-muted-foreground" data-testid="inbox-task-trigger">
+          {triggerTypeLabel(task.triggerType)}
+        </span>
+        {task.schedule?.nextFireAt && (
+          <p class="text-[10px] text-muted-foreground">
+            next: {formatFireTime(task.schedule.nextFireAt)}
+          </p>
+        )}
       </td>
       <td class="px-4 py-3">
         <span class="text-xs text-muted-foreground capitalize">{task.status}</span>

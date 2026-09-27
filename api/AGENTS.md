@@ -63,6 +63,30 @@ when it settles. Things to keep in mind when touching this area:
   task's prompt as an interactive chat turn. Run threads reject chat, retry
   and fork (409).
 
+### Scheduled (cron) tasks
+
+`cron_once` / `cron_repeat` tasks wait in the `scheduled` status.
+`services/cron-registry.ts` (`CronRegistry`) keeps one in-process timer per
+such task; the database is the source of truth and a timer is only a
+wake-up call:
+
+- Fire only through `store.fireCronTask()` — its gate (`scheduled` and
+  enabled) is what skips a fire while a run is still going. Never enqueue a
+  cron run any other way.
+- Anything that can change a cron task's trigger, status or existence must
+  call `getCronRegistry().sync(taskId)` afterwards (routes do this after
+  their handler; the executor is wrapped in `withCronResync`). Handlers
+  themselves stay registry-free so they remain unit-testable.
+- What a finished run does to the schedule (back to `scheduled`, `done`,
+  auto-pause after N scheduled failures — manual runs never count) is
+  `settleCronRun()` in `services/cron-settlement.ts`, applied by
+  `completeQueueEntry`. Fire-time arithmetic, catch-up and DST live only in
+  `services/cron-schedule.ts`; the UI never parses cron — it calls
+  `POST /api/v1/triggers/cron/preview` and reads each task's computed
+  `schedule` field.
+- Tests inject `now` / `setTimer` / `clearTimer` into `CronRegistry` (see
+  `cron-registry.test.ts`) rather than using real timers.
+
 See `docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md`.
 
 ## Environment and config

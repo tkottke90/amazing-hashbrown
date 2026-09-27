@@ -27,6 +27,12 @@ const suite: TestSuite = {
       expectedOutcome: 'Task card moves from Pending to Running column',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Create a workspace task on a repeating schedule',
+      expectedOutcome: 'Its card sits in the Scheduled column and shows when it runs next',
+      test: () => {},
+    },
   ],
 };
 
@@ -131,6 +137,44 @@ test.describe(
       await expect(
         pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
       ).not.toBeVisible();
+    });
+
+    test('a scheduled task sits in the Scheduled column with its next run', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const wsRes = await request.post('/api/v1/workspaces', {
+        data: {
+          name: 'kanban-scheduled-ws',
+          locationRoot: 'temporary',
+          directoryName: 'kanban-scheduled-ws',
+        },
+      });
+      expect(wsRes.status()).toBe(201);
+      const ws = await wsRes.json();
+
+      // Jan 1 only — never fires during the run.
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: {
+          title: 'Yearly review',
+          workspaceId: ws.id,
+          assignedTo: 'agent',
+          triggerType: 'cron_repeat',
+          triggerConfig: { expression: '0 9 1 1 *', timezone: 'UTC' },
+        },
+      });
+      expect(taskRes.status()).toBe(201);
+      expect((await taskRes.json()).status).toBe('scheduled');
+
+      await page.goto(`/workspaces/${ws.id}`);
+      await page.getByRole('button', { name: /tasks/i }).click();
+      await pauseBeforeAction(page, testInfo);
+
+      const card = page
+        .locator('[data-column="scheduled"] [data-testid="task-card"]')
+        .filter({ hasText: 'Yearly review' });
+      await expect(card).toBeVisible();
+      await expect(card.locator('[data-testid="task-card-schedule"]')).toContainText('next:');
     });
   },
 );

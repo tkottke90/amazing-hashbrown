@@ -275,6 +275,19 @@ implementation details that change without notice.
 | `task-run-history-row`     | `ui/src/components/task-run-history.tsx`            | One run in the drawer's Run history (opens the run)                                           |
 | `task-waiting-open-run`    | `ui/src/components/task-drawer.tsx`                 | The waiting-on-user banner's "Open run" button                                                |
 | `hitl-open-run`            | `ui/src/components/hitl-prompt-message.tsx`         | "Open run" link on a task question copied into the workspace chat                             |
+| `cron-expression`          | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) cron expression input                                                      |
+| `cron-timezone`            | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) time zone input                                                            |
+| `cron-max-iterations`      | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) max runs input (blank = unlimited)                                         |
+| `cron-stop-after`          | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) stop-after date input                                                      |
+| `cron-max-failures`        | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) auto-pause threshold (blank = never)                                       |
+| `cron-once-fire-at`        | `ui/src/components/cron-once-fields.tsx`            | Scheduled (once) date-time input                                                              |
+| `cron-preview`             | `ui/src/components/cron-preview-panel.tsx`          | Live schedule preview; `data-state` is `loading`, `valid`, `invalid` or `error`               |
+| `schedule-enabled`         | `ui/src/components/schedule-status-banner.tsx`      | The schedule's enabled checkbox                                                               |
+| `schedule-next-run`        | `ui/src/components/schedule-status-banner.tsx`      | "Next run: …" line for an active saved schedule                                               |
+| `schedule-inactive-banner` | `ui/src/components/schedule-status-banner.tsx`      | Why a saved schedule won't run again; pair with `data-reason`                                 |
+| `task-card-schedule`       | `ui/src/pages/workspaces/[id].tsx`                  | A cron task card's "next: …" line                                                             |
+| `task-card-last-run`       | `ui/src/pages/workspaces/[id].tsx`                  | A cron task card's last-run outcome badge                                                     |
+| `inbox-task-trigger`       | `ui/src/pages/inbox/index.tsx`                      | An Inbox row's trigger label ("Scheduled (repeat)", …)                                        |
 | `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
 | `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered node `<circle>` elements                                        |
 | `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |
