@@ -134,3 +134,34 @@ scenarios:
       - path: runId
         match: equals
         value: 6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90
+
+  # str-005 is a scheduled catch-up run: the kickoff carries the two extra
+  # schedule lines, the previous run is itself a scheduled one, and the
+  # vague summary is again held out from the kickoff's examples.
+  - id: str-005-catch-up-reads-history
+    name: On a catch-up run, the agent still opens a previous run whose summary lacks specifics
+    purpose: >
+      Catch-up runs fire after downtime, often days after the previous run,
+      and their kickoff adds a scheduled-run line and a catch-up notice
+      ahead of the history block. That extra framing must not pull the
+      agent into "just redo the audit" and skip the comparison the task
+      requires: the previous summary names no packages, so telling new
+      findings from still-open ones needs that run's transcript. A miss
+      here means scheduled runs silently lose continuity exactly when a gap
+      makes it matter most.
+    type: tool-call
+    input: |
+      Begin work on this task now: Weekly dependency audit.
+      This is scheduled run #4 (scheduled for 2026-09-26 09:00 UTC).
+      This is a catch-up run — the server was offline at the scheduled time.
+
+      Previous run — #3, 2026-09-19 09:00 UTC, done:
+      "Audit ran clean apart from a handful of transitive packages that need a closer look."
+      Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"9b3e5d71-2a4c-4f86-b0d2-5c8e1f7a6b43"}) now, instead of guessing at what it left out.
+
+      Earlier runs: #2 6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90 (done), #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
+    tool: read_task_run
+    argChecks:
+      - path: runId
+        match: equals
+        value: 9b3e5d71-2a4c-4f86-b0d2-5c8e1f7a6b43

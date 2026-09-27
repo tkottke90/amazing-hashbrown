@@ -361,5 +361,41 @@ describe('agents/task-context', () => {
         kickoffWithPreviousSummary('Audit finished; several packages were flagged for follow-up.'),
       );
     });
+
+    it('str-005 (catch-up) sends exactly the kickoff a catch-up run produces [unit]', () => {
+      expect(inputOf('str-005-catch-up-reads-history')).to.equal(
+        buildRunKickoff({
+          title: 'Weekly dependency audit',
+          resume: false,
+          runNumber: 4,
+          triggerSource: 'catch_up',
+          scheduledFor: '2026-09-26T09:00:00.000Z',
+          previousRuns: [
+            {
+              id: '9b3e5d71-2a4c-4f86-b0d2-5c8e1f7a6b43',
+              runNumber: 3,
+              status: 'done',
+              startedAt: '2026-09-19T09:00:00.000Z',
+              summary:
+                'Audit ran clean apart from a handful of transitive packages that need a closer look.',
+            },
+            {
+              id: '6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90',
+              runNumber: 2,
+              status: 'done',
+              startedAt: '2026-09-12T09:00:00.000Z',
+              summary: 'Audit complete.',
+            },
+            {
+              id: '1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10',
+              runNumber: 1,
+              status: 'done',
+              startedAt: '2026-09-05T09:00:00.000Z',
+              summary: 'Audit complete.',
+            },
+          ],
+        }),
+      );
+    });
   });
 });

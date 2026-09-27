@@ -319,3 +319,15 @@ New suite `suites/scheduled-task-runs.yaml`:
 - Mark the recurring-task item in `TODO_LIST.md` complete on the implementing branch.
 - `api/AGENTS.md`: document per-run threads, run records, and the cron registry.
 - Update the webhook design doc's forward reference to #72.
+
+## Implementation notes (scheduling PR)
+
+Where the shipped code differs from, or adds to, the design above:
+
+- **Registry sync lives in the routes, not the handlers.** Handlers stay registry-free (and unit-testable); each task route calls `getCronRegistry().sync(id)` after its handler, workspace delete calls `resyncAll()`, and the executor is wrapped in `withCronResync()` so every run re-syncs once it settles.
+- **Skipped one-shots still fire.** If a `cron_once` comes due while a manual run is in progress, the fire is skipped as usual, and `sync()` fires it as a `catch_up` once the task is back at `scheduled`, which is what §2's "the scheduled fire still happens" requires.
+- **A one-shot time in the past is rejected on save** (400, and `valid: false` from the preview). It could never fire, because catch-up only covers times missed while the schedule was on.
+- **`schedule.lastRunOutcome`** (the newest finished run's status) was added to the `schedule` field for the Kanban card's last-run badge.
+- **Run now and webhooks share one 409 check** in `enqueueTaskHandler`.
+- **Deleting a task now removes its run history**, and returns 409 while a run is queued or running. Before this, `deleteTask` left `task_queue` rows behind, so any task that had ever run failed to delete with a foreign-key error. Cron tasks always build up runs, so this had to be fixed here.
+- **Switching a trigger away from cron in the drawer** saves the task as `pending`. The drawer leaves the stored config to the server when the trigger is manual or webhook, so a webhook token survives a switch to manual and back.

@@ -27,6 +27,7 @@
 23. [Shell Command Execution](#shell-command-execution) — `lib/shell-executor` package with policy engine (allowlist/denylist/requires-approval), HITL approval flow via `interrupt()`, per-thread session memory for `approved_remember`, audit trail; `shell_exec` tool wired into the ReAct agent; eval suite added
 24. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — `recordHitlPrompt` and `resolveHitlPrompt` removed from `safe()` wrapper so DB write failures surface instead of silently losing interrupt state; `command` and `reason` persisted in `shell_approval` payload so hydration renders Approve/Deny buttons identically to the live SSE flow; `finalizeTurn` and `resumeChatToSse` emit `stream_error` on write failure; e2e test added for reconnect rendering
 25. [Settings Page UI](#settings-page-ui) — full `/settings?section=<slug>` page with 9 sections (General, Storage, Model providers, Embeddings, Agent behavior, Tools, Cost rates, MCP Servers, Skills); `GET /api/v1/settings/:slug` + `PATCH /api/v1/settings/:slug` endpoints writing back to `config.yaml` via `yaml` package; Save/Discard bar with loading spinner; toast notifications; API-key masking; per-field Zod validation with inline errors; Provider and Rate modals; all sections unit-tested (Jest + @testing-library/preact); Playwright E2E suites 12 (navigation) and 13 (sections)
+26. [Trigger System](#trigger-system) — interval, scheduled and event (webhook) triggers on tasks: `cron_once`/`cron_repeat` trigger types with per-task IANA time zone (`cron-parser` + `cronstrue`, DST-safe), a new `scheduled` task status, and an in-process `CronRegistry` that arms one timer per task, skips a fire while the task is busy, re-arms after every run, survives restarts (one catch-up run for fire times missed while down), and auto-pauses after N consecutive scheduled failures (manual Run now never counts); every run gets its own thread, a one-line summary and a run record, and its kickoff carries the previous run's summary plus the exact `read_task_run` call to open its transcript; drawer schedule forms with a server-side live preview, Kanban `Scheduled` column, run history and read-only run view; Inbox task questions are answerable (previously stuck); Duration and internal-event triggers split out below. See [design](docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md)
 
 ---
 
@@ -38,7 +39,7 @@ Items are ordered first by priority/necessity, then by dependency.
 
 1. [Task System](#task-system) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory); foundational for all autonomous operation; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 2. [Thread Type 2: Automated Task](#thread-type-2-automated-task) — depends on: #1 ([Wiki Locate & Orient Tools](#wiki-locate--orient-tools), [Wiki Write Tooling](#wiki-write-tooling), [Wiki Lint Tool](#wiki-lint-tool-wikilint), [Wiki Lint Remediation Tools](#wiki-lint-remediation-tools), [Web/URL Ingestion Tool](#weburl-ingestion-tool), and [Connect RLM to Chat Agent](#connect-rlm-to-chat-agent) now complete — no longer blocking)
-3. [Trigger System](#trigger-system) — depends on: #1; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
+3. [Duration & Internal Event Triggers](#duration--internal-event-triggers) — depends on: #1, [Trigger System](#trigger-system) (complete); the two trigger kinds the Trigger System left out
 4. [Escalation System](#escalation-system) — depends on: #1; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 5. [Dashboard System](#dashboard-system) — depends on: #1, #4; see [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md)
 6. [Multi-Conversation Support](#multi-conversation-support) — depends on: [Persistent Conversation Memory](#persistent-conversation-memory)
@@ -546,6 +547,22 @@ Items are ordered first by priority/necessity, then by dependency.
 - The UI should allow the user to configure triggers (initially in Settings, eventually a dedicated view)
 
 **Dependencies:** Task System
+
+**Status:** complete for Interval (`cron_repeat`), Scheduled (`cron_once`) and external Event (webhook) triggers, as trigger types on a task rather than a separate `/triggers` resource — see [the cron design](docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md) and [the webhook design](docs/superpowers/specs/2026-08-25-webhook-task-trigger-design.md). Duration and internal pub/sub event triggers moved to [Duration & Internal Event Triggers](#duration--internal-event-triggers).
+
+---
+
+### Duration & Internal Event Triggers
+
+**Goal:** The two trigger kinds the Trigger System didn't ship: act on a task that has sat in one state too long, and start work from something that happens inside the app rather than from a clock or an HTTP call.
+
+**Ideas / Requirements:**
+
+- **Duration**: fires when a task has been in a given status longer than a threshold (e.g. escalate if `waiting_on_user` for more than 4 hours). Likely a per-task timer in the same style as `CronRegistry` (`api/src/services/cron-registry.ts`), armed on status change and cleared when the status moves on; overlaps heavily with the Escalation System
+- **Internal event**: start a task from an in-process signal (a wiki page changing, another task finishing) — the broadcast bus (`api/src/services/broadcast.ts`) is the obvious source
+- Both should resolve to ordinary task runs (`task_queue` rows with their own `trigger_source`) so run history, kickoff context and read-only run views work unchanged
+
+**Dependencies:** Task System, Trigger System
 
 ---
 
