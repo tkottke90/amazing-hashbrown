@@ -347,5 +347,19 @@ describe('agents/task-context', () => {
         ),
       );
     });
+
+    it('str-003 (held out) sends exactly the kickoff its complete summary produces [unit]', () => {
+      expect(inputOf('str-003-skips-history-held-out')).to.equal(
+        kickoffWithPreviousSummary(
+          'All 14 dependencies are on their latest patch versions; no advisories were reported.',
+        ),
+      );
+    });
+
+    it('str-004 (held out) sends exactly the kickoff its vague summary produces [unit]', () => {
+      expect(inputOf('str-004-reads-history-held-out')).to.equal(
+        kickoffWithPreviousSummary('Audit finished; several packages were flagged for follow-up.'),
+      );
+    });
   });
 });
