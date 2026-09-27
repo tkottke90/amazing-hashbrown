@@ -24,7 +24,7 @@ Issue #191 attributes the error to a `shell_exec` timeout. That's not what happe
 The infrastructure for the right shape mostly exists: `runHeadlessTurn` (`agents/headless-turn.ts`) runs a system-initiated turn in an existing thread (used today by sub-agent completions), `enqueuePendingTurn` (`agents/pending-thread-turns.ts`) serialises it behind a live turn, and `CronRegistry` (`services/cron-registry.ts`) is a proven pattern for database-backed in-process timers. Gaps found while designing this:
 
 - A headless turn is invisible to an open UI (nothing is broadcast), cannot be stopped (no `AbortController` is registered), and logs failures without writing anything to the thread.
-- **Global chat has no busy guard.** Workspace chat returns 409 while another turn holds the thread (`workspace-chat-stream-handler.ts:166`); global chat (`stream-handler.ts`) overwrites the writer, so a user message sent during a headless turn runs a second turn concurrently on the same LangGraph checkpoint. Rare today (sub-agent completions only); routine once wake-ups exist.
+- **Global chat has no busy guard.** Workspace chat refuses a turn (SSE `stream_error`) while another turn holds the thread (`workspace-chat-stream-handler.ts:166`); global chat (`stream-handler.ts`) overwrites the writer, so a user message sent during a headless turn runs a second turn concurrently on the same LangGraph checkpoint. Rare today (sub-agent completions only); routine once wake-ups exist.
 
 ---
 
@@ -93,7 +93,7 @@ Partial unique index: `CREATE UNIQUE INDEX thread_wakeups_one_pending ON thread_
 
 **Transcript rows** (two `ThreadMessage` kinds, each with its own typed payload):
 
-- `wakeup` — written when the wake-up is scheduled. Payload `{ wakeupId, note, fireAt, status, settledBy?, settledAt?, cancelReason? }`. Updated in place on every transition.
+- `wakeup` — written when the wake-up is scheduled. Payload `{ wakeupId, note, fireAt, state, settledBy?, settledAt?, cancelReason? }` — `state` mirrors the table's `status`; it is not named `status` because `toClientMessage` lets a row's own `status` column override a payload field of that name. Updated in place on every transition.
 - `wakeup_fired` — written at fire time, immediately before the resulting turn. Payload `{ wakeupId, note, settledBy, lateByMs? }`. Immutable.
 
 **`WakeupStore`** (`services/wakeup-store.ts`) is the only writer of both the table and these rows. Each transition (`schedule`, `markFired`, `cancel`) updates the table row and the `wakeup` card payload in one transaction, and each returns `null` when the row is not `pending` — that return is the race gate every caller relies on. The table is the source of truth; the card is its projection.
@@ -128,7 +128,7 @@ Partial unique index: `CREATE UNIQUE INDEX thread_wakeups_one_pending ON thread_
 
 **Thread metadata** gains `activeTurn: boolean` (true while `getActiveSseWriter(threadId)` is set) on the thread GET response, so a reload mid-turn shows the right state.
 
-**Busy guard.** Global chat send / retry / fork / HITL resume return 409 (`"This chat is busy with another turn — try again in a moment."`) when `getActiveSseWriter(threadId)` is set, matching workspace chat.
+**Busy guard.** Global chat send / retry / HITL resume refuse the turn with an SSE `stream_error` (`"This chat is busy with another turn — try again in a moment."`) when `getActiveSseWriter(threadId)` is set — the same shape workspace chat already uses. (Fork is a plain JSON route that runs no turn.)
 
 ### 4. Tools and routes
 
@@ -141,14 +141,14 @@ Partial unique index: `CREATE UNIQUE INDEX thread_wakeups_one_pending ON thread_
 
 **`cancel_wakeup({ reason?: string })`** — cancels this thread's pending wake-up with `agent_cancel`; returns a plain message when there is none.
 
-Both are built per agent (they need the thread id), bound in `buildChatAgent` and `buildWorkspaceChatAgent` only, and registered in `tool-catalog.ts` (category `agent`, not always-on, enabled by default) so per-thread tool access can disable them.
+Both are built per agent (they need the thread id), bound in `buildChatAgent` and `buildWorkspaceChatAgent` only, and registered in `tool-catalog.ts` (category `built-in`, not always-on, enabled by default) so per-thread tool access can disable them.
 
 **Routes** (`routes/v1/threads.route.ts`, handlers in `threads.handlers.ts`):
 
 - `POST /api/v1/threads/:threadId/wakeups/:wakeupId/cancel` → `user_cancel`
 - `POST /api/v1/threads/:threadId/wakeups/:wakeupId/trigger` → `trigger_now`
 
-Both: 404 when the wake-up doesn't exist or belongs to another thread, 409 when it isn't pending, 200 with the updated card payload. Handlers use `WakeupStore`; the route calls the registry afterwards (same split as the cron routes). The thread delete route calls `getWakeupRegistry().clear(...)` for the thread's pending wake-ups before deleting.
+Both: 404 when the wake-up doesn't exist or belongs to another thread, 409 when it isn't pending, 200 with the updated card payload. Handlers use `WakeupStore`; the route calls the registry afterwards (same split as the cron routes). After a successful delete the thread delete route calls `getWakeupRegistry().clearThread(threadId)` to drop any armed timer (the row itself cascades).
 
 ### 5. Shell sleep guard
 
@@ -159,14 +159,14 @@ Both: 404 when the wake-up doesn't exist or belongs to another thread, 409 when 
 - Ignores `sleep` inside quoted strings (`echo "sleep 600"`).
 - Knowingly does not detect sleeps inside interpreters (`python -c 'time.sleep(600)'`) or scripts.
 
-`shell_exec` runs the guard **before** the allowlist / approval interrupt, and on detection returns (not throws) a refusal, recorded in `shell_audit_log` as refused:
+`shell_exec` runs the guard **before** the allowlist / approval interrupt, and on detection returns (not throws) a refusal, recorded in `shell_audit_log` with `outcome: 'denied'`, `source: 'sleep-guard'`:
 
 - `schedule_wakeup` bound: _"Refused: this command sleeps for 600s. Don't wait inside the shell — call schedule_wakeup with your delay and a note, then end your turn."_
 - Not bound: _"Refused: long sleeps aren't allowed in shell_exec."_
 
 ### 6. System prompt
 
-New `waiting` section in `system-prompt.ts`, `requiresAnyOf: ['schedule_wakeup']`:
+New `waiting` section in `system-prompt.ts`, `requiresAnyOf: ['schedule_wakeup']`. Section gating in `tool-access.middleware.ts` currently uses the thread's _enabled_ tool ids, so a section can appear for an agent that never binds the tool (e.g. a task agent); it is changed to use ids that are both enabled and present in the request's bound tools. Section content:
 
 - Use `schedule_wakeup` when you must wait for something external: a deploy, CI, a server starting, a long-running command.
 - After scheduling, end your turn immediately with a one-line status for the user.
@@ -195,7 +195,7 @@ New `waiting` section in `system-prompt.ts`, `requiresAnyOf: ['schedule_wakeup']
 | Thread deleted while pending                                | Row cascades; route clears the timer; a stray timer finds no row and does nothing.                                                     |
 | Workspace deleted while pending                             | Row still exists (thread may remain); agent resolution returns `null`, delivery is dropped and logged; card shows `fired`.             |
 | Wake-up fires during a running turn                         | Queued via `enqueuePendingTurn`; runs when the mutex frees.                                                                            |
-| User sends while a wake-up turn runs                        | 409 (busy guard); UI prevents it via `backgroundTurnActive`.                                                                           |
+| User sends while a wake-up turn runs                        | Busy-guard `stream_error`; UI prevents it via `backgroundTurnActive`.                                                                  |
 | Wake-up turn fails                                          | Error row written to the thread; `thread_turn_completed` broadcast; UI shows it on hydrate.                                            |
 | User presses Stop during a wake-up turn                     | Turn aborted and finalized as `cancelled`.                                                                                             |
 | SSE connection drops mid-turn                               | `connection_lost` shown; server finishes the turn; UI re-hydrates on `thread_turn_completed`.                                          |
@@ -213,7 +213,7 @@ Test names carry the `[unit]` / `[orchestration]` / `[external-orchestration]` t
 2. `tool-call`: user has just started a ~5 minute test run and asks to hear how it went → `schedule_wakeup`, not `shell_exec`.
 3. `tool-sequence`: seeded `shell_exec` refusal (sleep-guard text) → next call is `schedule_wakeup`.
 4. `tool-sequence`: seeded wake-up message whose note says to run a status command → the agent runs that check rather than rescheduling blindly.
-5. `llm-judge`: "Remind me in 10 minutes to call Sam." → does not call `schedule_wakeup`; rubric rewards stating honestly that it can't set reminders here. Expected to be revisited when `create_tasks` supports `cron_once`.
+5. `tool-call`: "Remind me in 10 minutes to call Sam." → `tool: '!schedule_wakeup'` (an `llm-judge` scenario can't observe tool calls — the runner never binds tools for it). Revisit when `create_tasks` supports `cron_once`.
 
 **Unit**
 
@@ -227,8 +227,8 @@ Test names carry the `[unit]` / `[orchestration]` / `[external-orchestration]` t
 
 - Fire → `enqueuePendingTurn` → stubbed agent: `wakeup_fired` row written before the turn, `thread_turn_started`/`completed` broadcast, card `fired`.
 - `/stop` aborts a running wake-up turn.
-- Global chat returns 409 while a headless turn holds the thread.
-- Cancel / trigger routes via supertest: 200, 404 (unknown / other thread), 409 (not pending).
+- Global chat refuses a turn (busy-guard `stream_error`) while a headless turn holds the thread.
+- Cancel / trigger routes via `startTestServer` + `fetch`: 200, 404 (unknown / other thread), 409 (not pending).
 - `shell_exec` returns the refusal before any approval interrupt.
 - Chat route emits keepalive lines on a slow stubbed stream.
 
