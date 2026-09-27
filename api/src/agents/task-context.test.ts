@@ -213,13 +213,14 @@ describe('agents/task-context', () => {
           '',
           'Previous run — #2, 2026-09-12 09:00 UTC, done:',
           '"Summary 2."',
-          'That summary may or may not be everything this run needs. If it already gives you a ' +
+          'Decide this now, before doing anything else: does that summary already give you a ' +
             'concrete fact you can act on directly — "0 advisories, nothing open" means there\'s ' +
-            "nothing to compare against — get on with the work; don't open the transcript just to " +
-            "double-check something it already told you. If instead it leaves out specifics you'd " +
-            'need — a count with no names, "see the transcript for details" — call ' +
-            'read_task_run({"runId":"run-2"}) before doing anything else, ' +
-            'instead of guessing at what it left out.',
+            "nothing to compare against — or does it leave out specifics you'd need, like a count " +
+            'with no names or "see the transcript for details"? If it already answers what you ' +
+            "need, get on with the work; don't open the transcript just to double-check something " +
+            "it already told you. If it doesn't, call " +
+            'read_task_run({"runId":"run-2"}) now, instead of guessing at ' +
+            'what it left out.',
           '',
           'Earlier runs: #1 run-1 (failed)',
         ].join('\n'),

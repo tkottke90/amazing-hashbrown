@@ -152,13 +152,14 @@ export function buildRunKickoff(input: RunKickoffInput): string {
       '',
       `Previous run — #${previous.runNumber}, ${when}${previous.status}:`,
       `"${previous.summary ?? 'No summary was recorded.'}"`,
-      `That summary may or may not be everything this run needs. If it already gives you a ` +
+      `Decide this now, before doing anything else: does that summary already give you a ` +
         `concrete fact you can act on directly — "0 advisories, nothing open" means there's ` +
-        `nothing to compare against — get on with the work; don't open the transcript just to ` +
-        `double-check something it already told you. If instead it leaves out specifics you'd ` +
-        `need — a count with no names, "see the transcript for details" — call ` +
-        `read_task_run(${JSON.stringify({ runId: previous.id })}) before doing anything else, ` +
-        `instead of guessing at what it left out.`,
+        `nothing to compare against — or does it leave out specifics you'd need, like a count ` +
+        `with no names or "see the transcript for details"? If it already answers what you ` +
+        `need, get on with the work; don't open the transcript just to double-check something ` +
+        `it already told you. If it doesn't, call ` +
+        `read_task_run(${JSON.stringify({ runId: previous.id })}) now, instead of guessing at ` +
+        `what it left out.`,
     );
     const shown = earlier.slice(0, EARLIER_RUNS_SHOWN);
     if (shown.length > 0) {
