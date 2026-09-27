@@ -137,11 +137,14 @@ describe('ModelProvidersPanel', () => {
 
     it('adds a favorite picked through the provider/model picker and marks the form dirty [unit]', async () => {
       const { container } = await renderLoaded();
+      // Grab the form first: once a model is picked, the trigger's
+      // "Select provider/model…" placeholder is replaced by the selection.
+      const form = favoriteForm();
 
       firePointerDown(screen.getByText('Select provider/model…'));
       openSubmenu(screen.getByRole('menuitem', { name: 'openai' }));
       fireEvent.click(screen.getByText('gpt-4o-mini'));
-      fireEvent.click(within(favoriteForm()).getByRole('button', { name: 'Add favorite' }));
+      fireEvent.click(within(form).getByRole('button', { name: 'Add favorite' }));
 
       await waitFor(() =>
         expect(container.querySelector('[data-slot="favorite-row"]')).toHaveTextContent(
