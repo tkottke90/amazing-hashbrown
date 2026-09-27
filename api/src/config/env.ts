@@ -300,7 +300,7 @@ export const env = {
     return (configManager.get('defaultProvider', '') ?? '') as string;
   },
   get favoriteModels(): FavoriteModel[] {
-    return parseFavoriteModels(configManager.get('favoriteModels', []));
+    return parseFavoriteModels(configManager.get('favoriteModels'));
   },
   get database(): z.infer<typeof DatabaseSchema> {
     try {
