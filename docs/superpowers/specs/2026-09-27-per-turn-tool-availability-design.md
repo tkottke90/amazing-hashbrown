@@ -110,21 +110,21 @@ to its `configurable`:
 
 - `api/src/agents/stream-handler.ts` — the three `startTrace` sites (currently ~943, ~1144, ~1347).
 - `api/src/agents/workspace-chat-stream-handler.ts` — the three `startTrace` sites (~210, ~443, ~674).
-- `api/src/agents/task-execution.ts`.
 
-Before editing, confirm each site's agent comes from `chat-agent.ts`; a site whose agent does not
-carry the middleware gains nothing from `trace_id` and is left alone.
+`task-execution.ts` and `headless-turn.ts` start no trace, so task runs get no snapshot (the
+middleware is still on the task agent and no-ops). `wiki-stream-handler.ts` uses the wiki ingestion
+agent, which is out of scope.
 
-Where the trace is started after `config` is built, reorder so `traceId` exists first, or build
-`config` after `startTrace`. The typed `configurable` shapes (e.g. `stream-handler.ts:488`,
-`task-execution.ts:265`) gain an optional `trace_id?: string`.
+In all six sites `config` is currently built before `startTrace`; move it after so it can include
+`trace_id: traceId`. The typed `configurable` shape at `stream-handler.ts:488` gains an optional
+`trace_id?: string`.
 
 ---
 
 ## 4. Storage — `lib/observability/src/store.ts`
 
-**Migration** (next free version number across the shared database — currently 33; re-verify at
-implementation time):
+**Migration** version 33 (1–32 are taken across the single database every store shares, opened
+in `api/src/index.ts`):
 
 ```sql
 ALTER TABLE observability_traces ADD COLUMN tools TEXT;
@@ -150,12 +150,14 @@ WHERE trace_id = ? AND tools IS NULL
 - `COALESCE` keeps the build-time prompt when no effective prompt was captured.
 
 **Read side:** `RawTraceSummarySchema` and `RawTraceRecordSchema` add `tools: z.string().nullable()`,
-transformed to `tools: string[] | null` via `JSON.parse`. `TraceSummary` / `TraceRecord` types gain
-the field. A value that fails to parse as a string array reads as `null`.
+transformed to `tools: string[] | null` via `JSON.parse`. A value that fails to parse as a string
+array reads as `null`. The public type lives in `lib/llm-common-types/src/traces/types.ts`:
+`TraceRecordSchema` gains `tools: z.array(z.string()).nullable()`, which flows into
+`TraceSummarySchema` and `TraceWithSpansSchema` via `.extend`.
 
 **Column semantics change:** `system_prompt` now means "the effective system prompt as sent to the
 model, when captured; otherwise the prompt known at `startTrace`". Update the schema comment
-(`TraceRecordSchema`) and the version-7 migration's cross-reference to say so. The pre-filter
+(`TraceRecordSchema` in `llm-common-types`) and the version-7 migration's cross-reference to say so. The pre-filter
 prompt is not stored separately — it is reproducible from code and config.
 
 ---
@@ -178,8 +180,8 @@ The System Prompt `<details>` block in `templates/report.njk` (currently lines 7
 `null` and `[]` render differently on purpose: an old, uncaptured trace must never look like a turn
 where the model had no tools.
 
-Sorting happens in `build.ts` (or a Nunjucks `sort` filter) so the template stays declarative;
-the stored order is left as-is.
+Sorting uses Nunjucks' built-in `sort` filter in the template; `build.ts` is unchanged and the
+stored order is left as-is.
 
 **Styling** — new `.tool-chip` and `.tool-chip-row` rules in `templates/base.css`: small monospace
 pill modeled on `.span-type`, using the existing color tokens so dark mode is inherited; the row is
@@ -189,8 +191,9 @@ pill modeled on `.span-type`, using the existing color tokens so dark mode is in
 
 ## 6. Testing
 
-All developer tests use Mocha + Chai, live adjacent to their source, and carry the AGENTS.md type
-tag.
+All developer tests use Mocha with each package's existing assertion style (Chai in `api/`, node
+`assert` in `lib/observability`), follow each package's existing test layout, and carry the
+AGENTS.md type tag.
 
 **`api/src/agents/model-input-snapshot.middleware.test.ts`**
 
@@ -209,7 +212,6 @@ tag.
 - a second `recordModelInput` for the same trace is a no-op (first call wins) `[unit]`
 - omitting `systemPrompt` preserves the `startTrace` prompt `[unit]`
 - `tools` round-trips as `string[]`; `NULL` reads back as `null` `[unit]`
-- the migration applies cleanly to a database created before it `[unit]`
 
 **`lib/thread-reports/test/unit/render.test.ts`**
 
@@ -218,7 +220,7 @@ tag.
 - renders `tools not captured` for `null` `[unit]`
 - renders the System Prompt section when tools are present but the prompt is null `[unit]`
 
-**Stream handler tests** (`stream-handler.test.ts`, workspace-chat and task-execution tests)
+**Stream handler tests** (`stream-handler.test.ts`, `workspace-chat-stream-handler.test.ts`)
 
 - the agent is invoked with `configurable.trace_id` equal to the trace that was started
   `[orchestration]`
