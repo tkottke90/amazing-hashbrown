@@ -19,7 +19,7 @@ import {
   activeWikiModel,
   setWikiModel,
 } from '@/pages/wiki/use-wiki-ingestion';
-import { providers, fetchProviders } from '@/hooks/use-providers';
+import { providers, favoriteModels, fetchProviders } from '@/hooks/use-providers';
 import { OrientationBadge } from './orientation-badge';
 import { NewDomainModal } from './new-domain-form';
 import { UploadWikiDialog } from './upload-wiki-form';
@@ -163,6 +163,7 @@ export function IngestionChat({ chatInputRef }: Props) {
           isGenerating={wikiIsStreaming.value}
           disabled={!!pendingHitlId}
           providers={providers.value}
+          favoriteModels={favoriteModels.value}
           activeProvider={resolvedProvider}
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}

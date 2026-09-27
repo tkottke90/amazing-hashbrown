@@ -33,7 +33,8 @@ import {
   MODEL_SUBMENU_CLOSE_GRACE_MS,
   whenMouse,
 } from '@/components/provider-model-picker';
-import type { ProviderInfo } from '@/hooks/use-providers';
+import type { FavoriteModel, ProviderInfo } from '@/hooks/use-providers';
+import { FavoriteModelItems } from '@/components/favorite-model-items';
 import { openThreadToolsDrawer } from '@/hooks/use-thread-tools';
 import { ThreadToolsDrawer } from '@/components/thread-tools-drawer';
 
@@ -59,6 +60,8 @@ export interface ChatInputProps {
   onAddFile?: () => void;
   className?: string;
   providers?: ProviderInfo[];
+  /** Pinned provider/model pairs listed flat at the top of the Provider sub-menu. */
+  favoriteModels?: FavoriteModel[];
   activeProvider?: string | null;
   activeModel?: string | null;
   onModelSelect?: (provider: string, model: string) => void;
@@ -142,6 +145,7 @@ export function ChatInput({
   onAddFile,
   className,
   providers,
+  favoriteModels = [],
   activeProvider,
   activeModel,
   onModelSelect,
@@ -713,6 +717,12 @@ export function ChatInput({
                       onFocus={keepProviderMenuOpenOnFocus}
                       onPointerLeave={whenMouse(scheduleProviderMenuClose)}
                     >
+                      <FavoriteModelItems
+                        favorites={favoriteModels}
+                        activeProvider={activeProvider ?? undefined}
+                        activeModel={activeModel ?? undefined}
+                        onSelect={(provider, model) => onModelSelect?.(provider, model)}
+                      />
                       {providerModelItems}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>

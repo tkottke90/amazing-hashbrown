@@ -4,7 +4,7 @@ import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapp
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { Layout } from '@/components/layout';
 import { ThreadMessageItem } from '@/components/thread-message';
-import { fetchProviders, providers } from '@/hooks/use-providers';
+import { favoriteModels, fetchProviders, providers } from '@/hooks/use-providers';
 import {
   activeThreadAfterAgentState,
   activeThreadId,
@@ -104,6 +104,7 @@ export function ThreadView() {
           isGenerating={thread.isStreaming.value}
           disabled={!!thread.pendingHitlId.value}
           providers={providers.value}
+          favoriteModels={favoriteModels.value}
           activeProvider={thread.activeThreadModel.value?.provider}
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}

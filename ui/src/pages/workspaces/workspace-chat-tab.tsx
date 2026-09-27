@@ -6,7 +6,7 @@ import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapp
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { Button } from '@/components/ui/button';
-import { fetchProviders, providers } from '@/hooks/use-providers';
+import { favoriteModels, fetchProviders, providers } from '@/hooks/use-providers';
 import { useThreadInstance } from '@/hooks/use-thread';
 import { patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
@@ -158,6 +158,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
             isGenerating={thread.isStreaming.value}
             disabled={!!thread.pendingHitlId.value || isBusy}
             providers={providers.value}
+            favoriteModels={favoriteModels.value}
             activeProvider={thread.activeThreadModel.value?.provider}
             activeModel={thread.activeThreadModel.value?.model}
             onModelSelect={thread.setThreadModel}
