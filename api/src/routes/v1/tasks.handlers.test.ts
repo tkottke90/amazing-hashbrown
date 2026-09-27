@@ -1115,4 +1115,100 @@ describe('routes/v1/tasks.handlers', () => {
       expect(result).to.deep.include({ ok: false, status: 404 });
     });
   });
+
+  describe('cron triggers on create/patch (cron task triggers design §1)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-cron-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    const daily = { expression: '0 0 * * *', timezone: 'UTC' };
+
+    it("creates a recurring task straight into 'scheduled' with its config filled in [unit]", () => {
+      const result = createTaskHandler(store, {
+        title: 'Nightly',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data!.status).to.equal('scheduled');
+      expect(result.data!.triggerConfig).to.include({
+        expression: '0 0 * * *',
+        enabled: true,
+        maxConsecutiveFailures: 3,
+        consecutiveFailures: 0,
+      });
+    });
+
+    it('rejects an invalid schedule with 400 and creates nothing [unit]', () => {
+      const result = createTaskHandler(store, {
+        title: 'Bad',
+        triggerType: 'cron_repeat',
+        triggerConfig: { expression: '99 * * * *', timezone: 'UTC' },
+      });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(!result.ok && result.error).to.match(/^Invalid schedule: expression/);
+      expect(store.listTasks()).to.have.length(0);
+    });
+
+    it('requires a config when switching a task onto a schedule [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { triggerType: 'cron_repeat' });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+    });
+
+    it("turning the schedule off takes the task out of 'scheduled' [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      const result = patchTaskHandler(store, id, {
+        triggerConfig: { ...daily, enabled: false },
+        status: 'scheduled', // the drawer resends the status it loaded with
+      });
+      expect(result.ok && result.data!.status).to.equal('pending');
+    });
+
+    it('a patch that does not touch the schedule keeps it, bookkeeping included [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const before = created.ok ? created.data! : null;
+      const result = patchTaskHandler(store, before!.id, { title: 'renamed' });
+      expect(result.ok && result.data!.triggerConfig).to.deep.equal(before!.triggerConfig);
+      expect(result.ok && result.data!.status).to.equal('scheduled');
+    });
+
+    it("switching a scheduled task to manual drops it back to 'pending' [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const result = patchTaskHandler(store, created.ok ? created.data!.id : '', {
+        triggerType: 'manual',
+        triggerConfig: null,
+      });
+      expect(result.ok && result.data!.status).to.equal('pending');
+    });
+
+    it("refuses to put a task without a schedule into 'scheduled', where it would never run [unit]", () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { status: 'scheduled' });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(store.getTask(task.id)!.status).to.equal('pending');
+    });
+  });
 });

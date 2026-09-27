@@ -1468,6 +1468,18 @@ export class WorkspaceStore extends BaseStore {
     return row ? { ...mapQueueEntry(row), runNumber: row.run_number } : null;
   }
 
+  // How many runs a cron schedule has started (schedule + catch-up) — what a
+  // cron_repeat's maxIterations counts. Manual "Run now" runs don't count.
+  countScheduledRuns(taskId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM task_queue
+         WHERE task_id = ? AND trigger_source IN ('schedule', 'catch_up')`,
+      )
+      .get(taskId) as { n: number };
+    return row.n;
+  }
+
   getTaskRunByThreadId(threadId: string): TaskRun | null {
     const row = this.db
       .prepare(`SELECT id FROM task_queue WHERE thread_id = ? LIMIT 1`)
