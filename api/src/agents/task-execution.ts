@@ -11,12 +11,7 @@ import {
   type Workspace,
   type WorkspaceStore,
 } from '../services/workspace-store.js';
-import {
-  setActiveSseWriter,
-  clearActiveSseWriter,
-  getActiveSseWriter,
-  type SseWriter,
-} from './active-sse-writer.js';
+import { setActiveSseWriter, getActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { registerTaskAbort, getTaskAbort, clearTaskAbort } from './active-task-abort.js';
 import {
   pipeEvents,
@@ -41,7 +36,7 @@ import {
 import { buildRunKickoff, type PreviousRun } from './task-context.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
-import { drainPendingTurns, runOnceThreadFree } from './pending-thread-turns.js';
+import { endThreadTurn, runOnceThreadFree } from './pending-thread-turns.js';
 import { broadcast } from '../services/broadcast.js';
 
 export type QueueEntryWithTask = TaskQueueEntry & { task: Task };
@@ -612,8 +607,7 @@ export async function executeTask(
           });
         }
       }
-      clearActiveSseWriter(threadId);
-      drainPendingTurns(threadId);
+      endThreadTurn(threadId);
       clearTaskAbort(entry.id);
     }
   };

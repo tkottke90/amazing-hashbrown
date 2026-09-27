@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { startSseKeepalive } from './sse-keepalive.js';
 import type { Request, Response } from 'express';
 import {
   streamWorkspaceChatToSse,
@@ -93,6 +94,7 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
   if (!workspace) return;
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
   try {
     await streamWorkspaceChatToSse(
@@ -114,6 +116,7 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });
@@ -141,6 +144,7 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
   if (respondIfTaskPrompt(req, res, { threadId, promptId, answer })) return;
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
   try {
     await resumeWorkspaceChatToSse(
@@ -163,6 +167,7 @@ workspaceChatRouter.post('/:threadId/hitl', async (req: Request, res: Response) 
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });
@@ -197,6 +202,7 @@ workspaceChatRouter.post('/:threadId/retry', async (req: Request, res: Response)
   }
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
   try {
     await retryWorkspaceChatToSse(res, workspace, threadId, startedAt, provider, model, afterAgent);
@@ -209,6 +215,7 @@ workspaceChatRouter.post('/:threadId/retry', async (req: Request, res: Response)
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });

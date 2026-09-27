@@ -1,4 +1,5 @@
-import { getActiveSseWriter } from './active-sse-writer.js';
+import { getActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import { broadcast } from '../services/broadcast.js';
 import { logger } from '../config/logger.js';
 
 // A spawn_sub_agent completion notification (see sub-agent-notification.ts)
@@ -16,12 +17,13 @@ import { logger } from '../config/logger.js';
 // executed — see that function's own comment.
 //
 // This module deliberately stays as import-light as active-sse-writer.ts
-// itself (see that file's own header comment on why) — every existing
-// clearActiveSseWriter(threadId) call site (task-execution.ts,
-// workspace-chat-stream-handler.ts) must call drainPendingTurns(threadId)
-// right after it, or a turn queued behind a live turn on that same thread
-// would never be delivered. active-sse-writer.ts is not modified to call
-// this itself, to avoid pulling the agent/stream-handler tree into it.
+// itself (see that file's own header comment on why) — broadcast.ts is a
+// standalone leaf module, so importing it here is safe. Every turn runner
+// releases its thread through endThreadTurn() below rather than calling
+// clearActiveSseWriter() directly, so a turn queued behind a live turn on
+// that same thread is always delivered. active-sse-writer.ts is not
+// modified to do this itself, to avoid pulling the agent/stream-handler
+// tree into it.
 type PendingTurn = () => Promise<void>;
 
 const _queues = new Map<string, PendingTurn[]>();
@@ -46,8 +48,8 @@ export function enqueuePendingTurn(threadId: string, run: PendingTurn): void {
 }
 
 // Pops and runs the next queued turn for threadId, if any. Safe to call
-// unconditionally (a no-op when nothing is queued) — every
-// clearActiveSseWriter(threadId) call site calls this right after.
+// unconditionally (a no-op when nothing is queued) — endThreadTurn() calls
+// this right after releasing the thread.
 export function drainPendingTurns(threadId: string): void {
   const queue = _queues.get(threadId);
   if (!queue || queue.length === 0) return;
@@ -74,4 +76,16 @@ export function runOnceThreadFree(threadId: string, run: PendingTurn): Promise<v
     // outcome into calls against this function's own promise instead.
     enqueuePendingTurn(threadId, () => run().then(resolve, reject));
   });
+}
+
+// Releases threadId at the end of any turn (interactive, headless, task or
+// wiki): frees the per-thread mutex, tells every open client the turn is
+// over so a loaded thread re-hydrates (the only way a client learns the
+// outcome of a headless turn, or of an interactive turn whose live stream
+// dropped), then starts the next queued turn, if any. See
+// docs/superpowers/specs/2026-09-27-agent-wait-design.md §1.
+export function endThreadTurn(threadId: string): void {
+  clearActiveSseWriter(threadId);
+  broadcast({ type: 'thread_turn_completed', threadId });
+  drainPendingTurns(threadId);
 }

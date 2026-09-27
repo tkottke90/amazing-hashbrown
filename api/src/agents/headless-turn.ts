@@ -3,15 +3,10 @@ import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import { getProviderQueue } from '../services/provider-queue.js';
-import {
-  getActiveSseWriter,
-  setActiveSseWriter,
-  clearActiveSseWriter,
-  type SseWriter,
-} from './active-sse-writer.js';
+import { getActiveSseWriter, setActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { pipeEvents, finalizeTurn, recoverThrownInterrupt } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
-import { drainPendingTurns } from './pending-thread-turns.js';
+import { endThreadTurn } from './pending-thread-turns.js';
 
 // Structural — any LangGraph-based agent built by chat-agent.ts's builders
 // satisfies this (same rationale as stream-handler.ts's own unexported
@@ -139,7 +134,6 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       });
     }
   } finally {
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }

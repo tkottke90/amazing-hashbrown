@@ -6,8 +6,8 @@ import { logger, serializeError } from '../config/logger.js';
 import type { ChatSSEEvent, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 import { classifyChatError } from './error-classification.js';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
-import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
-import { drainPendingTurns } from './pending-thread-turns.js';
+import { setActiveSseWriter, getActiveSseWriter, type SseWriter } from './active-sse-writer.js';
+import { endThreadTurn } from './pending-thread-turns.js';
 import { env } from '../config/env.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
@@ -885,6 +885,22 @@ export interface ChatStreamDeps {
   getChatAgent?: typeof getChatAgent;
 }
 
+// Another turn currently owns this thread — a headless wake-up or sub-agent
+// notification turn, or another tab's chat turn. Refuse rather than race a
+// second agent.streamEvents() against the same LangGraph checkpoint. Same
+// SSE stream_error shape workspace chat uses
+// (workspace-chat-stream-handler.ts). Returns true when the turn was refused.
+export const THREAD_BUSY_MESSAGE = 'This chat is busy with another turn — try again in a moment.';
+
+function refuseIfThreadBusy(res: Response, threadId: string): boolean {
+  if (!getActiveSseWriter(threadId)) return false;
+  writeSseEvent((event) => res.write(`data: ${JSON.stringify(event)}\n\n`), {
+    type: 'stream_error',
+    error: THREAD_BUSY_MESSAGE,
+  });
+  return true;
+}
+
 export async function streamChatToSse(
   res: Response,
   threadId: string,
@@ -896,6 +912,7 @@ export async function streamChatToSse(
   attachmentId?: string,
   deps: ChatStreamDeps = {},
 ): Promise<void> {
+  if (refuseIfThreadBusy(res, threadId)) return;
   const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'chat');
@@ -1093,8 +1110,7 @@ export async function streamChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -1109,6 +1125,7 @@ export async function resumeChatToSse(
   afterAgent?: boolean,
   deps: ChatStreamDeps = {},
 ): Promise<void> {
+  if (refuseIfThreadBusy(res, threadId)) return;
   const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
 
@@ -1291,8 +1308,7 @@ export async function resumeChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -1312,6 +1328,7 @@ export async function retryChatToSse(
   afterAgent?: boolean,
   deps: ChatStreamDeps = {},
 ): Promise<void> {
+  if (refuseIfThreadBusy(res, threadId)) return;
   const resolveChatAgent = deps.getChatAgent ?? getChatAgent;
   const threadStore = getThreadStore();
 
@@ -1488,7 +1505,6 @@ export async function retryChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }

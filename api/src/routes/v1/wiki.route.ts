@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { Router } from 'express';
+import { startSseKeepalive } from './sse-keepalive.js';
 import type { GraphNode, GraphEdge, WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 import {
@@ -221,6 +222,7 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
   }
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -235,6 +237,7 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     req.logger.info('Wiki ingestion inference completed', { threadId });
     res.end();
   }
@@ -256,6 +259,7 @@ wikiRouter.post('/chat/:threadId/hitl', async (req, res) => {
   }
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -269,6 +273,7 @@ wikiRouter.post('/chat/:threadId/hitl', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });
@@ -302,6 +307,7 @@ wikiRouter.post('/chat/:threadId/retry', async (req, res) => {
   }
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -315,6 +321,7 @@ wikiRouter.post('/chat/:threadId/retry', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });

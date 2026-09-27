@@ -22,12 +22,18 @@ import {
   streamChatToSse,
   resumeChatToSse,
   retryChatToSse,
+  THREAD_BUSY_MESSAGE,
   type ChatStreamDeps,
 } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
 import { queueWikiUpdate } from './after-agent.js';
 import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
-import { getActiveSseWriter, getActiveTurnAbort } from './active-sse-writer.js';
+import {
+  getActiveSseWriter,
+  getActiveTurnAbort,
+  setActiveSseWriter,
+  clearActiveSseWriter,
+} from './active-sse-writer.js';
 import { bootObservability, getObservabilityStore } from '../services/observability.js';
 
 const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
@@ -1591,6 +1597,94 @@ describe('agents/stream-handler', () => {
     // bound tools if the agent call carries the id of the trace that turn
     // opened. Reuses this describe's provider setup; the fake agent records
     // the streamEvents options, then fails the turn so no real model runs.
+    describe('busy guard', () => {
+      // An agent that fails the test if it is ever asked to stream — the
+      // guard must refuse before any agent/checkpoint work happens.
+      function forbiddenAgent() {
+        return {
+          streamEvents: () => {
+            throw new Error('agent must not run while another turn owns the thread');
+          },
+          graph: { getState: async () => ({ tasks: [], config: { configurable: {} } }) },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+      }
+
+      // Stands in for a headless wake-up / sub-agent turn holding the thread.
+      function holdThread(threadId: string): () => void {
+        const heldBy = () => {};
+        setActiveSseWriter(threadId, heldBy);
+        return () => clearActiveSseWriter(threadId);
+      }
+
+      it('streamChatToSse refuses a message while another turn owns the thread, without recording it [orchestration]', async () => {
+        const threadId = randomUUID();
+        const release = holdThread(threadId);
+        const { res, events } = fakeRes();
+        try {
+          await streamChatToSse(
+            res,
+            threadId,
+            'are you there?',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            depsFor(forbiddenAgent()),
+          );
+          expect(events()).to.deep.equal([{ type: 'stream_error', error: THREAD_BUSY_MESSAGE }]);
+          // Refused before upsert: a refused message must not appear in the
+          // transcript as if it had been sent.
+          expect(store.getThreadMeta(threadId)).to.equal(null);
+        } finally {
+          release();
+        }
+      });
+
+      it('resumeChatToSse refuses a HITL answer while another turn owns the thread [orchestration]', async () => {
+        const threadId = randomUUID();
+        const release = holdThread(threadId);
+        const { res, events } = fakeRes();
+        try {
+          await resumeChatToSse(
+            res,
+            threadId,
+            'prompt-1',
+            'yes',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(forbiddenAgent()),
+          );
+          expect(events()).to.deep.equal([{ type: 'stream_error', error: THREAD_BUSY_MESSAGE }]);
+        } finally {
+          release();
+        }
+      });
+
+      it('retryChatToSse refuses a retry while another turn owns the thread [orchestration]', async () => {
+        const threadId = randomUUID();
+        const release = holdThread(threadId);
+        const { res, events } = fakeRes();
+        try {
+          await retryChatToSse(
+            res,
+            threadId,
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(forbiddenAgent()),
+          );
+          expect(events()).to.deep.equal([{ type: 'stream_error', error: THREAD_BUSY_MESSAGE }]);
+        } finally {
+          release();
+        }
+      });
+    });
+
     describe('trace_id plumbing', () => {
       function fakeCapturingAgent() {
         const captured: { configurable?: Record<string, unknown> }[] = [];

@@ -1,11 +1,18 @@
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, afterEach, beforeEach } from 'mocha';
 import { expect } from 'chai';
-import { setActiveSseWriter, clearActiveSseWriter } from './active-sse-writer.js';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
+import {
+  setActiveSseWriter,
+  clearActiveSseWriter,
+  getActiveSseWriter,
+} from './active-sse-writer.js';
 import {
   enqueuePendingTurn,
   drainPendingTurns,
   runOnceThreadFree,
+  endThreadTurn,
 } from './pending-thread-turns.js';
+import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 
 const THREAD_ID = 'pending-turns-test-thread';
 
@@ -168,6 +175,55 @@ describe('agents/pending-thread-turns', () => {
       await second;
 
       expect(order).to.deep.equal(['fire-and-forget', 'awaitable']);
+    });
+  });
+
+  describe('endThreadTurn', () => {
+    let received: AppBroadcastEvent[];
+    const client = (event: AppBroadcastEvent) => received.push(event);
+
+    beforeEach(() => {
+      received = [];
+      registerBroadcastClient(client);
+    });
+    afterEach(() => unregisterBroadcastClient(client));
+
+    it('releases the thread mutex so the next turn can claim it [unit]', () => {
+      setActiveSseWriter(THREAD_ID, () => {});
+      endThreadTurn(THREAD_ID);
+      expect(getActiveSseWriter(THREAD_ID)).to.equal(undefined);
+    });
+
+    it('broadcasts thread_turn_completed so an open client re-hydrates the thread [unit]', () => {
+      setActiveSseWriter(THREAD_ID, () => {});
+      endThreadTurn(THREAD_ID);
+      expect(received).to.deep.equal([{ type: 'thread_turn_completed', threadId: THREAD_ID }]);
+    });
+
+    it('starts the next queued turn once the thread is released [orchestration]', async () => {
+      setActiveSseWriter(THREAD_ID, () => {});
+      let ran = false;
+      enqueuePendingTurn(THREAD_ID, async () => {
+        ran = true;
+      });
+      expect(ran).to.equal(false);
+
+      endThreadTurn(THREAD_ID);
+
+      expect(ran).to.equal(true);
+    });
+
+    it('announces completion before the queued turn starts, so the client sees the old turn end first [orchestration]', () => {
+      setActiveSseWriter(THREAD_ID, () => {});
+      const order: string[] = [];
+      registerBroadcastClient(() => order.push('completed'));
+      enqueuePendingTurn(THREAD_ID, async () => {
+        order.push('next-turn');
+      });
+
+      endThreadTurn(THREAD_ID);
+
+      expect(order).to.deep.equal(['completed', 'next-turn']);
     });
   });
 });
