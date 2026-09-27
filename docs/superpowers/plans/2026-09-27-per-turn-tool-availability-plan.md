@@ -92,8 +92,8 @@ line to just after `startTrace` and include `trace_id: traceId`.
   if something does, keep the build early and spread a second object at the `streamEvents` call
   instead. Widen the typed shape at :488 with `trace_id?: string`.
 - `api/src/agents/workspace-chat-stream-handler.ts`: :195/:210, :418/:443, :646/:674, same pattern.
-- Tests: in `stream-handler.test.ts` (fake agents ~:1333/1359/1381) and
-  `workspace-chat-stream-handler.test.ts` (~:147/170/192), capture the `streamEvents` options
+- Tests: in `stream-handler.test.ts` (fake agents ~~:1333/1359/1381) and
+  `workspace-chat-stream-handler.test.ts` (~~:147/170/192), capture the `streamEvents` options
   (pattern: `task-execution.test.ts:147`) and assert `options.configurable.trace_id` equals the id of
   the trace the store opened (read back via the store's `find({ threadId })`) `[orchestration]` —
   one per handler function.

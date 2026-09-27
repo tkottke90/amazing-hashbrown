@@ -83,7 +83,7 @@ describe('render/renderThreadReportHtml', () => {
 
   function traceFixture(
     systemPrompt: string | null,
-    overrides: { error?: string | null } = {},
+    overrides: { error?: string | null; tools?: string[] | null } = {},
   ): ThreadReportData {
     const data = fixture();
     data.timeline = [
@@ -101,6 +101,7 @@ describe('render/renderThreadReportHtml', () => {
           totalTokens: 60,
           totalCostEstimate: null,
           systemPrompt,
+          tools: overrides.tools ?? null,
           error: overrides.error ?? null,
           spans: [],
         },
@@ -119,6 +120,52 @@ describe('render/renderThreadReportHtml', () => {
   it('omits the System Prompt block when trace.systemPrompt is null', async () => {
     const html = await renderThreadReportHtml(traceFixture(null));
     expect(html).to.not.include('System Prompt');
+  });
+
+  // Issue #207: the System Prompt span doubles as the answer to "which tools
+  // did the model actually have on this turn?" — so the three tool states
+  // (list, empty, not captured) must be told apart at a glance.
+  describe('tool availability', () => {
+    function chips(html: string): string[] {
+      return [...html.matchAll(/<span class="tool-chip">([^<]*)<\/span>/g)].map((m) => m[1]);
+    }
+
+    it('renders one chip per tool, sorted, with the tool count [unit]', async () => {
+      const html = await renderThreadReportHtml(
+        traceFixture('prompt', { tools: ['web_fetch', 'ask_user', 'wiki_search'] }),
+      );
+      expect(chips(html), 'chips should be sorted so turns are easy to compare').to.deep.equal([
+        'ask_user',
+        'web_fetch',
+        'wiki_search',
+      ]);
+      expect(html).to.include('3 tools');
+    });
+
+    it('flags a captured turn with no tools bound as a warning [unit]', async () => {
+      const html = await renderThreadReportHtml(traceFixture('prompt', { tools: [] }));
+      expect(html).to.include('<span class="step-badge step-badge-warn">0 tools</span>');
+      expect(chips(html)).to.have.length(0);
+    });
+
+    it('marks an uncaptured trace as "tools not captured", never as zero tools [unit]', async () => {
+      const html = await renderThreadReportHtml(traceFixture('prompt', { tools: null }));
+      expect(html).to.include('tools not captured');
+      expect(html).to.not.include('0 tools');
+    });
+
+    it('still renders the System Prompt block when tools were captured but the prompt is null [unit]', async () => {
+      const html = await renderThreadReportHtml(traceFixture(null, { tools: ['wiki_search'] }));
+      expect(html).to.include('System Prompt');
+      expect(chips(html)).to.deep.equal(['wiki_search']);
+    });
+
+    it('escapes tool names rather than rendering them as markup [unit]', async () => {
+      const html = await renderThreadReportHtml(
+        traceFixture('prompt', { tools: ['<img src=x onerror=alert(1)>'] }),
+      );
+      expect(html).to.not.include('<img src=x');
+    });
   });
 
   it('renders a trace-level failure banner when trace.error is set', async () => {
