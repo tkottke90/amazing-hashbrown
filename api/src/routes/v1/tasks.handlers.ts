@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
   WorkspaceStore,
+  EnqueueOptions,
   NewTaskInput,
   PatchTaskInput,
   PlanStep,
@@ -9,6 +10,8 @@ import type {
   TriggerType,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
+import type { ThreadStore } from '../../services/thread-store.js';
+import { linkedPromptCopy, resolveHitlPrompt } from '../../agents/thread-message-writer.js';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { getFileTree } from '../../services/workspace-files.js';
 // Routes reaching into the agents layer — the only such direction in this
@@ -184,16 +187,86 @@ export function getQueueHandler(store: WorkspaceStore) {
 export function enqueueTaskHandler(
   store: WorkspaceStore,
   taskId: string,
+  opts: EnqueueOptions = {},
 ): HandlerResult<ReturnType<WorkspaceStore['enqueueTask']>> {
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
-  const entry = store.enqueueTask(taskId);
+  const entry = store.enqueueTask(taskId, opts);
   // Keep tasks.status in sync with the fact that this task is now queued —
   // mirrors the same invariant patchTaskHandler enforces for the R14 path.
   if (task.status !== 'ready') {
     store.patchTask(taskId, { status: 'ready' });
   }
   return ok(entry);
+}
+
+// A task's runs, newest first — the drawer's run history. 404 for an
+// unknown task so a stale drawer can tell "no runs yet" from "task gone".
+export function listTaskRunsHandler(
+  store: WorkspaceStore,
+  taskId: string,
+  opts: { limit?: number; offset?: number } = {},
+): HandlerResult<ReturnType<WorkspaceStore['listTaskRuns']>> {
+  if (!store.getTask(taskId)) return notFound(`Task ${taskId} not found`);
+  return ok(store.listTaskRuns(taskId, opts));
+}
+
+// 'not_task': an ordinary chat prompt — the caller resumes its own turn.
+// 'stale': the task has already moved on; the prompt is resolved for
+//   bookkeeping only and nothing re-runs.
+// 'resumed': the task is back in the queue — the caller must wake the
+//   scheduler.
+export type TaskPromptAnswerOutcome = 'not_task' | 'stale' | 'resumed';
+
+// The one place a HITL answer to an automated task's prompt is handled,
+// shared by every /hitl route (global chat — where Inbox task runs are
+// answered — and workspace chat) so none of them resumes a task's prompt as
+// an interactive chat turn, bypassing the scheduler. Works from either copy
+// of a mirrored prompt (the run thread's original, or the workspace chat's
+// copy) and always resolves both, so neither lingers as a live card. See
+// docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §4.
+export function answerTaskPrompt(
+  store: WorkspaceStore,
+  threadStore: ThreadStore,
+  input: { threadId: string; promptId: string; answer: string },
+): TaskPromptAnswerOutcome {
+  const prompt = threadStore.getMessage(input.threadId, input.promptId);
+  const payload = (prompt?.payload ?? {}) as Record<string, unknown>;
+  const taskId = typeof payload.taskId === 'string' ? payload.taskId : null;
+  if (!taskId) return 'not_task';
+
+  resolveHitlPrompt(threadStore, input.threadId, input.promptId, input.answer);
+  const linked = linkedPromptCopy(payload);
+  if (linked) resolveHitlPrompt(threadStore, linked.threadId, linked.promptId, input.answer);
+
+  const task = store.getTask(taskId);
+  const parked = store.listQueue().find((e) => e.taskId === taskId && e.status === 'paused');
+
+  // A task that isn't actually waiting on an answer anymore (already
+  // done/failed/cancelled/running, or deleted) means this prompt is stale —
+  // most often an interrupt finalizeTurn found in checkpoint state after the
+  // run had already completed via complete_task (see stream-handler.ts's
+  // discardInterrupt). Never let a stale answer reopen or re-run a task that
+  // has already moved on.
+  if (!parked && task?.status !== 'waiting_on_user') return 'stale';
+
+  store.patchTask(taskId, { status: 'ready', assignedTo: 'agent', resumeAnswer: input.answer });
+  if (parked) {
+    // Reactivate the row task-execution.ts parked (parkQueueEntryForHitl())
+    // at ITS ORIGINAL queue position — a fresh row would let every sibling
+    // still pending in this scope queue-jump a run that already started.
+    store.resumePausedEntry(parked.id);
+  } else {
+    // Defensive fallback — the task really is waiting on this answer but
+    // lost its parked row. Continue in the thread the prompt was raised in
+    // (its checkpoint holds the interrupt), not a fresh run thread, or the
+    // answer would have nothing to resume.
+    const runThreadId =
+      typeof payload.runThreadId === 'string' ? payload.runThreadId : input.threadId;
+    const entry = store.enqueueTask(taskId);
+    store.setQueueEntryThread(entry.id, runThreadId);
+  }
+  return 'resumed';
 }
 
 export function cancelTaskHandler(

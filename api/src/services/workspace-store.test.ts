@@ -1070,4 +1070,154 @@ describe('services/workspace-store', () => {
       });
     });
   });
+
+  describe('per-run records (migration 32 — task_queue thread_id/summary/trigger_source/scheduled_for)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-runs-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Rolls the DB back to "migration 31 applied, 32 not yet" so a test can
+    // seed pre-migration rows and then watch migration 32 run against them
+    // on the next store construction (== the next process start).
+    function rollBackMigration32(): void {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_task_queue_task_id;
+        DROP INDEX IF EXISTS idx_task_queue_thread_id;
+        ALTER TABLE task_queue DROP COLUMN thread_id;
+        ALTER TABLE task_queue DROP COLUMN summary;
+        ALTER TABLE task_queue DROP COLUMN trigger_source;
+        ALTER TABLE task_queue DROP COLUMN scheduled_for;
+        DELETE FROM schema_migrations WHERE version = 32;
+      `);
+    }
+
+    it('defaults a new run to trigger_source=manual with no thread, summary or scheduled time [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const entry = store.enqueueTask(task.id);
+      expect(entry.triggerSource).to.equal('manual');
+      expect(entry.threadId).to.equal(null);
+      expect(entry.summary).to.equal(null);
+      expect(entry.scheduledFor).to.equal(null);
+    });
+
+    it('records the trigger source and scheduled time passed to enqueueTask() [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const entry = store.enqueueTask(task.id, {
+        triggerSource: 'schedule',
+        scheduledFor: '2026-09-26T05:00:00.000Z',
+      });
+      expect(entry.triggerSource).to.equal('schedule');
+      expect(entry.scheduledFor).to.equal('2026-09-26T05:00:00.000Z');
+    });
+
+    it('tags batch-created tasks as chat and sub-agent tasks as agent, so run history can tell them apart [unit]', () => {
+      const [batch] = store.createTasks([{ title: 'from chat' }]);
+      const sub = store.createSubAgentTask({
+        role: 'r',
+        goal: 'g',
+        parentThreadId: 'parent',
+        dispatchGroupId: 'grp',
+      });
+      expect(store.listTaskRuns(batch!.id)[0]!.triggerSource).to.equal('chat');
+      expect(store.listTaskRuns(sub.id)[0]!.triggerSource).to.equal('agent');
+    });
+
+    it('persists a run thread and summary set after enqueue [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const entry = store.enqueueTask(task.id);
+      store.setQueueEntryThread(entry.id, 'run-thread-1');
+      store.setQueueEntrySummary(entry.id, 'Did the thing.');
+      const reloaded = store.getQueueEntry(entry.id)!;
+      expect(reloaded.threadId).to.equal('run-thread-1');
+      expect(reloaded.summary).to.equal('Did the thing.');
+    });
+
+    it('lists runs newest first with stable 1-based run numbers across pages [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      const ids = [0, 1, 2].map(() => {
+        const e = store.enqueueTask(task.id);
+        store.completeQueueEntry(e.id, 'done');
+        return e.id;
+      });
+
+      const all = store.listTaskRuns(task.id);
+      expect(all.map((r) => r.id)).to.deep.equal([...ids].reverse());
+      expect(all.map((r) => r.runNumber)).to.deep.equal([3, 2, 1]);
+
+      const secondPage = store.listTaskRuns(task.id, { limit: 1, offset: 1 });
+      expect(secondPage).to.have.length(1);
+      expect(secondPage[0]!.runNumber).to.equal(2);
+    });
+
+    it("does not mix another task's runs into a task's run history or numbering [unit]", () => {
+      const a = store.createTask({ title: 'a' });
+      const b = store.createTask({ title: 'b' });
+      store.enqueueTask(a.id);
+      const bRun = store.enqueueTask(b.id);
+      expect(store.listTaskRuns(b.id).map((r) => r.id)).to.deep.equal([bRun.id]);
+      expect(store.getTaskRun(bRun.id)!.runNumber).to.equal(1);
+    });
+
+    it('resolves a run, and its task, from the run thread [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      store.completeQueueEntry(store.enqueueTask(task.id).id, 'done');
+      const second = store.enqueueTask(task.id);
+      store.setQueueEntryThread(second.id, 'run-thread-2');
+
+      expect(store.getTaskRunByThreadId('run-thread-2')!.runNumber).to.equal(2);
+      // A sub-agent completion whose parent is a task run must still find
+      // the owning task, now that runs no longer share tasks.thread_id.
+      expect(store.getTaskByThreadId('run-thread-2')!.id).to.equal(task.id);
+    });
+
+    it('still resolves a task from a legacy tasks.thread_id [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      store.patchTask(task.id, { threadId: 'legacy-thread' });
+      expect(store.getTaskByThreadId('legacy-thread')!.id).to.equal(task.id);
+    });
+
+    it('writes a summary when crash recovery gives up on a run [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.dequeueNext();
+      new WorkspaceStore(db); // first crash: retried
+      store.dequeueNext();
+      new WorkspaceStore(db); // second crash: given up
+      expect(store.getQueueEntry(entry.id)!.summary).to.equal('Run failed after crash recovery.');
+    });
+
+    it('backfills open runs with the thread their checkpoint already lives in, so they resume in place [orchestration]', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      store.patchWorkspace(ws.id, { threadId: 'workspace-thread' });
+      const wsTask = store.createTask({ title: 'ws task', workspaceId: ws.id });
+      const inboxTask = store.createTask({ title: 'inbox task' });
+      store.patchTask(inboxTask.id, { threadId: 'inbox-task-thread' });
+      const doneTask = store.createTask({ title: 'finished', workspaceId: ws.id });
+
+      const wsEntry = store.enqueueTask(wsTask.id);
+      store.parkQueueEntryForHitl(wsEntry.id);
+      const inboxEntry = store.enqueueTask(inboxTask.id);
+      store.parkQueueEntry(inboxEntry.id);
+      const doneEntry = store.enqueueTask(doneTask.id);
+      store.completeQueueEntry(doneEntry.id, 'done');
+
+      rollBackMigration32();
+      const migrated = new WorkspaceStore(db);
+
+      expect(migrated.getQueueEntry(wsEntry.id)!.threadId).to.equal('workspace-thread');
+      expect(migrated.getQueueEntry(inboxEntry.id)!.threadId).to.equal('inbox-task-thread');
+      expect(migrated.getQueueEntry(doneEntry.id)!.threadId).to.equal(null);
+      expect(migrated.getQueueEntry(doneEntry.id)!.triggerSource).to.equal('manual');
+    });
+  });
 });

@@ -18,6 +18,7 @@ import { useTitle } from '@/hooks/use-title';
 import { useComputed, useSignal } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
+import { TaskRunView } from './task-run-view';
 
 export function ThreadView() {
   const { route } = useLocation();
@@ -118,17 +119,52 @@ export function ThreadView() {
 }
 
 export function ChatRoot({ id }: { path?: string; id?: string }) {
+  // 'chat' renders the normal chat view; 'run' the read-only view of an
+  // automated task run; 'resolving' is the brief check in between.
+  const mode = useSignal<'chat' | 'run' | 'resolving'>('chat');
+
   useEffect(() => {
     refreshThreadList();
   }, []);
 
   useEffect(() => {
-    if (id) void switchThread(id);
+    if (!id) return;
+    // A thread already in the chat list is a chat — switch straight to it.
+    // Anything else is checked first: an automated run's thread opens
+    // read-only and must never become the persisted active chat thread
+    // (switchThread's side effect), or the app would reopen it on the
+    // next visit.
+    if (threads.value.some((t) => t.id === id)) {
+      mode.value = 'chat';
+      void switchThread(id);
+      return;
+    }
+    let cancelled = false;
+    mode.value = 'resolving';
+    const instance = useThreadInstance(id);
+    void instance.hydrate().then(() => {
+      if (cancelled) return;
+      if (instance.threadType.value === 'task') {
+        mode.value = 'run';
+      } else {
+        mode.value = 'chat';
+        void switchThread(id);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   return (
     <Layout addLabel="New conversation">
-      <ThreadView />
+      {mode.value === 'run' && id ? (
+        <TaskRunView threadId={id} />
+      ) : mode.value === 'resolving' ? (
+        <div class="h-full" />
+      ) : (
+        <ThreadView />
+      )}
     </Layout>
   );
 }

@@ -47,6 +47,7 @@ import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
+import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
@@ -579,12 +580,22 @@ export interface TaskAgentHooks {
   onTaskComplete?: (call: CompleteTaskCall) => void;
 }
 
+// The queue entry (run) this agent is being built for. read_task_run is
+// bound only when hasPreviousRun is true — a first run has nothing to read,
+// and the kickoff message is what tells the agent the tool exists. Omitted
+// by callers that aren't a task run (sub-agent-notification.ts).
+export interface TaskRunBinding {
+  runId: string;
+  hasPreviousRun: boolean;
+}
+
 export async function buildTaskAgent(
   task: Task,
   provider?: string,
   model?: string,
   workspaceScope?: TaskWorkspaceScope,
   hooks?: TaskAgentHooks,
+  run?: TaskRunBinding,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
@@ -617,6 +628,7 @@ export async function buildTaskAgent(
         onAccepted: hooks?.onTaskComplete,
       }),
       makeUpdatePlanTool(task.id),
+      ...(run?.hasPreviousRun ? [makeReadTaskRunTool(task.id, run.runId)] : []),
       ...mcpTools,
     ],
     systemPrompt,

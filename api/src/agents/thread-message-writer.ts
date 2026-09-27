@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import type { ThreadStore } from '../services/thread-store.js';
+import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 
@@ -216,6 +218,15 @@ export interface HitlPromptFields {
   // apart from a plain chat one and re-enqueue the task instead of resuming
   // an interactive turn.
   taskId?: string;
+  // A task run's prompt is recorded in the run's own thread and, for a
+  // workspace task, copied into the workspace chat so the user can answer it
+  // where they already are. The two copies point at each other so answering
+  // either resolves both (see mirrorPendingTaskPrompts below and
+  // tasks.handlers.ts's answerTaskPrompt).
+  runThreadId?: string; // on the copy: the run thread holding the original
+  sourcePromptId?: string; // on the copy: the original's promptId
+  mirrorThreadId?: string; // on the original: where the copy lives
+  mirrorPromptId?: string; // on the original: the copy's promptId
 }
 
 export function recordHitlPrompt(
@@ -258,6 +269,50 @@ export function resolveHitlPrompt(
   });
 }
 
+// Copies every still-unanswered task prompt in a run thread into another
+// thread (a workspace's chat) under its own promptId, linking the two copies
+// both ways. Skips prompts already copied, so calling it again after a later
+// interrupt only copies the new one. Best-effort like the other marker
+// writers: a failed copy leaves the original answerable from the run view.
+export function mirrorPendingTaskPrompts(
+  store: ThreadStore,
+  runThreadId: string,
+  targetThreadId: string,
+): void {
+  safe(runThreadId, 'mirrorPendingTaskPrompts', () => {
+    const pending = store
+      .getThreadMessages(runThreadId)
+      .filter((m) => m.kind === 'hitl_prompt' && m.status === 'pending');
+    for (const prompt of pending) {
+      const payload = (prompt.payload ?? {}) as Record<string, unknown>;
+      if (!payload.taskId || payload.mirrorPromptId) continue;
+      const copyId = randomUUID();
+      store.insertMessage(targetThreadId, {
+        id: copyId,
+        kind: 'hitl_prompt',
+        status: 'pending',
+        payload: { ...payload, promptId: copyId, runThreadId, sourcePromptId: prompt.id },
+      });
+      store.updateMessage(runThreadId, prompt.id, {
+        payload: { ...payload, mirrorThreadId: targetThreadId, mirrorPromptId: copyId },
+      });
+    }
+  });
+}
+
+// The other copy of a mirrored task prompt, if this one has one.
+export function linkedPromptCopy(
+  payload: Record<string, unknown>,
+): { threadId: string; promptId: string } | null {
+  if (typeof payload.mirrorThreadId === 'string' && typeof payload.mirrorPromptId === 'string') {
+    return { threadId: payload.mirrorThreadId, promptId: payload.mirrorPromptId };
+  }
+  if (typeof payload.runThreadId === 'string' && typeof payload.sourcePromptId === 'string') {
+    return { threadId: payload.runThreadId, promptId: payload.sourcePromptId };
+  }
+  return null;
+}
+
 export function recordWikiUpdate(
   store: ThreadStore,
   threadId: string,
@@ -295,10 +350,20 @@ export function recordResourceCard(
   });
 }
 
-// Brackets an automated task run in its thread — a 'start' marker before the
-// agent begins and an 'end' marker (with the outcome) once it finishes —
-// so the user can tell task-originated activity apart from their own chat
-// turns in a workspace's shared thread. See task-execution.ts.
+// Which run a task_run_marker brackets — lets the UI label it ("Scheduled
+// run #12") and link a workspace chat's copy of the marker to the run's own
+// thread.
+export interface TaskRunMarkerRun {
+  runThreadId: string;
+  runNumber: number;
+  triggerSource: TriggerSource;
+}
+
+// Brackets an automated task run — a 'start' marker before the agent begins
+// and an 'end' marker (with the outcome) once it finishes. Written into the
+// run's own thread, and for a workspace task also copied into the
+// workspace's chat thread, so the user can see task activity (and open the
+// run) from the chat they already watch. See task-execution.ts.
 export function recordTaskRunMarker(
   store: ThreadStore,
   threadId: string,
@@ -307,12 +372,13 @@ export function recordTaskRunMarker(
   taskTitle: string,
   phase: 'start' | 'end',
   outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+  run?: TaskRunMarkerRun,
 ): number | null {
   return safe(threadId, 'recordTaskRunMarker', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'task_run_marker',
-      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}) },
+      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}), ...(run ?? {}) },
     }).seq;
   });
 }

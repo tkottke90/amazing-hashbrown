@@ -48,6 +48,21 @@ function toClientMessage(record: ThreadMessageRecord): Record<string, unknown> {
 
 export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
   messages: Record<string, unknown>[];
+  // Present only on a type='task' thread: which run of which task it
+  // records — powers the read-only run view's header without a second
+  // request.
+  taskRun?: TaskRunSummary;
+}
+
+export interface TaskRunSummary {
+  taskId: string;
+  taskTitle: string;
+  // null for an Inbox task — where the run view links back to.
+  workspaceId: string | null;
+  runId: string;
+  runNumber: number;
+  status: string;
+  triggerSource: string;
 }
 
 // Plain, Express-agnostic handler functions — no req/res anywhere. The
@@ -77,6 +92,10 @@ function serverError(error: string): HandlerFailure {
 
 function invalid(error: string): HandlerFailure {
   return { ok: false, status: 400, error };
+}
+
+function conflict(error: string): HandlerFailure {
+  return { ok: false, status: 409, error };
 }
 
 // The list response is enriched with live, non-persisted AfterAgent status —
@@ -113,11 +132,21 @@ export function getAfterAgentStatusHandler(
 export function getThreadHandler(
   store: ThreadStore,
   id: string,
-  opts: { afterMessageId?: string } = {},
+  opts: {
+    afterMessageId?: string;
+    // Resolves a type='task' thread to its run. Injected (rather than
+    // imported) so this handler stays free of the workspace store.
+    taskRunFor?: (threadId: string) => TaskRunSummary | null;
+  } = {},
 ): HandlerResult<ClientThreadDetail> {
-  const detail = store.getThread(id, opts);
+  const detail = store.getThread(id, { afterMessageId: opts.afterMessageId });
   if (!detail) return notFound(`Thread "${id}" not found`);
-  return ok({ ...detail, messages: detail.messages.map(toClientMessage) });
+  const taskRun = detail.type === 'task' ? (opts.taskRunFor?.(id) ?? null) : null;
+  return ok({
+    ...detail,
+    messages: detail.messages.map(toClientMessage),
+    ...(taskRun ? { taskRun } : {}),
+  });
 }
 
 export function renameThreadHandler(
@@ -154,6 +183,9 @@ export async function forkThreadHandler(
 
   const source = store.getThreadMeta(id);
   if (!source) return notFound(`Thread "${id}" not found`);
+  // A run thread is a read-only record of one automated task run — forking
+  // it would hand the user a chat seeded with a task agent's checkpoint.
+  if (source.type === 'task') return conflict('Automated run threads are read-only');
 
   const checkpointId = store.resolveForkCheckpointId(id, atSeq);
   if (!checkpointId) {

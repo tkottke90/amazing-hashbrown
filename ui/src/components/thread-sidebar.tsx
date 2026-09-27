@@ -18,6 +18,7 @@ import {
 import { useLocation } from 'preact-iso';
 
 import { cn } from '@/lib/utils';
+import { runPath } from '@/lib/task-runs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -222,6 +223,10 @@ function QueueWidget() {
   const { running, queue } = queueState.value;
   const pending = queue.filter((e) => e.status === 'pending').length;
   const currentTask = running[0]?.task ?? queue[0]?.task ?? null;
+  // The running run's own thread, once it has started — opens its live,
+  // read-only transcript.
+  const currentRunThread = running[0]?.threadId ?? null;
+  const { route } = useLocation();
 
   if (!currentTask && pending === 0) return null;
 
@@ -236,9 +241,21 @@ function QueueWidget() {
           Queue
         </span>
       </div>
-      <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
-        {currentTask?.title ?? '—'}
-      </div>
+      {currentRunThread ? (
+        <button
+          type="button"
+          data-testid="queue-current-task"
+          title="Open this run"
+          class="block w-full text-left text-[12px] font-medium truncate hover:underline"
+          onClick={() => route(runPath(currentRunThread))}
+        >
+          {currentTask?.title ?? '—'}
+        </button>
+      ) : (
+        <div data-testid="queue-current-task" class="text-[12px] font-medium truncate">
+          {currentTask?.title ?? '—'}
+        </div>
+      )}
       <div data-testid="queue-status" class="text-[11px] text-muted-foreground mt-0.5">
         {running.length > 1
           ? `${running.length} running · ${pending} pending`

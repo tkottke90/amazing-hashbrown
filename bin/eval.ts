@@ -41,6 +41,7 @@ import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.to
 import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.js';
 import { makeCompleteTaskTool } from '../api/src/agents/tools/complete-task.tool.js';
 import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js';
+import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
@@ -116,6 +117,9 @@ const evalTools = [
   // never execute the tool, so no task with that id needs to exist.
   makeUpdatePlanTool('eval-task'),
   makeCompleteTaskTool('eval-task'),
+  // Bound in real task runs only when a previous finished run exists; the
+  // eval harness never executes tools, so its store lookups never run here.
+  makeReadTaskRunTool('eval-task', 'eval-run'),
   fakeGenerateImageTool,
 ];
 

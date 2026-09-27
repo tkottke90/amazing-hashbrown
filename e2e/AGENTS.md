@@ -265,6 +265,16 @@ implementation details that change without notice.
 | `resource-card`            | `ui/src/components/resource-card-message.tsx`       | Targeting the resource card rendered after /create-workspace or /create-project               |
 | `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx`       | The card's Open control, navigating to `/workspaces/:id`                                      |
 | `task-run-marker`          | `ui/src/components/task-run-marker-message.tsx`     | The "Automated task started/completed/…" banner bracketing a task's run in a thread           |
+| `task-run-marker-open`     | `ui/src/components/task-run-marker-message.tsx`     | A run marker's "Open run" link (hidden inside that run's own view)                            |
+| `task-run-view`            | `ui/src/pages/chat/task-run-view.tsx`               | The read-only run view shown at `/chat/:id` for a `'task'` thread                             |
+| `task-run-title`           | `ui/src/pages/chat/task-run-view.tsx`               | Run view header text ("Run #N of <task>")                                                     |
+| `task-run-status`          | `ui/src/pages/chat/task-run-view.tsx`               | Run view status badge text                                                                    |
+| `task-run-back`            | `ui/src/pages/chat/task-run-view.tsx`               | Run view's link back to the workspace or Inbox                                                |
+| `task-run-readonly-note`   | `ui/src/pages/chat/task-run-view.tsx`               | Footer note standing in for the message box on a run view                                     |
+| `task-run-history`         | `ui/src/components/task-run-history.tsx`            | The task drawer's Run history section                                                         |
+| `task-run-history-row`     | `ui/src/components/task-run-history.tsx`            | One run in the drawer's Run history (opens the run)                                           |
+| `task-waiting-open-run`    | `ui/src/components/task-drawer.tsx`                 | The waiting-on-user banner's "Open run" button                                                |
+| `hitl-open-run`            | `ui/src/components/hitl-prompt-message.tsx`         | "Open run" link on a task question copied into the workspace chat                             |
 | `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
 | `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered node `<circle>` elements                                        |
 | `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |

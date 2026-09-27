@@ -6,6 +6,7 @@ import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { getThreadStore, type ThreadMessageRecord } from '../../services/thread-store.js';
+import { extractText } from '../thread-text.js';
 
 const SearchConversationSchema = z.object({
   query: z.string().describe('Natural language query to search the conversation history.'),
@@ -18,27 +19,6 @@ const SearchConversationSchema = z.object({
     .default(5)
     .describe('Number of turns to return (default 5).'),
 });
-
-function extractText(msg: ThreadMessageRecord): string | null {
-  const payload = msg.payload as Record<string, unknown> | null;
-  if (!payload) return null;
-
-  switch (msg.kind) {
-    case 'user':
-    case 'assistant': {
-      const content = payload['content'];
-      if (typeof content === 'string' && content.trim()) return content.trim();
-      break;
-    }
-    case 'tool_call': {
-      const name = String(payload['name'] ?? '');
-      const result = payload['result'] ?? payload['error'] ?? '';
-      const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-      return `Tool: ${name}\nResult: ${resultStr}`.trim();
-    }
-  }
-  return null;
-}
 
 function keywordSearch(
   query: string,

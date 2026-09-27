@@ -158,14 +158,15 @@ export async function streamWorkspaceChatToSse(
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  // An automated task run currently owns this exact thread (task-execution.ts
-  // registers itself the same way a chat turn does) — reject rather than
+  // Another turn currently owns this exact thread (a chat turn still
+  // streaming, or a headless sub-agent notification) — reject rather than
   // race a second agent.streamEvents() invocation against the same
-  // LangGraph checkpoint. Interrupting the task run itself is #86's job.
+  // LangGraph checkpoint. Automated task runs no longer land here: each run
+  // executes in its own thread (see task-execution.ts).
   if (getActiveSseWriter(threadId)) {
     writeSseEvent(sink, {
       type: 'stream_error',
-      error: 'This workspace has a task running — try again in a moment.',
+      error: 'This workspace chat is busy with another turn — try again in a moment.',
     });
     return;
   }
@@ -390,7 +391,7 @@ export async function resumeWorkspaceChatToSse(
   if (getActiveSseWriter(threadId)) {
     writeSseEvent(sink, {
       type: 'stream_error',
-      error: 'This workspace has a task running — try again in a moment.',
+      error: 'This workspace chat is busy with another turn — try again in a moment.',
     });
     return;
   }
@@ -618,7 +619,7 @@ export async function retryWorkspaceChatToSse(
   if (getActiveSseWriter(threadId)) {
     writeSseEvent(sink, {
       type: 'stream_error',
-      error: 'This workspace has a task running — try again in a moment.',
+      error: 'This workspace chat is busy with another turn — try again in a moment.',
     });
     return;
   }

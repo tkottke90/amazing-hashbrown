@@ -1,5 +1,7 @@
 import { useSignal } from '@preact/signals';
+import { useLocation } from 'preact-iso';
 import { MessageCircleQuestion } from 'lucide-preact';
+import { runPath } from '@/lib/task-runs';
 import { Modal } from '@tkottke90/preact-dialog';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -25,6 +27,23 @@ function parseChoice(raw: string): { label: string; description?: string } {
   const idx = raw.indexOf(' - ');
   if (idx < 0) return { label: raw };
   return { label: raw.slice(0, idx), description: raw.slice(idx + 3) };
+}
+
+// A workspace task run's question is copied into the workspace chat; the
+// copy carries the run's thread so the user can open the whole run for
+// context before answering.
+function OpenRunLink({ runThreadId }: { runThreadId: string }) {
+  const { route } = useLocation();
+  return (
+    <button
+      type="button"
+      data-testid="hitl-open-run"
+      className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      onClick={() => route(runPath(runThreadId))}
+    >
+      Open run
+    </button>
+  );
 }
 
 export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMessageProps) {
@@ -64,7 +83,10 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
       {/* Question header */}
       <div className={cn('flex items-start gap-2 px-4 pt-4', isMultipleChoice ? 'pb-3' : 'pb-0')}>
         <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <p className="font-medium leading-snug max-h-32 overflow-y-auto">{message.question}</p>
+        <p className="flex-1 font-medium leading-snug max-h-32 overflow-y-auto">
+          {message.question}
+        </p>
+        {message.runThreadId && <OpenRunLink runThreadId={message.runThreadId} />}
       </div>
 
       {/* Controls */}
