@@ -1,10 +1,12 @@
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 
 jest.mock('@/lib/sse', () => ({
+  ...jest.requireActual('@/lib/sse'),
   consumeSsePost: jest.fn(),
 }));
 
 import * as sse from '@/lib/sse';
+import { SseHttpError } from '@/lib/sse';
 import {
   useThreadInstance,
   switchThread,
@@ -464,5 +466,57 @@ describe('use-thread — switchThread model handling', () => {
 
     const thread = newThread('t15');
     expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
+  });
+});
+
+describe('use-thread — stream failures', () => {
+  function lastAssistant(thread: ThreadInstance) {
+    return [...thread.messages.value].reverse().find((m) => m.kind === 'assistant');
+  }
+
+  it('labels a dropped live stream as connection_lost, not a provider network failure [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('Error in input stream'));
+    const thread = newThread('t-drop');
+
+    await thread.sendMessage('run the long job');
+
+    const bubble = lastAssistant(thread);
+    expect(bubble).toMatchObject({ status: 'error', errorCategory: 'connection_lost' });
+    expect(thread.isStreaming.value).toBe(false);
+  });
+
+  it('labels a dropped HITL-resume stream as connection_lost too [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('network error'));
+    const thread = newThread('t-drop-hitl');
+
+    await thread.submitHitlAnswer('p1', 'yes');
+
+    expect(lastAssistant(thread)).toMatchObject({ errorCategory: 'connection_lost' });
+  });
+
+  it('shows the server message for an HTTP refusal instead of claiming the connection dropped [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(
+      new SseHttpError(409, 'Automated run threads are read-only'),
+    );
+    const thread = newThread('t-refused');
+
+    await thread.sendMessage('hello');
+
+    expect(lastAssistant(thread)).toMatchObject({
+      status: 'error',
+      error: 'Automated run threads are read-only',
+      errorCategory: 'unknown',
+    });
+  });
+
+  it('records no error when the user stopped the turn themselves [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' }),
+    );
+    const thread = newThread('t-stopped');
+
+    await thread.sendMessage('hello');
+
+    expect(lastAssistant(thread)).not.toMatchObject({ status: 'error' });
   });
 });

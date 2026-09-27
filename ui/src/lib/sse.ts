@@ -1,5 +1,18 @@
 import { ChatSSEEventSchema, type ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 
+// The server answered the POST with a non-2xx status before any stream
+// started (e.g. 400 bad input, 409 read-only run thread) — a refusal, not a
+// dropped connection. Carries the server's `{ error }` message when present.
+export class SseHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SseHttpError';
+  }
+}
+
 export async function consumeSsePost(
   url: string,
   body: Record<string, unknown>,
@@ -14,7 +27,14 @@ export async function consumeSsePost(
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    let message = `HTTP ${response.status}: ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: unknown };
+      if (typeof body.error === 'string' && body.error) message = body.error;
+    } catch {
+      // Not a JSON error body — keep the status line.
+    }
+    throw new SseHttpError(response.status, message);
   }
 
   if (!response.body) throw new Error('No response body');

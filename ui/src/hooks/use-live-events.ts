@@ -74,6 +74,18 @@ function handleEvent(event: AppBroadcastEvent): void {
         t.id === event.taskId ? { ...t, plan: event.plan } : t,
       );
       return;
+    case 'thread_turn_completed': {
+      // Any turn released this thread — a headless wake-up/sub-agent turn,
+      // another tab's turn, or this tab's own turn whose live stream
+      // dropped (connection_lost). Re-hydrate a loaded thread to show the
+      // result — unless this tab is still reading its own live stream for
+      // it, which already carries everything the turn produced.
+      if (hasThreadInstance(event.threadId)) {
+        const thread = useThreadInstance(event.threadId);
+        if (!thread.isStreaming.value) void thread.hydrate();
+      }
+      return;
+    }
     case 'task_started':
       // No task-list status change here (still 'running', same as before) —
       // just rehydrate an already-open thread so the "Automated task

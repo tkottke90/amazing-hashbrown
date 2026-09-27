@@ -3,7 +3,7 @@ import type { Signal } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
 import type { TriggerSource } from '../services/tasks-api';
-import { consumeSsePost } from '../lib/sse';
+import { consumeSsePost, SseHttpError } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
 import { providers, defaultProviderName, pickDefaultModelSelection } from './use-providers';
@@ -614,6 +614,22 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     });
   }
 
+  // A turn's POST or stream read failed. A user abort (Stop) is not a
+  // failure. An HTTP error is the server refusing the request — show its
+  // message. Anything else means the live connection dropped mid-turn: the
+  // server keeps running the turn, so say so rather than blaming the
+  // provider; use-live-events.ts re-hydrates this thread when the server
+  // broadcasts thread_turn_completed. See
+  // docs/superpowers/specs/2026-09-27-agent-wait-design.md §1.
+  function handleStreamFailure(err: unknown): void {
+    if ((err as { name?: string }).name === 'AbortError') return;
+    if (err instanceof SseHttpError) {
+      handleEvent({ type: 'stream_error', error: err.message, errorCategory: 'unknown' });
+      return;
+    }
+    handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'connection_lost' });
+  }
+
   async function sendMessage(content: string, attachmentId?: string): Promise<void> {
     const userId = randomUUID();
     const assistantId = randomUUID();
@@ -655,9 +671,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
@@ -699,9 +713,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
@@ -750,9 +762,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
