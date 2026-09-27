@@ -10,6 +10,7 @@ import { emptyCheckpoint } from '@langchain/langgraph-checkpoint';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { HumanMessage } from '@langchain/core/messages';
 import { ThreadStore } from '../../services/thread-store.js';
+import { WakeupStore } from '../../services/wakeup-store.js';
 import { ToolSettingsStore } from '../../services/tool-settings-store.js';
 import type { CatalogEntry } from '../../agents/tool-catalog.js';
 import { bootObservability } from '../../services/observability.js';
@@ -24,6 +25,7 @@ import {
   getThreadToolsHandler,
   putThreadToolsHandler,
   deleteThreadToolsHandler,
+  pendingWakeupHandler,
 } from './threads.handlers.js';
 
 // Minimal fake satisfying the .withStructuredOutput().withRetry().invoke()
@@ -527,5 +529,57 @@ describe('routes/v1/threads.handlers', () => {
         expect(store.getThreadMeta('t1')!.toolsCustomizedAt).to.equal(null);
       });
     });
+  });
+});
+
+describe('routes/v1/threads.handlers — pendingWakeupHandler', () => {
+  let dir: string;
+  let threads: ThreadStore;
+  let wakeups: WakeupStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'wakeup-handler-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    threads = new ThreadStore(db);
+    wakeups = new WakeupStore(db, threads);
+    threads.upsertThreadOnFirstMessage('t1', 'deploy', 'chat');
+    threads.upsertThreadOnFirstMessage('t2', 'other', 'chat');
+  });
+
+  afterEach(() => {
+    threads.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const schedule = (threadId = 't1') =>
+    wakeups.schedule({
+      threadId,
+      note: 'check',
+      fireAt: new Date(Date.now() + 60_000),
+      chainDepth: 1,
+    });
+
+  it('accepts a pending wake-up that belongs to the thread [unit]', () => {
+    const wakeup = schedule();
+    const result = pendingWakeupHandler(wakeups, 't1', wakeup.id);
+    expect(result).to.deep.equal({ ok: true, data: wakeup });
+  });
+
+  it('404s an unknown wake-up [unit]', () => {
+    const result = pendingWakeupHandler(wakeups, 't1', 'nope');
+    expect(result).to.include({ ok: false, status: 404 });
+  });
+
+  it("404s another thread's wake-up, so one thread's card cannot act on another's [unit]", () => {
+    const wakeup = schedule('t2');
+    const result = pendingWakeupHandler(wakeups, 't1', wakeup.id);
+    expect(result).to.include({ ok: false, status: 404 });
+  });
+
+  it('409s a wake-up that already fired or was cancelled [unit]', () => {
+    const wakeup = schedule();
+    wakeups.markFired(wakeup.id, 'timer');
+    const result = pendingWakeupHandler(wakeups, 't1', wakeup.id);
+    expect(result).to.include({ ok: false, status: 409 });
   });
 });

@@ -8,6 +8,7 @@ import type {
   ThreadSummary,
 } from '../../services/thread-store.js';
 import type { ToolSettingsStore } from '../../services/tool-settings-store.js';
+import type { Wakeup, WakeupStore } from '../../services/wakeup-store.js';
 import { ALWAYS_ON_TOOL_IDS } from '../../agents/tool-access.js';
 import {
   listResolvedToolSettings,
@@ -439,4 +440,23 @@ export function deleteThreadToolsHandler(
   store.resetThreadToolsCustomization(threadId);
 
   return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
+}
+
+// Validates a user action (Cancel / Trigger now) on a wake-up card: it must
+// exist, belong to this thread, and still be pending. The route then asks
+// WakeupRegistry to settle it — the registry, not this handler, does the
+// transition, because triggering must also start the resumed turn. The
+// registry re-checks pending, so a race lost after this check is a 409 too.
+// See docs/superpowers/specs/2026-09-27-agent-wait-design.md §4.
+export function pendingWakeupHandler(
+  store: WakeupStore,
+  threadId: string,
+  wakeupId: string,
+): HandlerResult<Wakeup> {
+  const wakeup = store.get(wakeupId);
+  if (!wakeup || wakeup.threadId !== threadId) {
+    return notFound(`Wake-up "${wakeupId}" not found in thread "${threadId}"`);
+  }
+  if (wakeup.status !== 'pending') return conflict(`Wake-up has already ${wakeup.status}`);
+  return ok(wakeup);
 }
