@@ -291,6 +291,12 @@ implementation details that change without notice.
 | `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
 | `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered node `<circle>` elements                                        |
 | `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |
+| `wakeup-card`              | `ui/src/components/wakeup-card.tsx`                 | A timed wake-up card; `data-state` is `pending`, `fired` or `cancelled`                       |
+| `wakeup-card-status`       | `ui/src/components/wakeup-card.tsx`                 | The card's "in 14m · 3:42 PM" / "Fired …" / "Cancelled …" line                                |
+| `wakeup-card-trigger`      | `ui/src/components/wakeup-card.tsx`                 | The card's Trigger now button (pending only)                                                  |
+| `wakeup-card-cancel`       | `ui/src/components/wakeup-card.tsx`                 | The card's Cancel button (pending only)                                                       |
+| `wakeup-fired-marker`      | `ui/src/components/wakeup-fired-marker.tsx`         | Divider above the turn a wake-up resumed                                                      |
+| `background-turn-status`   | `ui/src/pages/chat/index.tsx`                       | "Working in the background" strip while a headless turn holds the thread                      |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
