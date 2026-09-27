@@ -191,6 +191,22 @@ describe('routes/v1/threads.handlers', () => {
       }
     });
 
+    it('reports activeTurn from the injected check, so a client loading mid-turn shows the thread busy [unit]', () => {
+      store.upsertThreadOnFirstMessage('t-busy', 'Busy');
+
+      const busy = getThreadHandler(store, 't-busy', { isTurnActive: (id) => id === 't-busy' });
+      const idle = getThreadHandler(store, 't-busy', { isTurnActive: () => false });
+
+      expect(busy.ok && busy.data.activeTurn).to.equal(true);
+      expect(idle.ok && idle.data.activeTurn).to.equal(false);
+    });
+
+    it('reports activeTurn false when no check is injected [unit]', () => {
+      store.upsertThreadOnFirstMessage('t-default', 'Default');
+      const result = getThreadHandler(store, 't-default');
+      expect(result.ok && result.data.activeTurn).to.equal(false);
+    });
+
     it('flattens each message to the client shape: id/kind/seq/status alongside payload fields, no nested payload', () => {
       store.upsertThreadOnFirstMessage('t2', 'Flatten test');
       store.insertMessage('t2', {

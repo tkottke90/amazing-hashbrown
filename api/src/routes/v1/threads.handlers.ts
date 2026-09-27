@@ -52,6 +52,10 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
   // records — powers the read-only run view's header without a second
   // request.
   taskRun?: TaskRunSummary;
+  // True while any turn holds this thread — including a headless wake-up or
+  // sub-agent turn no client is streaming — so a client loading the thread
+  // mid-turn shows it as busy (and can offer Stop).
+  activeTurn: boolean;
 }
 
 export interface TaskRunSummary {
@@ -137,6 +141,9 @@ export function getThreadHandler(
     // Resolves a type='task' thread to its run. Injected (rather than
     // imported) so this handler stays free of the workspace store.
     taskRunFor?: (threadId: string) => TaskRunSummary | null;
+    // Whether a turn currently holds the thread. Injected for the same
+    // reason (the route passes active-sse-writer's mutex check).
+    isTurnActive?: (threadId: string) => boolean;
   } = {},
 ): HandlerResult<ClientThreadDetail> {
   const detail = store.getThread(id, { afterMessageId: opts.afterMessageId });
@@ -146,6 +153,7 @@ export function getThreadHandler(
     ...detail,
     messages: detail.messages.map(toClientMessage),
     ...(taskRun ? { taskRun } : {}),
+    activeTurn: opts.isTurnActive?.(id) ?? false,
   });
 }
 
@@ -205,7 +213,8 @@ export async function forkThreadHandler(
     // but keeps the return type honest without a non-null assertion.
     return notFound(`Forked thread "${newThreadId}" not found immediately after creation`);
   }
-  return ok({ ...forked, messages: forked.messages.map(toClientMessage) });
+  // A brand-new fork has never run a turn.
+  return ok({ ...forked, messages: forked.messages.map(toClientMessage), activeTurn: false });
 }
 
 // Keep this in sync with suites/thread-titles.yaml's scenario `input`

@@ -9,7 +9,11 @@ import {
   resolveAllowedWikiId,
 } from '../../agents/workspace-chat-stream-handler.js';
 import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
-import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
+import {
+  stopTurnResponse,
+  getActiveSseWriter,
+  type SseWriter,
+} from '../../agents/active-sse-writer.js';
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
 import { getWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
@@ -61,6 +65,7 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
 
   const result = getThreadHandler(getThreadStore(), threadId, {
     afterMessageId: workspace.lastSummarizedMessageId ?? undefined,
+    isTurnActive: (id) => getActiveSseWriter(id) !== undefined,
   });
   if (!result.ok) {
     // A workspace-chat thread not existing yet (pre-first-message) is not an

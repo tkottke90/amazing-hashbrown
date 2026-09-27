@@ -4,6 +4,7 @@ import { getThreadStore } from '../../services/thread-store.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getToolSettingsStore } from '../../services/tool-settings-store.js';
 import { getCheckpointer } from '../../agents/chat-agent.js';
+import { getActiveSseWriter } from '../../agents/active-sse-writer.js';
 import { createProvider } from '../../services/provider-factory.js';
 import {
   listThreadsHandler,
@@ -43,9 +44,11 @@ function taskRunFor(threadId: string): TaskRunSummary | null {
   };
 }
 
+const isTurnActive = (threadId: string): boolean => getActiveSseWriter(threadId) !== undefined;
+
 threadsRouter.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const result = getThreadHandler(getThreadStore(), id, { taskRunFor });
+  const result = getThreadHandler(getThreadStore(), id, { taskRunFor, isTurnActive });
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
