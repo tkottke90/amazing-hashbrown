@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
+import { isCronTrigger, type CronConfig } from './cron-config.js';
+import { settleCronRun } from './cron-settlement.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -696,7 +698,8 @@ export class WorkspaceStore extends BaseStore {
     const stuck = this.db
       .prepare(
         `SELECT task_queue.id AS id, task_queue.task_id AS task_id,
-                task_queue.recovery_attempts AS recovery_attempts, tasks.origin AS origin
+                task_queue.recovery_attempts AS recovery_attempts, tasks.origin AS origin,
+                task_queue.trigger_source AS trigger_source, tasks.trigger_type AS trigger_type
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
          WHERE task_queue.status = 'running'`,
@@ -706,6 +709,8 @@ export class WorkspaceStore extends BaseStore {
       task_id: string;
       recovery_attempts: number;
       origin: 'user' | 'agent';
+      trigger_source: TriggerSource;
+      trigger_type: TriggerType;
     }[];
 
     const now = new Date().toISOString();
@@ -739,6 +744,15 @@ export class WorkspaceStore extends BaseStore {
         mirrorFail.run(now, row.task_id);
         const task = this.getTask(row.task_id);
         if (task) this._pendingSubAgentCrashNotifications.push(task);
+      } else if (
+        isCronTrigger(row.trigger_type) &&
+        (row.trigger_source === 'schedule' || row.trigger_source === 'catch_up')
+      ) {
+        // A run the schedule started has no one waiting on it — escalating
+        // it to the user would park the schedule until someone noticed. It
+        // settles as a failed run instead, which counts toward auto-pause.
+        giveUp.run(now, row.id);
+        this.settleTaskAfterRun(row.task_id, row.trigger_source, 'failed', now);
       } else {
         giveUp.run(now, row.id);
         mirrorEscalate.run(now, row.task_id);
@@ -1651,14 +1665,77 @@ export class WorkspaceStore extends BaseStore {
       .prepare(`UPDATE task_queue SET status = ?, finished_at = ? WHERE id = ?`)
       .run(outcome, now, id);
 
-    const entry = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      { task_id: string } | undefined;
-    if (entry) {
+    const entry = this.db
+      .prepare(`SELECT task_id, trigger_source FROM task_queue WHERE id = ?`)
+      .get(id) as { task_id: string; trigger_source: TriggerSource } | undefined;
+    if (entry) this.settleTaskAfterRun(entry.task_id, entry.trigger_source, outcome, now);
+  }
+
+  // Mirrors a finished run onto its task. An ordinary task takes the run's
+  // outcome as its status; a cron task is settled by the schedule rules
+  // (cron-settlement.ts) — typically back to 'scheduled' — and its failure
+  // counter/auto-pause are written back into its trigger_config.
+  private settleTaskAfterRun(
+    taskId: string,
+    source: TriggerSource,
+    outcome: 'done' | 'failed' | 'cancelled',
+    now: string,
+  ): void {
+    const task = this.getTask(taskId);
+    if (task && isCronTrigger(task.triggerType) && task.triggerConfig) {
+      const settled = settleCronRun({
+        type: task.triggerType,
+        config: task.triggerConfig as CronConfig,
+        source,
+        outcome,
+        iterationCount: this.countScheduledRuns(taskId),
+        now: new Date(now),
+      });
+      this.db
+        .prepare(`UPDATE tasks SET status = ?, trigger_config = ?, updated_at = ? WHERE id = ?`)
+        .run(settled.status, JSON.stringify(settled.config), now, taskId);
+    } else {
       this.db
         .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)
-        .run(outcome, now, entry.task_id);
-      this.releaseEligibleDependents(entry.task_id);
+        .run(outcome, now, taskId);
     }
+    this.releaseEligibleDependents(taskId);
+  }
+
+  // Enqueues one scheduled (or catch-up) run of a cron task, atomically, if
+  // and only if the task is idle on its schedule: status 'scheduled' and
+  // enabled. Anything else — already queued, running, waiting on the user,
+  // paused, turned off, deleted — is a skipped fire, returned as null. The
+  // fire time is recorded as lastFiredAt, which is what catch-up and the
+  // one-shot "already fired" check read.
+  fireCronTask(
+    taskId: string,
+    scheduledFor: string,
+    source: 'schedule' | 'catch_up',
+  ): TaskQueueEntry | null {
+    return this.db.transaction(() => {
+      const task = this.getTask(taskId);
+      if (!task || !isCronTrigger(task.triggerType) || task.status !== 'scheduled') return null;
+      const config = task.triggerConfig as CronConfig | null;
+      if (!config?.enabled) return null;
+      this.patchTask(taskId, {
+        status: 'ready',
+        assignedTo: 'agent',
+        triggerConfig: { ...config, lastFiredAt: scheduledFor },
+      });
+      return this.enqueueTask(taskId, { triggerSource: source, scheduledFor });
+    })();
+  }
+
+  // Every cron task waiting on its schedule — what the registry arms on boot.
+  listScheduledTasks(): Task[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE status = 'scheduled' AND trigger_type IN ('cron_once', 'cron_repeat')`,
+      )
+      .all() as RawTaskRow[];
+    return rows.map(mapTask);
   }
 
   // User-initiated Pause: parks the row (status 'paused', tagged

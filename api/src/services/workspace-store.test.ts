@@ -1220,4 +1220,121 @@ describe('services/workspace-store', () => {
       expect(migrated.getQueueEntry(doneEntry.id)!.triggerSource).to.equal('manual');
     });
   });
+
+  describe('cron firing and settlement (cron task triggers design §2)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-cron-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function scheduledRepeatTask(overrides: Record<string, unknown> = {}) {
+      const task = store.createTask({
+        title: 'nightly',
+        triggerType: 'cron_repeat',
+        triggerConfig: {
+          expression: '0 0 * * *',
+          timezone: 'UTC',
+          enabled: true,
+          maxIterations: null,
+          stopAfter: null,
+          maxConsecutiveFailures: 3,
+          enabledAt: '2026-01-01T00:00:00.000Z',
+          lastFiredAt: null,
+          consecutiveFailures: 0,
+          pausedReason: null,
+          ...overrides,
+        },
+      });
+      return store.patchTask(task.id, { status: 'scheduled' })!;
+    }
+
+    it('fires an idle scheduled task: queues a schedule run and records the fire time [unit]', () => {
+      const task = scheduledRepeatTask();
+      const entry = store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule');
+
+      expect(entry).to.include({
+        triggerSource: 'schedule',
+        scheduledFor: '2026-09-26T00:00:00.000Z',
+      });
+      const after = store.getTask(task.id)!;
+      expect(after.status).to.equal('ready');
+      expect(after.assignedTo).to.equal('agent');
+      expect((after.triggerConfig as { lastFiredAt: string }).lastFiredAt).to.equal(
+        '2026-09-26T00:00:00.000Z',
+      );
+    });
+
+    it('skips a fire while the task is busy, so a long run is never doubled up [unit]', () => {
+      const task = scheduledRepeatTask();
+      store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule');
+      store.dequeueNext(); // now running
+
+      expect(store.fireCronTask(task.id, '2026-09-27T00:00:00.000Z', 'schedule')).to.equal(null);
+      expect(store.listTaskRuns(task.id)).to.have.length(1);
+    });
+
+    it('skips a fire when the schedule is turned off [unit]', () => {
+      const task = scheduledRepeatTask({ enabled: false });
+      expect(store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule')).to.equal(null);
+    });
+
+    it("settles a finished scheduled run back to 'scheduled' instead of 'done' [orchestration]", () => {
+      const task = scheduledRepeatTask();
+      const entry = store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule')!;
+      store.dequeueNext();
+      store.completeQueueEntry(entry.id, 'done');
+
+      expect(store.getTask(task.id)!.status).to.equal('scheduled');
+      expect(store.countScheduledRuns(task.id)).to.equal(1);
+    });
+
+    it('auto-pauses after the configured number of failed scheduled runs in a row [orchestration]', () => {
+      const task = scheduledRepeatTask({ maxConsecutiveFailures: 2 });
+      for (const day of ['26', '27']) {
+        const entry = store.fireCronTask(task.id, `2026-09-${day}T00:00:00.000Z`, 'schedule')!;
+        store.dequeueNext();
+        store.completeQueueEntry(entry.id, 'failed');
+      }
+      const after = store.getTask(task.id)!;
+      expect(after.status).to.equal('pending');
+      expect(after.triggerConfig).to.include({
+        enabled: false,
+        pausedReason: 'consecutive_failures',
+      });
+    });
+
+    it('lists only idle cron tasks for the registry to arm on boot [unit]', () => {
+      const scheduled = scheduledRepeatTask();
+      const busy = scheduledRepeatTask();
+      store.fireCronTask(busy.id, '2026-09-26T00:00:00.000Z', 'schedule');
+      store.createTask({ title: 'manual' });
+
+      expect(store.listScheduledTasks().map((t) => t.id)).to.deep.equal([scheduled.id]);
+    });
+
+    it('settles a scheduled run lost to repeated crashes as a failure, not a question for the user [orchestration]', () => {
+      const task = scheduledRepeatTask();
+      store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule');
+      store.dequeueNext();
+      new WorkspaceStore(db); // first crash: retried
+      store.dequeueNext();
+      new WorkspaceStore(db); // second crash: given up
+
+      const after = store.getTask(task.id)!;
+      expect(after.status, 'the schedule keeps going').to.equal('scheduled');
+      expect(after.assignedTo).to.not.equal('user');
+      expect((after.triggerConfig as { consecutiveFailures: number }).consecutiveFailures).to.equal(
+        1,
+      );
+    });
+  });
 });
