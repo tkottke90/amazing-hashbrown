@@ -101,3 +101,56 @@ describe('TaskCard — dependency badge', () => {
     expect(screen.queryByText(/Waiting on:/)).not.toBeInTheDocument();
   });
 });
+
+describe('TaskCard — schedule line', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("shows a cron task's next run and how its last run went", () => {
+    mockListTaskDependencies.mockResolvedValue([]);
+    render(
+      <TaskCard
+        task={{
+          ...baseTask,
+          status: 'scheduled',
+          triggerType: 'cron_repeat',
+          schedule: {
+            nextFireAt: '2026-09-27T00:00:00.000Z',
+            iterationCount: 3,
+            active: true,
+            inactiveReason: null,
+            lastRunOutcome: 'failed',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('task-card-schedule')).toHaveTextContent(/next: /);
+    expect(screen.getByTestId('task-card-last-run')).toHaveTextContent('last: failed');
+  });
+
+  it('shows no last-run badge before the first run, and no schedule line on other tasks', () => {
+    mockListTaskDependencies.mockResolvedValue([]);
+    const { unmount } = render(
+      <TaskCard
+        task={{
+          ...baseTask,
+          triggerType: 'cron_once',
+          schedule: {
+            nextFireAt: '2026-10-01T15:00:00.000Z',
+            iterationCount: 0,
+            active: true,
+            inactiveReason: null,
+            lastRunOutcome: null,
+          },
+        }}
+      />,
+    );
+    expect(screen.queryByTestId('task-card-last-run')).not.toBeInTheDocument();
+    unmount();
+
+    render(<TaskCard task={baseTask} />);
+    expect(screen.queryByTestId('task-card-schedule')).not.toBeInTheDocument();
+  });
+});

@@ -129,7 +129,13 @@ function statusAfterTriggerSave(
   return task.status === 'scheduled' ? 'pending' : null;
 }
 
-export type TaskResponse = Task & { schedule?: TaskSchedule };
+export type RunOutcome = 'done' | 'failed' | 'cancelled';
+
+export type TaskResponse = Task & {
+  schedule?: TaskSchedule & { lastRunOutcome: RunOutcome | null };
+};
+
+const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled']);
 
 // A task as the API returns it: cron tasks carry a computed `schedule`
 // (next fire time, run count, and why it's inactive, if it is) so the UI
@@ -140,14 +146,21 @@ export function withSchedule(
   now: Date = new Date(),
 ): TaskResponse {
   if (!isCronTrigger(task.triggerType) || !task.triggerConfig) return task;
+  // The newest finished run — the Kanban card's last-run badge.
+  const lastRun = store
+    .listTaskRuns(task.id, { limit: 5 })
+    .find((run) => RUN_OUTCOMES.has(run.status));
   return {
     ...task,
-    schedule: describeTaskSchedule(
-      task.triggerType,
-      task.triggerConfig as CronConfig,
-      store.countScheduledRuns(task.id),
-      now,
-    ),
+    schedule: {
+      ...describeTaskSchedule(
+        task.triggerType,
+        task.triggerConfig as CronConfig,
+        store.countScheduledRuns(task.id),
+        now,
+      ),
+      lastRunOutcome: (lastRun?.status as RunOutcome | undefined) ?? null,
+    },
   };
 }
 

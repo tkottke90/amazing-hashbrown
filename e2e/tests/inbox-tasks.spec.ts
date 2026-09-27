@@ -77,6 +77,20 @@ const suite: TestSuite = {
       expectedOutcome: 'A placeholder note is shown instead of a URL field',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action:
+        'Select Scheduled (repeat), type a cron expression, time zone and limits, save, and reopen the task',
+      expectedOutcome:
+        'The preview reads the schedule back with upcoming times; after saving, the row shows the trigger and next run, and every field round-trips',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Type an invalid cron expression',
+      expectedOutcome: 'The preview shows why it is invalid and Save stays disabled',
+      test: () => {},
+    },
   ],
 };
 
@@ -473,6 +487,77 @@ test.describe(
         drawer.getByText('Webhook URL is generated once the task is saved.'),
       ).toBeVisible();
       await expect(drawer.locator('[data-testid="task-webhook-url"]')).not.toBeVisible();
+    });
+
+    test('a repeating schedule is previewed, saved, and round-trips every field', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const taskRes = await request.post('/api/v1/tasks', {
+        data: { title: 'e2e-cron-repeat-task', assignedTo: 'agent' },
+      });
+      expect(taskRes.status()).toBe(201);
+      const task = await taskRes.json();
+
+      await page.goto('/inbox');
+      const row = page
+        .locator('[data-testid="inbox-task-row"]')
+        .filter({ hasText: 'e2e-cron-repeat-task' });
+      await row.click();
+
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer).toBeVisible();
+      await drawer.locator('[data-testid="task-trigger-type-select"]').selectOption('cron_repeat');
+
+      // 09:00 on Jan 1 only — far enough out that it never fires during the run.
+      await drawer.locator('[data-testid="cron-expression"]').fill('0 9 1 1 *');
+      await drawer.locator('[data-testid="cron-timezone"]').fill('America/Chicago');
+      await drawer.locator('[data-testid="cron-max-iterations"]').fill('5');
+      await drawer.locator('[data-testid="cron-max-failures"]').fill('2');
+
+      const preview = drawer.locator('[data-testid="cron-preview"]');
+      await expect(preview).toHaveAttribute('data-state', 'valid');
+      await expect(preview).toContainText('January');
+      await expect(preview.locator('li')).toHaveCount(3);
+
+      await pauseBeforeAction(page, testInfo);
+      await drawer.getByRole('button', { name: 'Save changes' }).click();
+      await expect(drawer).not.toBeVisible();
+
+      await expect(row.locator('[data-testid="inbox-task-trigger"]')).toHaveText(
+        'Scheduled (repeat)',
+      );
+      await expect(row).toContainText('next:');
+
+      await row.click();
+      const reopened = page.locator('dialog[open]');
+      await expect(reopened.locator('[data-testid="cron-expression"]')).toHaveValue('0 9 1 1 *');
+      await expect(reopened.locator('[data-testid="cron-timezone"]')).toHaveValue(
+        'America/Chicago',
+      );
+      await expect(reopened.locator('[data-testid="cron-max-iterations"]')).toHaveValue('5');
+      await expect(reopened.locator('[data-testid="cron-max-failures"]')).toHaveValue('2');
+      await expect(reopened.locator('[data-testid="schedule-enabled"]')).toBeChecked();
+      await expect(reopened.locator('[data-testid="schedule-next-run"]')).toBeVisible();
+
+      await request.delete(`/api/v1/tasks/${task.id}`);
+    });
+
+    test('an invalid cron expression is explained and cannot be saved', async ({
+      page,
+    }, testInfo) => {
+      await page.goto('/inbox');
+      await page.getByRole('button', { name: 'New task' }).click();
+
+      const drawer = page.locator('dialog[open]');
+      await drawer.getByPlaceholder('Task title').fill('e2e-cron-invalid-task');
+      await drawer.locator('[data-testid="task-trigger-type-select"]').selectOption('cron_repeat');
+      await drawer.locator('[data-testid="cron-expression"]').fill('0 25 * * *');
+
+      await pauseBeforeAction(page, testInfo);
+      const preview = drawer.locator('[data-testid="cron-preview"]');
+      await expect(preview).toHaveAttribute('data-state', 'invalid');
+      await expect(drawer.getByRole('button', { name: 'Create task' })).toBeDisabled();
     });
   },
 );

@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { forwardRef } from 'preact/compat';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
-import { ChevronRight, Plus, GitBranch, BookOpen, Calendar } from 'lucide-preact';
+import { ChevronRight, Plus, GitBranch, BookOpen, Calendar, Clock } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,8 @@ import {
 import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
 import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
-import type { Task, TaskStatus, TaskDependency } from '@/services/tasks-api';
+import type { Task, TaskStatus, TaskDependency, TaskSchedule } from '@/services/tasks-api';
+import { formatFireTime } from '@/lib/cron-drafts';
 import { listTaskDependencies } from '@/services/tasks-api';
 import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
 import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
@@ -133,6 +134,36 @@ function KanbanColumn({
   );
 }
 
+const LAST_RUN_BADGE: Record<NonNullable<TaskSchedule['lastRunOutcome']>, string> = {
+  done: 'bg-green-600/10 text-green-700 dark:text-green-400',
+  failed: 'bg-destructive/10 text-destructive',
+  cancelled: 'bg-muted text-muted-foreground',
+};
+
+// A cron task's card line: when it runs next, and how its last run went.
+function ScheduleCardLine({ schedule }: { schedule: TaskSchedule }) {
+  return (
+    <p
+      data-testid="task-card-schedule"
+      class="text-[10px] text-muted-foreground mt-1 flex items-center gap-1 flex-wrap"
+    >
+      <Clock class="size-3" />
+      {schedule.nextFireAt ? `next: ${formatFireTime(schedule.nextFireAt)}` : 'not scheduled'}
+      {schedule.lastRunOutcome && (
+        <span
+          data-testid="task-card-last-run"
+          class={cn(
+            'rounded-full px-1.5 py-0.5 font-medium',
+            LAST_RUN_BADGE[schedule.lastRunOutcome],
+          )}
+        >
+          last: {schedule.lastRunOutcome}
+        </span>
+      )}
+    </p>
+  );
+}
+
 // forwardRef is required because preact/compat drops refs on plain function
 // components (preactjs/preact#3297). Dialog.tsx clones the trigger element and
 // attaches a ref to wire up the click→showModal handler; without forwardRef
@@ -210,6 +241,7 @@ export const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function T
           {new Date(task.dueAt).toLocaleDateString()}
         </p>
       )}
+      {task.schedule && <ScheduleCardLine schedule={task.schedule} />}
       {waitingOn.value.length > 0 && (
         <p class="text-[10px] text-muted-foreground mt-1 truncate">
           Waiting on: {waitingOn.value[0]}

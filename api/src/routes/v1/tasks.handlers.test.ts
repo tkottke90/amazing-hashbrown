@@ -1246,6 +1246,26 @@ describe('routes/v1/tasks.handlers', () => {
       }
     });
 
+    it("reports the newest finished run's outcome for the Kanban last-run badge [unit]", () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        assignedTo: 'agent',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      const before = getTaskHandler(store, id) as { data: TaskResponse };
+      expect(before.data.schedule!.lastRunOutcome, 'no runs yet').to.equal(null);
+
+      const failed = store.enqueueTask(id);
+      store.dequeueNext();
+      store.completeQueueEntry(failed.id, 'failed');
+      store.enqueueTask(id); // queued, not finished — must not mask the failure
+
+      const after = getTaskHandler(store, id) as { data: TaskResponse };
+      expect(after.data.schedule!.lastRunOutcome).to.equal('failed');
+    });
+
     it('leaves the schedule summary off tasks that have no schedule [unit]', () => {
       const created = createTaskHandler(store, { title: 'plain' });
       expect(created.ok && created.data).to.not.have.property('schedule');
