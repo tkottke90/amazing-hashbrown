@@ -209,7 +209,7 @@ The work ships as **two PRs**:
   - `TODO_LIST.md`: move Trigger System to Completed and add a new outstanding item for Duration and Event triggers.
   - `api/AGENTS.md`: cron registry.
   - Update the webhook spec's pointer to #72.
-  - Rewrite #72's developer notes. Needs your go-ahead, since it's outward-facing.
+  - ~~Rewrite #72's developer notes~~ — dropped by the owner: the notes are suggestions, and deviating from them is fine.
 
 ---
 

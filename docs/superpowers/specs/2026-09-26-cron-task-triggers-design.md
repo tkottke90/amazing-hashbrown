@@ -315,7 +315,7 @@ New suite `suites/scheduled-task-runs.yaml`:
 
 ## Housekeeping
 
-- Rewrite #72's Developer Notes to match this spec (drop R6 self-scheduling, `node-schedule`, and "no new column").
+- #72's Developer Notes are left as written: they were suggestions, and this spec is the record of what was built.
 - Mark the recurring-task item in `TODO_LIST.md` complete on the implementing branch.
 - `api/AGENTS.md`: document per-run threads, run records, and the cron registry.
 - Update the webhook design doc's forward reference to #72.
