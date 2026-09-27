@@ -11,10 +11,12 @@ import {
   RLMConfigSchema,
   WebFetchConfigSchema,
   ProviderSchema,
+  FavoriteModelSchema,
   CostEntrySchema,
   GithubTrackerSchema,
   WorkspacesSchema,
   type ProviderConfig,
+  type FavoriteModel,
   type CostEntry,
   type RLMConfig,
 } from '../../config/env.js';
@@ -63,6 +65,7 @@ export interface EnvAccessor {
   logLevel: string;
   providers: ProviderConfig[];
   defaultProvider: string;
+  favoriteModels: FavoriteModel[];
   database: { path: string };
   observability: z.infer<typeof ObservabilitySchema>;
   afterAgent: z.infer<typeof AfterAgentSchema>;
@@ -133,6 +136,7 @@ export type StorageSettings = {
 export type ModelProvidersSettings = {
   providers: ProviderConfig[];
   defaultProvider: string;
+  favoriteModels: FavoriteModel[];
 };
 
 export type EmbeddingsSettings = z.infer<typeof EmbeddingsSchema>;
@@ -151,13 +155,44 @@ export type TrackersSettings = { github: z.infer<typeof GithubTrackerSchema> };
 
 type GetFn = (env: EnvAccessor, config: ConfigManagerAccessor) => unknown;
 type WriteFn = (validated: unknown, configDir: string, env: EnvAccessor) => void;
+// Cross-field checks patchSchema can't express on its own (e.g. a value
+// referencing another field or stored config). Runs after patchSchema
+// succeeds and before write; a non-null result is returned as a 400 with
+// these field errors and nothing is written.
+type ValidateFn = (validated: unknown, env: EnvAccessor) => Record<string, string[]> | null;
 
 type SlugDef = {
   get: GetFn;
   patchSchema?: z.ZodTypeAny;
+  validate?: ValidateFn;
   write?: WriteFn;
   readOnly?: boolean;
 };
+
+// Every favorite must name a configured provider, and each provider/model
+// pair may appear once. Models are deliberately not checked: that needs a
+// live call to the provider, which may simply be down (a router provider's
+// model list also changes without notice) — stale models are surfaced in
+// the UI instead. See docs/superpowers/specs/2026-09-27-favorite-models-design.md.
+export function validateFavoriteModels(
+  favorites: FavoriteModel[],
+  providerNames: string[],
+): string[] {
+  const known = new Set(providerNames);
+  const seen = new Set<string>();
+  const errors: string[] = [];
+  for (const f of favorites) {
+    if (!known.has(f.provider)) {
+      errors.push(
+        `Favorite "${f.provider} / ${f.model}" references unknown provider "${f.provider}"`,
+      );
+    }
+    const key = JSON.stringify([f.provider, f.model]);
+    if (seen.has(key)) errors.push(`Duplicate favorite "${f.provider} / ${f.model}"`);
+    seen.add(key);
+  }
+  return errors;
+}
 
 const SLUG_MAP: Record<string, SlugDef> = {
   general: {
@@ -219,13 +254,33 @@ const SLUG_MAP: Record<string, SlugDef> = {
         apiKey: maskApiKey(p.apiKey),
       })),
       defaultProvider: env.defaultProvider,
+      favoriteModels: env.favoriteModels,
     }),
     patchSchema: z.object({
       providers: z.array(ProviderSchema).optional(),
       defaultProvider: z.string().optional(),
+      favoriteModels: z.array(FavoriteModelSchema).optional(),
     }),
+    validate: (v, env) => {
+      const data = v as { providers?: ProviderConfig[]; favoriteModels?: FavoriteModel[] };
+      if (data.providers === undefined && data.favoriteModels === undefined) return null;
+      // Validate against the post-patch state: incoming values where the
+      // body has them, stored values otherwise — so changing providers
+      // alone can't silently orphan the stored favorites.
+      const providers = data.providers ?? env.providers;
+      const favorites = data.favoriteModels ?? env.favoriteModels;
+      const errors = validateFavoriteModels(
+        favorites,
+        providers.map((p) => p.name),
+      );
+      return errors.length > 0 ? { favoriteModels: errors } : null;
+    },
     write: (v, configDir, env) => {
-      const data = v as { providers?: ProviderConfig[]; defaultProvider?: string };
+      const data = v as {
+        providers?: ProviderConfig[];
+        defaultProvider?: string;
+        favoriteModels?: FavoriteModel[];
+      };
       const updates: Record<string, unknown> = {};
       if (data.providers !== undefined) {
         const storedByName = new Map(env.providers.map((p) => [p.name, p]));
@@ -235,6 +290,7 @@ const SLUG_MAP: Record<string, SlugDef> = {
         }));
       }
       if (data.defaultProvider !== undefined) updates.defaultProvider = data.defaultProvider;
+      if (data.favoriteModels !== undefined) updates.favoriteModels = data.favoriteModels;
       mergeConfigYaml(configDir, updates);
     },
   },
@@ -346,6 +402,9 @@ export async function patchSettingsSectionHandler(
     const fieldErrors = parsed.error.flatten().fieldErrors as Record<string, string[]>;
     return invalid('Validation failed', fieldErrors);
   }
+
+  const crossFieldErrors = def.validate?.(parsed.data, envAccessor);
+  if (crossFieldErrors) return invalid('Validation failed', crossFieldErrors);
 
   try {
     const configDir = configAccessor.getConfigDir();

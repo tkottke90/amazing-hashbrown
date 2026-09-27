@@ -72,6 +72,40 @@ specify one. If omitted, the first entry in the `providers` list is used.
 defaultProvider: local
 ```
 
+### `favoriteModels`
+
+An ordered list of provider/model pairs pinned to the top of the chat input's **Provider**
+menu, as a flat **Favorites** section. This is most useful for router providers — a single
+endpoint that proxies to dozens of models (e.g. DigitalOcean Serverless Inference) — where
+drilling into the provider's full model list every time is slow.
+
+| Field      | Type   | Description                                            |
+| ---------- | ------ | ------------------------------------------------------ |
+| `provider` | string | **Required.** The `name` of a provider in `providers`. |
+| `model`    | string | **Required.** A model id that provider lists.          |
+
+```yaml
+favoriteModels:
+  - provider: do-serverless
+    model: llama3.3-70b-instruct
+  - provider: local
+    model: qwen3:14b
+```
+
+Favorites can also be managed on **Settings → Model providers → Favorites**, which writes the
+same key back to `config.yaml`. When the list is empty, the chat menu shows no Favorites
+section at all.
+
+**Stale entries.** Favorites are never removed automatically:
+
+- A favorite whose model is not in the provider's current model list (e.g. a model a router
+  provider retired, or a provider that is temporarily unreachable) is hidden from the chat
+  menu and marked **Unavailable** in Settings.
+- Saving the Model providers settings rejects any favorite whose `provider` does not match a
+  configured provider's `name` — remove the entry (it shows as Unavailable) to save.
+- A malformed entry in `config.yaml` (e.g. missing `model`) is ignored; the other entries
+  still load.
+
 ## Full Example
 
 ```yaml
@@ -90,6 +124,10 @@ providers:
     defaultModel: claude-sonnet-4-6
 
 defaultProvider: local
+
+favoriteModels:
+  - provider: openai
+    model: gpt-4.1-mini
 ```
 
 Multiple providers can be defined simultaneously. The `defaultProvider` field controls

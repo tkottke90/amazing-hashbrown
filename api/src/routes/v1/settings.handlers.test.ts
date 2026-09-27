@@ -8,6 +8,7 @@ import {
   reloadSettingsHandler,
   getSettingsSectionHandler,
   patchSettingsSectionHandler,
+  validateFavoriteModels,
   type EnvAccessor,
   type ConfigManagerAccessor,
 } from './settings.handlers.js';
@@ -20,6 +21,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     logLevel: 'info',
     providers: [],
     defaultProvider: '',
+    favoriteModels: [],
     database: { path: 'app.db' },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
     afterAgent: { enabled: true },
@@ -657,6 +659,180 @@ describe('routes/v1/settings.handlers', () => {
         reloadTrackerRegistry,
       );
       expect(calls).to.deep.equal([]);
+    });
+  });
+
+  describe('validateFavoriteModels()', () => {
+    it('accepts favorites whose providers all exist [unit]', () => {
+      const errors = validateFavoriteModels(
+        [
+          { provider: 'do', model: 'a' },
+          { provider: 'local', model: 'b' },
+        ],
+        ['do', 'local'],
+      );
+      expect(errors).to.deep.equal([]);
+    });
+
+    it('reports a favorite pointing at a provider that is not configured [unit]', () => {
+      const errors = validateFavoriteModels([{ provider: 'gone', model: 'a' }], ['do']);
+      expect(errors).to.have.length(1);
+      expect(errors[0]).to.include('unknown provider "gone"');
+    });
+
+    it('reports the same provider/model pair listed twice [unit]', () => {
+      const errors = validateFavoriteModels(
+        [
+          { provider: 'do', model: 'a' },
+          { provider: 'do', model: 'a' },
+        ],
+        ['do'],
+      );
+      expect(errors).to.have.length(1);
+      expect(errors[0]).to.include('Duplicate favorite "do / a"');
+    });
+
+    it('treats the same model under different providers as distinct favorites [unit]', () => {
+      const errors = validateFavoriteModels(
+        [
+          { provider: 'do', model: 'a' },
+          { provider: 'local', model: 'a' },
+        ],
+        ['do', 'local'],
+      );
+      expect(errors).to.deep.equal([]);
+    });
+  });
+
+  describe('model-providers favoriteModels', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-favorites-test-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    const noop = async () => {};
+    const noopSync = () => {};
+
+    function patch(body: unknown, env: EnvAccessor) {
+      return patchSettingsSectionHandler(
+        'model-providers',
+        body,
+        makeConfig(tmpDir),
+        env,
+        noop,
+        noopSync,
+        noopSync,
+        noopSync,
+      );
+    }
+
+    const storedProviders: EnvAccessor['providers'] = [
+      { name: 'do', type: 'openai' },
+      { name: 'local', type: 'ollama' },
+    ];
+
+    it('includes the stored favorites in the GET response so the panel can render them [unit]', () => {
+      const favoriteModels = [{ provider: 'do', model: 'llama' }];
+      const result = getSettingsSectionHandler(
+        'model-providers',
+        makeEnv({ providers: storedProviders, favoriteModels }),
+        makeConfig(tmpDir),
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect((result.data as { favoriteModels: unknown }).favoriteModels).to.deep.equal(
+          favoriteModels,
+        );
+      }
+    });
+
+    it('persists favoriteModels to config.yaml in the submitted order [unit]', async () => {
+      const favoriteModels = [
+        { provider: 'local', model: 'qwen3:14b' },
+        { provider: 'do', model: 'llama' },
+      ];
+      const result = await patch({ favoriteModels }, makeEnv({ providers: storedProviders }));
+      expect(result.ok).to.equal(true);
+      expect(readYaml(tmpDir).favoriteModels).to.deep.equal(favoriteModels);
+    });
+
+    it('accepts a favorite whose model is not known, since models are only checked live in the UI [unit]', async () => {
+      const result = await patch(
+        { favoriteModels: [{ provider: 'do', model: 'retired-model' }] },
+        makeEnv({ providers: storedProviders }),
+      );
+      expect(result.ok).to.equal(true);
+    });
+
+    it('rejects a favorite naming an unknown provider and leaves config.yaml untouched [unit]', async () => {
+      writeYaml(tmpDir, { favoriteModels: [{ provider: 'do', model: 'llama' }] });
+      const result = await patch(
+        { favoriteModels: [{ provider: 'nope', model: 'x' }] },
+        makeEnv({ providers: storedProviders }),
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.fieldErrors?.favoriteModels).to.have.length(1);
+      }
+      expect(readYaml(tmpDir).favoriteModels).to.deep.equal([{ provider: 'do', model: 'llama' }]);
+    });
+
+    it('rejects duplicate provider/model pairs [unit]', async () => {
+      const result = await patch(
+        {
+          favoriteModels: [
+            { provider: 'do', model: 'llama' },
+            { provider: 'do', model: 'llama' },
+          ],
+        },
+        makeEnv({ providers: storedProviders }),
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.fieldErrors?.favoriteModels).to.have.length(1);
+    });
+
+    it('validates favorites against incoming providers so a rename and its favorites save together [unit]', async () => {
+      const result = await patch(
+        {
+          providers: [{ name: 'do-renamed', type: 'openai' }],
+          favoriteModels: [{ provider: 'do-renamed', model: 'llama' }],
+        },
+        makeEnv({ providers: [{ name: 'do', type: 'openai' }] }),
+      );
+      expect(result.ok).to.equal(true);
+      expect(readYaml(tmpDir).favoriteModels).to.deep.equal([
+        { provider: 'do-renamed', model: 'llama' },
+      ]);
+    });
+
+    it('rejects a providers-only patch that would orphan stored favorites [unit]', async () => {
+      const result = await patch(
+        { providers: [{ name: 'local', type: 'ollama' }] },
+        makeEnv({
+          providers: storedProviders,
+          favoriteModels: [{ provider: 'do', model: 'llama' }],
+        }),
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.fieldErrors?.favoriteModels?.[0]).to.include('"do"');
+      expect(readYaml(tmpDir).providers).to.equal(undefined);
+    });
+
+    it('does not validate favorites when only defaultProvider changes, so stale hand-edits cannot block it [unit]', async () => {
+      const result = await patch(
+        { defaultProvider: 'local' },
+        makeEnv({
+          providers: storedProviders,
+          favoriteModels: [{ provider: 'gone', model: 'x' }],
+        }),
+      );
+      expect(result.ok).to.equal(true);
     });
   });
 });

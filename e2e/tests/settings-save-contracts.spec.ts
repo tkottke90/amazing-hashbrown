@@ -94,7 +94,7 @@ const STUBS: {
     skillsRoot: './skills',
     database: { path: 'app.db' },
   },
-  'model-providers': { providers: [], defaultProvider: '' },
+  'model-providers': { providers: [], defaultProvider: '', favoriteModels: [] },
   embeddings: {
     enabled: true,
     type: 'ollama',
@@ -272,6 +272,7 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
         },
       ],
       defaultProvider: '',
+      favoriteModels: [],
     };
     expect(captured['model-providers']).toEqual(expected);
   });

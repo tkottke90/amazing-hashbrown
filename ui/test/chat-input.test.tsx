@@ -154,6 +154,52 @@ describe('ChatInput', () => {
     expect(screen.getByText('openai')).toBeInTheDocument();
     expect(screen.getByText('ollama')).toBeInTheDocument();
   });
+
+  it('lists favorites above the per-provider entries in the Provider sub-menu [unit]', () => {
+    render(
+      <ControlledChatInput
+        providers={[{ name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }] }]}
+        favoriteModels={[{ provider: 'openai', model: 'gpt-4o' }]}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByText('Provider'));
+
+    const favorite = screen.getByRole('menuitemcheckbox', { name: 'openai / gpt-4o' });
+    const providerEntry = screen.getByRole('menuitem', { name: 'openai' });
+    expect(
+      favorite.compareDocumentPosition(providerEntry) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('selecting a favorite switches the model through onModelSelect [unit]', () => {
+    const onModelSelect = jest.fn();
+    render(
+      <ControlledChatInput
+        onModelSelect={onModelSelect}
+        providers={[{ name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }] }]}
+        favoriteModels={[{ provider: 'openai', model: 'gpt-4o' }]}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByText('Provider'));
+
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'openai / gpt-4o' }));
+    expect(onModelSelect).toHaveBeenCalledWith('openai', 'gpt-4o');
+  });
+
+  it('shows no Favorites section when none are configured [unit]', () => {
+    render(
+      <ControlledChatInput
+        providers={[{ name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }] }]}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByText('Provider'));
+
+    expect(screen.getByText('openai')).toBeInTheDocument();
+    expect(screen.queryByText('Favorites')).not.toBeInTheDocument();
+  });
 });
 
 // Regression coverage for issue #130: the outer "Provider" sub-menu mirrors
