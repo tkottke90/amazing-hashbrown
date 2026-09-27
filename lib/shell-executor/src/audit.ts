@@ -2,7 +2,8 @@ export type AuditEntry = {
   timestamp: string;
   command: string;
   outcome: 'allowed' | 'denied' | 'approved' | 'rejected' | 'error';
-  source: 'trust' | 'policy' | 'session-memory' | 'user';
+  // 'sleep-guard': refused by detectLongSleep before policy/approval ran.
+  source: 'trust' | 'policy' | 'session-memory' | 'user' | 'sleep-guard';
   exitCode?: number;
   threadId?: string;
   trustAll: boolean;
