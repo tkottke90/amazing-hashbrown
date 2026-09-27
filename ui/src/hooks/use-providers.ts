@@ -18,8 +18,17 @@ export interface ProviderInfo {
   models: ModelInfo[];
 }
 
+// A user-pinned provider/model pair (config.yaml `favoriteModels`). The
+// /api/v1/providers response only includes favorites that resolve against
+// the live model lists, so every entry here is selectable.
+export interface FavoriteModel {
+  provider: string;
+  model: string;
+}
+
 export const providers = signal<ProviderInfo[]>([]);
 export const defaultProviderName = signal<string>('');
+export const favoriteModels = signal<FavoriteModel[]>([]);
 const _lastFetchedAt = signal<number>(0);
 const TTL_MS = 60_000;
 
@@ -28,13 +37,24 @@ export async function fetchProviders(): Promise<void> {
   try {
     const res = await fetch('/api/v1/providers');
     if (!res.ok) return;
-    const data = (await res.json()) as { providers: ProviderInfo[]; defaultProvider?: string };
+    const data = (await res.json()) as {
+      providers: ProviderInfo[];
+      defaultProvider?: string;
+      favoriteModels?: FavoriteModel[];
+    };
     providers.value = data.providers;
     defaultProviderName.value = data.defaultProvider ?? '';
+    favoriteModels.value = data.favoriteModels ?? [];
     _lastFetchedAt.value = Date.now();
   } catch {
     // best-effort
   }
+}
+
+// Drops the TTL cache so the next fetchProviders() hits the API — call after
+// saving provider settings so the chat menu reflects the change immediately.
+export function invalidateProviders(): void {
+  _lastFetchedAt.value = 0;
 }
 
 // Mirrors createProvider()'s own fallback chain (api/src/services/provider-factory.ts)
