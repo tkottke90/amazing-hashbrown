@@ -28,6 +28,7 @@
 24. [HITL Recovery on Reconnect](#hitl-recovery-on-reconnect) — `recordHitlPrompt` and `resolveHitlPrompt` removed from `safe()` wrapper so DB write failures surface instead of silently losing interrupt state; `command` and `reason` persisted in `shell_approval` payload so hydration renders Approve/Deny buttons identically to the live SSE flow; `finalizeTurn` and `resumeChatToSse` emit `stream_error` on write failure; e2e test added for reconnect rendering
 25. [Settings Page UI](#settings-page-ui) — full `/settings?section=<slug>` page with 9 sections (General, Storage, Model providers, Embeddings, Agent behavior, Tools, Cost rates, MCP Servers, Skills); `GET /api/v1/settings/:slug` + `PATCH /api/v1/settings/:slug` endpoints writing back to `config.yaml` via `yaml` package; Save/Discard bar with loading spinner; toast notifications; API-key masking; per-field Zod validation with inline errors; Provider and Rate modals; all sections unit-tested (Jest + @testing-library/preact); Playwright E2E suites 12 (navigation) and 13 (sections)
 26. [Trigger System](#trigger-system) — interval, scheduled and event (webhook) triggers on tasks: `cron_once`/`cron_repeat` trigger types with per-task IANA time zone (`cron-parser` + `cronstrue`, DST-safe), a new `scheduled` task status, and an in-process `CronRegistry` that arms one timer per task, skips a fire while the task is busy, re-arms after every run, survives restarts (one catch-up run for fire times missed while down), and auto-pauses after N consecutive scheduled failures (manual Run now never counts); every run gets its own thread, a one-line summary and a run record, and its kickoff carries the previous run's summary plus the exact `read_task_run` call to open its transcript; drawer schedule forms with a server-side live preview, Kanban `Scheduled` column, run history and read-only run view; Inbox task questions are answerable (previously stuck); Duration and internal-event triggers split out below. See [design](docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md)
+27. [Timed Agent Wake-ups](#timed-agent-wake-ups) — the agent waits for external work (a deploy, CI, a server starting) with a `schedule_wakeup` tool that ends its turn and resumes the same chat or workspace-chat thread with its own note when it fires (10 s–2 h, one pending per thread, at most 12 chained without a user reply), instead of `sleep` inside `shell_exec`, which now refuses sleeps over 10 s; persisted in `thread_wakeups` with an in-process `WakeupRegistry` (re-armed on boot, one catch-up for wake-ups missed while down); a wake-up card in the transcript with Trigger now / Cancel, plus `cancel_wakeup` for the agent; headless turns are now stoppable, broadcast `thread_turn_started`/`thread_turn_completed`, write failures to the thread and run on the thread's own model; per-turn chat streams send a keepalive, and a dropped stream shows `connection_lost` ("the agent may still be working") instead of "Couldn't reach the provider"; `agent-wait` eval suite. See [design](docs/superpowers/specs/2026-09-27-agent-wait-design.md)
 
 ---
 
@@ -48,6 +49,9 @@ Items are ordered first by priority/necessity, then by dependency.
 9. [MCP Tool Configuration UI](#mcp-tool-configuration-ui) — depends on: [Settings Page UI](#settings-page-ui) (now complete — no longer blocked)
 10. [Home / Conversation List Page](#home--conversation-list-page) — depends on: #6
 11. [Notification Delivery](#notification-delivery) — depends on: #4; external channels deferred; interim: `action_required` flag on threads/tasks
+12. [Background Process Wake-ups](#background-process-wake-ups) — depends on: [Timed Agent Wake-ups](#timed-agent-wake-ups) (complete); wake the agent when a background shell process exits
+13. [Parked Task Runs](#parked-task-runs) — depends on: #1, [Timed Agent Wake-ups](#timed-agent-wake-ups) (complete); lets a task run wait instead of settling
+14. [Agent-Created One-off Reminders](#agent-created-one-off-reminders) — depends on: [Trigger System](#trigger-system) (complete); `create_tasks` can't create `cron_once` tasks yet
 
 ---
 
@@ -563,6 +567,65 @@ Items are ordered first by priority/necessity, then by dependency.
 - Both should resolve to ordinary task runs (`task_queue` rows with their own `trigger_source`) so run history, kickoff context and read-only run views work unchanged
 
 **Dependencies:** Task System, Trigger System
+
+---
+
+### Timed Agent Wake-ups
+
+**Goal:** Let the agent wait for something external — a deploy rolling out, CI, a server starting — without sleeping inside its turn, and stop a long turn from surfacing as a false "Couldn't reach the provider" error (issue #191).
+
+**Ideas / Requirements:**
+
+- `schedule_wakeup({ delaySeconds, note })` ends the turn; the wake-up resumes the same thread as a headless turn carrying the agent's note
+- Chat and workspace-chat threads only — a task run settles when its turn ends (see Parked Task Runs)
+- Wake-up card with Trigger now / Cancel; `cancel_wakeup` for the agent
+- `shell_exec` refuses sleeps longer than 10 s; per-turn SSE keepalive; `connection_lost` error category
+
+**Dependencies:** Persistent Conversation Memory, Shell Command Execution
+
+**Status:** complete — see [the design](docs/superpowers/specs/2026-09-27-agent-wait-design.md).
+
+---
+
+### Background Process Wake-ups
+
+**Goal:** Wake the agent when a long-running command it started finishes (e.g. a test suite), instead of it guessing a wake-up delay.
+
+**Ideas / Requirements:**
+
+- A background mode for `shell_exec` with a job registry: process handle, bounded output capture, kill on Stop / thread delete, orphan handling on restart
+- On exit, deliver a wake-up into the thread through the existing wake-up delivery path (`agents/wakeup-delivery.ts`) with the exit code and output tail
+- Possibly a `shell_exec` timeout, which belongs with the same process-lifecycle work
+
+**Dependencies:** Timed Agent Wake-ups
+
+---
+
+### Parked Task Runs
+
+**Goal:** Let an automated task run wait for something external ("tests are running; check back in 10 minutes") instead of settling when its turn ends.
+
+**Design origin:** [Autonomous Collaboration Architecture](docs/Design/2026-07-10-autonomous-collaboration-architecture.md) — Agent Self-Schedule
+
+**Ideas / Requirements:**
+
+- A run state between `running` and settled (`running → blocked → running`) that queue settlement, cron settlement and run history all understand
+- Bind `schedule_wakeup` for task agents once a parked run can be resumed by its wake-up
+
+**Dependencies:** Task System, Timed Agent Wake-ups
+
+---
+
+### Agent-Created One-off Reminders
+
+**Goal:** "Remind me in 10 minutes to …" becomes a one-off scheduled task the agent creates, not a wake-up.
+
+**Ideas / Requirements:**
+
+- `create_tasks` hardcodes `triggerType: 'chat'`; allow `cron_once` with a fire time
+- Revisit `suites/agent-wait.yaml` `aw-005`, whose expected tool call becomes `create_tasks`
+
+**Dependencies:** Trigger System
 
 ---
 

@@ -89,6 +89,32 @@ wake-up call:
 
 See `docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md`.
 
+## Headless turns and timed wake-ups
+
+A headless turn (`agents/headless-turn.ts`) runs in an existing thread with no
+request attached — a timed wake-up firing or a sub-agent completion. It
+claims the thread with its own `AbortController` (so the thread's `/stop`
+route cancels it), broadcasts `thread_turn_started`, and records failures as
+error rows. Every turn runner — interactive, headless, task or wiki — releases
+its thread with `endThreadTurn()` (`agents/pending-thread-turns.ts`), which
+broadcasts `thread_turn_completed` and starts the next queued turn; never call
+`clearActiveSseWriter()` directly.
+
+Timed wake-ups (`schedule_wakeup` / `cancel_wakeup`, chat and workspace chat
+only):
+
+- `services/wakeup-store.ts` (`WakeupStore`) is the only writer of the
+  `thread_wakeups` table and of each wake-up's `wakeup` transcript card; it
+  updates both in one transaction, and its transitions return `null` unless
+  the wake-up is still pending — that gate is what resolves cancel/fire races.
+- `services/wakeup-registry.ts` (`WakeupRegistry`) holds one timer per pending
+  wake-up (same pattern as `CronRegistry`); `agents/wakeup-delivery.ts` turns a
+  fire into a queued headless turn. Routes validate with a handler, then call
+  the registry (`triggerNow` / `cancel`), never the store directly.
+- Tests inject `now` / `setTimer` / `clearTimer` / `deliver` into the registry.
+
+See `docs/superpowers/specs/2026-09-27-agent-wait-design.md`.
+
 ## Environment and config
 
 `src/config/env.ts` loads `.env` (see `.env.example`) via `dotenv`, then

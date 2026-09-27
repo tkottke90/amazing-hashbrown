@@ -1,7 +1,7 @@
 # Agent Wait (Timed Wake-ups) — Design
 
 **Date:** 2026-09-27
-**Status:** Draft
+**Status:** Implemented
 **Related:** [Issue #191](https://github.com/tkottke90/amazing-hashbrown/issues/191), [Autonomous collaboration architecture](../../Design/2026-07-10-autonomous-collaboration-architecture.md) ("Agent Self-Schedule"), [Cron task triggers design](./2026-09-26-cron-task-triggers-design.md), [Sub-agent tooling design](./2026-09-09-sub-agent-tooling-design.md)
 
 ---
