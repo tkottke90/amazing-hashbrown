@@ -35,6 +35,15 @@ export interface StartTraceParams {
   systemPrompt?: string;
 }
 
+// What the model actually received on a turn's first model call — written by
+// api/src/agents/model-input-snapshot.middleware.ts. systemPrompt is omitted
+// when the system message wasn't a plain string; the trace then keeps the
+// prompt it was started with.
+export interface ModelInputParams {
+  tools: string[];
+  systemPrompt?: string;
+}
+
 export interface EndTraceParams {
   totalTokens: number;
   totalCostEstimate?: number;
@@ -46,6 +55,20 @@ export interface EndTraceParams {
 // ---------------------------------------------------------------------------
 // Zod schemas — parse and transform raw SQLite rows into typed records
 // ---------------------------------------------------------------------------
+
+// observability_traces.tools holds a JSON array of tool names, or NULL when
+// nothing was captured. Anything that doesn't parse to a string array reads
+// as null ("not captured") rather than throwing — a corrupt snapshot must
+// not make the whole trace unreadable.
+function parseTools(raw: string | null): string[] | null {
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((t) => typeof t === 'string') ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 // Used by findById() and find() — the GROUP BY query always returns span counts.
 const RawTraceSummarySchema = z
@@ -61,6 +84,7 @@ const RawTraceSummarySchema = z
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
     system_prompt: z.string().nullable(),
+    tools: z.string().nullable(),
     error: z.string().nullable(),
     // COUNT() returns 0 for empty sets; SUM() returns null for empty sets.
     span_count: z.number(),
@@ -85,6 +109,7 @@ const RawTraceSummarySchema = z
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
     systemPrompt: row.system_prompt,
+    tools: parseTools(row.tools),
     error: row.error,
     spanCount: row.span_count,
     llmCallCount: row.llm_call_count,
@@ -105,6 +130,7 @@ const RawTraceRecordSchema = z
     total_tokens: z.number(),
     total_cost_estimate: z.number().nullable(),
     system_prompt: z.string().nullable(),
+    tools: z.string().nullable(),
     error: z.string().nullable(),
   })
   .transform((row) => ({
@@ -119,6 +145,7 @@ const RawTraceRecordSchema = z
     totalTokens: row.total_tokens,
     totalCostEstimate: row.total_cost_estimate,
     systemPrompt: row.system_prompt,
+    tools: parseTools(row.tools),
     error: row.error,
   }));
 
@@ -232,6 +259,16 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE observability_traces ADD COLUMN error TEXT;
     `,
   },
+  {
+    // Snapshot of the tool names bound to the model on a trace's first model
+    // call (JSON array) — see recordModelInput(). NULL for pre-existing rows
+    // and for sources that never record one; not backfilled, since the
+    // historical tool set can't be reconstructed.
+    version: 33,
+    sql: `
+      ALTER TABLE observability_traces ADD COLUMN tools TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -271,6 +308,20 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
         params.systemPrompt ?? null,
       );
     return traceId;
+  }
+
+  // Records the tools and system prompt the model actually received. First
+  // call per trace wins (the `tools IS NULL` guard): a turn's later model
+  // calls no-op here, so callers need no bookkeeping of their own. When
+  // systemPrompt is omitted, the prompt passed to startTrace() is kept.
+  recordModelInput(traceId: string, params: ModelInputParams): void {
+    this.db
+      .prepare(
+        `UPDATE observability_traces
+         SET tools = ?, system_prompt = COALESCE(?, system_prompt)
+         WHERE trace_id = ? AND tools IS NULL`,
+      )
+      .run(JSON.stringify(params.tools), params.systemPrompt ?? null, traceId);
   }
 
   // Closes the trace record with final token counts and optional cost estimate.
