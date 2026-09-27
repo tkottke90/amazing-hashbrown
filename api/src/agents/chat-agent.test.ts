@@ -11,6 +11,7 @@ import {
   estimateToolsTokens,
   createContextWindowMiddleware,
   STATIC_CHAT_TOOLS,
+  WAKEUP_TOOLS,
   buildWorkspaceScopedTools,
 } from './chat-agent.js';
 import { logger } from '../config/logger.js';
@@ -76,6 +77,15 @@ describe('agents/chat-agent', () => {
 
     it('STATIC_CHAT_TOOLS (bound in plain chat) never includes create_tasks', () => {
       expect(STATIC_CHAT_TOOLS.map((t) => t.name)).to.not.include('create_tasks');
+    });
+
+    it('keeps wake-up tools out of STATIC_CHAT_TOOLS, which task and sub-agent runs also bind [unit]', () => {
+      // A task run settles when its turn ends — a wake-up would have nothing
+      // to resume (agent-wait design D3).
+      const shared = STATIC_CHAT_TOOLS.map((t) => t.name);
+      expect(shared).to.not.include('schedule_wakeup');
+      expect(shared).to.not.include('cancel_wakeup');
+      expect(WAKEUP_TOOLS.map((t) => t.name)).to.deep.equal(['schedule_wakeup', 'cancel_wakeup']);
     });
   });
 

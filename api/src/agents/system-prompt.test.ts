@@ -41,6 +41,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</rlm>');
       expect(result).to.include('<shell_execution>');
       expect(result).to.include('</shell_execution>');
+      expect(result).to.include('<waiting>');
+      expect(result).to.include('</waiting>');
       expect(result).to.include('<image>');
       expect(result).to.include('</image>');
       expect(result).to.include('<search_skills>');
@@ -51,11 +53,11 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(12);
-      expect(closes).to.equal(12);
+      expect(opens).to.equal(13);
+      expect(closes).to.equal(13);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, image, search_skills, create_tasks, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
@@ -65,6 +67,7 @@ describe('agents/system-prompt', () => {
       const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
       const rlmTagIndex = result.indexOf('<rlm>');
       const shellTagIndex = result.indexOf('<shell_execution>');
+      const waitingTagIndex = result.indexOf('<waiting>');
       const imageTagIndex = result.indexOf('<image>');
       const searchSkillsTagIndex = result.indexOf('<search_skills>');
       const createTasksTagIndex = result.indexOf('<create_tasks>');
@@ -77,6 +80,7 @@ describe('agents/system-prompt', () => {
       expect(wikiIngestTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(shellTagIndex).to.be.greaterThan(-1);
+      expect(waitingTagIndex).to.be.greaterThan(-1);
       expect(imageTagIndex).to.be.greaterThan(-1);
       expect(searchSkillsTagIndex).to.be.greaterThan(-1);
       expect(createTasksTagIndex).to.be.greaterThan(-1);
@@ -88,7 +92,8 @@ describe('agents/system-prompt', () => {
       expect(webFetchTagIndex).to.be.lessThan(wikiIngestTagIndex);
       expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
-      expect(shellTagIndex).to.be.lessThan(imageTagIndex);
+      expect(shellTagIndex).to.be.lessThan(waitingTagIndex);
+      expect(waitingTagIndex).to.be.lessThan(imageTagIndex);
       expect(imageTagIndex).to.be.lessThan(searchSkillsTagIndex);
       expect(searchSkillsTagIndex).to.be.lessThan(createTasksTagIndex);
       expect(createTasksTagIndex).to.be.lessThan(askUserTagIndex);
@@ -542,6 +547,7 @@ describe('agents/system-prompt', () => {
       'web_fetch',
       'rlm_query',
       'shell_exec',
+      'schedule_wakeup',
       'upload_image',
       'search_skills',
       'create_tasks',
@@ -558,6 +564,7 @@ describe('agents/system-prompt', () => {
         'wiki_ingest',
         'rlm',
         'shell_execution',
+        'waiting',
         'image',
         'search_skills',
         'create_tasks',
@@ -620,6 +627,21 @@ describe('agents/system-prompt', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.not.include('<shell_execution>');
+    });
+
+    it('removes waiting when schedule_wakeup is unavailable, e.g. for a task run [unit]', () => {
+      const available = new Set(['shell_exec']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<waiting>');
+      expect(result).to.include('<shell_execution>');
+    });
+
+    it('tells the agent to end its turn after scheduling and never to sleep in the shell [unit]', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), new Set(['schedule_wakeup']));
+      expect(result).to.include('<waiting>');
+      expect(result).to.match(/end your turn right away/);
+      expect(result).to.match(/Never wait by sleeping in the shell/);
+      expect(result).to.match(/not reminders for the user/);
     });
 
     it('removes image when upload_image is unavailable', () => {

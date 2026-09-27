@@ -121,6 +121,21 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: true,
   },
   {
+    toolId: 'schedule_wakeup',
+    name: 'Schedule Wake-up',
+    description:
+      'Wait for something external (a deploy, CI) by ending the turn and resuming this conversation later. Chat and workspace chat only.',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'cancel_wakeup',
+    name: 'Cancel Wake-up',
+    description: "Cancel this conversation's pending wake-up.",
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
     toolId: 'create_tasks',
     name: 'Create Tasks',
     description:
