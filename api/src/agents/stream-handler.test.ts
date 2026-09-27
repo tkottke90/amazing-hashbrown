@@ -28,6 +28,7 @@ import { recordAssistantStart } from './thread-message-writer.js';
 import { queueWikiUpdate } from './after-agent.js';
 import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
 import { getActiveSseWriter, getActiveTurnAbort } from './active-sse-writer.js';
+import { bootObservability, getObservabilityStore } from '../services/observability.js';
 
 const TEST_SENT_AT = '2024-01-01T00:00:00.000Z';
 
@@ -1579,6 +1580,131 @@ describe('agents/stream-handler', () => {
         );
         expect(err.category).to.equal('cancelled');
         expect(getActiveSseWriter(threadId)).to.equal(undefined);
+      });
+    });
+
+    // Issue #207: model-input-snapshot.middleware.ts can only record a turn's
+    // bound tools if the agent call carries the id of the trace that turn
+    // opened. Reuses this describe's provider setup; the fake agent records
+    // the streamEvents options, then fails the turn so no real model runs.
+    describe('trace_id plumbing', () => {
+      let obsDir: string;
+
+      before(() => {
+        obsDir = mkdtempSync(join(tmpdir(), 'stream-handler-trace-id-test-'));
+        bootObservability(openDatabase(join(obsDir, 'obs.db')));
+      });
+
+      after(() => {
+        rmSync(obsDir, { recursive: true, force: true });
+      });
+
+      function fakeCapturingAgent() {
+        const captured: { configurable?: Record<string, unknown> }[] = [];
+        const agent = {
+          streamEvents: (
+            _input: unknown,
+            options: { configurable?: Record<string, unknown> },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ): AsyncIterable<any> => {
+            captured.push(options);
+            async function* gen() {
+              yield* [];
+              throw new Error('simulated stream failure');
+            }
+            return gen();
+          },
+          graph: {
+            getState: async () => ({
+              tasks: [],
+              config: { configurable: { checkpoint_id: 'cp-test' } },
+            }),
+          },
+        };
+        return { agent, captured };
+      }
+
+      function expectTraceIdPassed(
+        threadId: string,
+        captured: { configurable?: Record<string, unknown> }[],
+      ) {
+        const traces = getObservabilityStore().find({ threadId });
+        expect(traces, 'the turn should open exactly one trace').to.have.length(1);
+        expect(captured).to.have.length(1);
+        expect(
+          captured[0].configurable?.trace_id,
+          'agent must receive the id of the trace this turn opened',
+        ).to.equal(traces[0].traceId);
+        expect(captured[0].configurable?.thread_id, 'thread_id must be preserved').to.equal(
+          threadId,
+        );
+      }
+
+      it('streamChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+        const threadId = randomUUID();
+        const { agent, captured } = fakeCapturingAgent();
+
+        await expectClassifiedTurnError(
+          streamChatToSse(
+            fakeRes().res,
+            threadId,
+            'hello',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            depsFor(agent),
+          ),
+        );
+
+        expectTraceIdPassed(threadId, captured);
+      });
+
+      it('resumeChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+        const threadId = randomUUID();
+        store.upsertThreadOnFirstMessage(threadId, 'hello');
+        recordAssistantStart(store, threadId, randomUUID(), new Date().toISOString());
+        const { agent, captured } = fakeCapturingAgent();
+
+        await expectClassifiedTurnError(
+          resumeChatToSse(
+            fakeRes().res,
+            threadId,
+            'no-such-prompt',
+            'yes',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(agent),
+          ),
+        );
+
+        expectTraceIdPassed(threadId, captured);
+      });
+
+      it('retryChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+        const threadId = randomUUID();
+        store.upsertThreadOnFirstMessage(threadId, 'hello');
+        const failedId = randomUUID();
+        recordAssistantStart(store, threadId, failedId, new Date().toISOString());
+        store.updateMessage(threadId, failedId, { status: 'error', payload: { content: '' } });
+        const { agent, captured } = fakeCapturingAgent();
+
+        await expectClassifiedTurnError(
+          retryChatToSse(
+            fakeRes().res,
+            threadId,
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            depsFor(agent),
+          ),
+        );
+
+        expectTraceIdPassed(threadId, captured);
       });
     });
   });

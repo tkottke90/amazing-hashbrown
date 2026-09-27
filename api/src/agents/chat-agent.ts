@@ -41,6 +41,7 @@ import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.
 import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
+import { modelInputSnapshotMiddleware } from './model-input-snapshot.middleware.js';
 import { getSubAgentToolIds, toBoundMatchKeys } from './tool-config.js';
 import { syncMcpToolStatus } from './mcp-tool-status.js';
 import { getToolSettingsStore } from '../services/tool-settings-store.js';
@@ -398,6 +399,8 @@ async function buildChatAgent(provider?: string, model?: string) {
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
+      // Innermost wrapModelCall — must stay last (see its header comment).
+      modelInputSnapshotMiddleware,
     ],
   });
 
@@ -496,6 +499,8 @@ async function buildWorkspaceChatAgent(
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
+      // Innermost wrapModelCall — must stay last (see its header comment).
+      modelInputSnapshotMiddleware,
     ],
   });
 
@@ -644,6 +649,8 @@ export async function buildTaskAgent(
       toolAccessMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
+      // Innermost wrapModelCall — must stay last (see its header comment).
+      modelInputSnapshotMiddleware,
     ],
   });
 
