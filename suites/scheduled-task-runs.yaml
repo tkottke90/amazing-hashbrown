@@ -37,7 +37,7 @@ scenarios:
 
       Previous run — #2, 2026-09-19 09:00 UTC, done:
       "Audit complete: found 3 high-severity advisories (package names and advisory ids are in the run transcript)."
-      For full details call: read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"})
+      That summary may or may not be everything this run needs. If it already gives you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — get on with the work; don't open the transcript just to double-check something it already told you. If instead it leaves out specifics you'd need — a count with no names, "see the transcript for details" — call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) before doing anything else, instead of guessing at what it left out.
 
       Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
     tool: read_task_run
@@ -61,7 +61,7 @@ scenarios:
 
       Previous run — #2, 2026-09-19 09:00 UTC, done:
       "Audit complete: 0 advisories of any severity; nothing was open."
-      For full details call: read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"})
+      That summary may or may not be everything this run needs. If it already gives you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — get on with the work; don't open the transcript just to double-check something it already told you. If instead it leaves out specifics you'd need — a count with no names, "see the transcript for details" — call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) before doing anything else, instead of guessing at what it left out.
 
       Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
     priorTurns:

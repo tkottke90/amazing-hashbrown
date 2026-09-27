@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'mocha';
+import { parse } from 'yaml';
 import { expect } from 'chai';
 import {
   buildRunKickoff,
@@ -282,6 +285,65 @@ describe('agents/task-context', () => {
       expect(formatRunTime('2026-09-26T17:05:00.000Z')).to.equal('2026-09-26 17:05 UTC');
       expect(formatRunTime('2026-09-26T17:05:00.000Z', 'America/Chicago')).to.equal(
         '2026-09-26 12:05 America/Chicago',
+      );
+    });
+  });
+
+  // suites/scheduled-task-runs.yaml hands the model a kickoff message as a
+  // literal `input` string — the eval harness never calls buildRunKickoff()
+  // itself. So if the kickoff wording changes and the suite doesn't, every
+  // eval run silently tests the old wording. This rebuilds each scenario's
+  // kickoff from the same fixture the suite describes and requires the two
+  // to match, so a wording change fails here until the suite is updated.
+  describe('suites/scheduled-task-runs.yaml stays in sync with buildRunKickoff()', () => {
+    const suitePath = fileURLToPath(
+      new URL('../../../suites/scheduled-task-runs.yaml', import.meta.url),
+    );
+    const suite = parse(readFileSync(suitePath, 'utf-8')) as {
+      scenarios: { id: string; input: string }[];
+    };
+    const inputOf = (id: string) =>
+      suite.scenarios.find((s) => s.id === id)?.input.replace(/\n+$/, '');
+
+    // The run history both scenarios describe: this is manual run #3 of the
+    // task; run #2 finished at 2026-09-19 09:00 UTC; run #1 before that.
+    const kickoffWithPreviousSummary = (summary: string) =>
+      buildRunKickoff({
+        title: 'Weekly dependency audit',
+        resume: false,
+        runNumber: 3,
+        triggerSource: 'manual',
+        previousRuns: [
+          {
+            id: '6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90',
+            runNumber: 2,
+            status: 'done',
+            startedAt: '2026-09-19T09:00:00.000Z',
+            summary,
+          },
+          {
+            id: '1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10',
+            runNumber: 1,
+            status: 'done',
+            startedAt: '2026-09-12T09:00:00.000Z',
+            summary: 'Audit complete.',
+          },
+        ],
+      });
+
+    it('str-001 sends exactly the kickoff a vague previous summary produces [unit]', () => {
+      expect(inputOf('str-001-reads-previous-run-when-summary-lacks-detail')).to.equal(
+        kickoffWithPreviousSummary(
+          'Audit complete: found 3 high-severity advisories (package names and advisory ids are in the run transcript).',
+        ),
+      );
+    });
+
+    it('str-002 sends exactly the kickoff a complete previous summary produces [unit]', () => {
+      expect(inputOf('str-002-skips-history-when-summary-suffices')).to.equal(
+        kickoffWithPreviousSummary(
+          'Audit complete: 0 advisories of any severity; nothing was open.',
+        ),
       );
     });
   });
