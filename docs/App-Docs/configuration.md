@@ -40,16 +40,17 @@ The API also loads a `.env` file from the process's working directory at startup
 
 ## Top-Level Options
 
-| Key               | Type   | Default         | Description                                                                                               |
-| ----------------- | ------ | --------------- | --------------------------------------------------------------------------------------------------------- |
-| `port`            | number | `3000`          | Port the API server listens on.                                                                           |
-| `logLevel`        | string | `"info"`        | Log verbosity: `debug` \| `info` \| `warn` \| `error`.                                                    |
-| `wikiRoot`        | string | `"./wiki"`      | Path to the knowledge-base root directory, resolved relative to the config directory.                     |
-| `mcpConfigDir`    | string | `"./mcp"`       | Directory holding `mcp.json` (MCP server definitions) and other runtime config, resolved the same way.    |
-| `artifactRoot`    | string | `"./artifacts"` | Directory where uploaded and agent-generated artifacts (images, files) are stored, resolved the same way. |
-| `defaultProvider` | string | `""`            | The `name` of the provider used for requests that don't specify one. See [Providers](./Providers.md).     |
-| `providers`       | array  | `[]`            | LLM provider definitions. See [Providers](./Providers.md) for the full schema and per-engine examples.    |
-| `costs`           | object | `{}`            | Per-provider/model token pricing, keyed `"providerName/model"`. See [Cost Rates](#cost-rates).            |
+| Key               | Type   | Default         | Description                                                                                                                    |
+| ----------------- | ------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `port`            | number | `3000`          | Port the API server listens on.                                                                                                |
+| `logLevel`        | string | `"info"`        | Log verbosity: `debug` \| `info` \| `warn` \| `error`.                                                                         |
+| `wikiRoot`        | string | `"./wiki"`      | Path to the knowledge-base root directory, resolved relative to the config directory.                                          |
+| `mcpConfigDir`    | string | `"./mcp"`       | Directory holding `mcp.json` (MCP server definitions) and other runtime config, resolved the same way.                         |
+| `artifactRoot`    | string | `"./artifacts"` | Directory where uploaded and agent-generated artifacts (images, files) are stored, resolved the same way.                      |
+| `defaultProvider` | string | `""`            | The `name` of the provider used for requests that don't specify one. See [Providers](./Providers.md).                          |
+| `providers`       | array  | `[]`            | LLM provider definitions. See [Providers](./Providers.md) for the full schema and per-engine examples.                         |
+| `favoriteModels`  | array  | `[]`            | Pinned `{ provider, model }` pairs shown at the top of the chat Provider menu. See [Providers](./Providers.md#favoritemodels). |
+| `costs`           | object | `{}`            | Per-provider/model token pricing, keyed `"providerName/model"`. See [Cost Rates](#cost-rates).                                 |
 
 ```yaml
 port: 3000
@@ -216,6 +217,12 @@ providers:
     defaultModel: claude-sonnet-4-6
 
 defaultProvider: local
+
+favoriteModels:
+  - provider: openai
+    model: gpt-4.1-mini
+  - provider: local
+    model: llama3
 
 embeddings:
   enabled: true

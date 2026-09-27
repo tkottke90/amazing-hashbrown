@@ -4,6 +4,13 @@
 
 # (truncated for brevity; include your existing config lines here)
 
+# Optional: provider/model pairs pinned to the top of the chat Provider menu.
+# Each `provider` must match a configured provider's `name`. Also editable on
+# Settings -> Model providers -> Favorites. See docs/App-Docs/Providers.md.
+# favoriteModels:
+#   - provider: local
+#     model: qwen3:14b
+
 tools:
   # Example tools with default configurations.
   # shell_exec is a special tool with its own workingDirectory default.

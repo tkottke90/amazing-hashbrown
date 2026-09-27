@@ -72,7 +72,8 @@ favoriteModels:
   - If the body changes `providers` but not `favoriteModels`, the stored
     favorites are validated against the incoming providers too, so removing
     or renaming a provider through the API can't silently orphan favorites.
-    (The UI always sends both — see §2 rename cascade.)
+    (The settings UI can't rename providers — the Name field is disabled in
+    edit mode — so this guards direct API use and hand-edits.)
   - Consequence: the panel PATCHes the full form, so a hand-edited favorite
     naming a nonexistent provider blocks saving the panel until it is removed.
     This is intended — the field error surfaces under the Favorites card, and
@@ -125,8 +126,8 @@ favoriteModels:
     loaded; ghost icon button (trash) with
     `aria-label="Remove {provider} / {model}"`.
   - `FieldError` for `favoriteModels`.
-- Rename cascade: `handleEditProvider` compares old vs new name; if changed,
-  rewrites matching favorites in the same edit, so one Save persists both.
+- No rename cascade: `provider-modal.tsx` disables the Name field in edit
+  mode, so a provider's name can't change from this panel.
 - All changes go through the existing `SaveDiscardBar`; nothing auto-saves.
 - After Save, call `invalidateProviders()` (see §3) so chat picks up changes
   immediately. `useSettingsSection.save()` swallows its own errors, so the
@@ -140,7 +141,6 @@ favoriteModels:
 - Remove drops the row.
 - Unavailable badge shown for a pair missing from the live list; not shown
   while the live list is loading.
-- Renaming a provider rewrites its favorites.
 - Modal hides already-favorited pairs.
 
 ## 3. Chat menu
