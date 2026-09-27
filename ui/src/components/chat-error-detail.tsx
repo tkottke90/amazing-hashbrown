@@ -9,6 +9,7 @@ import {
   WifiOff,
   AlertTriangle,
   CircleStop,
+  Unplug,
   ChevronDown,
   ChevronRight,
 } from 'lucide-preact';
@@ -60,6 +61,14 @@ const CATEGORY_INFO: Record<ChatErrorCategory, { icon: typeof AlertTriangle; mes
   unknown: {
     icon: AlertTriangle,
     message: GENERIC_MESSAGE,
+  },
+  // The browser lost the turn's live stream — not a provider failure. The
+  // server keeps running the turn and the thread re-hydrates when it
+  // finishes (use-thread.ts / use-live-events.ts).
+  connection_lost: {
+    icon: Unplug,
+    message:
+      'Lost the live connection to the server. The agent may still be working — this thread will refresh when it finishes.',
   },
   // Not a failure — the turn was explicitly stopped (Stop button, or a
   // provider timeout after the turn was abandoned). Deliberately styled
