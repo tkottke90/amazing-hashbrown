@@ -114,6 +114,79 @@ describe('ObservabilityStore', () => {
     });
   });
 
+  // recordModelInput snapshots what the model actually received on a turn —
+  // the thread report relies on it to answer "was tool X bound on this
+  // turn?", so both the first-call-wins rule and the null-vs-[] distinction
+  // are part of the contract.
+  describe('recordModelInput', () => {
+    let store: ObservabilityStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('stores tools and the effective system prompt, readable via findById and getTrace [unit]', () => {
+      const traceId = store.startTrace({
+        provider: 'openai',
+        model: 'gpt-4o',
+        systemPrompt: 'build-time prompt',
+      });
+      store.recordModelInput(traceId, {
+        tools: ['wiki_search', 'playwright__browser_click'],
+        systemPrompt: 'effective prompt',
+      });
+
+      const summary = store.findById(traceId);
+      const trace = store.getTrace(traceId);
+      assert.deepEqual(summary?.tools, ['wiki_search', 'playwright__browser_click']);
+      assert.deepEqual(trace?.tools, ['wiki_search', 'playwright__browser_click']);
+      assert.equal(
+        summary?.systemPrompt,
+        'effective prompt',
+        'effective prompt should replace build-time prompt',
+      );
+      assert.equal(trace?.systemPrompt, 'effective prompt');
+    });
+
+    it('keeps the first snapshot when a later model call in the same turn records again [unit]', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+      store.recordModelInput(traceId, { tools: ['first'], systemPrompt: 'first prompt' });
+      store.recordModelInput(traceId, { tools: ['second'], systemPrompt: 'second prompt' });
+
+      const trace = store.getTrace(traceId);
+      assert.deepEqual(trace?.tools, ['first'], 'second recordModelInput should be a no-op');
+      assert.equal(trace?.systemPrompt, 'first prompt');
+    });
+
+    it('keeps the startTrace prompt when no effective prompt is supplied [unit]', () => {
+      const traceId = store.startTrace({
+        provider: 'openai',
+        model: 'gpt-4o',
+        systemPrompt: 'build-time prompt',
+      });
+      store.recordModelInput(traceId, { tools: ['wiki_search'] });
+
+      assert.equal(store.getTrace(traceId)?.systemPrompt, 'build-time prompt');
+    });
+
+    it('stores an empty tool list as [], distinct from not captured [unit]', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+      store.recordModelInput(traceId, { tools: [] });
+
+      assert.deepEqual(store.getTrace(traceId)?.tools, []);
+    });
+
+    it('reads tools as null for a trace that never recorded model input [unit]', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+
+      assert.equal(store.findById(traceId)?.tools, null);
+      assert.equal(store.getTrace(traceId)?.tools, null);
+    });
+  });
+
   describe('saveSpans / getTrace', () => {
     let store: ObservabilityStore;
     let dir: string;

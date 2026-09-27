@@ -69,7 +69,19 @@ export const TraceRecordSchema = z.object({
   // always null — that source runs multiple distinct prompts (summarize/
   // classify/extract/merge) within one trace, none of which is "a system
   // prompt" in this sense.
+  //
+  // For turns run through the chat agents, this is overwritten on the turn's
+  // first model call with the system message actually sent to the model
+  // (after tool-access filtering and <tool_guidance> injection) — see
+  // api/src/agents/model-input-snapshot.middleware.ts. So: the effective
+  // prompt when captured, otherwise the prompt known at startTrace().
   systemPrompt: z.string().nullable(),
+  // Names of the tools bound to the model on this trace's first model call,
+  // as the model saw them (bound names, e.g. playwright__browser_click), after
+  // skill gating and per-thread tool access filtering. Null means "not
+  // captured" — historical rows, and sources that don't run the chat agent
+  // middleware chain — which is distinct from [] (captured, no tools bound).
+  tools: z.array(z.string()).nullable(),
   // Why this trace's run ultimately failed, if it did — set when the agent
   // run throws (e.g. the provider errors out mid-stream). Complements
   // SpanRecordSchema's per-span `error`: a span-level error only exists if

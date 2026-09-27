@@ -69,13 +69,28 @@
         {% if event.trace.error %}
           <div class="span-error-text">Turn failed: {{ event.trace.error }}</div>
         {% endif %}
-        {% if event.trace.systemPrompt %}
+        {# tools: null = not captured (old/uninstrumented trace), [] = captured with nothing bound. #}
+        {% if event.trace.systemPrompt or event.trace.tools != None %}
           <details class="span-row">
             <summary>
               <span class="span-type">system</span>
               <span class="span-name">System Prompt{% if event.systemPromptTokens != None %} &middot; {{ event.systemPromptTokens }} tokens{% endif %}</span>
+              {% if event.trace.tools == None %}
+                <span class="tools-not-captured">&middot; tools not captured</span>
+              {% elif event.trace.tools | length == 0 %}
+                <span class="step-badge step-badge-warn">0 tools</span>
+              {% else %}
+                <span class="tools-count">&middot; {{ event.trace.tools | length }} tools</span>
+              {% endif %}
             </summary>
-            <div class="span-preview">{{ event.trace.systemPrompt | json }}</div>
+            {% if event.trace.tools %}
+              <div class="tool-chip-row" aria-label="Tools available on this turn">
+                {% for tool in event.trace.tools | sort %}<span class="tool-chip">{{ tool }}</span>{% endfor %}
+              </div>
+            {% endif %}
+            {% if event.trace.systemPrompt %}
+              <div class="span-preview">{{ event.trace.systemPrompt | json }}</div>
+            {% endif %}
           </details>
         {% endif %}
         {% if event.userMessage %}

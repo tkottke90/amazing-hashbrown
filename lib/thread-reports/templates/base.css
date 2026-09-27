@@ -477,6 +477,32 @@ summary {
   word-break: break-word;
   min-width: 0;
 }
+
+/* Per-turn tool availability (issue #207) — the tools bound to the model on
+   a turn, listed inside each trace's system-prompt details row. */
+.tools-count,
+.tools-not-captured {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.tool-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.35rem 0;
+}
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
 .span-tokens {
   color: var(--text-muted);
   font-size: 0.75rem;

@@ -19,6 +19,7 @@ import {
   getActiveTurnAbort,
 } from './active-sse-writer.js';
 import { ClassifiedTurnError } from './stream-handler.js';
+import { bootObservability, getObservabilityStore } from '../services/observability.js';
 import { recordAssistantStart } from './thread-message-writer.js';
 import {
   streamWorkspaceChatToSse,
@@ -253,6 +254,10 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
     workspaceStore = new WorkspaceStore(db);
     bootWorkspaceStore(db);
     bootThreadStore(db);
+    // Every handler here opens a trace via getObservabilityStore() before
+    // the agent runs — boot it explicitly rather than relying on an earlier
+    // test file having done so.
+    bootObservability(db);
     bootTaskScheduler();
 
     threadId = randomUUID();
@@ -391,6 +396,120 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
     );
     expect(err.category).to.equal('cancelled');
     expect(getActiveSseWriter(threadId)).to.equal(undefined);
+  });
+
+  // Issue #207: model-input-snapshot.middleware.ts can only record a turn's
+  // bound tools if the agent call carries the id of the trace that turn
+  // opened. The fake agent records the streamEvents options, then fails the
+  // turn so no real model runs.
+  describe('trace_id plumbing', () => {
+    function fakeCapturingAgent() {
+      const captured: { configurable?: Record<string, unknown> }[] = [];
+      const agent = {
+        streamEvents: (
+          _input: unknown,
+          options: { configurable?: Record<string, unknown> },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ): AsyncIterable<any> => {
+          captured.push(options);
+          async function* gen() {
+            yield* [];
+            throw new Error('simulated stream failure');
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+      };
+      return { agent, captured };
+    }
+
+    function expectTraceIdPassed(captured: { configurable?: Record<string, unknown> }[]) {
+      const traces = getObservabilityStore().find({ threadId });
+      expect(traces, 'the turn should open exactly one trace').to.have.length(1);
+      expect(captured).to.have.length(1);
+      expect(
+        captured[0].configurable?.trace_id,
+        'agent must receive the id of the trace this turn opened',
+      ).to.equal(traces[0].traceId);
+      expect(captured[0].configurable?.thread_id, 'thread_id must be preserved').to.equal(threadId);
+      expect(captured[0].configurable?.workspaceId, 'workspaceId must be preserved').to.equal(
+        workspace.id,
+      );
+    }
+
+    it('streamWorkspaceChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        streamWorkspaceChatToSse(
+          fakeRes().res,
+          workspace,
+          threadId,
+          'hello',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
+
+    it('resumeWorkspaceChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'workspace-chat');
+      recordAssistantStart(getThreadStore(), threadId, randomUUID(), new Date().toISOString());
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        resumeWorkspaceChatToSse(
+          fakeRes().res,
+          workspace,
+          threadId,
+          'no-such-prompt',
+          'yes',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
+
+    it('retryWorkspaceChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'workspace-chat');
+      const failedId = randomUUID();
+      recordAssistantStart(getThreadStore(), threadId, failedId, new Date().toISOString());
+      getThreadStore().updateMessage(threadId, failedId, {
+        status: 'error',
+        payload: { content: '' },
+      });
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        retryWorkspaceChatToSse(
+          fakeRes().res,
+          workspace,
+          threadId,
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
   });
 });
 

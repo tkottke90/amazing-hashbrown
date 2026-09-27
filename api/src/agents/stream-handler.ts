@@ -979,6 +979,9 @@ export async function streamChatToSse(
           { messages: [{ role: 'human', content: llmContent }] },
           {
             ...config,
+            // trace_id lets model-input-snapshot.middleware.ts record this turn's
+            // bound tools + effective system prompt onto the trace (issue #207).
+            configurable: { ...config.configurable, trace_id: traceId },
             version: 'v2',
             callbacks: [obsHandler],
             context: {
@@ -1178,6 +1181,9 @@ export async function resumeChatToSse(
       async () => {
         const eventStream = agent.streamEvents(new Command({ resume: answer }), {
           ...config,
+          // trace_id lets model-input-snapshot.middleware.ts record this turn's
+          // bound tools + effective system prompt onto the trace (issue #207).
+          configurable: { ...config.configurable, trace_id: traceId },
           version: 'v2',
           recursionLimit: env.agent?.recursionLimit ?? 100,
           callbacks: [obsHandler],
@@ -1372,6 +1378,9 @@ export async function retryChatToSse(
       async () => {
         const eventStream = agent.streamEvents(null, {
           ...config,
+          // trace_id lets model-input-snapshot.middleware.ts record this turn's
+          // bound tools + effective system prompt onto the trace (issue #207).
+          configurable: { ...config.configurable, trace_id: traceId },
           version: 'v2',
           recursionLimit: env.agent?.recursionLimit ?? 100,
           callbacks: [obsHandler],

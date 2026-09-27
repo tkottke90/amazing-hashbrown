@@ -1,6 +1,6 @@
 // Store
 export { ObservabilityStore } from './store.js';
-export type { StartTraceParams, EndTraceParams } from './store.js';
+export type { StartTraceParams, EndTraceParams, ModelInputParams } from './store.js';
 
 // Cost store
 export { CostStore } from './cost-store.js';

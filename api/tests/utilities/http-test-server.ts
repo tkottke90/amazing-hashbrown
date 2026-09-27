@@ -28,9 +28,17 @@ export async function startTestServer(
 
   return {
     baseUrl: `http://127.0.0.1:${port}${basePath}`,
+    // closeAllConnections() first: server.close() alone waits for every open
+    // socket, and Node's fetch can leave a spare keep-alive connection open
+    // that never carried a request (observed with the events route's SSE
+    // tests). server.close() doesn't count that socket as idle, so it hangs
+    // until the client's keep-alive timeout — longer than Mocha's 2s hook
+    // timeout. Tests have already made their assertions by the time close()
+    // runs, so force-closing leftovers here can't mask a server-side bug.
     close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((err) => (err ? reject(err) : resolve())),
-      ),
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
   };
 }
