@@ -11,11 +11,14 @@ import type {
   TriggerType,
 } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
+import type { Task } from '../../services/workspace-store.js';
 import {
+  describeTaskSchedule,
   isCronTrigger,
   resolveCronConfig,
   statusForSavedSchedule,
   type CronConfig,
+  type TaskSchedule,
 } from '../../services/cron-config.js';
 import type { ThreadStore } from '../../services/thread-store.js';
 import { linkedPromptCopy, resolveHitlPrompt } from '../../agents/thread-message-writer.js';
@@ -126,33 +129,55 @@ function statusAfterTriggerSave(
   return task.status === 'scheduled' ? 'pending' : null;
 }
 
+export type TaskResponse = Task & { schedule?: TaskSchedule };
+
+// A task as the API returns it: cron tasks carry a computed `schedule`
+// (next fire time, run count, and why it's inactive, if it is) so the UI
+// never needs its own cron parser.
+export function withSchedule(
+  store: WorkspaceStore,
+  task: Task,
+  now: Date = new Date(),
+): TaskResponse {
+  if (!isCronTrigger(task.triggerType) || !task.triggerConfig) return task;
+  return {
+    ...task,
+    schedule: describeTaskSchedule(
+      task.triggerType,
+      task.triggerConfig as CronConfig,
+      store.countScheduledRuns(task.id),
+      now,
+    ),
+  };
+}
+
 export function listTasksHandler(store: WorkspaceStore, filters: TaskListFilters = {}) {
-  return ok(store.listTasks(filters));
+  return ok(store.listTasks(filters).map((task) => withSchedule(store, task)));
 }
 
 export function getTaskHandler(store: WorkspaceStore, id: string) {
   const task = store.getTask(id);
   if (!task) return notFound(`Task ${id} not found`);
-  return ok(task);
+  return ok(withSchedule(store, task));
 }
 
 export function createTaskHandler(
   store: WorkspaceStore,
   body: Partial<NewTaskInput>,
-): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
+): HandlerResult<TaskResponse> {
   if (!body.title || typeof body.title !== 'string') return badRequest('title is required');
   const trigger = resolveTriggerConfig(null, body);
   if (!trigger.ok) return badRequest(trigger.error);
   const task = store.createTask({ ...body, triggerConfig: trigger.triggerConfig } as NewTaskInput);
   const status = statusAfterTriggerSave(store, task);
-  return ok(status ? store.patchTask(task.id, { status }) : task);
+  return ok(withSchedule(store, status ? store.patchTask(task.id, { status })! : task));
 }
 
 export function patchTaskHandler(
   store: WorkspaceStore,
   id: string,
   patch: PatchTaskInput & { regenerateWebhookToken?: boolean },
-): HandlerResult<ReturnType<WorkspaceStore['getTask']>> {
+): HandlerResult<TaskResponse> {
   const current = store.getTask(id);
   if (!current) return notFound(`Task ${id} not found`);
 
@@ -234,13 +259,18 @@ export function patchTaskHandler(
     if (!alreadyQueued) store.enqueueTask(id);
   }
 
-  return ok(task);
+  return ok(withSchedule(store, task));
 }
 
 export function deleteTaskHandler(
   store: WorkspaceStore,
   id: string,
 ): HandlerResult<{ deleted: true }> {
+  // Deleting under a live run would pull its queue row out from under the
+  // executor — cancel it first.
+  if (store.listQueue().some((entry) => entry.taskId === id)) {
+    return conflict('Task has a queued or running run — cancel it before deleting');
+  }
   const deleted = store.deleteTask(id);
   if (!deleted) return notFound(`Task ${id} not found`);
   return ok({ deleted: true });
@@ -263,6 +293,12 @@ export function enqueueTaskHandler(
 ): HandlerResult<ReturnType<WorkspaceStore['enqueueTask']>> {
   const task = store.getTask(taskId);
   if (!task) return notFound(`Task ${taskId} not found`);
+  // One active run per task: "Run now" or a webhook while a run is already
+  // queued or running would double it up (and, for a cron task, race its
+  // schedule).
+  if (store.listQueue().some((entry) => entry.taskId === taskId)) {
+    return conflict(`Task "${task.title}" is already queued or running`);
+  }
   const entry = store.enqueueTask(taskId, opts);
   // Keep tasks.status in sync with the fact that this task is now queued —
   // mirrors the same invariant patchTaskHandler enforces for the R14 path.

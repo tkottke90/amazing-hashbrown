@@ -1,6 +1,7 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import {
+  describeTaskSchedule,
   resolveCronConfig,
   statusForSavedSchedule,
   type CronOnceConfig,
@@ -133,6 +134,16 @@ describe('services/cron-config', () => {
       expect(!result.ok && result.error).to.equal('fireAt must be a valid date');
     });
 
+    it('rejects a new or moved time in the past, which would never fire [unit]', () => {
+      const result = resolveCronConfig(
+        'cron_once',
+        null,
+        { fireAt: '2026-09-26T11:59:00.000Z', timezone: 'UTC' },
+        NOW,
+      );
+      expect(!result.ok && result.error).to.equal('fireAt must be in the future');
+    });
+
     it('re-arms a one-shot that already fired when it is moved to a new time [unit]', () => {
       const current: CronOnceConfig = {
         fireAt: '2026-09-20T09:00:00.000Z',
@@ -201,6 +212,61 @@ describe('services/cron-config', () => {
         lastFiredAt: null,
       };
       expect(statusForSavedSchedule('pending', 'cron_once', config, 0, NOW)).to.equal('scheduled');
+    });
+
+    it('does not park a one-shot whose time passed before it was turned on — it can never fire [unit]', () => {
+      const config: CronOnceConfig = {
+        fireAt: '2026-09-25T09:00:00.000Z',
+        timezone: 'UTC',
+        enabled: true,
+        enabledAt: '2026-09-26T00:00:00.000Z',
+        lastFiredAt: null,
+      };
+      expect(statusForSavedSchedule('pending', 'cron_once', config, 0, NOW)).to.equal(null);
+    });
+  });
+
+  describe('describeTaskSchedule()', () => {
+    it('reports the next fire time of a live schedule [unit]', () => {
+      expect(describeTaskSchedule('cron_repeat', repeatConfig(), 4, NOW)).to.deep.equal({
+        nextFireAt: '2026-09-27T00:00:00.000Z',
+        iterationCount: 4,
+        active: true,
+        inactiveReason: null,
+      });
+    });
+
+    it('tells an auto-pause apart from a schedule the user turned off [unit]', () => {
+      const paused = repeatConfig({ enabled: false, pausedReason: 'consecutive_failures' });
+      expect(describeTaskSchedule('cron_repeat', paused, 4, NOW).inactiveReason).to.equal(
+        'failures',
+      );
+      const off = repeatConfig({ enabled: false });
+      expect(describeTaskSchedule('cron_repeat', off, 4, NOW).inactiveReason).to.equal('disabled');
+    });
+
+    it('tells a used-up run budget apart from a passed stop date [unit]', () => {
+      const budget = repeatConfig({ maxIterations: 4 });
+      expect(describeTaskSchedule('cron_repeat', budget, 4, NOW)).to.include({
+        active: false,
+        inactiveReason: 'exhausted',
+        nextFireAt: null,
+      });
+      const stopped = repeatConfig({ stopAfter: '2026-09-26T06:00:00.000Z' });
+      expect(describeTaskSchedule('cron_repeat', stopped, 4, NOW).inactiveReason).to.equal(
+        'expired',
+      );
+    });
+
+    it("marks a one-shot that already fired as 'fired' [unit]", () => {
+      const config: CronOnceConfig = {
+        fireAt: '2026-09-26T09:00:00.000Z',
+        timezone: 'UTC',
+        enabled: true,
+        enabledAt: '2026-09-01T00:00:00.000Z',
+        lastFiredAt: '2026-09-26T09:00:00.000Z',
+      };
+      expect(describeTaskSchedule('cron_once', config, 1, NOW).inactiveReason).to.equal('fired');
     });
   });
 });

@@ -1275,12 +1275,18 @@ export class WorkspaceStore extends BaseStore {
     return this.getTask(id);
   }
 
+  // Removes a task with its dependency edges and its run history
+  // (task_queue rows FK'd to it — without this, any task that ever ran
+  // failed to delete). Callers refuse to delete a task with an active run.
   deleteTask(id: string): boolean {
-    this.db
-      .prepare(`DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?`)
-      .run(id, id);
-    const result = this.db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
-    return result.changes > 0;
+    return this.db.transaction(() => {
+      this.db
+        .prepare(`DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?`)
+        .run(id, id);
+      this.db.prepare(`DELETE FROM task_queue WHERE task_id = ?`).run(id);
+      const result = this.db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
+      return result.changes > 0;
+    })();
   }
 
   // -------------------------------------------------------------------------

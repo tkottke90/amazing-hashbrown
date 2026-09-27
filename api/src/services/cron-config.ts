@@ -3,6 +3,7 @@ import type { TaskStatus, TriggerType } from './workspace-store.js';
 import {
   cronExpressionError,
   isValidTimeZone,
+  latestMissedFireAt,
   nextFireAt,
   type CronTiming,
 } from './cron-schedule.js';
@@ -99,12 +100,18 @@ export function resolveCronConfig(
     const prev = current as CronOnceConfig | null;
     const enabled = parsed.data.enabled ?? true;
     const turnedOn = enabled && !(prev?.enabled ?? false);
-    const moved =
-      prev !== null && new Date(prev.fireAt).getTime() !== new Date(parsed.data.fireAt).getTime();
+    const fireAt = new Date(parsed.data.fireAt);
+    const moved = prev !== null && new Date(prev.fireAt).getTime() !== fireAt.getTime();
+    // A new or moved time in the past would never fire: catch-up only covers
+    // times missed while the schedule was on. Reject it rather than park the
+    // task at 'scheduled' forever.
+    if ((moved || !prev) && fireAt.getTime() <= now.getTime()) {
+      return { ok: false, error: 'fireAt must be in the future' };
+    }
     return {
       ok: true,
       config: {
-        fireAt: new Date(parsed.data.fireAt).toISOString(),
+        fireAt: fireAt.toISOString(),
         timezone: parsed.data.timezone,
         enabled,
         enabledAt: turnedOn || !prev ? nowIso : prev.enabledAt,
@@ -177,12 +184,66 @@ export function statusForSavedSchedule(
   now: Date,
 ): TaskStatus | null {
   if (BUSY.has(currentStatus)) return null;
+  const timing = cronTiming(type, config);
   const willFire =
     config.enabled &&
-    (nextFireAt(cronTiming(type, config), now, iterationCount) !== null ||
-      // a cron_once whose time passed while it was never fired still
-      // fires once — as a catch-up — so it stays scheduled.
-      (type === 'cron_once' && (config as CronOnceConfig).lastFiredAt === null));
+    (nextFireAt(timing, now, iterationCount) !== null ||
+      // a cron_once whose time passed while it was on but unfired (it was
+      // busy with a manual run at the time) still fires once, as a
+      // catch-up — so it stays scheduled.
+      (type === 'cron_once' && latestMissedFireAt(timing, now, iterationCount) !== null));
   if (willFire) return 'scheduled';
   return currentStatus === 'scheduled' ? 'pending' : null;
+}
+
+// Why a cron schedule will not fire again, for the drawer's banner:
+// turned off by hand, auto-paused after failures, out of runs, past
+// stopAfter (or a one-shot time that can no longer fire), or a one-shot that
+// already fired.
+export type ScheduleInactiveReason = 'disabled' | 'failures' | 'exhausted' | 'expired' | 'fired';
+
+export interface TaskSchedule {
+  nextFireAt: string | null;
+  iterationCount: number;
+  active: boolean;
+  inactiveReason: ScheduleInactiveReason | null;
+}
+
+// The computed `schedule` field on a cron task's API responses.
+export function describeTaskSchedule(
+  type: 'cron_once' | 'cron_repeat',
+  config: CronConfig,
+  iterationCount: number,
+  now: Date,
+): TaskSchedule {
+  const inactive = (inactiveReason: ScheduleInactiveReason): TaskSchedule => ({
+    nextFireAt: null,
+    iterationCount,
+    active: false,
+    inactiveReason,
+  });
+  const timing = cronTiming(type, config);
+
+  if (type === 'cron_once') {
+    const c = config as CronOnceConfig;
+    if (!c.enabled) return inactive('disabled');
+    if (c.lastFiredAt !== null) return inactive('fired');
+    // Due but unfired (it was busy at its time) fires as soon as it's idle.
+    const next =
+      nextFireAt(timing, now, iterationCount) ?? latestMissedFireAt(timing, now, iterationCount);
+    if (!next) return inactive('expired');
+    return { nextFireAt: next.toISOString(), iterationCount, active: true, inactiveReason: null };
+  }
+
+  const c = config as CronRepeatConfig;
+  if (!c.enabled) {
+    return inactive(c.pausedReason === 'consecutive_failures' ? 'failures' : 'disabled');
+  }
+  const next = nextFireAt(timing, now, iterationCount);
+  if (!next) {
+    return inactive(
+      c.maxIterations !== null && iterationCount >= c.maxIterations ? 'exhausted' : 'expired',
+    );
+  }
+  return { nextFireAt: next.toISOString(), iterationCount, active: true, inactiveReason: null };
 }

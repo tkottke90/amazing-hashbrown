@@ -10,6 +10,10 @@ import { WorkspaceStore } from '../../services/workspace-store.js';
 import { bootObservability } from '../../services/observability.js';
 import {
   createTaskHandler,
+  deleteTaskHandler,
+  getTaskHandler,
+  listTasksHandler,
+  type TaskResponse,
   patchTaskHandler,
   enqueueTaskHandler,
   cancelTaskHandler,
@@ -1209,6 +1213,78 @@ describe('routes/v1/tasks.handlers', () => {
       const result = patchTaskHandler(store, task.id, { status: 'scheduled' });
       expect(result).to.deep.include({ ok: false, status: 400 });
       expect(store.getTask(task.id)!.status).to.equal('pending');
+    });
+
+    it('rejects a one-shot time that has already passed, since it could never fire [unit]', () => {
+      const result = createTaskHandler(store, {
+        title: 'late',
+        triggerType: 'cron_once',
+        triggerConfig: { fireAt: '2020-01-01T00:00:00.000Z', timezone: 'UTC' },
+      });
+      expect(result).to.deep.include({ ok: false, status: 400 });
+      expect(!result.ok && result.error).to.match(/fireAt must be in the future/);
+    });
+
+    it('computes a schedule summary on cron task responses, so the UI needs no cron parser [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      for (const task of [
+        created.ok ? created.data : null,
+        (getTaskHandler(store, id) as { data: TaskResponse }).data,
+        (listTasksHandler(store) as { data: TaskResponse[] }).data[0],
+      ]) {
+        expect(task!.schedule).to.include({
+          active: true,
+          iterationCount: 0,
+          inactiveReason: null,
+        });
+        expect(new Date(task!.schedule!.nextFireAt!).getUTCHours()).to.equal(0);
+      }
+    });
+
+    it('leaves the schedule summary off tasks that have no schedule [unit]', () => {
+      const created = createTaskHandler(store, { title: 'plain' });
+      expect(created.ok && created.data).to.not.have.property('schedule');
+    });
+
+    it('deletes a task that has run before, taking its run history with it [unit]', () => {
+      const task = store.createTask({ title: 'ran once', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.dequeueNext();
+      store.completeQueueEntry(entry.id, 'done');
+
+      expect(deleteTaskHandler(store, task.id)).to.deep.equal({
+        ok: true,
+        data: { deleted: true },
+      });
+      expect(store.getTask(task.id)).to.equal(null);
+      expect(store.getTaskRun(entry.id)).to.equal(null);
+    });
+
+    it('refuses to delete a task mid-run with 409, leaving it intact [unit]', () => {
+      const task = store.createTask({ title: 'busy', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+
+      expect(deleteTaskHandler(store, task.id)).to.deep.include({ ok: false, status: 409 });
+      expect(store.getTask(task.id)).to.not.equal(null);
+    });
+
+    it('refuses "Run now" with 409 while a run is already queued or running [unit]', () => {
+      const created = createTaskHandler(store, {
+        title: 't',
+        triggerType: 'cron_repeat',
+        triggerConfig: daily,
+      });
+      const id = created.ok ? created.data!.id : '';
+      expect(enqueueTaskHandler(store, id).ok).to.equal(true);
+
+      const again = enqueueTaskHandler(store, id);
+      expect(again).to.deep.include({ ok: false, status: 409 });
+      expect(store.listQueue().filter((e) => e.taskId === id)).to.have.length(1);
     });
   });
 });
