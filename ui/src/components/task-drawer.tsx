@@ -67,6 +67,7 @@ function plansEqual(a: PlanStep[], b: PlanStep[]): boolean {
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pending',
+  scheduled: 'Scheduled',
   ready: 'Ready',
   running: 'Running',
   waiting_on_user: 'Waiting on user',
@@ -959,11 +960,15 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
                 }}
                 class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               >
-                {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
+                {/* 'scheduled' is set by the server from the task's schedule, so it
+                    is only listed to display a task that already has it. */}
+                {(Object.keys(STATUS_LABELS) as TaskStatus[])
+                  .filter((s) => s !== 'scheduled' || status.value === 'scheduled')
+                  .map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
               </select>
             </div>
           )}

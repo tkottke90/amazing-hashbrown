@@ -115,6 +115,7 @@ export async function generatePlanForNewTask(input: {
 export function groupTasksByStatus(taskList: Task[]): Record<TaskStatus, Task[]> {
   const groups: Record<TaskStatus, Task[]> = {
     pending: [],
+    scheduled: [],
     ready: [],
     running: [],
     waiting_on_user: [],

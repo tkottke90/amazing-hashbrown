@@ -87,8 +87,21 @@ export interface PatchProjectInput extends PatchWorkspaceInput {
   closeProgress?: CloseProgress;
 }
 
+// 'scheduled' is the idle state of a task with an enabled cron trigger:
+// waiting for its next fire time. The cron registry only fires a task that
+// is 'scheduled', so any other status (queued, running, waiting on the user,
+// paused) means "busy — skip this fire". See
+// docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §1.
 export type TaskStatus =
-  'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  | 'pending'
+  | 'scheduled'
+  | 'ready'
+  | 'running'
+  | 'waiting_on_user'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 

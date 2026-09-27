@@ -1,7 +1,15 @@
 import { request } from '@/utils/fetch.utils';
 
 export type TaskStatus =
-  'pending' | 'ready' | 'running' | 'waiting_on_user' | 'blocked' | 'done' | 'failed' | 'cancelled';
+  | 'pending'
+  | 'scheduled'
+  | 'ready'
+  | 'running'
+  | 'waiting_on_user'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 export type TriggerType = 'manual' | 'chat' | 'cron_once' | 'cron_repeat' | 'webhook';
 

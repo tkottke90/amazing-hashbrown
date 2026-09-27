@@ -437,6 +437,13 @@ export function addTaskDependencyHandler(
   const target = store.getTask(dependsOnTaskId);
   if (!target) return notFound(`Task ${dependsOnTaskId} not found`);
 
+  // A recurring task never finishes in the usual sense — it settles back to
+  // 'scheduled' after every run — so a dependency on it would either release
+  // after its first run or never, neither of which is what the user meant.
+  if (target.triggerType === 'cron_repeat') {
+    return badRequest("A recurring task can't be a dependency");
+  }
+
   // Editable only while the task itself hasn't started yet — once
   // ready/running/etc. its dependency list is locked (Take-over is the way
   // back to 'pending' for a dependency-blocked task; see patchTaskHandler

@@ -638,6 +638,16 @@ describe('routes/v1/tasks.handlers', () => {
         }
       });
 
+      it('rejects depending on a recurring task, which never settles as finished [unit]', () => {
+        const recurring = store.createTask({ title: 'nightly', triggerType: 'cron_repeat' });
+        const b = store.createTask({ title: 'b' });
+
+        const result = addTaskDependencyHandler(store, b.id, { dependsOnTaskId: recurring.id });
+
+        expect(result).to.deep.include({ ok: false, status: 400 });
+        expect(store.listTaskDependencies(b.id)).to.have.length(0);
+      });
+
       it('accepts explicit requireSuccess/whileBlocked flags', () => {
         const a = store.createTask({ title: 'a' });
         const b = store.createTask({ title: 'b' });
