@@ -1407,6 +1407,10 @@ describe('agents/stream-handler', () => {
       const db = openDatabase(join(dir, 'test.db'));
       store = new ThreadStore(db);
       bootThreadStore(db);
+      // Every handler here opens a trace via getObservabilityStore() before
+      // the agent runs — boot it explicitly rather than relying on an earlier
+      // test file having done so.
+      bootObservability(db);
       configManager.set('providers', [
         {
           name: TEST_PROVIDER,
@@ -1588,17 +1592,6 @@ describe('agents/stream-handler', () => {
     // opened. Reuses this describe's provider setup; the fake agent records
     // the streamEvents options, then fails the turn so no real model runs.
     describe('trace_id plumbing', () => {
-      let obsDir: string;
-
-      before(() => {
-        obsDir = mkdtempSync(join(tmpdir(), 'stream-handler-trace-id-test-'));
-        bootObservability(openDatabase(join(obsDir, 'obs.db')));
-      });
-
-      after(() => {
-        rmSync(obsDir, { recursive: true, force: true });
-      });
-
       function fakeCapturingAgent() {
         const captured: { configurable?: Record<string, unknown> }[] = [];
         const agent = {

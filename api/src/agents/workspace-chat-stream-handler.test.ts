@@ -254,6 +254,10 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
     workspaceStore = new WorkspaceStore(db);
     bootWorkspaceStore(db);
     bootThreadStore(db);
+    // Every handler here opens a trace via getObservabilityStore() before
+    // the agent runs — boot it explicitly rather than relying on an earlier
+    // test file having done so.
+    bootObservability(db);
     bootTaskScheduler();
 
     threadId = randomUUID();
@@ -399,10 +403,6 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
   // opened. The fake agent records the streamEvents options, then fails the
   // turn so no real model runs.
   describe('trace_id plumbing', () => {
-    beforeEach(() => {
-      bootObservability(openDatabase(join(dir, 'obs.db')));
-    });
-
     function fakeCapturingAgent() {
       const captured: { configurable?: Record<string, unknown> }[] = [];
       const agent = {

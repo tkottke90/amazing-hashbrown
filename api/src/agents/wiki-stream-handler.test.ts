@@ -8,6 +8,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { configManager } from '../config/env.js';
 import { bootThreadStore, getThreadStore } from '../services/thread-store.js';
+import { bootObservability } from '../services/observability.js';
 import {
   clearActiveSseWriter,
   getActiveSseWriter,
@@ -162,6 +163,10 @@ describe('agents/wiki-stream-handler — abort handling', () => {
     dir = mkdtempSync(join(tmpdir(), 'wiki-stream-abort-test-'));
     const db = openDatabase(join(dir, 'test.db'));
     bootThreadStore(db);
+    // Every handler here opens a trace via getObservabilityStore() before
+    // the agent runs — boot it explicitly rather than relying on an earlier
+    // test file having done so.
+    bootObservability(db);
     threadId = randomUUID();
   });
 
