@@ -38,6 +38,28 @@ export const ProviderSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 
+// A user-pinned provider/model pair, surfaced at the top of the chat
+// Provider menu (issue #137). An ordered list rather than a Record — a
+// favorite carries no value, and the user's order is meaningful.
+export const FavoriteModelSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+});
+
+export type FavoriteModel = z.infer<typeof FavoriteModelSchema>;
+
+// Keeps only well-formed entries, so one malformed hand-edited entry in
+// config.yaml doesn't discard the rest (unlike getSection, which fails the
+// whole section). Entries naming a provider that doesn't exist are kept —
+// staleness is resolved by consumers, never a load error.
+export function parseFavoriteModels(raw: unknown): FavoriteModel[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const parsed = FavoriteModelSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
 export const DatabaseSchema = z.object({
   path: z.string().default('./app.db'),
 });
@@ -210,6 +232,10 @@ const AppConfigSchema = z.object({
   tempProjectsRoot: z.string().optional(),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
+  // Deliberately loose: entries are validated one by one in
+  // env.favoriteModels (parseFavoriteModels) so a single malformed
+  // hand-edited entry can't fail config loading.
+  favoriteModels: z.array(z.unknown()).default([]),
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
   afterAgent: AfterAgentSchema.optional(),
@@ -272,6 +298,9 @@ export const env = {
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
+  },
+  get favoriteModels(): FavoriteModel[] {
+    return parseFavoriteModels(configManager.get('favoriteModels', []));
   },
   get database(): z.infer<typeof DatabaseSchema> {
     try {

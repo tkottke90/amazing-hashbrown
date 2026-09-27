@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { CostEntrySchema, ContextWindowSchema } from './env.js';
+import { CostEntrySchema, ContextWindowSchema, parseFavoriteModels } from './env.js';
 
 describe('config/env', () => {
   describe('ContextWindowSchema', () => {
@@ -37,6 +37,43 @@ describe('config/env', () => {
 
     it('rejects an invalid scale value', () => {
       expect(() => CostEntrySchema.parse({ inputScale: 'invalid' })).to.throw();
+    });
+  });
+
+  describe('parseFavoriteModels', () => {
+    it('preserves a valid list in the user-chosen order [unit]', () => {
+      const raw = [
+        { provider: 'do', model: 'llama3.3-70b' },
+        { provider: 'local', model: 'qwen3:14b' },
+      ];
+      expect(parseFavoriteModels(raw)).to.deep.equal(raw);
+    });
+
+    it('drops only the malformed entry so one hand-edit typo does not wipe every favorite [unit]', () => {
+      const raw = [
+        { provider: 'do', model: 'llama3.3-70b' },
+        { provider: 'local' },
+        'not-an-object',
+        { provider: 'local', model: 'qwen3:14b' },
+      ];
+      expect(parseFavoriteModels(raw)).to.deep.equal([
+        { provider: 'do', model: 'llama3.3-70b' },
+        { provider: 'local', model: 'qwen3:14b' },
+      ]);
+    });
+
+    it('rejects empty-string provider or model, which could never resolve to a real model [unit]', () => {
+      expect(
+        parseFavoriteModels([
+          { provider: '', model: 'x' },
+          { provider: 'x', model: '' },
+        ]),
+      ).to.deep.equal([]);
+    });
+
+    it('returns an empty list when the config value is not an array [unit]', () => {
+      expect(parseFavoriteModels(undefined)).to.deep.equal([]);
+      expect(parseFavoriteModels({ provider: 'do', model: 'm' })).to.deep.equal([]);
     });
   });
 });

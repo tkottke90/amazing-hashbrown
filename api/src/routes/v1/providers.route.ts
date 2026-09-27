@@ -7,6 +7,7 @@ import {
   resolveVisionCapabilityFromConfig,
 } from '../../services/provider-factory.js';
 import { unmaskApiKey } from './settings.handlers.js';
+import { resolveAvailableFavorites } from '../../services/favorite-models.js';
 import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
 
 export const providersRouter = Router();
@@ -38,7 +39,11 @@ providersRouter.get('/', async (_req, res) => {
     }),
   );
 
-  res.json({ providers: results, defaultProvider: env.defaultProvider });
+  res.json({
+    providers: results,
+    defaultProvider: env.defaultProvider,
+    favoriteModels: resolveAvailableFavorites(env.favoriteModels, results),
+  });
 });
 
 interface ListModelsBody {
