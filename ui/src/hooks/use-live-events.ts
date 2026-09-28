@@ -1,5 +1,5 @@
 import { AppBroadcastEventSchema, type AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
-import { tasks, queueState, refreshQueue, refreshTasks } from './use-tasks';
+import { tasks, queueState, refreshQueue, refreshTask, refreshTasks } from './use-tasks';
 import { hasThreadInstance, refreshThreadList, threads, useThreadInstance } from './use-thread';
 import type { QueueState, TaskStatus } from '../services/tasks-api';
 
@@ -116,13 +116,13 @@ function handleEvent(event: AppBroadcastEvent): void {
   }
 }
 
-// Local-patch, mirroring use-tasks.ts's other mutators (e.g. cancelTask()) —
-// the event already says exactly what changed, so there's no need to
-// refetch the task list just to reflect one status field. Also keeps the
-// Kanban board's columns live for a background task without navigating away
-// and back.
+// Patches the status locally so badges update at once, then re-fetches just
+// this task: its Kanban lane and legal moves are computed by the server from
+// more than the status (the agent's question, the failure streak, …), so a
+// local status patch alone would leave the card in a stale lane.
 function patchTaskStatus(taskId: string, status: TaskStatus, threadId: string): void {
   tasks.value = tasks.value.map((t) => (t.id === taskId ? { ...t, status } : t));
+  if (tasks.value.some((t) => t.id === taskId)) void refreshTask(taskId);
 
   // hasThreadInstance(), not "is this the active thread" — the workspace
   // Chat tab (workspace-chat-tab.tsx) calls useThreadInstance() directly and
