@@ -1,0 +1,69 @@
+suite:
+  id: file-ops
+  name: File-Ops Skill-Callable Tools
+  purpose: >
+    Verifies the model can self-activate the "file-ops" skill via
+    activate_skill (rather than requiring a human-typed /file-ops command)
+    and then actually uses find_file/edit_file instead of shell_exec for
+    file work, once the gate is open. Every scenario sets `gatedSkill`
+    (or deliberately omits it for fo-001, to test self-activation itself),
+    routing the runner through the real skillExpansionMiddleware/
+    skillGatedToolsMiddleware pair per the same mechanism
+    create-workspace-project.yaml already exercises — find_file/read_file/
+    edit_file are only visible to the model when the gate is genuinely open.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: fo-001-model-self-activates-file-ops
+    name: Model calls activate_skill when it needs to find a file, without being told to
+    purpose: >
+      Confirms the model recognizes a file-lookup request as a reason to
+      self-activate file-ops via activate_skill, rather than reaching for
+      shell_exec's find syntax directly — the entire point of making the
+      skill self-callable rather than human-typed-only.
+    type: tool-call
+    input: 'Find the file that defines the workspace chat system prompt.'
+    tool: activate_skill
+    argChecks:
+      - path: name
+        match: equals
+        value: file-ops
+
+  - id: fo-002-finds-file-once-gate-is-open
+    name: Model calls find_file once file-ops is active
+    purpose: >
+      Companion to fo-001: given the gate is already open (activate_skill
+      already succeeded), confirms the very next tool call is find_file,
+      not a repeat activate_skill call or a fall back to shell_exec.
+    type: tool-sequence
+    gatedSkill: file-ops
+    input: 'Find the file that defines the workspace chat system prompt.'
+    priorTurns:
+      - tool: activate_skill
+        args: { name: 'file-ops' }
+        result: { text: 'Call find_file/read_file/edit_file as needed.' }
+    tool: find_file
+
+  - id: fo-003-does-not-retry-identical-edit-after-ambiguous-match
+    name: Model does not blindly retry an ambiguous edit_file call
+    purpose: >
+      Given edit_file already rejected an old_string as matching multiple
+      locations, confirms the agent does not immediately retry the exact
+      same call — it should narrow old_string or ask, not repeat a call
+      that's already told it what's wrong.
+    type: tool-sequence
+    gatedSkill: file-ops
+    input: 'Okay, go ahead and make that change.'
+    priorTurns:
+      - tool: edit_file
+        args:
+          {
+            path: 'src/config.ts',
+            old_string: 'const timeout = 30;',
+            new_string: 'const timeout = 60;',
+          }
+        result:
+          {
+            text: '"old_string" matches 2 locations in "src/config.ts" — it must match exactly once. Add more surrounding context to make it unique. No changes made.',
+          }
+    tool: '!edit_file'

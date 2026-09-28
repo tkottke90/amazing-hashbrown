@@ -15,4 +15,5 @@ import type { SkillGatedToolRegistration } from './skill-gated-tools.middleware.
 export const GATED_SKILL_REGISTRATIONS: SkillGatedToolRegistration[] = [
   { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
   { skillCommand: 'create-project', toolNames: ['create_project'] },
+  { skillCommand: 'file-ops', toolNames: ['find_file', 'read_file', 'edit_file'] },
 ];

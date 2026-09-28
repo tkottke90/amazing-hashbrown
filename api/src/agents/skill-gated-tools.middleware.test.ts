@@ -7,7 +7,13 @@ function fakeTool(name: string) {
 }
 
 const ALWAYS_ON = [fakeTool('ask_user'), fakeTool('wiki_search')];
-const GATED = [fakeTool('create_workspace'), fakeTool('create_project')];
+const GATED = [
+  fakeTool('create_workspace'),
+  fakeTool('create_project'),
+  fakeTool('find_file'),
+  fakeTool('read_file'),
+  fakeTool('edit_file'),
+];
 
 function fakeRequest(activeGatedSkill: string | null) {
   return {
@@ -21,6 +27,7 @@ describe('agents/skill-gated-tools.middleware', () => {
   const registrations = [
     { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
     { skillCommand: 'create-project', toolNames: ['create_project'] },
+    { skillCommand: 'file-ops', toolNames: ['find_file', 'read_file', 'edit_file'] },
   ];
 
   it('hides gated tools from the model when no skill is active', async () => {
@@ -67,5 +74,25 @@ describe('agents/skill-gated-tools.middleware', () => {
     await middleware.wrapModelCall!(fakeRequest('some-unrelated-skill'), handler);
 
     expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search']);
+  });
+
+  it('exposes all three file-ops tools together when that skill is active', async () => {
+    const middleware = createSkillGatedToolsMiddleware(registrations);
+    let seenTools: { name: string }[] = [];
+    const handler = async (req: { tools: { name: string }[] }) => {
+      seenTools = req.tools;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return {} as any;
+    };
+
+    await middleware.wrapModelCall!(fakeRequest('file-ops'), handler);
+
+    expect(seenTools.map((t) => t.name)).to.deep.equal([
+      'ask_user',
+      'wiki_search',
+      'find_file',
+      'read_file',
+      'edit_file',
+    ]);
   });
 });
