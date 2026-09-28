@@ -22,6 +22,9 @@ export interface HandlerFailure {
   ok: false;
   status: 400 | 404;
   error: string;
+  // Same shape as skills.handlers.ts's fieldErrors. Env rows are keyed
+  // "env.<NAME>" so the drawer can show each message next to its row (#220).
+  fieldErrors?: Record<string, string[]>;
 }
 
 export type HandlerResult<T> = { ok: true; data: T } | HandlerFailure;
@@ -34,57 +37,65 @@ function notFound(error: string): HandlerFailure {
   return { ok: false, status: 404, error };
 }
 
-function badRequest(error: string): HandlerFailure {
-  return { ok: false, status: 400, error };
+function badRequest(error: string, fieldErrors?: Record<string, string[]>): HandlerFailure {
+  return fieldErrors
+    ? { ok: false, status: 400, error, fieldErrors }
+    : { ok: false, status: 400, error };
 }
 
-// ---- shell_exec env validation (issue #189) ---------------------------------
+// ---- shell_exec env validation (issues #189, #220) --------------------------
 
 // config-manager's interpolateEnvVars() only matches
 // /\$\{([A-Z_][A-Z0-9_]*)\}/g — lowercase names stay literal strings.
 export const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
-// Exactly one lookup, no surrounding text — keeps secrets out of config.yaml
-// by construction: only "${VAR}" lookup syntax is storable via the API.
-export const ENV_VALUE_RE = /^\$\{([A-Z_][A-Z0-9_]*)\}$/;
+// Every lookup inside a value. Values may be a lookup, a literal or a mix
+// ("${HOME}/bin") — literals are stored in config.yaml as plain text, which
+// the drawer's helper text states.
+const ENV_REF_RE = /\$\{([A-Z_][A-Z0-9_]*)\}/g;
 
+// Messages name the row and the fix, never the submitted value — a value may
+// be a secret the user pasted as a literal.
 function validateShellEnv(env: Record<string, unknown>): HandlerResult<Record<string, string>> {
   const validated: Record<string, string> = {};
-  const missing: string[] = [];
+  const fieldErrors: Record<string, string[]> = {};
+  const fail = (key: string, message: string) =>
+    (fieldErrors[`env.${key}`] ??= []).push(`${key}: ${message}`);
+
   for (const [key, rawValue] of Object.entries(env)) {
     if (!ENV_VAR_NAME_RE.test(key)) {
-      return badRequest(
-        `Invalid environment variable name "${key}": config-manager env lookups ` +
-          'support uppercase names only (pattern [A-Z_][A-Z0-9_]*).',
+      fail(key, 'names must be uppercase letters, digits or _ (e.g. GH_TOKEN).');
+      continue;
+    }
+    if (typeof rawValue !== 'string') {
+      fail(key, 'value must be text.');
+      continue;
+    }
+    // A missing variable would silently resolve to an empty string at load.
+    const missing = [...rawValue.matchAll(ENV_REF_RE)]
+      .map((m) => m[1]!)
+      .filter((name) => !(name in process.env));
+    for (const name of new Set(missing)) {
+      fail(
+        key,
+        `references \${${name}}, which isn't set in the API's environment. ` +
+          'Set it and restart the API, or remove the reference.',
       );
     }
-    const value = typeof rawValue === 'string' ? rawValue : '';
-    const valueMatch = ENV_VALUE_RE.exec(value);
-    if (!valueMatch) {
-      return badRequest(
-        `Invalid value for environment variable "${key}": must be exactly one ` +
-          'env lookup in the form "${VAR}" — secrets are never written to ' +
-          'config.yaml, only the lookup syntax is.',
-      );
-    }
-    const referenced = valueMatch[1];
-    if (referenced && !(referenced in process.env)) {
-      missing.push(referenced);
-    }
-    validated[key] = value;
+    if (missing.length === 0) validated[key] = rawValue;
   }
-  if (missing.length > 0) {
+
+  const rows = Object.keys(fieldErrors).length;
+  if (rows > 0) {
     return badRequest(
-      `Referenced environment variable(s) not set in this environment: ` +
-        `${missing.join(', ')}. A missing variable would silently resolve to ` +
-        'an empty string at load time.',
+      `${rows} environment variable${rows === 1 ? ' is' : 's are'} invalid.`,
+      fieldErrors,
     );
   }
   return { ok: true, data: validated };
 }
 
 // Names only — values are never included, logged, or sent. Used by the
-// drawer's env editor combobox; the value side stays "${VAR}" lookup syntax
-// the user types (or the stored config value), never a resolved secret.
+// drawer's env editor combobox to suggest names for new rows.
 export function listAvailableEnvVarsHandler(): HandlerResult<{ names: string[] }> {
   const names = Object.keys(process.env)
     .filter((name) => ENV_VAR_NAME_RE.test(name))
@@ -191,7 +202,12 @@ export function patchToolSettingHandler(
     if (!parsedExtra.success) {
       return badRequest(parsedExtra.error.issues.map((i) => i.message).join('; '));
     }
-    validatedExtra = parsedExtra.data as Record<string, unknown>;
+    // Zod 4's .partial() still fills in field defaults, so keep only the
+    // keys the client actually sent — otherwise saving one field writes every
+    // other field's default into config.yaml (for shell_exec that included
+    // the host's literal PATH/HOME/USER, the origin of issue #220).
+    const parsedData = parsedExtra.data as Record<string, unknown>;
+    validatedExtra = Object.fromEntries(extraKeys.map((k) => [k, parsedData[k]]));
     // shell_exec-specific: env entries must be config-manager lookup syntax
     // referencing variables that actually exist (issue #189).
     if (toolId === 'shell_exec' && validatedExtra['env'] !== undefined) {
