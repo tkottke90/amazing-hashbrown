@@ -208,3 +208,148 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
     expect(deleteRequest.method()).toBe('DELETE');
   });
 });
+
+// ---- Live backend: Shell Exec env round-trip (issue #220) ------------------
+//
+// Unlike the mocked suite above, these tests hit the real API: the bug was the
+// round-trip itself (GET returned resolved env values, which the next PATCH
+// rejected), which a mocked endpoint can't reproduce. Only ${HOME} (always set)
+// and a deliberately unset variable are referenced, so nothing depends on how
+// the API process was started.
+
+const liveEnvSuite: TestSuite = {
+  id: 44,
+  name: 'Shell Exec env settings (live API)',
+  description:
+    'Saves Shell Exec settings against the real API: an allowlist-only save, adding and removing an env row, and a per-row validation error',
+  purpose:
+    'Issue #220: saving Shell Exec settings failed with an unexplained PATH error because the drawer received resolved env values; users must be able to configure the tool, and must never see a resolved secret',
+  tags: ['@user-workflow'],
+  steps: [
+    {
+      tags: ['@user-workflow'],
+      action: 'Change only the allowlist and click Save',
+      expectedOutcome: 'The save succeeds and a success toast appears',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add an env row referencing ${HOME}, save, reopen the drawer',
+      expectedOutcome: 'The row shows the ${HOME} lookup, never the resolved path',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Remove that row, save, reopen the drawer',
+      expectedOutcome: 'The row is gone',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add an env row referencing an unset variable and click Save',
+      expectedOutcome: 'The drawer stays open with an error next to that row naming the variable',
+      test: () => {},
+    },
+  ],
+};
+
+interface ShellExecSnapshot {
+  allowlist?: string[];
+  denylist?: string[];
+  env?: Record<string, string>;
+}
+
+test.describe(
+  'Shell Exec env settings (live API)',
+  { annotation: suiteAnnotations(liveEnvSuite) },
+  () => {
+    let snapshot: ShellExecSnapshot;
+
+    test.beforeEach(async ({ page }) => {
+      const res = await page.request.get('/api/v1/tool-settings');
+      expect(res.ok()).toBe(true);
+      const tools = (await res.json()) as Array<ShellExecSnapshot & { toolId: string }>;
+      const shell = tools.find((t) => t.toolId === 'shell_exec')!;
+      snapshot = { allowlist: shell.allowlist, denylist: shell.denylist, env: shell.env };
+    });
+
+    // Restore only what these tests change, via PATCH rather than Reset
+    // Defaults — a DELETE would wipe a developer's local shell_exec config
+    // when Playwright reuses their running dev server.
+    test.afterEach(async ({ page }) => {
+      const res = await page.request.patch('/api/v1/tool-settings/shell_exec', {
+        data: {
+          allowlist: snapshot.allowlist ?? [],
+          denylist: snapshot.denylist ?? [],
+          env: snapshot.env ?? {},
+        },
+      });
+      expect(res.ok(), await res.text()).toBe(true);
+    });
+
+    async function openShellExec(page: Page) {
+      await page.goto('/settings?section=tools');
+      await toolRow(page, 'Shell Exec').click();
+      const drawer = page.locator('dialog[open]');
+      await expect(drawer.getByLabel('Allowlist (one glob per line)')).toBeVisible();
+      return drawer;
+    }
+
+    test('an allowlist-only save succeeds @user-workflow', async ({ page }, testInfo) => {
+      const drawer = await openShellExec(page);
+      await pauseBeforeAction(page, testInfo);
+
+      await drawer.getByLabel('Allowlist (one glob per line)').fill('gh *\necho *');
+      await drawer.getByRole('button', { name: 'Save' }).click();
+
+      await expect(page.getByRole('alert').filter({ hasText: 'Shell Exec updated' })).toBeVisible();
+      await expect(drawer).toBeHidden();
+    });
+
+    test('an env row keeps its ${VAR} lookup after saving, and can be removed @user-workflow', async ({
+      page,
+    }, testInfo) => {
+      let drawer = await openShellExec(page);
+      await pauseBeforeAction(page, testInfo);
+
+      await drawer.getByLabel('Add variable name').fill('E2E_HOME_220');
+      await drawer.getByLabel('Value for new variable').fill('${HOME}');
+      await drawer.getByRole('button', { name: 'Add', exact: true }).click();
+      await drawer.getByRole('button', { name: 'Save' }).click();
+      await expect(drawer).toBeHidden();
+
+      // Regression for #220: the reopened drawer must show the stored lookup,
+      // not HOME's resolved path.
+      drawer = await openShellExec(page);
+      const value = drawer.getByLabel('Value for E2E_HOME_220');
+      await expect(value).toHaveValue('${HOME}');
+
+      await drawer
+        .getByRole('button', { name: 'Remove environment variable E2E_HOME_220' })
+        .click();
+      await drawer.getByRole('button', { name: 'Save' }).click();
+      await expect(drawer).toBeHidden();
+
+      drawer = await openShellExec(page);
+      await expect(drawer.getByLabel('Value for E2E_HOME_220')).toHaveCount(0);
+    });
+
+    test('a row referencing an unset variable shows its error in place @user-workflow', async ({
+      page,
+    }, testInfo) => {
+      const drawer = await openShellExec(page);
+      await pauseBeforeAction(page, testInfo);
+
+      await drawer.getByLabel('Add variable name').fill('E2E_BAD_220');
+      await drawer.getByLabel('Value for new variable').fill('${E2E_UNSET_VAR_220}');
+      await drawer.getByRole('button', { name: 'Add', exact: true }).click();
+      await drawer.getByRole('button', { name: 'Save' }).click();
+
+      const value = drawer.getByLabel('Value for E2E_BAD_220');
+      await expect(value).toHaveAttribute('aria-invalid', 'true');
+      const errorId = await value.getAttribute('aria-describedby');
+      await expect(drawer.locator(`[id="${errorId}"]`)).toContainText('E2E_UNSET_VAR_220');
+      await expect(drawer).toBeVisible();
+    });
+  },
+);

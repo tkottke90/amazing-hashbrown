@@ -8,14 +8,24 @@ import {
   deleteToolSettingHandler,
   refreshToolSettingsHandler,
   listAvailableEnvVarsHandler,
+  type HandlerFailure,
 } from './tool-settings.handlers.js';
 
 export const toolSettingsRouter = Router();
 
+// fieldErrors carries per-row env validation failures so the drawer can show
+// each one next to its row (issue #220); absent for every other failure.
+function sendFailure(res: Response, result: HandlerFailure): void {
+  res.status(result.status).json({
+    error: result.error,
+    ...(result.fieldErrors ? { fieldErrors: result.fieldErrors } : {}),
+  });
+}
+
 toolSettingsRouter.get('/', (_req: Request, res: Response) => {
-  const result = listToolSettingsHandler();
+  const result = listToolSettingsHandler(configManager.getConfigDir());
   if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+    sendFailure(res, result);
     return;
   }
   res.json(result.data);
@@ -26,7 +36,7 @@ toolSettingsRouter.get('/', (_req: Request, res: Response) => {
 toolSettingsRouter.get('/shell_exec/env-vars', (_req: Request, res: Response) => {
   const result = listAvailableEnvVarsHandler();
   if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+    sendFailure(res, result);
     return;
   }
   res.json(result.data);
@@ -40,7 +50,7 @@ toolSettingsRouter.patch('/:toolId', (req: Request, res: Response) => {
     () => configManager.reload(),
   );
   if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+    sendFailure(res, result);
     return;
   }
   res.json(result.data);
@@ -53,7 +63,7 @@ toolSettingsRouter.delete('/:toolId', (req: Request, res: Response) => {
     () => configManager.reload(),
   );
   if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+    sendFailure(res, result);
     return;
   }
   res.json(result.data);
@@ -63,9 +73,9 @@ toolSettingsRouter.delete('/:toolId', (req: Request, res: Response) => {
 // triggered automatically by GET / just from loading the page, matching the
 // existing MCP servers panel's "no side effects from viewing a page" rule.
 toolSettingsRouter.post('/refresh', async (_req: Request, res: Response) => {
-  const result = await refreshToolSettingsHandler(toolsManager);
+  const result = await refreshToolSettingsHandler(toolsManager, configManager.getConfigDir());
   if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+    sendFailure(res, result);
     return;
   }
   res.json(result.data);

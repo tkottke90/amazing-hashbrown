@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -14,6 +14,7 @@ import {
   deleteToolSettingHandler,
   refreshToolSettingsHandler,
   listAvailableEnvVarsHandler,
+  readRawToolsConfig,
 } from './tool-settings.handlers.js';
 
 // listResolvedToolSettings() (which every handler above calls) reads
@@ -54,9 +55,52 @@ describe('routes/v1/tool-settings.handlers', () => {
     rmSync(configDir, { recursive: true, force: true });
   });
 
+  function writeConfig(tools: Record<string, unknown>): void {
+    writeFileSync(join(configDir, 'config.yaml'), yaml.stringify({ tools }), 'utf8');
+  }
+
+  // Issue #220: config-manager interpolates ${VAR} lookups at load time, so
+  // anything built from env.tools carries resolved secrets. The settings UI
+  // must see the raw lookup syntax, or it renders the secret and then fails
+  // to save it back.
+  describe('readRawToolsConfig()', () => {
+    it('returns the tools section exactly as written, lookups unresolved [unit]', () => {
+      process.env['RAW_CFG_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${RAW_CFG_SECRET_220}' } } });
+      expect(readRawToolsConfig(configDir)['shell_exec']).to.deep.equal({
+        env: { GH_TOKEN: '${RAW_CFG_SECRET_220}' },
+      });
+      delete process.env['RAW_CFG_SECRET_220'];
+    });
+
+    it('returns an empty map when config.yaml does not exist [unit]', () => {
+      expect(readRawToolsConfig(configDir)).to.deep.equal({});
+    });
+
+    it('falls back to an empty map instead of throwing when the tools section is malformed [unit]', () => {
+      writeFileSync(join(configDir, 'config.yaml'), yaml.stringify({ tools: 'not-a-map' }), 'utf8');
+      expect(readRawToolsConfig(configDir)).to.deep.equal({});
+    });
+  });
+
   describe('listToolSettingsHandler()', () => {
+    it('never exposes a resolved env value, only the stored lookup (issue #220) [unit]', () => {
+      process.env['LIST_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${LIST_SECRET_220}' } } });
+      const result = listToolSettingsHandler(configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const shell = result.data.find((t) => t.toolId === 'shell_exec')!;
+        expect(shell['env']).to.deep.equal({ GH_TOKEN: '${LIST_SECRET_220}' });
+        expect(JSON.stringify(result.data), 'secret leaked into the response').to.not.include(
+          's3cret-value',
+        );
+      }
+      delete process.env['LIST_SECRET_220'];
+    });
+
     it('returns every catalog tool, resolved', () => {
-      const result = listToolSettingsHandler();
+      const result = listToolSettingsHandler(configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         expect(result.data.map((t) => t.toolId)).to.include.members(['web_fetch', 'wiki_search']);
@@ -131,66 +175,83 @@ describe('routes/v1/tool-settings.handlers', () => {
       expect(reloaded).to.equal(1);
     });
 
-    describe('shell_exec env patch validation (issue #189)', () => {
-      it('400s on a lowercase env key and names it', () => {
-        const result = patchToolSettingHandler(
-          'shell_exec',
-          { env: { gh_token: '${GH_TOKEN}' } },
-          configDir,
-        );
-        expect(result.ok).to.equal(false);
-        if (!result.ok) {
-          expect(result.status).to.equal(400);
-          expect(result.error).to.include('gh_token');
-        }
-      });
+    // Issue #220: env values may be ${VAR} lookups, literals or a mix; every
+    // bad row is reported with its key so the drawer can show it in place.
+    describe('shell_exec env patch validation (issues #189, #220)', () => {
+      function fieldErrorKeys(result: ReturnType<typeof patchToolSettingHandler>): string[] {
+        return result.ok ? [] : Object.keys(result.fieldErrors ?? {});
+      }
 
-      it('400s on a plain (non-lookup) value', () => {
+      it('400s on a lowercase env key and reports it against that row [unit]', () => {
         const result = patchToolSettingHandler(
           'shell_exec',
-          { env: { GH_TOKEN: 'abc123' } },
-          configDir,
-        );
-        expect(result.ok).to.equal(false);
-        if (!result.ok) {
-          expect(result.status).to.equal(400);
-          expect(result.error).to.include('${VAR}');
-        }
-      });
-
-      it('400s when the value contains more than the lookup syntax', () => {
-        const result = patchToolSettingHandler(
-          'shell_exec',
-          { env: { GH_TOKEN: 'Bearer ${GH_TOKEN}' } },
+          { env: { gh_token: '${HOME}' } },
           configDir,
         );
         expect(result.ok).to.equal(false);
         if (!result.ok) expect(result.status).to.equal(400);
+        expect(fieldErrorKeys(result)).to.deep.equal(['env.gh_token']);
       });
 
-      it('400s on a variable that is not set, listing it; succeeds once it is set', () => {
+      it('accepts a literal value, since non-secret values like a custom PATH are allowed [unit]', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { PATH: '/opt/bin:/usr/bin' } },
+          configDir,
+        );
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.shell_exec.env).to.deep.equal({ PATH: '/opt/bin:/usr/bin' });
+      });
+
+      it('accepts a value mixing a lookup with literal text [unit]', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { TOOLS_DIR: '${HOME}/bin' } },
+          configDir,
+        );
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+      });
+
+      it('400s on a reference to an unset variable, naming the row and the variable; succeeds once set [unit]', () => {
         delete process.env['DOES_NOT_EXIST_XYZ_9'];
         const missing = patchToolSettingHandler(
           'shell_exec',
-          { env: { GH_TOKEN: '${DOES_NOT_EXIST_XYZ_9}' } },
+          { env: { GH_TOKEN: 'Bearer ${DOES_NOT_EXIST_XYZ_9}' } },
           configDir,
         );
         expect(missing.ok).to.equal(false);
         if (!missing.ok) {
           expect(missing.status).to.equal(400);
-          expect(missing.error).to.include('DOES_NOT_EXIST_XYZ_9');
+          const messages = missing.fieldErrors?.['env.GH_TOKEN'] ?? [];
+          expect(messages).to.have.length(1);
+          expect(messages[0]).to.include('DOES_NOT_EXIST_XYZ_9');
+          expect(messages[0], 'error messages must never echo the submitted value').to.not.include(
+            'Bearer',
+          );
         }
         process.env['DOES_NOT_EXIST_XYZ_9'] = 'sentinel-value';
         const present = patchToolSettingHandler(
           'shell_exec',
-          { env: { GH_TOKEN: '${DOES_NOT_EXIST_XYZ_9}' } },
+          { env: { GH_TOKEN: 'Bearer ${DOES_NOT_EXIST_XYZ_9}' } },
           configDir,
         );
         expect(present.ok).to.equal(true);
         delete process.env['DOES_NOT_EXIST_XYZ_9'];
       });
 
-      it('persists a valid env entry to config.yaml and returns it', () => {
+      it('reports every invalid row, not only the first, with a summary error [unit]', () => {
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { env: { bad_name: 'x', OK_ROW: 'fine', MISSING: '${UNSET_VAR_220_A}' } },
+          configDir,
+        );
+        expect(result.ok).to.equal(false);
+        expect(fieldErrorKeys(result)).to.have.members(['env.bad_name', 'env.MISSING']);
+        if (!result.ok) expect(result.error).to.include('2');
+      });
+
+      it('persists a valid env entry to config.yaml as written, lookup unresolved [unit]', () => {
         process.env['GH_TOKEN_TEST_VAR'] = 'sentinel-value';
         const result = patchToolSettingHandler(
           'shell_exec',
@@ -208,6 +269,51 @@ describe('routes/v1/tool-settings.handlers', () => {
           GH_TOKEN: '${GH_TOKEN_TEST_VAR}',
         });
         delete process.env['GH_TOKEN_TEST_VAR'];
+      });
+
+      it('clears stored env when saved with an empty map [unit]', () => {
+        writeConfig({ shell_exec: { env: { PATH: '/opt/bin' } } });
+        const result = patchToolSettingHandler('shell_exec', { env: {} }, configDir);
+        expect(result.ok).to.equal(true);
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.shell_exec.env).to.deep.equal({});
+      });
+
+      // The #220 repro: the drawer resends everything it loaded. That must
+      // round-trip even when the stored env holds lookups and literals.
+      it('saves an unchanged GET -> PATCH round-trip of shell_exec settings [unit]', () => {
+        writeConfig({
+          shell_exec: { allowlist: ['gh *'], env: { PATH: '${HOME}/bin:/usr/bin', X: 'lit' } },
+        });
+        const listed = listToolSettingsHandler(configDir);
+        if (!listed.ok) throw new Error('list failed');
+        const shell = listed.data.find((t) => t.toolId === 'shell_exec')!;
+        const result = patchToolSettingHandler(
+          'shell_exec',
+          { allowlist: shell['allowlist'], denylist: shell['denylist'] ?? [], env: shell['env'] },
+          configDir,
+        );
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+      });
+    });
+
+    // Zod 4's .partial() still applies field defaults, so validating a patch
+    // of one field used to write every *other* field's default into
+    // config.yaml — including shell_exec's host PATH/HOME/USER, which is how
+    // a literal PATH got stored and then rejected on the next save (#220).
+    describe('only persists the extra fields the client sent (issue #220)', () => {
+      it('saving only the allowlist writes no env, workingDirectory or denylist [unit]', () => {
+        const result = patchToolSettingHandler('shell_exec', { allowlist: ['gh *'] }, configDir);
+        expect(result.ok).to.equal(true);
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.shell_exec).to.deep.equal({ allowlist: ['gh *'] });
+      });
+
+      it('saving one web_fetch field leaves a stored sibling field untouched [unit]', () => {
+        writeConfig({ web_fetch: { respectRobotsTxt: false } });
+        patchToolSettingHandler('web_fetch', { timeoutMs: 5000 }, configDir);
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.web_fetch).to.deep.equal({ respectRobotsTxt: false, timeoutMs: 5000 });
       });
     });
   });
@@ -283,8 +389,21 @@ describe('routes/v1/tool-settings.handlers', () => {
       rmSync(mcpDir, { recursive: true, force: true });
     });
 
+    it('never exposes a resolved env value after a refresh (issue #220) [unit]', async () => {
+      process.env['REFRESH_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${REFRESH_SECRET_220}' } } });
+      const result = await refreshToolSettingsHandler(manager, configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(JSON.stringify(result.data)).to.not.include('s3cret-value');
+        const shell = result.data.find((t) => t.toolId === 'shell_exec')!;
+        expect(shell['env']).to.deep.equal({ GH_TOKEN: '${REFRESH_SECRET_220}' });
+      }
+      delete process.env['REFRESH_SECRET_220'];
+    });
+
     it('returns the resolved list unchanged when no MCP servers are configured', async () => {
-      const result = await refreshToolSettingsHandler(manager);
+      const result = await refreshToolSettingsHandler(manager, configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         expect(result.data.map((t) => t.toolId)).to.not.include('pushover:pushover_send');
@@ -312,7 +431,7 @@ describe('routes/v1/tool-settings.handlers', () => {
           ],
         ]),
       );
-      const result = await refreshToolSettingsHandler(manager);
+      const result = await refreshToolSettingsHandler(manager, configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         const row = result.data.find((t) => t.toolId === 'pushover:pushover_send');

@@ -15,6 +15,7 @@ import {
   type ToolSettingItem,
   type ToolSettingPatch,
 } from '@/services/tool-settings-api';
+import { RequestError } from '@/utils/fetch.utils';
 import type { JSX } from 'preact';
 
 // Per-tool global admin drawer (Settings > Tools) — trigger-driven, same
@@ -39,6 +40,25 @@ function linesToArray(text: string): string[] {
 // Same pattern the API side validates with — config-manager only interpolates
 // uppercase ${VAR} lookups, so a lowercase name would stay a literal string.
 const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+
+// "${GH_TOKEN}" pasted into the name field means the name GH_TOKEN.
+function normalizeEnvName(raw: string): string {
+  const trimmed = raw.trim();
+  return /^\$\{(.+)\}$/.exec(trimmed)?.[1] ?? trimmed;
+}
+
+function lookupFor(name: string): string {
+  return name ? '${' + name + '}' : '';
+}
+
+// API fieldErrors are keyed "env.<NAME>"; keep only the env rows, by name.
+function envErrorsByName(fieldErrors: Record<string, string[]>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(fieldErrors)
+      .filter(([key]) => key.startsWith('env.'))
+      .map(([key, messages]) => [key.slice('env.'.length), messages.join(' ')]),
+  );
+}
 
 interface EnvEntry {
   name: string;
@@ -98,7 +118,11 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   const denylist = useSignal(arrayToLines(tool.denylist));
   const envEntries = useSignal<EnvEntry[]>([]);
   const envNameQuery = useSignal('');
+  const newEnvValue = useSignal('');
+  // Until the user types a value, it follows the name as a ${NAME} lookup.
+  const newEnvValueTouched = useSignal(false);
   const envWarn = useSignal<string | null>(null);
+  const envErrors = useSignal<Record<string, string>>({});
 
   const isSaving = useSignal(false);
   const isResetting = useSignal(false);
@@ -128,7 +152,10 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
     denylist.value = arrayToLines(tool.denylist);
     envEntries.value = Object.entries(tool.env ?? {}).map(([name, value]) => ({ name, value }));
     envNameQuery.value = '';
+    newEnvValue.value = '';
+    newEnvValueTouched.value = false;
     envWarn.value = null;
+    envErrors.value = {};
     saveError.value = null;
     if (tool.toolId === 'shell_exec') {
       fetchShellEnvVarNames()
@@ -141,20 +168,57 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   // free-text-only (still fully usable, just without suggestions).
   const envVarNames = useSignal<string[]>([]);
 
-  function addEnvEntry(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed || envEntries.value.some((e) => e.name === trimmed)) return;
-    envEntries.value = [...envEntries.value, { name: trimmed, value: '${' + trimmed + '}' }];
+  function setNewEnvName(raw: string) {
+    envNameQuery.value = raw;
+    envWarn.value = null;
+    if (!newEnvValueTouched.value) newEnvValue.value = lookupFor(normalizeEnvName(raw));
+  }
+
+  function addEnvEntry() {
+    const name = normalizeEnvName(envNameQuery.value);
+    if (!name || envEntries.value.some((e) => e.name === name)) return;
+    const value = newEnvValueTouched.value ? newEnvValue.value : lookupFor(name);
+    envEntries.value = [...envEntries.value, { name, value }];
     envNameQuery.value = '';
-    envWarn.value = ENV_VAR_NAME_RE.test(trimmed)
+    newEnvValue.value = '';
+    newEnvValueTouched.value = false;
+    envWarn.value = ENV_VAR_NAME_RE.test(name)
       ? null
       : 'config-manager only supports uppercase names — save will be rejected';
+  }
+
+  function clearEnvError(name: string) {
+    if (!(name in envErrors.value)) return;
+    const rest = { ...envErrors.value };
+    delete rest[name];
+    envErrors.value = rest;
+  }
+
+  function updateEnvValue(index: number, value: string) {
+    const entry = envEntries.value[index];
+    if (!entry) return;
+    envEntries.value = envEntries.value.map((e, j) => (j === index ? { ...e, value } : e));
+    clearEnvError(entry.name);
+  }
+
+  function removeEnvEntry(index: number) {
+    const entry = envEntries.value[index];
+    envEntries.value = envEntries.value.filter((_, j) => j !== index);
+    if (entry) clearEnvError(entry.name);
+  }
+
+  function onEnvAddKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addEnvEntry();
+    }
   }
 
   async function handleSave(e: Event) {
     e.preventDefault();
     isSaving.value = true;
     saveError.value = null;
+    envErrors.value = {};
     try {
       const patch: ToolSettingPatch = {
         description: description.value,
@@ -179,12 +243,9 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
       } else if (tool.toolId === 'shell_exec') {
         patch.allowlist = linesToArray(allowlist.value);
         patch.denylist = linesToArray(denylist.value);
-        // Omitted when empty — saving with an empty editor must not wipe
-        // pre-existing config.yaml entries; individual rows are still removed
-        // because untouched entries stay in the list.
-        if (envEntries.value.length > 0) {
-          patch.env = Object.fromEntries(envEntries.value.map((e) => [e.name, e.value]));
-        }
+        // Always sent: the drawer was loaded from what config.yaml holds, so
+        // an empty editor means "no env" and {} is how the last row is removed.
+        patch.env = Object.fromEntries(envEntries.value.map((e) => [e.name, e.value]));
       }
       const updated = await patchToolSetting(tool.toolId, patch);
       onSaved(updated);
@@ -192,6 +253,9 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
       close();
     } catch (err) {
       saveError.value = err instanceof Error ? err.message : 'Failed to save';
+      if (err instanceof RequestError && err.fieldErrors) {
+        envErrors.value = envErrorsByName(err.fieldErrors);
+      }
     } finally {
       isSaving.value = false;
     }
@@ -389,46 +453,86 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
               />
             </div>
 
-            {/* Environment variables — names + "${VAR}" lookup syntax only;
-                the API never exposes resolved values (issue #189). */}
+            {/* Environment variables — values are shown exactly as stored in
+                config.yaml (lookups unresolved); the API never returns a
+                resolved value (issue #220). */}
             <div class="space-y-2">
               <Label>Environment variables</Label>
-              {envEntries.value.map((entry, i) => (
-                <div key={entry.name} class="flex items-center gap-2">
-                  <span class="min-w-0 flex-1 truncate text-sm" title={entry.name}>
-                    {entry.name}
-                  </span>
-                  <code class="rounded bg-muted px-1.5 py-0.5 text-xs">{entry.value}</code>
+              <p class="text-xs text-muted-foreground">
+                PATH, HOME and USER are always set. Add a row with the same name to override one.
+                Use {'${VAR}'} to read a value from the API&apos;s environment, or type a literal.
+                Literals are saved to config.yaml as plain text.
+              </p>
+              {envEntries.value.map((entry, i) => {
+                const error = envErrors.value[entry.name];
+                const errorId = `tool-settings-shell-env-error-${i}`;
+                return (
+                  <div key={entry.name} class="space-y-1">
+                    <div class="flex items-center gap-2">
+                      <span class="w-40 shrink-0 truncate text-sm" title={entry.name}>
+                        {entry.name}
+                      </span>
+                      <Input
+                        className="min-w-0 flex-1 font-mono text-xs"
+                        aria-label={`Value for ${entry.name}`}
+                        aria-invalid={error ? true : undefined}
+                        aria-describedby={error ? errorId : undefined}
+                        value={entry.value}
+                        onInput={(e) => updateEnvValue(i, (e.target as HTMLInputElement).value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Remove environment variable ${entry.name}`}
+                        onClick={() => removeEnvEntry(i)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    {error && (
+                      <p id={errorId} class="text-xs text-destructive">
+                        {error}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              <div class="space-y-1">
+                <div class="flex items-end gap-2">
+                  <div class="w-40 shrink-0 space-y-1">
+                    <Label htmlFor="tool-settings-shell-env-name">Add variable name</Label>
+                    <Input
+                      id="tool-settings-shell-env-name"
+                      value={envNameQuery.value}
+                      placeholder="e.g. GH_TOKEN"
+                      list="tool-settings-shell-env-names"
+                      onInput={(e) => setNewEnvName((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e) => onEnvAddKeyDown(e as KeyboardEvent)}
+                    />
+                  </div>
+                  <Input
+                    className="min-w-0 flex-1 font-mono text-xs"
+                    aria-label="Value for new variable"
+                    placeholder="${VAR} or a literal"
+                    value={newEnvValue.value}
+                    onInput={(e) => {
+                      newEnvValue.value = (e.target as HTMLInputElement).value;
+                      newEnvValueTouched.value = true;
+                    }}
+                    onKeyDown={(e) => onEnvAddKeyDown(e as KeyboardEvent)}
+                  />
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    aria-label={`Remove environment variable ${entry.name}`}
-                    onClick={() => (envEntries.value = envEntries.value.filter((_, j) => j !== i))}
+                    disabled={!normalizeEnvName(envNameQuery.value)}
+                    onClick={addEnvEntry}
                   >
-                    Remove
+                    Add
                   </Button>
                 </div>
-              ))}
-              <div class="space-y-1">
-                <Label htmlFor="tool-settings-shell-env-name">Add variable name</Label>
-                <Input
-                  id="tool-settings-shell-env-name"
-                  value={envNameQuery.value}
-                  placeholder="e.g. GH_TOKEN"
-                  list="shell-env-var-names"
-                  onInput={(e) => {
-                    envNameQuery.value = (e.target as HTMLInputElement).value;
-                    envWarn.value = null;
-                  }}
-                  onKeyDown={(e) => {
-                    if ((e as KeyboardEvent).key === 'Enter') {
-                      e.preventDefault();
-                      addEnvEntry(envNameQuery.value);
-                    }
-                  }}
-                />
-                <datalist id="shell-env-vars-datalist">
+                <datalist id="tool-settings-shell-env-names">
                   {envVarNames.value
                     .filter(
                       (n) =>

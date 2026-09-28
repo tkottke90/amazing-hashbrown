@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { ShellExecutorConfig } from './config.js';
+import { defaultShellEnv, type ShellExecutorConfig } from './config.js';
 import type { AuditWriter, AuditEntry } from './audit.js';
 import type { ApprovalCallback, ShellCommandResult } from './types.js';
 import { evaluatePolicy } from './policy.js';
@@ -22,7 +22,7 @@ function spawnCommand(command: string, config: ShellExecutorConfig): Promise<She
     const proc = spawn(command, {
       shell: true,
       cwd: config.workingDirectory,
-      env: config.env as NodeJS.ProcessEnv,
+      env: { ...defaultShellEnv(), ...config.env },
     });
 
     const stdoutChunks: string[] = [];
