@@ -3,7 +3,7 @@ import type { Signal } from '@preact/signals';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
 import type { TriggerSource } from '../services/tasks-api';
-import { consumeSsePost } from '../lib/sse';
+import { consumeSsePost, SseHttpError } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
 import { providers, defaultProviderName, pickDefaultModelSelection } from './use-providers';
@@ -229,6 +229,14 @@ export interface ThreadInstance {
   // exist yet. taskRun is only set on a 'task' (automated run) thread.
   threadType: Signal<ThreadType | null>;
   taskRun: Signal<TaskRunInfo | null>;
+  // True while a turn this tab is not streaming holds the thread — a timed
+  // wake-up or sub-agent notification turn, or this tab's own turn after
+  // its live stream dropped. Seeded from the server's `activeTurn` on
+  // hydrate, then driven by thread_turn_started/completed broadcasts
+  // (use-live-events.ts). Pages treat it like isStreaming: Stop instead of
+  // Send. See docs/superpowers/specs/2026-09-27-agent-wait-design.md §7.
+  backgroundTurnActive: Signal<boolean>;
+  markBackgroundTurn: (active: boolean) => void;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
   sendMessage: (content: string, attachmentId?: string) => Promise<void>;
@@ -287,6 +295,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const waitingProviderName = signal<string | null>(null);
   const threadType = signal<ThreadType | null>(null);
   const taskRun = signal<TaskRunInfo | null>(null);
+  const backgroundTurnActive = signal(false);
 
   let _currentAssistantId: string | null = null;
   let _currentUserId: string | null = null;
@@ -329,12 +338,15 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         model?: string | null;
         type?: ThreadType;
         taskRun?: TaskRunInfo;
+        activeTurn?: boolean;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
         messages.value = hydrated;
         threadType.value = data.type ?? null;
         taskRun.value = data.taskRun ?? null;
+        // A turn this tab is streaming itself is not a background turn.
+        backgroundTurnActive.value = !isStreaming.value && (data.activeTurn ?? false);
         summaryPath.value = data.summaryPath ?? null;
         // Scan backward for the last *pending* hitl_prompt rather than only
         // checking the final message — a task-originated pause appends a
@@ -614,6 +626,26 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     });
   }
 
+  // A turn's POST or stream read failed. A user abort (Stop) is not a
+  // failure. An HTTP error is the server refusing the request — show its
+  // message. Anything else means the live connection dropped mid-turn: the
+  // server keeps running the turn, so say so rather than blaming the
+  // provider; use-live-events.ts re-hydrates this thread when the server
+  // broadcasts thread_turn_completed. See
+  // docs/superpowers/specs/2026-09-27-agent-wait-design.md §1.
+  function handleStreamFailure(err: unknown): void {
+    if ((err as { name?: string }).name === 'AbortError') return;
+    if (err instanceof SseHttpError) {
+      handleEvent({ type: 'stream_error', error: err.message, errorCategory: 'unknown' });
+      return;
+    }
+    handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'connection_lost' });
+    // Reconcile with the server right away: if the turn already finished
+    // this shows its result; if it is still running, activeTurn marks the
+    // thread busy until thread_turn_completed re-hydrates it.
+    void hydrate();
+  }
+
   async function sendMessage(content: string, attachmentId?: string): Promise<void> {
     const userId = randomUUID();
     const assistantId = randomUUID();
@@ -655,9 +687,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
@@ -699,9 +729,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
@@ -750,12 +778,15 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         _abortController.signal,
       );
     } catch (err: unknown) {
-      if ((err as { name?: string }).name !== 'AbortError') {
-        handleEvent({ type: 'stream_error', error: String(err), errorCategory: 'network' });
-      }
+      handleStreamFailure(err);
     } finally {
       _abortController = null;
     }
+  }
+
+  function markBackgroundTurn(active: boolean): void {
+    // This tab's own live stream already reflects its turn.
+    backgroundTurnActive.value = active && !isStreaming.value;
   }
 
   function stopGeneration(): void {
@@ -790,6 +821,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     waitingProviderName,
     threadType,
     taskRun,
+    backgroundTurnActive,
+    markBackgroundTurn,
     setThreadModel,
     hydrate,
     sendMessage,

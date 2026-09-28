@@ -40,3 +40,33 @@ describe('chat/AppBroadcastEventSchema — task_plan_updated', () => {
     expect(parsed.success).to.equal(false);
   });
 });
+
+describe('chat/AppBroadcastEventSchema — thread turn lifecycle', () => {
+  it('accepts a thread_turn_started event from a wake-up, so a client can mark the thread busy [unit]', () => {
+    const event = { type: 'thread_turn_started', threadId: 't-1', source: 'wakeup' };
+    const parsed = AppBroadcastEventSchema.safeParse(event);
+    expect(parsed.success).to.equal(true);
+    expect(parsed.data).to.deep.equal(event);
+  });
+
+  it('rejects a thread_turn_started event with an unknown source, since the UI labels the busy state by source [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'thread_turn_started',
+      threadId: 't-1',
+      source: 'cron',
+    });
+    expect(parsed.success).to.equal(false);
+  });
+
+  it('accepts a thread_turn_completed event carrying only the thread id [unit]', () => {
+    const event = { type: 'thread_turn_completed', threadId: 't-1' };
+    const parsed = AppBroadcastEventSchema.safeParse(event);
+    expect(parsed.success).to.equal(true);
+    expect(parsed.data).to.deep.equal(event);
+  });
+
+  it('rejects a thread_turn_completed event with no threadId, since there is nothing to re-hydrate [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({ type: 'thread_turn_completed' });
+    expect(parsed.success).to.equal(false);
+  });
+});

@@ -307,6 +307,18 @@ describe('agents/tool-access.middleware', () => {
       expect(systemContent).to.include('<shell_execution>');
     });
 
+    it("strips an enabled tool's section when this agent does not bind the tool (e.g. schedule_wakeup in a task run) [unit]", async () => {
+      // shell_exec is enabled for the thread but this agent's request offers
+      // only web_fetch — guidance for a tool the model cannot call would only
+      // mislead it.
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch'], 't1', HARNESS_TEXT),
+      );
+      expect(systemContent).to.not.include('<shell_execution>');
+      expect(systemContent).to.include('<web_fetch>');
+    });
+
     it('filters sections and still appends instruction blocks in the same call', async () => {
       toolsConfig['shell_exec'] = { enabled: false };
       toolsConfig['web_fetch'] = { instructions: 'Always summarize concisely.' };

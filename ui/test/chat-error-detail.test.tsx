@@ -14,6 +14,16 @@ describe('ChatErrorDetail', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders connection-lost copy that says the agent may still be working, not a provider failure [unit]', () => {
+    render(<ChatErrorDetail category="connection_lost" />);
+    expect(
+      screen.getByText(
+        'Lost the live connection to the server. The agent may still be working — this thread will refresh when it finishes.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't reach the provider/)).not.toBeInTheDocument();
+  });
+
   it('renders neutral "stopped" copy for the cancelled category, not an error message', () => {
     render(<ChatErrorDetail category="cancelled" />);
     expect(screen.getByText('Stopped before finishing.')).toBeInTheDocument();

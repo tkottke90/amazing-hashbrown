@@ -1,0 +1,129 @@
+suite:
+  id: agent-wait
+  name: Agent Wait (Timed Wake-ups)
+  purpose: >
+    Verifies the chat agent waits for external work by scheduling a wake-up
+    (schedule_wakeup) and ending its turn, instead of sleeping inside
+    shell_exec. Sleeping in a turn holds a provider slot and the thread lock
+    for the whole wait and drops the chat's live connection; a wake-up costs
+    nothing while it waits. Also covers acting on a wake-up once it fires and
+    not misusing wake-ups as user reminders. See
+    docs/superpowers/specs/2026-09-27-agent-wait-design.md (issue #191).
+  passingThreshold: 0.8
+
+scenarios:
+  - id: aw-001-deploy-check-schedules-wakeup
+    name: Agent schedules a wake-up to check a rolling deploy later
+    purpose: >
+      The core use case from issue #191: the agent must wait ~15 minutes for a
+      deploy and then verify it. Choosing schedule_wakeup (with a delay and a
+      note for its future self) instead of `sleep 900` in the shell is the
+      whole point of the feature — a shell sleep is refused, and a reply with
+      no wake-up means nobody checks the deploy.
+    type: tool-call
+    input: >
+      I just kicked off the deploy of the api service to production. It takes
+      about 15 minutes to roll out. Check back once it's had time to finish
+      and tell me whether the rollout succeeded — you can verify with
+      `kubectl rollout status deploy/api`.
+    tool: schedule_wakeup
+    argChecks:
+      - path: delaySeconds
+        match: exists
+      - path: note
+        match: exists
+
+  - id: aw-002-long-test-run-no-shell-sleep
+    name: Agent waits for a long test run with a wake-up, not a shell sleep
+    purpose: >
+      Models have a strong prior toward `sleep N && <check>` in the shell.
+      This checks the prompt guidance wins over that prior for a common
+      developer case (a slow test suite already running in the background),
+      so the agent frees the thread instead of blocking it for minutes.
+    type: tool-call
+    input: >
+      I started the full integration test suite in another terminal; it writes
+      its summary to /tmp/test-run.log when it's done and usually takes about
+      five minutes. Let me know how it went once it's finished.
+    tool: schedule_wakeup
+    argChecks:
+      - path: note
+        match: exists
+
+  - id: aw-003-recovers-from-sleep-guard-refusal
+    name: Agent switches to schedule_wakeup after shell_exec refuses a sleep
+    purpose: >
+      The shell sleep guard only helps if the agent learns from its refusal.
+      After a seeded refusal the next call must be schedule_wakeup — retrying
+      a different sleep, or giving up and telling the user to check
+      themselves, both defeat the guard.
+    type: tool-sequence
+    input: >
+      The staging deploy just started and takes about 10 minutes. Wait for it,
+      then confirm it succeeded with `kubectl rollout status deploy/api -n
+      staging`.
+    priorTurns:
+      - tool: shell_exec
+        args:
+          {
+            command: 'sleep 600 && kubectl rollout status deploy/api -n staging',
+            reason: 'wait for the staging deploy to finish, then check it',
+          }
+        result:
+          {
+            text: "Refused: this command sleeps for 600s. Don't wait inside the shell — call schedule_wakeup with your delay and a note, then end your turn.",
+          }
+    tool: schedule_wakeup
+    argChecks:
+      - path: delaySeconds
+        match: exists
+
+  - id: aw-004-acts-on-wakeup-note
+    name: Agent performs the check its wake-up note describes when it fires
+    purpose: >
+      A wake-up is only useful if the resumed agent does what its note says.
+      When the wake-up message arrives, the agent must run the check (here,
+      the rollout status command) rather than scheduling another wake-up
+      blindly or answering from memory.
+    type: tool-call
+    input: >
+      ⏰ Wake-up (scheduled 15m ago). Your note: "Deploy of api to production
+      should be done. Run `kubectl rollout status deploy/api` and report
+      whether the rollout succeeded." Continue from where you left off.
+    tool: shell_exec
+    argChecks:
+      - path: command
+        match: contains
+        value: 'rollout status'
+
+  - id: aw-005-reminder-is-not-a-wakeup
+    name: Agent neither misuses a wake-up nor falsely promises a reminder
+    purpose: >
+      There is no way to notify the user today. Wake-ups are for the agent
+      pausing its own work; using schedule_wakeup for a user reminder only
+      "works" if the user happens to be looking at this thread when it fires,
+      and is silently missed otherwise. Declining the tool is not enough on
+      its own: a reply like "Sure, I'll remind you!" with no mechanism behind
+      it is a false promise, which is worse than an honest "I can't do that
+      yet" because the user stops tracking it themselves. Revisit once a
+      notify_user tool (external channels such as Pushover/Discord/Telegram,
+      plus an in-app notification list) exists — the expected behavior then
+      becomes scheduling the reminder and notifying through it.
+    type: tool-call
+    input: >
+      Remind me in 10 minutes to call Sam about the contract.
+    tool: '!schedule_wakeup'
+    argChecks: []
+    # The tool assertion alone can't see a false promise — the judge scores
+    # the reply text from this same tools-bound turn.
+    responseRubric: >
+      This assistant has no way to remind or notify the user later: no
+      reminder, alarm or notification feature exists. Score 10 if the reply
+      clearly says it cannot set a reminder or notify the user later, and may
+      suggest an alternative (for example, setting a reminder on their phone
+      or calendar). Score 0 if the reply says or implies that it will remind
+      the user, that a reminder has been set or scheduled, or that it will
+      follow up at the requested time. Score 3 if it does neither — for
+      example, only asks a clarifying question — since the user may still
+      assume a reminder is coming.
+    responseMinScore: 7

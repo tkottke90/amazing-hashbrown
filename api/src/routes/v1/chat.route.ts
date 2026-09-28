@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { startSseKeepalive } from './sse-keepalive.js';
 import {
   streamChatToSse,
   resumeChatToSse,
@@ -56,6 +57,7 @@ chatRouter.post('/:threadId', async (req, res) => {
   if (rejectIfTaskRunThread(threadId, res)) return;
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -79,6 +81,7 @@ chatRouter.post('/:threadId', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     req.logger.info(`Inference completed for thread`, { threadId });
     res.end();
   }
@@ -104,6 +107,7 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   if (respondIfTaskPrompt(req, res, { threadId, promptId, answer })) return;
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -117,6 +121,7 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });
@@ -151,6 +156,7 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
   }
 
   setSseHeaders(res);
+  const stopKeepalive = startSseKeepalive(res);
   const startedAt = Date.now();
 
   try {
@@ -164,6 +170,7 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
       ...(errorCategory ? { errorCategory } : {}),
     });
   } finally {
+    stopKeepalive();
     res.end();
   }
 });

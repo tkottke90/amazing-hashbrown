@@ -85,6 +85,15 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
           </div>
         )}
 
+        {thread.backgroundTurnActive.value && (
+          <div
+            data-testid="background-turn-status"
+            class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            The agent is working in the background…
+          </div>
+        )}
+
         {thread.summaryPath.value && (
           <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
             Earlier messages were summarised —{' '}
@@ -111,6 +120,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
               <ThreadMessageItem
                 key={msg.id}
                 message={msg}
+                threadId={workspace.threadId ?? undefined}
                 onHitlAnswer={thread.submitHitlAnswer}
                 onRetry={thread.retryTurn}
               />
@@ -155,7 +165,7 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
             }}
             onSend={handleSend}
             onStop={thread.stopGeneration}
-            isGenerating={thread.isStreaming.value}
+            isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}
             disabled={!!thread.pendingHitlId.value || isBusy}
             providers={providers.value}
             favoriteModels={favoriteModels.value}

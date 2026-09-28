@@ -42,6 +42,8 @@ import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.j
 import { makeCompleteTaskTool } from '../api/src/agents/tools/complete-task.tool.js';
 import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js';
 import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.js';
+import { scheduleWakeupTool } from '../api/src/agents/tools/schedule-wakeup.tool.js';
+import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
@@ -58,7 +60,9 @@ const evalTools = [
   // Safe to bind here even though it can run real commands: tool-call and
   // tool-sequence scenarios only inspect response.tool_calls — the runner
   // never executes the bound tools (see invokeToolCallModel in runner.ts).
-  makeShellExecTool(),
+  // wakeupAvailable matches production chat: the sleep-guard refusal
+  // (seeded in suites/agent-wait.yaml aw-003) names schedule_wakeup.
+  makeShellExecTool(undefined, { wakeupAvailable: true }),
   uploadImageTool,
   wikiSearchTool,
   wikiReadPageTool,
@@ -120,6 +124,11 @@ const evalTools = [
   // Bound in real task runs only when a previous finished run exists; the
   // eval harness never executes tools, so its store lookups never run here.
   makeReadTaskRunTool('eval-task', 'eval-run'),
+  // Bound in production chat and workspace chat (WAKEUP_TOOLS in
+  // chat-agent.ts); suites/agent-wait.yaml needs them offered. Never
+  // executed here, so no wake-up store or registry is needed.
+  scheduleWakeupTool,
+  cancelWakeupTool,
   fakeGenerateImageTool,
 ];
 

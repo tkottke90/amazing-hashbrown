@@ -76,11 +76,33 @@ const TaskPlanUpdatedSchema = z.object({
   plan: z.array(z.object({ step: z.string(), done: z.boolean() })),
 });
 
+// Fired when a system-initiated (headless) turn claims a thread — a timed
+// wake-up firing or a sub-agent completion notification — so an open
+// client can show the thread as busy and offer Stop even though no request
+// of its own is streaming. See
+// docs/superpowers/specs/2026-09-27-agent-wait-design.md §3.
+const ThreadTurnStartedSchema = z.object({
+  type: z.literal('thread_turn_started'),
+  threadId: z.string(),
+  source: z.enum(['wakeup', 'sub_agent']),
+});
+
+// Fired whenever any turn (interactive, headless or task) releases a
+// thread. A client re-hydrates that thread if it has it loaded — the only
+// way it learns the outcome of a headless turn, or of an interactive turn
+// whose live connection it lost.
+const ThreadTurnCompletedSchema = z.object({
+  type: z.literal('thread_turn_completed'),
+  threadId: z.string(),
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
   TaskStartedSchema,
   TaskCompletedSchema,
   TaskPlanUpdatedSchema,
+  ThreadTurnStartedSchema,
+  ThreadTurnCompletedSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

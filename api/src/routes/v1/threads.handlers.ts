@@ -8,6 +8,7 @@ import type {
   ThreadSummary,
 } from '../../services/thread-store.js';
 import type { ToolSettingsStore } from '../../services/tool-settings-store.js';
+import type { Wakeup, WakeupStore } from '../../services/wakeup-store.js';
 import { ALWAYS_ON_TOOL_IDS } from '../../agents/tool-access.js';
 import {
   listResolvedToolSettings,
@@ -52,6 +53,10 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
   // records — powers the read-only run view's header without a second
   // request.
   taskRun?: TaskRunSummary;
+  // True while any turn holds this thread — including a headless wake-up or
+  // sub-agent turn no client is streaming — so a client loading the thread
+  // mid-turn shows it as busy (and can offer Stop).
+  activeTurn: boolean;
 }
 
 export interface TaskRunSummary {
@@ -137,6 +142,9 @@ export function getThreadHandler(
     // Resolves a type='task' thread to its run. Injected (rather than
     // imported) so this handler stays free of the workspace store.
     taskRunFor?: (threadId: string) => TaskRunSummary | null;
+    // Whether a turn currently holds the thread. Injected for the same
+    // reason (the route passes active-sse-writer's mutex check).
+    isTurnActive?: (threadId: string) => boolean;
   } = {},
 ): HandlerResult<ClientThreadDetail> {
   const detail = store.getThread(id, { afterMessageId: opts.afterMessageId });
@@ -146,6 +154,7 @@ export function getThreadHandler(
     ...detail,
     messages: detail.messages.map(toClientMessage),
     ...(taskRun ? { taskRun } : {}),
+    activeTurn: opts.isTurnActive?.(id) ?? false,
   });
 }
 
@@ -205,7 +214,8 @@ export async function forkThreadHandler(
     // but keeps the return type honest without a non-null assertion.
     return notFound(`Forked thread "${newThreadId}" not found immediately after creation`);
   }
-  return ok({ ...forked, messages: forked.messages.map(toClientMessage) });
+  // A brand-new fork has never run a turn.
+  return ok({ ...forked, messages: forked.messages.map(toClientMessage), activeTurn: false });
 }
 
 // Keep this in sync with suites/thread-titles.yaml's scenario `input`
@@ -430,4 +440,23 @@ export function deleteThreadToolsHandler(
   store.resetThreadToolsCustomization(threadId);
 
   return ok(computeThreadTools(toolSettingsStore, store.getThreadMeta(threadId)!, toolsConfig));
+}
+
+// Validates a user action (Cancel / Trigger now) on a wake-up card: it must
+// exist, belong to this thread, and still be pending. The route then asks
+// WakeupRegistry to settle it — the registry, not this handler, does the
+// transition, because triggering must also start the resumed turn. The
+// registry re-checks pending, so a race lost after this check is a 409 too.
+// See docs/superpowers/specs/2026-09-27-agent-wait-design.md §4.
+export function pendingWakeupHandler(
+  store: WakeupStore,
+  threadId: string,
+  wakeupId: string,
+): HandlerResult<Wakeup> {
+  const wakeup = store.get(wakeupId);
+  if (!wakeup || wakeup.threadId !== threadId) {
+    return notFound(`Wake-up "${wakeupId}" not found in thread "${threadId}"`);
+  }
+  if (wakeup.status !== 'pending') return conflict(`Wake-up has already ${wakeup.status}`);
+  return ok(wakeup);
 }

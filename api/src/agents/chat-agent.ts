@@ -16,6 +16,8 @@ import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { makeShellExecTool } from './tools/shell-exec.tool.js';
+import { scheduleWakeupTool } from './tools/schedule-wakeup.tool.js';
+import { cancelWakeupTool } from './tools/cancel-wakeup.tool.js';
 import { uploadImageTool } from './tools/upload-image.tool.js';
 import { makeWikiAddCrossLinkTool } from './tools/wiki-add-cross-link.tool.js';
 import { makeWikiCreatePageTool } from './tools/wiki-create-page.tool.js';
@@ -286,6 +288,13 @@ export const STATIC_CHAT_TOOLS = [
   spawnSubAgentTool,
 ];
 
+// Timed wake-ups (issue #191) — interactive chat and workspace chat only.
+// Deliberately not in STATIC_CHAT_TOOLS, which task and sub-agent builders
+// spread: a task run settles when its turn ends, so there is nothing for a
+// wake-up to resume (docs/superpowers/specs/2026-09-27-agent-wait-design.md
+// D3). Exported for chat-agent.test.ts.
+export const WAKEUP_TOOLS = [scheduleWakeupTool, cancelWakeupTool];
+
 // Skill sources. search_skills and slash-command expansion are built per
 // agent (not shared singletons) because what they read depends on the
 // agent's scope: plain chat sees the global skills; anything scoped to a
@@ -379,8 +388,9 @@ async function buildChatAgent(provider?: string, model?: string) {
   const agent = createAgent({
     model: llm,
     tools: [
-      makeShellExecTool(),
+      makeShellExecTool(undefined, { wakeupAvailable: true }),
       ...STATIC_CHAT_TOOLS,
+      ...WAKEUP_TOOLS,
       ...buildSkillTools(globalSkills),
       ...buildGatedTools(),
       ...buildWikiWriteTools(),
@@ -478,8 +488,9 @@ async function buildWorkspaceChatAgent(
   const agent = createAgent({
     model: llm,
     tools: [
-      makeShellExecTool(workspaceContext.location),
+      makeShellExecTool(workspaceContext.location, { wakeupAvailable: true }),
       ...STATIC_CHAT_TOOLS,
+      ...WAKEUP_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),

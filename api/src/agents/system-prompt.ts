@@ -1069,6 +1069,28 @@ Report the command's actual output, not what you expect it to print. If a comman
 or blocked by policy, say so plainly and offer a path forward — never present a blocked command as
 having succeeded.`;
 
+// Timed wake-ups (issue #191, suites/agent-wait.yaml). Models reach for
+// `sleep N && <check>` in the shell by default; that ties up the turn (and
+// is refused by shell_exec's sleep guard). This steers waiting for
+// external work to schedule_wakeup, insists the turn actually ends after
+// scheduling, asks for a note that makes the future check self-contained
+// (aw-004), and keeps user reminders out of it (aw-005).
+const WAITING_SECTION = `When you have to wait for something outside this conversation — a deploy rolling out, CI or a
+test suite running, a server starting, a long command finishing in the background — call
+schedule_wakeup with how long to wait and a note, then end your turn right away with a one-line
+status for the user ("Deploy is rolling out; I'll check back in 15 minutes."). You will be
+resumed in this conversation with your note when the wake-up fires.
+
+Never wait by sleeping in the shell (sleep, timeout, polling loops): it holds the conversation
+open and is refused.
+
+Write the note for your future self, who will not remember the details: what to check and exactly
+how (the command, URL or file), and what counts as success. When you are woken, do that check
+first, then report or schedule another wake-up only if the work is genuinely still in progress.
+
+If what you are waiting for finishes early, call cancel_wakeup. Wake-ups are for your own work —
+they are not reminders for the user.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
 // domains they meant, but wrote the question straight into its reply instead
@@ -1398,6 +1420,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   },
   { tag: 'rlm', content: RLM_SECTION, requiresAnyOf: ['rlm_query'] },
   { tag: 'shell_execution', content: SHELL_EXECUTION_SECTION, requiresAnyOf: ['shell_exec'] },
+  { tag: 'waiting', content: WAITING_SECTION, requiresAnyOf: ['schedule_wakeup'] },
   { tag: 'image', content: IMAGE_SECTION, requiresAnyOf: ['upload_image'] },
   {
     tag: 'search_skills',

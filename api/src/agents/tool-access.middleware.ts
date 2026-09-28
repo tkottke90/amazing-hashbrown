@@ -158,8 +158,15 @@ export function createToolAccessMiddleware(
       // allBlocks is non-empty below, or a thread with no per-tool custom
       // instructions set and no #tool-name syntax present (the common case)
       // would never have its system message touched at all, silently
-      // defeating this filter.
-      const filteredContent = filterHarnessSections(baseContent, enabledIds);
+      // defeating this filter. "Bound" means enabled for the thread AND
+      // actually offered by this agent (`tools`, filtered above): a tool that
+      // is enabled but that this agent flavor never binds (schedule_wakeup
+      // or create_tasks in a task run) must not get prompt guidance for a
+      // tool the model cannot call.
+      const boundIds = new Set(
+        tools.map((tool) => displayIdByMatchKey.get(tool.name as string) ?? (tool.name as string)),
+      );
+      const filteredContent = filterHarnessSections(baseContent, boundIds);
 
       if (allBlocks.length === 0) {
         return handler({ ...request, tools, systemMessage: new SystemMessage(filteredContent) });

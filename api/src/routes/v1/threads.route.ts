@@ -4,6 +4,9 @@ import { getThreadStore } from '../../services/thread-store.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getToolSettingsStore } from '../../services/tool-settings-store.js';
 import { getCheckpointer } from '../../agents/chat-agent.js';
+import { getActiveSseWriter } from '../../agents/active-sse-writer.js';
+import { getWakeupStore, toCardPayload, type Wakeup } from '../../services/wakeup-store.js';
+import { getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
 import {
   listThreadsHandler,
@@ -17,6 +20,7 @@ import {
   generateThreadReportHandler,
   getThreadToolsHandler,
   putThreadToolsHandler,
+  pendingWakeupHandler,
   deleteThreadToolsHandler,
 } from './threads.handlers.js';
 
@@ -43,9 +47,11 @@ function taskRunFor(threadId: string): TaskRunSummary | null {
   };
 }
 
+const isTurnActive = (threadId: string): boolean => getActiveSseWriter(threadId) !== undefined;
+
 threadsRouter.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const result = getThreadHandler(getThreadStore(), id, { taskRunFor });
+  const result = getThreadHandler(getThreadStore(), id, { taskRunFor, isTurnActive });
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -96,8 +102,42 @@ threadsRouter.delete('/:id', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  // The thread's wake-up rows cascaded away; drop any timer still armed.
+  getWakeupRegistry().clearThread(id);
   res.status(204).end();
 });
+
+// Wake-up card actions (issue #191). The handler validates; the registry
+// settles — Trigger now also starts the resumed turn. Both return the
+// updated card payload.
+function settleWakeupRoute(
+  settle: (wakeupId: string) => Wakeup | null,
+): (req: Request, res: Response) => void {
+  return (req, res) => {
+    const { threadId, wakeupId } = req.params as { threadId: string; wakeupId: string };
+    const result = pendingWakeupHandler(getWakeupStore(), threadId, wakeupId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    const settled = settle(wakeupId);
+    if (!settled) {
+      res.status(409).json({ error: 'Wake-up is no longer pending' });
+      return;
+    }
+    res.json(toCardPayload(settled));
+  };
+}
+
+threadsRouter.post(
+  '/:threadId/wakeups/:wakeupId/cancel',
+  settleWakeupRoute((wakeupId) => getWakeupRegistry().cancel(wakeupId, 'user_cancel')),
+);
+
+threadsRouter.post(
+  '/:threadId/wakeups/:wakeupId/trigger',
+  settleWakeupRoute((wakeupId) => getWakeupRegistry().triggerNow(wakeupId)),
+);
 
 threadsRouter.post('/:id/fork', async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };

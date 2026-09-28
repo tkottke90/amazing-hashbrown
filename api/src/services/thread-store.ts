@@ -149,6 +149,10 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // Management — issue #171).
 // 30=ToolSettingsStore (drops tool_settings.enabled/default_include —
 // moved to config.yaml, tool-settings-store.ts).
+// 31-32=WorkspaceStore, 33=observability.
+// 34=threads (thread_wakeups table for timed agent wake-ups — issue #191,
+// read/written by wakeup-store.ts; created here so its FK to threads and
+// ON DELETE CASCADE live beside the threads table itself).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -234,6 +238,29 @@ const MIGRATIONS: DbMigration[] = [
     // getEffectiveToolIds()), a real and permanent state, not a placeholder
     // pending a default value.
     sql: `ALTER TABLE threads ADD COLUMN tools_customized_at TEXT`,
+  },
+  {
+    version: 34,
+    // One row per timed wake-up. At most one pending per thread (partial
+    // unique index). Rows cascade away with their thread; settled rows are
+    // kept as history alongside the transcript card that mirrors them.
+    sql: `
+      CREATE TABLE IF NOT EXISTS thread_wakeups (
+        id             TEXT PRIMARY KEY,
+        thread_id      TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        note           TEXT NOT NULL,
+        fire_at        TEXT NOT NULL,
+        status         TEXT NOT NULL,
+        chain_depth    INTEGER NOT NULL,
+        created_at     TEXT NOT NULL,
+        settled_at     TEXT,
+        settled_by     TEXT,
+        cancel_reason  TEXT
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS thread_wakeups_one_pending
+        ON thread_wakeups(thread_id) WHERE status = 'pending';
+    `,
   },
 ];
 

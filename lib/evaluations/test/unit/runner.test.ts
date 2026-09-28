@@ -452,6 +452,141 @@ function fakeTool(name: string): BindToolsInput {
   return { name } as unknown as BindToolsInput;
 }
 
+describe('executeScenario — tool-call responseRubric', () => {
+  // A tools-bound model whose single reply calls the given tools (possibly
+  // none) and says `content`.
+  function makeReplyingModel(content: string, toolCallNames: string[] = []): BaseChatModel {
+    return {
+      bindTools: () => ({
+        invoke: async () => ({
+          tool_calls: toolCallNames.map((name, i) => ({ id: `call-${i}`, name, args: {} })),
+          content,
+        }),
+      }),
+    } as unknown as BaseChatModel;
+  }
+
+  // A judge that records the prompt it was given and returns a fixed score.
+  function makeRecordingJudge(score: number): { judge: BaseChatModel; prompts: string[] } {
+    const prompts: string[] = [];
+    const judge = {
+      withStructuredOutput: () => ({
+        withRetry: () => ({
+          invoke: async (prompt: string) => {
+            prompts.push(prompt);
+            return { score, reasoning: 'judged' };
+          },
+        }),
+      }),
+    } as unknown as BaseChatModel;
+    return { judge, prompts };
+  }
+
+  function makeScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'aw-005',
+      name: 'Reminder is not a wake-up',
+      purpose: 'p',
+      input: 'Remind me in 10 minutes to call Sam.',
+      type: 'tool-call',
+      tool: '!schedule_wakeup',
+      minScore: 1,
+      responseRubric: 'Does not promise to remind the user later.',
+      ...overrides,
+    };
+  }
+
+  async function run(scenario: ToolCallScenario, model: BaseChatModel, judge: BaseChatModel) {
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: judge,
+      tools: [fakeTool('schedule_wakeup'), fakeTool('ask_user')],
+    };
+    return executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+  }
+
+  it('passes when the forbidden tool is skipped and the reply is judged honest [unit]', async () => {
+    const { judge } = makeRecordingJudge(9);
+    const result = await run(
+      makeScenario(),
+      makeReplyingModel("I can't set reminders here yet."),
+      judge,
+    );
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.deepEqual(result.details.responseJudge, {
+        score: 9,
+        minScore: 7,
+        reasoning: 'judged',
+        judgeModel: 'test-model',
+        biasRisk: true,
+      });
+    }
+  });
+
+  it('fails a false promise: the tool is skipped but the reply claims a reminder is set [unit]', async () => {
+    const { judge } = makeRecordingJudge(2);
+    const result = await run(
+      makeScenario(),
+      makeReplyingModel("Sure — I'll remind you in 10 minutes!"),
+      judge,
+    );
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0.2);
+  });
+
+  it('still fails when the forbidden tool is called, however well the reply is judged [unit]', async () => {
+    const { judge } = makeRecordingJudge(10);
+    const result = await run(
+      makeScenario(),
+      makeReplyingModel('Wake-up scheduled.', ['schedule_wakeup']),
+      judge,
+    );
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0);
+  });
+
+  it('gives the judge the user input, the reply text and the rubric [unit]', async () => {
+    const { judge, prompts } = makeRecordingJudge(9);
+    await run(makeScenario(), makeReplyingModel("I can't set reminders here yet."), judge);
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0]!, /User input: Remind me in 10 minutes to call Sam\./);
+    assert.match(prompts[0]!, /Actual output: I can't set reminders here yet\./);
+    assert.match(prompts[0]!, /Rubric: Does not promise to remind the user later\./);
+  });
+
+  it('honors a custom responseMinScore [unit]', async () => {
+    const { judge } = makeRecordingJudge(8);
+    const result = await run(
+      makeScenario({ responseMinScore: 9 }),
+      makeReplyingModel("I can't set reminders here yet."),
+      judge,
+    );
+
+    assert.equal(result.passed, false);
+  });
+
+  it('never calls the judge when no responseRubric is set [unit]', async () => {
+    const result = await run(
+      makeScenario({ responseRubric: undefined }),
+      makeReplyingModel("Sure — I'll remind you!"),
+      neverInvokedModel(),
+    );
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type === 'tool-call' && result.details.responseJudge, undefined);
+  });
+});
+
 describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
   const ALWAYS_ON = fakeTool('ask_user');
   const GATED = fakeTool('create_workspace');

@@ -14,6 +14,12 @@ export const ChatErrorCategorySchema = z.enum([
   // provider request timeout after a turn was abandoned). See
   // docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md.
   'cancelled',
+  // Client-side only — the browser lost the turn's live SSE connection
+  // (idle timeout, proxy drop). The server keeps running the turn; the UI
+  // re-hydrates when it finishes. Distinct from 'network', which means the
+  // server couldn't reach the provider. See
+  // docs/superpowers/specs/2026-09-27-agent-wait-design.md §1.
+  'connection_lost',
 ]);
 export type ChatErrorCategory = z.infer<typeof ChatErrorCategorySchema>;
 

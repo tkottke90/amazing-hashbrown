@@ -1,17 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import { env } from '../config/env.js';
+import { env, type ProviderConfig } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { resolveProviderConfig } from '../services/provider-factory.js';
+import { broadcast } from '../services/broadcast.js';
+import { getActiveSseWriter, setActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import {
-  getActiveSseWriter,
-  setActiveSseWriter,
-  clearActiveSseWriter,
-  type SseWriter,
-} from './active-sse-writer.js';
-import { pipeEvents, finalizeTurn, recoverThrownInterrupt } from './stream-handler.js';
-import { recordAssistantStart } from './thread-message-writer.js';
-import { drainPendingTurns } from './pending-thread-turns.js';
+  pipeEvents,
+  finalizeTurn,
+  recoverThrownInterrupt,
+  extractPartialAssistantState,
+} from './stream-handler.js';
+import { recordAssistantStart, failAssistant } from './thread-message-writer.js';
+import { classifyChatError } from './error-classification.js';
+import { endThreadTurn } from './pending-thread-turns.js';
 
 // Structural — any LangGraph-based agent built by chat-agent.ts's builders
 // satisfies this (same rationale as stream-handler.ts's own unexported
@@ -36,6 +39,7 @@ export interface HeadlessTurnParams {
   message: string;
   threadStore: ThreadStore;
   provider?: string;
+  model?: string;
   recursionLimit?: number;
   workspaceId?: string;
   // Set only when this notification is itself about a task-originated
@@ -44,17 +48,26 @@ export interface HeadlessTurnParams {
   // asks the user something) re-enqueues correctly rather than resuming an
   // interactive turn. Omitted for chat/workspace-chat parent threads.
   taskId?: string;
+  // What started this turn — broadcast in thread_turn_started so an open
+  // client can label the thread as busy.
+  source: 'wakeup' | 'sub_agent';
+  // Set only for a wake-up turn: that wake-up's chain depth, exposed to
+  // tools as configurable.wakeupDepth so schedule_wakeup can cap
+  // consecutive self-wake-ups (see schedule-wakeup.tool.ts).
+  wakeupDepth?: number;
 }
 
 // Runs one system-generated turn against an existing thread with no live
 // SSE connection watching it — the same headless shape task-execution.ts
 // uses for an automated task run (agent already built by the caller,
 // stream, pipe, finalize), reused here for a spawn_sub_agent completion
-// notification (see sub-agent-notification.ts). Claims/releases the
-// per-thread mutex (active-sse-writer.ts) itself and drains the next queued
-// pending turn on release — see pending-thread-turns.ts. Never throws: a
-// failure here must not crash the sub-agent completion path that invoked
-// it, only fail to deliver this one notification.
+// notification (see sub-agent-notification.ts) and a timed wake-up (see
+// wakeup-delivery.ts). Claims the per-thread mutex (active-sse-writer.ts)
+// with its own AbortController, so the thread's /stop route cancels it like
+// an interactive turn, and tells open clients the thread is busy
+// (thread_turn_started); endThreadTurn() releases it. Never throws: a
+// failure is written to the thread as an error row instead, and must not
+// crash the path that delivered the turn.
 export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void> {
   const { threadId, agent, message, threadStore, taskId } = params;
   const provider = params.provider ?? env.defaultProvider;
@@ -67,7 +80,9 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
   const sink: SseWriter = (event) => {
     previousWriter?.(event);
   };
-  setActiveSseWriter(threadId, sink);
+  const controller = new AbortController();
+  setActiveSseWriter(threadId, sink, controller);
+  broadcast({ type: 'thread_turn_started', threadId, source: params.source });
 
   // Hoisted above the try block so the catch block below can still reach
   // them to recover a thrown GraphInterrupt — see task-execution.ts's own
@@ -78,27 +93,77 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
     configurable: {
       thread_id: threadId,
       ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
+      ...(params.wakeupDepth !== undefined ? { wakeupDepth: params.wakeupDepth } : {}),
     },
   };
   let assistantSeq: number | null = null;
 
+  // Mirrors the interactive handlers' catch (stream-handler.ts): a Stop is
+  // recorded as cancelled, anything else as a classified error — so the
+  // thread shows what happened instead of a turn that silently vanished.
+  const recordFailure = (err: unknown, aborted: boolean): void => {
+    const {
+      segmentId,
+      content: partialContent,
+      thoughtContent: partialThought,
+    } = extractPartialAssistantState(err, msgId);
+    if (aborted) {
+      failAssistant(
+        threadStore,
+        threadId,
+        segmentId,
+        partialContent,
+        turnSentAt,
+        partialThought,
+        'Stopped.',
+        'cancelled',
+      );
+      return;
+    }
+    logger.error('headless-turn: turn failed', { threadId, err: serializeError(err) });
+    const classified = classifyChatError(err, providerTypeOf(provider));
+    failAssistant(
+      threadStore,
+      threadId,
+      segmentId,
+      partialContent,
+      turnSentAt,
+      partialThought,
+      classified.message,
+      classified.category,
+    );
+  };
+
   try {
     const startedAt = Date.now();
-    assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+    assistantSeq = recordAssistantStart(
+      threadStore,
+      threadId,
+      msgId,
+      turnSentAt,
+      provider,
+      params.model,
+    );
 
     const { content, thoughtContent, finalSegmentId, hadToolCall } =
-      await getProviderQueue().withSlot(provider, 'sync', async () => {
-        const rawStream = agent.streamEvents(
-          { messages: [{ role: 'human', content: message }] },
-          {
-            ...config,
-            version: 'v2',
-            recursionLimit,
-            context: { provider, model: undefined, afterAgentEnabled: undefined },
-          },
-        );
-        return pipeEvents(sink, msgId, rawStream, threadStore, threadId, turnSentAt);
-      });
+      await getProviderQueue().withSlot(
+        provider,
+        'sync',
+        async () => {
+          const rawStream = agent.streamEvents(
+            { messages: [{ role: 'human', content: message }] },
+            {
+              ...config,
+              version: 'v2',
+              recursionLimit,
+              context: { provider, model: params.model, afterAgentEnabled: undefined },
+              signal: controller.signal,
+            },
+          );
+          return pipeEvents(sink, msgId, rawStream, threadStore, threadId, turnSentAt);
+        },
+        { signal: controller.signal },
+      );
 
     await finalizeTurn(
       sink,
@@ -115,7 +180,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       null,
       undefined,
       provider,
-      undefined,
+      params.model,
       taskId,
     );
   } catch (err) {
@@ -132,14 +197,18 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       null,
       taskId,
     );
-    if (!recovered) {
-      logger.error('headless-turn: notification turn failed', {
-        threadId,
-        err: serializeError(err),
-      });
-    }
+    if (!recovered) recordFailure(err, controller.signal.aborted);
   } finally {
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
+  }
+}
+
+// Provider type for error classification; undefined when the provider is no
+// longer configured (classification then falls back to generic matching).
+function providerTypeOf(provider: string): ProviderConfig['type'] | undefined {
+  try {
+    return resolveProviderConfig(provider).type;
+  } catch {
+    return undefined;
   }
 }

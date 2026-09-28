@@ -378,6 +378,6 @@ Each scenario in a suite YAML declares a `type` (see `lib/evaluations/src/schema
 - `semantic` — embedding similarity against an expected response
 - `llm-judge` — a second model scores the response against a rubric
 - `structured` — asserts on fields of a `withStructuredOutput()` result
-- `tool-call` — asserts the model calls a specific tool (with optional arg checks) for a single-turn prompt
+- `tool-call` — asserts the model calls a specific tool (with optional arg checks) for a single-turn prompt; a `'!name'` tool asserts it is _not_ called, and an optional `responseRubric` has the judge model also score the reply text from that same tools-bound turn
 - `tool-sequence` — like `tool-call`, but seeds a synthetic prior tool call + result into the conversation first, for testing multi-turn tool chains (e.g. does the agent correctly relay a prior tool's output into `upload_image`)
 - `human` — deferred to an interactive review pass (`eval:review`)

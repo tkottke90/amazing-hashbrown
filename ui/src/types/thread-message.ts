@@ -141,7 +141,39 @@ export type ThreadMessage =
       runNumber?: number;
       triggerSource?: TriggerSource;
       seq?: number;
+    }
+  | {
+      // A timed wake-up the agent scheduled (schedule_wakeup) — shown where it
+      // was scheduled and updated in place as it fires or is cancelled. See
+      // api's wakeup-store.ts and
+      // docs/superpowers/specs/2026-09-27-agent-wait-design.md §7.
+      kind: 'wakeup';
+      id: string;
+      wakeupId: string;
+      note: string;
+      fireAt: string;
+      state: WakeupState;
+      settledBy?: WakeupSettledBy;
+      settledAt?: string;
+      cancelReason?: string;
+      seq?: number;
+    }
+  | {
+      // Written right before the turn a wake-up resumes, so the agent's reply
+      // is visibly a response to it.
+      kind: 'wakeup_fired';
+      id: string;
+      wakeupId: string;
+      note: string;
+      settledBy: WakeupFireSource;
+      firedAt: string;
+      lateByMs?: number;
+      seq?: number;
     };
+
+export type WakeupState = 'pending' | 'fired' | 'cancelled';
+export type WakeupFireSource = 'timer' | 'trigger_now' | 'catch_up';
+export type WakeupSettledBy = WakeupFireSource | 'user_cancel' | 'agent_cancel';
 
 export type UserThreadMessage = Extract<ThreadMessage, { kind: 'user' }>;
 export type AssistantThreadMessage = Extract<ThreadMessage, { kind: 'assistant' }>;
@@ -152,3 +184,5 @@ export type AudioThreadMessage = Extract<ThreadMessage, { kind: 'audio' }>;
 export type WikiUpdateThreadMessage = Extract<ThreadMessage, { kind: 'wiki_update' }>;
 export type ResourceCardThreadMessage = Extract<ThreadMessage, { kind: 'resource_card' }>;
 export type TaskRunMarkerThreadMessage = Extract<ThreadMessage, { kind: 'task_run_marker' }>;
+export type WakeupThreadMessage = Extract<ThreadMessage, { kind: 'wakeup' }>;
+export type WakeupFiredThreadMessage = Extract<ThreadMessage, { kind: 'wakeup_fired' }>;

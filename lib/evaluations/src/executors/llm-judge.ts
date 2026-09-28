@@ -15,8 +15,10 @@ interface LlmJudgeDetails {
   biasRisk: boolean;
 }
 
+// Only the input and rubric are read, so a tool-call scenario's
+// responseRubric can be judged with the same prompt (see runner.ts).
 export async function runLlmJudge(
-  scenario: LlmJudgeScenario,
+  scenario: Pick<LlmJudgeScenario, 'input' | 'rubric'>,
   actualOutput: string,
   modelId: string,
   judgeModel: BaseChatModel,

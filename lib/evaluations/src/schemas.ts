@@ -115,6 +115,15 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   // if argChecks is omitted — the tool-name match alone determines pass/fail).
   minScore: z.number().min(0).max(1).default(1),
   gatedSkill: GatedSkillField,
+  // Optional judge of the reply text from the same tools-bound turn — for
+  // scenarios where the tool assertion alone can't see the failure, e.g. a
+  // negated tool ('!schedule_wakeup') where the model rightly skips the tool
+  // but then falsely promises to do the thing anyway. Scored 0-10 by the
+  // run's judge model (executors/llm-judge.ts); the scenario passes only if
+  // the tool assertion holds AND the score is >= responseMinScore (default 7).
+  // llm-judge scenarios can't cover this: they never bind tools.
+  responseRubric: z.string().min(1).optional(),
+  responseMinScore: z.number().min(0).max(10).optional(),
 }).strict();
 
 export const ToolSequenceScenarioSchema = BaseScenario.extend({
@@ -294,8 +303,18 @@ const InvalidToolCallSchema = z.object({
   error: z.string().optional(),
 });
 
+const ResponseJudgeDetails = z.object({
+  score: z.number(),
+  minScore: z.number(),
+  reasoning: z.string(),
+  judgeModel: z.string(),
+  biasRisk: z.boolean(),
+});
+
 const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
+  // Present only when the scenario sets responseRubric.
+  responseJudge: ResponseJudgeDetails.optional(),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
   // All tool names actually invoked this turn — see executors/tool-call.ts.

@@ -8,7 +8,8 @@ jest.mock('@/hooks/use-tasks', () => ({
 }));
 
 const mockHydrate = jest.fn();
-const mockUseThreadInstance = jest.fn(() => ({ hydrate: mockHydrate }));
+const mockMarkBackgroundTurn = jest.fn();
+const mockUseThreadInstance = jest.fn((..._args: unknown[]): unknown => ({ hydrate: mockHydrate }));
 const mockHasThreadInstance = jest.fn(() => false);
 
 jest.mock('@/hooks/use-thread', () => ({
@@ -238,6 +239,74 @@ describe('hooks/use-live-events', () => {
     currentSource().emit({ type: 'task_started', threadId: 'thread-A', taskId: 'task-1' });
 
     expect(tasks.value.find((t) => t.id === 'task-1')!.status).toBe('running');
+  });
+
+  it('rehydrates a loaded thread on thread_turn_completed so a headless turn result appears live [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
+
+    expect(mockUseThreadInstance).toHaveBeenCalledWith('thread-A');
+    expect(mockHydrate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not rehydrate on thread_turn_completed while this tab is still reading its own live stream [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: true },
+    });
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
+
+    expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it('clears the background-turn state on thread_turn_completed [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
+
+    expect(mockMarkBackgroundTurn).toHaveBeenCalledWith(false);
+  });
+
+  it('marks a loaded thread busy on thread_turn_started from a wake-up [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(true);
+    mockUseThreadInstance.mockReturnValue({
+      hydrate: mockHydrate,
+      markBackgroundTurn: mockMarkBackgroundTurn,
+      isStreaming: { value: false },
+    });
+
+    currentSource().emit({ type: 'thread_turn_started', threadId: 'thread-A', source: 'wakeup' });
+
+    expect(mockMarkBackgroundTurn).toHaveBeenCalledWith(true);
+    expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it('ignores thread_turn_completed for a thread this tab never loaded [unit]', () => {
+    connectLiveEvents();
+    mockHasThreadInstance.mockReturnValue(false);
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-A' });
+
+    expect(mockUseThreadInstance).not.toHaveBeenCalled();
+    expect(mockHydrate).not.toHaveBeenCalled();
   });
 
   it('silently ignores a payload that fails schema validation', () => {

@@ -3,8 +3,8 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
-import { setActiveSseWriter, clearActiveSseWriter, type SseWriter } from './active-sse-writer.js';
-import { drainPendingTurns } from './pending-thread-turns.js';
+import { setActiveSseWriter, type SseWriter } from './active-sse-writer.js';
+import { endThreadTurn } from './pending-thread-turns.js';
 import {
   writeSseEvent,
   pipeEvents,
@@ -198,8 +198,7 @@ export async function streamWikiChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -361,8 +360,7 @@ export async function resumeWikiChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -526,8 +524,7 @@ export async function retryWikiChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 

@@ -1,10 +1,12 @@
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 
 jest.mock('@/lib/sse', () => ({
+  ...jest.requireActual('@/lib/sse'),
   consumeSsePost: jest.fn(),
 }));
 
 import * as sse from '@/lib/sse';
+import { SseHttpError } from '@/lib/sse';
 import {
   useThreadInstance,
   switchThread,
@@ -464,5 +466,114 @@ describe('use-thread — switchThread model handling', () => {
 
     const thread = newThread('t15');
     expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
+  });
+});
+
+describe('use-thread — stream failures', () => {
+  function lastAssistant(thread: ThreadInstance) {
+    return [...thread.messages.value].reverse().find((m) => m.kind === 'assistant');
+  }
+
+  it('labels a dropped live stream as connection_lost, not a provider network failure [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('Error in input stream'));
+    const thread = newThread('t-drop');
+
+    await thread.sendMessage('run the long job');
+
+    const bubble = lastAssistant(thread);
+    expect(bubble).toMatchObject({ status: 'error', errorCategory: 'connection_lost' });
+    expect(thread.isStreaming.value).toBe(false);
+  });
+
+  it('labels a dropped HITL-resume stream as connection_lost too [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('network error'));
+    const thread = newThread('t-drop-hitl');
+
+    await thread.submitHitlAnswer('p1', 'yes');
+
+    expect(lastAssistant(thread)).toMatchObject({ errorCategory: 'connection_lost' });
+  });
+
+  it('shows the server message for an HTTP refusal instead of claiming the connection dropped [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(
+      new SseHttpError(409, 'Automated run threads are read-only'),
+    );
+    const thread = newThread('t-refused');
+
+    await thread.sendMessage('hello');
+
+    expect(lastAssistant(thread)).toMatchObject({
+      status: 'error',
+      error: 'Automated run threads are read-only',
+      errorCategory: 'unknown',
+    });
+  });
+
+  it('records no error when the user stopped the turn themselves [unit]', async () => {
+    mockConsumeSsePost.mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' }),
+    );
+    const thread = newThread('t-stopped');
+
+    await thread.sendMessage('hello');
+
+    expect(lastAssistant(thread)).not.toMatchObject({ status: 'error' });
+  });
+});
+
+describe('use-thread — background turns', () => {
+  function hydrateWith(body: Record<string, unknown>) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], ...body }),
+    }) as unknown as typeof fetch;
+  }
+
+  it('marks the thread busy when loaded mid-turn, so the composer offers Stop [unit]', async () => {
+    hydrateWith({ activeTurn: true });
+    const thread = newThread('t-bg');
+
+    await thread.hydrate();
+
+    expect(thread.backgroundTurnActive.value).toBe(true);
+  });
+
+  it('clears the busy state once the server reports no active turn [unit]', async () => {
+    const thread = newThread('t-bg-done');
+    thread.markBackgroundTurn(true);
+    hydrateWith({ activeTurn: false });
+
+    await thread.hydrate();
+
+    expect(thread.backgroundTurnActive.value).toBe(false);
+  });
+
+  it("never treats this tab's own streaming turn as a background turn [unit]", () => {
+    let release: () => void = () => {};
+    mockConsumeSsePost.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const thread = newThread('t-own');
+    void thread.sendMessage('hello');
+
+    thread.markBackgroundTurn(true);
+
+    expect(thread.backgroundTurnActive.value).toBe(false);
+    release();
+  });
+
+  it('re-hydrates by itself after a dropped stream, picking up a turn still running on the server [orchestration]', async () => {
+    mockConsumeSsePost.mockRejectedValue(new TypeError('Error in input stream'));
+    hydrateWith({ activeTurn: true });
+    const thread = newThread('t-drop-rehydrate');
+
+    await thread.sendMessage('run the long job');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/threads/t-drop-rehydrate');
+    expect(thread.backgroundTurnActive.value).toBe(true);
   });
 });

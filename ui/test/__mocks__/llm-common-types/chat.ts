@@ -85,5 +85,11 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     taskId: z.string(),
     plan: z.array(z.object({ step: z.string(), done: z.boolean() })),
   }),
+  z.object({
+    type: z.literal('thread_turn_started'),
+    threadId: z.string(),
+    source: z.enum(['wakeup', 'sub_agent']),
+  }),
+  z.object({ type: z.literal('thread_turn_completed'), threadId: z.string() }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

@@ -1195,6 +1195,8 @@ describe('agents/task-execution', () => {
       expect(received).to.deep.equal([
         { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
         { type: 'task_completed', threadId: runThreadOf(entry), taskId: task.id, outcome: 'done' },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1213,6 +1215,8 @@ describe('agents/task-execution', () => {
           taskId: task.id,
           outcome: 'failed',
         },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1232,6 +1236,8 @@ describe('agents/task-execution', () => {
           taskId: task.id,
           outcome: 'failed',
         },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1244,6 +1250,8 @@ describe('agents/task-execution', () => {
       expect(received).to.deep.equal([
         { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
         { type: 'hitl_prompt', threadId: runThreadOf(entry), taskId: task.id },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1256,6 +1264,8 @@ describe('agents/task-execution', () => {
       expect(received).to.deep.equal([
         { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
         { type: 'hitl_prompt', threadId: runThreadOf(entry), taskId: task.id },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1273,6 +1283,8 @@ describe('agents/task-execution', () => {
           taskId: task.id,
           outcome: 'cancelled',
         },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
 
@@ -1284,6 +1296,8 @@ describe('agents/task-execution', () => {
       const task = store.getTask(entry.task.id)!;
       expect(received).to.deep.equal([
         { type: 'task_started', threadId: runThreadOf(entry), taskId: task.id },
+        // Every run releases its thread through endThreadTurn().
+        { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
     });
   });

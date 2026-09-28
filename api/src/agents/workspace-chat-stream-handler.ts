@@ -5,13 +5,8 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { getWorkspaceChatAgent, type WorkspaceChatContext } from './chat-agent.js';
-import {
-  setActiveSseWriter,
-  clearActiveSseWriter,
-  getActiveSseWriter,
-  type SseWriter,
-} from './active-sse-writer.js';
-import { drainPendingTurns } from './pending-thread-turns.js';
+import { setActiveSseWriter, getActiveSseWriter, type SseWriter } from './active-sse-writer.js';
+import { endThreadTurn } from './pending-thread-turns.js';
 import {
   writeSseEvent,
   pipeEvents,
@@ -367,8 +362,7 @@ export async function streamWorkspaceChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -600,8 +594,7 @@ export async function resumeWorkspaceChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }
 
@@ -825,7 +818,6 @@ export async function retryWorkspaceChatToSse(
       totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
       error: turnError,
     });
-    clearActiveSseWriter(threadId);
-    drainPendingTurns(threadId);
+    endThreadTurn(threadId);
   }
 }

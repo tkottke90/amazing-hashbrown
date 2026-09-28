@@ -9,6 +9,7 @@ jest.mock('preact-iso', () => ({
 }));
 
 jest.mock('@/lib/sse', () => ({
+  ...jest.requireActual('@/lib/sse'),
   consumeSsePost: jest.fn().mockResolvedValue(undefined),
 }));
 

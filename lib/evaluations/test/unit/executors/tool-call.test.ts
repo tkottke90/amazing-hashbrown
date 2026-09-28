@@ -100,6 +100,39 @@ describe('runToolCall', () => {
     });
   });
 
+  describe('negated tool ("!name")', () => {
+    it('scores 1 with toolCalled null when the forbidden tool was not called', () => {
+      const result = runToolCall(makeScenario('!schedule_wakeup'), [
+        { name: 'ask_user', args: {} },
+      ]);
+      assert.equal(result.toolCalled, null);
+      assert.equal(result.score, 1);
+    });
+
+    it('scores 1 when no tools were called at all', () => {
+      const result = runToolCall(makeScenario('!schedule_wakeup'), []);
+      assert.equal(result.toolCalled, null);
+      assert.equal(result.score, 1);
+    });
+
+    it('scores 0 and reports the offending call when the forbidden tool was called', () => {
+      const result = runToolCall(makeScenario('!schedule_wakeup'), [
+        { name: 'schedule_wakeup', args: { delaySeconds: 600, note: 'n' } },
+      ]);
+      assert.equal(result.toolCalled, 'schedule_wakeup');
+      assert.equal(result.score, 0);
+      assert.deepEqual(result.matchedArgs, { delaySeconds: 600, note: 'n' });
+    });
+
+    it('ignores argChecks on a negated scenario', () => {
+      const result = runToolCall(
+        makeScenario('!schedule_wakeup', [{ path: 'note', match: 'exists' }]),
+        [{ name: 'schedule_wakeup', args: {} }],
+      );
+      assert.deepEqual(result.fieldResults, []);
+    });
+  });
+
   describe('matcher parity with structured', () => {
     it('equals: passes when the arg equals the expected value', () => {
       const result = runToolCall(
