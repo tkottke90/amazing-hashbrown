@@ -125,7 +125,7 @@ export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiR
     {
       name: 'create_workspace',
       description:
-        'Create a new workspace after all required fields have been collected and confirmed with the user. ' +
+        'Create a new workspace after the required fields have been confirmed with the user. ' +
         'Only available once the /create-workspace skill has been invoked.',
       schema: CreateWorkspaceSchema,
     },
