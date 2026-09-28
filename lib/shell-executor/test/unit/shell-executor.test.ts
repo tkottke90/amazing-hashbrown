@@ -1,7 +1,7 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { ShellExecutor } from '../../src/shell-executor.js';
-import { ShellExecutorConfigSchema } from '../../src/config.js';
+import { ShellExecutorConfigSchema, defaultShellEnv } from '../../src/config.js';
 import type { AuditEntry } from '../../src/audit.js';
 
 const defaultConfig = ShellExecutorConfigSchema.parse({
@@ -136,6 +136,46 @@ describe('ShellExecutor', () => {
       });
       const result = await executor.execute('echo resilient');
       expect(result.stdout.trim()).to.equal('resilient');
+    });
+  });
+
+  // Issue #220: configured env used to *replace* PATH/HOME/USER, so adding
+  // GH_TOKEN left commands with no PATH and `gh` was "command not found".
+  describe('environment (issue #220)', () => {
+    const printEnv = 'echo "$PATH|$HOME|$GH_X"';
+
+    it('gives commands the default PATH/HOME when no env is configured [unit]', async () => {
+      const config = ShellExecutorConfigSchema.parse({ workingDirectory: '/tmp' });
+      const result = await new ShellExecutor(config, { trustAll: true }).execute(printEnv);
+      const [path, home] = result.stdout.trim().split('|');
+      expect(path).to.equal(defaultShellEnv()['PATH']);
+      expect(home).to.equal(defaultShellEnv()['HOME']);
+    });
+
+    it('layers configured env on top of the defaults instead of replacing them [unit]', async () => {
+      const config = ShellExecutorConfigSchema.parse({
+        workingDirectory: '/tmp',
+        env: { GH_X: 'token-value' },
+      });
+      const result = await new ShellExecutor(config, { trustAll: true }).execute(printEnv);
+      const [path, , ghX] = result.stdout.trim().split('|');
+      expect(ghX, 'configured variable should reach the command').to.equal('token-value');
+      expect(path, 'default PATH must survive a configured env').to.equal(
+        defaultShellEnv()['PATH'],
+      );
+    });
+
+    it('lets a configured PATH override the default [unit]', async () => {
+      const config = ShellExecutorConfigSchema.parse({
+        workingDirectory: '/tmp',
+        env: { PATH: '/opt/custom/bin:/usr/bin:/bin' },
+      });
+      const result = await new ShellExecutor(config, { trustAll: true }).execute(printEnv);
+      expect(result.stdout.trim().split('|')[0]).to.equal('/opt/custom/bin:/usr/bin:/bin');
+    });
+
+    it('defaults configured env to empty, leaving PATH/HOME/USER to spawn time [unit]', () => {
+      expect(ShellExecutorConfigSchema.parse({}).env).to.deep.equal({});
     });
   });
 });
