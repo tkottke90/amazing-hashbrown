@@ -5,6 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { configManager } from '../config/env.js';
+import { bootObservability, getObservabilityStore } from '../services/observability.js';
 import { bootThreadStore, getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   WorkspaceStore,
@@ -187,6 +188,63 @@ function fakeCapturingAgent(events: RawEvent[], capture: { input: unknown }) {
   } as any;
 }
 
+// The metrics finalizeTurn stores on an assistant row's payload (#131).
+interface MetricsPayload {
+  durationMs?: number;
+  usage?: { inputTokens: number; outputTokens: number };
+  cost?: { tokensPerSecond?: number; dollars?: number };
+}
+
+interface StreamOptionsCapture {
+  options?: { configurable?: Record<string, unknown> };
+}
+
+// Reports a real LLM call to the ObservabilityCallbackHandler executeTask
+// attaches (options.callbacks[0]) before replaying `events` — the fakes
+// above ignore callbacks, so without this every token total would be 0.
+// The short pause makes the handler's measured LLM time non-zero, which is
+// what tokens-per-second is computed from.
+function fakeMeteredAgent(
+  events: RawEvent[],
+  usage: { inputTokens: number; outputTokens: number },
+  capture: StreamOptionsCapture = {},
+) {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamEvents: (_input: unknown, options: any): AsyncIterable<RawEvent> => {
+      capture.options = options;
+      async function* gen() {
+        const handler = options.callbacks[0];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await handler.handleLLMStart({} as any, [], 'llm-run-1');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await handler.handleLLMEnd(
+          {
+            generations: [[{ text: 'done' }]],
+            llmOutput: {
+              usage_metadata: {
+                input_tokens: usage.inputTokens,
+                output_tokens: usage.outputTokens,
+              },
+            },
+          },
+          'llm-run-1',
+        );
+        await handler.handleChainEnd();
+        for (const e of events) yield e;
+      }
+      return gen();
+    },
+    graph: {
+      getState: async () => ({
+        tasks: [],
+        config: { configurable: { checkpoint_id: 'cp-test' } },
+      }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
 // Completion is decided by the complete_task tool itself (it can reject a
 // "done" call — see complete-task.tool.ts), which reports acceptance through
 // buildTaskAgent's onTaskComplete hook. The fake agents above only replay
@@ -251,6 +309,9 @@ const COMPLETE_TASK_FAILED_EVENTS: RawEvent[] = [
   { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-2', data: { output: 'ok' } },
 ];
 
+const TEST_PROVIDER = 'task-test-provider';
+const TEST_MODEL = 'task-test-model';
+
 describe('agents/task-execution', () => {
   let db: ReturnType<typeof openDatabase>;
   let store: WorkspaceStore;
@@ -263,10 +324,25 @@ describe('agents/task-execution', () => {
     store = new WorkspaceStore(db);
     bootWorkspaceStore(db);
     bootThreadStore(db);
+    // Every run resolves its real provider/model and opens a trace before
+    // the agent runs — nothing connects to this provider, since
+    // buildTaskAgent is always faked.
+    bootObservability(db);
+    configManager.set('providers', [
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: TEST_MODEL,
+      },
+    ]);
+    configManager.set('defaultProvider', TEST_PROVIDER);
     threadStore = getThreadStore();
   });
 
   afterEach(() => {
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
     db.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -490,6 +566,183 @@ describe('agents/task-execution', () => {
     // not any specific category.
     expect(payload.error).to.equal('simulated stream failure');
     expect(payload.errorCategory).to.equal('unknown');
+  });
+
+  describe('usage metrics and trace (issue #132)', () => {
+    const USAGE = { inputTokens: 1000, outputTokens: 500 };
+
+    afterEach(() => {
+      configManager.set('costs', {});
+    });
+
+    // finalizeTurn persists metrics on the turn's final assistant segment —
+    // the last assistant row in the run thread.
+    function finalAssistantRow(entry: QueueEntryWithTask) {
+      const rows = threadStore
+        .getThreadMessages(runThreadOf(entry))
+        .filter((m) => m.kind === 'assistant');
+      expect(rows.length, 'the run should have written an assistant row').to.be.greaterThan(0);
+      return rows[rows.length - 1]!;
+    }
+
+    function runTrace(entry: QueueEntryWithTask) {
+      const traces = getObservabilityStore().find({ threadId: runThreadOf(entry) });
+      expect(traces, 'each run turn should open exactly one trace').to.have.length(1);
+      return traces[0]!;
+    }
+
+    it('persists duration, token counts and tokens-per-second on the run message [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
+      });
+
+      // These survive a reload only because they're on the stored row,
+      // not just the live usage_stats event nobody is listening to.
+      const payload = finalAssistantRow(entry).payload as MetricsPayload;
+      expect(payload.durationMs, 'duration should be persisted').to.be.a('number');
+      expect(payload.usage).to.deep.equal(USAGE);
+      expect(payload.cost?.tokensPerSecond, 'tok/s should be persisted').to.be.a('number');
+    });
+
+    it('prices the run message when a rate exists for the resolved provider/model [orchestration]', async () => {
+      configManager.set('costs', {
+        [`${TEST_PROVIDER}/${TEST_MODEL}`]: {
+          inputPer1kTokens: 0.01,
+          inputScale: '1k',
+          outputPer1kTokens: 0.02,
+          outputScale: '1k',
+        },
+      });
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
+      });
+
+      // 1000 in * $0.01/1k + 500 out * $0.02/1k — only reachable if the
+      // run's model is resolved rather than left undefined.
+      const payload = finalAssistantRow(entry).payload as MetricsPayload;
+      expect(payload.cost?.dollars).to.be.closeTo(0.02, 1e-9);
+    });
+
+    it('still shows duration, tok/s and tokens with no dollar figure when no rate is configured [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
+      });
+
+      const payload = finalAssistantRow(entry).payload as MetricsPayload;
+      expect(payload.cost, 'no rate means no dollar figure').to.not.have.property('dollars');
+      expect(payload.durationMs).to.be.a('number');
+      expect(payload.usage).to.deep.equal(USAGE);
+      expect(payload.cost?.tokensPerSecond).to.be.a('number');
+    });
+
+    it('records which provider and model produced the run message [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
+      });
+
+      const row = finalAssistantRow(entry);
+      expect(row.provider).to.equal(TEST_PROVIDER);
+      expect(row.model).to.equal(TEST_MODEL);
+    });
+
+    it('builds the agent on the resolved provider/model, so what runs is what gets priced [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      const inner = fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE));
+      const calls: Array<[string | undefined, string | undefined]> = [];
+      const recording = ((...args: Parameters<typeof buildTaskAgent>) => {
+        calls.push([args[1], args[2]]);
+        return inner(...args);
+      }) as typeof buildTaskAgent;
+
+      await executeTask(entry, { buildTaskAgent: recording });
+
+      expect(calls).to.deep.equal([[TEST_PROVIDER, TEST_MODEL]]);
+    });
+
+    it('records a closed task-run trace for the run, linked to its task [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      const capture: StreamOptionsCapture = {};
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE, capture),
+        ),
+      });
+
+      const trace = runTrace(entry);
+      expect(trace).to.include({
+        source: 'task-run',
+        taskId: entry.task.id,
+        provider: TEST_PROVIDER,
+        model: TEST_MODEL,
+        totalTokens: 1500,
+        error: null,
+      });
+      expect(trace.endedAt, 'the trace must be closed when the run ends').to.be.a('string');
+      expect(trace.llmCallCount, 'the run LLM call should be recorded as a span').to.equal(1);
+      // model-input-snapshot.middleware.ts records per-turn tool availability
+      // against this id (#207) — without it task runs get no tool snapshot.
+      expect(capture.options?.configurable?.trace_id).to.equal(trace.traceId);
+    });
+
+    it('records the classified failure on the trace when the stream fails [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeThrowingAgent([
+        { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
+      ]);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      const summary = store.getTaskRun(entry.id)!.summary!;
+      const trace = runTrace(entry);
+      expect(trace.error, 'a failed run must not look like a clean trace').to.be.a('string');
+      // The run summary is "Run failed: <classified message>".
+      expect(summary).to.equal(`Run failed: ${trace.error}`);
+      expect(trace.endedAt).to.be.a('string');
+    });
+
+    it('records a cancelled run as stopped on its trace [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeAbortingAgent(entry.id, 'cancel');
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(runTrace(entry).error).to.equal('Stopped.');
+    });
+
+    it('still finishes the run and frees its thread when closing the trace fails [orchestration]', async () => {
+      // executeTask must never throw or leave its thread claimed — a broken
+      // trace write would otherwise wedge every later turn in that thread.
+      const obsStore = getObservabilityStore();
+      obsStore.endTrace = () => {
+        throw new Error('database is locked');
+      };
+      const entry = makeGlobalEntry();
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
+      });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      expect(getActiveSseWriter(runThreadOf(entry)), 'the run thread must be released').to.equal(
+        undefined,
+      );
+    });
+
+    it('records running out of steps on its trace [orchestration]', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeThrowingAgent(
+        [{ event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } }],
+        Object.assign(new Error('Recursion limit reached'), { name: 'GraphRecursionError' }),
+      );
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(runTrace(entry).error).to.equal('Ran out of steps before completing this task.');
+    });
   });
 
   describe('error classification against the default provider', () => {

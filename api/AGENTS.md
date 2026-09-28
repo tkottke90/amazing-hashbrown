@@ -62,6 +62,12 @@ when it settles. Things to keep in mind when touching this area:
   (`routes/v1/tasks.handlers.ts`), which re-queues the task — never resume a
   task's prompt as an interactive chat turn. Run threads reject chat, retry
   and fork (409).
+- A run records an observability trace (`source: 'task-run'`) and persists
+  per-message usage metrics through `agents/turn-observability.ts`
+  (`resolveTurnModel` + `startTurnObservability`). New turn runners should
+  compose the same helper rather than hand-rolling
+  `startTrace`/`ObservabilityCallbackHandler`/`endTrace` — moving the existing
+  inline copies onto it is tracked in #219.
 
 ### Scheduled (cron) tasks
 
