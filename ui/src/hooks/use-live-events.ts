@@ -1,6 +1,6 @@
 import { AppBroadcastEventSchema, type AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import { tasks, queueState, refreshQueue, refreshTasks } from './use-tasks';
-import { hasThreadInstance, useThreadInstance } from './use-thread';
+import { hasThreadInstance, refreshThreadList, threads, useThreadInstance } from './use-thread';
 import type { QueueState, TaskStatus } from '../services/tasks-api';
 
 // Opens the standing app-level SSE channel (GET /api/v1/events) — unlike
@@ -20,6 +20,9 @@ export function connectLiveEvents(): EventSource {
     // during a brief reconnect never leaves stale state stranded.
     void refreshQueue();
     void refreshTasks();
+    // Also the AfterAgent indicators — an after_agent_state 'done' missed
+    // while disconnected would otherwise leave a thread showing 'running'.
+    void refreshThreadList();
   };
 
   es.onmessage = (msg) => {
@@ -93,6 +96,14 @@ function handleEvent(event: AppBroadcastEvent): void {
       if (hasThreadInstance(event.threadId)) {
         useThreadInstance(event.threadId).markBackgroundTurn(true);
       }
+      return;
+    case 'after_agent_state':
+      // Replaces the old 3.5s thread-list poll after each chat turn. Patch
+      // only — a thread not in the list yet (e.g. a brand-new one whose
+      // list refresh hasn't landed) picks its state up from that fetch.
+      threads.value = threads.value.map((t) =>
+        t.id === event.threadId ? { ...t, afterAgentState: event.state } : t,
+      );
       return;
     case 'task_started':
       // No task-list status change here (still 'running', same as before) —

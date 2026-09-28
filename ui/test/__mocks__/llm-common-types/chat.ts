@@ -64,6 +64,17 @@ export const TaskQueueEntrySchema = z.object({
 });
 export type TaskQueueEntry = z.infer<typeof TaskQueueEntrySchema>;
 
+export const AfterAgentStateSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('idle') }),
+  z.object({ status: z.literal('running') }),
+  z.object({
+    status: z.literal('done'),
+    outcome: z.enum(['identified', 'no-op', 'error']),
+    finishedAt: z.string(),
+  }),
+]);
+export type AfterAgentState = z.infer<typeof AfterAgentStateSchema>;
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task_queue_update'),
@@ -91,5 +102,10 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     source: z.enum(['wakeup', 'sub_agent']),
   }),
   z.object({ type: z.literal('thread_turn_completed'), threadId: z.string() }),
+  z.object({
+    type: z.literal('after_agent_state'),
+    threadId: z.string(),
+    state: AfterAgentStateSchema,
+  }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

@@ -70,3 +70,41 @@ describe('chat/AppBroadcastEventSchema — thread turn lifecycle', () => {
     expect(parsed.success).to.equal(false);
   });
 });
+
+describe('chat/AppBroadcastEventSchema — after_agent_state', () => {
+  it('accepts a running state, so the thread list can show the spinner live [unit]', () => {
+    const event = { type: 'after_agent_state', threadId: 't-1', state: { status: 'running' } };
+    const parsed = AppBroadcastEventSchema.safeParse(event);
+    expect(parsed.success).to.equal(true);
+    expect(parsed.data).to.deep.equal(event);
+  });
+
+  it('accepts a done state carrying outcome and finishedAt, which the indicator dedups its flash on [unit]', () => {
+    const event = {
+      type: 'after_agent_state',
+      threadId: 't-1',
+      state: { status: 'done', outcome: 'identified', finishedAt: '2026-09-28T00:00:00.000Z' },
+    };
+    const parsed = AppBroadcastEventSchema.safeParse(event);
+    expect(parsed.success).to.equal(true);
+    expect(parsed.data).to.deep.equal(event);
+  });
+
+  it('rejects a done state with no outcome, since the indicator has no icon to pick [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'after_agent_state',
+      threadId: 't-1',
+      state: { status: 'done', finishedAt: '2026-09-28T00:00:00.000Z' },
+    });
+    expect(parsed.success).to.equal(false);
+  });
+
+  it('rejects an unknown status, so a malformed event never reaches the thread list [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'after_agent_state',
+      threadId: 't-1',
+      state: { status: 'queued' },
+    });
+    expect(parsed.success).to.equal(false);
+  });
+});

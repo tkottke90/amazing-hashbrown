@@ -10,6 +10,8 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { bootObservability } from '../services/observability.js';
 import { WorkspaceStore } from '../services/workspace-store.js';
+import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
+import type { AfterAgentState, AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import type { ObservabilityCallbackHandler } from './observability-handler.js';
 import { logger } from '../config/logger.js';
 import {
@@ -37,6 +39,20 @@ function captureLogCalls(method: 'warn' | 'info') {
       spy[method] = original;
     },
   };
+}
+
+// Records every after_agent_state broadcast for one thread, in order, via a
+// real client on the real broadcast registry (same pattern as
+// task-scheduler.test.ts). Always call stop() in a finally block.
+function captureAfterAgentBroadcasts(threadId: string) {
+  const states: AfterAgentState[] = [];
+  const writer = (event: AppBroadcastEvent) => {
+    if (event.type === 'after_agent_state' && event.threadId === threadId) {
+      states.push(event.state);
+    }
+  };
+  registerBroadcastClient(writer);
+  return { states, stop: () => unregisterBroadcastClient(writer) };
 }
 
 // A fake BaseChatModel satisfying only the .withStructuredOutput().withRetry().invoke()
@@ -260,6 +276,56 @@ describe('agents/after-agent', () => {
 
       expect(getAfterAgentState(threadId)).to.deep.equal({ status: 'idle' });
     });
+
+    it('broadcasts running, then done/no-op, so the thread list updates without polling [unit]', async () => {
+      const threadId = `broadcast-no-op-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'nothing notable yet' },
+        'after-agent:classify': { shouldWrite: false, reason: 'small talk' },
+      });
+      const capture = captureAfterAgentBroadcasts(threadId);
+      try {
+        await runAfterAgentPipeline({ threadId, messages: [new HumanMessage('thanks!')], llm });
+      } finally {
+        capture.stop();
+      }
+
+      expect(capture.states.map((s) => s.status)).to.deep.equal(['running', 'done']);
+      expect((capture.states[1] as { outcome: string }).outcome).to.equal('no-op');
+      // The broadcast must carry exactly what the REST list would report, so
+      // a later reconciliation fetch never contradicts it.
+      expect(capture.states[1]).to.deep.equal(getAfterAgentState(threadId));
+    });
+
+    it('broadcasts done/error when a pipeline step throws, so a failure never leaves the spinner stuck [unit]', async () => {
+      const threadId = `broadcast-error-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({});
+      const capture = captureAfterAgentBroadcasts(threadId);
+      try {
+        await runAfterAgentPipeline({ threadId, messages: [new HumanMessage('boom')], llm });
+      } finally {
+        capture.stop();
+      }
+
+      expect(capture.states.map((s) => s.status)).to.deep.equal(['running', 'done']);
+      expect((capture.states[1] as { outcome: string }).outcome).to.equal('error');
+    });
+
+    it('broadcasts nothing when the pipeline is disabled, since no status changed [unit]', async () => {
+      const threadId = `broadcast-disabled-${crypto.randomUUID()}`;
+      const capture = captureAfterAgentBroadcasts(threadId);
+      try {
+        await runAfterAgentPipeline({
+          threadId,
+          messages: [new HumanMessage('hello')],
+          requestAfterAgentEnabled: false,
+        });
+      } finally {
+        capture.stop();
+      }
+
+      expect(capture.states).to.deep.equal([]);
+    });
   });
 
   describe('runAfterAgentPipeline() — write dispatch (createWikiPage/updateWikiPage)', () => {
@@ -294,17 +360,24 @@ describe('agents/after-agent', () => {
         },
       });
 
-      await runAfterAgentPipeline({
-        threadId,
-        messages: [new HumanMessage('I prefer tea over coffee.')],
-        llm,
-        registry,
-        store,
-      });
+      const capture = captureAfterAgentBroadcasts(threadId);
+      try {
+        await runAfterAgentPipeline({
+          threadId,
+          messages: [new HumanMessage('I prefer tea over coffee.')],
+          llm,
+          registry,
+          store,
+        });
+      } finally {
+        capture.stop();
+      }
 
       const state = getAfterAgentState(threadId);
       expect(state.status).to.equal('done');
       expect((state as { outcome: string }).outcome).to.equal('identified');
+      // The success outcome reaches open clients live, not just the REST list.
+      expect(capture.states[capture.states.length - 1]).to.deep.equal(state);
 
       const wiki = await registry.load('user');
       const page = await wiki.readPage('entities/favorite-drink.md');
