@@ -172,6 +172,20 @@ export interface TaskDependency {
   createdAt: string;
 }
 
+// One outgoing dependency edge with enough about its target for display —
+// see listDependencyEdgesForTasks().
+export interface DependencyEdgeSummary {
+  dependency: TaskDependency;
+  target: { id: string; title: string; trackerId: string | null; status: TaskStatus };
+  satisfied: boolean;
+}
+
+// A task's trailing run of failed runs — see failedRunStreaks().
+export interface FailedRunStreak {
+  attempts: number;
+  lastSummary: string | null;
+}
+
 export interface NewTaskInput {
   workspaceId?: string | null;
   title: string;
@@ -1344,6 +1358,45 @@ export class WorkspaceStore extends BaseStore {
     return rows.map(mapTaskDependency);
   }
 
+  // Outgoing edges for many tasks in one query, each with its target's
+  // title/tracker/status and whether the edge is currently satisfied — the
+  // Kanban board's "Waiting on …" badge and dependency_failed reason (see the
+  // board-v2 design, §1.6). Tasks with no edges are absent from the map.
+  listDependencyEdgesForTasks(taskIds: string[]): Map<string, DependencyEdgeSummary[]> {
+    const result = new Map<string, DependencyEdgeSummary[]>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT task_dependencies.*, tasks.status AS target_status, tasks.title AS target_title,
+                tasks.tracker_id AS target_tracker_id
+         FROM task_dependencies
+         JOIN tasks ON tasks.id = task_dependencies.depends_on_task_id
+         WHERE task_dependencies.task_id IN (${placeholders})`,
+      )
+      .all(...taskIds) as (RawTaskDependencyRow & {
+      target_status: TaskStatus;
+      target_title: string;
+      target_tracker_id: string | null;
+    })[];
+    for (const row of rows) {
+      const dep = mapTaskDependency(row);
+      const edges = result.get(dep.taskId) ?? [];
+      edges.push({
+        dependency: dep,
+        target: {
+          id: dep.dependsOnTaskId,
+          title: row.target_title,
+          trackerId: row.target_tracker_id,
+          status: row.target_status,
+        },
+        satisfied: this.isEdgeSatisfied(dep, row.target_status),
+      });
+      result.set(dep.taskId, edges);
+    }
+    return result;
+  }
+
   private loadDependencyEdges(
     taskId: string,
   ): Array<{ dep: TaskDependency; targetStatus: TaskStatus }> {
@@ -1453,6 +1506,93 @@ export class WorkspaceStore extends BaseStore {
   // history and the next run's kickoff message.
   setQueueEntrySummary(id: string, summary: string): void {
     this.db.prepare(`UPDATE task_queue SET summary = ? WHERE id = ?`).run(summary, id);
+  }
+
+  // Takes a queued-but-never-started task back out of the queue and returns
+  // it to 'pending'. The pending row is deleted rather than marked
+  // 'cancelled' (cf. detachQueueEntry) because it never ran, so it must not
+  // show up in run history. Returns false, changing nothing, when the task
+  // has no pending row — a running or paused run is stopped via pause /
+  // cancel instead.
+  dequeueTask(taskId: string): boolean {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(`SELECT id FROM task_queue WHERE task_id = ? AND status = 'pending'`)
+        .get(taskId) as { id: string } | undefined;
+      if (!row) return false;
+      this.db.prepare(`DELETE FROM task_queue WHERE id = ?`).run(row.id);
+      this.patchTask(taskId, { status: 'pending' });
+      return true;
+    })();
+  }
+
+  // Moves a task's pending row to `index` (0-based) among the pending rows of
+  // its own scope (workspace, or the Inbox). The scope's rows keep the same
+  // set of position values, just reassigned in the new order, so rows from
+  // other scopes stay exactly where they were in the global ordering.
+  // Running and paused rows are never moved. Returns false if the task has
+  // no pending row.
+  reorderQueue(taskId: string, index: number): boolean {
+    return this.db.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT task_queue.id AS id, task_queue.task_id AS task_id, task_queue.position AS position
+           FROM task_queue
+           JOIN tasks ON tasks.id = task_queue.task_id
+           WHERE task_queue.status = 'pending'
+             AND COALESCE(tasks.workspace_id, 'inbox') = (
+               SELECT COALESCE(workspace_id, 'inbox') FROM tasks WHERE id = ?
+             )
+           ORDER BY task_queue.position ASC`,
+        )
+        .all(taskId) as { id: string; task_id: string; position: number }[];
+      const from = rows.findIndex((r) => r.task_id === taskId);
+      if (from === -1) return false;
+
+      const positions = rows.map((r) => r.position);
+      const reordered = [...rows];
+      const moved = reordered.splice(from, 1)[0]!;
+      const to = Math.max(0, Math.min(index, reordered.length));
+      reordered.splice(to, 0, moved);
+
+      const update = this.db.prepare(`UPDATE task_queue SET position = ? WHERE id = ?`);
+      reordered.forEach((r, i) => update.run(positions[i], r.id));
+      return true;
+    })();
+  }
+
+  // For each task, how many of its most recent settled runs failed in a row
+  // (0 when the latest settled run didn't fail), plus the newest failure's
+  // summary — the board's "Retry · N attempts" line. One query for all tasks.
+  // Tasks with no trailing failures are absent from the map.
+  failedRunStreaks(taskIds: string[]): Map<string, FailedRunStreak> {
+    const result = new Map<string, FailedRunStreak>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `WITH ranked AS (
+           SELECT task_id, status, summary,
+                  ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY enqueued_at DESC, rowid DESC) AS rn
+           FROM task_queue
+           WHERE task_id IN (${placeholders}) AND status IN ('done', 'failed', 'cancelled')
+         ),
+         first_non_failed AS (
+           SELECT task_id, MIN(rn) AS rn FROM ranked WHERE status != 'failed' GROUP BY task_id
+         )
+         SELECT ranked.task_id AS task_id, COUNT(*) AS attempts,
+                MAX(CASE WHEN ranked.rn = 1 THEN ranked.summary END) AS last_summary
+         FROM ranked
+         LEFT JOIN first_non_failed ON first_non_failed.task_id = ranked.task_id
+         WHERE ranked.status = 'failed'
+           AND (first_non_failed.rn IS NULL OR ranked.rn < first_non_failed.rn)
+         GROUP BY ranked.task_id`,
+      )
+      .all(...taskIds) as { task_id: string; attempts: number; last_summary: string | null }[];
+    for (const row of rows) {
+      result.set(row.task_id, { attempts: row.attempts, lastSummary: row.last_summary });
+    }
+    return result;
   }
 
   // Every run of a task, newest first. runNumber is the run's 1-based

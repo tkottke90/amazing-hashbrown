@@ -450,6 +450,27 @@ export class ThreadStore extends BaseStore {
     return row ? mapMessageRow(row) : null;
   }
 
+  // The newest still-pending HITL prompt in each of the given threads, in
+  // one query — the Kanban board needs the question a waiting task is asking
+  // for every card at once (see the board-v2 design, §1.6). Threads with no
+  // pending prompt are simply absent from the map.
+  listPendingHitlPrompts(threadIds: string[]): Map<string, ThreadMessageRecord> {
+    const result = new Map<string, ThreadMessageRecord>();
+    if (threadIds.length === 0) return result;
+    const placeholders = threadIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM thread_messages
+         WHERE kind = 'hitl_prompt' AND status = 'pending' AND thread_id IN (${placeholders})
+         ORDER BY seq DESC`,
+      )
+      .all(...threadIds) as RawMessageRow[];
+    for (const row of rows) {
+      if (!result.has(row.thread_id)) result.set(row.thread_id, mapMessageRow(row));
+    }
+    return result;
+  }
+
   // Returns the id of the thread's most recent message if it's a failed
   // (status: 'error') assistant turn, or null otherwise. Retry only ever
   // targets the tail — see the design doc's retry scope constraint. Always
