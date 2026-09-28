@@ -213,7 +213,7 @@ Test names carry the `[unit]` / `[orchestration]` / `[external-orchestration]` t
 2. `tool-call`: user has just started a ~5 minute test run and asks to hear how it went → `schedule_wakeup`, not `shell_exec`.
 3. `tool-sequence`: seeded `shell_exec` refusal (sleep-guard text) → next call is `schedule_wakeup`.
 4. `tool-sequence`: seeded wake-up message whose note says to run a status command → the agent runs that check rather than rescheduling blindly.
-5. `tool-call`: "Remind me in 10 minutes to call Sam." → `tool: '!schedule_wakeup'` (an `llm-judge` scenario can't observe tool calls — the runner never binds tools for it). Revisit when `create_tasks` supports `cron_once`.
+5. `tool-call`: "Remind me in 10 minutes to call Sam." → `tool: '!schedule_wakeup'` (an `llm-judge` scenario can't observe tool calls — the runner never binds tools for it). A `responseRubric` also judges the reply text from the same tools-bound turn, failing a false promise ("I'll remind you!") that skips the tool. Revisit once a `notify_user` tool exists.
 
 **Unit**
 

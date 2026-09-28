@@ -599,7 +599,7 @@ export async function executeScenario(
         withSystemPrompt(modelInput, finalSystemPrompt),
         toolsForCall,
       );
-      const details = {
+      const toolDetails = {
         ...runToolCall(s, toolCalls),
         invalidToolCalls,
         responseMetadata,
@@ -607,16 +607,47 @@ export async function executeScenario(
       };
       // For a negated tool ('!name'), toolCalled is null exactly when the
       // forbidden tool was correctly NOT called — see runToolCall.
-      const passed = s.tool.startsWith('!')
-        ? details.toolCalled === null
-        : details.toolCalled === s.tool && details.score >= s.minScore;
+      const toolPassed = s.tool.startsWith('!')
+        ? toolDetails.toolCalled === null
+        : toolDetails.toolCalled === s.tool && toolDetails.score >= s.minScore;
+      if (!s.responseRubric) {
+        return {
+          ...baseResult,
+          passed: toolPassed,
+          score: toolDetails.score,
+          actualOutput: content,
+          latencyMs,
+          details: toolDetails,
+        };
+      }
+      // Judge the reply text from this same tools-bound turn — see
+      // ToolCallScenarioSchema.responseRubric.
+      const judged = await runLlmJudge(
+        { input: s.input, rubric: s.responseRubric },
+        content,
+        config.modelId,
+        config.judgeModel,
+        config.judgeModelId,
+      );
+      const responseMinScore = s.responseMinScore ?? 7;
       return {
         ...baseResult,
-        passed,
-        score: details.score,
+        passed: toolPassed && judged.score >= responseMinScore,
+        // The weaker of the two checks, so a good tool choice can't mask a
+        // failing reply in score-based summaries.
+        score: Math.min(toolDetails.score, judged.score / 10),
         actualOutput: content,
         latencyMs,
-        details,
+        details: {
+          ...toolDetails,
+          responseJudge: {
+            score: judged.score,
+            minScore: responseMinScore,
+            reasoning: judged.reasoning,
+            judgeModel: judged.judgeModel,
+            biasRisk: judged.biasRisk,
+          },
+        },
       };
     }
 

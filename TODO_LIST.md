@@ -623,7 +623,7 @@ Items are ordered first by priority/necessity, then by dependency.
 **Ideas / Requirements:**
 
 - `create_tasks` hardcodes `triggerType: 'chat'`; allow `cron_once` with a fire time
-- Revisit `suites/agent-wait.yaml` `aw-005`, whose expected tool call becomes `create_tasks`
+- Scheduling alone doesn't deliver a reminder — a one-off task's run lands in a thread nobody is watching. `suites/agent-wait.yaml` `aw-005` expects an honest decline until a `notify_user` tool (external channels plus an in-app list) exists
 
 **Dependencies:** Trigger System
 

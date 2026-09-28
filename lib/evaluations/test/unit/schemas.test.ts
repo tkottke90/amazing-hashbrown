@@ -272,6 +272,36 @@ describe('ToolCallScenarioSchema', () => {
       }),
     );
   });
+
+  it('accepts a responseRubric and responseMinScore for judging the reply text [unit]', () => {
+    const result = ToolCallScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-call',
+      tool: '!schedule_wakeup',
+      responseRubric: 'Does not promise a reminder.',
+      responseMinScore: 8,
+    });
+    assert.equal(result.responseRubric, 'Does not promise a reminder.');
+    assert.equal(result.responseMinScore, 8);
+  });
+
+  it('rejects a responseMinScore above the 0-10 judge scale [unit]', () => {
+    assert.throws(() =>
+      ToolCallScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'tool-call',
+        tool: '!schedule_wakeup',
+        responseRubric: 'r',
+        responseMinScore: 11,
+      }),
+    );
+  });
 });
 
 describe('LlmJudgeScenarioSchema', () => {
