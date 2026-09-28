@@ -177,6 +177,19 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('does not retry, and does not claim success, on a write rejection that names no correct wiki', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "opposite case: there's nothing to retry. Don't treat the next user turn",
+      );
+      expect(result).to.include(
+        "don't respond as if the write already\n     succeeded. Say plainly that the save didn't go through",
+      );
+      expect(result).to.include(
+        'then either call wiki_locate to find a real alternative domain or call ask_user',
+      );
+    });
+
     it('narrows "obvious" to an established domain or no plausible alternative, not a subjective guess', () => {
       const result = buildSystemPrompt();
       expect(result).to.include('no other\n     domain could plausibly cover it');

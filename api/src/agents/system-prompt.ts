@@ -657,6 +657,45 @@
 // stricter tool_choice constraint) — out of scope for this file and not
 // something to build speculatively without a separate decision to pursue
 // it.
+//
+// Twenty-fourth entry, auto-eval round 1 of suites/wiki-write.yaml
+// (2026-09-28, local/Lemonade/Ornith/Digital Ocean, judge local) — the
+// suite's first run since wwrite-010 was added for issue #202 (an
+// "owned-by-another-workspace" wiki_forbidden rejection, distinct from the
+// "locked to one allowed wiki" shape the fourteenth entry's paragraph
+// already covers — confirmed in code, api/src/agents/tools/
+// wiki-write-guard.ts: the 'locked' reason carries an allowedWikiId to
+// retry with, 'owned-by-another-workspace' carries none). 3 of 4 models
+// failed it on this first exposure, in two distinct bad shapes: local
+// ignored the rejection entirely and asked generic "what/where" questions
+// as if starting fresh, never mentioning video-streaming or the conflict;
+// Ornith hallucinated that the content had already been saved into the
+// rejected wiki and described its contents back to the user. Only Lemonade
+// passed, by producing the rubric's expected behavior unprompted. This
+// isn't a ceiling — it's the first-ever exposure of a genuine case the
+// priority-overrides paragraph never addressed: everything it said about a
+// write rejection assumed a corrected wikiId was named to retry with,
+// which this rejection shape never provides. Added a second bullet
+// immediately after the existing one, giving it its own contrastive
+// example (the actual wiki-write-guard.ts message text) per
+// interpreting-results.md §3, and explicitly forbidding both failure
+// shapes seen: no silent retry, no claiming success. Left the fourteenth
+// entry's bullet and every other section untouched — this is an addition,
+// not a rewording, so it shouldn't disturb wwrite-005/006/007/009, which
+// already pass reliably per the 2026-09-15 session
+// ([[wiki-write-eval-outcomes]] memory). This round's other failures
+// (wwrite-001/002 dry-run-vs-prose on local/Lemonade, wwrite-006/008
+// rejection-recovery misses on local/Ornith, wwrite-005 llm-judge
+// terseness on local/Lemonade) all reproduce categories that memory
+// already documents as confirmed ceilings or round-to-round noise, not
+// touched here. Digital Ocean's run returned "[scenario error] 403
+// Forbidden" with 0ms latency on 6 of 10 scenarios, scattered
+// non-contiguously through the run — instant failure with no model
+// latency at all rules out a content-triggered block and points at
+// provider-side rate/concurrency limiting on the Digital Ocean endpoint,
+// not a prompt or model issue; not chased here. Next round: re-run all
+// four models against wwrite-010 specifically to confirm the new bullet
+// lands, and re-run Digital Ocean alone to see if the 403s were transient.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -752,7 +791,17 @@ wiki_locate first to produce a wikiId the directive never asked for.
      "use the right one," "try that again," a plain "yes" — retry the exact same call with only
      wikiId swapped to the one the rejection named. Don't re-derive the path, content,
      fromPage/toPage, or rawFilePath you already had, and don't ask what they'd like to do next;
-     the confirmation already answered that.`;
+     the confirmation already answered that.
+   - A write rejection that does not name a correct wiki — it says the wiki "belongs to another
+     workspace," to "choose a different wiki," or to "ask the user where this should go" — is the
+     opposite case: there's nothing to retry. Don't treat the next user turn ("okay, save that,"
+     "go ahead") as confirmation to retry the same wikiId, and don't respond as if the write already
+     succeeded. Say plainly that the save didn't go through and name the wiki that was rejected,
+     then either call wiki_locate to find a real alternative domain or call ask_user — don't invent
+     a replacement wikiId yourself. For example, a rejection reading \`Wiki "video-streaming" belongs
+     to another workspace and can't be written from here. Choose a different wiki (wiki_locate can
+     help), or ask the user where this should go.\` names no wikiId to swap in, unlike the
+     locked-wiki case above — the fix is to locate or ask, not to retry.`;
 
 // Added from auto-eval round 1 of suites/web-fetch.yaml (2026-08-03), the
 // first suite to exercise web_fetch alongside the wiki tools. Nothing in the
