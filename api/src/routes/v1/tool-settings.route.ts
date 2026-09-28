@@ -13,7 +13,7 @@ import {
 export const toolSettingsRouter = Router();
 
 toolSettingsRouter.get('/', (_req: Request, res: Response) => {
-  const result = listToolSettingsHandler();
+  const result = listToolSettingsHandler(configManager.getConfigDir());
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -63,7 +63,7 @@ toolSettingsRouter.delete('/:toolId', (req: Request, res: Response) => {
 // triggered automatically by GET / just from loading the page, matching the
 // existing MCP servers panel's "no side effects from viewing a page" rule.
 toolSettingsRouter.post('/refresh', async (_req: Request, res: Response) => {
-  const result = await refreshToolSettingsHandler(toolsManager);
+  const result = await refreshToolSettingsHandler(toolsManager, configManager.getConfigDir());
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

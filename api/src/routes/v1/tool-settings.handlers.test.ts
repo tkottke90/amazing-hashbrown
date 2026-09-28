@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -14,6 +14,7 @@ import {
   deleteToolSettingHandler,
   refreshToolSettingsHandler,
   listAvailableEnvVarsHandler,
+  readRawToolsConfig,
 } from './tool-settings.handlers.js';
 
 // listResolvedToolSettings() (which every handler above calls) reads
@@ -54,9 +55,52 @@ describe('routes/v1/tool-settings.handlers', () => {
     rmSync(configDir, { recursive: true, force: true });
   });
 
+  function writeConfig(tools: Record<string, unknown>): void {
+    writeFileSync(join(configDir, 'config.yaml'), yaml.stringify({ tools }), 'utf8');
+  }
+
+  // Issue #220: config-manager interpolates ${VAR} lookups at load time, so
+  // anything built from env.tools carries resolved secrets. The settings UI
+  // must see the raw lookup syntax, or it renders the secret and then fails
+  // to save it back.
+  describe('readRawToolsConfig()', () => {
+    it('returns the tools section exactly as written, lookups unresolved [unit]', () => {
+      process.env['RAW_CFG_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${RAW_CFG_SECRET_220}' } } });
+      expect(readRawToolsConfig(configDir)['shell_exec']).to.deep.equal({
+        env: { GH_TOKEN: '${RAW_CFG_SECRET_220}' },
+      });
+      delete process.env['RAW_CFG_SECRET_220'];
+    });
+
+    it('returns an empty map when config.yaml does not exist [unit]', () => {
+      expect(readRawToolsConfig(configDir)).to.deep.equal({});
+    });
+
+    it('falls back to an empty map instead of throwing when the tools section is malformed [unit]', () => {
+      writeFileSync(join(configDir, 'config.yaml'), yaml.stringify({ tools: 'not-a-map' }), 'utf8');
+      expect(readRawToolsConfig(configDir)).to.deep.equal({});
+    });
+  });
+
   describe('listToolSettingsHandler()', () => {
+    it('never exposes a resolved env value, only the stored lookup (issue #220) [unit]', () => {
+      process.env['LIST_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${LIST_SECRET_220}' } } });
+      const result = listToolSettingsHandler(configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const shell = result.data.find((t) => t.toolId === 'shell_exec')!;
+        expect(shell['env']).to.deep.equal({ GH_TOKEN: '${LIST_SECRET_220}' });
+        expect(JSON.stringify(result.data), 'secret leaked into the response').to.not.include(
+          's3cret-value',
+        );
+      }
+      delete process.env['LIST_SECRET_220'];
+    });
+
     it('returns every catalog tool, resolved', () => {
-      const result = listToolSettingsHandler();
+      const result = listToolSettingsHandler(configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         expect(result.data.map((t) => t.toolId)).to.include.members(['web_fetch', 'wiki_search']);
@@ -283,8 +327,21 @@ describe('routes/v1/tool-settings.handlers', () => {
       rmSync(mcpDir, { recursive: true, force: true });
     });
 
+    it('never exposes a resolved env value after a refresh (issue #220) [unit]', async () => {
+      process.env['REFRESH_SECRET_220'] = 's3cret-value';
+      writeConfig({ shell_exec: { env: { GH_TOKEN: '${REFRESH_SECRET_220}' } } });
+      const result = await refreshToolSettingsHandler(manager, configDir);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(JSON.stringify(result.data)).to.not.include('s3cret-value');
+        const shell = result.data.find((t) => t.toolId === 'shell_exec')!;
+        expect(shell['env']).to.deep.equal({ GH_TOKEN: '${REFRESH_SECRET_220}' });
+      }
+      delete process.env['REFRESH_SECRET_220'];
+    });
+
     it('returns the resolved list unchanged when no MCP servers are configured', async () => {
-      const result = await refreshToolSettingsHandler(manager);
+      const result = await refreshToolSettingsHandler(manager, configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         expect(result.data.map((t) => t.toolId)).to.not.include('pushover:pushover_send');
@@ -312,7 +369,7 @@ describe('routes/v1/tool-settings.handlers', () => {
           ],
         ]),
       );
-      const result = await refreshToolSettingsHandler(manager);
+      const result = await refreshToolSettingsHandler(manager, configDir);
       expect(result.ok).to.equal(true);
       if (result.ok) {
         const row = result.data.find((t) => t.toolId === 'pushover:pushover_send');

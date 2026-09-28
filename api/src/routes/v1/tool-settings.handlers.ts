@@ -7,7 +7,13 @@ import {
   listResolvedToolSettings,
   type ResolvedToolSettingItem,
 } from '../../agents/tool-config.js';
-import { WebFetchConfigSchema, RLMConfigSchema, type ToolEntry } from '../../config/env.js';
+import {
+  WebFetchConfigSchema,
+  RLMConfigSchema,
+  ToolsConfigSchema,
+  type ToolEntry,
+} from '../../config/env.js';
+import { logger } from '../../config/logger.js';
 import { readConfigYaml, mergeConfigYaml } from './settings.handlers.js';
 
 // ---- HandlerResult (mirrors mcp-servers.handlers.ts) ----------------------
@@ -121,12 +127,23 @@ const GENERIC_FIELD_NAMES = new Set(['enabled', 'defaultInclude', 'description',
 
 export type ToolSettingItem = ResolvedToolSettingItem;
 
-// toolsConfig is an optional override purely for testability — production
-// call sites (the route) omit it and get the real config.yaml-backed state.
-export function listToolSettingsHandler(
-  toolsConfig?: Record<string, ToolEntry>,
-): HandlerResult<ToolSettingItem[]> {
-  return ok(listResolvedToolSettings(toolsConfig));
+// The tools section exactly as written in config.yaml — ${VAR} lookups left
+// unresolved. Anything the settings UI reads must come from here, not from
+// env.tools: config-manager interpolates lookups at load time, so env.tools
+// holds resolved secrets (issue #220). Runtime consumers keep env.tools.
+export function readRawToolsConfig(configDir: string): Record<string, ToolEntry> {
+  const parsed = ToolsConfigSchema.safeParse(readConfigYaml(configDir)['tools']);
+  if (!parsed.success) {
+    logger.warn('config.yaml tools section failed validation; showing defaults', {
+      issues: parsed.error.issues.map((i) => i.message),
+    });
+    return {};
+  }
+  return parsed.data;
+}
+
+export function listToolSettingsHandler(configDir: string): HandlerResult<ToolSettingItem[]> {
+  return ok(listResolvedToolSettings(readRawToolsConfig(configDir)));
 }
 
 function findResolved(
@@ -221,8 +238,9 @@ export function deleteToolSettingHandler(
 
 export async function refreshToolSettingsHandler(
   manager: ToolsManager,
+  configDir: string,
 ): Promise<HandlerResult<ToolSettingItem[]>> {
   await manager.refreshMcpTools();
   syncMcpToolStatus(manager, getToolSettingsStore());
-  return ok(listResolvedToolSettings());
+  return ok(listResolvedToolSettings(readRawToolsConfig(configDir)));
 }

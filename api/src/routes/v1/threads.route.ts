@@ -8,6 +8,8 @@ import { getActiveSseWriter } from '../../agents/active-sse-writer.js';
 import { getWakeupStore, toCardPayload, type Wakeup } from '../../services/wakeup-store.js';
 import { getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
+import { configManager } from '../../config/env.js';
+import { readRawToolsConfig } from './tool-settings.handlers.js';
 import {
   listThreadsHandler,
   getThreadHandler,
@@ -156,7 +158,12 @@ threadsRouter.post('/:id/fork', async (req: Request, res: Response) => {
 
 threadsRouter.get('/:id/tools', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const result = getThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id);
+  const result = getThreadToolsHandler(
+    getThreadStore(),
+    getToolSettingsStore(),
+    id,
+    readRawToolsConfig(configManager.getConfigDir()),
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -166,7 +173,13 @@ threadsRouter.get('/:id/tools', (req: Request, res: Response) => {
 
 threadsRouter.put('/:id/tools', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const result = putThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id, req.body);
+  const result = putThreadToolsHandler(
+    getThreadStore(),
+    getToolSettingsStore(),
+    id,
+    req.body,
+    readRawToolsConfig(configManager.getConfigDir()),
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -176,7 +189,12 @@ threadsRouter.put('/:id/tools', (req: Request, res: Response) => {
 
 threadsRouter.delete('/:id/tools', (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const result = deleteThreadToolsHandler(getThreadStore(), getToolSettingsStore(), id);
+  const result = deleteThreadToolsHandler(
+    getThreadStore(),
+    getToolSettingsStore(),
+    id,
+    readRawToolsConfig(configManager.getConfigDir()),
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
