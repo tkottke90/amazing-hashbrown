@@ -72,8 +72,27 @@ export function runToolCall(
   scenario: ToolCallScenario,
   toolCalls: InvokedToolCall[],
 ): ToolCallDetails {
-  const match = toolCalls.find((call) => call.name === scenario.tool);
   const calledTools = toolCalls.map((call) => call.name);
+
+  // A '!'-prefixed tool inverts the assertion: the scenario passes only if
+  // the named tool was NOT called this turn. Mirrors executors/tool-sequence.ts's
+  // identical handling — argChecks are ignored, since a passing run has no
+  // matched call to check them against.
+  if (scenario.tool.startsWith('!')) {
+    const forbidden = scenario.tool.slice(1);
+    const offender = toolCalls.find((call) => call.name === forbidden);
+    return {
+      type: 'tool-call',
+      expectedTool: scenario.tool,
+      toolCalled: offender?.name ?? null,
+      calledTools,
+      ...(offender ? { matchedArgs: offender.args } : {}),
+      fieldResults: [],
+      score: offender ? 0 : 1,
+    };
+  }
+
+  const match = toolCalls.find((call) => call.name === scenario.tool);
 
   if (!match) {
     return {
