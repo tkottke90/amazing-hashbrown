@@ -10,6 +10,7 @@ jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 import { ToolSettingsDrawer } from '@/components/tool-settings-drawer';
 import * as api from '@/services/tool-settings-api';
 import type { ToolSettingItem } from '@/services/tool-settings-api';
+import { RequestError } from '@/utils/fetch.utils';
 
 const mockPatch = api.patchToolSetting as jest.MockedFunction<typeof api.patchToolSetting>;
 const mockReset = api.resetToolSetting as jest.MockedFunction<typeof api.resetToolSetting>;
@@ -160,39 +161,81 @@ describe('ToolSettingsDrawer', () => {
       render(<ToolSettingsDrawer tool={t} onSaved={onSaved} trigger={OPEN_TRIGGER} />);
     }
 
-    it('fetches env var names on open and suggests them via datalist', async () => {
+    it('fetches env var names on open and suggests them via datalist [unit]', async () => {
       openShellDrawer(shellTool());
       await waitFor(() => expect(mockEnvNames).toHaveBeenCalledWith());
       expect((await screen.findByText('Environment variables')).parentElement).toBeInTheDocument();
       await waitFor(() => expect(screen.getByLabelText('Add variable name')).toBeInTheDocument());
     });
 
-    it('degrades to free-text-only when the names fetch fails', async () => {
+    it('degrades to free-text-only when the names fetch fails [unit]', async () => {
       mockEnvNames.mockRejectedValue(new Error('offline'));
       openShellDrawer(shellTool());
       const input = await screen.findByLabelText('Add variable name');
       fireEvent.input(input, { target: { value: 'GH_TOKEN' } });
       fireEvent.keyDown(input, { key: 'Enter' });
       // Entry is still addable — no suggestions, but no hard failure either.
-      expect(screen.getByText('GH_TOKEN')).toBeInTheDocument();
-      expect(screen.getByText('${GH_TOKEN}')).toBeInTheDocument();
+      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
     });
 
-    it('adds an entry with ${NAME} value and warns on a lowercase name', async () => {
+    // Issue #220: the input pointed at a datalist id that didn't exist, so
+    // name suggestions never appeared.
+    it('wires the name input to the suggestions datalist [unit]', async () => {
+      openShellDrawer(shellTool());
+      const input = await screen.findByLabelText('Add variable name');
+      const listId = input.getAttribute('list');
+      expect(listId).toBeTruthy();
+      expect(document.getElementById(listId!)?.tagName).toBe('DATALIST');
+    });
+
+    it('adds an entry via the Add button, pre-filling a ${NAME} lookup [unit]', async () => {
+      openShellDrawer(shellTool());
+      fireEvent.input(await screen.findByLabelText('Add variable name'), {
+        target: { value: 'GH_TOKEN' },
+      });
+      expect(screen.getByLabelText('Value for new variable')).toHaveValue('${GH_TOKEN}');
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
+      expect(screen.getByLabelText('Add variable name')).toHaveValue('');
+    });
+
+    it('keeps a literal value typed before adding [unit]', async () => {
+      openShellDrawer(shellTool());
+      fireEvent.input(await screen.findByLabelText('Add variable name'), {
+        target: { value: 'TOOLS_DIR' },
+      });
+      fireEvent.input(screen.getByLabelText('Value for new variable'), {
+        target: { value: '/opt/tools' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(screen.getByLabelText('Value for TOOLS_DIR')).toHaveValue('/opt/tools');
+    });
+
+    // The screenshot in #220 shows "${GH_TOKEN}" typed into the name field.
+    it('treats ${NAME} typed as a name as the bare name [unit]', async () => {
+      openShellDrawer(shellTool());
+      const input = await screen.findByLabelText('Add variable name');
+      fireEvent.input(input, { target: { value: '${GH_TOKEN}' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
+    });
+
+    it('warns on a lowercase name [unit]', async () => {
       openShellDrawer(shellTool());
       const input = await screen.findByLabelText('Add variable name');
       fireEvent.input(input, { target: { value: 'gh_token' } });
       fireEvent.keyDown(input, { key: 'Enter' });
-      expect(screen.getByText('gh_token')).toBeInTheDocument();
-      expect(screen.getByText('${gh_token}')).toBeInTheDocument();
+      expect(screen.getByLabelText('Value for gh_token')).toBeInTheDocument();
       expect(screen.getByText(/uppercase names/i)).toBeInTheDocument();
     });
 
-    it('sends patch.env with existing entries and omits it when the editor is empty', async () => {
+    it('shows stored values in editable inputs and saves edits [unit]', async () => {
       mockPatch.mockResolvedValue(tool({ toolId: 'shell_exec' }));
-      // Pre-existing config.yaml env that the drawer must not wipe.
-      openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}', LOWER: '${LOWER}' } }));
-      fireEvent.click(await screen.findByText('Save'));
+      openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}', PATH: '${HOME}/bin' } }));
+      const value = await screen.findByLabelText('Value for PATH');
+      expect(value).toHaveValue('${HOME}/bin');
+      fireEvent.input(value, { target: { value: '/opt/bin:/usr/bin' } });
+      fireEvent.click(screen.getByText('Save'));
 
       await waitFor(() => expect(mockPatch).toHaveBeenCalled());
       expect(mockPatch).toHaveBeenCalledWith(
@@ -200,29 +243,54 @@ describe('ToolSettingsDrawer', () => {
         expect.objectContaining({
           allowlist: ['gh *'],
           denylist: [],
-          env: { GH_TOKEN: '${GH_TOKEN}', LOWER: '${LOWER}' },
+          env: { GH_TOKEN: '${GH_TOKEN}', PATH: '/opt/bin:/usr/bin' },
         }),
       );
     });
 
-    it('omits patch.env when no entries exist', async () => {
+    // With GET returning what config.yaml holds, an empty editor means "no
+    // env" — sending {} is what lets the last row actually be removed.
+    it('sends an empty env when there are no entries [unit]', async () => {
       mockPatch.mockResolvedValue(tool({ toolId: 'shell_exec' }));
       openShellDrawer(shellTool());
       fireEvent.click(await screen.findByText('Save'));
 
       await waitFor(() => expect(mockPatch).toHaveBeenCalled());
-      const patch = mockPatch.mock.calls[0][1] as Record<string, unknown>;
-      expect(patch).not.toHaveProperty('env');
+      expect(mockPatch.mock.calls[0][1]).toHaveProperty('env', {});
     });
 
-    it('removes an entry, sending patch.env without it', async () => {
+    it('removing the last entry saves an empty env, clearing it [unit]', async () => {
       mockPatch.mockResolvedValue(tool({ toolId: 'shell_exec' }));
       openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}' } }));
       fireEvent.click(await screen.findByLabelText('Remove environment variable GH_TOKEN'));
       fireEvent.click(screen.getByText('Save'));
 
       await waitFor(() => expect(mockPatch).toHaveBeenCalled());
-      expect(mockPatch.mock.calls[0][1]).not.toHaveProperty('env');
+      expect(mockPatch.mock.calls[0][1]).toHaveProperty('env', {});
+    });
+
+    it('shows each rejected row error next to that row and keeps the drawer open [unit]', async () => {
+      mockPatch.mockRejectedValue(
+        new RequestError('1 environment variable is invalid.', 400, {
+          'env.PATH': ["PATH: references ${NOPE}, which isn't set in the API's environment."],
+        }),
+      );
+      openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}', PATH: '${NOPE}' } }));
+      fireEvent.click(await screen.findByText('Save'));
+
+      const pathValue = await screen.findByLabelText('Value for PATH');
+      await waitFor(() => expect(pathValue).toHaveAttribute('aria-invalid', 'true'));
+      const errorId = pathValue.getAttribute('aria-describedby')!;
+      expect(document.getElementById(errorId)).toHaveTextContent(/references \$\{NOPE\}/);
+      expect(screen.getByLabelText('Value for GH_TOKEN')).not.toHaveAttribute(
+        'aria-invalid',
+        'true',
+      );
+      expect(screen.getByText('1 environment variable is invalid.')).toBeInTheDocument();
+
+      // Editing the row clears its error.
+      fireEvent.input(pathValue, { target: { value: '/usr/bin' } });
+      expect(pathValue).not.toHaveAttribute('aria-invalid', 'true');
     });
   });
 

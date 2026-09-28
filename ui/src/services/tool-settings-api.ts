@@ -34,7 +34,8 @@ export interface ToolSettingItem {
   model?: string;
   maxIterations?: number;
   truncateThreshold?: number;
-  // shell_exec
+  // shell_exec — env values as stored in config.yaml: ${VAR} lookups
+  // (unresolved), literals, or a mix
   allowlist?: string[];
   denylist?: string[];
   env?: Record<string, string>;
@@ -68,8 +69,9 @@ export interface ThreadToolsResponse {
 
 // ---- Global (Settings > Tools) --------------------------------------------
 
-// Names only — the API never exposes env var values, so there is nothing
-// here to accidentally render or log a secret from.
+// Names only — used to suggest names for new env rows. The tool's own `env`
+// map holds values exactly as stored in config.yaml (${VAR} lookups
+// unresolved, literals as typed); the API never returns a resolved value.
 export async function fetchShellEnvVarNames(): Promise<string[]> {
   const res = await fetch('/api/v1/tool-settings/shell_exec/env-vars');
   if (!res.ok) throw new Error('Failed to fetch environment variable names');
