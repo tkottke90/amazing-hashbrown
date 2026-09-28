@@ -1376,4 +1376,156 @@ describe('services/workspace-store', () => {
       );
     });
   });
+
+  describe('Kanban board v2 queue primitives (dequeueTask / reorderQueue / batch readers)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-board-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function queued(title: string, workspaceId: string | null = null) {
+      const task = store.createTask({ title, workspaceId, assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      return task;
+    }
+
+    function pendingOrder(): string[] {
+      return store
+        .listQueue()
+        .filter((e) => e.status === 'pending')
+        .map((e) => store.getTask(e.taskId)!.title);
+    }
+
+    it('dequeueTask returns a queued task to pending without leaving a phantom run in history [unit]', () => {
+      const task = queued('t');
+
+      expect(store.dequeueTask(task.id)).to.equal(true);
+
+      expect(store.getTask(task.id)!.status).to.equal('pending');
+      expect(store.listQueue(), 'no active queue row remains').to.have.length(0);
+      expect(
+        store.listTaskRuns(task.id),
+        'a run that never started must not appear as a cancelled run',
+      ).to.have.length(0);
+    });
+
+    it('dequeueTask refuses a running task, which must be paused or cancelled instead [unit]', () => {
+      const task = queued('t');
+      store.dequeueNext();
+
+      expect(store.dequeueTask(task.id)).to.equal(false);
+      expect(store.getTask(task.id)!.status).to.equal('running');
+    });
+
+    it('reorderQueue moves a task within its own workspace [unit]', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      queued('a', ws.id);
+      queued('b', ws.id);
+      const c = queued('c', ws.id);
+
+      expect(store.reorderQueue(c.id, 0)).to.equal(true);
+
+      expect(pendingOrder()).to.deep.equal(['c', 'a', 'b']);
+    });
+
+    it('reorderQueue leaves other scopes at their exact global positions [unit]', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      queued('w1', ws.id);
+      queued('inbox1');
+      const w2 = queued('w2', ws.id);
+      queued('inbox2');
+
+      store.reorderQueue(w2.id, 0);
+
+      expect(
+        pendingOrder(),
+        'Inbox rows keep their slots; only the workspace rows swap among theirs',
+      ).to.deep.equal(['w2', 'inbox1', 'w1', 'inbox2']);
+    });
+
+    it('reorderQueue never moves the running row [unit]', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      const running = queued('running', ws.id);
+      queued('a', ws.id);
+      const b = queued('b', ws.id);
+      store.dequeueNext();
+
+      store.reorderQueue(b.id, 0);
+
+      const order = store.listQueue().map((e) => store.getTask(e.taskId)!.title);
+      expect(order[0]).to.equal('running');
+      expect(store.getTask(running.id)!.status).to.equal('running');
+      expect(pendingOrder()).to.deep.equal(['b', 'a']);
+    });
+
+    it('reorderQueue clamps an out-of-range index to the end [unit]', () => {
+      const a = queued('a');
+      queued('b');
+
+      store.reorderQueue(a.id, 99);
+
+      expect(pendingOrder()).to.deep.equal(['b', 'a']);
+    });
+
+    it('failedRunStreaks counts only the trailing failures and reports the newest summary [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const settle = (outcome: 'done' | 'failed', summary: string) => {
+        const entry = store.enqueueTask(task.id);
+        store.setQueueEntrySummary(entry.id, summary);
+        store.completeQueueEntry(entry.id, outcome);
+      };
+      settle('failed', 'first failure');
+      settle('done', 'ok');
+      settle('failed', 'second failure');
+      settle('failed', 'third failure');
+
+      const streak = store.failedRunStreaks([task.id]).get(task.id);
+
+      expect(streak, 'the failure before the success does not count').to.deep.equal({
+        attempts: 2,
+        lastSummary: 'third failure',
+      });
+    });
+
+    it('failedRunStreaks omits a task whose latest run succeeded [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const failed = store.enqueueTask(task.id);
+      store.completeQueueEntry(failed.id, 'failed');
+      const ok = store.enqueueTask(task.id);
+      store.completeQueueEntry(ok.id, 'done');
+
+      expect(store.failedRunStreaks([task.id]).has(task.id)).to.equal(false);
+    });
+
+    it('listDependencyEdgesForTasks returns each edge with its target and satisfaction [unit]', () => {
+      const target = store.createTask({ title: 'Deploy', trackerId: 'INF-12' });
+      const waiting = store.createTask({ title: 'Route' });
+      store.addTaskDependency(waiting.id, target.id);
+
+      const edges = store.listDependencyEdgesForTasks([waiting.id, target.id]);
+
+      expect(edges.has(target.id), 'tasks without edges are absent').to.equal(false);
+      const [edge] = edges.get(waiting.id)!;
+      expect(edge.target).to.deep.equal({
+        id: target.id,
+        title: 'Deploy',
+        trackerId: 'INF-12',
+        status: 'pending',
+      });
+      expect(edge.satisfied).to.equal(false);
+
+      store.patchTask(target.id, { status: 'done' });
+      expect(
+        store.listDependencyEdgesForTasks([waiting.id]).get(waiting.id)![0].satisfied,
+      ).to.equal(true);
+    });
+  });
 });

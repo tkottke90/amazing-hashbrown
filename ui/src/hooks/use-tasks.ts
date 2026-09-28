@@ -1,7 +1,16 @@
 import { signal } from '@preact/signals';
-import type { Task, TaskStatus, QueueState, CreateTaskInput, PlanStep } from '@/services/tasks-api';
+import type {
+  Task,
+  TaskStatus,
+  QueueState,
+  CreateTaskInput,
+  PlanStep,
+  MoveRequest,
+} from '@/services/tasks-api';
 import {
+  fetchTask,
   fetchTasks,
+  moveTask as apiMoveTask,
   fetchQueue,
   createTask as apiCreateTask,
   patchTask as apiPatchTask,
@@ -37,6 +46,32 @@ export async function refreshQueue(): Promise<void> {
   } catch {
     // best-effort — widget just stays stale until the next successful refresh
   }
+}
+
+// Swaps one task in the list for a newer copy of it — the result of a move,
+// a re-fetch, or the original copy restored after a failed optimistic move.
+export function replaceTask(task: Task): void {
+  tasks.value = tasks.value.map((t) => (t.id === task.id ? task : t));
+}
+
+// Re-fetches a single task so its server-computed board (lane, moves,
+// reason) catches up with a change pushed over live events.
+export async function refreshTask(id: string): Promise<void> {
+  try {
+    replaceTask(await fetchTask(id));
+  } catch {
+    // best-effort — the next full refresh catches it up
+  }
+}
+
+// Moves a task to a Kanban lane and swaps in the server's copy (with its
+// new board). Throws the API's RequestError on a rejected move so callers
+// can roll back an optimistic update.
+export async function moveTask(id: string, move: MoveRequest): Promise<Task> {
+  const updated = await apiMoveTask(id, move);
+  replaceTask(updated);
+  void refreshQueue();
+  return updated;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
@@ -110,22 +145,4 @@ export async function generatePlanForNewTask(input: {
   workspaceId?: string | null;
 }): Promise<PlanStep[]> {
   return apiGeneratePlanForNewTask(input);
-}
-
-export function groupTasksByStatus(taskList: Task[]): Record<TaskStatus, Task[]> {
-  const groups: Record<TaskStatus, Task[]> = {
-    pending: [],
-    scheduled: [],
-    ready: [],
-    running: [],
-    waiting_on_user: [],
-    blocked: [],
-    done: [],
-    failed: [],
-    cancelled: [],
-  };
-  for (const task of taskList) {
-    groups[task.status].push(task);
-  }
-  return groups;
 }

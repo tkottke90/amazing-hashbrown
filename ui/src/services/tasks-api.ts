@@ -66,6 +66,58 @@ export interface CronPreview {
 export type CronPreviewRequest =
   { expression: string; timezone: string } | { fireAt: string; timezone: string };
 
+// The Kanban board projection the API computes for every task — the server
+// owns which lane a task is in and where it may be dropped (see the API's
+// board-rules.ts). The UI renders it and never re-derives it from status.
+export type Lane = 'backlog' | 'scheduled' | 'queue' | 'attention' | 'done';
+
+export type MoveNeeds = 'none' | 'start_time' | 'reply' | 'reassign';
+
+export interface Move {
+  to: Lane;
+  needs: MoveNeeds;
+}
+
+export interface TaskRef {
+  id: string;
+  title: string;
+  trackerId: string | null;
+}
+
+export interface ReplyChoice {
+  label: string;
+  value: string;
+}
+
+export type BoardReason =
+  | {
+      kind: 'waiting_on_user';
+      question: string | null;
+      choices: ReplyChoice[];
+      allowFreeText: boolean;
+    }
+  | { kind: 'failed'; summary: string | null; attempts: number }
+  | { kind: 'paused' }
+  | { kind: 'dependency_failed'; dependency: TaskRef | null }
+  | { kind: 'schedule_paused'; failures: number }
+  | { kind: 'waiting_on_dependency'; dependencies: TaskRef[] }
+  | { kind: 'assigned_to_user' };
+
+export interface Board {
+  lane: Lane;
+  moves: Move[];
+  reason?: BoardReason;
+}
+
+export interface MoveRequest {
+  to: Lane;
+  position?: number;
+  startAt?: string;
+  timezone?: string;
+  reply?: string;
+  assignTo?: 'agent';
+}
+
 export interface Task {
   id: string;
   workspaceId: string | null;
@@ -88,6 +140,9 @@ export interface Task {
   updatedAt: string;
   // Present on cron tasks only.
   schedule?: TaskSchedule;
+  // Present on every task the tasks API returns; absent on the loose task
+  // copies embedded in queue broadcasts.
+  board?: Board;
 }
 
 export interface TaskDependency {
@@ -221,6 +276,20 @@ export async function pauseTask(id: string): Promise<Task> {
 
 export async function takeOverTask(id: string): Promise<Task> {
   return request<Task>(`/api/v1/tasks/${id}/take-over`, { method: 'POST' });
+}
+
+export async function fetchTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}`);
+}
+
+// Moves a task to a Kanban lane. The server decides what that means (enqueue,
+// pause, schedule, …) and answers 409 when the move is no longer legal.
+export async function moveTask(id: string, move: MoveRequest): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(move),
+  });
 }
 
 export async function resumeTask(id: string): Promise<Task> {

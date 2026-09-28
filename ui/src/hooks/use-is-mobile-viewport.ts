@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useMediaQuery } from './use-media-query';
 
 // Tailwind v4's default `sm` breakpoint (unmodified in this app's
 // style.css) is 640px — "mobile" here means narrower than that.
@@ -9,15 +9,5 @@ import { useEffect, useState } from 'preact/hooks';
 const MOBILE_QUERY = '(max-width: 639px)';
 
 export function useIsMobileViewport(): boolean {
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
-
-  useEffect(() => {
-    const media = window.matchMedia(MOBILE_QUERY);
-    const onChange = () => setIsMobile(media.matches);
-    onChange();
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-
-  return isMobile;
+  return useMediaQuery(MOBILE_QUERY);
 }

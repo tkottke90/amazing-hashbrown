@@ -1,12 +1,10 @@
 import { useEffect } from 'preact/hooks';
-import { forwardRef } from 'preact/compat';
 import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
-import { ChevronRight, Plus, GitBranch, BookOpen, Calendar, Clock } from 'lucide-preact';
+import { ChevronRight, GitBranch, BookOpen, Calendar } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
-import { TaskDrawer } from '@/components/task-drawer';
 import { WorkspaceSettingsDrawer } from '@/pages/workspaces/workspace-settings-drawer';
 import { FilesTab } from '@/pages/workspaces/files-tab';
 import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
@@ -18,40 +16,18 @@ import {
   closeProject,
   getProjectForWorkspace,
 } from '@/hooks/use-workspaces';
-import { tasks, refreshTasks, groupTasksByStatus } from '@/hooks/use-tasks';
+import { tasks, refreshTasks } from '@/hooks/use-tasks';
+import { useIsWideBoardViewport } from '@/hooks/use-media-query';
+import { TaskBoard } from '@/pages/workspaces/task-board/task-board';
+import { TaskListMobile } from '@/pages/workspaces/task-board/task-list-mobile';
 import { useTitle } from '@/hooks/use-title';
 import { cn } from '@/lib/utils';
-import type { Task, TaskStatus, TaskDependency, TaskSchedule } from '@/services/tasks-api';
-import { formatFireTime } from '@/lib/cron-drafts';
-import { listTaskDependencies } from '@/services/tasks-api';
 import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
 import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
 import { showToast } from '@/lib/toast';
 import { buildDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
 
-// Mirrors WorkspaceStore.isTaskReady()'s per-edge rule (workspace-store.ts)
-// — kept deliberately simple since this only drives a cosmetic Kanban badge,
-// never the actual gating (the server is the sole source of truth for that).
-function isDependencySatisfied(dep: TaskDependency, targetStatus: TaskStatus | undefined): boolean {
-  if (!targetStatus) return true; // target no longer exists — don't block the UI on stale data
-  if (dep.whileBlocked && targetStatus === 'blocked') return true;
-  if (dep.requireSuccess) return targetStatus === 'done';
-  return targetStatus === 'done' || targetStatus === 'failed' || targetStatus === 'cancelled';
-}
-
 type DetailTab = 'overview' | 'tasks' | 'files' | 'chat';
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  pending: 'Pending',
-  scheduled: 'Scheduled',
-  ready: 'Ready',
-  running: 'Running',
-  waiting_on_user: 'Waiting on user',
-  blocked: 'Blocked',
-  done: 'Done',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
 
 const DETAIL_TAB_TITLE_SUFFIX: Record<DetailTab, string> = {
   overview: '',
@@ -59,198 +35,6 @@ const DETAIL_TAB_TITLE_SUFFIX: Record<DetailTab, string> = {
   files: ' - Files',
   chat: ' - Chat',
 };
-
-const COLUMN_ORDER: TaskStatus[] = [
-  'pending',
-  'scheduled',
-  'ready',
-  'running',
-  'waiting_on_user',
-  'blocked',
-  'done',
-  'failed',
-];
-
-function KanbanColumn({
-  status,
-  taskList,
-  workspaceId,
-  onSaved,
-  onGoToChat,
-}: {
-  status: TaskStatus;
-  taskList: Task[];
-  workspaceId: string;
-  onSaved: () => void;
-  onGoToChat: () => void;
-}) {
-  const isDone = status === 'done';
-  const isReady = status === 'ready';
-  const isRunning = status === 'running';
-  const isBlocked = status === 'blocked';
-  const isFailed = status === 'failed';
-  const isScheduled = status === 'scheduled';
-  const label = status === 'failed' ? 'Failed / Cancelled' : STATUS_LABELS[status];
-
-  const columnTasks = status === 'failed' ? [...taskList] : taskList;
-
-  return (
-    <div data-column={status} class="bg-muted rounded-xl p-2.5 flex flex-col gap-2 min-h-[200px]">
-      <div class="flex items-center justify-between px-1">
-        <span
-          class={cn(
-            'text-xs font-semibold uppercase tracking-wider',
-            isRunning
-              ? 'text-primary'
-              : isBlocked || isFailed
-                ? 'text-destructive'
-                : isDone
-                  ? 'text-green-600'
-                  : isReady
-                    ? 'text-amber-600'
-                    : isScheduled
-                      ? 'text-violet-600'
-                      : 'text-muted-foreground',
-          )}
-        >
-          {label}
-        </span>
-        <span class="rounded-full bg-background border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          {columnTasks.length}
-        </span>
-      </div>
-
-      {columnTasks.map((task) => (
-        <TaskDrawer
-          key={task.id}
-          task={task}
-          defaultWorkspaceId={workspaceId}
-          onSaved={onSaved}
-          onGoToChat={onGoToChat}
-          trigger={<TaskCard task={task} />}
-        />
-      ))}
-    </div>
-  );
-}
-
-const LAST_RUN_BADGE: Record<NonNullable<TaskSchedule['lastRunOutcome']>, string> = {
-  done: 'bg-green-600/10 text-green-700 dark:text-green-400',
-  failed: 'bg-destructive/10 text-destructive',
-  cancelled: 'bg-muted text-muted-foreground',
-};
-
-// A cron task's card line: when it runs next, and how its last run went.
-function ScheduleCardLine({ schedule }: { schedule: TaskSchedule }) {
-  return (
-    <p
-      data-testid="task-card-schedule"
-      class="text-[10px] text-muted-foreground mt-1 flex items-center gap-1 flex-wrap"
-    >
-      <Clock class="size-3" />
-      {schedule.nextFireAt ? `next: ${formatFireTime(schedule.nextFireAt)}` : 'not scheduled'}
-      {schedule.lastRunOutcome && (
-        <span
-          data-testid="task-card-last-run"
-          class={cn(
-            'rounded-full px-1.5 py-0.5 font-medium',
-            LAST_RUN_BADGE[schedule.lastRunOutcome],
-          )}
-        >
-          last: {schedule.lastRunOutcome}
-        </span>
-      )}
-    </p>
-  );
-}
-
-// forwardRef is required because preact/compat drops refs on plain function
-// components (preactjs/preact#3297). Dialog.tsx clones the trigger element and
-// attaches a ref to wire up the click→showModal handler; without forwardRef
-// that ref is silently discarded and the drawer never opens.
-export const TaskCard = forwardRef<HTMLButtonElement, { task: Task }>(function TaskCard(
-  { task },
-  ref,
-) {
-  const isRunning = task.status === 'running';
-  const isDone = task.status === 'done';
-
-  // Titles of this task's not-yet-satisfied dependencies, alphabetical — a
-  // pending task with no dependencies (the common case) never fetches at
-  // all. Only relevant while 'pending': once a task is readied/enqueued its
-  // dependencies (if any) were already satisfied.
-  const waitingOn = useSignal<string[]>([]);
-
-  useEffect(() => {
-    if (task.status !== 'pending') {
-      waitingOn.value = [];
-      return;
-    }
-    let cancelled = false;
-    void listTaskDependencies(task.id)
-      .then((deps) => {
-        if (cancelled) return;
-        const unmetTitles = deps
-          .filter((dep) => {
-            const target = tasks.value.find((t) => t.id === dep.dependsOnTaskId);
-            return !isDependencySatisfied(dep, target?.status);
-          })
-          .map(
-            (dep) =>
-              tasks.value.find((t) => t.id === dep.dependsOnTaskId)?.title ?? dep.dependsOnTaskId,
-          )
-          .sort((a, b) => a.localeCompare(b));
-        waitingOn.value = unmetTitles;
-      })
-      .catch(() => {
-        // best-effort — the badge just doesn't show if this fails
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [task.status, task.id]);
-
-  return (
-    <button
-      ref={ref}
-      type="button"
-      data-testid="task-card"
-      data-task-id={task.id}
-      class={cn(
-        'bg-card border border-border rounded-[10px] p-[11px_12px] text-left text-sm transition-colors hover:border-primary/40 w-full',
-        isRunning && 'border-primary',
-        isDone && 'opacity-75',
-      )}
-    >
-      <p class="font-medium truncate">{task.title}</p>
-      {task.assignedTo && (
-        <span
-          class={cn(
-            'inline-flex items-center mt-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-            task.assignedTo === 'agent'
-              ? 'bg-primary/10 text-primary'
-              : 'bg-muted text-muted-foreground',
-          )}
-        >
-          {task.assignedTo}
-        </span>
-      )}
-      {task.dueAt && (
-        <p class="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-          <Calendar class="size-3" />
-          {new Date(task.dueAt).toLocaleDateString()}
-        </p>
-      )}
-      {task.schedule && <ScheduleCardLine schedule={task.schedule} />}
-      {waitingOn.value.length > 0 && (
-        <p class="text-[10px] text-muted-foreground mt-1 truncate">
-          Waiting on: {waitingOn.value[0]}
-          {waitingOn.value.length > 1 && ` +${waitingOn.value.length - 1} more`}
-        </p>
-      )}
-    </button>
-  );
-});
 
 function OverviewTab({
   workspace,
@@ -339,45 +123,24 @@ function TasksTab({
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
   );
-  const grouped = useComputed(() => groupTasksByStatus(workspaceTasks.value));
+  // All five lanes fit side by side from 1024px; narrower screens get the
+  // grouped list with one-tap actions instead of drag-and-drop.
+  const wide = useIsWideBoardViewport();
 
-  const failedAndCancelled = useComputed(() => [
-    ...grouped.value.failed,
-    ...grouped.value.cancelled,
-  ]);
-
-  return (
-    <div class="p-4">
-      <div class="flex items-center justify-between mb-3">
-        <p class="text-xs text-muted-foreground">
-          {workspaceTasks.value.length} total · queue is serial, one runs at a time
-        </p>
-        <TaskDrawer
-          task={null}
-          defaultWorkspaceId={workspaceId}
-          onSaved={onSaved}
-          trigger={
-            <Button size="sm">
-              <Plus class="size-3.5" />
-              Add task
-            </Button>
-          }
-        />
-      </div>
-
-      <div class="grid gap-3" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
-        {COLUMN_ORDER.map((status) => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            taskList={status === 'failed' ? failedAndCancelled.value : grouped.value[status]}
-            workspaceId={workspaceId}
-            onSaved={onSaved}
-            onGoToChat={onGoToChat}
-          />
-        ))}
-      </div>
-    </div>
+  return wide ? (
+    <TaskBoard
+      workspaceId={workspaceId}
+      taskList={workspaceTasks.value}
+      onSaved={onSaved}
+      onGoToChat={onGoToChat}
+    />
+  ) : (
+    <TaskListMobile
+      workspaceId={workspaceId}
+      taskList={workspaceTasks.value}
+      onSaved={onSaved}
+      onGoToChat={onGoToChat}
+    />
   );
 }
 

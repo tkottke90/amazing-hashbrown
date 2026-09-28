@@ -95,6 +95,26 @@ wake-up call:
 
 See `docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md`.
 
+### The Kanban board
+
+Which lane a task shows in, which lanes it may be dragged to, and what each
+drop does live **only** in `services/board-rules.ts` (`boardFor` /
+`planMove`, pure and exhaustively tested per move-table cell). The UI never
+maps a status to a lane or a drop to an endpoint:
+
+- Every task a tasks route returns carries `board: { lane, moves, reason? }`
+  (`withBoard` / `withBoards` in `routes/v1/tasks-board.handlers.ts`). Build
+  contexts with `buildBoardContexts` — one query per fact type, never per
+  task.
+- `POST /api/v1/tasks/:id/move` recomputes the plan from fresh state (409 if
+  the move went stale) and runs each step through the existing handlers
+  (`enqueueTaskHandler`, `pauseTaskHandler`, `patchTaskHandler`,
+  `answerTaskPrompt`, …), so a drag obeys the same invariants as the
+  equivalent button. To change what a drag does, change `board-rules.ts` and
+  its test; to add a new kind of step, add it to `MoveStep` and `runStep`.
+
+See `docs/superpowers/specs/2026-09-28-kanban-board-v2-design.md`.
+
 ## Headless turns and timed wake-ups
 
 A headless turn (`agents/headless-turn.ts`) runs in an existing thread with no

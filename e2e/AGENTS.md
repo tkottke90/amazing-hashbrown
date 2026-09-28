@@ -242,61 +242,82 @@ implementation details that change without notice.
 
 ### Known `data-testid` attributes in UI source
 
-| Attribute value            | Component file                                      | Added for                                                                                     |
-| -------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `assistant-message`        | `ui/src/components/assistant-message.tsx`           | Targeting assistant response bubbles in @llm tests                                            |
-| `workspace-row`            | `ui/src/pages/workspaces/index.tsx`                 | Selecting specific workspace rows; pair with `data-workspace-id`                              |
-| `win-condition`            | `ui/src/pages/workspaces/[id].tsx`                  | Asserting project win condition card in Overview tab                                          |
-| `git-chip`                 | `ui/src/pages/workspaces/[id].tsx`                  | Targeting the Git metadata chip to assert its `title` (remote URL)                            |
-| `task-card`                | `ui/src/pages/workspaces/[id].tsx`                  | Selecting task cards in Kanban columns; pair with `data-task-id`                              |
-| `task-plan`                | `ui/src/components/task-drawer.tsx`                 | Targeting the plan field section inside the task drawer                                       |
-| `plan-step`                | `ui/src/components/task-drawer.tsx`                 | Individual plan step rows; pair with `data-done="true\|false"`                                |
-| `plan-step-checkbox`       | `ui/src/components/task-drawer.tsx`                 | Checkbox inside a plan step row                                                               |
-| `task-status-select`       | `ui/src/components/task-drawer.tsx`                 | Status `<select>` in the task drawer edit form                                                |
-| `task-tracker-type-select` | `ui/src/components/task-drawer.tsx`                 | Tracker adapter `<select>` in the task drawer's Tracker section                               |
-| `task-tracker-preview`     | `ui/src/components/task-drawer.tsx`                 | Linked-item preview card once a tracker link resolves                                         |
-| `queue-widget`             | `ui/src/components/thread-sidebar.tsx`              | Sidebar queue widget container                                                                |
-| `queue-current-task`       | `ui/src/components/thread-sidebar.tsx`              | Task name text inside the queue widget                                                        |
-| `queue-status`             | `ui/src/components/thread-sidebar.tsx`              | Status line inside the queue widget                                                           |
-| `inbox-empty`              | `ui/src/pages/inbox/index.tsx`                      | Empty state placeholder shown when inbox has no tasks                                         |
-| `inbox-due-soon`           | `ui/src/pages/inbox/index.tsx`                      | Section wrapper for tasks with a due date                                                     |
-| `inbox-no-due-date`        | `ui/src/pages/inbox/index.tsx`                      | Section wrapper for tasks with no due date                                                    |
-| `inbox-task-row`           | `ui/src/pages/inbox/index.tsx`                      | Table row for an inbox task; pair with `data-task-id`                                         |
-| `resource-card`            | `ui/src/components/resource-card-message.tsx`       | Targeting the resource card rendered after /create-workspace or /create-project               |
-| `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx`       | The card's Open control, navigating to `/workspaces/:id`                                      |
-| `task-run-marker`          | `ui/src/components/task-run-marker-message.tsx`     | The "Automated task started/completed/…" banner bracketing a task's run in a thread           |
-| `task-run-marker-open`     | `ui/src/components/task-run-marker-message.tsx`     | A run marker's "Open run" link (hidden inside that run's own view)                            |
-| `task-run-view`            | `ui/src/pages/chat/task-run-view.tsx`               | The read-only run view shown at `/chat/:id` for a `'task'` thread                             |
-| `task-run-title`           | `ui/src/pages/chat/task-run-view.tsx`               | Run view header text ("Run #N of <task>")                                                     |
-| `task-run-status`          | `ui/src/pages/chat/task-run-view.tsx`               | Run view status badge text                                                                    |
-| `task-run-back`            | `ui/src/pages/chat/task-run-view.tsx`               | Run view's link back to the workspace or Inbox                                                |
-| `task-run-readonly-note`   | `ui/src/pages/chat/task-run-view.tsx`               | Footer note standing in for the message box on a run view                                     |
-| `task-run-history`         | `ui/src/components/task-run-history.tsx`            | The task drawer's Run history section                                                         |
-| `task-run-history-row`     | `ui/src/components/task-run-history.tsx`            | One run in the drawer's Run history (opens the run)                                           |
-| `task-waiting-open-run`    | `ui/src/components/task-drawer.tsx`                 | The waiting-on-user banner's "Open run" button                                                |
-| `hitl-open-run`            | `ui/src/components/hitl-prompt-message.tsx`         | "Open run" link on a task question copied into the workspace chat                             |
-| `cron-expression`          | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) cron expression input                                                      |
-| `cron-timezone`            | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) time zone input                                                            |
-| `cron-max-iterations`      | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) max runs input (blank = unlimited)                                         |
-| `cron-stop-after`          | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) stop-after date input                                                      |
-| `cron-max-failures`        | `ui/src/components/cron-repeat-fields.tsx`          | Scheduled (repeat) auto-pause threshold (blank = never)                                       |
-| `cron-once-fire-at`        | `ui/src/components/cron-once-fields.tsx`            | Scheduled (once) date-time input                                                              |
-| `cron-preview`             | `ui/src/components/cron-preview-panel.tsx`          | Live schedule preview; `data-state` is `loading`, `valid`, `invalid` or `error`               |
-| `schedule-enabled`         | `ui/src/components/schedule-status-banner.tsx`      | The schedule's enabled checkbox                                                               |
-| `schedule-next-run`        | `ui/src/components/schedule-status-banner.tsx`      | "Next run: …" line for an active saved schedule                                               |
-| `schedule-inactive-banner` | `ui/src/components/schedule-status-banner.tsx`      | Why a saved schedule won't run again; pair with `data-reason`                                 |
-| `task-card-schedule`       | `ui/src/pages/workspaces/[id].tsx`                  | A cron task card's "next: …" line                                                             |
-| `task-card-last-run`       | `ui/src/pages/workspaces/[id].tsx`                  | A cron task card's last-run outcome badge                                                     |
-| `inbox-task-trigger`       | `ui/src/pages/inbox/index.tsx`                      | An Inbox row's trigger label ("Scheduled (repeat)", …)                                        |
-| `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
-| `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                  | Wrapper `<g>` around rendered node `<circle>` elements                                        |
-| `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx` | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |
-| `wakeup-card`              | `ui/src/components/wakeup-card.tsx`                 | A timed wake-up card; `data-state` is `pending`, `fired` or `cancelled`                       |
-| `wakeup-card-status`       | `ui/src/components/wakeup-card.tsx`                 | The card's "in 14m · 3:42 PM" / "Fired …" / "Cancelled …" line                                |
-| `wakeup-card-trigger`      | `ui/src/components/wakeup-card.tsx`                 | The card's Trigger now button (pending only)                                                  |
-| `wakeup-card-cancel`       | `ui/src/components/wakeup-card.tsx`                 | The card's Cancel button (pending only)                                                       |
-| `wakeup-fired-marker`      | `ui/src/components/wakeup-fired-marker.tsx`         | Divider above the turn a wake-up resumed                                                      |
-| `background-turn-status`   | `ui/src/pages/chat/index.tsx`                       | "Working in the background" strip while a headless turn holds the thread                      |
+| Attribute value            | Component file                                            | Added for                                                                                     |
+| -------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `assistant-message`        | `ui/src/components/assistant-message.tsx`                 | Targeting assistant response bubbles in @llm tests                                            |
+| `workspace-row`            | `ui/src/pages/workspaces/index.tsx`                       | Selecting specific workspace rows; pair with `data-workspace-id`                              |
+| `win-condition`            | `ui/src/pages/workspaces/[id].tsx`                        | Asserting project win condition card in Overview tab                                          |
+| `git-chip`                 | `ui/src/pages/workspaces/[id].tsx`                        | Targeting the Git metadata chip to assert its `title` (remote URL)                            |
+| `task-card`                | `ui/src/pages/workspaces/task-board/board-card.tsx`       | A task card on the board or mobile list; pair with `data-task-id` and `data-status`           |
+| `task-plan`                | `ui/src/components/task-drawer.tsx`                       | Targeting the plan field section inside the task drawer                                       |
+| `plan-step`                | `ui/src/components/task-drawer.tsx`                       | Individual plan step rows; pair with `data-done="true\|false"`                                |
+| `plan-step-checkbox`       | `ui/src/components/task-drawer.tsx`                       | Checkbox inside a plan step row                                                               |
+| `task-status-select`       | `ui/src/components/task-drawer.tsx`                       | Status `<select>` in the task drawer edit form                                                |
+| `task-tracker-type-select` | `ui/src/components/task-drawer.tsx`                       | Tracker adapter `<select>` in the task drawer's Tracker section                               |
+| `task-tracker-preview`     | `ui/src/components/task-drawer.tsx`                       | Linked-item preview card once a tracker link resolves                                         |
+| `queue-widget`             | `ui/src/components/thread-sidebar.tsx`                    | Sidebar queue widget container                                                                |
+| `queue-current-task`       | `ui/src/components/thread-sidebar.tsx`                    | Task name text inside the queue widget                                                        |
+| `queue-status`             | `ui/src/components/thread-sidebar.tsx`                    | Status line inside the queue widget                                                           |
+| `inbox-empty`              | `ui/src/pages/inbox/index.tsx`                            | Empty state placeholder shown when inbox has no tasks                                         |
+| `inbox-due-soon`           | `ui/src/pages/inbox/index.tsx`                            | Section wrapper for tasks with a due date                                                     |
+| `inbox-no-due-date`        | `ui/src/pages/inbox/index.tsx`                            | Section wrapper for tasks with no due date                                                    |
+| `inbox-task-row`           | `ui/src/pages/inbox/index.tsx`                            | Table row for an inbox task; pair with `data-task-id`                                         |
+| `resource-card`            | `ui/src/components/resource-card-message.tsx`             | Targeting the resource card rendered after /create-workspace or /create-project               |
+| `resource-card-open-link`  | `ui/src/components/resource-card-message.tsx`             | The card's Open control, navigating to `/workspaces/:id`                                      |
+| `task-run-marker`          | `ui/src/components/task-run-marker-message.tsx`           | The "Automated task started/completed/…" banner bracketing a task's run in a thread           |
+| `task-run-marker-open`     | `ui/src/components/task-run-marker-message.tsx`           | A run marker's "Open run" link (hidden inside that run's own view)                            |
+| `task-run-view`            | `ui/src/pages/chat/task-run-view.tsx`                     | The read-only run view shown at `/chat/:id` for a `'task'` thread                             |
+| `task-run-title`           | `ui/src/pages/chat/task-run-view.tsx`                     | Run view header text ("Run #N of <task>")                                                     |
+| `task-run-status`          | `ui/src/pages/chat/task-run-view.tsx`                     | Run view status badge text                                                                    |
+| `task-run-back`            | `ui/src/pages/chat/task-run-view.tsx`                     | Run view's link back to the workspace or Inbox                                                |
+| `task-run-readonly-note`   | `ui/src/pages/chat/task-run-view.tsx`                     | Footer note standing in for the message box on a run view                                     |
+| `task-run-history`         | `ui/src/components/task-run-history.tsx`                  | The task drawer's Run history section                                                         |
+| `task-run-history-row`     | `ui/src/components/task-run-history.tsx`                  | One run in the drawer's Run history (opens the run)                                           |
+| `task-waiting-open-run`    | `ui/src/components/task-drawer.tsx`                       | The waiting-on-user banner's "Open run" button                                                |
+| `hitl-open-run`            | `ui/src/components/hitl-prompt-message.tsx`               | "Open run" link on a task question copied into the workspace chat                             |
+| `cron-expression`          | `ui/src/components/cron-repeat-fields.tsx`                | Scheduled (repeat) cron expression input                                                      |
+| `cron-timezone`            | `ui/src/components/cron-repeat-fields.tsx`                | Scheduled (repeat) time zone input                                                            |
+| `cron-max-iterations`      | `ui/src/components/cron-repeat-fields.tsx`                | Scheduled (repeat) max runs input (blank = unlimited)                                         |
+| `cron-stop-after`          | `ui/src/components/cron-repeat-fields.tsx`                | Scheduled (repeat) stop-after date input                                                      |
+| `cron-max-failures`        | `ui/src/components/cron-repeat-fields.tsx`                | Scheduled (repeat) auto-pause threshold (blank = never)                                       |
+| `cron-once-fire-at`        | `ui/src/components/cron-once-fields.tsx`                  | Scheduled (once) date-time input                                                              |
+| `cron-preview`             | `ui/src/components/cron-preview-panel.tsx`                | Live schedule preview; `data-state` is `loading`, `valid`, `invalid` or `error`               |
+| `schedule-enabled`         | `ui/src/components/schedule-status-banner.tsx`            | The schedule's enabled checkbox                                                               |
+| `schedule-next-run`        | `ui/src/components/schedule-status-banner.tsx`            | "Next run: …" line for an active saved schedule                                               |
+| `schedule-inactive-banner` | `ui/src/components/schedule-status-banner.tsx`            | Why a saved schedule won't run again; pair with `data-reason`                                 |
+| `task-card-schedule`       | `ui/src/pages/workspaces/task-board/board-card.tsx`       | A cron task card's "next: …" line                                                             |
+| `task-card-last-run`       | `ui/src/pages/workspaces/task-board/board-card.tsx`       | A cron task card's last-run outcome badge                                                     |
+| `task-card-status`         | `ui/src/pages/workspaces/task-board/board-card.tsx`       | A card's exact-status badge (lanes group several statuses)                                    |
+| `task-card-reason`         | `ui/src/pages/workspaces/task-board/board-card.tsx`       | The line saying why a card is in its lane (question, failure, dependency…)                    |
+| `task-card-plan`           | `ui/src/pages/workspaces/task-board/board-card.tsx`       | A card's plan progress ("2/5")                                                                |
+| `task-card-assignee-you`   | `ui/src/pages/workspaces/task-board/board-card.tsx`       | The "You" chip on a task assigned to the user                                                 |
+| `task-board`               | `ui/src/pages/workspaces/task-board/task-board.tsx`       | The desktop five-lane board; lanes carry `data-column`, `data-drop-state` and `data-over`     |
+| `task-board-summary`       | `ui/src/pages/workspaces/task-board/task-board.tsx`       | "N tasks · N running" line above the board                                                    |
+| `lane-count`               | `ui/src/pages/workspaces/task-board/task-board.tsx`       | A lane header's card count                                                                    |
+| `task-list-mobile`         | `ui/src/pages/workspaces/task-board/task-list-mobile.tsx` | The mobile Tasks list; sections carry `data-section`                                          |
+| `section-toggle`           | `ui/src/pages/workspaces/task-board/task-list-mobile.tsx` | A mobile section header that collapses/expands it                                             |
+| `card-action-*`            | `ui/src/pages/workspaces/task-board/task-list-mobile.tsx` | A mobile card's one-tap action: `-reply`, `-retry`, `-unblock`, `-run-now`                    |
+| `quick-add-button`         | `ui/src/pages/workspaces/task-board/task-list-mobile.tsx` | The mobile + button that opens quick add                                                      |
+| `quick-add-form`           | `ui/src/pages/workspaces/task-board/task-list-mobile.tsx` | The quick-add sheet's form                                                                    |
+| `board-callout`            | `ui/src/components/task-board/board-callout.tsx`          | The task drawer's board section                                                               |
+| `board-action-*`           | `ui/src/components/task-board/board-callout.tsx`          | Drawer board actions: `-retry`, `-unblock`, `-run-now`, `-reschedule`, `-resume-schedule`     |
+| `board-move-to`            | `ui/src/components/task-board/board-callout.tsx`          | The drawer's "Move to" lane `<select>`                                                        |
+| `board-reply-form`         | `ui/src/components/task-board/reply-form.tsx`             | Answer-the-agent form (drawer and mobile reply sheet)                                         |
+| `board-reply-question`     | `ui/src/components/task-board/reply-form.tsx`             | The agent's question text in the reply form                                                   |
+| `board-reply-choice`       | `ui/src/components/task-board/reply-form.tsx`             | A quick-reply button in the reply form                                                        |
+| `move-start-time-form`     | `ui/src/components/task-board/move-prompts.tsx`           | The start-time picker a move to Scheduled opens                                               |
+| `move-reassign-confirm`    | `ui/src/components/task-board/move-prompts.tsx`           | The "Hand to the agent?" confirmation                                                         |
+| `task-add-to-queue`        | `ui/src/components/task-drawer.tsx`                       | New-task drawer's "Add to queue" checkbox                                                     |
+| `inbox-task-trigger`       | `ui/src/pages/inbox/index.tsx`                            | An Inbox row's trigger label ("Scheduled (repeat)", …)                                        |
+| `graph-edges`              | `ui/src/pages/wiki/graph-view.tsx`                        | Wrapper `<g>` around rendered edge `<line>` elements; count children to assert edge rendering |
+| `graph-nodes`              | `ui/src/pages/wiki/graph-view.tsx`                        | Wrapper `<g>` around rendered node `<circle>` elements                                        |
+| `chat-scroll-container`    | `ui/src/components/chat-message-scroll-wrapper.tsx`       | Reading `scrollTop`/`scrollHeight` to assert auto-scroll behavior in `chat-scroll.spec.ts`    |
+| `wakeup-card`              | `ui/src/components/wakeup-card.tsx`                       | A timed wake-up card; `data-state` is `pending`, `fired` or `cancelled`                       |
+| `wakeup-card-status`       | `ui/src/components/wakeup-card.tsx`                       | The card's "in 14m · 3:42 PM" / "Fired …" / "Cancelled …" line                                |
+| `wakeup-card-trigger`      | `ui/src/components/wakeup-card.tsx`                       | The card's Trigger now button (pending only)                                                  |
+| `wakeup-card-cancel`       | `ui/src/components/wakeup-card.tsx`                       | The card's Cancel button (pending only)                                                       |
+| `wakeup-fired-marker`      | `ui/src/components/wakeup-fired-marker.tsx`               | Divider above the turn a wake-up resumed                                                      |
+| `background-turn-status`   | `ui/src/pages/chat/index.tsx`                             | "Working in the background" strip while a headless turn holds the thread                      |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
