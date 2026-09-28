@@ -16,9 +16,11 @@ tools:
   # shell_exec is a special tool with its own workingDirectory default.
   # It also supports an optional "env" field for extra environment variables.
   shell_exec:
-    # Optional: extra env vars passed to shell_exec child commands, on top
-    # of the sanitized minimal environment (PATH/HOME/USER).
-    # Values must be config-manager env lookups: "${VAR}" — uppercase names
-    # only; a missing variable resolves to an empty string.
+    # Optional: extra env vars for shell_exec child commands, layered on top
+    # of the minimal environment (PATH/HOME/USER); an entry with the same
+    # name overrides the default. Names must be uppercase. Values may be a
+    # "${VAR}" lookup (resolved from the API's environment at load time), a
+    # literal, or a mix like "${HOME}/bin". Literals are stored here as plain
+    # text, so keep secrets in the environment and reference them by lookup.
     env:
       GH_TOKEN: "${GH_TOKEN}"

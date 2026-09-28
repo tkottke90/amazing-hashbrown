@@ -1,7 +1,7 @@
 # Shell Exec Env Settings — Design
 
 **Date:** 2026-09-28
-**Status:** Approved
+**Status:** Implemented
 **Related:** [Issue #220](https://github.com/tkottke90/amazing-hashbrown/issues/220), [Issue #189](https://github.com/tkottke90/amazing-hashbrown/issues/189) (introduced the env editor), [Tool settings redesign](./2026-09-13-tool-settings-redesign-design.md)
 
 ---
@@ -20,12 +20,13 @@ Saving Shell Exec settings fails with:
 Invalid value for environment variable "PATH": must be exactly one env lookup in the form "${VAR}" — secrets are never written to config.yaml, only the lookup syntax is.
 ```
 
-Four defects combine here:
+Five defects combine here:
 
 1. **The settings API reads interpolated values.** `GET /api/v1/tool-settings` builds its response from `env.tools`, which comes from config-manager's `getSection()`. config-manager runs `interpolateEnvVars()` when it loads, so `getSection()` returns resolved values. `${GH_TOKEN}` reaches the drawer as the real token and is shown in plain text. `${PATH}` (or a literal `PATH`) reaches it as `/usr/local/bin:…`. `PATCH` reads and writes the **raw** file (`readConfigYaml`/`mergeConfigYaml`) and its response comes from raw data, so `GET` and `PATCH` disagree about what the data is.
 2. **Saving resends resolved values, and they fail validation.** The drawer loads every `tool.env` entry into `envEntries` and sends them all back on save. `validateShellEnv` accepts only `^\$\{[A-Z_][A-Z0-9_]*\}$`, so the resolved `PATH` is rejected. The handler stops at the first bad entry, and its error doesn't say what to do.
 3. **Configured env replaces the defaults.** `ShellExecutorConfigSchema` sets `PATH/HOME/USER` only as a Zod `.default()`. Once `env` holds anything (e.g. `{ GH_TOKEN }`), commands start with no `PATH` and `gh` can't be found. That contradicts `api/config.yaml.example`, which says user env is added "on top of" the minimal environment.
-4. **Drawer UX bugs.**
+4. **Saving one field writes every other field's default.** _(Found during implementation — the most likely way `PATH` got into config.yaml.)_ The `PATCH` handler validates extra fields with `ShellExecutorConfigSchema.partial().strict()`, and in Zod 4 `.partial()` still applies field defaults. Saving only the allowlist therefore wrote `workingDirectory: /app`, `denylist: []` and the host's literal `env: { PATH, HOME, USER }` into config.yaml. The next save sent that literal `PATH` back and was rejected: the error in #220. The same bug reset `web_fetch.respectRobotsTxt` whenever only the timeout was saved.
+5. **Drawer UX bugs.**
    - The name input's `list="shell-env-var-names"` doesn't match the datalist's `id="shell-env-vars-datalist"`, so suggestions never show.
    - A row can only be added with Enter.
    - `${GH_TOKEN}` is accepted as a _name_.
@@ -48,7 +49,11 @@ Four defects combine here:
 
 ### 1. API: read and write the same data
 
-**Read.** `listToolSettingsHandler(configDir)` builds its list from `readConfigYaml(configDir).tools`, checked against `ToolsConfigSchema`, and no longer uses `env.tools`. The route passes `configManager.getConfigDir()`. If the raw file fails validation, the handler falls back to `{}` and logs a warning, matching the `env.tools` getter.
+**Read.** A new `readRawToolsConfig(configDir)` returns `readConfigYaml(configDir).tools` checked against `ToolsConfigSchema`. If the raw file fails validation, it falls back to `{}` and logs a warning, matching the `env.tools` getter. Every response that carries tool settings uses it instead of `env.tools`:
+
+- `listToolSettingsHandler(configDir)` (`GET /api/v1/tool-settings`)
+- `refreshToolSettingsHandler(manager, configDir)` (`POST /api/v1/tool-settings/refresh`)
+- the per-thread tools routes (`GET/PUT/DELETE /api/v1/threads/:id/tools`), which pass it as their existing `toolsConfig` argument. Their `enabled`/`defaultInclude` logic only reads booleans, which are identical raw or interpolated.
 
 - `patchToolSettingHandler`'s existence check (`findResolved`) only needs the catalog entry and is unaffected.
 - Runtime consumers (resolver defaults for agents, `shell-exec.tool.ts`, `api/src/index.ts`) keep reading the filled-in `env.tools`. **Only the settings API switches to the raw file.**
@@ -62,10 +67,12 @@ Four defects combine here:
 - Every entry is validated. All failures are collected, not only the first.
 - `ENV_VALUE_RE` (the single-lookup rule) is removed and replaced with a global reference regex.
 
+**Persist only what was sent.** After `.partial().strict()` validation, the handler keeps only the keys present in the request body, so schema defaults never reach config.yaml. This applies to every tool with extra fields (`web_fetch`, `rlm_query`, `shell_exec`).
+
 **Error format.**
 
-- `HandlerFailure` gets an optional `fieldErrors?: Array<{ field: 'env'; key: string; message: string }>`.
-- The route sends back `{ error, fieldErrors }`. `error` is a one-line summary, e.g. `2 environment variables are invalid.`
+- `HandlerFailure` gets an optional `fieldErrors?: Record<string, string[]>`, the same shape `skills.handlers.ts` already returns. Env rows are keyed `env.<NAME>`.
+- The route sends back `{ error, fieldErrors }`, and leaves `fieldErrors` out for failures not tied to a row. `error` is a one-line summary, e.g. `2 environment variables are invalid.`
 - Messages name the row and the fix, and **never include the value**:
   - `gh_token: names must be uppercase letters, digits or _ (e.g. GH_TOKEN).`
   - `PATH: references ${FOO}, which isn't set in the API's environment. Set it and restart the API, or remove the reference.`
@@ -97,7 +104,7 @@ Update the `env` comment in `api/config.yaml.example`: user entries go on top of
   - Fix the datalist mismatch (input `list` = datalist `id`).
 - **Helper text** under "Environment variables":
   > PATH, HOME and USER are always set. Add a row with the same name to override one. Use `${VAR}` to read a value from the API's environment, or type a literal. Literals are saved to config.yaml as plain text.
-- **Errors:** `patchToolSetting` (`ui/src/services/tool-settings-api.ts`) throws an error that carries `fieldErrors`. The drawer shows each message under its row (`aria-invalid`, destructive text), and the save banner shows the summary. Editing a row clears that row's error.
+- **Errors:** `request()` (`ui/src/utils/fetch.utils.ts`) throws a `RequestError` that carries `status` and `fieldErrors`, so `patchToolSetting` passes them through. The drawer shows each message under its row (`aria-invalid`, destructive text), and the save banner shows the summary. Editing a row clears that row's error.
 - **Saving:** always send `env` for shell_exec, and `{}` when the list is empty. The empty-list workaround is removed, because `GET` now shows what's in the file.
 
 ---
@@ -119,7 +126,7 @@ Update the `env` comment in `api/config.yaml.example`: user entries go on top of
 - With no `env`, a spawned command sees the default `PATH/HOME/USER`.
 - With only `GH_TOKEN`, it sees `GH_TOKEN` and the default `PATH`.
 - A user `PATH` overrides the default.
-- `ShellExecutorConfigSchema.partial().strict()` parse output contains no default env keys.
+- The schema's `env` default is `{}`. (Keeping defaults out of config.yaml is tested at the API: saving only the allowlist writes only the allowlist, and saving one `web_fetch` field leaves a stored sibling untouched.)
 
 **UI — `ui/test/tool-settings-drawer.test.tsx`** `[unit]`
 
