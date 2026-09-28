@@ -20,12 +20,21 @@ export const requestLogger: RequestHandler = (req, res, next) => {
     const diff = process.hrtime(start);
     const durationMs = (diff[0] * NS_PER_SEC + diff[1]) / NS_TO_MS;
 
-    req.logger.info(`${req.method} ${req.originalUrl} [${durationMs.toFixed(2)} ms]`, {
-      method: req.method,
-      url: req.url,
-      durationMs,
-      status: res.statusCode,
-    });
+    // Successful reads (status polls, list refreshes, static assets — this
+    // middleware runs before express.static) are routine and would otherwise
+    // bury real activity, so they log at debug. Writes and any error stay at
+    // info. An aborted request keeps Express's default 200, so it's judged by
+    // method alone — the long-lived GET /api/v1/events closing lands at debug.
+    const quiet = (req.method === 'GET' || req.method === 'HEAD') && res.statusCode < 400;
+    req.logger[quiet ? 'debug' : 'info'](
+      `${req.method} ${req.originalUrl} [${durationMs.toFixed(2)} ms]`,
+      {
+        method: req.method,
+        url: req.url,
+        durationMs,
+        status: res.statusCode,
+      },
+    );
   });
 
   next();
