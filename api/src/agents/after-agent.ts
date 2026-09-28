@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
+import type { AfterAgentState } from '@tkottke90/llm-common-types/chat';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import type { WorkspaceStore } from '../services/workspace-store.js';
@@ -11,6 +12,7 @@ import {
   type UpdateWikiPageResult,
 } from '../services/wiki-write.js';
 import { getObservabilityStore } from '../services/observability.js';
+import { broadcast } from '../services/broadcast.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
@@ -56,13 +58,13 @@ export function queueWikiUpdate(threadId: string, event: WikiUpdatedEvent): void
 // precedent as threadState/pendingWikiUpdates above.
 // ---------------------------------------------------------------------------
 
-export type AfterAgentState =
-  | { status: 'idle' }
-  | { status: 'running' }
-  | { status: 'done'; outcome: 'identified' | 'no-op' | 'error'; finishedAt: string };
+// Shape shared with the UI and the after_agent_state broadcast — see
+// lib/llm-common-types/src/chat/broadcast-events.ts.
+export type { AfterAgentState };
 
-// Generous headroom so a slow poller or a second tab still catches the
-// outcome before it's swept — not a correctness requirement, just UX.
+// Generous headroom so a thread-list fetch (e.g. the live-events reconnect
+// reconciliation) still catches the outcome before it's swept — not a
+// correctness requirement, just UX.
 const DONE_TTL_MS = 60_000;
 
 const afterAgentStatus = new Map<string, AfterAgentState>();
@@ -77,8 +79,17 @@ export function getAfterAgentState(threadId: string): AfterAgentState {
   return entry;
 }
 
+// The only writer of afterAgentStatus — every transition is also pushed over
+// the live-events channel, which is what replaces the UI's old thread-list
+// poll. The lazy 'done' -> 'idle' expiry in getAfterAgentState() is
+// deliberately silent (see the after_agent_state schema comment).
+function setAfterAgentState(threadId: string, state: AfterAgentState): void {
+  afterAgentStatus.set(threadId, state);
+  broadcast({ type: 'after_agent_state', threadId, state });
+}
+
 function setAfterAgentDone(threadId: string, outcome: 'identified' | 'no-op' | 'error'): void {
-  afterAgentStatus.set(threadId, {
+  setAfterAgentState(threadId, {
     status: 'done',
     outcome,
     finishedAt: new Date().toISOString(),
@@ -324,7 +335,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     // prompt" in the buildSystemPrompt() sense — see TraceRecordSchema's
     // comment. Left null rather than forcing an ill-fitting single value.
   });
-  afterAgentStatus.set(threadId, { status: 'running' });
+  setAfterAgentState(threadId, { status: 'running' });
   const handler = new ObservabilityCallbackHandler(
     traceId,
     store,
