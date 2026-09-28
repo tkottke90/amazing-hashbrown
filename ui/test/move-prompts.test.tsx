@@ -74,3 +74,13 @@ describe('MovePrompts', () => {
     expect(mockApiMoveTask).not.toHaveBeenCalled();
   });
 });
+
+describe('MovePrompts — idle', () => {
+  it('renders no dialog at all while no move is waiting on input [unit]', () => {
+    // A closed preact-dialog <dialog> stays in the DOM; since MovePrompts is
+    // mounted at the app root, an idle one must not add dialogs to every page.
+    movePrompt.value = null;
+    const { container } = render(<MovePrompts />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});

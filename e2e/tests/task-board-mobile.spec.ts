@@ -52,14 +52,28 @@ const suite: TestSuite = {
 
 test.use({ viewport: { width: 390, height: 844 } });
 
+const createdWorkspaceIds: string[] = [];
+
 async function createWorkspace(request: APIRequestContext, name: string) {
   const slug = `${name}-${Date.now()}`;
   const res = await request.post('/api/v1/workspaces', {
     data: { name: slug, locationRoot: 'temporary', directoryName: slug },
   });
   expect(res.status(), 'workspace created').toBe(201);
-  return (await res.json()) as { id: string };
+  const ws = (await res.json()) as { id: string };
+  createdWorkspaceIds.push(ws.id);
+  return ws;
 }
+
+// Deleting a workspace removes its tasks and queue rows (and its temp
+// directory). Without this, the e2e server's no-op executor would leave
+// these tests' queued tasks "running" forever, and later specs that expect
+// an empty queue (task-queue-widget.spec.ts) would fail.
+test.afterEach(async ({ request }) => {
+  for (const id of createdWorkspaceIds.splice(0)) {
+    await request.delete(`/api/v1/workspaces/${id}`);
+  }
+});
 
 async function createTask(request: APIRequestContext, data: Record<string, unknown>) {
   const res = await request.post('/api/v1/tasks', { data });

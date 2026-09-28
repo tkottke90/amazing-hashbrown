@@ -1,5 +1,4 @@
 import { useSignal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
 import { Modal } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { CronOnceFields } from '@/components/cron-once-fields';
@@ -85,42 +84,38 @@ function ReassignForm({
   );
 }
 
+function PromptModal({ prompt }: { prompt: MovePrompt }) {
+  const open = useSignal(true);
+  const dismiss = () => {
+    movePrompt.value = null;
+  };
+  return (
+    <Modal
+      title={prompt.kind === 'start_time' ? 'Schedule task' : 'Hand to the agent?'}
+      open={open}
+      onClose={dismiss}
+      onCancel={dismiss}
+    >
+      {prompt.kind === 'start_time' ? (
+        <StartTimeForm task={prompt.task} to={prompt.to} />
+      ) : (
+        <ReassignForm task={prompt.task} to={prompt.to} position={prompt.position} />
+      )}
+    </Modal>
+  );
+}
+
 // The dialogs a Kanban move opens when it needs input first: a start time
 // (moving to Scheduled) or confirmation that a task assigned to you should
 // go to the agent. Driven by the global `movePrompt` signal and mounted once
 // at the app root, so the board, the mobile list and the task drawer all
 // share it.
+//
+// Rendered only while a prompt is active: a closed preact-dialog <dialog>
+// stays in the DOM (and in the accessibility tree), so an always-mounted
+// modal here would add a stray dialog to every page of the app.
 export function MovePrompts() {
   const prompt = movePrompt.value;
-  const startOpen = useSignal(false);
-  const reassignOpen = useSignal(false);
-
-  useEffect(() => {
-    startOpen.value = prompt?.kind === 'start_time';
-    reassignOpen.value = prompt?.kind === 'reassign';
-  }, [prompt]);
-
-  const dismiss = () => {
-    movePrompt.value = null;
-  };
-
-  return (
-    <>
-      <Modal title="Schedule task" open={startOpen} onClose={dismiss} onCancel={dismiss}>
-        {prompt?.kind === 'start_time' && (
-          <StartTimeForm key={prompt.task.id} task={prompt.task} to={prompt.to} />
-        )}
-      </Modal>
-      <Modal title="Hand to the agent?" open={reassignOpen} onClose={dismiss} onCancel={dismiss}>
-        {prompt?.kind === 'reassign' && (
-          <ReassignForm
-            key={prompt.task.id}
-            task={prompt.task}
-            to={prompt.to}
-            position={prompt.position}
-          />
-        )}
-      </Modal>
-    </>
-  );
+  if (!prompt) return null;
+  return <PromptModal key={`${prompt.kind}:${prompt.task.id}`} prompt={prompt} />;
 }
