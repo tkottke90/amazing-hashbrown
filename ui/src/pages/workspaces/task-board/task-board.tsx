@@ -1,4 +1,4 @@
-import { useComputed, useSignal } from '@preact/signals';
+import { useSignal } from '@preact/signals';
 import type { ComponentChildren, JSX } from 'preact';
 import {
   closestCorners,
@@ -7,12 +7,14 @@ import {
   KeyboardSensor,
   PointerSensor,
   pointerWithin,
+  rectIntersection,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type KeyboardCoordinateGetter,
   type DragStartEvent,
 } from '@dnd-kit/core';
 import {
@@ -41,13 +43,39 @@ import {
 } from './lanes';
 
 // Cards sit inside lanes, and both are drop targets: prefer the card under
-// the pointer (a Queue reorder slot) over the lane around it; keyboard drags
-// have no pointer, so fall back to the nearest target.
+// the pointer (a Queue reorder slot) over the lane around it. Keyboard drags
+// have no pointer, so use what the dragged card overlaps, then the nearest
+// target.
 const collisionDetection: CollisionDetection = (args) => {
-  const hits = pointerWithin(args);
-  const found = hits.length > 0 ? hits : closestCorners(args);
+  const pointerHits = pointerWithin(args);
+  const overlaps = pointerHits.length > 0 ? pointerHits : rectIntersection(args);
+  const found = overlaps.length > 0 ? overlaps : closestCorners(args);
   const cards = found.filter((c) => !String(c.id).startsWith('lane:'));
   return cards.length > 0 ? cards : found;
+};
+
+// Keyboard moves: Left/Right jump the card to the neighbouring lane; Up/Down
+// step through the Queue's sortable slots. (dnd-kit's sortable getter alone
+// can't carry a card that isn't itself sortable across lanes.)
+const keyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+  if (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight') {
+    return sortableKeyboardCoordinates(event, args);
+  }
+  const { collisionRect, droppableRects } = args.context;
+  if (!collisionRect) return undefined;
+  event.preventDefault();
+
+  const lanes = LANE_ORDER.map((l) => droppableRects.get(laneDropId(l))).filter(
+    (rect): rect is NonNullable<typeof rect> => rect !== undefined,
+  );
+  const centre = collisionRect.left + collisionRect.width / 2;
+  const current = lanes.findIndex((rect) => centre >= rect.left && centre <= rect.right);
+  const target = lanes[current + (event.code === 'ArrowRight' ? 1 : -1)];
+  if (current === -1 || !target) return undefined;
+  return {
+    x: target.left + (target.width - collisionRect.width) / 2,
+    y: target.top + 56,
+  };
 };
 
 // Whether `lane` accepts the card being dragged: a lane the server lists in
@@ -135,6 +163,7 @@ function BoardLane({
       ref={setNodeRef}
       data-column={lane}
       data-drop-state={dropState}
+      data-over={isOver ? 'true' : undefined}
       aria-label={LANE_LABELS[lane]}
       class={cn(
         'flex min-h-[240px] min-w-0 flex-col gap-2 rounded-xl border-2 border-transparent bg-muted p-2.5 transition-colors',
@@ -181,7 +210,9 @@ export function TaskBoard({
   // One drawer for the whole board, opened on whichever card was clicked.
   const drawerOpen = useSignal(false);
   const selectedId = useSignal<string | null>(null);
-  const selected = useComputed(() => taskList.find((t) => t.id === selectedId.value) ?? null);
+  // Looked up on every render, not memoized: `taskList` is a plain prop, and
+  // a task created after the board mounted must still be found.
+  const selected = taskList.find((t) => t.id === selectedId.value) ?? null;
   const openTask = (task: Task) => {
     selectedId.value = task.id;
     drawerOpen.value = true;
@@ -190,7 +221,7 @@ export function TaskBoard({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
+      coordinateGetter: keyboardCoordinates,
       keyboardCodes: { start: ['Space'], cancel: ['Escape'], end: ['Space'] },
     }),
   );
@@ -265,7 +296,7 @@ export function TaskBoard({
       </DndContext>
 
       <TaskDrawer
-        task={selected.value}
+        task={selected}
         open={drawerOpen}
         defaultWorkspaceId={workspaceId}
         onSaved={onSaved}

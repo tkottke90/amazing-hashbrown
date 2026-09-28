@@ -186,7 +186,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await drawer.getByRole('button', { name: 'Create task' }).click();
 
         const taskCard = page
-          .locator('[data-column="pending"]')
+          .locator('[data-column="backlog"]')
           .locator('[data-testid="task-card"]')
           .filter({ hasText: taskTitle });
         await expect(taskCard).toBeVisible();
@@ -223,7 +223,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await drawer.getByRole('button', { name: 'Create task' }).click();
 
         const taskCard = page
-          .locator('[data-column="pending"]')
+          .locator('[data-column="backlog"]')
           .locator('[data-testid="task-card"]')
           .filter({ hasText: taskTitle });
         await expect(taskCard).toBeVisible();

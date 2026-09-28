@@ -106,3 +106,20 @@ also run `npm run dev` and check the change in a browser before committing.
 
 Prefer `@preact/signals` (`useSignal`, `useComputed`) over `useState`/`useReducer`
 from `preact/hooks` for component-level reactive state.
+
+`useComputed` only tracks **signals**. A computed that reads a plain prop
+(e.g. `useComputed(() => taskList.find(…))`) keeps the prop's value from the
+first render forever — compute prop-derived values directly in the render
+body instead.
+
+## Tasks board
+
+The workspace Tasks tab is `pages/workspaces/task-board/` — the five-lane
+drag-and-drop board at ≥1024px (`task-board.tsx`) and the grouped mobile
+list below that (`task-list-mobile.tsx`). Both render the server's
+`task.board` projection and never derive a lane or a legal drop from
+`status`. Every move — a drop, a card button, the drawer's "Move to…" — goes
+through `components/task-board/board-move.ts` (`requestMove` /
+`performMove`), which asks for any input the move `needs` via the app-root
+`MovePrompts`, applies it optimistically, and rolls back with the server's
+reason on a rejection.

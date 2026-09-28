@@ -1,4 +1,4 @@
-import { useComputed, useSignal } from '@preact/signals';
+import { useSignal } from '@preact/signals';
 import { BottomSheet } from '@tkottke90/preact-dialog';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
@@ -200,11 +200,12 @@ export function TaskListMobile({
 
   const drawerOpen = useSignal(false);
   const selectedId = useSignal<string | null>(null);
-  const selected = useComputed(() => taskList.find((t) => t.id === selectedId.value) ?? null);
+  // Looked up on every render, not memoized: `taskList` is a plain prop.
+  const selected = taskList.find((t) => t.id === selectedId.value) ?? null;
 
   const replyOpen = useSignal(false);
   const replyId = useSignal<string | null>(null);
-  const replyTask = useComputed(() => taskList.find((t) => t.id === replyId.value) ?? null);
+  const replyTask = taskList.find((t) => t.id === replyId.value) ?? null;
   const openReply = (task: Task) => {
     replyId.value = task.id;
     replyOpen.value = true;
@@ -223,7 +224,7 @@ export function TaskListMobile({
     drawerOpen.value = true;
   };
 
-  const replyReason = replyTask.value?.board?.reason;
+  const replyReason = replyTask?.board?.reason;
 
   return (
     <div class="flex flex-col gap-4 p-4 pb-24" data-testid="task-list-mobile">
@@ -279,10 +280,10 @@ export function TaskListMobile({
       </Button>
 
       <BottomSheet title="Answer the agent" open={replyOpen}>
-        {replyTask.value && replyReason?.kind === 'waiting_on_user' && (
+        {replyTask && replyReason?.kind === 'waiting_on_user' && (
           <ReplyForm
-            key={replyTask.value.id}
-            task={replyTask.value}
+            key={replyTask.id}
+            task={replyTask}
             reason={replyReason}
             onSent={() => (replyOpen.value = false)}
           />
@@ -302,7 +303,7 @@ export function TaskListMobile({
       </BottomSheet>
 
       <TaskDrawer
-        task={selected.value}
+        task={selected}
         open={drawerOpen}
         defaultWorkspaceId={workspaceId}
         onSaved={onSaved}

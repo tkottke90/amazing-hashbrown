@@ -72,6 +72,22 @@ describe('TaskBoard (desktop)', () => {
     expect(screen.getByDisplayValue('Deploy Infisical')).toBeInTheDocument();
   });
 
+  it('opens a task that was added after the board mounted (regression) [unit]', () => {
+    const { rerender } = renderBoard([]);
+    rerender(
+      <TaskBoard
+        workspaceId="ws-1"
+        taskList={[boardTask({ id: 'late', title: 'Added later' }, { lane: 'backlog' })]}
+        onSaved={jest.fn()}
+        onGoToChat={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('task-card'));
+
+    expect(screen.getByDisplayValue('Added later')).toBeInTheDocument();
+  });
+
   it('opens the task drawer with Enter, leaving Space for picking the card up [unit]', () => {
     renderBoard([boardTask({ id: 'a', title: 'Deploy Infisical' }, { lane: 'backlog' })]);
 

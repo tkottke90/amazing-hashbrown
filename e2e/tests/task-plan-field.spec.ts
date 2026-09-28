@@ -119,9 +119,9 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Create task' }).click();
 
-      // Task card should appear in Pending column
-      const pendingColumn = page.locator('[data-column="pending"]');
-      const taskCard = pendingColumn
+      // Task card should appear in the Backlog lane
+      const backlogLane = page.locator('[data-column="backlog"]');
+      const taskCard = backlogLane
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'Plan test task' });
       await expect(taskCard).toBeVisible();
@@ -255,8 +255,8 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Create task' }).click();
 
-      const pendingColumn = page.locator('[data-column="pending"]');
-      const taskCard = pendingColumn
+      const backlogLane = page.locator('[data-column="backlog"]');
+      const taskCard = backlogLane
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'AI plan test task' });
       await expect(taskCard).toBeVisible();
@@ -316,7 +316,7 @@ test.describe(
       await page.getByRole('button', { name: /tasks/i }).click();
 
       const taskCard = page
-        .locator('[data-column="pending"] [data-testid="task-card"]')
+        .locator('[data-column="backlog"] [data-testid="task-card"]')
         .filter({ hasText: 'No clobber task' });
       await expect(taskCard).toBeVisible();
 

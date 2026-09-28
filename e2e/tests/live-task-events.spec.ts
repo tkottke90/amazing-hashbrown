@@ -419,7 +419,7 @@ test.describe(
       await page.goto(`/workspaces/${wsId}`);
       await page.getByRole('button', { name: /tasks/i }).click();
       const taskCard = page
-        .locator('[data-column="pending"] [data-testid="task-card"]')
+        .locator('[data-column="backlog"] [data-testid="task-card"]')
         .filter({ hasText: 'Live plan task' });
       await expect(taskCard).toBeVisible();
       await taskCard.click();

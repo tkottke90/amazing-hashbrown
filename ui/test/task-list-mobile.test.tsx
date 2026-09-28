@@ -169,6 +169,23 @@ describe('TaskListMobile', () => {
     expect(await screen.findByTestId('board-reply-question')).toHaveTextContent('NAS or MinIO?');
   });
 
+  it('opens a task that was added after the list mounted (regression) [unit]', () => {
+    const { rerender } = renderList([]);
+    const late = boardTask({ id: 'late', title: 'Added later' }, { lane: 'backlog' });
+    rerender(
+      <TaskListMobile
+        workspaceId="ws-1"
+        taskList={[late]}
+        onSaved={jest.fn()}
+        onGoToChat={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('task-card'));
+
+    expect(screen.getByDisplayValue('Added later')).toBeInTheDocument();
+  });
+
   it('quick add creates the task and queues it for the agent [unit]', async () => {
     const created = boardTask(
       { id: 'new', title: 'Renew certs' },

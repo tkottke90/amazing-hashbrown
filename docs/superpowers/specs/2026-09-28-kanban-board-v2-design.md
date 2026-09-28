@@ -79,7 +79,7 @@ function boardFor(task: Task, ctx: BoardContext): Board;
 function planMove(task: Task, ctx: BoardContext, to: Lane, opts: MoveOptions): MovePlan | Rejection;
 ```
 
-`BoardContext` is the pre-fetched facts for one task: its queue entry (if any), its dependencies and their statuses, `TaskSchedule`, the pending `hitl_prompt` message (if any), and the consecutive-failed-run count. `MovePlan` is a discriminated union of concrete operations (`enqueue`, `dequeue`, `pause`, `disable_trigger`, `save_cron_once`, `patch_status`, `reassign_and_enqueue`, `reorder`, and ordered combinations of these). `Rejection` carries a human-readable reason.
+`BoardContext` is the pre-fetched facts for one task: its queue entry (if any), its dependencies and their statuses, `TaskSchedule`, the pending `hitl_prompt` message (if any), and the consecutive-failed-run count. `MovePlan` is `{ needs, steps }`, where each step is one typed operation (`enqueue`, `dequeue`, `detach_paused`, `pause`, `resume`, `patch_status`, `disable_trigger`, `enable_trigger`, `clear_trigger`, `save_cron_once`, `reassign_to_agent`, `answer_prompt`, `reorder`, `release_dependents`) executed in order. `Rejection` carries a human-readable reason.
 
 Everything derivable client-side stays out of `board`: "Step n of m" comes from `plan`; schedule text comes from `schedule`.
 
@@ -100,26 +100,26 @@ Everything derivable client-side stays out of `board`: "Step n of m" comes from 
 | `pending`, unmet dependencies                                                  | backlog   | `waiting_on_dependency` |
 | `pending`                                                                      | backlog   | —                       |
 
-### 1.3 Move table (initial ruleset)
+### 1.3 Move table (as implemented)
 
-✗ = not in `moves`; the UI shows a not-allowed outline and sends nothing. "Picker" = `needs: 'start_time'`, executes `save_cron_once` (and disables any existing trigger first).
+✗ = not in `moves`; the UI shows a not-allowed outline and sends nothing. "Picker" = `needs: 'start_time'`, executes `save_cron_once`. "+ release" = `release_dependents`, run after every manual `done` so waiting dependents are unblocked exactly as a finished run would unblock them. `board-rules.test.ts` pins every cell.
 
-| From ↓ / To →                   | Backlog                       | Scheduled          | Queue                                               | Needs attention | Done                          |
-| ------------------------------- | ----------------------------- | ------------------ | --------------------------------------------------- | --------------- | ----------------------------- |
-| Pending (agent)                 | —                             | picker             | `enqueue`                                           | ✗               | `patch_status done`           |
-| Pending (user)                  | —                             | picker             | `reassign` → `reassign_and_enqueue`                 | ✗               | `patch_status done`           |
-| Pending (waiting on dependency) | —                             | ✗                  | ✗                                                   | ✗               | `patch_status done`           |
-| Scheduled                       | `disable_trigger` → `pending` | ✗                  | `enqueue` (Run now)                                 | ✗               | `disable_trigger` → `done`    |
-| Ready                           | `dequeue` → `pending`         | `dequeue` → picker | `reorder`                                           | ✗               | `dequeue` → `done`            |
-| Running                         | ✗                             | ✗                  | ✗                                                   | `pause`         | ✗ (cancel lives in the sheet) |
-| Waiting on you                  | ✗                             | ✗                  | `reply` (opens reply UI; commit happens on send)    | —               | ✗                             |
-| Blocked (paused)                | `patch_status pending`        | picker             | resume (`patch_status ready`, existing resume path) | —               | `patch_status done`           |
-| Blocked (dependency failed)     | `patch_status pending`        | picker             | ✗                                                   | —               | `patch_status done`           |
-| Failed                          | `patch_status pending`        | picker             | `enqueue` (retry)                                   | —               | `patch_status done`           |
-| Schedule paused                 | `disable_trigger` → `pending` | picker             | `enqueue`                                           | —               | `disable_trigger` → `done`    |
-| Done / Cancelled                | `patch_status pending`        | picker             | `enqueue` (rerun)                                   | ✗               | —                             |
+| From ↓ / To →                   | Backlog                                             | Scheduled                              | Queue                                                 | Needs attention | Done                                |
+| ------------------------------- | --------------------------------------------------- | -------------------------------------- | ----------------------------------------------------- | --------------- | ----------------------------------- |
+| Pending (agent)                 | —                                                   | picker                                 | `enqueue`                                             | ✗               | `patch_status done` + release       |
+| Pending (user)                  | —                                                   | picker                                 | `reassign_to_agent`, `enqueue` (needs `reassign`)     | ✗               | `patch_status done` + release       |
+| Pending (waiting on dependency) | —                                                   | ✗                                      | ✗                                                     | ✗               | `patch_status done` + release       |
+| Scheduled                       | `disable_trigger`                                   | picker (reschedule; `cron_once` only)  | Run now: `enqueue`; `cron_once` first `clear_trigger` | ✗               | `disable_trigger`, `done` + release |
+| Ready                           | `dequeue`                                           | `dequeue`, picker                      | `reorder`                                             | ✗               | `dequeue`, `done` + release         |
+| Running                         | ✗                                                   | ✗                                      | —                                                     | `pause`         | ✗ (cancel lives in the drawer)      |
+| Waiting on you                  | ✗                                                   | ✗                                      | `answer_prompt` (needs `reply`)                       | —               | ✗                                   |
+| Blocked (paused)                | `detach_paused`, `patch_status pending`             | `detach_paused`, `pending`, picker     | `resume` (existing blocked → ready path)              | —               | `detach_paused`, `done` + release   |
+| Blocked (dependency failed)     | `patch_status pending`                              | ✗                                      | ✗ (take over, or remove the dependency)               | —               | `patch_status done` + release       |
+| Failed                          | `patch_status pending`                              | picker                                 | `enqueue` (retry)                                     | —               | `patch_status done` + release       |
+| Schedule paused (failures)      | `clear_trigger` (stop scheduling it)                | `enable_trigger` (resume the schedule) | `enqueue` (one manual run)                            | —               | `patch_status done` + release       |
+| Done / Cancelled                | `patch_status pending`; cron: `clear_trigger` first | picker (not for `cron_repeat`)         | `enqueue` (rerun)                                     | ✗               | —                                   |
 
-Every `patch_status done` leaves `plan` untouched (D6).
+Every `patch_status done` leaves `plan` untouched (D6). A drag never overwrites a `webhook` or `cron_repeat` trigger with a one-off time — those are rejected with a pointer to the task details.
 
 ### 1.4 `POST /api/v1/tasks/:id/move`
 
@@ -152,7 +152,7 @@ An agent tool that calls `move`. (If added later, it needs a `tool-call` eval.)
 
 ## 2. Desktop UI (≥ 1024px)
 
-Board code leaves `ui/src/pages/workspaces/[id].tsx` for `ui/src/components/task-board/`:
+Board code leaves `ui/src/pages/workspaces/[id].tsx` for `ui/src/pages/workspaces/task-board/` (see implementation note 8):
 
 - `task-board.tsx` — `DndContext` + five lanes; header line "N tasks · N running · queue runs one at a time"; Add task button.
 - `board-lane.tsx` — header, count, subtitle; highlighted when the dragged card's `moves` include it, not-allowed outline otherwise. `data-column={lane}`.
@@ -193,7 +193,7 @@ Board code leaves `ui/src/pages/workspaces/[id].tsx` for `ui/src/components/task
   - `paused` → **Mark unblocked** (move to Queue)
   - `scheduled` → **Run now** (move to Queue)
 - Actions show a confirmation toast; no Undo (D7).
-- **Reply sheet** (`sheet.tsx`, bottom): question, `choices` as tap targets, free text, Send (a `reply` move). Dismiss by tapping outside. Swipe-to-dismiss only if `sheet.tsx` already supports it.
+- **Reply sheet** (`BottomSheet`): question, `choices` as tap targets, free text, Send (a `reply` move). Dismiss by tapping outside; no swipe-to-dismiss (implementation note 7).
 - **Tap a card** → waiting card opens the reply sheet; any other opens `task-drawer.tsx` full-screen with the same callout and "Move to…" picker.
 - **Quick add (+)** → sheet with title, Agent/Me toggle, "Add to queue now". "More details" opens the full New task sheet with those values carried over.
 
@@ -231,3 +231,20 @@ The existing E2E specs that read `data-column` — `task-kanban`, `task-queue-wi
 ## PR notes
 
 The PR description must state: touch drag is intentionally not implemented (D8, deviates from #83's acceptance criteria); new API endpoints were added and changes span API + UI (D11). #83 has no entry in `TODO_LIST.md`, so no TODO update is required.
+
+---
+
+## Implementation notes
+
+Found while building, and reflected in the tables above:
+
+1. **Run now on `cron_once` clears the trigger** (`triggerType: 'manual'`) before enqueueing. `settleCronRun` returns an early manual run of an unfired one-off to `scheduled`, so simply enqueueing would run it twice; disabling it instead would settle every outcome as `pending`, losing a failure.
+2. **Dequeue deletes the never-started `pending` row** (`WorkspaceStore.dequeueTask`) rather than marking it `cancelled` like `detachQueueEntry`, which would show a phantom run in run history.
+3. **A paused run is closed out** (`detach_paused`) before a paused task goes to Backlog, Scheduled or Done — otherwise its `paused` queue row would stay wedged.
+4. **A paused schedule's lanes**: Scheduled re-enables it (no picker — it already has its schedule); Backlog drops the trigger, because a disabled-by-failures schedule would otherwise keep the card in Needs attention.
+5. **Reopening a finished cron task** (Done → Backlog) drops its spent trigger, or its `exhausted`/`expired`/`fired` schedule would put it straight back in Done.
+6. **Route tests** use `startTestServer` (`api/tests/utilities/http-test-server.ts`); `api/` has no supertest.
+7. **Sheets** are `@tkottke90/preact-dialog`'s `Drawer`, `Modal` and `BottomSheet`, not `ui/src/components/ui/sheet.tsx`. No swipe-to-dismiss.
+8. **Where the UI lives**: page-only pieces in `ui/src/pages/workspaces/task-board/` (board, lanes, cards, mobile list) per `ui/AGENTS.md`; pieces the shared task drawer also uses in `ui/src/components/task-board/` (move flow, prompts, callout, reply form). `MovePrompts` is mounted once at the app root, like the toast container.
+9. **Keyboard dragging**: Left/Right move a picked-up card to the neighbouring lane (a custom coordinate getter — dnd-kit's sortable getter can't carry a non-sortable card across lanes); Up/Down step through Queue slots.
+10. **Mobile E2E** sets a 390×844 viewport per spec (`test.use`); `playwright.config.ts` has no mobile project.

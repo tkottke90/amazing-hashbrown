@@ -5,8 +5,10 @@ import { pauseBeforeAction } from '../lib/video.js';
 const suite: TestSuite = {
   id: 6,
   name: 'Task Kanban',
-  description: 'Verifies creating a workspace, adding a task, and moving it between Kanban columns',
-  purpose: 'Ensure tasks appear in the correct column and move when status changes',
+  description:
+    'Verifies creating a workspace, adding a task, and seeing it move between Kanban lanes',
+  purpose:
+    'Ensure tasks appear in the correct lane, with their exact status, and move when status changes',
   tags: ['@user-workflow'],
   steps: [
     {
@@ -18,19 +20,19 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Navigate to the workspace Tasks tab and add a task',
-      expectedOutcome: 'Task card appears in the Pending column',
+      expectedOutcome: 'Task card appears in the Backlog lane',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Change the task status to Running via API',
-      expectedOutcome: 'Task card moves from Pending to Running column',
+      expectedOutcome: 'Task card moves from Backlog to Queue, badged Running',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Create a workspace task on a repeating schedule',
-      expectedOutcome: 'Its card sits in the Scheduled column and shows when it runs next',
+      expectedOutcome: 'Its card sits in the Scheduled lane and shows when it runs next',
       test: () => {},
     },
   ],
@@ -42,7 +44,7 @@ test.describe(
     annotation: suiteAnnotations(suite),
   },
   () => {
-    test('task appears in Pending column after creation', async ({ page, request }, testInfo) => {
+    test('task appears in the Backlog lane after creation', async ({ page, request }, testInfo) => {
       await page.goto('/workspaces');
       await pauseBeforeAction(page, testInfo);
 
@@ -72,16 +74,16 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await drawer.getByRole('button', { name: 'Create task' }).click();
 
-      // Task card should appear in the Pending column
-      const pendingColumn = page.locator('[data-column="pending"]');
-      await expect(pendingColumn).toBeVisible();
-      const card = pendingColumn
+      // Task card should appear in the Backlog lane
+      const backlogLane = page.locator('[data-column="backlog"]');
+      await expect(backlogLane).toBeVisible();
+      const card = backlogLane
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'My kanban task' });
       await expect(card).toBeVisible();
     });
 
-    test('task moves to Running column when status changes', async ({
+    test('task moves to the Queue lane, badged Running, when status changes', async ({
       page,
       request,
     }, testInfo) => {
@@ -108,10 +110,10 @@ test.describe(
       await page.goto(`/workspaces/${ws.id}`);
       await page.getByRole('button', { name: /tasks/i }).click();
 
-      // Verify task is in Pending column
-      const pendingColumn = page.locator('[data-column="pending"]');
+      // Verify task is in the Backlog lane
+      const backlogLane = page.locator('[data-column="backlog"]');
       await expect(
-        pendingColumn.locator('[data-task-id]').filter({ hasText: 'Moveable task' }),
+        backlogLane.locator('[data-task-id]').filter({ hasText: 'Moveable task' }),
       ).toBeVisible();
 
       // Change status to running via API
@@ -126,20 +128,22 @@ test.describe(
 
       await pauseBeforeAction(page, testInfo);
 
-      // Task should now be in Running column
-      const runningColumn = page.locator('[data-column="running"]');
-      await expect(runningColumn).toBeVisible();
-      await expect(
-        runningColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
-      ).toBeVisible();
+      // Task should now be in the Queue lane, with its exact status on the card
+      const queueLane = page.locator('[data-column="queue"]');
+      await expect(queueLane).toBeVisible();
+      const runningCard = queueLane
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'Moveable task' });
+      await expect(runningCard).toBeVisible();
+      await expect(runningCard).toHaveAttribute('data-status', 'running');
 
-      // And not in Pending column
+      // And not in the Backlog
       await expect(
-        pendingColumn.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
+        backlogLane.locator('[data-testid="task-card"]').filter({ hasText: 'Moveable task' }),
       ).not.toBeVisible();
     });
 
-    test('a scheduled task sits in the Scheduled column with its next run', async ({
+    test('a scheduled task sits in the Scheduled lane with its next run', async ({
       page,
       request,
     }, testInfo) => {
