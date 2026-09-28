@@ -16,6 +16,8 @@ export const TraceSourceSchema = z.enum([
   'wiki-ingestion',
   'workspace-chat',
   'workspace-summary',
+  // An automated task run (api/src/agents/task-execution.ts).
+  'task-run',
 ]);
 
 export const SpanRecordSchema = z.object({

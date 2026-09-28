@@ -24,6 +24,14 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
+      action: 'Open a finished run whose agent message has recorded usage',
+      expectedOutcome:
+        'The metrics row (duration, tok/s, dollar cost, token counts) shows under the ' +
+        "agent's message, the same as in chat",
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
       action: "Answer a paused run's question from the run view",
       expectedOutcome: "The answer is posted to the run thread's /hitl route with its promptId",
       test: () => {},
@@ -153,6 +161,39 @@ test.describe(
       } finally {
         await request.delete(`/api/v1/tasks/${taskId}`);
       }
+    });
+
+    test("shows a run message's cost, duration and token metrics", async ({ page }, testInfo) => {
+      // What a finished run's GET /threads returns once #132 persists the
+      // run's usage on its assistant row.
+      await mockRunThread(
+        page,
+        runThreadBody({
+          messages: [
+            {
+              id: 'a1',
+              kind: 'assistant',
+              seq: 1,
+              status: 'done',
+              content: 'Checked the dependency list.',
+              sentAt: '2026-09-26T00:01:00.000Z',
+              durationMs: 2300,
+              usage: { inputTokens: 512, outputTokens: 128 },
+              cost: { tokensPerSecond: 14.2, dollars: 0.0031 },
+            },
+          ],
+        }),
+      );
+
+      await pauseBeforeAction(page, testInfo);
+      await page.goto(`/chat/${RUN_THREAD}`);
+
+      const view = page.getByTestId('task-run-view');
+      await expect(view.getByText('Checked the dependency list.')).toBeVisible();
+      await expect(view.getByText('2.3s', { exact: true })).toBeVisible();
+      await expect(view.getByText('14.2 tok/s', { exact: true })).toBeVisible();
+      await expect(view.getByText('$0.0031', { exact: true })).toBeVisible();
+      await expect(view.getByText('(512 in / 128 out)', { exact: true })).toBeVisible();
     });
 
     test("answers a paused run's question from the run view", async ({ page }, testInfo) => {

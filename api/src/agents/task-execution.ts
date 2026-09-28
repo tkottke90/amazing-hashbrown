@@ -35,6 +35,11 @@ import {
 } from './thread-message-writer.js';
 import { buildRunKickoff, type PreviousRun } from './task-context.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
+import {
+  resolveTurnModel,
+  startTurnObservability,
+  type TurnObservability,
+} from './turn-observability.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
 import { endThreadTurn, runOnceThreadFree } from './pending-thread-turns.js';
 import { broadcast } from '../services/broadcast.js';
@@ -49,7 +54,8 @@ interface WorkspaceScope {
 
 // Task runs always use the default provider. classifyChatError() needs its
 // type, not its name — resolved inside a try because this runs on the failure
-// path, where a misconfigured default provider must not throw a second time.
+// path, where a misconfigured default provider must not throw a second time
+// (the run itself resolves it through resolveTurnModel(), which does throw).
 function defaultProviderType(): ProviderConfig['type'] | undefined {
   try {
     return resolveProviderConfig(env.defaultProvider).type;
@@ -261,6 +267,11 @@ export async function executeTask(
     // number | null (not | undefined) to match recordAssistantStart's return
     // type and finalizeTurn/dispatchHitlPrompt's own assistantSeq param type.
     let assistantSeq: number | null = null;
+    // This run's observability trace (#132), and the error it is closed
+    // with — both hoisted so the finally block below can close it whichever
+    // branch the run ends in.
+    let turnObs: TurnObservability | undefined;
+    let traceError: string | null = null;
 
     try {
       recordMarker('start');
@@ -282,25 +293,37 @@ export async function executeTask(
       // below. Last accepted call wins.
       const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
 
-      agent = (
-        await buildAgent(
-          runTask,
-          undefined,
-          undefined,
-          workspaceScope
-            ? {
-                workspaceContext: workspaceScope.workspaceContext,
-                allowedWikiId: workspaceScope.allowedWikiId,
-              }
-            : undefined,
-          {
-            onTaskComplete: (call) => {
-              completeTaskBox.current = call;
-            },
+      // Task runs always use the default provider, resolved to a concrete
+      // model up front so the agent that runs, the trace, and the cost-rate
+      // lookup in finalizeTurn all agree on it.
+      const { provider, model } = resolveTurnModel(env.defaultProvider);
+
+      const built = await buildAgent(
+        runTask,
+        provider,
+        model,
+        workspaceScope
+          ? {
+              workspaceContext: workspaceScope.workspaceContext,
+              allowedWikiId: workspaceScope.allowedWikiId,
+            }
+          : undefined,
+        {
+          onTaskComplete: (call) => {
+            completeTaskBox.current = call;
           },
-          { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
-        )
-      ).agent;
+        },
+        { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
+      );
+      agent = built.agent;
+      turnObs = startTurnObservability({
+        threadId,
+        taskId: task.id,
+        provider,
+        model,
+        source: 'task-run',
+        systemPrompt: built.systemPrompt,
+      });
 
       config = {
         configurable: {
@@ -311,7 +334,14 @@ export async function executeTask(
       msgId = randomUUID();
       turnSentAt = new Date().toISOString();
       const startedAt = Date.now();
-      assistantSeq = recordAssistantStart(threadStore, threadId, msgId, turnSentAt);
+      assistantSeq = recordAssistantStart(
+        threadStore,
+        threadId,
+        msgId,
+        turnSentAt,
+        provider,
+        model,
+      );
 
       // A resume_answer set by the /hitl route's task re-enqueue branch means
       // this run continues a previously-interrupted checkpoint — consumed
@@ -342,23 +372,27 @@ export async function executeTask(
       const resolvedTurnSentAt = turnSentAt;
       const resolvedAgent = agent;
       const resolvedConfig = config;
+      const resolvedTurnObs = turnObs;
 
       const { content, thoughtContent, finalSegmentId, hadToolCall } =
         await getProviderQueue().withSlot(
-          env.defaultProvider,
+          provider,
           'async',
           async () => {
-            const rawStream = resolvedAgent.streamEvents(input, {
-              ...resolvedConfig,
-              version: 'v2',
-              recursionLimit: env.agent?.recursionLimit ?? 100,
-              signal: controller.signal,
-              context: {
-                provider: env.defaultProvider,
-                model: undefined,
-                afterAgentEnabled: undefined,
-              },
-            });
+            const rawStream = resolvedAgent.streamEvents(
+              input,
+              resolvedTurnObs.attach({
+                ...resolvedConfig,
+                version: 'v2',
+                recursionLimit: env.agent?.recursionLimit ?? 100,
+                signal: controller.signal,
+                context: {
+                  provider,
+                  model,
+                  afterAgentEnabled: undefined,
+                },
+              }),
+            );
             return pipeEvents(
               sink,
               resolvedMsgId,
@@ -383,13 +417,12 @@ export async function executeTask(
         turnSentAt,
         assistantSeq,
         null,
-        undefined,
-        // Task runs always use the default provider (see this file's own
-        // agent.streamEvents context above) — passing it through here is what
-        // lets finalizeTurn's Ollama empty-response check apply to task runs
-        // too, not just interactive chat turns.
-        env.defaultProvider,
-        undefined,
+        // The handler and resolved provider/model are what make finalizeTurn
+        // compute, price and persist this turn's metrics (#132); the provider
+        // also lets its Ollama empty-response check apply to task runs.
+        turnObs.obsHandler,
+        provider,
+        model,
         task.id,
         // completeTaskBox is already populated by now — complete_task's tool
         // body (which fires onTaskComplete) runs inside the stream that
@@ -473,6 +506,9 @@ export async function executeTask(
         }
       };
 
+      // Same string interactive chat closes an aborted turn's trace with.
+      if (intent) traceError = 'Stopped.';
+
       if (intent === 'cancel') {
         logger.info('task-execution: run cancelled', { taskId: task.id });
         finalOutcome = 'cancelled';
@@ -530,15 +566,18 @@ export async function executeTask(
           // own failAssistant/dispatchHitlPrompt already marked the row
           // 'error' — recovered === null means the guard above never ran it.
           // Either way, the queue entry still needs closing out.
+          traceError = 'Failed to record the approval prompt.';
           await finishFailedRun('Failed to record the approval prompt.');
         }
       } else {
         logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
         finalOutcome = 'failed';
         const outOfSteps = (err as Error).name === 'GraphRecursionError';
-        const failureSummary = outOfSteps
+        const classified = classifyChatError(err, defaultProviderType());
+        traceError = outOfSteps
           ? 'Ran out of steps before completing this task.'
-          : `Run failed: ${classifyChatError(err, defaultProviderType()).message}`;
+          : classified.message;
+        const failureSummary = outOfSteps ? traceError : `Run failed: ${classified.message}`;
         if (partialState && turnSentAt !== undefined) {
           if (outOfSteps) {
             finalizeAssistant(
@@ -551,7 +590,6 @@ export async function executeTask(
               null,
             );
           } else {
-            const classified = classifyChatError(err, defaultProviderType());
             failAssistant(
               threadStore,
               threadId,
@@ -582,6 +620,16 @@ export async function executeTask(
         );
       }
     } finally {
+      // Guarded: a failed trace write must never skip the thread release
+      // below (endThreadTurn) — this function never throws.
+      try {
+        turnObs?.end(traceError);
+      } catch (err) {
+        logger.error('task-execution: failed to close run trace', {
+          taskId: task.id,
+          err: serializeError(err),
+        });
+      }
       recordMarker('end', finalOutcome);
       // Single choke point for the live-events broadcast (see
       // docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md) —
