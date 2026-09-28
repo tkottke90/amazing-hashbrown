@@ -83,9 +83,11 @@ for a best-effort indicator.
 
 In the `close` handler, pick the level from the request's outcome:
 
-- `GET` or `HEAD` with `res.statusCode` in `[1, 400)` → `debug`
-- Everything else (mutations, any 4xx/5xx, aborted requests with no status)
-  → `info`
+- `GET` or `HEAD` with `res.statusCode < 400` → `debug`
+- Everything else (mutations, any 4xx/5xx) → `info`
+
+An aborted request keeps Express's default status of 200, so it can't be
+told apart by status — it's judged by method like any other request.
 
 Message and metadata are unchanged; only the level changes.
 
@@ -142,10 +144,15 @@ Developer tests:
 - `ui/test/use-thread.test.ts` `[unit]`: after `stream_done`, advancing fake
   timers well past 3.5s produces no further `/api/v1/threads` fetches.
 
-E2E — `e2e/tests/live-task-events.spec.ts` (`@user-workflow`, CI-safe):
+E2E — `e2e/tests/after-agent-status.spec.ts` (suite 10, `@smoke`, CI-safe).
+This suite already mocks `/api/v1/threads` and owns the indicator selectors;
+none of its existing tests depend on the poll.
 
-- A mocked `after_agent_state` broadcast (`running`, then `done`) updates the
-  thread list's AfterAgent indicator without a reload, using the existing
-  `page.route()` SSE mock pattern.
+- A mocked `after_agent_state` `running` broadcast turns an idle row's kebab
+  into the spinner without a reload.
+- A mocked `done`/`identified` broadcast turns a running row's spinner into
+  the success checkmark.
+- Only the first thread-list request is answered; later ones are held, so
+  the broadcast is the only thing that can change the row.
 
 No eval: nothing here changes prompts or model behaviour.

@@ -29,6 +29,21 @@ const suite: TestSuite = {
       expectedOutcome: 'The sidebar row shows the normal kebab menu, no indicator',
       test: () => {},
     },
+    {
+      tags: ['@smoke'],
+      action:
+        'Load / with an idle thread, then push an after_agent_state "running" broadcast over /api/v1/events',
+      expectedOutcome:
+        'The sidebar row switches to the spinner live — no reload, and no further thread-list fetch involved',
+      test: () => {},
+    },
+    {
+      tags: ['@smoke'],
+      action:
+        'Load / with an idle thread, then push an after_agent_state "done"/"identified" broadcast',
+      expectedOutcome: 'The sidebar row shows the success-colored checkmark live',
+      test: () => {},
+    },
   ],
 };
 
@@ -95,6 +110,64 @@ async function mockThreadsApi(page: import('@playwright/test').Page, threads: Mo
 
     await route.fallback();
   });
+}
+
+function deferredGate(): { promise: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+// Like mockThreadsApi, but only the first list request is answered — every
+// later one (e.g. the live-events reconnect reconciliation) is held until
+// the returned release() is called, then aborted. That way nothing but the
+// broadcast itself can change a row after the page has loaded.
+async function mockThreadsApiFirstListOnly(
+  page: import('@playwright/test').Page,
+  threads: MockThread[],
+): Promise<() => void> {
+  const hold = deferredGate();
+  let listServed = false;
+  await page.route('**/api/v1/threads', async (route: Route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    if (!listServed) {
+      listServed = true;
+      await route.fulfill({ json: threads });
+      return;
+    }
+    await hold.promise;
+    await route.abort().catch(() => {});
+  });
+  return hold.release;
+}
+
+// Serves one after_agent_state frame on the first /api/v1/events connection,
+// once release() is called; reconnects after that get an empty stream.
+async function mockAfterAgentBroadcast(
+  page: import('@playwright/test').Page,
+  threadId: string,
+  state: MockThread['afterAgentState'],
+): Promise<() => void> {
+  const gate = deferredGate();
+  let delivered = false;
+  await page.route('**/api/v1/events', async (route: Route) => {
+    await gate.promise;
+    const body = delivered
+      ? ''
+      : `data: ${JSON.stringify({ type: 'after_agent_state', threadId, state })}\n\n`;
+    delivered = true;
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body,
+    });
+  });
+  return gate.release;
 }
 
 function rowFor(page: import('@playwright/test').Page, title: string) {
@@ -167,6 +240,54 @@ test.describe(
       await expect(row.locator('svg.animate-spin')).toHaveCount(0);
       await expect(row.locator('.text-success')).toHaveCount(0);
       await expect(row.locator('.text-destructive')).toHaveCount(0);
+    });
+
+    test('an after_agent_state "running" broadcast shows the spinner live, without a reload or thread-list poll', async ({
+      page,
+    }, testInfo) => {
+      const releaseThreads = await mockThreadsApiFirstListOnly(page, [
+        mockThread('t-live-running', 'Live thread', { status: 'idle' }),
+      ]);
+      const sendBroadcast = await mockAfterAgentBroadcast(page, 't-live-running', {
+        status: 'running',
+      });
+      try {
+        await page.goto('/');
+        const row = rowFor(page, 'Live thread');
+        await expect(row.locator('button[aria-haspopup="menu"]')).toBeAttached();
+        await pauseBeforeAction(page, testInfo);
+
+        sendBroadcast();
+
+        await expect(row.locator('svg.animate-spin')).toBeVisible();
+      } finally {
+        releaseThreads();
+      }
+    });
+
+    test('an after_agent_state "done"/"identified" broadcast shows the success checkmark live', async ({
+      page,
+    }, testInfo) => {
+      const releaseThreads = await mockThreadsApiFirstListOnly(page, [
+        mockThread('t-live-done', 'Finishing thread', { status: 'running' }),
+      ]);
+      const sendBroadcast = await mockAfterAgentBroadcast(page, 't-live-done', {
+        status: 'done',
+        outcome: 'identified',
+        finishedAt: new Date().toISOString(),
+      });
+      try {
+        await page.goto('/');
+        const row = rowFor(page, 'Finishing thread');
+        await expect(row.locator('svg.animate-spin')).toBeVisible();
+        await pauseBeforeAction(page, testInfo);
+
+        sendBroadcast();
+
+        await expect(row.locator('.text-success')).toBeVisible();
+      } finally {
+        releaseThreads();
+      }
     });
   },
 );
