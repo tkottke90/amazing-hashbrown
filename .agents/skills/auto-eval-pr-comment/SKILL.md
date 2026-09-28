@@ -7,7 +7,9 @@ description: >
   comment for the same suite, compose a findings write-up from the
   eval-logs/auto-eval-<timestamp>.yaml audit trail in this repo's
   established comment format, and post it with `gh pr comment` (or update
-  the prior comment in place). Use this after the auto-eval-loop skill
+  the prior comment in place), then ensure the PR carries the
+  `evaluations` label as a signal that evals were run against it. Use this
+  after the auto-eval-loop skill
   finishes, or whenever someone says "post the eval results to the PR,"
   "comment the eval findings on the pull request," "share the auto-eval
   results on the PR," "update the PR with what the eval loop found," or
@@ -118,6 +120,31 @@ Prints the comment URL, e.g.
 `https://github.com/tkottke90/amazing-hashbrown/pull/44#issuecomment-5169159635`
 — the number after `#issuecomment-` is the REST comment ID for any later
 edit. Relay the URL to the user.
+
+## Step 6 — Ensure the `evaluations` label is applied
+
+The label is the at-a-glance signal that eval results were posted to this
+PR, so it must be present whenever this skill comments — whether this was a
+fresh post or an update to an existing comment.
+
+```bash
+gh pr view <number> --json labels --jq '.labels[].name'
+```
+
+If `evaluations` isn't in the list, ensure the label exists in the repo. If it does add it:
+
+```bash
+gh label list
+gh pr edit <number> --add-label "evaluations"
+```
+
+If the label doesn't exist in the repo yet, `gh pr edit` fails with a `not
+found` error — create it once, then retry:
+
+```bash
+gh label create evaluations --description "Auto-eval results posted to this PR" --color BFDADC
+gh pr edit <number> --add-label "evaluations"
+```
 
 ## Updating an existing comment
 
