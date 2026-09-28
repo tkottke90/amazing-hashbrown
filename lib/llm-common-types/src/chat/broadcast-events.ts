@@ -96,6 +96,32 @@ const ThreadTurnCompletedSchema = z.object({
   threadId: z.string(),
 });
 
+// Live status of the fire-and-forget AfterAgent background pipeline
+// (api/src/agents/after-agent.ts) for one thread. Shared so the API's
+// in-memory status map, the thread-list REST payload, and the broadcast
+// below all speak the same shape as the UI's indicator.
+export const AfterAgentStateSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('idle') }),
+  z.object({ status: z.literal('running') }),
+  z.object({
+    status: z.literal('done'),
+    outcome: z.enum(['identified', 'no-op', 'error']),
+    finishedAt: z.string(),
+  }),
+]);
+export type AfterAgentState = z.infer<typeof AfterAgentStateSchema>;
+
+// Fired on every AfterAgent status transition (running, then done) so the
+// thread list's indicator updates live instead of polling. Not fired when
+// the server lazily expires a stale 'done' back to 'idle' — the UI's own
+// flash timer already hides it. See
+// docs/superpowers/specs/2026-09-28-remaining-ui-polling-design.md §1.
+const AfterAgentStateEventSchema = z.object({
+  type: z.literal('after_agent_state'),
+  threadId: z.string(),
+  state: AfterAgentStateSchema,
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
@@ -104,5 +130,6 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskPlanUpdatedSchema,
   ThreadTurnStartedSchema,
   ThreadTurnCompletedSchema,
+  AfterAgentStateEventSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

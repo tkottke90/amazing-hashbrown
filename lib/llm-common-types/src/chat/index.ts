@@ -10,4 +10,6 @@ export {
   type AppBroadcastEvent,
   TaskQueueEntrySchema,
   type TaskQueueEntry,
+  AfterAgentStateSchema,
+  type AfterAgentState,
 } from './broadcast-events.js';
