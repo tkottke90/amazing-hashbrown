@@ -146,21 +146,3 @@ export async function generatePlanForNewTask(input: {
 }): Promise<PlanStep[]> {
   return apiGeneratePlanForNewTask(input);
 }
-
-export function groupTasksByStatus(taskList: Task[]): Record<TaskStatus, Task[]> {
-  const groups: Record<TaskStatus, Task[]> = {
-    pending: [],
-    scheduled: [],
-    ready: [],
-    running: [],
-    waiting_on_user: [],
-    blocked: [],
-    done: [],
-    failed: [],
-    cancelled: [],
-  };
-  for (const task of taskList) {
-    groups[task.status].push(task);
-  }
-  return groups;
-}

@@ -1,4 +1,4 @@
-import { useSignal, useComputed } from '@preact/signals';
+import { useSignal, useComputed, type Signal } from '@preact/signals';
 import { Sparkles, GripVertical, Plus, X, Loader2, ExternalLink, Copy, Check } from 'lucide-preact';
 import type { JSX } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
@@ -20,6 +20,8 @@ import {
   tasks,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
+import { BoardCallout } from '@/components/task-board/board-callout';
+import { performMove } from '@/components/task-board/board-move';
 import { TaskRunHistory, useTaskRuns, waitingRun } from '@/components/task-run-history';
 import { runPath } from '@/lib/task-runs';
 import { CronOnceFields } from '@/components/cron-once-fields';
@@ -93,9 +95,22 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: 'Cancelled',
 };
 
+// Values carried into a brand-new task's form — the mobile quick-add sheet's
+// "More details" hands over what was already typed.
+export interface TaskDraft {
+  title: string;
+  assignedTo: 'user' | 'agent' | null;
+  addToQueue: boolean;
+}
+
 interface TaskDrawerProps {
   task?: Task | null;
-  trigger: JSX.Element;
+  draft?: TaskDraft;
+  // Either a trigger element that opens the drawer, or an `open` signal the
+  // caller drives (the Kanban board opens one shared drawer for whichever
+  // card was clicked, so a drag and a click never compete for the card).
+  trigger?: JSX.Element;
+  open?: Signal<boolean>;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
   // Called (after closing the drawer) when the user clicks the
@@ -108,7 +123,9 @@ interface TaskDrawerProps {
 
 export function TaskDrawer({
   task,
+  draft,
   trigger,
+  open,
   defaultWorkspaceId,
   onSaved,
   onGoToChat,
@@ -117,11 +134,14 @@ export function TaskDrawer({
   return (
     <Drawer
       trigger={trigger}
+      open={open}
       title={isNew ? 'New task' : 'Task details'}
       className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
     >
       <TaskForm
+        key={task?.id ?? `new:${JSON.stringify(draft ?? null)}`}
         task={task}
+        draft={draft}
         defaultWorkspaceId={defaultWorkspaceId}
         onSaved={onSaved}
         onGoToChat={onGoToChat}
@@ -132,16 +152,17 @@ export function TaskDrawer({
 
 interface TaskFormProps {
   task?: Task | null;
+  draft?: TaskDraft;
   defaultWorkspaceId?: string | null;
   onSaved?: (task: Task) => void;
   onGoToChat?: () => void;
 }
 
-function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormProps) {
+function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormProps) {
   const { close } = useDialog();
 
   const isNew = !task;
-  const title = useSignal(task?.title ?? '');
+  const title = useSignal(task?.title ?? draft?.title ?? '');
   const description = useSignal(task?.description ?? '');
   const outcome = useSignal(task?.outcome ?? '');
   const status = useSignal<TaskStatus>(task?.status ?? 'pending');
@@ -154,7 +175,9 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   // closed and reopened. Both signals are updated together on success so
   // the dropdown and the action panel never disagree.
   const liveStatus = useSignal<TaskStatus>(task?.status ?? 'pending');
-  const assignedTo = useSignal<'user' | 'agent' | null>(task?.assignedTo ?? null);
+  const assignedTo = useSignal<'user' | 'agent' | null>(
+    task?.assignedTo ?? draft?.assignedTo ?? null,
+  );
   const triggerType = useSignal<TriggerType>(task?.triggerType ?? 'manual');
   const webhookToken = useSignal<string | null>(
     (task?.triggerConfig as { webhookToken?: string } | null)?.webhookToken ?? null,
@@ -188,6 +211,14 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
   const generatePlanError = useSignal('');
   const saving = useSignal(false);
   const error = useSignal('');
+  // The list's live copy of this task — the board projection (lane, moves,
+  // reason) changes as the task moves, while the form fields above keep
+  // what the drawer opened with.
+  const liveTask = useComputed(() =>
+    task ? (tasks.value.find((t) => t.id === task.id) ?? task) : null,
+  );
+  // New tasks only: queue the task for the agent as soon as it's created.
+  const addToQueue = useSignal(draft?.addToQueue ?? false);
   const actionLoading = useSignal<'pause' | 'take-over' | 'cancel' | 'resume' | null>(null);
   const actionError = useSignal('');
 
@@ -621,6 +652,12 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
       let saved: Task;
       if (isNew) {
         saved = await createTask({ ...patch, title: patch.title! });
+        if (addToQueue.value && saved.board?.moves.some((m) => m.to === 'queue')) {
+          await performMove(
+            saved,
+            saved.assignedTo === 'user' ? { to: 'queue', assignTo: 'agent' } : { to: 'queue' },
+          );
+        }
       } else {
         // 'scheduled' belongs to cron tasks; a task taken off its schedule
         // goes back to 'pending' (the server settles cron statuses itself).
@@ -801,6 +838,8 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
             <p class="text-xs text-destructive">{generatePlanError.value}</p>
           )}
         </div>
+
+        {liveTask.value?.board && <BoardCallout task={liveTask.value} />}
 
         {!isNew &&
           task &&
@@ -1003,6 +1042,20 @@ function TaskForm({ task, defaultWorkspaceId, onSaved, onGoToChat }: TaskFormPro
             <option value="agent">Agent</option>
           </select>
         </div>
+
+        {isNew && (
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              data-testid="task-add-to-queue"
+              checked={addToQueue.value}
+              onChange={(e) => {
+                addToQueue.value = (e.target as HTMLInputElement).checked;
+              }}
+            />
+            Add to queue — the agent runs it when its turn comes
+          </label>
+        )}
 
         <div class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
