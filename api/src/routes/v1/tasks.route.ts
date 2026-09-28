@@ -5,6 +5,9 @@ import type { TaskListFilters, TaskStatus } from '../../services/workspace-store
 import { getTaskScheduler } from '../../services/task-scheduler.js';
 import { getCronRegistry } from '../../services/cron-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
+import { getThreadStore } from '../../services/thread-store.js';
+import type { Task } from '../../services/workspace-store.js';
+import { moveTaskHandler, withBoard, withBoards } from './tasks-board.handlers.js';
 import {
   listTasksHandler,
   getTaskHandler,
@@ -25,6 +28,12 @@ import {
 } from './tasks.handlers.js';
 
 export const tasksRouter = Router();
+
+// Every task a route returns carries its Kanban `board` projection, so a UI
+// that swaps a returned task into its list never holds a stale lane.
+function boarded(task: Task) {
+  return withBoard(getWorkspaceStore(), getThreadStore(), task);
+}
 
 // GET /queue must be registered before /:id so it isn't matched as an id param
 tasksRouter.get('/queue', (_req: Request, res: Response) => {
@@ -50,7 +59,7 @@ tasksRouter.get('/', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
-  res.json(result.data);
+  res.json(withBoards(getWorkspaceStore(), getThreadStore(), result.data));
 });
 
 tasksRouter.post('/', (req: Request, res: Response) => {
@@ -60,7 +69,7 @@ tasksRouter.post('/', (req: Request, res: Response) => {
     return;
   }
   getCronRegistry().sync(result.data.id);
-  res.status(201).json(result.data);
+  res.status(201).json(boarded(result.data));
 });
 
 // Bare /generate-plan must be registered before /:id so it isn't matched as
@@ -98,12 +107,13 @@ tasksRouter.get('/:id', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
-  res.json(result.data);
+  res.json(boarded(result.data));
 });
 
 tasksRouter.patch('/:id', (req: Request, res: Response) => {
+  const store = getWorkspaceStore();
   const result = patchTaskHandler(
-    getWorkspaceStore(),
+    store,
     req.params['id'] as string,
     req.body as Record<string, unknown>,
   );
@@ -118,7 +128,7 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
   // A schedule edit, status change or trigger switch — (re-)arm or clear
   // the task's cron timer. A no-op for non-cron tasks.
   getCronRegistry().sync(req.params['id'] as string);
-  res.json(result.data);
+  res.json(boarded(store.getTask(req.params['id'] as string) ?? result.data));
 });
 
 tasksRouter.delete('/:id', (req: Request, res: Response) => {
@@ -170,7 +180,7 @@ tasksRouter.post('/:id/cancel', (req: Request, res: Response) => {
   }
   getTaskScheduler().wake();
   getCronRegistry().sync(req.params['id'] as string);
-  res.status(200).json(result.data);
+  res.status(200).json(result.data ? boarded(result.data) : result.data);
 });
 
 tasksRouter.post('/:id/pause', (req: Request, res: Response) => {
@@ -181,7 +191,7 @@ tasksRouter.post('/:id/pause', (req: Request, res: Response) => {
   }
   getTaskScheduler().wake();
   getCronRegistry().sync(req.params['id'] as string);
-  res.status(200).json(result.data);
+  res.status(200).json(result.data ? boarded(result.data) : result.data);
 });
 
 tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
@@ -192,6 +202,26 @@ tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
   }
   getTaskScheduler().wake();
   getCronRegistry().sync(req.params['id'] as string);
+  res.status(200).json(result.data ? boarded(result.data) : result.data);
+});
+
+// Moves a task to a Kanban lane — see tasks-board.handlers.ts. The move may
+// have enqueued, resumed or paused work, or changed a schedule, so it wakes
+// the scheduler and re-syncs the task's cron timer like PATCH does.
+tasksRouter.post('/:id/move', (req: Request, res: Response) => {
+  const id = req.params['id'] as string;
+  const result = moveTaskHandler(
+    getWorkspaceStore(),
+    getThreadStore(),
+    id,
+    (req.body ?? {}) as Record<string, unknown>,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  getTaskScheduler().wake();
+  getCronRegistry().sync(id);
   res.status(200).json(result.data);
 });
 
