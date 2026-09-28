@@ -69,11 +69,11 @@ const evalTools = [
   wikiLocateTool,
   wikiOrientTool,
   wikiLintTool,
-  // Unrestricted (no allowedWikiId), matching production's global-chat agent
-  // — the eval runner only inspects proposed tool_calls against seeded
-  // priorTurns context, it never actually executes a tool, so this can't
-  // exercise the allowedWikiId restriction itself (that's what
-  // wwrite-005/006-009's seeded rejection results are for).
+  // Unrestricted (invoked without a thread, so no write scope applies) — the
+  // eval runner only inspects proposed tool_calls against seeded priorTurns
+  // context, it never actually executes a tool, so this can't exercise the
+  // write scope itself (that's what wwrite-005/006-010's seeded rejection
+  // results are for).
   makeWikiCreatePageTool(),
   makeWikiUpdatePageTool(),
   makeWikiAddCrossLinkTool(),

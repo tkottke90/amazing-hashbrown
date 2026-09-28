@@ -137,17 +137,17 @@ describe('services/wiki-write', () => {
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
 
-    it('returns unknown_wiki (not wiki_forbidden) for an unregistered wikiId even when allowedWikiId is set', async () => {
+    it('returns unknown_wiki (not wiki_forbidden) for an unregistered wikiId even when the scope is locked elsewhere', async () => {
       const result = await createWikiPage(
         { wikiId: 'does-not-exist', title: 'X', content: 'x', section: 'entity' },
         registry,
-        'test-wiki',
+        { kind: 'locked', wikiId: 'test-wiki' },
         store,
       );
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
 
-    it('returns wiki_forbidden when wikiId does not match allowedWikiId', async () => {
+    it('returns wiki_forbidden (locked) when wikiId is not the locked wiki', async () => {
       await registry.create({ id: 'other-wiki', domain: 'other', tags: [] });
       const result = await createWikiPage(
         {
@@ -157,12 +157,13 @@ describe('services/wiki-write', () => {
           section: 'entity',
         },
         registry,
-        'test-wiki',
+        { kind: 'locked', wikiId: 'test-wiki' },
         store,
       );
       expect(result).to.deep.equal({
         status: 'wiki_forbidden',
         wikiId: 'other-wiki',
+        reason: 'locked',
         allowedWikiId: 'test-wiki',
       });
 
@@ -176,7 +177,7 @@ describe('services/wiki-write', () => {
       expect(threw, 'a forbidden write must not create the page').to.equal(true);
     });
 
-    it('writes normally when wikiId matches allowedWikiId', async () => {
+    it('writes normally when wikiId is the locked wiki', async () => {
       const result = await createWikiPage(
         {
           wikiId: 'test-wiki',
@@ -185,10 +186,69 @@ describe('services/wiki-write', () => {
           section: 'entity',
         },
         registry,
-        'test-wiki',
+        { kind: 'locked', wikiId: 'test-wiki' },
         store,
       );
       expect(result.status).to.equal('written');
+    });
+
+    it('returns wiki_forbidden (owned-by-another-workspace) for an excluded wiki in an open scope [unit]', async () => {
+      // An unbound workspace must not write into a wiki another workspace
+      // owns (#202) — and must not get a "use X instead" hint, since there
+      // is no single right answer.
+      await registry.create({ id: 'owned-wiki', domain: 'owned', tags: [] });
+      const result = await createWikiPage(
+        { wikiId: 'owned-wiki', title: 'Leak', content: 'x', section: 'entity' },
+        registry,
+        { kind: 'open', excludedWikiIds: ['owned-wiki'] },
+        store,
+      );
+      expect(result).to.deep.equal({
+        status: 'wiki_forbidden',
+        wikiId: 'owned-wiki',
+        reason: 'owned-by-another-workspace',
+      });
+    });
+
+    it('writes to a non-excluded wiki in an open scope [unit]', async () => {
+      const result = await createWikiPage(
+        {
+          wikiId: 'test-wiki',
+          title: 'Open Scope Page',
+          content: 'Fine. See [[dns]] and [[network]].',
+          section: 'entity',
+        },
+        registry,
+        { kind: 'open', excludedWikiIds: ['owned-wiki'] },
+        store,
+      );
+      expect(result.status).to.equal('written');
+    });
+
+    it('returns wiki_forbidden (unresolved) for any wiki when the scope is unresolved [unit]', async () => {
+      const result = await createWikiPage(
+        { wikiId: 'test-wiki', title: 'Nowhere', content: 'x', section: 'entity' },
+        registry,
+        { kind: 'unresolved' },
+        store,
+      );
+      expect(result).to.deep.equal({
+        status: 'wiki_forbidden',
+        wikiId: 'test-wiki',
+        reason: 'unresolved',
+      });
+    });
+
+    it('still returns wiki_archived for an archived wiki the scope allows [unit]', async () => {
+      // Scope and archive are independent guards: being locked to a closed
+      // project's wiki must not reopen it for writes.
+      const result = await createWikiPage(
+        { wikiId: 'archived-wiki', title: 'Late', content: 'x', section: 'entity' },
+        registry,
+        { kind: 'locked', wikiId: 'archived-wiki' },
+        store,
+      );
+      expect(result).to.deep.equal({ status: 'wiki_archived', wikiId: 'archived-wiki' });
     });
 
     it('returns wiki_archived and does not write when the target domain is archived', async () => {
@@ -355,7 +415,7 @@ describe('services/wiki-write', () => {
       expect(result).to.deep.equal({ status: 'unknown_wiki', wikiId: 'does-not-exist' });
     });
 
-    it('returns wiki_forbidden when wikiId does not match allowedWikiId', async () => {
+    it('returns wiki_forbidden (locked) when wikiId is not the locked wiki', async () => {
       const created = await createWikiPage(
         {
           wikiId: 'test-wiki',
@@ -377,12 +437,13 @@ describe('services/wiki-write', () => {
       const result = await updateWikiPage(
         { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
         registry,
-        'some-other-allowed-wiki',
+        { kind: 'locked', wikiId: 'some-other-allowed-wiki' },
         store,
       );
       expect(result).to.deep.equal({
         status: 'wiki_forbidden',
         wikiId: 'test-wiki',
+        reason: 'locked',
         allowedWikiId: 'some-other-allowed-wiki',
       });
 
@@ -391,7 +452,7 @@ describe('services/wiki-write', () => {
       expect(page.content).to.contain('v1.'); // unchanged
     });
 
-    it('writes normally when wikiId matches allowedWikiId', async () => {
+    it('writes normally when wikiId is the locked wiki', async () => {
       const created = await createWikiPage(
         {
           wikiId: 'test-wiki',
@@ -410,10 +471,24 @@ describe('services/wiki-write', () => {
       const result = await updateWikiPage(
         { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
         registry,
-        'test-wiki',
+        { kind: 'locked', wikiId: 'test-wiki' },
         store,
       );
       expect(result.status).to.equal('written');
+    });
+
+    it('returns wiki_forbidden (owned-by-another-workspace) for an excluded wiki [unit]', async () => {
+      const result = await updateWikiPage(
+        { wikiId: 'test-wiki', path: 'entities/anything.md', content: 'v2.' },
+        registry,
+        { kind: 'open', excludedWikiIds: ['test-wiki'] },
+        store,
+      );
+      expect(result).to.deep.equal({
+        status: 'wiki_forbidden',
+        wikiId: 'test-wiki',
+        reason: 'owned-by-another-workspace',
+      });
     });
 
     it('returns wiki_archived and does not write when the target domain is archived', async () => {

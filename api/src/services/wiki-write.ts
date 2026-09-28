@@ -3,6 +3,7 @@ import type { PageType, Warning, WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from './wiki.js';
 import { getWorkspaceStore, type WorkspaceStore } from './workspace-store.js';
 import { isWikiDomainArchived } from './wiki-archive-guard.js';
+import { checkWikiWrite, type WikiWriteDenial, type WikiWriteScope } from './wiki-write-scope.js';
 
 export interface WikiWriteResult {
   path: string; // relative to the wiki root
@@ -11,13 +12,22 @@ export interface WikiWriteResult {
   warnings: Warning[];
 }
 
+// allowedWikiId is set only for a 'locked' denial — it names the one wiki
+// the conversation may write to, so the agent can retry against it.
+export interface WikiForbiddenResult {
+  status: 'wiki_forbidden';
+  wikiId: string;
+  reason: WikiWriteDenial;
+  allowedWikiId?: string;
+}
+
 export type CreateWikiPageResult =
   | { status: 'written'; result: WikiWriteResult }
   | { status: 'dry_run'; title: string; wikiId: string; section: PageType }
   | { status: 'duplicate'; existingPath: string; existingTitle: string }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string }
-  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string }
+  | WikiForbiddenResult
   | { status: 'wiki_archived'; wikiId: string };
 
 export interface CreateWikiPageParams {
@@ -37,6 +47,17 @@ export interface CreateWikiPageParams {
   force?: boolean;
 }
 
+export function scopeDenial(scope: WikiWriteScope, wikiId: string): WikiForbiddenResult | null {
+  const check = checkWikiWrite(scope, wikiId);
+  if (check.allowed) return null;
+  return {
+    status: 'wiki_forbidden',
+    wikiId,
+    reason: check.reason,
+    ...(scope.kind === 'locked' ? { allowedWikiId: scope.wikiId } : {}),
+  };
+}
+
 // Test-only escape hatch on both functions below: an already-constructed
 // registry, used in place of getWikiRegistry(). Production callers never
 // set this — same pattern as after-agent.ts's `llm?` param on
@@ -46,10 +67,9 @@ export interface CreateWikiPageParams {
 export async function createWikiPage(
   params: CreateWikiPageParams,
   registry?: WikiRegistry,
-  // Set only for a workspace-chat session scoped to a project's wiki — see
-  // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
-  // matching today's global-chat/non-project behavior.
-  allowedWikiId?: string,
+  // Which wikis this conversation may write to — see wiki-write-scope.ts.
+  // Left undefined (evals, unit tests), writes are unrestricted.
+  scope?: WikiWriteScope,
   // Test-injection escape hatch, same rationale as `registry` above.
   store?: WorkspaceStore,
 ): Promise<CreateWikiPageResult> {
@@ -84,9 +104,8 @@ export async function createWikiPage(
     return { status: 'unknown_wiki', wikiId };
   }
 
-  if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
-    return { status: 'wiki_forbidden', wikiId, allowedWikiId };
-  }
+  const forbidden = scope && scopeDenial(scope, wikiId);
+  if (forbidden) return forbidden;
 
   if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
     return { status: 'wiki_archived', wikiId };
@@ -132,7 +151,7 @@ export type UpdateWikiPageResult =
   | { status: 'invalid_path' }
   | { status: 'wiki_unavailable' }
   | { status: 'unknown_wiki'; wikiId: string }
-  | { status: 'wiki_forbidden'; wikiId: string; allowedWikiId: string }
+  | WikiForbiddenResult
   | { status: 'wiki_archived'; wikiId: string };
 
 export interface UpdateWikiPageParams {
@@ -162,10 +181,9 @@ function extractH2Sections(body: string): string[] {
 export async function updateWikiPage(
   params: UpdateWikiPageParams,
   registry?: WikiRegistry,
-  // Set only for a workspace-chat session scoped to a project's wiki — see
-  // workspace-chat-stream-handler.ts. Left undefined, this is unrestricted,
-  // matching today's global-chat/non-project behavior.
-  allowedWikiId?: string,
+  // Which wikis this conversation may write to — see wiki-write-scope.ts.
+  // Left undefined (evals, unit tests), writes are unrestricted.
+  scope?: WikiWriteScope,
   // Test-injection escape hatch, same rationale as `registry` above.
   store?: WorkspaceStore,
 ): Promise<UpdateWikiPageResult> {
@@ -199,9 +217,8 @@ export async function updateWikiPage(
     return { status: 'unknown_wiki', wikiId };
   }
 
-  if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
-    return { status: 'wiki_forbidden', wikiId, allowedWikiId };
-  }
+  const forbidden = scope && scopeDenial(scope, wikiId);
+  if (forbidden) return forbidden;
 
   if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
     return { status: 'wiki_archived', wikiId };

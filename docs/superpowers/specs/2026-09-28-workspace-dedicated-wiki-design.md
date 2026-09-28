@@ -54,7 +54,7 @@ This feature adds more "known domain" cases and makes every write path respect t
 - Validation happens up front, before any side effects:
   - `newWiki` together with a non-null `wikiId` → 400 `Choose an existing wiki or create a new one, not both.`
   - `newWiki.name` missing or not a string → 400.
-  - `id = slugify(newWiki.name)` (reuse `slugify` from `projects.handlers.ts`). An empty slug → 400 `Wiki name must contain letters or numbers.`
+  - `id = wikiIdFromName(newWiki.name)`: `slugify` from `projects.handlers.ts` capped at 60 characters with trailing dashes trimmed, matching the UI's `slugify` (`ui/src/lib/utils.ts`) so the client-side collision check agrees with the server. An empty id → 400 `Wiki name must contain letters or numbers.`
   - `id` already present in `registry.list()` → 409 `A wiki named "<id>" already exists.`
 - Order of operations:
   1. Validation (above, plus the existing name, location, and duplicate-workspace checks).
@@ -66,6 +66,7 @@ This feature adds more "known domain" cases and makes every write path respect t
      - If it throws → best-effort `reg.destroy(id)` (only if step 3 created it) and best-effort directory removal, each logged on failure; return 500.
      - This also gives the existing no-wiki path the directory rollback it lacks today.
 - The handler takes an optional `registry?: WikiRegistry` parameter (defaulting to `getWikiRegistry()`), matching `createProjectHandler` and `deleteWorkspaceHandler`.
+- `rollbackDirectory` and `serverError` in `projects.handlers.ts` are exported and reused rather than duplicated.
 - The route passes `newWiki` through. The `domain` field is the entered name, because the UI's domain select labels options by `domain`.
 
 **Retention.** No change needed. `deleteWorkspaceHandler` destroys the bound wiki only when the workspace has a project.
@@ -100,7 +101,7 @@ export type WikiWriteScope =
   | { kind: 'unresolved' };
 
 export function resolveWikiWriteScope(
-  threadId: string,
+  context: { threadId: string; workspaceId?: string },
   stores?: { workspaceStore?: WorkspaceStore; threadStore?: ThreadStore },
 ): WikiWriteScope;
 
@@ -112,14 +113,18 @@ export function checkWikiWrite(
 ): { allowed: true } | { allowed: false; reason: WikiWriteDenial };
 ```
 
-Resolution rules:
+Resolution rules. The **workspace rule** is: the workspace has a `wikiId` (project or not) → `locked` to it; otherwise `open` with `excludedWikiIds` = every wiki id bound to any workspace.
 
-| Thread                                                                                                       | Scope                                                            |
-| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `workspace-chat`, workspace has a `wikiId` (project or not)                                                  | `locked` to that `wikiId`                                        |
-| `workspace-chat`, workspace has no `wikiId`                                                                  | `open`, `excludedWikiIds` = every wiki id bound to any workspace |
-| `chat`, `wiki`, `task` (global task threads only; workspace-scoped tasks run on their workspace-chat thread) | `open`, no exclusions                                            |
-| Thread meta not found; `workspace-chat` thread with no matching workspace; unknown type                      | `unresolved`                                                     |
+| Input                                                                                        | Scope                                     |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `workspaceId` given (server-set `configurable.workspaceId`)                                  | workspace rule; `unresolved` if not found |
+| `workspace-chat` thread                                                                      | `getWorkspaceByThreadId` → workspace rule |
+| `task` thread whose task has a `workspaceId`                                                 | workspace rule for that workspace         |
+| `task` thread for a global task; `chat`; `wiki`                                              | `open`, no exclusions                     |
+| Thread meta not found; workspace-chat thread with no workspace; task not found; unknown type | `unresolved`                              |
+
+- `workspaceId` wins when present. Workspace chat, task runs and headless turns set it on the run config; the workspace summarizer only sets `thread_id` (the workspace's own thread), which resolves through the thread row.
+- Workspace-scoped task runs execute in their **own `task` thread**, not the workspace-chat thread, so the `task` row is resolved through `getTaskByThreadId` to find the task's workspace. Treating every `task` thread as global would leave those runs unrestricted.
 
 - `checkWikiWrite` behavior:
   - `locked` denies any other id with reason `locked`.
@@ -143,7 +148,7 @@ Resolution rules:
 
 **Scope is resolved at call time, not at agent build time**
 
-- Write tools read `config.configurable.thread_id` and call `resolveWikiWriteScope(threadId)` on every invocation.
+- Write tools read `config.configurable.thread_id` (and `workspaceId`, when set) and call `resolveWikiWriteScope` on every invocation.
   - With no `thread_id` (evals, unit tests), they pass no scope, which means unrestricted.
   - A `thread_id` that resolves to nothing yields `unresolved`, which fails closed.
 - Why: `getWorkspaceChatAgent` caches agents per workspace. An unbound workspace's exclusions depend on _other_ workspaces' bindings, so values captured at build time would go stale.
@@ -155,16 +160,26 @@ Resolution rules:
 
 **AfterAgent: `api/src/agents/after-agent.ts`**
 
-- `runAfterAgentPipeline` resolves `scope = resolveWikiWriteScope(threadId, …)` **before** the summarize and classify LLM calls. `RunAfterAgentPipelineParams` gains a test-only `threadStore?`, matching the existing `store?` / `registry?` escape hatches.
+- `runAfterAgentPipeline` resolves `scope = resolveWikiWriteScope({ threadId, workspaceId }, …)` **before** the summarize and classify LLM calls. `afterAgentMiddleware` passes `runtime.configurable.workspaceId`. `RunAfterAgentPipelineParams` gains `workspaceId?` and a test-only `threadStore?`, matching the existing `store?` / `registry?` escape hatches.
 - `unresolved` → warn log, `setAfterAgentDone(threadId, 'no-op')`, return. No LLM calls are made.
 - Candidate domains passed to `buildExtractPrompt` are `registry.list()` filtered by `checkWikiWrite(scope, d.id).allowed`.
   - A `locked` scope offers exactly one domain.
   - If filtering leaves no domains, the result is `no-op`. This matches today's empty-registry branch.
-- `createWikiPage` / `updateWikiPage` receive `scope`, so a domain id the LLM invents outside the filtered list is still rejected. The existing unknown-domain check already catches most of these first. Either way the result is a `no-op`.
+- The existing unknown-domain check runs against the **filtered** list, so an out-of-scope id becomes a `no-op` before `saveRawSource` touches that domain. `createWikiPage` / `updateWikiPage` also receive `scope`, as a second line of defense.
 
 **Prompt copy**
 
 - `buildWorkspaceContextBlock` (`chat-agent.ts:454`) changes its bound-wiki line to: `Bound wiki domain: "<domain>" — this workspace's memory lives here. Wiki writes from this workspace can only go to this domain; you can still read and search other domains.`
+
+### 3. Deleting a wiki domain
+
+Persistent wikis created from the form need a way out, and E2E tests need to clean up after themselves.
+
+- New route: `DELETE /api/v1/wiki/domains/:id` (API only, no UI button in this change).
+  - Unknown id → 404.
+  - Id is bound to any workspace (`listBoundWikiIds()`), which includes every project wiki → 409 `Wiki "<id>" is bound to a workspace; unbind it first.`
+  - Otherwise `registry.destroy(id)` → 200 `{ deleted: true }`.
+  - Registry unavailable → 503, matching `GET /domains`.
 
 ---
 
@@ -201,6 +216,8 @@ Test tags follow the root `AGENTS.md` conventions. Tests sit next to the files t
 
 ### Developer tests
 
+- **`api/src/routes/v1/wiki.route.test.ts`** `[orchestration]`: delete succeeds and the domain disappears from `GET /domains`; 404 for an unknown id; 409 for a bound domain.
+
 - **`api/src/services/wiki-write-scope.test.ts`** `[unit]`:
   - one test per row of the resolution table
   - `checkWikiWrite` for each scope kind, including `unresolved` denying every id
@@ -219,6 +236,7 @@ Test tags follow the root `AGENTS.md` conventions. Tests sit next to the files t
 - **Write-tool call-time scope** `[orchestration]`, in `wiki-create-page.tool.test.ts`:
   - build the tool, then bind `video-streaming` to another workspace, then invoke the tool from an unbound workspace thread → forbidden with `owned-by-another-workspace`
   - a bound non-project workspace thread writing elsewhere → `locked`
+  - a workspace-scoped task's own `task` thread → that workspace's lock
   - an unknown thread id → `unresolved`
 - **`api/src/agents/after-agent.test.ts`** `[orchestration]`:
   - locked scope: the extract prompt lists only the bound domain and the page lands there
@@ -228,7 +246,7 @@ Test tags follow the root `AGENTS.md` conventions. Tests sit next to the files t
   - `newWikiName` creates and binds a new domain
   - `newWikiName` + `wikiId` returns the pick-one error and creates nothing
   - a colliding name returns the 409 message
-- **UI Jest** in `new-wiki-name-field.test.tsx` (the workspaces page has no Jest coverage today):
+- **UI Jest** in `ui/test/` (where UI tests live): a new `new-wiki-name-field.test.tsx`, plus additions to `workspace-create-form.test.tsx`:
   - `newWikiNameError` `[unit]`: empty slug, collision, and a valid name
   - selecting "Create new wiki…" reveals the Wiki name input
   - the input follows the workspace name until edited, then stops following
@@ -240,7 +258,7 @@ Test tags follow the root `AGENTS.md` conventions. Tests sit next to the files t
 - `@user-workflow`: create a workspace with **Create new wiki…** and a custom name, then check that the wiki appears in the wiki domain list.
 - `@user-workflow`: delete that workspace, then check that the wiki is still listed.
 - `@user-workflow`: choose a name that collides with an existing domain, then check that the inline error shows and submit is disabled.
-- Tests remove any wiki domains they create, even on failure.
+- Tests remove any wiki domains they create through `DELETE /api/v1/wiki/domains/:id`, even on failure.
 
 ---
 

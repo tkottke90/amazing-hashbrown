@@ -12,6 +12,7 @@ import {
 } from '../../agents/wiki-stream-handler.js';
 import { stopTurnResponse, type SseWriter } from '../../agents/active-sse-writer.js';
 import { getThreadStore } from '../../services/thread-store.js';
+import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
 import { serializeError } from '../../config/logger.js';
 import { wikiUploadRouter } from './wiki-upload.route.js';
 
@@ -45,6 +46,50 @@ wikiRouter.get('/domains', async (_req, res) => {
     res.json(domains);
   } catch (err) {
     res.status(503).json({ error: 'Wiki registry unavailable', detail: String(err) });
+  }
+});
+
+export type DeleteWikiDomainResult =
+  { status: 200; body: { deleted: true } } | { status: 404 | 409; body: { error: string } };
+
+/**
+ * Unregisters a wiki domain and removes it from disk. Refuses while any
+ * workspace (project wikis included) is bound to it: a bound wiki is that
+ * workspace's write target, and a project wiki's lifecycle belongs to the
+ * project. Exported for the same testability reason as buildMergedGraph.
+ */
+export async function deleteWikiDomain(
+  registry: WikiRegistry,
+  store: WorkspaceStore,
+  id: string,
+): Promise<DeleteWikiDomainResult> {
+  if (!registry.list().some((d) => d.id === id)) {
+    return { status: 404, body: { error: `Wiki "${id}" not found` } };
+  }
+  if (store.listBoundWikiIds().includes(id)) {
+    return {
+      status: 409,
+      body: { error: `Wiki "${id}" is bound to a workspace; unbind it first.` },
+    };
+  }
+  await registry.destroy(id);
+  return { status: 200, body: { deleted: true } };
+}
+
+// DELETE /api/v1/wiki/domains/:id
+wikiRouter.delete('/domains/:id', async (req, res) => {
+  let registry: WikiRegistry;
+  try {
+    registry = await getWikiRegistry();
+  } catch (err) {
+    res.status(503).json({ error: 'Wiki registry unavailable', detail: String(err) });
+    return;
+  }
+  try {
+    const result = await deleteWikiDomain(registry, getWorkspaceStore(), req.params.id);
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 

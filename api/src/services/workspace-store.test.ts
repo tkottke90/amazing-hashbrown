@@ -271,6 +271,45 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('listBoundWikiIds()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-bound-wikis-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('lists each bound wiki id once, even when shared by several workspaces [unit]', () => {
+      store.createWorkspace({ name: 'a', location: '/tmp/a', wikiId: 'shared' });
+      store.createWorkspace({ name: 'b', location: '/tmp/b', wikiId: 'shared' });
+      store.createWorkspace({ name: 'c', location: '/tmp/c', wikiId: 'solo' });
+      // A shared wiki must appear once — callers build exclusion lists from
+      // this and duplicates would only hide real bugs in the comparison.
+      expect(store.listBoundWikiIds().sort()).to.deep.equal(['shared', 'solo']);
+    });
+
+    it('omits workspaces without a wiki binding [unit]', () => {
+      store.createWorkspace({ name: 'unbound', location: '/tmp/u' });
+      expect(store.listBoundWikiIds()).to.deep.equal([]);
+    });
+
+    it('includes project wikis, which are bound through their workspace row [unit]', () => {
+      store.createProject({
+        id: 'p1',
+        name: 'proj',
+        location: '/tmp/p',
+        winCondition: 'done',
+        wikiId: 'project-p1',
+      });
+      expect(store.listBoundWikiIds()).to.deep.equal(['project-p1']);
+    });
+  });
+
   describe('task cancel/pause/take-over queue columns (migration 26)', () => {
     let store: WorkspaceStore;
     let dir: string;

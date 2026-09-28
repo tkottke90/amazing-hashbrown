@@ -23,11 +23,7 @@ import { getThreadStore } from '../services/thread-store.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
-import {
-  getWorkspaceStore,
-  type Workspace,
-  type WorkspaceStore,
-} from '../services/workspace-store.js';
+import { getWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
 import {
@@ -38,20 +34,6 @@ import {
   resolveHitlPrompt,
   recordRetryAttempt,
 } from './thread-message-writer.js';
-
-// A project workspace may only write to its own configured wiki — resolved
-// once per turn and passed to getWorkspaceChatAgent(), which builds the
-// agent's wiki write tools with this value closed over (see
-// buildWikiWriteTools() in chat-agent.ts). undefined for a non-project
-// workspace, meaning unrestricted, matching today's global-chat behavior.
-export function resolveAllowedWikiId(
-  store: WorkspaceStore,
-  workspaceId: string,
-): string | undefined {
-  const project = store.getProject(workspaceId);
-  if (!project) return undefined;
-  return store.getWorkspace(workspaceId)?.wikiId ?? undefined;
-}
 
 // Reads .hashbrown/summaries/ under the workspace's location: the most
 // recent file's full content, plus older files reduced to a manifest
@@ -175,14 +157,12 @@ export async function streamWorkspaceChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
   const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
     effectiveModel,
-    allowedWikiId,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;
@@ -400,14 +380,12 @@ export async function resumeWorkspaceChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
   const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
     effectiveModel,
-    allowedWikiId,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;
@@ -630,14 +608,12 @@ export async function retryWorkspaceChatToSse(
     threadStore.updateThreadModel(threadId, effectiveProvider ?? null, effectiveModel ?? null);
   }
 
-  const allowedWikiId = resolveAllowedWikiId(workspaceStore, workspace.id);
   const workspaceContext = await buildWorkspaceContext(workspace);
   const { agent, systemPrompt } = await resolveWorkspaceChatAgent(
     workspace.id,
     workspaceContext,
     effectiveProvider,
     effectiveModel,
-    allowedWikiId,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
   const resolvedProvider = providerConfig.name;

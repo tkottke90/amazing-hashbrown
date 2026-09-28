@@ -344,3 +344,78 @@ describe('CreateWorkspaceForm — Wiki binding section', () => {
     expect(mockCreateProject).not.toHaveBeenCalled();
   });
 });
+
+describe('CreateWorkspaceForm — Create new wiki option (#202)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFetchDomains.mockResolvedValue([
+      { id: 'video-streaming', domain: 'Video Streaming', tags: [] },
+    ]);
+    mockCreateWorkspace.mockResolvedValue({ id: 'ws-1' } as unknown as Awaited<
+      ReturnType<typeof api.createWorkspace>
+    >);
+  });
+
+  async function chooseCreateNewWiki() {
+    await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
+    fireEvent.click(getWikiTrigger());
+    const listbox = await screen.findByRole('listbox');
+    fireEvent.click(within(listbox).getByText('Create new wiki…'));
+  }
+
+  it('reveals a Wiki name field only once "Create new wiki…" is chosen', async () => {
+    render(<CreateWorkspaceForm />);
+    expect(screen.queryByLabelText(/Wiki name/)).not.toBeInTheDocument();
+
+    await chooseCreateNewWiki();
+
+    expect(screen.getByLabelText(/Wiki name/)).toBeInTheDocument();
+  });
+
+  it('states that the bound wiki is the only write target', () => {
+    render(<CreateWorkspaceForm />);
+    expect(
+      screen.getByText('Notes from this workspace are written only to this wiki.'),
+    ).toBeInTheDocument();
+  });
+
+  it('prefills the wiki name from the workspace name until the user edits it', async () => {
+    render(<CreateWorkspaceForm />);
+    await chooseCreateNewWiki();
+    fillName('Image Archive');
+    const wikiName = screen.getByLabelText(/Wiki name/) as HTMLInputElement;
+    expect(wikiName.value).toBe('Image Archive');
+
+    fireEvent.input(wikiName, { target: { value: 'Image Notes' } });
+    fillName('Image Archive v2');
+
+    // Once edited, the user's name sticks — renaming the workspace must not
+    // silently rename the wiki that will outlive it.
+    expect((screen.getByLabelText(/Wiki name/) as HTMLInputElement).value).toBe('Image Notes');
+  });
+
+  it('sends newWiki (and no wikiId) on submit', async () => {
+    render(<CreateWorkspaceForm />);
+    await chooseCreateNewWiki();
+    fillName('Image Archive');
+    submitForm();
+
+    await waitFor(() => expect(mockCreateWorkspace).toHaveBeenCalled());
+    const payload = mockCreateWorkspace.mock.calls[0]![0];
+    expect(payload.newWiki).toEqual({ name: 'Image Archive' });
+    expect(payload).not.toHaveProperty('wikiId');
+  });
+
+  it('flags a name that collides with an existing wiki and blocks submission', async () => {
+    render(<CreateWorkspaceForm />);
+    await chooseCreateNewWiki();
+    fillName('Video Streaming');
+
+    expect(screen.getByText('A wiki named "video-streaming" already exists.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create workspace' })).toBeDisabled();
+
+    submitForm();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockCreateWorkspace).not.toHaveBeenCalled();
+  });
+});

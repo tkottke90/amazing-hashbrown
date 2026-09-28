@@ -29,6 +29,7 @@ import { fetchDomains, type WikiDomain } from '@/services/wiki-api';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import { useTitle } from '@/hooks/use-title';
 import { cn, slugify } from '@/lib/utils';
+import { NewWikiNameField, newWikiNameError } from './new-wiki-name-field';
 
 type FilterTab = 'all' | 'workspaces' | 'projects' | 'closed';
 
@@ -42,6 +43,8 @@ const DIRECTORY_NAME_DEBOUNCE_MS = 300;
 // Radix SelectItem rejects '' as a value, so an explicit sentinel represents
 // "no wiki bound" in the select instead of an empty string.
 const NONE_WIKI_VALUE = '__none__';
+// Creates a new dedicated wiki alongside the workspace (issue #202).
+const NEW_WIKI_VALUE = '__new__';
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -99,6 +102,22 @@ export function CreateWorkspaceForm() {
   const wikiDomains = useSignal<WikiDomain[]>([]);
   const wikiDomainsLoading = useSignal(true);
   const wikiDomainsError = useSignal(false);
+  // The new wiki's name follows the workspace name until the user types
+  // their own — after that it stays put.
+  const wikiNameInput = useSignal('');
+  const wikiNameEdited = useSignal(false);
+  const wikiName = useComputed(() => (wikiNameEdited.value ? wikiNameInput.value : name.value));
+  const creatingNewWiki = useComputed(
+    () => mode.value === 'workspace' && wikiId.value === NEW_WIKI_VALUE,
+  );
+  const wikiNameError = useComputed(() =>
+    creatingNewWiki.value
+      ? newWikiNameError(
+          wikiName.value,
+          wikiDomains.value.map((d) => d.id),
+        )
+      : null,
+  );
 
   useEffect(() => {
     fetchDomains()
@@ -145,7 +164,7 @@ export function CreateWorkspaceForm() {
       error.value = 'Remote URL is required when Git is enabled.';
       return;
     }
-    if (wikiDomainsError.value) {
+    if (wikiDomainsError.value || wikiNameError.value) {
       return;
     }
     saving.value = true;
@@ -153,7 +172,11 @@ export function CreateWorkspaceForm() {
     // Only Workspace mode's select actually controls this — Project mode
     // always sends null, since the backend provisions its own wiki domain.
     const resolvedWikiId =
-      mode.value === 'workspace' && wikiId.value !== NONE_WIKI_VALUE ? wikiId.value : null;
+      mode.value === 'workspace' &&
+      wikiId.value !== NONE_WIKI_VALUE &&
+      wikiId.value !== NEW_WIKI_VALUE
+        ? wikiId.value
+        : null;
     try {
       if (mode.value === 'project') {
         const entry = await createProject({
@@ -181,7 +204,9 @@ export function CreateWorkspaceForm() {
           remoteUrl: gitEnabled.value ? remoteUrl.value.trim() : null,
           javascript: javascriptEnabled.value,
           python: pythonEnabled.value,
-          wikiId: resolvedWikiId,
+          ...(creatingNewWiki.value
+            ? { newWiki: { name: wikiName.value.trim() } }
+            : { wikiId: resolvedWikiId }),
         });
         close();
       }
@@ -312,11 +337,14 @@ export function CreateWorkspaceForm() {
                   <SelectValue>
                     {wikiId.value === NONE_WIKI_VALUE
                       ? 'None'
-                      : (wikiDomains.value.find((d) => d.id === wikiId.value)?.domain ?? 'None')}
+                      : wikiId.value === NEW_WIKI_VALUE
+                        ? 'Create new wiki…'
+                        : (wikiDomains.value.find((d) => d.id === wikiId.value)?.domain ?? 'None')}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE_WIKI_VALUE}>None</SelectItem>
+                  <SelectItem value={NEW_WIKI_VALUE}>Create new wiki…</SelectItem>
                   {wikiDomains.value.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.domain}
@@ -325,7 +353,7 @@ export function CreateWorkspaceForm() {
                 </SelectContent>
               </Select>
               <p class="text-xs text-muted-foreground">
-                Sets the first lookup, not an exclusive scope.
+                Notes from this workspace are written only to this wiki.
               </p>
               {wikiDomainsError.value && (
                 <p class="text-xs text-destructive">
@@ -333,6 +361,17 @@ export function CreateWorkspaceForm() {
                 </p>
               )}
             </div>
+          )}
+
+          {creatingNewWiki.value && (
+            <NewWikiNameField
+              value={wikiName.value}
+              error={wikiNameError.value}
+              onInput={(v) => {
+                wikiNameInput.value = v;
+                wikiNameEdited.value = true;
+              }}
+            />
           )}
 
           {mode.value === 'project' && (
@@ -444,7 +483,7 @@ export function CreateWorkspaceForm() {
         <Button
           type="submit"
           form="create-workspace-form"
-          disabled={saving.value || wikiDomainsError.value}
+          disabled={saving.value || wikiDomainsError.value || !!wikiNameError.value}
         >
           {saving.value
             ? 'Creating…'

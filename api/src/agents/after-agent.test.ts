@@ -10,6 +10,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { bootObservability } from '../services/observability.js';
 import { WorkspaceStore } from '../services/workspace-store.js';
+import { ThreadStore } from '../services/thread-store.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 import type { AfterAgentState, AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import type { ObservabilityCallbackHandler } from './observability-handler.js';
@@ -20,7 +21,20 @@ import {
   runAfterAgentPipeline,
   invokeStructured,
   getAfterAgentState,
+  type RunAfterAgentPipelineParams,
 } from './after-agent.js';
+
+// The pipeline resolves where a thread may write before doing anything, and
+// fails closed for a thread it can't place (#202). Most tests here are about
+// the pipeline's own steps, so they run as a global chat thread — "open"
+// scope — registered in a throwaway ThreadStore.
+const chatThreadsDir = mkdtempSync(join(tmpdir(), 'after-agent-threads-'));
+const chatThreads = new ThreadStore(openDatabase(join(chatThreadsDir, 'threads.db')));
+
+function runInChatThread(params: RunAfterAgentPipelineParams) {
+  chatThreads.upsertThreadOnFirstMessage(params.threadId, 'test', 'chat');
+  return runAfterAgentPipeline({ threadStore: chatThreads, ...params });
+}
 
 // Monkey-patches one logger method to record calls while forwarding to the real
 // implementation — no mocking library needed (this repo uses mocha + chai only).
@@ -83,6 +97,10 @@ function fakeStructuredLlm(responses: Record<string, unknown>) {
 }
 
 describe('agents/after-agent', () => {
+  after(() => {
+    rmSync(chatThreadsDir, { recursive: true, force: true });
+  });
+
   describe('extractLatestTurnText()', () => {
     it('returns an empty string when there are no human messages', () => {
       const messages = [new SystemMessage('you are a helpful assistant'), new AIMessage('hi')];
@@ -173,7 +191,7 @@ describe('agents/after-agent', () => {
         'after-agent:summarize': { summary: 'User is named Thomas.' },
         'after-agent:classify': { shouldWrite: false, reason: 'first turn, not asserted on' },
       });
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('My name is Thomas.')],
         llm: llm1,
@@ -189,7 +207,7 @@ describe('agents/after-agent', () => {
         'after-agent:summarize': { summary: 'User is named Thomas, 36 years old.' },
         'after-agent:classify': { shouldWrite: false, reason: 'novel fact, but untested here' },
       });
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('I am 36 years old.')],
         llm: llm2,
@@ -234,7 +252,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: false, reason: 'small talk' },
       });
 
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('thanks!')],
         llm,
@@ -251,7 +269,7 @@ describe('agents/after-agent', () => {
       // call (summarize) throws, landing in runAfterAgentPipeline's catch.
       const { llm } = fakeStructuredLlm({});
 
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('this will blow up')],
         llm,
@@ -268,7 +286,7 @@ describe('agents/after-agent', () => {
 
       // requestAfterAgentEnabled: false short-circuits before startTrace()/the
       // 'running' write — status must stay exactly as it was (idle here).
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('hello')],
         requestAfterAgentEnabled: false,
@@ -285,7 +303,7 @@ describe('agents/after-agent', () => {
       });
       const capture = captureAfterAgentBroadcasts(threadId);
       try {
-        await runAfterAgentPipeline({ threadId, messages: [new HumanMessage('thanks!')], llm });
+        await runInChatThread({ threadId, messages: [new HumanMessage('thanks!')], llm });
       } finally {
         capture.stop();
       }
@@ -302,7 +320,7 @@ describe('agents/after-agent', () => {
       const { llm } = fakeStructuredLlm({});
       const capture = captureAfterAgentBroadcasts(threadId);
       try {
-        await runAfterAgentPipeline({ threadId, messages: [new HumanMessage('boom')], llm });
+        await runInChatThread({ threadId, messages: [new HumanMessage('boom')], llm });
       } finally {
         capture.stop();
       }
@@ -315,7 +333,7 @@ describe('agents/after-agent', () => {
       const threadId = `broadcast-disabled-${crypto.randomUUID()}`;
       const capture = captureAfterAgentBroadcasts(threadId);
       try {
-        await runAfterAgentPipeline({
+        await runInChatThread({
           threadId,
           messages: [new HumanMessage('hello')],
           requestAfterAgentEnabled: false,
@@ -362,7 +380,7 @@ describe('agents/after-agent', () => {
 
       const capture = captureAfterAgentBroadcasts(threadId);
       try {
-        await runAfterAgentPipeline({
+        await runInChatThread({
           threadId,
           messages: [new HumanMessage('I prefer tea over coffee.')],
           llm,
@@ -418,7 +436,7 @@ describe('agents/after-agent', () => {
         },
       });
 
-      await runAfterAgentPipeline({
+      await runInChatThread({
         threadId,
         messages: [new HumanMessage('Actually I switched to decaf coffee.')],
         llm,
@@ -439,6 +457,161 @@ describe('agents/after-agent', () => {
         pageKind: 'updated',
         path: 'entities/coffee-habit.md',
       });
+    });
+  });
+
+  describe('runAfterAgentPipeline() — write scope (#202)', () => {
+    let dir: string;
+    let registry: WikiRegistry;
+    let store: WorkspaceStore;
+    let threads: ThreadStore;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'after-agent-scope-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      bootObservability(db);
+      store = new WorkspaceStore(db);
+      threads = new ThreadStore(db);
+      registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
+      await registry.create({ id: 'user', domain: 'user', tags: ['personal'] });
+      await registry.create({ id: 'image-archive', domain: 'Image Archive', tags: [] });
+      await registry.create({ id: 'video-streaming', domain: 'Video Streaming', tags: [] });
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function boundWorkspaceThread(wikiId: string) {
+      const ws = store.createWorkspace({
+        name: `ws-${crypto.randomUUID()}`,
+        location: join(dir, crypto.randomUUID()),
+        wikiId,
+      });
+      const threadId = `ws-thread-${crypto.randomUUID()}`;
+      threads.upsertThreadOnFirstMessage(threadId, 'ws', 'workspace-chat');
+      store.patchWorkspace(ws.id, { threadId });
+      return threadId;
+    }
+
+    const nodeTurn = [new HumanMessage('Our upload pipeline now uses NodeJS stream.pipeline().')];
+
+    it('offers only the bound wiki to extract and files the page there [orchestration]', async () => {
+      const threadId = boundWorkspaceThread('image-archive');
+      const { llm, calls } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Uploads use NodeJS streams.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'project fact' },
+        'after-agent:extract': {
+          domainId: 'image-archive',
+          type: 'concept',
+          title: 'Upload Streaming',
+          tags: ['nodejs'],
+          body: 'Uploads use stream.pipeline(). See [[dns]] and [[proxy]].',
+        },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: nodeTurn,
+        llm,
+        registry,
+        store,
+        threadStore: threads,
+      });
+
+      const extractPrompt = calls.find((c) => c.runName === 'after-agent:extract')!.prompt;
+      expect(extractPrompt).to.contain('id: "image-archive"');
+      expect(extractPrompt, 'other domains must never be offered').to.not.contain(
+        'video-streaming',
+      );
+      expect(extractPrompt).to.not.contain('id: "user"');
+
+      const page = await (
+        await registry.load('image-archive')
+      ).readPage('concepts/upload-streaming.md');
+      expect(page.content).to.contain('stream.pipeline()');
+      expect((getAfterAgentState(threadId) as { outcome: string }).outcome).to.equal('identified');
+    });
+
+    it('writes nothing when extract picks a domain outside the scope [orchestration]', async () => {
+      // The model "knows better" and routes a NodeJS note to the other
+      // project's wiki — the filtered candidate list turns that into a no-op
+      // before any page or raw source lands in video-streaming.
+      const threadId = boundWorkspaceThread('image-archive');
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Uploads use NodeJS streams.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'project fact' },
+        'after-agent:extract': {
+          domainId: 'video-streaming',
+          type: 'concept',
+          title: 'Leaked Streaming Note',
+          tags: ['nodejs'],
+          body: 'Should never be written.',
+        },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: nodeTurn,
+        llm,
+        registry,
+        store,
+        threadStore: threads,
+      });
+
+      expect((getAfterAgentState(threadId) as { outcome: string }).outcome).to.equal('no-op');
+      const video = await registry.load('video-streaming');
+      const leaked = await video.readPage('concepts/leaked-streaming-note.md').then(
+        () => true,
+        () => false,
+      );
+      expect(leaked, 'no page may be written to an out-of-scope wiki').to.equal(false);
+      expect(drainPendingWikiUpdates(threadId)).to.have.length(0);
+    });
+
+    it('skips without calling the model when the thread cannot be placed [orchestration]', async () => {
+      const threadId = `unknown-${crypto.randomUUID()}`;
+      const { llm, calls } = fakeStructuredLlm({});
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: nodeTurn,
+        llm,
+        registry,
+        store,
+        threadStore: threads,
+      });
+
+      expect(calls, 'an unplaceable turn must cost no tokens').to.have.length(0);
+      expect(getAfterAgentState(threadId)).to.deep.include({ status: 'done', outcome: 'no-op' });
+    });
+
+    it('uses the server-set workspaceId even when the thread row is unknown [orchestration]', async () => {
+      const ws = store.createWorkspace({
+        name: `ws-${crypto.randomUUID()}`,
+        location: join(dir, crypto.randomUUID()),
+        wikiId: 'image-archive',
+      });
+      const threadId = `no-row-${crypto.randomUUID()}`;
+      const { llm, calls } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 's' },
+        'after-agent:classify': { shouldWrite: false, reason: 'nothing new' },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        workspaceId: ws.id,
+        messages: nodeTurn,
+        llm,
+        registry,
+        store,
+        threadStore: threads,
+      });
+
+      expect(calls.map((c) => c.runName)).to.deep.equal([
+        'after-agent:summarize',
+        'after-agent:classify',
+      ]);
     });
   });
 
@@ -479,7 +652,7 @@ describe('agents/after-agent', () => {
 
       const warnSpy = captureLogCalls('warn');
       try {
-        await runAfterAgentPipeline({
+        await runInChatThread({
           threadId,
           messages: [new HumanMessage('Write a page with a broken link.')],
           llm,
@@ -529,7 +702,7 @@ describe('agents/after-agent', () => {
       const warnSpy = captureLogCalls('warn');
       const infoSpy = captureLogCalls('info');
       try {
-        await runAfterAgentPipeline({
+        await runInChatThread({
           threadId,
           messages: [new HumanMessage('Write a brief note.')],
           llm,
@@ -580,7 +753,7 @@ describe('agents/after-agent', () => {
 
       const warnSpy = captureLogCalls('warn');
       try {
-        await runAfterAgentPipeline({
+        await runInChatThread({
           threadId,
           messages: [new HumanMessage('Write something.')],
           llm,

@@ -1058,6 +1058,16 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapProject(row) : null;
   }
 
+  /** Every wiki domain id currently bound to at least one workspace
+   * (project or not). A bound wiki belongs to its workspace(s): other
+   * workspaces may not write to it — see services/wiki-write-scope.ts. */
+  listBoundWikiIds(): string[] {
+    const rows = this.db
+      .prepare(`SELECT DISTINCT wiki_id FROM workspaces WHERE wiki_id IS NOT NULL`)
+      .all() as { wiki_id: string }[];
+    return rows.map((r) => r.wiki_id);
+  }
+
   /** Move a project into the closing state. Only succeeds from 'active'. */
   closeProject(workspaceId: string, intent: 'close' | 'abandon'): Project | null {
     const result = this.db

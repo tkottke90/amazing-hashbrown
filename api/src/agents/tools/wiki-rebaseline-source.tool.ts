@@ -2,8 +2,10 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
-import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
+import { resolveToolWriteScope, wikiWriteDeniedMessage } from './wiki-write-guard.js';
 import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
+import type { ThreadStore } from '../../services/thread-store.js';
+import { scopeDenial } from '../../services/wiki-write.js';
 import { isWikiDomainArchived, wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiRebaselineSourceSchema = z.object({
@@ -15,17 +17,17 @@ const WikiRebaselineSourceSchema = z.object({
     ),
 });
 
-// Test-only escape hatch, same pattern as wiki-write.ts's `registry` param —
+// Test-only escape hatches (registry/store/threadStore), same pattern as wiki-write.ts's `registry` param —
 // production callers never pass this. getWikiRegistry() is a lazy,
 // process-wide singleton bound to env.wikiRoot with no other way to redirect
 // it to a temp test directory.
 export function makeWikiRebaselineSourceTool(
-  allowedWikiId?: string,
   registry?: WikiRegistry,
   store?: WorkspaceStore,
+  threadStore?: ThreadStore,
 ) {
   return tool(
-    async ({ wikiId, rawFilePath }) => {
+    async ({ wikiId, rawFilePath }, config) => {
       let reg = registry;
       if (!reg) {
         try {
@@ -40,9 +42,9 @@ export function makeWikiRebaselineSourceTool(
       } catch {
         return `Wiki "${wikiId}" is not registered. Use wiki_locate to find available domains.`;
       }
-      if (allowedWikiId !== undefined && wikiId !== allowedWikiId) {
-        return wikiWriteForbiddenMessage(wikiId, allowedWikiId);
-      }
+      const scope = resolveToolWriteScope(config, { workspaceStore: store, threadStore });
+      const forbidden = scope && scopeDenial(scope, wikiId);
+      if (forbidden) return wikiWriteDeniedMessage(forbidden);
       if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
         return wikiArchivedMessage(wikiId);
       }

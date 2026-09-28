@@ -90,6 +90,37 @@ scenarios:
         result: { text: 'A workspace named "Homelab Ops" already exists.' }
     tool: '!create_workspace'
 
+  - id: cwp-008-workspace-creates-new-dedicated-wiki
+    name: Agent passes newWikiName when the user asked for a dedicated wiki
+    purpose: >
+      Issue #202: a workspace can create and bind its own persistent wiki in
+      the same step, which makes that wiki the only place the workspace's
+      notes are written. The agent-driven flow must reach the same outcome as
+      the UI's "Create new wiki…" option — if the agent drops the request (or
+      tries to bind a non-existent wikiId instead), chat-created workspaces
+      stay unscoped and their notes leak into other domains. Given a
+      confirmed request for a workspace with a new wiki, the very next call
+      must be create_workspace carrying newWikiName.
+    type: tool-sequence
+    gatedSkill: create-workspace
+    input: 'Yes, go ahead.'
+    priorTurns:
+      - tool: ask_user
+        args:
+          {
+            question: 'Create workspace "Image Archive" with a new dedicated wiki named "Image Archive Notes"?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+    tool: create_workspace
+    argChecks:
+      - path: name
+        match: equals
+        value: Image Archive
+      - path: newWikiName
+        match: equals
+        value: Image Archive Notes
+
   - id: cwp-005-project-asks-for-missing-required-fields
     name: Agent asks for missing required project fields before creating
     purpose: >

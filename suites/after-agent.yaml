@@ -429,6 +429,57 @@ scenarios:
         match: equals
         value: projects
 
+  - id: ext-006-single-bound-domain
+    name: Extract uses the only offered domain even when the topic fits another project
+    purpose: >
+      Issue #202: when AfterAgent runs in a workspace with a bound wiki, its
+      candidate list is filtered down to that one domain — the code enforces
+      the boundary, but if this prompt fights a one-item list (inventing a
+      "better" domain id from the turn's topic) every turn silently becomes a
+      no-op and the workspace's notes are never captured. The turn here talks
+      about NodeJS streaming, which topically fits a video-streaming wiki
+      that is deliberately not offered.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "image-archive" (domain: Image Archive, tags: [])
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: We switched the upload pipeline to NodeJS streams with pipeline() so large video
+      thumbnails and RAW images don't blow up memory; backpressure is handled by highWaterMark 64KB.
+      ai: Nice — using stream.pipeline() gives you backpressure and error propagation for free.
+
+
+      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: domainId
+        match: equals
+        value: image-archive
+
   - id: ext-005-never-index-or-log
     name: Extract never produces the reserved index/log page types
     purpose: >

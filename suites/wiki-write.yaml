@@ -272,6 +272,45 @@ scenarios:
       was given directly in the tool's own result.
     minScore: 6
 
+  - id: wwrite-010-owned-by-another-workspace-rejected
+    name: Agent does not retry a wiki owned by another workspace
+    purpose: >
+      Issue #202: a workspace without its own wiki may not write into a wiki
+      bound to a different workspace (e.g. an "Image Archive" workspace must
+      not modify the "Video Streaming" project's wiki just because both use
+      NodeJS). The rejection is enforced in code, but it only helps if the
+      agent stops pushing that write — retrying the same wikiId wastes turns,
+      and claiming success misleads the user about where their notes live.
+      Unlike the "locked" rejection (wwrite-005/006) there is no single
+      correct wiki named in the message, so the right move is to pick a
+      different domain or ask the user.
+    type: llm-judge
+    input: 'Okay, go ahead and save that.'
+    priorTurns:
+      - tool: wiki_create_page
+        args:
+          {
+            wikiId: 'video-streaming',
+            title: 'NodeJS Stream Backpressure',
+            corpus:
+              {
+                raw: 'Notes on handling backpressure with NodeJS streams in the image upload pipeline.',
+              },
+            section: 'concept',
+          }
+        result:
+          {
+            text: 'Wiki "video-streaming" belongs to another workspace and can''t be written from here. Choose a different wiki (wiki_locate can help), or ask the user where this should go.',
+          }
+    rubric: >
+      The response should: (1) tell the user the note was not saved to
+      "video-streaming" because that wiki belongs to another workspace, (2)
+      not claim the page was saved, (3) not retry wiki_create_page against
+      "video-streaming". It is acceptable, and good, for the response to ask
+      the user which wiki to use or to propose a different, clearly named
+      wiki for the note.
+    minScore: 6
+
   - id: wwrite-003-duplicate-create-then-update
     name: Agent recovers from a duplicate signal by reading/updating, not retrying create
     purpose: >

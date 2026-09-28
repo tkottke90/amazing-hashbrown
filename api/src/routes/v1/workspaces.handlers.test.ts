@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -441,6 +441,130 @@ describe('routes/v1/workspaces.handlers', () => {
     });
   });
 
+  describe('createWorkspaceHandler() new dedicated wiki (#202)', () => {
+    let store: WorkspaceStore;
+    let registry: WikiRegistry;
+    let dir: string;
+    let wikiRoot: string;
+    let workspaceDirs: string[];
+
+    beforeEach(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'workspaces-handlers-new-wiki-test-'));
+      wikiRoot = join(dir, 'wiki');
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+      registry = await createWikiRegistry({ wikiRoot });
+      workspaceDirs = [];
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+      for (const wsDir of workspaceDirs) rmSync(wsDir, { recursive: true, force: true });
+    });
+
+    function request(extra: Record<string, unknown>) {
+      const directoryName = `new-wiki-ws-${randomUUID()}`;
+      const location = join(tmpdir(), 'projects', directoryName);
+      workspaceDirs.push(location);
+      return {
+        location,
+        body: { name: 'Image Archive', locationRoot: 'temporary', directoryName, ...extra },
+      };
+    }
+
+    it('creates a persistent (non-ephemeral) wiki and binds it to the new workspace [orchestration]', async () => {
+      const { body } = request({ newWiki: { name: 'Image Archive Notes' } });
+
+      const result = await createWorkspaceHandler(store, body, undefined, registry);
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.wikiId).to.equal('image-archive-notes');
+      expect(registry.list().map((d) => d.id)).to.deep.equal(['image-archive-notes']);
+      // Ephemeral project wikis carry `type: ephemeral` frontmatter; a
+      // dedicated wiki must not, or project cleanup could treat it as one.
+      const index = readFileSync(join(wikiRoot, 'image-archive-notes', 'index.md'), 'utf8');
+      expect(index).to.not.contain('ephemeral');
+    });
+
+    it('returns 409 and creates nothing when the wiki id is already taken [orchestration]', async () => {
+      await registry.create({ id: 'image-archive-notes', domain: 'existing' });
+      const { body, location } = request({ newWiki: { name: 'Image Archive Notes' } });
+
+      const result = await createWorkspaceHandler(store, body, undefined, registry);
+
+      expect(result).to.deep.equal({
+        ok: false,
+        status: 409,
+        error: 'A wiki named "image-archive-notes" already exists.',
+      });
+      expect(existsSync(location), 'collision is checked before the directory is made').to.equal(
+        false,
+      );
+      expect(store.listWorkspaces()).to.have.length(0);
+    });
+
+    it('returns 400 when both newWiki and wikiId are sent [unit]', async () => {
+      const { body, location } = request({ newWiki: { name: 'x' }, wikiId: 'user' });
+      const result = await createWorkspaceHandler(store, body, undefined, registry);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+      expect(existsSync(location)).to.equal(false);
+    });
+
+    it('returns 400 when the wiki name has no letters or numbers [unit]', async () => {
+      const { body, location } = request({ newWiki: { name: '!!!' } });
+      const result = await createWorkspaceHandler(store, body, undefined, registry);
+      expect(result).to.deep.equal({
+        ok: false,
+        status: 400,
+        error: 'Wiki name must contain letters or numbers.',
+      });
+      expect(existsSync(location)).to.equal(false);
+    });
+
+    it('rolls back the directory and creates no workspace when the wiki cannot be created [orchestration]', async () => {
+      const failing = {
+        list: () => registry.list(),
+        create: async () => {
+          throw new Error('disk full');
+        },
+      } as unknown as WikiRegistry;
+      const { body, location } = request({ newWiki: { name: 'Image Archive Notes' } });
+
+      const result = await createWorkspaceHandler(store, body, undefined, failing);
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(500);
+        expect(result.error).to.include('disk full');
+      }
+      expect(existsSync(location)).to.equal(false);
+      expect(store.listWorkspaces()).to.have.length(0);
+    });
+
+    it('destroys the new wiki and removes the directory when the workspace insert fails [orchestration]', async () => {
+      const throwingStore = Object.create(store) as WorkspaceStore;
+      throwingStore.createWorkspace = () => {
+        throw new Error('database is locked');
+      };
+      const { body, location } = request({ newWiki: { name: 'Image Archive Notes' } });
+
+      const result = await createWorkspaceHandler(throwingStore, body, undefined, registry);
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(500);
+      expect(registry.list(), 'no orphaned wiki may be left behind').to.have.length(0);
+      expect(existsSync(location)).to.equal(false);
+    });
+
+    it('does not touch the wiki registry when no new wiki is requested [unit]', async () => {
+      const { body } = request({});
+      const result = await createWorkspaceHandler(store, body, undefined, registry);
+      expect(result.ok).to.equal(true);
+      expect(registry.list()).to.have.length(0);
+    });
+  });
+
   describe('deleteWorkspaceHandler()', () => {
     let store: WorkspaceStore;
     let registry: WikiRegistry;
@@ -494,6 +618,44 @@ describe('routes/v1/workspaces.handlers', () => {
         true,
       );
       expect(registry.list().map((w) => w.id)).to.deep.equal(['manual-wiki']);
+    });
+
+    it('keeps a dedicated wiki and its pages after deleting the workspace that created it [orchestration]', async () => {
+      // #202: unlike a project wiki, a wiki created alongside a workspace is
+      // the long-lived home of that repo's notes — it must outlive the
+      // workspace.
+      const created = await createWorkspaceHandler(
+        store,
+        {
+          name: 'Image Archive',
+          locationRoot: 'temporary',
+          directoryName: `keep-wiki-${randomUUID()}`,
+          newWiki: { name: 'Image Archive' },
+        },
+        undefined,
+        registry,
+      );
+      expect(created.ok).to.equal(true);
+      if (!created.ok) return;
+      const wiki = await registry.load('image-archive');
+      await wiki.commitPage({
+        type: 'concept',
+        title: 'Upload Streaming',
+        tags: [],
+        sources: [],
+        body: 'Uses stream.pipeline(). See [[dns]] and [[proxy]].',
+      });
+
+      const result = await deleteWorkspaceHandler(store, created.data.id, registry, [
+        join(tmpdir(), 'projects'),
+      ]);
+
+      expect(result.ok).to.equal(true);
+      expect(registry.list().map((w) => w.id)).to.deep.equal(['image-archive']);
+      const page = await (
+        await registry.load('image-archive')
+      ).readPage('concepts/upload-streaming.md');
+      expect(page.content).to.contain('stream.pipeline()');
     });
 
     it('removes the workspace directory when it sits under a managed root [orchestration]', async () => {

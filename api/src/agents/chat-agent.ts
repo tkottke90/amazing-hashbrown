@@ -98,6 +98,10 @@ const afterAgentMiddleware = createMiddleware({
         provider: runtime.context?.provider,
         model: runtime.context?.model,
         requestAfterAgentEnabled: runtime.context?.afterAgentEnabled,
+        workspaceId:
+          typeof runtime.configurable?.workspaceId === 'string'
+            ? runtime.configurable.workspaceId
+            : undefined,
       }).catch((err: unknown) => {
         logger.error('after-agent: pipeline failed to start', {
           threadId,
@@ -340,15 +344,16 @@ export function buildWorkspaceScopedTools() {
   return [makeCreateTasksTool()];
 }
 
-// The four write-capable wiki tools are built fresh per agent construction
-// (not shared singletons like STATIC_CHAT_TOOLS) so each can close over its
-// own allowedWikiId restriction — see wiki-write-guard.ts and issue #79.
-export function buildWikiWriteTools(allowedWikiId?: string) {
+// The four write-capable wiki tools. Each resolves which wikis it may write
+// to on every call, from the run's thread/workspace — never captured here,
+// since agents are cached per workspace while the scope can change under
+// them. See services/wiki-write-scope.ts and issue #202.
+export function buildWikiWriteTools() {
   return [
-    makeWikiCreatePageTool(allowedWikiId),
-    makeWikiUpdatePageTool(allowedWikiId),
-    makeWikiAddCrossLinkTool(allowedWikiId),
-    makeWikiRebaselineSourceTool(allowedWikiId),
+    makeWikiCreatePageTool(),
+    makeWikiUpdatePageTool(),
+    makeWikiAddCrossLinkTool(),
+    makeWikiRebaselineSourceTool(),
   ];
 }
 
@@ -451,7 +456,7 @@ function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
   if (ctx.goal) lines.push(`Goal: ${ctx.goal}`);
   if (ctx.wikiDomain) {
     lines.push(
-      `Bound wiki domain: "${ctx.wikiDomain}" — this workspace's memory lives here; orient to this domain for wiki lookups and writes relevant to this workspace.`,
+      `Bound wiki domain: "${ctx.wikiDomain}" — this workspace's memory lives here. Wiki writes from this workspace can only go to this domain; you can still read and search other domains.`,
     );
   }
   if (ctx.systemPrompt?.trim()) {
@@ -475,7 +480,6 @@ async function buildWorkspaceChatAgent(
   workspaceContext: WorkspaceChatContext,
   provider?: string,
   model?: string,
-  allowedWikiId?: string,
 ) {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
@@ -494,7 +498,7 @@ async function buildWorkspaceChatAgent(
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),
-      ...buildWikiWriteTools(allowedWikiId),
+      ...buildWikiWriteTools(),
       ...mcpTools,
     ],
     systemPrompt,
@@ -529,13 +533,12 @@ export async function getWorkspaceChatAgent(
   workspaceContext: WorkspaceChatContext,
   provider?: string,
   model?: string,
-  allowedWikiId?: string,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const key = `${workspaceId}:${provider ?? ''}:${model ?? ''}`;
   if (!_workspaceAgents.has(key)) {
     _workspaceAgents.set(
       key,
-      await buildWorkspaceChatAgent(workspaceId, workspaceContext, provider, model, allowedWikiId),
+      await buildWorkspaceChatAgent(workspaceId, workspaceContext, provider, model),
     );
   }
   return _workspaceAgents.get(key)!;
@@ -585,7 +588,6 @@ export { buildTaskContextBlock, formatPlanChecklist, type TaskContext } from './
 
 export interface TaskWorkspaceScope {
   workspaceContext: WorkspaceChatContext;
-  allowedWikiId?: string;
 }
 
 export interface TaskAgentHooks {
@@ -636,7 +638,7 @@ export async function buildTaskAgent(
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),
-      ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
+      ...buildWikiWriteTools(),
       makeCompleteTaskTool(task.id, {
         // Read at call time so steps update_plan checked earlier in this
         // same run count toward complete_task's unchecked-steps nudge.
@@ -739,7 +741,7 @@ export async function buildSubAgentAgent(
   const candidatePool = [
     ...STATIC_CHAT_TOOLS,
     ...buildSkillTools(workspaceSkills(task.workspaceId)),
-    ...buildWikiWriteTools(workspaceScope?.allowedWikiId),
+    ...buildWikiWriteTools(),
     makeShellExecTool(workspaceScope?.workspaceContext.location),
     ...mcpTools,
   ];

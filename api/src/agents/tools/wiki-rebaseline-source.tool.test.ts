@@ -11,6 +11,16 @@ import { makeWikiRebaselineSourceTool } from './wiki-rebaseline-source.tool.js';
 import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
 import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 import { WorkspaceStore } from '../../services/workspace-store.js';
+import { ThreadStore } from '../../services/thread-store.js';
+
+const LOCKED_THREAD = 'locked-thread';
+
+// A workspace-chat thread whose workspace is bound to test-wiki, so the
+// tool's write scope is locked to it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lockedConfig(): any {
+  return { configurable: { thread_id: LOCKED_THREAD } };
+}
 
 async function rawSha256(registry: WikiRegistry, wikiId: string, relPath: string) {
   const wiki = await registry.load(wikiId);
@@ -22,10 +32,20 @@ describe('agents/tools/wiki-rebaseline-source', () => {
   let dir: string;
   let registry: WikiRegistry;
   let store: WorkspaceStore;
+  let threadStore: ThreadStore;
 
   before(async () => {
     dir = mkdtempSync(join(tmpdir(), 'wiki-rebaseline-source-test-'));
-    store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+    const db = openDatabase(join(dir, 'test.db'));
+    store = new WorkspaceStore(db);
+    threadStore = new ThreadStore(db);
+    const bound = store.createWorkspace({
+      name: 'bound',
+      location: join(dir, 'bound-ws'),
+      wikiId: 'test-wiki',
+    });
+    threadStore.upsertThreadOnFirstMessage(LOCKED_THREAD, 'bound', 'workspace-chat');
+    store.patchWorkspace(bound.id, { threadId: LOCKED_THREAD });
     registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
     await registry.create({ id: 'test-wiki', domain: 'testing', tags: ['test'] });
     await registry.create({ id: 'other-wiki', domain: 'other', tags: [] });
@@ -62,21 +82,27 @@ describe('agents/tools/wiki-rebaseline-source', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('rejects a forbidden wiki before rebaselining', async () => {
-    const tool = makeWikiRebaselineSourceTool('test-wiki', registry, store);
-    const result = await tool.invoke({ wikiId: 'other-wiki', rawFilePath: 'raw/note.md' });
+  it('rejects a wiki outside a locked workspace scope before rebaselining', async () => {
+    const tool = makeWikiRebaselineSourceTool(registry, store, threadStore);
+    const result = await tool.invoke(
+      { wikiId: 'other-wiki', rawFilePath: 'raw/note.md' },
+      lockedConfig(),
+    );
     expect(result).to.equal(wikiWriteForbiddenMessage('other-wiki', 'test-wiki'));
     expect(await rawSha256(registry, 'test-wiki', 'raw/note.md')).to.equal('stale-placeholder');
   });
 
-  it('rebaselines when the wiki matches allowedWikiId', async () => {
-    const tool = makeWikiRebaselineSourceTool('test-wiki', registry, store);
-    const result = await tool.invoke({ wikiId: 'test-wiki', rawFilePath: 'raw/note.md' });
+  it('rebaselines when the wiki is the locked one', async () => {
+    const tool = makeWikiRebaselineSourceTool(registry, store, threadStore);
+    const result = await tool.invoke(
+      { wikiId: 'test-wiki', rawFilePath: 'raw/note.md' },
+      lockedConfig(),
+    );
     expect(result).to.contain('Rebaselined raw source');
     expect(await rawSha256(registry, 'test-wiki', 'raw/note.md')).to.not.equal('stale-placeholder');
   });
 
-  it('applies no restriction when allowedWikiId is undefined', async () => {
+  it('applies no restriction when invoked without a thread (evals/tests)', async () => {
     const wiki = await registry.load('test-wiki');
     await wiki.saveRawSource({
       path: 'raw/other-note.md',
@@ -85,19 +111,22 @@ describe('agents/tools/wiki-rebaseline-source', () => {
       content: 'raw body two',
     });
 
-    const tool = makeWikiRebaselineSourceTool(undefined, registry, store);
+    const tool = makeWikiRebaselineSourceTool(registry, store, threadStore);
     const result = await tool.invoke({ wikiId: 'test-wiki', rawFilePath: 'raw/other-note.md' });
     expect(result).to.contain('Rebaselined raw source');
   });
 
   it('still reports a missing raw file once the wiki is allowed', async () => {
-    const tool = makeWikiRebaselineSourceTool('test-wiki', registry, store);
-    const result = await tool.invoke({ wikiId: 'test-wiki', rawFilePath: 'raw/nope.md' });
+    const tool = makeWikiRebaselineSourceTool(registry, store, threadStore);
+    const result = await tool.invoke(
+      { wikiId: 'test-wiki', rawFilePath: 'raw/nope.md' },
+      lockedConfig(),
+    );
     expect(result).to.equal('Raw file not found: raw/nope.md');
   });
 
   it('rejects an archived domain before rebaselining', async () => {
-    const tool = makeWikiRebaselineSourceTool(undefined, registry, store);
+    const tool = makeWikiRebaselineSourceTool(registry, store, threadStore);
     const result = await tool.invoke({ wikiId: 'archived-wiki', rawFilePath: 'raw/note.md' });
     expect(result).to.equal(wikiArchivedMessage('archived-wiki'));
     expect(await rawSha256(registry, 'archived-wiki', 'raw/note.md')).to.equal('stale-placeholder');
