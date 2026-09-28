@@ -227,7 +227,25 @@ export function TaskListMobile({
   const replyReason = replyTask?.board?.reason;
 
   return (
-    <div class="flex flex-col gap-4 p-4 pb-24" data-testid="task-list-mobile">
+    <div class="flex flex-col gap-4 p-4" data-testid="task-list-mobile">
+      {/* A labelled button rather than a floating "+": the app's mobile bottom
+          bar already has a centred "+" (new conversation). */}
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-muted-foreground">
+          {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'} · {sections.running.length}{' '}
+          running
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          data-testid="quick-add-button"
+          onClick={() => (quickAddOpen.value = true)}
+        >
+          <Plus class="size-3.5" />
+          Add task
+        </Button>
+      </div>
+
       {SECTION_ORDER.filter((section) => sections[section].length > 0).map((section) => {
         const isCollapsed = collapsed.value[section] ?? false;
         return (
@@ -268,16 +286,6 @@ export function TaskListMobile({
       {taskList.length === 0 && (
         <p class="py-8 text-center text-sm text-muted-foreground">No tasks yet.</p>
       )}
-
-      <Button
-        type="button"
-        aria-label="Quick add task"
-        data-testid="quick-add-button"
-        class="fixed bottom-6 right-6 size-12 rounded-full shadow-lg"
-        onClick={() => (quickAddOpen.value = true)}
-      >
-        <Plus class="size-5" />
-      </Button>
 
       <BottomSheet title="Answer the agent" open={replyOpen}>
         {replyTask && replyReason?.kind === 'waiting_on_user' && (

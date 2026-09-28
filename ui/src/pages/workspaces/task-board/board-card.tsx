@@ -175,15 +175,15 @@ export const BoardCard = forwardRef<HTMLDivElement, BoardCardProps>(function Boa
         className as string | undefined,
       )}
     >
-      <div class="flex items-center gap-2 text-[10px] text-muted-foreground">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
         <StatusBadge status={task.status} />
         {task.trackerId && (
-          <span class="inline-flex items-center gap-0.5 font-mono">
+          <span class="inline-flex items-center gap-0.5 whitespace-nowrap font-mono">
             <LinkIcon class="size-3" />
             {task.trackerId}
           </span>
         )}
-        {step && <span class="ml-auto text-primary">{step}</span>}
+        {step && <span class="ml-auto whitespace-nowrap text-primary">{step}</span>}
       </div>
 
       <p class={cn('font-medium mt-1.5', compact ? 'line-clamp-2' : 'line-clamp-3')}>
