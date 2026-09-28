@@ -204,6 +204,29 @@ describe('use-thread — retryTurn', () => {
   });
 });
 
+describe('use-thread — AfterAgent status after a turn (issue #205)', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('refreshes the thread list once after stream_done and never polls it afterwards — AfterAgent status arrives by broadcast instead [unit]', async () => {
+    jest.useFakeTimers();
+    respondWith([{ type: 'stream_done', durationMs: 10 }]);
+
+    const thread = newThread('t-after-agent');
+    await thread.sendMessage('Remember that I like tea.');
+
+    const threadListFetches = () =>
+      (global.fetch as jest.Mock).mock.calls.filter(([url]) => url === '/api/v1/threads').length;
+    expect(threadListFetches()).toBe(1);
+
+    // Well past the old 3.5s poll interval, several times over.
+    await jest.advanceTimersByTimeAsync(30_000);
+
+    expect(threadListFetches()).toBe(1);
+  });
+});
+
 describe('use-thread — sendMessage attachmentId', () => {
   it('includes attachmentId in the POST body when provided', async () => {
     respondWith([{ type: 'stream_done', durationMs: 10 }]);

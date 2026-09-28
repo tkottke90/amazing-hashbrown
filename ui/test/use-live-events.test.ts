@@ -11,15 +11,18 @@ const mockHydrate = jest.fn();
 const mockMarkBackgroundTurn = jest.fn();
 const mockUseThreadInstance = jest.fn((..._args: unknown[]): unknown => ({ hydrate: mockHydrate }));
 const mockHasThreadInstance = jest.fn(() => false);
+const mockRefreshThreadList = jest.fn();
 
 jest.mock('@/hooks/use-thread', () => ({
   ...jest.requireActual('@/hooks/use-thread'),
   useThreadInstance: (...args: unknown[]) => mockUseThreadInstance(...args),
   hasThreadInstance: (...args: unknown[]) => mockHasThreadInstance(...args),
+  refreshThreadList: (...args: unknown[]) => mockRefreshThreadList(...args),
 }));
 
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { tasks, queueState } from '@/hooks/use-tasks';
+import { threads, type ThreadSummary } from '@/hooks/use-thread';
 import type { Task } from '@/services/tasks-api';
 
 // jsdom has no real EventSource — a minimal fake that captures the handlers
@@ -70,6 +73,27 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
+function makeThread(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
+  const id = overrides.id ?? 'thread-1';
+  return {
+    id,
+    title: 'A thread',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    forkedFromThreadId: null,
+    forkedFromSeq: null,
+    type: 'chat',
+    afterAgentState: { status: 'idle' },
+    links: {
+      self: `/api/v1/threads/${id}`,
+      afterAgentStatus: `/api/v1/threads/${id}/after-agent-status`,
+    },
+    provider: null,
+    model: null,
+    ...overrides,
+  };
+}
+
 describe('hooks/use-live-events', () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
@@ -80,6 +104,8 @@ describe('hooks/use-live-events', () => {
     mockUseThreadInstance.mockClear();
     mockHasThreadInstance.mockClear();
     mockHasThreadInstance.mockReturnValue(false);
+    mockRefreshThreadList.mockClear();
+    threads.value = [];
     tasks.value = [];
     queueState.value = { queue: [], running: [] };
   });
@@ -110,6 +136,52 @@ describe('hooks/use-live-events', () => {
     currentSource().open();
     expect(mockRefreshQueue).toHaveBeenCalledTimes(2);
     expect(mockRefreshTasks).toHaveBeenCalledTimes(2);
+  });
+
+  it('refetches the thread list on open, so an AfterAgent outcome missed while disconnected never leaves a thread stuck at running [unit]', () => {
+    connectLiveEvents();
+    currentSource().open();
+    expect(mockRefreshThreadList).toHaveBeenCalledTimes(1);
+  });
+
+  it("patches the matching thread's afterAgentState on after_agent_state, leaving other threads untouched [unit]", () => {
+    threads.value = [makeThread({ id: 'thread-1' }), makeThread({ id: 'thread-2' })];
+    connectLiveEvents();
+    currentSource().emit({
+      type: 'after_agent_state',
+      threadId: 'thread-1',
+      state: { status: 'running' },
+    });
+
+    expect(threads.value.find((t) => t.id === 'thread-1')!.afterAgentState).toEqual({
+      status: 'running',
+    });
+    expect(threads.value.find((t) => t.id === 'thread-2')!.afterAgentState).toEqual({
+      status: 'idle',
+    });
+  });
+
+  it('carries a done outcome through unchanged, so the indicator can flash and dedup on finishedAt [unit]', () => {
+    threads.value = [makeThread({ id: 'thread-1', afterAgentState: { status: 'running' } })];
+    connectLiveEvents();
+    const done = { status: 'done', outcome: 'identified', finishedAt: '2026-01-01T00:01:00.000Z' };
+    currentSource().emit({ type: 'after_agent_state', threadId: 'thread-1', state: done });
+
+    expect(threads.value[0]!.afterAgentState).toEqual(done);
+  });
+
+  it('ignores after_agent_state for a thread not in the list, with no fetch [unit]', () => {
+    const before = [makeThread({ id: 'thread-1' })];
+    threads.value = before;
+    connectLiveEvents();
+    currentSource().emit({
+      type: 'after_agent_state',
+      threadId: 'unknown-thread',
+      state: { status: 'running' },
+    });
+
+    expect(threads.value).toEqual(before);
+    expect(mockRefreshThreadList).not.toHaveBeenCalled();
   });
 
   it('sets queueState directly from a task_queue_update event, with no fetch', () => {
