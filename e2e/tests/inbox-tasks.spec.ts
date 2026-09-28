@@ -38,13 +38,13 @@ const suite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Change task status to Done via the drawer status select',
-      expectedOutcome: 'Task card moves from Pending column to Done column',
+      expectedOutcome: 'Task card moves from the Backlog lane to the Done lane',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
       action: 'Change task status to Ready via the drawer status select',
-      expectedOutcome: 'Task card moves from Pending column to Ready column',
+      expectedOutcome: 'Task card moves from the Backlog lane to the Queue lane, badged Ready',
       test: () => {},
     },
     {
@@ -224,7 +224,7 @@ test.describe(
       );
     });
 
-    test('changing task status to Done via the drawer moves the card to the Done column', async ({
+    test('changing task status to Done via the drawer moves the card to the Done lane', async ({
       page,
       request,
     }, testInfo) => {
@@ -247,9 +247,9 @@ test.describe(
       await page.goto(`/workspaces/${ws.id}`);
       await page.getByRole('button', { name: /tasks/i }).click();
 
-      // Task should be in the Pending column
-      const pendingColumn = page.locator('[data-column="pending"]');
-      const taskCard = pendingColumn
+      // Task should be in the Backlog lane
+      const backlogLane = page.locator('[data-column="backlog"]');
+      const taskCard = backlogLane
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'e2e-status-done-task' });
       await expect(taskCard).toBeVisible();
@@ -268,22 +268,22 @@ test.describe(
       await drawer.getByRole('button', { name: 'Save changes' }).click();
       await expect(drawer).not.toBeVisible();
 
-      // Card should now be in the Done column
+      // Card should now be in the Done lane
       const doneColumn = page.locator('[data-column="done"]');
       await expect(doneColumn).toBeVisible();
       await expect(
         doneColumn.locator('[data-testid="task-card"]').filter({ hasText: 'e2e-status-done-task' }),
       ).toBeVisible();
 
-      // And no longer in Pending
+      // And no longer in the Backlog
       await expect(
-        pendingColumn
+        backlogLane
           .locator('[data-testid="task-card"]')
           .filter({ hasText: 'e2e-status-done-task' }),
       ).not.toBeVisible();
     });
 
-    test('changing task status to Ready via the drawer moves the card to the Ready column', async ({
+    test('changing task status to Ready via the drawer moves the card to the Queue lane', async ({
       page,
       request,
     }, testInfo) => {
@@ -308,9 +308,9 @@ test.describe(
       await page.goto(`/workspaces/${ws.id}`);
       await page.getByRole('button', { name: /tasks/i }).click();
 
-      // Task should be in the Pending column
-      const pendingColumn = page.locator('[data-column="pending"]');
-      const taskCard = pendingColumn
+      // Task should be in the Backlog lane
+      const backlogLane = page.locator('[data-column="backlog"]');
+      const taskCard = backlogLane
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'e2e-status-ready-task' });
       await expect(taskCard).toBeVisible();
@@ -329,18 +329,18 @@ test.describe(
       await drawer.getByRole('button', { name: 'Save changes' }).click();
       await expect(drawer).not.toBeVisible();
 
-      // Card should now be in the Ready column
-      const readyColumn = page.locator('[data-column="ready"]');
-      await expect(readyColumn).toBeVisible();
-      await expect(
-        readyColumn
-          .locator('[data-testid="task-card"]')
-          .filter({ hasText: 'e2e-status-ready-task' }),
-      ).toBeVisible();
+      // Card should now be in the Queue lane, badged Ready
+      const queueLane = page.locator('[data-column="queue"]');
+      await expect(queueLane).toBeVisible();
+      const readyCard = queueLane
+        .locator('[data-testid="task-card"]')
+        .filter({ hasText: 'e2e-status-ready-task' });
+      await expect(readyCard).toBeVisible();
+      await expect(readyCard).toHaveAttribute('data-status', 'ready');
 
-      // And no longer in Pending
+      // And no longer in the Backlog
       await expect(
-        pendingColumn
+        backlogLane
           .locator('[data-testid="task-card"]')
           .filter({ hasText: 'e2e-status-ready-task' }),
       ).not.toBeVisible();

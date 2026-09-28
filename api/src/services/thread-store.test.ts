@@ -183,6 +183,61 @@ describe('services/thread-store', () => {
     });
   });
 
+  describe('listPendingHitlPrompts', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns the newest pending prompt per thread so a waiting card shows the live question [unit]', () => {
+      store.upsertThreadOnFirstMessage('run-a', 'a');
+      store.insertMessage('run-a', {
+        id: 'old',
+        kind: 'hitl_prompt',
+        status: 'pending',
+        payload: { question: 'old?' },
+      });
+      store.insertMessage('run-a', {
+        id: 'new',
+        kind: 'hitl_prompt',
+        status: 'pending',
+        payload: { question: 'new?' },
+      });
+
+      const prompts = store.listPendingHitlPrompts(['run-a']);
+
+      expect(prompts.get('run-a')?.id, 'the latest pending prompt is the one being asked').to.equal(
+        'new',
+      );
+    });
+
+    it('ignores answered prompts and other message kinds [unit]', () => {
+      store.upsertThreadOnFirstMessage('run-b', 'b');
+      store.insertMessage('run-b', {
+        id: 'answered',
+        kind: 'hitl_prompt',
+        status: 'answered',
+        payload: { question: 'done?' },
+      });
+      store.insertMessage('run-b', {
+        id: 'tool',
+        kind: 'tool_call',
+        status: 'pending',
+        payload: {},
+      });
+
+      expect(store.listPendingHitlPrompts(['run-b']).has('run-b')).to.equal(false);
+    });
+
+    it('returns an empty map for no thread ids without querying [unit]', () => {
+      expect(store.listPendingHitlPrompts([]).size).to.equal(0);
+    });
+  });
+
   describe('resolveRetryTarget', () => {
     let store: ThreadStore;
     let dir: string;

@@ -1,10 +1,12 @@
 const mockRefreshQueue = jest.fn();
 const mockRefreshTasks = jest.fn();
+const mockRefreshTask = jest.fn();
 
 jest.mock('@/hooks/use-tasks', () => ({
   ...jest.requireActual('@/hooks/use-tasks'),
   refreshQueue: (...args: unknown[]) => mockRefreshQueue(...args),
   refreshTasks: (...args: unknown[]) => mockRefreshTasks(...args),
+  refreshTask: (...args: unknown[]) => mockRefreshTask(...args),
 }));
 
 const mockHydrate = jest.fn();
@@ -100,6 +102,7 @@ describe('hooks/use-live-events', () => {
     (global as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
     mockRefreshQueue.mockClear();
     mockRefreshTasks.mockClear();
+    mockRefreshTask.mockClear();
     mockHydrate.mockClear();
     mockUseThreadInstance.mockClear();
     mockHasThreadInstance.mockClear();
@@ -258,6 +261,38 @@ describe('hooks/use-live-events', () => {
       { step: 'Other', done: false },
     ]);
     expect(mockRefreshTasks).not.toHaveBeenCalled();
+  });
+
+  it('re-fetches the completed task so its server-computed Kanban lane catches up [unit]', () => {
+    tasks.value = [makeTask({ id: 'task-1', status: 'running' })];
+    connectLiveEvents();
+
+    currentSource().emit({
+      type: 'task_completed',
+      threadId: 'thread-inactive',
+      taskId: 'task-1',
+      outcome: 'failed',
+    });
+
+    expect(mockRefreshTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it('re-fetches a task that starts waiting on the user, so its card shows the question [unit]', () => {
+    tasks.value = [makeTask({ id: 'task-1', status: 'running' })];
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'hitl_prompt', threadId: 'thread-inactive', taskId: 'task-1' });
+
+    expect(mockRefreshTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it('does not fetch a task this tab has not loaded [unit]', () => {
+    tasks.value = [];
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'hitl_prompt', threadId: 'thread-inactive', taskId: 'task-9' });
+
+    expect(mockRefreshTask).not.toHaveBeenCalled();
   });
 
   it('patches the matching task to waiting_on_user on hitl_prompt', () => {

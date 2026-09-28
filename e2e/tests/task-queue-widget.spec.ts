@@ -151,7 +151,7 @@ test.describe(
       await page.getByRole('button', { name: /tasks/i }).click();
 
       const taskCard = page
-        .locator('[data-column="pending"]')
+        .locator('[data-column="backlog"]')
         .locator('[data-testid="task-card"]')
         .filter({ hasText: 'Ready-via-drawer task' });
       await expect(taskCard).toBeVisible();

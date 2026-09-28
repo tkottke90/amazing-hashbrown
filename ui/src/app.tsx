@@ -2,6 +2,7 @@ import { LocationProvider, Router, useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
 import { ToastContainer } from '@/components/toast-container';
+import { MovePrompts } from '@/components/task-board/move-prompts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { activeThreadId } from '@/hooks/use-thread';
 import { activeGuard } from '@/hooks/use-settings-guard';
@@ -47,6 +48,7 @@ export function App() {
     <LocationProvider>
       <TooltipProvider>
         <ToastContainer />
+        <MovePrompts />
         <Router>
           <RootRedirect path="/" />
           <ChatRoot path="/chat/:id" />
