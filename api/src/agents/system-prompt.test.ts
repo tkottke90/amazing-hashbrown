@@ -150,6 +150,23 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('tells the agent not to fill an unrecorded step of a found-but-incomplete page from its own knowledge', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "The same honesty applies once a page turns up but is only partially written — don't fill an unrecorded",
+      );
+    });
+
+    it('anchors the no-gap-filling rule with the wrq-003 seeded partial Verdaccio page', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"Authenticate using the CI service account. (Exact command still being documented.)" has exactly one',
+      );
+      expect(result).to.include(
+        'rather than your own guess.',
+      );
+    });
+
     it('tells the agent to translate tool-result vocabulary instead of passing it straight through', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

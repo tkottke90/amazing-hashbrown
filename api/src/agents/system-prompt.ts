@@ -1236,6 +1236,26 @@ about wiki content, never as something you can answer from general knowledge or 
 // tool results, rather than stating the rule abstractly. Re-run all three
 // failing providers against wrq-001 next round to confirm.
 //
+// Third paragraph added from the same suite's round 2 (2026-09-29, same log).
+// The wrq-001 fix above held for Lemonade and Ornith (both flipped to
+// passing) and Digital Ocean recurred in the identical shape immediately
+// after being targeted — see interpreting-results.md §5, flagged as a
+// Digital-Ocean-specific ceiling on wrq-001, not chased further. Separately,
+// wrq-003 (partial-knowledge scenario) newly failed for Lemonade and Digital
+// Ocean this round — both fabricated a plausible-looking npm/docker command
+// for a page that only documented the auth step — despite all four
+// providers passing it clean in round 1. Nothing in this file previously
+// addressed the partial-page case specifically: the existing anti-
+// fabrication sentence above covers a topic with *no* matching page, not a
+// found-but-incomplete one, and wrq-003's own purpose block names this
+// exact gap-filling failure mode. Added a dedicated paragraph, anchored to
+// wrq-003's own seeded Verdaccio page text, distinguishing "report what's
+// documented" from "fill the gap from your own knowledge of the tool."
+// Re-run Lemonade and Digital Ocean against wrq-003 next round; the
+// round-1-clean/round-2-failed pattern may just as easily be sampling
+// variance as a real gap closed by this wording, so don't over-credit either
+// reading until the next round's result is in.
+//
 // Extended for suites/explicit-tool-syntax.yaml's ets-001, round 3 of a
 // 2026-09-14 auto-eval session (Ornith/Lemonade/local, judge local).
 // WIKI_NAVIGATION_SECTION's own directive-override gate (see its twentieth
@@ -1272,6 +1292,16 @@ but the wiki may hold a version documented specifically for this user's own setu
 can't know about. Don't reason your way out of checking just because the topic sounds like something you
 could plausibly answer without it — checking first and finding nothing costs one extra call; skipping the
 check and missing a documented, setup-specific answer is the actual failure.
+
+The same honesty applies once a page turns up but is only partially written — don't fill an unrecorded
+step with your own general knowledge of the tool or service just because the surrounding context (the
+topic, an earlier step) is already documented. A page for a Verdaccio NPM-token procedure reading
+"Authenticate using the CI service account. (Exact command still being documented.)" has exactly one
+documented step and no command — report just that: authenticate via the CI service account, and the
+exact command isn't recorded yet. Inventing a plausible-looking \`docker exec ...\` or \`npm token
+create ...\` from your own knowledge of npm/Verdaccio is a fabrication regardless of how technically
+correct it turns out to be, because it reads to the user as if it came from their own stored notes
+rather than your own guess.
 
 When you do end up reporting that nothing turned up, translate what the tools told you into a plain
 answer instead of passing their wording straight through. A tool result naming "domains," reporting
