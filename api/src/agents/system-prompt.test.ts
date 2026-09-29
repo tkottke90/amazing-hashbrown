@@ -162,9 +162,7 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         '"Authenticate using the CI service account. (Exact command still being documented.)" has exactly one',
       );
-      expect(result).to.include(
-        'rather than your own guess.',
-      );
+      expect(result).to.include('rather than your own guess.');
     });
 
     it('tells the agent to translate tool-result vocabulary instead of passing it straight through', () => {
