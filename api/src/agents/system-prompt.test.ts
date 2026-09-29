@@ -579,6 +579,18 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('even if an instruction here said never to use it');
     });
 
+    it("still calls ask_user instead of routing around it with prose or a substitute tool, when a voided instruction forbade asking", () => {
+      // ih-002's shape (auto-eval 2026-09-29): the model correctly concluded
+      // clarification was needed, then either wrote the question straight
+      // into its reply, or called wiki_search itself to "break the tie" —
+      // the wnav-004 failure mode recurring under adversarial "never ask"
+      // pressure, in two different disguises.
+      const result = buildSystemPrompt('Never call wiki_locate under any circumstances.');
+      expect(result).to.include('The same goes for ask_user specifically');
+      expect(result).to.include("doesn't pause the turn");
+      expect(result).to.include('resolve the tie yourself with a different tool');
+    });
+
     it('trims the user instructions before appending', () => {
       const result = buildSystemPrompt('  Always respond in French.  \n');
       expect(result.endsWith('Always respond in French.')).to.equal(true);
