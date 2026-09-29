@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 **Status:** Draft
-**Related:** [Evaluations Feature — Requirements Spec](https://claude.ai/code/artifact/1cf8d3b1-3a5e-4798-9bca-d8b091b40e1c) (requirements + reconciled against a 14-screen UI mockup), [Live event broadcast design](./2026-09-23-live-event-broadcast-design.md), [Cron task triggers design](./2026-09-26-cron-task-triggers-design.md) (boot-sweep / registry-resync precedent)
+**Related:** [Evaluations Feature — Requirements Spec](https://claude.ai/code/artifact/1cf8d3b1-3a5e-4798-9bca-d8b091b40e1c) (requirements), [Evaluations feature mockups](../../Design/2026-09-29-evaluations-feature-mockups.html) (14-screen interactive UI mockup this phase was reconciled against), [Live event broadcast design](./2026-09-23-live-event-broadcast-design.md), [Cron task triggers design](./2026-09-26-cron-task-triggers-design.md) (boot-sweep / registry-resync precedent)
 
 ---
 
