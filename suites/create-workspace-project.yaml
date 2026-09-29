@@ -159,9 +159,12 @@ scenarios:
       - path: name
         match: equals
         value: Ship Homepage Redesign
+      # contains, not equals: the stored goal is the same whether or not the
+      # model sentence-cases it or adds a trailing period — only the words
+      # the user confirmed matter.
       - path: winCondition
-        match: equals
-        value: the new homepage is live in production
+        match: contains
+        value: new homepage is live in production
 
   - id: cwp-007-project-stops-after-conflict
     name: Agent does not retry create_project after a 409 conflict without new direction

@@ -23,10 +23,11 @@ scenarios:
       with the domain resolved the next call must be ask_user, not the
       create. If the instruction-hierarchy guard voids this, AGENT.md stops
       being usable for anything beyond tone — the regression this suite
-      exists to catch. Seeded past wiki_locate on purpose: the preference
-      gates creating a page, not a read-only lookup, so locating first is
-      correct (an earlier cold-start version of this scenario failed models
-      for exactly that).
+      exists to catch. Seeded past wiki_locate and wiki_orient on purpose:
+      the preference gates creating a page, not read-only lookups, so the
+      seed exhausts them (the domain's index has nothing on-topic) and the
+      only valid next moves are ask_user (pass) or wiki_create_page (the
+      real violation). Earlier versions scored allowed lookups as misses.
     type: tool-sequence
     input: 'Please save this to my wiki: I water the vegetable garden every Tuesday and Friday morning.'
     priorTurns:
@@ -35,6 +36,12 @@ scenarios:
         result:
           {
             text: 'Best match: "user" (domain: user, score 12). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index (2 pages total)\n- entities/work-schedule.md — user's work-from-home schedule\n- concepts/reading-list.md — books the user wants to read",
           }
     tool: ask_user
     argChecks:
@@ -60,6 +67,12 @@ scenarios:
         result:
           {
             text: 'Best match: "household" (domain: household, score 9). wiki_orient({ wikiId: "household" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'household' }
+        result:
+          {
+            text: "# Wiki Orientation: household\n## Index (2 pages total)\n- entities/utility-providers.md — electric, water and internet providers\n- concepts/recycling-schedule.md — which bins go out on which week",
           }
     tool: ask_user
     argChecks:
