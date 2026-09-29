@@ -696,6 +696,34 @@
 // not a prompt or model issue; not chased here. Next round: re-run all
 // four models against wwrite-010 specifically to confirm the new bullet
 // lands, and re-run Digital Ocean alone to see if the 403s were transient.
+//
+// Twenty-fifth entry, auto-eval round 1-2 of suites/wiki-navigation.yaml
+// (2026-09-28, all four providers, judge local) — completes the check the
+// sixteenth entry asked for and that the seventeenth entry's restructure
+// (and the seven entries after it, all focused on other scenarios) never
+// circled back to. Lemonade reproduced wnav-013 in the identical
+// wiki_orient-before-scoped-search shape across both rounds, and wnav-009
+// in the same shape in round 2, with the sixteenth entry's contrastive
+// examples (the morning-routine/programming-language pair, verbatim in
+// step 3's Examples list) unchanged and still present. Per the sixteenth
+// entry's own stated test ("if it reproduces in the same wiki_orient-first
+// shape with wording unchanged, that's evidence of a second Lemonade-
+// specific ceiling, not a remaining wording gap") and per interpreting-
+// results.md §5's cross-check, this is now confirmed: local, Ornith, and
+// Digital Ocean all passed both scenarios cleanly against the identical
+// wording both rounds. Not chasing this further with prompt edits — a
+// second confirmed Lemonade-specific ceiling, distinct from wnav-004's
+// (eleventh/twenty-third entries) execution-reliability shape; this one
+// is a habit override (inserting a redundant orient step even against a
+// verbatim-matching worked example), and no amount of additional wording
+// moved it the first time this exact fix was tried.
+//
+// Same round, Digital Ocean's first attempt errored with "[scenario
+// error] 403 Forbidden" at 0ms latency on most scenarios, got worse on an
+// immediate retry (3/15 -> 3/15 with a different scenario mix), then
+// passed cleanly (15/15) on a third attempt minutes later — confirms the
+// twenty-fourth entry's read that this is provider-side rate/concurrency
+// limiting on the Digital Ocean endpoint, not a prompt or model issue.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
