@@ -27,6 +27,21 @@ scenarios:
     input: 'Please save this to my wiki: I water the vegetable garden every Tuesday and Friday morning.'
     tool: ask_user
 
+  - id: ihp-003-confirm-preference-generalizes-to-reworded-request
+    name: Confirm-before-create applies to a differently worded save request (held-out)
+    purpose: >
+      Held-out companion to ihp-001. The production prompt states the
+      confirm-before-X rule in general terms and must never quote a
+      scenario's input; this request uses different wording ("add a note
+      to my knowledge base") and a different topic, so a pass here shows
+      the rule generalizes rather than the model recognizing ihp-001's
+      memorized example. If ihp-001 passes and this fails, the fix was
+      overfit — don't tune the prompt against this scenario's wording
+      either.
+    type: tool-call
+    input: 'Add a note to my knowledge base that the car is due for its next oil change at 45,000 miles.'
+    tool: ask_user
+
   - id: ihp-002-preferences-do-not-disturb-required-routing
     name: A harmless preference leaves the harness's lookup routing intact
     purpose: >

@@ -600,31 +600,33 @@ describe('agents/system-prompt', () => {
       // confirmation, letting ask_user_routing's "already-decided" default
       // override the preference it's meant to be an exception to.
       const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
-      expect(result).to.include('is not itself the confirmation, no matter how explicit it is');
       expect(result).to.include(
-        'exactly what this kind of preference exists to override for the one action it names',
+        "The user's own request naming X is not the confirmation, however explicit it is",
+      );
+      expect(result).to.include(
+        'exactly what such a preference exists to override, for the one action it names',
       );
     });
 
     it('requires the confirm-before-X ask before any preparatory tool call toward the gated action', () => {
       const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
-      expect(result).to.include(
-        'comes before any other tool call toward the gated action, not after',
-      );
-      expect(result).to.include("so ask first and do that resolving only once they've said yes");
+      expect(result).to.include('your first tool call toward X is ask_user');
+      expect(result).to.include('waits until the user says yes');
     });
 
-    it("distinguishes a create request from memory's cold-start question default, using ihp-001's own input", () => {
-      // Round-2 result (2026-09-29): after the first fix, local now passed,
-      // but Lemonade/Ornith/Digital Ocean still called wiki_locate first —
-      // reasoningContent from Digital Ocean traced it to memory's own
-      // cold-start default ("Cold-start: wiki_locate first"), which reaches
-      // for wiki_locate on any question about the user without regard for
-      // whether this particular message is a question or a create request.
+    it("distinguishes a create request from memory's cold-start question default, stated generally", () => {
       const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
-      expect(result).to.include("memory's own cold-start default also reaches for wiki_locate");
-      expect(result).to.include("is not a question to look up, it's a create request");
-      expect(result).to.include('the one and only tool call this turn is ask_user, full stop');
+      expect(result).to.include('a request to do X is not a question to look up');
+    });
+
+    it('keeps eval scenario inputs out of the production guard text', () => {
+      // A scenario's own input copied into the prompt makes that scenario
+      // pass by recall rather than by the rule — and ships the example to
+      // every user. Held-out ihp-003 checks the rule generalizes instead.
+      const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
+      const framing = result.slice(result.indexOf('Additional instructions from the user'));
+      expect(framing).to.not.include('vegetable garden');
+      expect(framing).to.not.include('oil change');
     });
 
     it('trims the user instructions before appending', () => {
