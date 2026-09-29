@@ -10,6 +10,27 @@ import { ThemeProvider } from '@/hooks/use-theme';
 import { workspaces, projects } from '@/hooks/use-workspaces';
 import type { Workspace, WorkspaceWithProject } from '@/services/workspaces-api';
 
+// This suite exercises the desktop (`>= lg`) header/chip markup, which only
+// renders when useIsDesktopViewport() matches — jest.setup.ts stubs
+// matchMedia to never match by default, so it's forced true here rather
+// than accidentally asserting against the mobile header/sheets instead. See
+// ui/test/use-media-query.test.tsx for the same mockMatchMedia pattern.
+beforeAll(() => {
+  jest.spyOn(window, 'matchMedia').mockImplementation(
+    (media: string) =>
+      ({
+        matches: true,
+        media,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      }) as unknown as MediaQueryList,
+  );
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
+
 const baseWorkspace: Workspace = {
   id: 'ws-1',
   name: 'My Project',

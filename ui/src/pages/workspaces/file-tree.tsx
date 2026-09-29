@@ -1,5 +1,5 @@
-import { useRef } from 'preact/hooks';
-import { useSignal } from '@preact/signals';
+import { useRef, useEffect } from 'preact/hooks';
+import { useSignal, type Signal } from '@preact/signals';
 import {
   ChevronRight,
   ChevronDown,
@@ -170,11 +170,13 @@ function FolderActionIcons({
   dir,
   onUploadClick,
   alwaysVisible = false,
+  hideUpload = false,
 }: {
   workspaceId: string;
   dir: string;
   onUploadClick: (dir: string) => void;
   alwaysVisible?: boolean;
+  hideUpload?: boolean;
 }) {
   return (
     <span
@@ -183,19 +185,21 @@ function FolderActionIcons({
         !alwaysVisible && 'opacity-0 focus-within:opacity-100 group-hover:opacity-100',
       )}
     >
-      <button
-        type="button"
-        data-testid="folder-action-upload"
-        aria-label="Upload files"
-        title="Upload files"
-        class="rounded p-0.5 hover:bg-background"
-        onClick={(e: Event) => {
-          e.stopPropagation();
-          onUploadClick(dir);
-        }}
-      >
-        <Upload class="size-3.5 text-muted-foreground" />
-      </button>
+      {!hideUpload && (
+        <button
+          type="button"
+          data-testid="folder-action-upload"
+          aria-label="Upload files"
+          title="Upload files"
+          class="rounded p-0.5 hover:bg-background"
+          onClick={(e: Event) => {
+            e.stopPropagation();
+            onUploadClick(dir);
+          }}
+        >
+          <Upload class="size-3.5 text-muted-foreground" />
+        </button>
+      )}
       <CreateEntryModal
         workspaceId={workspaceId}
         dir={dir}
@@ -320,7 +324,22 @@ function FileTreeRow({
   );
 }
 
-export function FileTree({ workspaceId }: { workspaceId: string }) {
+export function FileTree({
+  workspaceId,
+  hideUploadAction = false,
+  uploadRequest,
+}: {
+  workspaceId: string;
+  // Hides just the header's always-visible upload icon — for the mobile
+  // single-pane Files view, where the bottom app bar's "+" is the upload
+  // entry point instead (see files-tab.tsx). Per-row upload icons (for a
+  // specific subfolder) are untouched.
+  hideUploadAction?: boolean;
+  // Incremented by a caller (the bottom app bar's "+") to trigger a
+  // root-directory upload externally, reusing the same file picker the
+  // header icon opens.
+  uploadRequest?: Signal<number>;
+}) {
   const tree = fileTree.value;
   const error = fileTreeError.value;
 
@@ -342,6 +361,16 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
     pendingUploadDir.current = dir;
     fileInputRef.current?.click();
   }
+
+  // Skips the mount-time run (ref starts at the signal's initial value) so a
+  // page that never taps "+" never pops the file picker on its own.
+  const lastUploadRequest = useRef(uploadRequest?.value);
+  useEffect(() => {
+    if (uploadRequest === undefined) return;
+    if (uploadRequest.value === lastUploadRequest.current) return;
+    lastUploadRequest.current = uploadRequest.value;
+    triggerUpload('');
+  }, [uploadRequest?.value]);
 
   async function handleFileInputChange(e: Event): Promise<void> {
     const input = e.currentTarget as HTMLInputElement;
@@ -381,6 +410,7 @@ export function FileTree({ workspaceId }: { workspaceId: string }) {
             dir=""
             onUploadClick={triggerUpload}
             alwaysVisible
+            hideUpload={hideUploadAction}
           />
           <button
             type="button"

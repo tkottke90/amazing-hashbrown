@@ -12,7 +12,16 @@ import { patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 import { randomUUID } from '@/lib/utils';
 
-export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
+export function WorkspaceChatTab({
+  workspace,
+  onInputFocusChange,
+}: {
+  workspace: Workspace;
+  // Mirrors the onGoToChat callback-prop pattern: the parent (WorkspaceDetailView)
+  // hides mobile chrome while this fires true, and restores it on false. See
+  // the workspace mobile detail redesign design, §7.
+  onInputFocusChange?: (focused: boolean) => void;
+}) {
   const inputValue = useSignal('');
   const stagedAttachment = useSignal<StagedAttachment | null>(null);
   const forceScrollTrigger = useSignal(0);
@@ -165,6 +174,8 @@ export function WorkspaceChatTab({ workspace }: { workspace: Workspace }) {
             }}
             onSend={handleSend}
             onStop={thread.stopGeneration}
+            onFocus={() => onInputFocusChange?.(true)}
+            onBlur={() => onInputFocusChange?.(false)}
             isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}
             disabled={!!thread.pendingHitlId.value || isBusy}
             providers={providers.value}

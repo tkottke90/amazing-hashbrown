@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { ThemeToggle } from './theme-toggle';
 import { ThreadSidebar } from './thread-sidebar';
 import { useNewThreadAction } from '@/hooks/use-thread';
+import { cn } from '@/lib/utils';
 
 function AppNavEnd() {
   return (
@@ -22,6 +23,12 @@ export interface LayoutProps {
   navEnd?: ComponentChildren;
   onAddClick?: () => void;
   addLabel?: string;
+  // Hides the whole bottom app bar (and its menu sheet) — for a mobile view
+  // that needs to reclaim the space, e.g. while the on-screen keyboard is up.
+  hideBottomBar?: boolean;
+  // Hides just the floating add button, keeping the rest of the bottom bar
+  // (hamburger menu, navStart, navEnd) — for a tab with no add action.
+  hideAddButton?: boolean;
 }
 
 export function Layout({
@@ -31,6 +38,8 @@ export function Layout({
   navEnd,
   onAddClick,
   addLabel = 'Add',
+  hideBottomBar = false,
+  hideAddButton = false,
 }: LayoutProps) {
   const { createNewThread } = useNewThreadAction();
 
@@ -44,45 +53,51 @@ export function Layout({
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden lg:z-10 lg:rounded-l-2xl lg:shadow-[-8px_0_24px_-6px_rgb(0_0_0_/_0.15)]">
-        <div className="min-h-0 flex-1 overflow-hidden pb-20 lg:pb-0">{children}</div>
+        <div className={cn('min-h-0 flex-1 overflow-hidden lg:pb-0', !hideBottomBar && 'pb-20')}>
+          {children}
+        </div>
       </main>
 
-      <Sheet>
-        <nav
-          aria-label="Bottom navigation"
-          className="fixed inset-x-0 bottom-0 z-40 flex h-20 items-start justify-between border-t border-border bg-background px-4 pt-4 lg:hidden"
-        >
-          <div className="flex flex-1 items-center gap-1">
-            <SheetTrigger
-              aria-label="Open navigation menu"
-              className={buttonVariants({ variant: 'ghost', size: 'icon' })}
-            >
-              <Menu />
-            </SheetTrigger>
-            {navStart}
-          </div>
-
-          <Button
-            size="icon"
-            aria-label={addLabel}
-            onClick={onAddClick ?? createNewThread}
-            className="absolute left-1/2 -top-5 size-12 -translate-x-1/2 rounded-full shadow-lg"
+      {!hideBottomBar && (
+        <Sheet>
+          <nav
+            aria-label="Bottom navigation"
+            className="fixed inset-x-0 bottom-0 z-40 flex h-20 items-start justify-between border-t border-border bg-background px-4 pt-4 lg:hidden"
           >
-            <Plus />
-          </Button>
+            <div className="flex flex-1 items-center gap-1">
+              <SheetTrigger
+                aria-label="Open navigation menu"
+                className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+              >
+                <Menu />
+              </SheetTrigger>
+              {navStart}
+            </div>
 
-          <div className="flex flex-1 items-center justify-end gap-1">
-            {navEnd ?? <AppNavEnd />}
-          </div>
-        </nav>
+            {!hideAddButton && (
+              <Button
+                size="icon"
+                aria-label={addLabel}
+                onClick={onAddClick ?? createNewThread}
+                className="absolute left-1/2 -top-5 size-12 -translate-x-1/2 rounded-full shadow-lg"
+              >
+                <Plus />
+              </Button>
+            )}
 
-        <SheetContent side="bottom" className="data-[side=bottom]:h-[90vh] lg:hidden">
-          <SheetHeader>
-            <SheetTitle>Menu</SheetTitle>
-          </SheetHeader>
-          <div className="overflow-y-auto px-4 pb-4">{aside ?? <ThreadSidebar />}</div>
-        </SheetContent>
-      </Sheet>
+            <div className="flex flex-1 items-center justify-end gap-1">
+              {navEnd ?? <AppNavEnd />}
+            </div>
+          </nav>
+
+          <SheetContent side="bottom" className="data-[side=bottom]:h-[90vh] lg:hidden">
+            <SheetHeader>
+              <SheetTitle>Menu</SheetTitle>
+            </SheetHeader>
+            <div className="overflow-y-auto px-4 pb-4">{aside ?? <ThreadSidebar />}</div>
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   );
 }
