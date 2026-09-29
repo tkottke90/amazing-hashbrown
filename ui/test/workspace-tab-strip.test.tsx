@@ -5,7 +5,13 @@ import { WorkspaceTabStrip, type DetailTab } from '@/pages/workspaces/workspace-
 import { tasks } from '@/hooks/use-tasks';
 import { boardTask } from './fixtures/board-task';
 
-function Harness({ workspaceId, initialTab = 'overview' }: { workspaceId: string; initialTab?: DetailTab }) {
+function Harness({
+  workspaceId,
+  initialTab = 'overview',
+}: {
+  workspaceId: string;
+  initialTab?: DetailTab;
+}) {
   const tab = useSignal<DetailTab>(initialTab);
   return (
     <>

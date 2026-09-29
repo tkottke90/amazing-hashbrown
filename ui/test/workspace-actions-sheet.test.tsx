@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/preact';
 import { fireEvent } from '@testing-library/preact';
-import { useSignal } from '@preact/signals';
+import { signal } from '@preact/signals';
 
 import { WorkspaceActionsSheet } from '@/pages/workspaces/workspace-actions-sheet';
 import { ThemeProvider } from '@/hooks/use-theme';
@@ -33,15 +33,17 @@ function baseWorkspace(): Workspace {
   };
 }
 
-function renderSheet(overrides: {
-  isTerminal?: boolean;
-  isProj?: boolean;
-  projectStatus?: Project['status'];
-  onSaved?: () => void;
-  onCloseIntent?: (intent: 'close' | 'abandon') => void;
-  onDelete?: () => void;
-} = {}) {
-  const open = useSignal(true);
+function renderSheet(
+  overrides: {
+    isTerminal?: boolean;
+    isProj?: boolean;
+    projectStatus?: Project['status'];
+    onSaved?: () => void;
+    onCloseIntent?: (intent: 'close' | 'abandon') => void;
+    onDelete?: () => void;
+  } = {},
+) {
+  const open = signal(true);
   const onSaved = overrides.onSaved ?? jest.fn();
   const onCloseIntent = overrides.onCloseIntent ?? jest.fn();
   const onDelete = overrides.onDelete ?? jest.fn();

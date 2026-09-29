@@ -28,14 +28,16 @@ function baseWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   };
 }
 
-function renderHeader(overrides: {
-  workspace?: Workspace;
-  proj?: ReturnType<typeof getProjectForWorkspace>;
-  isActive?: boolean;
-  isTerminal?: boolean;
-  onOpenDetails?: () => void;
-  route?: (path: string) => void;
-} = {}) {
+function renderHeader(
+  overrides: {
+    workspace?: Workspace;
+    proj?: ReturnType<typeof getProjectForWorkspace>;
+    isActive?: boolean;
+    isTerminal?: boolean;
+    onOpenDetails?: () => void;
+    route?: (path: string) => void;
+  } = {},
+) {
   const onOpenDetails = overrides.onOpenDetails ?? jest.fn();
   const route = overrides.route ?? jest.fn();
 

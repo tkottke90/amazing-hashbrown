@@ -11,7 +11,11 @@ import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
 import { WorkspaceMobileHeader } from '@/pages/workspaces/workspace-mobile-header';
 import { WorkspaceDetailsSheet } from '@/pages/workspaces/workspace-details-sheet';
 import { WorkspaceActionsSheet } from '@/pages/workspaces/workspace-actions-sheet';
-import { WorkspaceTabStrip, DETAIL_TAB_TITLE_SUFFIX, type DetailTab } from '@/pages/workspaces/workspace-tab-strip';
+import {
+  WorkspaceTabStrip,
+  DETAIL_TAB_TITLE_SUFFIX,
+  type DetailTab,
+} from '@/pages/workspaces/workspace-tab-strip';
 import {
   workspaces,
   projects,
@@ -292,11 +296,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                 <span
                   class={cn(
                     'size-2 rounded-full inline-block',
-                    isTerminal
-                      ? 'bg-muted-foreground'
-                      : isActive
-                        ? 'bg-green-500'
-                        : 'bg-amber-500',
+                    isTerminal ? 'bg-muted-foreground' : isActive ? 'bg-green-500' : 'bg-amber-500',
                   )}
                   title={isTerminal ? 'Closed' : isActive ? 'Active' : 'Closing'}
                 />

@@ -1,5 +1,5 @@
 import { signal, type Signal } from '@preact/signals';
-import { render, screen, within } from '@testing-library/preact';
+import { render, screen, within, fireEvent } from '@testing-library/preact';
 
 jest.mock('@/services/workspace-files-api', () => {
   const actual = jest.requireActual('@/services/workspace-files-api');
@@ -291,7 +291,7 @@ describe('FilesTab mobile (< lg)', () => {
     activeTabPath.value = 'a.ts';
 
     renderFilesTab();
-    screen.getByTestId('files-mobile-back').click();
+    fireEvent.click(screen.getByTestId('files-mobile-back'));
 
     expect(activeTabPath.value).toBeNull();
     expect(openTabs.value).toHaveLength(1);

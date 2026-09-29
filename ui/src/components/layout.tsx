@@ -53,9 +53,7 @@ export function Layout({
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden lg:z-10 lg:rounded-l-2xl lg:shadow-[-8px_0_24px_-6px_rgb(0_0_0_/_0.15)]">
-        <div
-          className={cn('min-h-0 flex-1 overflow-hidden lg:pb-0', !hideBottomBar && 'pb-20')}
-        >
+        <div className={cn('min-h-0 flex-1 overflow-hidden lg:pb-0', !hideBottomBar && 'pb-20')}>
           {children}
         </div>
       </main>

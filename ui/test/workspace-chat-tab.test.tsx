@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { render, screen, fireEvent } from '@testing-library/preact';
+import { render, screen } from '@testing-library/preact';
 
 import type { ThreadInstance } from '@/hooks/use-thread';
 
@@ -83,18 +83,22 @@ describe('WorkspaceChatTab', () => {
       <WorkspaceChatTab workspace={baseWorkspace()} onInputFocusChange={onInputFocusChange} />,
     );
 
-    const textarea = screen.getByPlaceholderText('Message...');
-    fireEvent.focus(textarea);
+    // preact/compat remaps onFocus/onBlur to the bubbling focusin/focusout
+    // events — fireEvent.focus()/blur() dispatch the native, non-bubbling
+    // events instead and never reach them, so real DOM focus()/blur() calls
+    // are used here (see chat-input.test.tsx's matching note).
+    const textarea = screen.getByPlaceholderText('Message...') as HTMLTextAreaElement;
+    textarea.focus();
     expect(onInputFocusChange).toHaveBeenCalledWith(true);
 
-    fireEvent.blur(textarea);
+    textarea.blur();
     expect(onInputFocusChange).toHaveBeenCalledWith(false);
   });
 
   it('does not throw when onInputFocusChange is omitted [unit]', () => {
     render(<WorkspaceChatTab workspace={baseWorkspace()} />);
 
-    const textarea = screen.getByPlaceholderText('Message...');
-    expect(() => fireEvent.focus(textarea)).not.toThrow();
+    const textarea = screen.getByPlaceholderText('Message...') as HTMLTextAreaElement;
+    expect(() => textarea.focus()).not.toThrow();
   });
 });

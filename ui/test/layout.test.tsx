@@ -75,9 +75,7 @@ describe('Layout', () => {
     );
 
     expect(screen.queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Open navigation menu' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
   });
 
   it('omits just the floating add button when hideAddButton is set, keeping the rest of the bar', () => {
