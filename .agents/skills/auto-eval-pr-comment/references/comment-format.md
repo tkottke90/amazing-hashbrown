@@ -21,18 +21,38 @@ comment should be inventable without the log open next to you.
    - ``## `wiki-write` eval results``
    - ``## Auto-eval loop: `web-fetch` suite — all providers passing``
 
-2. **Intro paragraph** — which suite, which models (bold the eval ids),
-   which judge, how many rounds to convergence, and the converging
-   commit(s). One paragraph.
+2. **Commit line** — immediately below the heading, one bold-labeled line
+   naming the exact commit these results were evaluated against, linked to
+   GitHub:
 
-3. **Models used** (optional table; include when the eval ids alone are
+   ```
+   **Evaluated commit:** [`a1b2c3d`](https://github.com/tkottke90/amazing-hashbrown/commit/a1b2c3d1234567890abcdef1234567890abcdef)
+   ```
+
+   This is the commit that actually got run through the eval loop — the
+   last round's `commit` in the audit trail — not necessarily the branch's
+   current HEAD, which may have moved since the loop finished. Put it here
+   rather than folding it into prose: when a reviewer (human or an AI
+   coding agent) opens the comment, this is often the first thing they
+   check, and it should be answerable without reading past the heading.
+   When one session posts comments for multiple suites on the same PR,
+   this SHA must be identical across all of them — that's how a reader
+   confirms the comments describe the same code.
+
+3. **Intro paragraph** — which suite, which models (bold the eval ids),
+   which judge, how many rounds to convergence. One paragraph. (The
+   converging commit itself now lives in the commit line above — no need
+   to repeat the full SHA here, though naming the round is fine, e.g. "by
+   round 3".)
+
+4. **Models used** (optional table; include when the eval ids alone are
    cryptic) — one row per model from `config/config.yaml` `providers:`:
 
    | Eval model id | Served as                  | Provider                       |
    | ------------- | -------------------------- | ------------------------------ |
    | `ornith`      | `user.Ornith-1.0-35B-GGUF` | local OpenAI-compatible server |
 
-4. **Score trajectory** — from `runs:`. Two shapes in the wild; pick by
+5. **Score trajectory** — from `runs:`. Two shapes in the wild; pick by
    round count:
    - Compact table (`| Model | Initial | Converged |`) when the journey
      itself isn't the story.
@@ -41,7 +61,7 @@ comment should be inventable without the log open next to you.
      State scores as `passed/total`, and name the threshold when
      explaining why a high fraction still failed.
 
-5. **Findings** — the heart of it. One bullet per failure worth
+6. **Findings** — the heart of it. One bullet per failure worth
    narrating, from `log[].summary` / `log[].modifications`:
    - **Bold lead** stating the scenario id(s) and the point ("**wfetch-003
      failed for all three models, but two of them were right.**").
@@ -50,21 +70,21 @@ comment should be inventable without the log open next to you.
    - Say what fixed it and where, with the round's commit SHA in
      backticks (`` fixed in `f4b57ab` ``).
 
-6. **Remaining known issues** — ceiling flags and open nondeterminism,
+7. **Remaining known issues** — ceiling flags and open nondeterminism,
    with the evidence that earned the flag ("three occurrences across
    three fixtures, each already maximally explicit"). If nothing remains,
    say so in one line ("No capability-ceiling flags this time"). Never
    omit the section to make the run look cleaner than it was.
 
-7. **Audit-trail pointer** — name the `eval-logs/auto-eval-<timestamp>.yaml`
+8. **Audit-trail pointer** — name the `eval-logs/auto-eval-<timestamp>.yaml`
    file and note it's untracked (`eval-logs/` is gitignored), so the
    comment is the durable record.
 
-8. **Cross-reference** — if the session produced comments for other
+9. **Cross-reference** — if the session produced comments for other
    suites on the same PR, link them in prose ("See the `wiki-navigation`
    results comment above").
 
-9. **Footer** — attribution line, set off by `---` or a blank line:
+10. **Footer** — attribution line, set off by `---` or a blank line:
 
    ```
    🤖 Generated with [Claude Code](https://claude.com/claude-code)

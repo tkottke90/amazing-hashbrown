@@ -2,7 +2,7 @@ import { logger } from '../config/logger.js';
 import { getWorkspaceStore } from '../services/workspace-store.js';
 import { getThreadStore } from '../services/thread-store.js';
 import { getChatAgent, getWorkspaceChatAgent, buildTaskAgent } from './chat-agent.js';
-import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
+import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
 import type { HeadlessAgent } from './headless-turn.js';
 
 // Resolves the agent that should run a system-initiated (headless) turn in
@@ -51,14 +51,12 @@ export async function resolveThreadAgent(threadId: string): Promise<ResolvedThre
         });
         return null;
       }
-      const allowedWikiId = resolveAllowedWikiId(store, workspace.id);
       const workspaceContext = await buildWorkspaceContext(workspace);
       const { agent } = await getWorkspaceChatAgent(
         workspace.id,
         workspaceContext,
         provider,
         model,
-        allowedWikiId,
       );
       return { agent, workspaceId: workspace.id, provider, model };
     }

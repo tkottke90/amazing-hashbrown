@@ -5,9 +5,10 @@ import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { getToolContent } from '../../services/tool-content-store.js';
-import { wikiWriteForbiddenMessage } from './wiki-write-guard.js';
+import { resolveToolWriteScope, wikiWriteDeniedMessage } from './wiki-write-guard.js';
 import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 import type { WorkspaceStore } from '../../services/workspace-store.js';
+import type { ThreadStore } from '../../services/thread-store.js';
 
 const WikiCreatePageSchema = z.object({
   wikiId: z
@@ -52,13 +53,13 @@ const WikiCreatePageSchema = z.object({
 });
 
 // Test-only escape hatch, same pattern as wiki-write.ts's `registry`/`store`
-// params — production callers never pass these. getWikiRegistry() is a
+// params (plus `threadStore`, for resolving the write scope) — production callers never pass these. getWikiRegistry() is a
 // lazy, process-wide singleton bound to env.wikiRoot with no other way to
 // redirect it to a temp test directory.
 export function makeWikiCreatePageTool(
-  allowedWikiId?: string,
   registry?: WikiRegistry,
   store?: WorkspaceStore,
+  threadStore?: ThreadStore,
 ) {
   return tool(
     async (
@@ -105,7 +106,7 @@ export function makeWikiCreatePageTool(
           force,
         },
         registry,
-        allowedWikiId,
+        resolveToolWriteScope(config, { workspaceStore: store, threadStore }),
         store,
       );
 
@@ -136,7 +137,7 @@ export function makeWikiCreatePageTool(
         case 'unknown_wiki':
           return `Wiki "${result.wikiId}" is not registered. Use wiki_locate to find available domains.`;
         case 'wiki_forbidden':
-          return wikiWriteForbiddenMessage(result.wikiId, result.allowedWikiId);
+          return wikiWriteDeniedMessage(result);
         case 'wiki_archived':
           return wikiArchivedMessage(result.wikiId);
       }

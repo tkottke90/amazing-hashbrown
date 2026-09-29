@@ -18,6 +18,12 @@ const CreateWorkspaceSchema = z.object({
     .describe(
       'Name/id/tag of an existing wiki domain to bind this workspace to. Must match a domain returned by the wiki domain list — validated before creation.',
     ),
+  newWikiName: z
+    .string()
+    .optional()
+    .describe(
+      'Name for a brand-new dedicated wiki to create and bind to this workspace. Only when the user asked for a new/dedicated wiki — never together with wikiId.',
+    ),
   git: z
     .boolean()
     .optional()
@@ -48,8 +54,12 @@ function matchesWikiQuery(
 // rather than wiki-create-domain.tool.ts's untestable singleton-only style.
 export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiRegistry) {
   return tool(
-    async ({ name, goal, wikiId, git, remoteUrl }, runtime: ToolRuntime) => {
+    async ({ name, goal, wikiId, newWikiName, git, remoteUrl }, runtime: ToolRuntime) => {
       const s = store ?? getWorkspaceStore();
+
+      if (wikiId && newWikiName) {
+        return 'Pass either wikiId (bind an existing wiki) or newWikiName (create a new one), not both. Ask the user which they want.';
+      }
 
       let resolvedWikiId = wikiId;
       if (wikiId) {
@@ -64,15 +74,21 @@ export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiR
       }
 
       const directoryName = slugify(name);
-      const result = await createWorkspaceHandler(s, {
-        name,
-        goal,
-        wikiId: resolvedWikiId,
-        git: git ?? false,
-        remoteUrl,
-        directoryName,
-        locationRoot: 'projects',
-      });
+      const result = await createWorkspaceHandler(
+        s,
+        {
+          name,
+          goal,
+          wikiId: resolvedWikiId,
+          git: git ?? false,
+          remoteUrl,
+          directoryName,
+          locationRoot: 'projects',
+          ...(newWikiName ? { newWiki: { name: newWikiName } } : {}),
+        },
+        undefined,
+        registry,
+      );
 
       if (!result.ok) {
         if (result.status === 409 || result.status === 400) return result.error;
@@ -109,7 +125,7 @@ export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiR
     {
       name: 'create_workspace',
       description:
-        'Create a new workspace after all required fields have been collected and confirmed with the user. ' +
+        'Create a new workspace after the required fields have been confirmed with the user. ' +
         'Only available once the /create-workspace skill has been invoked.',
       schema: CreateWorkspaceSchema,
     },

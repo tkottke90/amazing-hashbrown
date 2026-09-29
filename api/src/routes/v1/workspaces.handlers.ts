@@ -29,6 +29,7 @@ import {
   type DependencyScanEntry,
 } from '../../services/dependency-cleanup.js';
 import { invalidateWorkspaceChatAgent } from '../../agents/chat-agent.js';
+import { rollbackDirectory, serverError, wikiIdFromName } from './projects.handlers.js';
 import { logger } from '../../config/logger.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -60,10 +61,35 @@ export function getWorkspaceHandler(
   return ok(toWorkspaceResponse(ws));
 }
 
+// Validates the optional `newWiki: { name }` request (issue #202) before
+// any side effects. Returns the derived domain id, or a failure.
+function validateNewWiki(
+  body: Record<string, unknown>,
+  registry: WikiRegistry,
+): { id: string; name: string } | HandlerFailure | null {
+  if (body.newWiki === undefined || body.newWiki === null) return null;
+  if (body.wikiId !== undefined && body.wikiId !== null) {
+    return badRequest('Choose an existing wiki or create a new one, not both.');
+  }
+  const newWiki = body.newWiki as { name?: unknown };
+  if (typeof newWiki !== 'object' || typeof newWiki.name !== 'string') {
+    return badRequest('newWiki.name is required');
+  }
+  const id = wikiIdFromName(newWiki.name);
+  if (!id) return badRequest('Wiki name must contain letters or numbers.');
+  if (registry.list().some((d) => d.id === id)) return wikiExists(id);
+  return { id, name: newWiki.name.trim() };
+}
+
+function wikiExists(id: string): HandlerFailure {
+  return conflict(`A wiki named "${id}" already exists.`);
+}
+
 export async function createWorkspaceHandler(
   store: WorkspaceStore,
   body: Record<string, unknown>,
   execFileFn?: ExecFileFn,
+  registry?: WikiRegistry,
 ): Promise<HandlerResult<WorkspaceResponse<Workspace>>> {
   if (!body.name || typeof body.name !== 'string') return badRequest('name is required');
   if (!isLocationRoot(body.locationRoot)) {
@@ -74,6 +100,20 @@ export async function createWorkspaceHandler(
   }
   if (store.findWorkspaceByName(body.name)) {
     return conflict(`A workspace named "${body.name}" already exists.`);
+  }
+
+  // Only touch the wiki registry when a new wiki was actually requested.
+  let reg: WikiRegistry | undefined;
+  let newWiki: { id: string; name: string } | null = null;
+  if (body.newWiki !== undefined && body.newWiki !== null) {
+    try {
+      reg = registry ?? (await getWikiRegistry());
+    } catch (err) {
+      return serverError(err instanceof Error ? err.message : String(err));
+    }
+    const checked = validateNewWiki(body, reg);
+    if (checked && 'ok' in checked) return checked;
+    newWiki = checked;
   }
 
   let location: string;
@@ -111,10 +151,48 @@ export async function createWorkspaceHandler(
     );
   }
 
+  // A dedicated wiki is a normal, persistent domain — no ephemeral
+  // metadata, and deleteWorkspaceHandler only destroys project wikis — so
+  // it outlives the workspace. Created before the DB insert so a workspace
+  // row never points at a wiki that doesn't exist.
+  if (newWiki && reg) {
+    try {
+      await reg.create({ id: newWiki.id, name: newWiki.name, domain: newWiki.name });
+    } catch (err) {
+      await rollbackDirectory(location);
+      const message = err instanceof Error ? err.message : String(err);
+      // Lost a race with another create of the same id after the pre-check.
+      if (message.includes('already registered')) return wikiExists(newWiki.id);
+      return serverError(`Failed to create wiki: ${message}`);
+    }
+  }
+
   // store.createWorkspace() reads only the specific fields it needs off
   // NewWorkspaceInput — the leftover locationRoot/directoryName keys are
   // harmless to pass through alongside the resolved `location`.
-  const ws = store.createWorkspace({ ...body, location } as NewWorkspaceInput);
+  const input = { ...body };
+  delete input.newWiki;
+  let ws: Workspace;
+  try {
+    ws = store.createWorkspace({
+      ...input,
+      location,
+      ...(newWiki ? { wikiId: newWiki.id } : {}),
+    } as NewWorkspaceInput);
+  } catch (err) {
+    if (newWiki && reg) {
+      try {
+        await reg.destroy(newWiki.id);
+      } catch (destroyErr) {
+        logger.warn('createWorkspace rollback: failed to destroy wiki domain', {
+          wikiId: newWiki.id,
+          err: String(destroyErr),
+        });
+      }
+    }
+    await rollbackDirectory(location);
+    return serverError(err instanceof Error ? err.message : String(err));
+  }
   return ok(toWorkspaceResponse(ws));
 }
 

@@ -1,7 +1,7 @@
 # Project Wiki Write Restriction — Scoped Write Tool Guardrail — Design
 
 **Date:** 2026-08-26
-**Status:** Draft
+**Status:** Superseded in part by [Workspace Dedicated Wiki & Scoped Wiki Writes](2026-09-28-workspace-dedicated-wiki-design.md) — the per-project `allowedWikiId` restriction is now a per-call write scope that applies to every bound workspace and to AfterAgent
 **Related:** [Issue #79](https://github.com/tkottke90/amazing-hashbrown/issues/79) (depends on [#77](https://github.com/tkottke90/amazing-hashbrown/issues/77), closed)
 
 ---

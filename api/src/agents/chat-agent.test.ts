@@ -180,19 +180,16 @@ describe('agents/chat-agent', () => {
       'wiki_rebaseline_source',
     ];
 
-    it('returns the four write-capable wiki tools, unrestricted, when called with no argument', () => {
+    it('returns the four write-capable wiki tools', () => {
+      // Which wikis they may write to is resolved per call from the run's
+      // thread (wiki-write-scope.ts), so there's nothing to configure here.
       const tools = buildWikiWriteTools();
       expect(tools.map((t) => t.name)).to.have.members(expectedNames);
     });
 
-    it('returns the same four tool names when scoped to a project wiki', () => {
-      const tools = buildWikiWriteTools('proj-wiki');
-      expect(tools.map((t) => t.name)).to.have.members(expectedNames);
-    });
-
     it('builds a fresh set of tool instances on each call, not a shared singleton', () => {
-      const a = buildWikiWriteTools('wiki-a');
-      const b = buildWikiWriteTools('wiki-b');
+      const a = buildWikiWriteTools();
+      const b = buildWikiWriteTools();
       expect(a[0]).to.not.equal(b[0]);
     });
   });

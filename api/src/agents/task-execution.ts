@@ -24,7 +24,7 @@ import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
-import { buildWorkspaceContext, resolveAllowedWikiId } from './workspace-chat-stream-handler.js';
+import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
 import {
   recordAssistantStart,
   finalizeAssistant,
@@ -49,7 +49,6 @@ export type QueueEntryWithTask = TaskQueueEntry & { task: Task };
 interface WorkspaceScope {
   workspace: Workspace;
   workspaceContext: WorkspaceChatContext;
-  allowedWikiId?: string;
 }
 
 // Task runs always use the default provider. classifyChatError() needs its
@@ -145,9 +144,8 @@ export async function executeTask(
       if (!workspace) {
         throw new Error(`Task ${task.id} references missing workspace ${task.workspaceId}`);
       }
-      const allowedWikiId = resolveAllowedWikiId(store, workspace.id);
       const workspaceContext = await buildWorkspaceContext(workspace);
-      workspaceScope = { workspace, workspaceContext, allowedWikiId };
+      workspaceScope = { workspace, workspaceContext };
       mirrorThreadId = ensureWorkspaceChatThread(store, threadStore, workspace);
     }
     if (entry.threadId !== null) {
@@ -302,12 +300,7 @@ export async function executeTask(
         runTask,
         provider,
         model,
-        workspaceScope
-          ? {
-              workspaceContext: workspaceScope.workspaceContext,
-              allowedWikiId: workspaceScope.allowedWikiId,
-            }
-          : undefined,
+        workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
         {
           onTaskComplete: (call) => {
             completeTaskBox.current = call;

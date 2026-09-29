@@ -101,6 +101,50 @@ import type { CreateSkillInput } from '@tkottke90/skills-manager';
 // The "pass exactly as confirmed" rule only named `name` explicitly;
 // widened it to cover winCondition too, since nothing said a confirmed
 // value's casing must survive verbatim into the tool call.
+//
+// Fifth tightening, added after a fresh eval run
+// (eval-logs/auto-eval-20260928140346.yaml round 1) against all four
+// configured providers, including a newly-added one (Digital Ocean/
+// glm-5.3-flash) never tested against this suite before:
+// - cwp-008 (local): after confirmation named only name/newWikiName (no
+//   goal), the model still called ask_user to request a goal before
+//   create_workspace, reasoning from the create_workspace tool's own
+//   description ("after all required fields have been collected and
+//   confirmed") that goal was something it still needed to collect. The
+//   create-project skill's step 4 already has an explicit "optional
+//   fields not confirmed are simply omitted, don't ask" sentence (added
+//   in the second tightening above) — create-workspace's step 4 never
+//   got the equivalent. Added it here, mirroring create-project's wording
+//   for goal/wikiId/newWikiName/git.
+// - cwp-008 (Digital Ocean): passed create_workspace with name:
+//   "image-archive" and newWikiName: "image-archive-notes" — slugified,
+//   lowercased forms of the confirmed "Image Archive"/"Image Archive
+//   Notes". create-project's step 4 already has an explicit
+//   character-for-character/no-slug rule for name (added in the second
+//   tightening above); create-workspace's step 4 never got it either.
+//   Added the same rule here, extended to also cover newWikiName since
+//   workspace has no winCondition field to anchor it to.
+// - Both tool descriptions (create_workspace, create_project — see
+//   create-workspace.tool.ts / create-project.tool.ts) read "after all
+//   required fields have been collected and confirmed with the user."
+//   local's reasoningContent quoted this phrase near-verbatim as its
+//   justification for treating goal as something still to collect — the
+//   word "collected" reads as an instruction to gather more, even though
+//   the skill body it's paired with already lists goal as optional and
+//   already-decided-or-omitted by this point. Reworded both tool
+//   descriptions to "after the required fields have been confirmed with
+//   the user" — dropping "collected" removes the phrase the model was
+//   latching onto without changing what the tool actually requires.
+// - cwp-002 (Lemonade): asked for the missing workspace name using
+//   kind: "multiple_choice" with four fabricated example names ("Homelab
+//   Ops", "Project Documentation", ...) instead of kind: "free_text" —
+//   a name has no fixed set of valid values, so offering choices means
+//   presenting invented placeholder answers as if they were real options.
+//   Step 2 never said which `kind` to use for an open-ended field like
+//   name; added an explicit "use free_text, not multiple_choice" note to
+//   both skills' step 2 (create-project's equivalent ask for
+//   name/winCondition has the same shape, so mirrored there too even
+//   though it wasn't observed failing this round).
 export const DEFAULT_SKILLS: CreateSkillInput[] = [
   {
     name: 'create-workspace',
@@ -113,13 +157,14 @@ Required field:
 Optional fields:
 - goal — what the workspace is for, in a sentence or two.
 - wikiId — an existing wiki domain to bind this workspace to. This is genuinely optional — create_workspace works perfectly well with it left out, and there is no requirement to have one. Only ask if the user brings it up; don't ask by default, and don't treat its absence as a blocker to resolve before creating. That means not calling wiki_locate, wiki_orient, or any other tool "to see what domains exist" or "to offer it as an option" — if the user didn't name a wikiId, proceed straight to confirming and creating without one. If they name one themselves, the create_workspace tool validates it against the real wiki domain list itself and will tell you if it doesn't match.
+- newWikiName — use instead of wikiId only when the user asks for a new or dedicated wiki for this workspace: create_workspace creates it and binds it in one step. If they don't give it a name, use the workspace name. Same rule as wikiId: never ask about it or suggest it unprompted, and never pass both.
 - git — whether to initialize git in the workspace directory. Defaults to no.
 
 Steps:
 1. Parse whatever the user already gave you in their message.
-2. If "name" is missing, ask for it with a single ask_user call — do not proceed without it. If other optional fields are also missing and worth asking about, batch them into that same question rather than asking one field at a time.
+2. If "name" is missing, ask for it with a single ask_user call using kind: "free_text" — do not proceed without it, and do not use kind: "multiple_choice" with invented example names, since there is no fixed set of valid names to choose from. If other optional fields are also missing and worth asking about, batch them into that same question rather than asking one field at a time.
 3. Once you have a name (and any other fields the user wants to set), summarize what you're about to create — including that the directory name will be derived automatically from the workspace name — and confirm with a yes/no ask_user call before creating anything. This confirmation step applies even when every field you need is already sitting in the user's message, and even when the message itself describes the process in a way that sounds like a go-ahead — e.g. "/create-workspace called "Homelab Ops", goal: track server maintenance" gives you a complete name and goal, but that's still a request to run the skill, not a substitute for asking "create workspace X with goal Y — confirm?" and waiting for a yes. A name and goal being present is exactly the case this step exists for; it is never a reason to skip straight to create_workspace.
-4. Only after explicit confirmation, call create_workspace immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go looking for more. If the user never named a wikiId, that means omit the field entirely; it is not a reason to call wiki_locate, ask_user, or anything else to find or confirm one for them.
+4. Only after explicit confirmation, call create_workspace immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go looking for more. Pass "name" and "newWikiName" exactly as confirmed, character-for-character — same casing, same wording, same punctuation, for any name at all, not just an example that happens to match one you've seen before: "Image Archive" stays "Image Archive," "Homelab Ops" stays "Homelab Ops," never lowercased or hyphenated into a slug (the tool derives the directory name from it internally, so you never construct that form yourself). Every optional field — goal, git, wikiId, newWikiName, remoteUrl, all of them, not just the ones named explicitly here — follows the same rule: if it wasn't part of what you confirmed in step 3, simply omit it from the tool call. That is never a reason to ask about it now (via ask_user or any other tool), never a reason to invent a plausible-sounding value for it, and never a reason to go looking for one (e.g. calling wiki_locate, wiki_orient, or anything else to find a wikiId). The tool's own description says fields must be "confirmed," not that every optional field must be populated; confirmation already happened in step 3, and whatever wasn't in it stays unset — full stop, no exceptions for any particular field name.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
   },
@@ -142,7 +187,7 @@ Note: unlike workspaces, projects always get a fresh, dedicated wiki automatical
 
 Steps:
 1. Parse whatever the user already gave you in their message.
-2. If "name" or "winCondition" is missing, ask for both (and any other missing optional fields worth asking about) in a single batched ask_user call — do not ask one field at a time, and do not proceed without both required fields.
+2. If "name" or "winCondition" is missing, ask for both (and any other missing optional fields worth asking about) in a single batched ask_user call using kind: "free_text" — do not use kind: "multiple_choice" with invented example values, since neither field has a fixed set of valid answers. Do not ask one field at a time, and do not proceed without both required fields.
 3. Once you have the required fields, summarize what you're about to create — including that the directory name will be derived automatically from the project name — and confirm with a yes/no ask_user call before creating anything. This confirmation step applies even when every required field is already sitting in the user's message, and even when the message itself describes the process in a way that sounds like a go-ahead — a complete name and winCondition up front is exactly the case this step exists for, not a reason to skip straight to create_project.
 4. Only after explicit confirmation, call create_project immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go collect more. Pass "name" and "winCondition" exactly as confirmed, character-for-character — same casing, same wording, same punctuation. "Ship Homepage Redesign" stays "Ship Homepage Redesign," never lowercased or hyphenated into a slug (the tool derives the directory name from it internally, so you never construct that form yourself), and a winCondition that starts lowercase in the confirmed text stays lowercase in the tool call — restating it as the start of a new sentence and capitalizing it is still a change, even though it reads naturally that way. Optional fields (goal, dueAt, git) that weren't part of what you confirmed are simply omitted; that is not a reason to ask about them now, and it is not a reason to invent a plausible-sounding value for one either — leave it unset.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.

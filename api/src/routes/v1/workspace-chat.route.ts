@@ -6,7 +6,6 @@ import {
   resumeWorkspaceChatToSse,
   retryWorkspaceChatToSse,
   buildWorkspaceContext,
-  resolveAllowedWikiId,
 } from '../../agents/workspace-chat-stream-handler.js';
 import { writeSseEvent, ClassifiedTurnError } from '../../agents/stream-handler.js';
 import {
@@ -242,13 +241,11 @@ workspaceChatRouter.post('/:threadId/summarize', async (req: Request, res: Respo
 
   try {
     const workspaceContext = await buildWorkspaceContext(workspace);
-    const allowedWikiId = resolveAllowedWikiId(getWorkspaceStore(), workspace.id);
     const { agent } = await getWorkspaceChatAgent(
       workspace.id,
       workspaceContext,
       effectiveProvider,
       effectiveModel,
-      allowedWikiId,
     );
 
     await maybeSummarizeWorkspace(

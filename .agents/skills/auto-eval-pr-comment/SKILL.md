@@ -51,6 +51,15 @@ You will also usually need:
   the log summary alone isn't specific enough about a failure worth
   narrating.
 
+Note the **final round's `commit` SHA** specifically — it's the commit the
+evals were actually run against, and it goes in the comment's header (see
+`references/comment-format.md`) so a reviewer, human or an AI coding
+agent, can confirm at a glance which commit the results describe without
+questioning whether you're even on the right branch. It may not equal the
+branch's current HEAD if more commits landed after the loop finished —
+use the round's SHA, not `git rev-parse HEAD`, since that's what was
+actually evaluated.
+
 **Check the referenced commits are pushed** before posting — the comment
 cites SHAs, and `eval-logs/` being gitignored means those SHAs are the only
 thing a reader can follow:
@@ -60,6 +69,8 @@ git log origin/$(git branch --show-current) --oneline | head -5
 ```
 
 If the round commits aren't on the remote yet, push first (never force).
+This includes the final round's commit that's about to go in the header —
+an unpushed SHA there is worse than a missing one.
 
 ## Step 2 — Check for an open PR on this branch
 
@@ -109,6 +120,12 @@ Follow `references/comment-format.md` (structure distilled from the two
 real comments on PR #37 and PR #44, with fetch commands to read them).
 Everything in the comment must come from the actual log/results in front
 of you — real scenario IDs, real numbers, real SHAs.
+
+Include the commit line right after the heading (see
+`references/comment-format.md`'s "Commit line" item) — the final round's
+SHA, linked to `https://github.com/{owner}/{repo}/commit/<full-sha>`. If
+this session posts comments for more than one suite on the same PR, reuse
+the exact same SHA in each one.
 
 ## Step 5 — Post it
 

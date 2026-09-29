@@ -133,4 +133,49 @@ describe('agents/tools/create-workspace', () => {
     workspaceDirs.push(created.location);
     expect(created.remoteUrl).to.equal('https://example.com/org/repo.git');
   });
+
+  describe('newWikiName (#202)', () => {
+    it('creates a dedicated wiki and binds it to the new workspace [orchestration]', async () => {
+      const tool = makeCreateWorkspaceTool(store, registry);
+
+      await tool.invoke(
+        { name: `Image Archive ${randomUUID()}`, newWikiName: 'Image Archive Notes' },
+        invokeConfig(),
+      );
+
+      const created = store.listWorkspaces()[0]!;
+      workspaceDirs.push(created.location);
+      expect(created.wikiId).to.equal('image-archive-notes');
+      expect(registry.list().map((d) => d.id)).to.include('image-archive-notes');
+    });
+
+    it('refuses newWikiName together with wikiId and creates nothing [orchestration]', async () => {
+      await registry.create({ id: 'homelab', domain: 'homelab stuff', tags: [] });
+      const tool = makeCreateWorkspaceTool(store, registry);
+
+      const result = await tool.invoke(
+        { name: `Both ${randomUUID()}`, wikiId: 'homelab', newWikiName: 'Fresh' },
+        invokeConfig(),
+      );
+
+      expect(result as unknown as string).to.include('not both');
+      expect(store.listWorkspaces()).to.have.length(0);
+      expect(registry.list().map((d) => d.id)).to.deep.equal(['homelab']);
+    });
+
+    it('relays the collision message when the wiki name is already taken [orchestration]', async () => {
+      await registry.create({ id: 'image-archive-notes', domain: 'taken', tags: [] });
+      const tool = makeCreateWorkspaceTool(store, registry);
+
+      const result = await tool.invoke(
+        { name: `Image Archive ${randomUUID()}`, newWikiName: 'Image Archive Notes' },
+        invokeConfig(),
+      );
+
+      expect(result as unknown as string).to.equal(
+        'A wiki named "image-archive-notes" already exists.',
+      );
+      expect(store.listWorkspaces()).to.have.length(0);
+    });
+  });
 });

@@ -83,8 +83,8 @@ export function makeCreateProjectTool(store?: WorkspaceStore, registry?: WikiReg
     {
       name: 'create_project',
       description:
-        'Create a new project (a workspace plus win condition, with a fresh ephemeral wiki) after all required ' +
-        'fields have been collected and confirmed with the user. Only available once the /create-project skill has been invoked.',
+        'Create a new project (a workspace plus win condition, with a fresh ephemeral wiki) after the required ' +
+        'fields have been confirmed with the user. Only available once the /create-project skill has been invoked.',
       schema: CreateProjectSchema,
     },
   );

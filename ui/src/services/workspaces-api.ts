@@ -58,6 +58,9 @@ export interface CreateWorkspaceInput {
   python?: boolean;
   git?: boolean;
   wikiId?: string | null;
+  // Create a new persistent wiki with this name and bind it (workspaces
+  // only — mutually exclusive with wikiId).
+  newWiki?: { name: string };
 }
 
 export interface CreateProjectInput extends CreateWorkspaceInput {

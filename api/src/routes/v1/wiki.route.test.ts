@@ -2,12 +2,59 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { describe, it, before, after, afterEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { startTestServer } from '@/tests/utilities/http-test-server.js';
-import { buildMergedGraph, wikiRouter } from './wiki.route.js';
+import { buildMergedGraph, deleteWikiDomain, wikiRouter } from './wiki.route.js';
+import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { WorkspaceStore } from '../../services/workspace-store.js';
 import { setActiveSseWriter, clearActiveSseWriter } from '../../agents/active-sse-writer.js';
+
+describe('routes/v1/wiki.route deleteWikiDomain', () => {
+  let dir: string;
+  let registry: WikiRegistry;
+  let store: WorkspaceStore;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wiki-route-delete-test-'));
+    registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
+    store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('removes an unbound domain so it no longer appears in the domain list [orchestration]', async () => {
+    await registry.create({ id: 'old-notes', domain: 'Old Notes' });
+    const result = await deleteWikiDomain(registry, store, 'old-notes');
+    expect(result).to.deep.equal({ status: 200, body: { deleted: true } });
+    expect(registry.list().map((d) => d.id)).to.not.include('old-notes');
+  });
+
+  it('returns 404 for an unknown domain [unit]', async () => {
+    const result = await deleteWikiDomain(registry, store, 'nope');
+    expect(result.status).to.equal(404);
+  });
+
+  it('refuses with 409 while a workspace is bound to the domain [orchestration]', async () => {
+    // Deleting a bound wiki would leave that workspace locked to a wiki
+    // that no longer exists — its notes would have nowhere to go.
+    await registry.create({ id: 'image-archive', domain: 'Image Archive' });
+    store.createWorkspace({
+      name: 'Image Archive',
+      location: join(dir, 'ws'),
+      wikiId: 'image-archive',
+    });
+    const result = await deleteWikiDomain(registry, store, 'image-archive');
+    expect(result).to.deep.equal({
+      status: 409,
+      body: { error: 'Wiki "image-archive" is bound to a workspace; unbind it first.' },
+    });
+    expect(registry.list().map((d) => d.id)).to.include('image-archive');
+  });
+});
 
 describe('routes/v1/wiki.route buildMergedGraph', () => {
   let dir: string;

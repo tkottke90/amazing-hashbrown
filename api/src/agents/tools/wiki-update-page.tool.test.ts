@@ -7,6 +7,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { createWikiRegistry, type WikiRegistry } from '@tkottke90/llm-wiki';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { WorkspaceStore } from '../../services/workspace-store.js';
+import { ThreadStore } from '../../services/thread-store.js';
 import { setActiveSseWriter, clearActiveSseWriter } from '../active-sse-writer.js';
 import { createWikiPage } from '../../services/wiki-write.js';
 import { makeWikiUpdatePageTool } from './wiki-update-page.tool.js';
@@ -20,6 +21,7 @@ function invokeConfig(): any {
 
 describe('agents/tools/wiki-update-page', () => {
   let store: WorkspaceStore;
+  let threadStore: ThreadStore;
   let registry: WikiRegistry;
   let dir: string;
   let sseEvents: ChatSSEEvent[];
@@ -28,6 +30,10 @@ describe('agents/tools/wiki-update-page', () => {
     dir = mkdtempSync(join(tmpdir(), 'wiki-update-page-tool-test-'));
     const db = openDatabase(join(dir, 'test.db'));
     store = new WorkspaceStore(db);
+    threadStore = new ThreadStore(db);
+    // A global chat thread — write scope resolves to "open", so these
+    // tests exercise the tool's own behavior, not the scope rules.
+    threadStore.upsertThreadOnFirstMessage(THREAD_ID, 'test', 'chat');
     registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
     await registry.create({ id: 'test-wiki', domain: 'testing', tags: [] });
     sseEvents = [];
@@ -54,7 +60,7 @@ describe('agents/tools/wiki-update-page', () => {
     expect(created.status).to.equal('written');
     if (created.status !== 'written') return;
 
-    const tool = makeWikiUpdatePageTool(undefined, registry, store);
+    const tool = makeWikiUpdatePageTool(registry, store, threadStore);
     await tool.invoke(
       { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
       invokeConfig(),
@@ -71,7 +77,7 @@ describe('agents/tools/wiki-update-page', () => {
   });
 
   it('does not emit a wiki_updated event when the update target is not found', async () => {
-    const tool = makeWikiUpdatePageTool(undefined, registry, store);
+    const tool = makeWikiUpdatePageTool(registry, store, threadStore);
 
     const result = await tool.invoke(
       { wikiId: 'test-wiki', path: 'entities/does-not-exist.md', content: 'v2.' },

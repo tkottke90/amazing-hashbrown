@@ -41,18 +41,18 @@ function conflict(error: string): HandlerFailure {
   return { ok: false, status: 409, error };
 }
 
-function serverError(error: string): HandlerFailure {
+export function serverError(error: string): HandlerFailure {
   return { ok: false, status: 500, error };
 }
 
 /** Routing text for the project wiki domain: lowercase, hyphen-separated. */
 // Best-effort rollback of a directory this request created. A failed rm is
 // logged, never thrown, so it can't mask the error that triggered the rollback.
-async function rollbackDirectory(location: string): Promise<void> {
+export async function rollbackDirectory(location: string): Promise<void> {
   try {
     await rm(location, { recursive: true, force: true });
   } catch (err) {
-    logger.warn('createProject rollback: failed to remove workspace directory', {
+    logger.warn('create rollback: failed to remove workspace directory', {
       location,
       err: String(err),
     });
@@ -64,6 +64,13 @@ export function slugify(input: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+// Id for a user-named wiki domain. Capped at 60 characters exactly like the
+// UI's slugify (ui/src/lib/utils.ts) so the form's live collision check and
+// the server agree on the id a name produces.
+export function wikiIdFromName(name: string): string {
+  return slugify(name).slice(0, 60).replace(/-+$/g, '');
 }
 
 export function listProjectsHandler(store: WorkspaceStore) {

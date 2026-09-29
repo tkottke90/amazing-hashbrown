@@ -5,6 +5,8 @@ import type { AfterAgentState } from '@tkottke90/llm-common-types/chat';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import type { WorkspaceStore } from '../services/workspace-store.js';
+import type { ThreadStore } from '../services/thread-store.js';
+import { checkWikiWrite, resolveWikiWriteScope } from '../services/wiki-write-scope.js';
 import {
   createWikiPage,
   updateWikiPage,
@@ -290,6 +292,12 @@ export interface RunAfterAgentPipelineParams {
   // WorkspaceStore, which in production is the process-wide getWorkspaceStore()
   // singleton (booted once at server start). Production callers never set this.
   store?: WorkspaceStore;
+  // The run's server-set configurable.workspaceId, when it has one — the
+  // most reliable way to place the turn in its workspace (see
+  // services/wiki-write-scope.ts).
+  workspaceId?: string;
+  // Test-only escape hatch, same rationale as `store` above.
+  threadStore?: ThreadStore;
 }
 
 export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams): Promise<void> {
@@ -303,6 +311,23 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
 
   const turnText = extractLatestTurnText(messages);
   if (!turnText.trim()) return;
+
+  // Where this turn is allowed to file knowledge (#202) — resolved before
+  // any LLM call, so a turn we can't place costs nothing. Failing closed
+  // matters here: silently falling back to "any domain" is exactly how
+  // a workspace's notes leaked into unrelated wikis.
+  const scope = resolveWikiWriteScope(
+    { threadId, workspaceId: params.workspaceId },
+    { workspaceStore: params.store, threadStore: params.threadStore },
+  );
+  if (scope.kind === 'unresolved') {
+    logger.warn('after-agent: could not determine where this thread may write — skipping', {
+      threadId,
+      workspaceId: params.workspaceId,
+    });
+    setAfterAgentDone(threadId, 'no-op');
+    return;
+  }
 
   // Resolves the real provider/model this pipeline's LLM calls will run
   // against, so the trace below (and the aggregate usage/cost dashboard it
@@ -375,11 +400,18 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     }
 
     const registry = params.registry ?? (await getWikiRegistry());
-    const domains = registry.list();
+    // Only domains this thread may write to are offered — a locked
+    // workspace sees exactly one. The unknown-domain check below runs
+    // against this filtered list, so an out-of-scope id the model invents
+    // no-ops before anything (raw source included) touches that domain.
+    const domains = registry.list().filter((d) => checkWikiWrite(scope, d.id).allowed);
     if (domains.length === 0) {
-      logger.warn('after-agent: classify said shouldWrite but no wiki domains are registered', {
-        threadId,
-      });
+      logger.warn(
+        'after-agent: classify said shouldWrite but no wiki domain is writable from this thread',
+        {
+          threadId,
+        },
+      );
       setAfterAgentDone(threadId, 'no-op');
       return;
     }
@@ -440,7 +472,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
           summary: extract.summary,
         },
         params.registry,
-        undefined,
+        scope,
         params.store,
       );
     } else {
@@ -455,7 +487,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
           summary: extract.summary,
         },
         params.registry,
-        undefined,
+        scope,
         params.store,
       );
     }
