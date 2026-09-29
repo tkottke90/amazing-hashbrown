@@ -52,6 +52,9 @@ export interface ChatInputProps {
   placeholder?: string;
   onSend: () => void;
   onStop?: () => void;
+  /** Fires when the text input gains/loses focus (e.g. to hide chrome while typing). */
+  onFocus?: () => void;
+  onBlur?: () => void;
   /** When true, the send button becomes a stop button. */
   isGenerating?: boolean;
   disabled?: boolean;
@@ -139,6 +142,8 @@ export function ChatInput({
   placeholder = 'Message...',
   onSend,
   onStop,
+  onFocus,
+  onBlur,
   isGenerating = false,
   disabled = false,
   actions,
@@ -657,6 +662,8 @@ export function ChatInput({
               updateToolMenu(target.value, target.selectionStart ?? target.value.length);
             }}
             onKeyDown={handleKeyDown}
+            onFocus={onFocus}
+            onBlur={onBlur}
             placeholder={placeholder}
             disabled={disabled}
             rows={2}

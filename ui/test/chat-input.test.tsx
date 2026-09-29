@@ -68,6 +68,25 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText('Ask anything')).toBeInTheDocument();
   });
 
+  it('calls onFocus/onBlur as the textarea gains/loses focus [unit]', () => {
+    const onFocus = jest.fn();
+    const onBlur = jest.fn();
+    render(<ControlledChatInput onFocus={onFocus} onBlur={onBlur} />);
+
+    // preact/compat remaps onFocus/onBlur to the bubbling focusin/focusout
+    // events (React-compat semantics) — fireEvent.focus()/blur() dispatch
+    // the native, non-bubbling focus/blur events instead and never reach
+    // them, so real focus()/blur() DOM calls are used here (same reasoning
+    // as ui/test/workspace-create-form.test.tsx's fillName helper).
+    const textarea = screen.getByPlaceholderText('Message...') as HTMLTextAreaElement;
+    textarea.focus();
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onBlur).not.toHaveBeenCalled();
+
+    textarea.blur();
+    expect(onBlur).toHaveBeenCalledTimes(1);
+  });
+
   it('updates value as the user types', () => {
     render(<ControlledChatInput />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
