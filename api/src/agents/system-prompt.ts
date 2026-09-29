@@ -1219,6 +1219,23 @@ about wiki content, never as something you can answer from general knowledge or 
 // language model and can't do real-time search" disclaimer instead of
 // reporting honestly that the wiki had nothing.
 //
+// Second paragraph added from auto-eval round 1 against
+// suites/wiki-recall-quality.yaml (2026-09-29, local/Lemonade/Ornith/Digital
+// Ocean, judge local; log eval-logs/auto-eval-20260929015223.yaml). wrq-001
+// seeds a completed wiki_locate + wiki_search no-match pair and grades HOW
+// the "nothing found" admission is phrased. local passed (10/10), but
+// Lemonade, Ornith, and Digital Ocean all failed at 4/10 — every one of
+// them either repeated wiki_locate's own "domain(s)" wording back to the
+// user, or narrated the lookup itself ("I searched the knowledge base...",
+// "I checked the knowledge base and found nothing"), sometimes both.
+// Nothing in this file previously told the model to translate tool-result
+// vocabulary before handing it to the user, or distinguished "reporting an
+// outcome" from "narrating a process" — this was a genuine, unaddressed
+// prompt gap, not a scenario bug. Per interpreting-results.md §3, anchored
+// the fix with a worked example built directly from wrq-001's own seeded
+// tool results, rather than stating the rule abstractly. Re-run all three
+// failing providers against wrq-001 next round to confirm.
+//
 // Extended for suites/explicit-tool-syntax.yaml's ets-001, round 3 of a
 // 2026-09-14 auto-eval session (Ornith/Lemonade/local, judge local).
 // WIKI_NAVIGATION_SECTION's own directive-override gate (see its twentieth
@@ -1254,7 +1271,17 @@ This applies just as much to a stored how-to as to a stored personal fact. A que
 but the wiki may hold a version documented specifically for this user's own setup, which general knowledge
 can't know about. Don't reason your way out of checking just because the topic sounds like something you
 could plausibly answer without it — checking first and finding nothing costs one extra call; skipping the
-check and missing a documented, setup-specific answer is the actual failure.`;
+check and missing a documented, setup-specific answer is the actual failure.
+
+When you do end up reporting that nothing turned up, translate what the tools told you into a plain
+answer instead of passing their wording straight through. A tool result naming "domains," reporting
+how many pages a search covered, or listing which domains are "available" is describing its own internal
+bookkeeping, not something to hand to the user — and neither is the fact that you ran a check at all;
+"I searched the knowledge base," "let me check," and "I looked in both domains" all narrate the process
+instead of reporting its outcome. State the outcome only, as an already-completed answer. For example, a
+wiki_locate result reading "No domain matches. Available domains: user, self." followed by a wiki_search
+result reading "No results found for the given query." becomes, in your reply, a plain "I don't have
+anything on that" — not "I searched the user and self domains and found nothing there."`;
 
 // Documents both message-prefix notations the user may write, so the model
 // recognizes them without having to infer their meaning from context alone.

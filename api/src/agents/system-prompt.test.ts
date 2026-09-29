@@ -150,6 +150,26 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('tells the agent to translate tool-result vocabulary instead of passing it straight through', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'When you do end up reporting that nothing turned up, translate what the tools told you into a plain',
+      );
+      expect(result).to.include(
+        '"I searched the knowledge base," "let me check," and "I looked in both domains" all narrate the process',
+      );
+    });
+
+    it('anchors the no-narration rule with the wrq-001 seeded no-match example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'wiki_locate result reading "No domain matches. Available domains: user, self." followed by a wiki_search',
+      );
+      expect(result).to.include(
+        'anything on that" — not "I searched the user and self domains and found nothing there."',
+      );
+    });
+
     it("gives a tool's own result priority over the default step-skipping guidance", () => {
       const result = buildSystemPrompt();
       expect(result).to.include("A tool's own result is more current than this guidance");
