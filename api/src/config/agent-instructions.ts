@@ -8,9 +8,10 @@ const AGENT_MD_FILE = 'AGENT.md';
 const DEFAULT_TEMPLATE = `<!--
   AGENT.md — read on every chat turn and appended after the harness's own
   tool-orchestration and behavior guidance. Use this file for tone, style,
-  communication preferences, or context about you — it supplements the
-  harness prompt, it never overrides its tool orchestration or behavior
-  rules.
+  communication and working preferences (e.g. "confirm with me before
+  creating a wiki page"), or context about you. It supplements the harness
+  prompt: a preference that adds to its rules applies, but one that
+  contradicts its tool orchestration or behavior rules is ignored.
 
   This file starts empty (comments like this one are stripped before being
   sent to the model). Anything you add outside a comment block becomes part
