@@ -612,6 +612,19 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('so ask first and do that resolving only once they\'ve said yes');
     });
 
+    it("distinguishes a create request from memory's cold-start question default, using ihp-001's own input", () => {
+      // Round-2 result (2026-09-29): after the first fix, local now passed,
+      // but Lemonade/Ornith/Digital Ocean still called wiki_locate first —
+      // reasoningContent from Digital Ocean traced it to memory's own
+      // cold-start default ("Cold-start: wiki_locate first"), which reaches
+      // for wiki_locate on any question about the user without regard for
+      // whether this particular message is a question or a create request.
+      const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
+      expect(result).to.include("memory's own cold-start default also reaches for wiki_locate");
+      expect(result).to.include('is not a question to look up, it\'s a create request');
+      expect(result).to.include('the one and only tool call this turn is ask_user, full stop');
+    });
+
     it('trims the user instructions before appending', () => {
       const result = buildSystemPrompt('  Always respond in French.  \n');
       expect(result.endsWith('Always respond in French.')).to.equal(true);
