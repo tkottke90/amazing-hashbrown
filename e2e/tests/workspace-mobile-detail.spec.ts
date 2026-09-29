@@ -160,19 +160,25 @@ test.describe(
       expect(fileRes.status(), 'file created').toBe(201);
 
       await goToWorkspace(page, ws.id);
-      await page.getByRole('tab', { name: /files/i }).click();
+      // Plain button role, same as the desktop tab row and the pre-existing
+      // mobile task-board suites (getByRole('button', { name: /tasks/i })).
+      await page.getByRole('button', { name: /files/i }).click();
       await expect(page.getByText('README.md')).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
+      // Scoped to the editor pane — a bare getByText('Save') also matches
+      // "Save changes" on the (mobile-only, always-mounted-but-closed)
+      // Actions sheet's Edit form, since text queries match substrings.
+      const editorPane = page.getByTestId('file-editor-pane');
       await page.getByText('README.md').click();
       await expect(page.getByTestId('files-mobile-back')).toBeVisible();
-      await expect(page.getByText('Save')).toBeVisible();
+      await expect(editorPane.getByRole('button', { name: 'Save' })).toBeVisible();
 
       await page.getByTestId('files-mobile-back').click();
       await expect(page.getByTestId('file-tree')).toBeVisible();
 
       await page.getByText('README.md').click();
-      await expect(page.getByText('Save')).toBeVisible();
+      await expect(editorPane.getByRole('button', { name: 'Save' })).toBeVisible();
     });
 
     test('focusing the chat input hides the tab strip and bottom bar, blur restores them', async ({
@@ -182,7 +188,7 @@ test.describe(
       const ws = await createWorkspace(request, 'mobile-chat-focus');
 
       await goToWorkspace(page, ws.id);
-      await page.getByRole('tab', { name: /chat/i }).click();
+      await page.getByRole('button', { name: /chat/i }).click();
       await pauseBeforeAction(page, testInfo);
 
       await expect(page.getByTestId('workspace-tab-strip')).toBeVisible();

@@ -30,16 +30,20 @@ describe('WorkspaceTabStrip', () => {
   it('renders all four tabs [unit]', () => {
     render(<Harness workspaceId="ws-1" />);
 
-    expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /tasks/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /files/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /chat/i })).toBeInTheDocument();
+    // Plain buttons, matching the desktop tab row's convention — the mobile
+    // e2e suite (task-board-mobile.spec.ts and others) finds this same
+    // switcher via getByRole('button', { name: /tasks/i }), so this stays a
+    // button role rather than role="tab".
+    expect(screen.getByRole('button', { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /files/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /chat/i })).toBeInTheDocument();
   });
 
   it('updates the tab signal when a tab is clicked [unit]', () => {
     render(<Harness workspaceId="ws-1" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /files/i }));
+    fireEvent.click(screen.getByRole('button', { name: /files/i }));
 
     expect(screen.getByTestId('active-tab')).toHaveTextContent('files');
   });

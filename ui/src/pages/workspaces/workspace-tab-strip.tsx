@@ -30,17 +30,11 @@ export function WorkspaceTabStrip({
   );
 
   return (
-    <div
-      data-testid="workspace-tab-strip"
-      role="tablist"
-      class="flex items-center gap-1 overflow-x-auto"
-    >
+    <div data-testid="workspace-tab-strip" class="flex items-center gap-1 overflow-x-auto">
       {TABS.map((t) => (
         <button
           key={t}
           type="button"
-          role="tab"
-          aria-selected={tab.value === t}
           onClick={() => {
             tab.value = t;
           }}

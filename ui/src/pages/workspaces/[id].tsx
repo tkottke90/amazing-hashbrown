@@ -416,8 +416,11 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
               <OverviewTab workspace={ws} proj={proj.value} />
               {/* TaskListMobile (Tasks tab) owns its own QuickAddSheet bound
                   to the same signal — this one covers Overview, whose
-                  bottom-bar "+" also opens it but never mounts the list. */}
-              {id && (
+                  bottom-bar "+" also opens it but never mounts the list.
+                  Mobile-only: BottomSheet stays in the DOM even closed (no
+                  display:none), so mounting this on desktop too would add a
+                  second "Add"-flow form alongside desktop's own controls. */}
+              {!desktop && id && (
                 <QuickAddSheet
                   workspaceId={id}
                   open={quickAddOpen}
@@ -454,17 +457,25 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
         </div>
       </div>
 
-      <WorkspaceDetailsSheet workspace={ws} proj={proj.value} open={detailsSheetOpen} />
-      <WorkspaceActionsSheet
-        workspace={ws}
-        isTerminal={isTerminal}
-        isProj={isProj}
-        projectStatus={projectStatus}
-        onSaved={() => void refreshWorkspaces()}
-        onCloseIntent={(intent) => void handleCloseIntent(intent)}
-        onDelete={handleDelete}
-        open={actionsSheetOpen}
-      />
+      {/* Mobile-only: BottomSheet stays in the DOM even closed (no
+          display:none), so mounting these on desktop too would put a second
+          Edit/Close/Abandon/Delete control next to desktop's own — see the
+          Overview tab's QuickAddSheet comment above for the same reasoning. */}
+      {!desktop && (
+        <>
+          <WorkspaceDetailsSheet workspace={ws} proj={proj.value} open={detailsSheetOpen} />
+          <WorkspaceActionsSheet
+            workspace={ws}
+            isTerminal={isTerminal}
+            isProj={isProj}
+            projectStatus={projectStatus}
+            onSaved={() => void refreshWorkspaces()}
+            onCloseIntent={(intent) => void handleCloseIntent(intent)}
+            onDelete={handleDelete}
+            open={actionsSheetOpen}
+          />
+        </>
+      )}
     </Layout>
   );
 }
