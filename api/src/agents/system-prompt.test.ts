@@ -591,6 +591,27 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('resolve the tie yourself with a different tool');
     });
 
+    it("doesn't treat the user's own explicit request as already satisfying a standing confirm-before-X preference", () => {
+      // ihp-001's shape (auto-eval, suites/instruction-hierarchy-preferences.yaml,
+      // 2026-09-29): all four configured providers called wiki_locate instead
+      // of ask_user for "Please save this to my wiki: ..." under a "confirm
+      // with me before creating any new wiki page" preference. Digital
+      // Ocean's reasoning explicitly treated the request itself as the
+      // confirmation, letting ask_user_routing's "already-decided" default
+      // override the preference it's meant to be an exception to.
+      const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
+      expect(result).to.include('is not itself the confirmation, no matter how explicit it is');
+      expect(result).to.include(
+        "exactly what this kind of preference exists to override for the one action it names",
+      );
+    });
+
+    it('requires the confirm-before-X ask before any preparatory tool call toward the gated action', () => {
+      const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
+      expect(result).to.include('comes before any other tool call toward the gated action, not after');
+      expect(result).to.include('so ask first and do that resolving only once they\'ve said yes');
+    });
+
     it('trims the user instructions before appending', () => {
       const result = buildSystemPrompt('  Always respond in French.  \n');
       expect(result.endsWith('Always respond in French.')).to.equal(true);
