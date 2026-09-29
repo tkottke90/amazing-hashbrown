@@ -189,12 +189,11 @@ test.describe(
         await route.fulfill({ status: planResponse.status, json: planResponse.body });
       });
 
+      // Unique per attempt — a fixed name 409s on Playwright's retry (and on a
+      // local re-run), since the first attempt's workspace is never removed.
+      const wsName = `task-ai-plan-gen-ws-${Date.now()}`;
       const wsRes = await request.post('/api/v1/workspaces', {
-        data: {
-          name: 'task-ai-plan-gen-ws',
-          locationRoot: 'temporary',
-          directoryName: 'task-ai-plan-gen-ws',
-        },
+        data: { name: wsName, locationRoot: 'temporary', directoryName: wsName },
       });
       expect(wsRes.status()).toBe(201);
       const ws = await wsRes.json();
@@ -268,9 +267,12 @@ test.describe(
       const savedSparkleButton = drawer.getByRole('button', { name: 'Generate plan with AI' });
       planResponse = { status: 200, body: [{ step: 'Persisted generated step', done: false }] };
       const savedPlanSteps = drawer.locator('[data-testid="task-plan"] [data-testid="plan-step"]');
-      const countBeforeSavedGenerate = await savedPlanSteps.count();
+      // The saved task carries the three steps asserted above. Wait for the
+      // reopened drawer to render them before generating — count() is a
+      // snapshot, not a wait, and read too early it returns 0.
+      await expect(savedPlanSteps).toHaveCount(3);
       await savedSparkleButton.click();
-      await expect(savedPlanSteps).toHaveCount(countBeforeSavedGenerate + 1);
+      await expect(savedPlanSteps).toHaveCount(4);
       await expect(savedPlanSteps.last().locator('input[type="text"]')).toHaveValue(
         'Persisted generated step',
       );
@@ -283,7 +285,7 @@ test.describe(
       const reopenedSavedPlanSteps = page.locator(
         'dialog[open] [data-testid="task-plan"] [data-testid="plan-step"]',
       );
-      await expect(reopenedSavedPlanSteps).toHaveCount(countBeforeSavedGenerate + 1);
+      await expect(reopenedSavedPlanSteps).toHaveCount(4);
       await expect(reopenedSavedPlanSteps.last().locator('input[type="text"]')).toHaveValue(
         'Persisted generated step',
       );
