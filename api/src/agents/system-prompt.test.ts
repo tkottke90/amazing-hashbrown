@@ -608,15 +608,16 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('requires the confirm-before-X ask before any preparatory tool call toward the gated action', () => {
+    it('places the confirm-before-X ask right before the gated action, allowing read-only steps first', () => {
+      // A "confirm before creating a page" preference gates the create, not
+      // a lookup: all four providers located the domain, then planned to
+      // ask. An earlier "ask_user must be the first tool call" rule was
+      // stricter than the preference and contradicted wiki_navigation's
+      // resolve-the-domain-first procedure.
       const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
-      expect(result).to.include('your first tool call toward X is ask_user');
-      expect(result).to.include('waits until the user says yes');
-    });
-
-    it("distinguishes a create request from memory's cold-start question default, stated generally", () => {
-      const result = buildSystemPrompt('Always confirm with me before creating a wiki page.');
-      expect(result).to.include('a request to do X is not a question to look up');
+      expect(result).to.include('The ask belongs right before the X call itself');
+      expect(result).to.include('but X waits until the user says yes');
+      expect(result).to.not.include('your first tool call toward X is ask_user');
     });
 
     it('keeps eval scenario inputs out of the production guard text', () => {
