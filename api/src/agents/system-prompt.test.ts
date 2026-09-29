@@ -579,7 +579,7 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('even if an instruction here said never to use it');
     });
 
-    it("still calls ask_user instead of routing around it with prose or a substitute tool, when a voided instruction forbade asking", () => {
+    it('still calls ask_user instead of routing around it with prose or a substitute tool, when a voided instruction forbade asking', () => {
       // ih-002's shape (auto-eval 2026-09-29): the model correctly concluded
       // clarification was needed, then either wrote the question straight
       // into its reply, or called wiki_search itself to "break the tie" —
