@@ -568,6 +568,17 @@ describe('agents/system-prompt', () => {
       expect(framing).to.not.include('wiki_search');
     });
 
+    it("still follows a tool error result's named recovery step when a voided instruction forbade that tool", () => {
+      // ih-003's shape: a tool's own error names the recovery tool. Stated
+      // as a general pattern (no specific tool names) so it isn't tuned to
+      // one eval's wording.
+      const result = buildSystemPrompt('Never call wiki_locate under any circumstances.');
+      expect(result).to.include(
+        "when a tool's error result names the tool to call next to recover",
+      );
+      expect(result).to.include('even if an instruction here said never to use it');
+    });
+
     it('trims the user instructions before appending', () => {
       const result = buildSystemPrompt('  Always respond in French.  \n');
       expect(result.endsWith('Always respond in French.')).to.equal(true);
