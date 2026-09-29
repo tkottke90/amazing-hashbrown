@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/preact';
-import { useIsWideBoardViewport, useMediaQuery } from '@/hooks/use-media-query';
+import { useIsDesktopViewport, useMediaQuery } from '@/hooks/use-media-query';
 
 // jest.setup.ts stubs matchMedia to never match; these tests swap in a fake
 // MediaQueryList that records its query and fires change listeners.
@@ -47,9 +47,9 @@ describe('useMediaQuery', () => {
     expect(result.current).toBe(true);
   });
 
-  it('shows the lane board only at 1024px and wider, where all five lanes fit [unit]', () => {
+  it('reports desktop chrome only at 1024px and wider [unit]', () => {
     const { spy } = mockMatchMedia(true);
-    renderHook(() => useIsWideBoardViewport());
+    renderHook(() => useIsDesktopViewport());
     expect(spy).toHaveBeenCalledWith('(min-width: 1024px)');
   });
 });

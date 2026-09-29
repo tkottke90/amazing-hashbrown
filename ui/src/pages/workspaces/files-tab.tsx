@@ -1,11 +1,13 @@
 import { useEffect } from 'preact/hooks';
-import { X, Volume2, VolumeX } from 'lucide-preact';
+import type { Signal } from '@preact/signals';
+import { X, Volume2, VolumeX, ArrowLeft } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { FileTree } from '@/pages/workspaces/file-tree';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
 import { GitControls } from '@/pages/workspaces/git-controls';
+import { useIsDesktopViewport } from '@/hooks/use-media-query';
 import {
   openTabs,
   activeTabPath,
@@ -170,10 +172,103 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
   }
 }
 
-export function FilesTab({ workspaceId, git }: { workspaceId: string; git: boolean }) {
+// All open tabs stay mounted simultaneously (hidden via CSS, not
+// destroyed/recreated on switch) so cursor/scroll/undo history survive a
+// tab switch — shared by the desktop split pane and the mobile single pane.
+function EditorPanes({ workspaceId }: { workspaceId: string }) {
+  return (
+    <>
+      {openTabs.value.map((tab) => (
+        <div
+          key={tab.path}
+          data-testid="file-editor-pane"
+          data-path={tab.path}
+          class={cn('h-full', activeTabPath.value !== tab.path && 'hidden')}
+        >
+          <EditorPanel workspaceId={workspaceId} tab={tab} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+// Below `lg`, the fixed 250px-tree + editor split pane has no room to
+// exist — one full-width pane at a time instead: the tree, or (once a file
+// is opened) that file's editor with a back arrow. Desktop is untouched.
+// See the workspace mobile detail redesign design, §6.
+function MobileFilesTab({
+  workspaceId,
+  git,
+  uploadRequest,
+}: {
+  workspaceId: string;
+  git: boolean;
+  uploadRequest?: Signal<number>;
+}) {
+  const activeTab = openTabs.value.find((tab) => tab.path === activeTabPath.value) ?? null;
+
+  if (activeTab) {
+    const fileName = activeTab.path.split('/').pop() ?? activeTab.path;
+    return (
+      <div class="flex size-full flex-col overflow-hidden rounded-xl border border-border">
+        <div class="flex items-center gap-2 border-b border-border px-2 py-1.5">
+          <button
+            type="button"
+            aria-label="Back to files"
+            data-testid="files-mobile-back"
+            class="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              activeTabPath.value = null;
+            }}
+          >
+            <ArrowLeft class="size-4" />
+          </button>
+          <span class="truncate text-sm font-medium" title={activeTab.path}>
+            {fileName}
+          </span>
+        </div>
+        <div class="min-h-0 flex-1">
+          <EditorPanes workspaceId={workspaceId} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="flex size-full flex-col overflow-hidden rounded-xl border border-border">
+      <GitControls workspaceId={workspaceId} git={git} />
+      <div class="min-h-0 flex-1 overflow-hidden">
+        <FileTree workspaceId={workspaceId} hideUploadAction uploadRequest={uploadRequest} />
+      </div>
+    </div>
+  );
+}
+
+export function FilesTab({
+  workspaceId,
+  git,
+  uploadRequest,
+}: {
+  workspaceId: string;
+  git: boolean;
+  // Incremented by the mobile bottom app bar's "+" (see [id].tsx) — passed
+  // through to FileTree's mobile upload trigger. Unused on desktop, which
+  // keeps its own always-visible upload icon in FileTree's header.
+  uploadRequest?: Signal<number>;
+}) {
   useEffect(() => {
     void loadFileTree(workspaceId);
   }, [workspaceId]);
+
+  const desktop = useIsDesktopViewport();
+
+  if (!desktop) {
+    return (
+      <div class="p-4 size-full">
+        <MobileFilesTab workspaceId={workspaceId} git={git} uploadRequest={uploadRequest} />
+      </div>
+    );
+  }
 
   return (
     <div class="p-4 size-full">
@@ -199,19 +294,7 @@ export function FilesTab({ workspaceId, git }: { workspaceId: string; git: boole
                 Select a file to view its contents.
               </div>
             ) : (
-              // All open tabs stay mounted simultaneously (hidden via CSS,
-              // not destroyed/recreated on switch) so cursor/scroll/undo
-              // history survive a tab switch.
-              openTabs.value.map((tab) => (
-                <div
-                  key={tab.path}
-                  data-testid="file-editor-pane"
-                  data-path={tab.path}
-                  class={cn('h-full', activeTabPath.value !== tab.path && 'hidden')}
-                >
-                  <EditorPanel workspaceId={workspaceId} tab={tab} />
-                </div>
-              ))
+              <EditorPanes workspaceId={workspaceId} />
             )}
           </div>
         </div>

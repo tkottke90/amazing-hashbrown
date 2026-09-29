@@ -1,3 +1,4 @@
+import type { Signal } from '@preact/signals';
 import { useSignal } from '@preact/signals';
 import { BottomSheet } from '@tkottke90/preact-dialog';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-preact';
@@ -174,6 +175,47 @@ function QuickAddForm({
   );
 }
 
+// The "New task" sheet + its "More details" escape hatch into the full task
+// drawer — extracted so it can be mounted independently of TaskListMobile
+// itself (e.g. from the Overview tab's bottom-bar "+", which never mounts
+// the mobile task list). TaskListMobile below renders exactly one of these,
+// same as before this was pulled out.
+export function QuickAddSheet({
+  workspaceId,
+  open,
+  onSaved,
+}: {
+  workspaceId: string;
+  open: Signal<boolean>;
+  onSaved: () => void;
+}) {
+  const newTaskOpen = useSignal(false);
+  const newTaskDraft = useSignal<TaskDraft | undefined>(undefined);
+
+  return (
+    <>
+      <BottomSheet title="New task" open={open}>
+        <QuickAddForm
+          workspaceId={workspaceId}
+          onDone={() => (open.value = false)}
+          onMoreDetails={(draft) => {
+            open.value = false;
+            newTaskDraft.value = draft;
+            newTaskOpen.value = true;
+          }}
+        />
+      </BottomSheet>
+      <TaskDrawer
+        task={null}
+        draft={newTaskDraft.value}
+        open={newTaskOpen}
+        defaultWorkspaceId={workspaceId}
+        onSaved={onSaved}
+      />
+    </>
+  );
+}
+
 // The Tasks tab below 1024px: sections ordered by urgency, each collapsible
 // (remembered per browser), one-tap actions on the cards, and a quick-add
 // sheet. There's no drag on touch — every status change is an explicit
@@ -183,11 +225,16 @@ export function TaskListMobile({
   taskList,
   onSaved,
   onGoToChat,
+  quickAddOpen: quickAddOpenProp,
 }: {
   workspaceId: string;
   taskList: Task[];
   onSaved: () => void;
   onGoToChat: () => void;
+  // Lets a caller drive the "New task" sheet from outside (e.g. the mobile
+  // bottom app bar's shared "+" on both the Overview and Tasks tabs).
+  // Defaults to an internal signal so standalone/desktop usage is unaffected.
+  quickAddOpen?: Signal<boolean>;
 }) {
   const sections = mobileSections(taskList, queueState.value);
   const collapsed = useSignal<Partial<Record<MobileSection, boolean>>>(
@@ -211,9 +258,8 @@ export function TaskListMobile({
     replyOpen.value = true;
   };
 
-  const quickAddOpen = useSignal(false);
-  const newTaskOpen = useSignal(false);
-  const newTaskDraft = useSignal<TaskDraft | undefined>(undefined);
+  const internalQuickAddOpen = useSignal(false);
+  const quickAddOpen = quickAddOpenProp ?? internalQuickAddOpen;
 
   const openTask = (task: Task) => {
     if (task.board?.reason?.kind === 'waiting_on_user' && findMove(task, 'queue')) {
@@ -228,8 +274,10 @@ export function TaskListMobile({
 
   return (
     <div class="flex flex-col gap-4 p-4" data-testid="task-list-mobile">
-      {/* A labelled button rather than a floating "+": the app's mobile bottom
-          bar already has a centred "+" (new conversation). */}
+      {/* This labelled button and the mobile bottom app bar's own "+" (set to
+          "New task" on the Overview/Tasks tabs, see [id].tsx) both drive the
+          same quickAddOpen signal — this one stays for when the bar isn't
+          the trigger (e.g. the standalone board), and for discoverability. */}
       <div class="flex items-center justify-between gap-2">
         <p class="text-xs text-muted-foreground">
           {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'} · {sections.running.length}{' '}
@@ -298,17 +346,7 @@ export function TaskListMobile({
         )}
       </BottomSheet>
 
-      <BottomSheet title="New task" open={quickAddOpen}>
-        <QuickAddForm
-          workspaceId={workspaceId}
-          onDone={() => (quickAddOpen.value = false)}
-          onMoreDetails={(draft) => {
-            quickAddOpen.value = false;
-            newTaskDraft.value = draft;
-            newTaskOpen.value = true;
-          }}
-        />
-      </BottomSheet>
+      <QuickAddSheet workspaceId={workspaceId} open={quickAddOpen} onSaved={onSaved} />
 
       <TaskDrawer
         task={selected}
@@ -316,13 +354,6 @@ export function TaskListMobile({
         defaultWorkspaceId={workspaceId}
         onSaved={onSaved}
         onGoToChat={onGoToChat}
-      />
-      <TaskDrawer
-        task={null}
-        draft={newTaskDraft.value}
-        open={newTaskOpen}
-        defaultWorkspaceId={workspaceId}
-        onSaved={onSaved}
       />
     </div>
   );

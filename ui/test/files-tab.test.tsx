@@ -1,4 +1,4 @@
-import { signal } from '@preact/signals';
+import { signal, type Signal } from '@preact/signals';
 import { render, screen, within } from '@testing-library/preact';
 
 jest.mock('@/services/workspace-files-api', () => {
@@ -21,6 +21,31 @@ import {
 } from '@/hooks/use-workspace-files';
 import { mediaMuted } from '@/hooks/use-media-mute';
 
+// jest.setup.ts stubs matchMedia to never match by default, which would put
+// these desktop-split-pane assertions on the mobile single-pane branch
+// instead — force desktop for this file's existing coverage, same as
+// ui/test/workspace-overview.test.tsx. The dedicated mobile describe block
+// below overrides this locally.
+function mockDesktopViewport(matches: boolean) {
+  return jest.spyOn(window, 'matchMedia').mockImplementation(
+    (media: string) =>
+      ({
+        matches,
+        media,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      }) as unknown as MediaQueryList,
+  );
+}
+
+beforeAll(() => {
+  mockDesktopViewport(true);
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
+
 function makeTab(path: string, opts: Partial<OpenTab> = {}): OpenTab {
   return {
     path,
@@ -33,10 +58,10 @@ function makeTab(path: string, opts: Partial<OpenTab> = {}): OpenTab {
   };
 }
 
-function renderFilesTab() {
+function renderFilesTab(overrides: { uploadRequest?: Signal<number> } = {}) {
   return render(
     <ThemeProvider>
-      <FilesTab workspaceId="ws-1" git={false} />
+      <FilesTab workspaceId="ws-1" git={false} uploadRequest={overrides.uploadRequest} />
     </ThemeProvider>,
   );
 }
@@ -225,5 +250,70 @@ describe('FilesTab', () => {
       screen.getByTestId('media-mute-toggle').click();
       expect(mediaMuted.value).toBe(true);
     });
+  });
+});
+
+describe('FilesTab mobile (< lg)', () => {
+  let matchMediaSpy: ReturnType<typeof mockDesktopViewport>;
+
+  beforeEach(() => {
+    matchMediaSpy = mockDesktopViewport(false);
+  });
+
+  afterEach(() => {
+    matchMediaSpy.mockRestore();
+    resetWorkspaceFilesState();
+    jest.clearAllMocks();
+  });
+
+  it('shows the file tree, not the desktop placeholder, when no tab is active [unit]', () => {
+    renderFilesTab();
+
+    expect(screen.getByTestId('file-tree')).toBeInTheDocument();
+    expect(screen.queryByText('Select a file to view its contents.')).not.toBeInTheDocument();
+  });
+
+  it('shows the active tab full width with a back arrow instead of a tab bar [unit]', () => {
+    const tab = makeTab('a.ts');
+    openTabs.value = [tab];
+    activeTabPath.value = 'a.ts';
+
+    renderFilesTab();
+
+    expect(screen.getByTestId('files-mobile-back')).toBeInTheDocument();
+    expect(screen.getByText('Save')).toBeInTheDocument();
+    expect(screen.queryByTestId('file-tab')).not.toBeInTheDocument();
+  });
+
+  it('returns to the tree when the back arrow is tapped, without closing the tab [unit]', () => {
+    const tab = makeTab('a.ts');
+    openTabs.value = [tab];
+    activeTabPath.value = 'a.ts';
+
+    renderFilesTab();
+    screen.getByTestId('files-mobile-back').click();
+
+    expect(activeTabPath.value).toBeNull();
+    expect(openTabs.value).toHaveLength(1);
+    expect(screen.getByTestId('file-tree')).toBeInTheDocument();
+  });
+
+  it('preserves another open tab’s editor pane across a drill-down/back round trip [unit]', () => {
+    const tabA = makeTab('a.ts');
+    const tabB = makeTab('b.ts');
+    openTabs.value = [tabA, tabB];
+    activeTabPath.value = 'a.ts';
+
+    renderFilesTab();
+    screen.getByTestId('files-mobile-back').click();
+    activeTabPath.value = 'b.ts';
+
+    expect(openTabs.value.map((t) => t.path)).toEqual(['a.ts', 'b.ts']);
+  });
+
+  it('hides the file tree’s own upload icon, since the bottom app bar owns upload on mobile [unit]', () => {
+    renderFilesTab();
+
+    expect(screen.queryByTestId('folder-action-upload')).not.toBeInTheDocument();
   });
 });

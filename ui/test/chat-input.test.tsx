@@ -68,6 +68,20 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText('Ask anything')).toBeInTheDocument();
   });
 
+  it('calls onFocus/onBlur as the textarea gains/loses focus [unit]', () => {
+    const onFocus = jest.fn();
+    const onBlur = jest.fn();
+    render(<ControlledChatInput onFocus={onFocus} onBlur={onBlur} />);
+
+    const textarea = screen.getByPlaceholderText('Message...');
+    fireEvent.focus(textarea);
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onBlur).not.toHaveBeenCalled();
+
+    fireEvent.blur(textarea);
+    expect(onBlur).toHaveBeenCalledTimes(1);
+  });
+
   it('updates value as the user types', () => {
     render(<ControlledChatInput />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;

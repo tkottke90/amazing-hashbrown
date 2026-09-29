@@ -64,4 +64,39 @@ describe('Layout', () => {
     expect(screen.getAllByText('Sidebar content')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
+
+  it('omits the whole bottom bar when hideBottomBar is set', () => {
+    render(
+      <ThemeProvider>
+        <Layout aside={<div>Sidebar content</div>} hideBottomBar>
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
+    );
+
+    expect(screen.queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Open navigation menu' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('omits just the floating add button when hideAddButton is set, keeping the rest of the bar', () => {
+    render(
+      <ThemeProvider>
+        <Layout
+          aside={<div>Sidebar content</div>}
+          navStart={<button>Search</button>}
+          navEnd={<button>Profile</button>}
+          hideAddButton
+        >
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByRole('navigation', { name: 'Bottom navigation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+  });
 });

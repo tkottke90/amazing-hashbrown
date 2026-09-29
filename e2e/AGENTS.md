@@ -318,6 +318,20 @@ implementation details that change without notice.
 | `wakeup-card-cancel`       | `ui/src/components/wakeup-card.tsx`                       | The card's Cancel button (pending only)                                                       |
 | `wakeup-fired-marker`      | `ui/src/components/wakeup-fired-marker.tsx`               | Divider above the turn a wake-up resumed                                                      |
 | `background-turn-status`   | `ui/src/pages/chat/index.tsx`                             | "Working in the background" strip while a headless turn holds the thread                      |
+| `workspace-mobile-header`  | `ui/src/pages/workspaces/workspace-mobile-header.tsx`     | The compact (`< lg`) workspace header container                                               |
+| `mobile-header-details-trigger` | `ui/src/pages/workspaces/workspace-mobile-header.tsx` | The header's icon cluster; opens the Details sheet                                            |
+| `workspace-tab-strip`      | `ui/src/pages/workspaces/workspace-tab-strip.tsx`         | The mobile segmented tab control docked in the bottom app bar                                 |
+| `tab-strip-attention-dot`  | `ui/src/pages/workspaces/workspace-tab-strip.tsx`         | Amber dot on the Tasks tab when a task's `board.lane` is `attention`                           |
+| `details-location`         | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | Location row in the mobile Details sheet                                                      |
+| `details-git`              | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | Git row (title carries the remote URL) in the mobile Details sheet                             |
+| `details-wiki-link`        | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | Wiki link row in the mobile Details sheet                                                     |
+| `details-javascript`       | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | JavaScript runtime row in the mobile Details sheet                                             |
+| `details-python`           | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | Python runtime row in the mobile Details sheet                                                |
+| `details-due`              | `ui/src/pages/workspaces/workspace-details-sheet.tsx`     | Due-date row in the mobile Details sheet                                                       |
+| `actions-close-project`    | `ui/src/pages/workspaces/workspace-actions-sheet.tsx`     | Close project row in the mobile Actions sheet                                                 |
+| `actions-abandon-project`  | `ui/src/pages/workspaces/workspace-actions-sheet.tsx`     | Abandon project row in the mobile Actions sheet                                               |
+| `actions-delete-workspace` | `ui/src/pages/workspaces/workspace-actions-sheet.tsx`     | Delete workspace row in the mobile Actions sheet                                              |
+| `files-mobile-back`        | `ui/src/pages/workspaces/files-tab.tsx`                   | Back-to-tree arrow in the mobile single-pane Files view                                       |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
