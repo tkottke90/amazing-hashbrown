@@ -8,6 +8,7 @@ import { FakeListChatModel } from '@langchain/core/utils/testing';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { WorkspaceStore } from '../../services/workspace-store.js';
 import { bootObservability } from '../../services/observability.js';
+import { configManager } from '../../config/env.js';
 import {
   createTaskHandler,
   deleteTaskHandler,
@@ -834,9 +835,26 @@ describe('routes/v1/tasks.handlers', () => {
     before(() => {
       obsDir = mkdtempSync(join(tmpdir(), 'tasks-handlers-generate-plan-obs-'));
       bootObservability(openDatabase(join(obsDir, 'observability.db')));
+      // runPathA/runPathB now resolve the trace's provider/model through
+      // resolveTurnModel() (#219), which calls resolveProviderConfig() even
+      // though `model` here is always a directly-injected fake — a real
+      // route always configures one first (createProvider() in
+      // tasks.route.ts), so this mirrors that, not a change to what these
+      // handlers actually require in production.
+      configManager.set('providers', [
+        {
+          name: 'test-plan-provider',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'test-plan-model',
+        },
+      ]);
+      configManager.set('defaultProvider', 'test-plan-provider');
     });
     after(() => {
       rmSync(obsDir, { recursive: true, force: true });
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
     });
 
     beforeEach(() => {

@@ -18,6 +18,11 @@ export const TraceSourceSchema = z.enum([
   'workspace-summary',
   // An automated task run (api/src/agents/task-execution.ts).
   'task-run',
+  // A headless turn (api/src/agents/headless-turn.ts) triggered by a timed
+  // wake-up firing (wakeup-delivery.ts) or a sub-agent completion
+  // notification (sub-agent-notification.ts).
+  'wakeup',
+  'sub-agent-notification',
 ]);
 
 export const SpanRecordSchema = z.object({

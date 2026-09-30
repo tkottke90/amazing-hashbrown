@@ -42,11 +42,14 @@ export interface TurnObservability {
   // Closes the trace with the handler's token totals. Only the first call
   // writes, so a finally-block cleanup can't overwrite an error recorded
   // earlier.
-  end(error?: string | null): void;
+  end(error?: string | null): Promise<void>;
 }
 
 export interface StartTurnObservabilityParams {
-  threadId: string;
+  // Optional — matches the store's own StartTraceParams: a turn with no
+  // thread yet (e.g. plan-generation.ts, which runs before any task/thread
+  // exists) still gets a trace, just with no threadId to attribute it to.
+  threadId?: string;
   taskId?: string;
   // Already resolved — see resolveTurnModel().
   provider: string;
@@ -75,9 +78,15 @@ export function startTurnObservability(params: StartTurnObservabilityParams): Tu
         callbacks: [obsHandler],
       };
     },
-    end(error = null) {
+    async end(error = null) {
       if (closed) return;
       closed = true;
+      // A bare model.invoke() (no chain/graph wrapping it) never fires
+      // handleChainEnd on its own, so every caller used to have to remember
+      // to call it before closing the trace — folded in here so no call
+      // site can forget it. Safe no-op for streaming/graph callers, whose
+      // own callback machinery already flushed the handler by this point.
+      await obsHandler.handleChainEnd();
       store.endTrace(traceId, {
         totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
         error,

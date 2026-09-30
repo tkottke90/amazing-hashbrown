@@ -616,7 +616,7 @@ export async function executeTask(
       // Guarded: a failed trace write must never skip the thread release
       // below (endThreadTurn) — this function never throws.
       try {
-        turnObs?.end(traceError);
+        await turnObs?.end(traceError);
       } catch (err) {
         logger.error('task-execution: failed to close run trace', {
           taskId: task.id,

@@ -15,6 +15,11 @@ import {
 import { recordAssistantStart, failAssistant } from './thread-message-writer.js';
 import { classifyChatError } from './error-classification.js';
 import { endThreadTurn } from './pending-thread-turns.js';
+import {
+  resolveTurnModel,
+  startTurnObservability,
+  type TurnObservability,
+} from './turn-observability.js';
 
 // Structural — any LangGraph-based agent built by chat-agent.ts's builders
 // satisfies this (same rationale as stream-handler.ts's own unexported
@@ -97,6 +102,12 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
     },
   };
   let assistantSeq: number | null = null;
+  // This turn's observability trace (#132/#219), and the error it is closed
+  // with — both hoisted so the finally block below can close it whichever
+  // branch this function ends in. Mirrors task-execution.ts's identical
+  // pattern.
+  let turnObs: TurnObservability | undefined;
+  let traceError: string | null = null;
 
   // Mirrors the interactive handlers' catch (stream-handler.ts): a Stop is
   // recorded as cancelled, anything else as a classified error — so the
@@ -108,6 +119,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       thoughtContent: partialThought,
     } = extractPartialAssistantState(err, msgId);
     if (aborted) {
+      traceError = 'Stopped.';
       failAssistant(
         threadStore,
         threadId,
@@ -122,6 +134,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
     }
     logger.error('headless-turn: turn failed', { threadId, err: serializeError(err) });
     const classified = classifyChatError(err, providerTypeOf(provider));
+    traceError = classified.message;
     failAssistant(
       threadStore,
       threadId,
@@ -135,30 +148,44 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
   };
 
   try {
+    const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+      provider,
+      params.model,
+    );
+    turnObs = startTurnObservability({
+      threadId,
+      ...(taskId ? { taskId } : {}),
+      provider: resolvedProvider,
+      model: resolvedModel,
+      // No systemPrompt: the agent is pre-built by the caller and this
+      // function never sees the prompt that built it.
+      source: params.source === 'wakeup' ? 'wakeup' : 'sub-agent-notification',
+    });
+
     const startedAt = Date.now();
     assistantSeq = recordAssistantStart(
       threadStore,
       threadId,
       msgId,
       turnSentAt,
-      provider,
-      params.model,
+      resolvedProvider,
+      resolvedModel,
     );
 
     const { content, thoughtContent, finalSegmentId, hadToolCall } =
       await getProviderQueue().withSlot(
-        provider,
+        resolvedProvider,
         'sync',
         async () => {
           const rawStream = agent.streamEvents(
             { messages: [{ role: 'human', content: message }] },
-            {
+            turnObs!.attach({
               ...config,
               version: 'v2',
               recursionLimit,
               context: { provider, model: params.model, afterAgentEnabled: undefined },
               signal: controller.signal,
-            },
+            }),
           );
           return pipeEvents(sink, msgId, rawStream, threadStore, threadId, turnSentAt);
         },
@@ -178,9 +205,9 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       turnSentAt,
       assistantSeq,
       null,
-      undefined,
-      provider,
-      params.model,
+      turnObs.obsHandler,
+      resolvedProvider,
+      resolvedModel,
       taskId,
     );
   } catch (err) {
@@ -199,6 +226,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
     );
     if (!recovered) recordFailure(err, controller.signal.aborted);
   } finally {
+    await turnObs?.end(traceError);
     endThreadTurn(threadId);
   }
 }

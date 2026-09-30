@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
 import type { AfterAgentState } from '@tkottke90/llm-common-types/chat';
-import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
+import { createProvider } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import type { WorkspaceStore } from '../services/workspace-store.js';
 import type { ThreadStore } from '../services/thread-store.js';
@@ -13,9 +13,9 @@ import {
   type CreateWikiPageResult,
   type UpdateWikiPageResult,
 } from '../services/wiki-write.js';
-import { getObservabilityStore } from '../services/observability.js';
 import { broadcast } from '../services/broadcast.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 
@@ -339,18 +339,11 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
   // configured, which test env deliberately doesn't set up, matching
   // provider-factory.test.ts's own documented "can't test the live env
   // path" limitation. Production callers never set `params.llm`.
-  const { resolvedProvider, resolvedModel } = params.llm
-    ? { resolvedProvider: provider ?? env.defaultProvider, resolvedModel: model ?? '' }
-    : (() => {
-        const providerConfig = resolveProviderConfig(provider);
-        return {
-          resolvedProvider: providerConfig.name,
-          resolvedModel: model ?? providerConfig.defaultModel!,
-        };
-      })();
+  const { provider: resolvedProvider, model: resolvedModel } = params.llm
+    ? { provider: provider ?? env.defaultProvider, model: model ?? '' }
+    : resolveTurnModel(provider, model);
 
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
@@ -358,15 +351,12 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     // No systemPrompt: this pipeline runs 4 distinct prompts (summarize/
     // classify/extract/merge) within one trace, none of which is "a system
     // prompt" in the buildSystemPrompt() sense — see TraceRecordSchema's
-    // comment. Left null rather than forcing an ill-fitting single value.
+    // comment. Left unset rather than forcing an ill-fitting single value.
   });
   setAfterAgentState(threadId, { status: 'running' });
-  const handler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    env.observability.spanOutputPreviewChars,
-  );
+  const handler = turnObs.obsHandler;
 
+  let traceError: string | null = null;
   try {
     const llm = params.llm ?? createProvider(provider, model);
     const state = threadState.get(threadId) ?? { rollingSummary: '' };
@@ -556,9 +546,8 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
     logger.error('after-agent: pipeline error', { threadId, err: serializeError(err) });
     setAfterAgentDone(threadId, 'error');
     // Never throw — this must not surface back into the afterAgent hook.
+    traceError = err instanceof Error ? err.message : String(err);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: handler.totalInputTokens + handler.totalOutputTokens,
-    });
+    await turnObs.end(traceError);
   }
 }

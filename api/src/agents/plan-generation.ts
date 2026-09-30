@@ -1,8 +1,6 @@
 import { createAgent } from 'langchain';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { env } from '../config/env.js';
-import { getObservabilityStore } from '../services/observability.js';
-import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { wikiReadPageTool } from './tools/wiki-read-page.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import type { PlanStep, Workspace } from '../services/workspace-store.js';
@@ -183,34 +181,26 @@ export async function runPathA(
   provider: string | undefined,
   modelName: string | undefined,
 ): Promise<string> {
-  const obsStore = getObservabilityStore();
-  const traceId = obsStore.startTrace({
-    provider: provider ?? env.defaultProvider,
-    model: modelName ?? '',
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    provider,
+    modelName,
+  );
+  const turnObs = startTurnObservability({
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'generate-plan',
     systemPrompt: prompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    obsStore,
-    env.observability.spanOutputPreviewChars,
-  );
 
+  let error: string | null = null;
   try {
-    const response = await model.invoke(prompt, { callbacks: [obsHandler] });
-    // A bare model.invoke() (no chain/graph wrapping it) never fires
-    // handleChainEnd on its own — same gotcha generateTitleHandler documents.
-    await obsHandler.handleChainEnd();
-    obsStore.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
+    const response = await model.invoke(prompt, { callbacks: [turnObs.obsHandler] });
     return typeof response.content === 'string' ? response.content : String(response.content ?? '');
   } catch (err) {
-    await obsHandler.handleChainEnd();
-    obsStore.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
+    error = err instanceof Error ? err.message : String(err);
     throw err;
+  } finally {
+    await turnObs.end(error);
   }
 }
 
@@ -224,18 +214,16 @@ export async function runPathB(
   provider: string | undefined,
   modelName: string | undefined,
 ): Promise<string> {
-  const obsStore = getObservabilityStore();
-  const traceId = obsStore.startTrace({
-    provider: provider ?? env.defaultProvider,
-    model: modelName ?? '',
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    provider,
+    modelName,
+  );
+  const turnObs = startTurnObservability({
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'generate-plan',
     systemPrompt: PLAN_GENERATION_SYSTEM_PROMPT,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    obsStore,
-    env.observability.spanOutputPreviewChars,
-  );
 
   const planAgent = createAgent({
     model,
@@ -243,25 +231,21 @@ export async function runPathB(
     systemPrompt: PLAN_GENERATION_SYSTEM_PROMPT,
   });
 
+  let error: string | null = null;
   try {
     const result = await planAgent.invoke(
       { messages: [{ role: 'human', content: humanMessage }] },
-      { callbacks: [obsHandler] },
+      { callbacks: [turnObs.obsHandler] },
     );
-    await obsHandler.handleChainEnd();
-    obsStore.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
 
     const messages = (result as { messages: Array<{ content: unknown }> }).messages;
     const last = messages[messages.length - 1];
     const content = last?.content;
     return typeof content === 'string' ? content : String(content ?? '');
   } catch (err) {
-    await obsHandler.handleChainEnd();
-    obsStore.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
+    error = err instanceof Error ? err.message : String(err);
     throw err;
+  } finally {
+    await turnObs.end(error);
   }
 }

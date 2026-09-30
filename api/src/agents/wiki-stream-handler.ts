@@ -15,9 +15,8 @@ import {
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
-import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
-import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import {
   recordUserMessage,
   recordAssistantStart,
@@ -49,8 +48,7 @@ export async function streamWikiChatToSse(
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
   const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = model ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -59,20 +57,13 @@ export async function streamWikiChatToSse(
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'wiki');
   const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const assistantSeq = recordAssistantStart(
     threadStore,
@@ -92,17 +83,16 @@ export async function streamWikiChatToSse(
   try {
     const eventStream = agent.streamEvents(
       { messages: [{ role: 'human', content }] },
-      {
+      turnObs.attach({
         ...config,
         version: 'v2',
-        callbacks: [obsHandler],
         context: {
           provider: provider ?? env.defaultProvider,
           model,
         },
         recursionLimit: env.agent?.recursionLimit ?? 100,
         signal: controller.signal,
-      },
+      }),
     );
 
     const {
@@ -134,7 +124,7 @@ export async function streamWikiChatToSse(
       turnSentAt,
       assistantSeq,
       userSeq,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -194,10 +184,7 @@ export async function streamWikiChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }
@@ -215,8 +202,7 @@ export async function resumeWikiChatToSse(
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
   const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = model ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
@@ -224,20 +210,13 @@ export async function resumeWikiChatToSse(
 
   resolveHitlPrompt(threadStore, threadId, promptId, answer);
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const assistantSeq = recordAssistantStart(
     threadStore,
@@ -255,17 +234,19 @@ export async function resumeWikiChatToSse(
   setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
-    const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-      ...config,
-      version: 'v2',
-      callbacks: [obsHandler],
-      context: {
-        provider: provider ?? env.defaultProvider,
-        model,
-      },
-      recursionLimit: env.agent?.recursionLimit ?? 100,
-      signal: controller.signal,
-    });
+    const eventStream = agent.streamEvents(
+      new Command({ resume: answer }),
+      turnObs.attach({
+        ...config,
+        version: 'v2',
+        context: {
+          provider: provider ?? env.defaultProvider,
+          model,
+        },
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        signal: controller.signal,
+      }),
+    );
 
     const {
       content: finalContent,
@@ -296,7 +277,7 @@ export async function resumeWikiChatToSse(
       turnSentAt,
       assistantSeq,
       null,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -356,10 +337,7 @@ export async function resumeWikiChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }
@@ -375,8 +353,7 @@ export async function retryWikiChatToSse(
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
   const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = model ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(provider, model);
   const config = { configurable: { thread_id: threadId } };
   const threadStore = getThreadStore();
 
@@ -397,20 +374,13 @@ export async function retryWikiChatToSse(
     resolvedModel,
   );
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'wiki-ingestion',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const sink: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -419,17 +389,19 @@ export async function retryWikiChatToSse(
   setActiveSseWriter(threadId, sink, controller);
   let turnError: string | null = null;
   try {
-    const eventStream = agent.streamEvents(null, {
-      ...config,
-      version: 'v2',
-      callbacks: [obsHandler],
-      context: {
-        provider: provider ?? env.defaultProvider,
-        model,
-      },
-      recursionLimit: env.agent?.recursionLimit ?? 100,
-      signal: controller.signal,
-    });
+    const eventStream = agent.streamEvents(
+      null,
+      turnObs.attach({
+        ...config,
+        version: 'v2',
+        context: {
+          provider: provider ?? env.defaultProvider,
+          model,
+        },
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        signal: controller.signal,
+      }),
+    );
 
     const {
       content: finalContent,
@@ -460,7 +432,7 @@ export async function retryWikiChatToSse(
       turnSentAt,
       assistantSeq,
       null,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -520,10 +492,7 @@ export async function retryWikiChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }

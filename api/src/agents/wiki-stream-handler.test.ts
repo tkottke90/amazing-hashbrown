@@ -8,7 +8,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { configManager } from '../config/env.js';
 import { bootThreadStore, getThreadStore } from '../services/thread-store.js';
-import { bootObservability } from '../services/observability.js';
+import { bootObservability, getObservabilityStore } from '../services/observability.js';
 import {
   clearActiveSseWriter,
   getActiveSseWriter,
@@ -285,5 +285,113 @@ describe('agents/wiki-stream-handler — abort handling', () => {
     );
     expect(err.category).to.equal('cancelled');
     expect(getActiveSseWriter(threadId)).to.equal(undefined);
+  });
+
+  // Issue #207/#219: migrating these handlers onto the shared
+  // turn-observability helper's attach() adds trace_id merging that this
+  // file never had before (unlike workspace-chat-stream-handler.ts, which
+  // already merged it manually) — model-input-snapshot.middleware.ts can
+  // only record a turn's bound tools if the agent call carries the id of
+  // the trace that turn opened. The fake agent records the streamEvents
+  // options, then fails the turn so no real model runs.
+  describe('trace_id plumbing', () => {
+    function fakeCapturingAgent() {
+      const captured: { configurable?: Record<string, unknown> }[] = [];
+      const agent = {
+        streamEvents: (
+          _input: unknown,
+          options: { configurable?: Record<string, unknown> },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ): AsyncIterable<any> => {
+          captured.push(options);
+          async function* gen() {
+            yield* [];
+            throw new Error('simulated stream failure');
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+      };
+      return { agent, captured };
+    }
+
+    function expectTraceIdPassed(captured: { configurable?: Record<string, unknown> }[]) {
+      const traces = getObservabilityStore().find({ threadId });
+      expect(traces, 'the turn should open exactly one trace').to.have.length(1);
+      expect(captured).to.have.length(1);
+      expect(
+        captured[0].configurable?.trace_id,
+        'agent must receive the id of the trace this turn opened',
+      ).to.equal(traces[0].traceId);
+      expect(captured[0].configurable?.thread_id, 'thread_id must be preserved').to.equal(threadId);
+    }
+
+    it('streamWikiChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        streamWikiChatToSse(
+          fakeRes().res,
+          threadId,
+          'hello',
+          Date.now(),
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
+
+    it('resumeWikiChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'wiki');
+      recordAssistantStart(getThreadStore(), threadId, randomUUID(), new Date().toISOString());
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        resumeWikiChatToSse(
+          fakeRes().res,
+          threadId,
+          'no-such-prompt',
+          'yes',
+          Date.now(),
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
+
+    it('retryWikiChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
+      getThreadStore().upsertThreadOnFirstMessage(threadId, 'hello', 'wiki');
+      const failedId = randomUUID();
+      recordAssistantStart(getThreadStore(), threadId, failedId, new Date().toISOString());
+      getThreadStore().updateMessage(threadId, failedId, {
+        status: 'error',
+        payload: { content: '' },
+      });
+      const { agent, captured } = fakeCapturingAgent();
+
+      await expectClassifiedTurnError(
+        retryWikiChatToSse(
+          fakeRes().res,
+          threadId,
+          Date.now(),
+          undefined,
+          undefined,
+          depsFor(agent),
+        ),
+      );
+
+      expectTraceIdPassed(captured);
+    });
   });
 });

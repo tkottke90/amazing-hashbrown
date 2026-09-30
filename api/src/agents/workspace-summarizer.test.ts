@@ -12,6 +12,7 @@ import { FakeListChatModel } from '@langchain/core/utils/testing';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
 import { logger } from '../config/logger.js';
+import { configManager } from '../config/env.js';
 import { ThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootObservability } from '../services/observability.js';
@@ -102,12 +103,28 @@ describe('agents/workspace-summarizer', () => {
       tools: [],
       checkpointer,
     });
+
+    // maybeSummarizeWorkspace now resolves the trace's provider/model
+    // through resolveTurnModel() (#219), which calls resolveProviderConfig()
+    // even though `model` here is always a directly-injected fake — a real
+    // caller always has a real provider configured already.
+    configManager.set('providers', [
+      {
+        name: 'local',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-summary-model',
+      },
+    ]);
+    configManager.set('defaultProvider', 'local');
   });
 
   after(() => {
     threadStore.close();
     checkpointDb.close();
     rmSync(dir, { recursive: true, force: true });
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
   });
 
   beforeEach(() => {
