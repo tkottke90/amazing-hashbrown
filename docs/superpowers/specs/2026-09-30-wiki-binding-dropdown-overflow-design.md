@@ -47,9 +47,7 @@ directly in the issue's developer notes):
 ```tsx
 <SelectItem key={d.id} value={d.id}>
   <div className="font-mono text-sm font-semibold">{d.id}</div>
-  <div className="text-xs text-muted-foreground max-w-[70ch] line-clamp-2">
-    {d.domain}
-  </div>
+  <div className="text-xs text-muted-foreground max-w-[70ch] line-clamp-2">{d.domain}</div>
 </SelectItem>
 ```
 
