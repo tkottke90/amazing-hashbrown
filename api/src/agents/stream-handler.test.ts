@@ -784,6 +784,7 @@ describe('agents/stream-handler', () => {
       );
 
       expect(result?.interrupted).to.equal(false);
+      expect(result?.reason).to.equal('no_interrupt_in_state');
       const assistantRow = store
         .getThreadMessages('t1')
         .find((m) => m.id === 'seg-2' && m.kind === 'assistant');
@@ -813,6 +814,8 @@ describe('agents/stream-handler', () => {
       );
 
       expect(result?.interrupted).to.equal(false);
+      expect(result?.reason).to.equal('persist_failed');
+      expect(result?.detail).to.be.a('string').and.not.equal('');
       const emitted = events();
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);

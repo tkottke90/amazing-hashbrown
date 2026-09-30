@@ -348,6 +348,18 @@ interface AgentWithGraph {
 // recovers an interrupt LangGraph left parked in checkpoint state after
 // pipeEvents throws instead of completing normally — see that file's own
 // comment on why a thrown interrupt needs the same handling as a returned one.
+// Why a HITL prompt failed to reach a real waiting_on_user state — surfaced
+// all the way up through recoverThrownInterrupt to task-execution.ts, which
+// puts it in the task's queue summary (and hence the Kanban board's
+// reason.summary) instead of one generic string for two different causes.
+export type HitlDispatchFailureReason = 'no_interrupt_in_state' | 'persist_failed';
+
+export interface HitlDispatchResult {
+  interrupted: boolean;
+  reason?: HitlDispatchFailureReason;
+  detail?: string;
+}
+
 export function dispatchHitlPrompt(
   sink: SseWriter,
   threadStore: ThreadStore,
@@ -359,7 +371,7 @@ export function dispatchHitlPrompt(
   assistantSeq: number | null,
   userSeq: number | null,
   taskId?: string,
-): { interrupted: boolean } {
+): HitlDispatchResult {
   const interruptValue = interrupt.value as Record<string, unknown>;
   const promptId = randomUUID();
 
@@ -463,7 +475,7 @@ export function dispatchHitlPrompt(
     // The interrupt could not be durably recorded, so there is no prompt
     // for the user to ever answer — a caller must treat this as a plain
     // failure, not a real waiting_on_user state.
-    return { interrupted: false };
+    return { interrupted: false, reason: 'persist_failed', detail: errorMessageOf(err) };
   }
   return { interrupted: true };
 }
@@ -492,7 +504,7 @@ export async function recoverThrownInterrupt(
   assistantSeq: number | null,
   userSeq: number | null,
   taskId?: string,
-): Promise<{ interrupted: boolean } | null> {
+): Promise<HitlDispatchResult | null> {
   if ((err as Error)?.name !== 'GraphInterrupt') return null;
 
   const partialState = extractPartialAssistantState(err, msgId);
@@ -510,7 +522,14 @@ export async function recoverThrownInterrupt(
   const interrupt = state.tasks?.[0]?.interrupts?.[0];
   if (!interrupt) {
     // Name matched but checkpoint has no interrupt — safety net, not the
-    // expected path.
+    // expected path. Logged (unlike a normal handled case) because this
+    // means LangGraph's own checkpoint write of the interrupt wasn't
+    // visible to this immediate read-back — worth knowing about, not just
+    // silently falling through to a generic failure.
+    logger.error('recoverThrownInterrupt: no interrupt found in checkpoint state after GraphInterrupt', {
+      threadId,
+      tasks: state.tasks,
+    });
     failAssistant(
       threadStore,
       threadId,
@@ -521,7 +540,7 @@ export async function recoverThrownInterrupt(
       'Lost the approval prompt after an interrupt.',
       'unknown',
     );
-    return { interrupted: false };
+    return { interrupted: false, reason: 'no_interrupt_in_state' };
   }
 
   return dispatchHitlPrompt(
