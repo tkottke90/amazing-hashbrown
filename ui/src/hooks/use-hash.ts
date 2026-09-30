@@ -1,5 +1,5 @@
-import { useSignal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 
 function readHash() {
   return window.location.hash.slice(1);
@@ -11,7 +11,9 @@ export function useUrlHash() {
   useEffect(() => {
     const eventListener = new AbortController();
 
-    window.addEventListener('hashchange', () => hash.value = readHash(), { signal: eventListener.signal });
+    window.addEventListener('hashchange', () => (hash.value = readHash()), {
+      signal: eventListener.signal,
+    });
 
     return () => eventListener.abort();
   }, []);
@@ -20,7 +22,7 @@ export function useUrlHash() {
 }
 
 export function setHash(newHash: string) {
-  window.location.hash = newHash
+  window.location.hash = newHash;
 }
 
 // Updates the URL hash without adding a browser history entry — for

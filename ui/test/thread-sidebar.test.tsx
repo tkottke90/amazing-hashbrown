@@ -13,7 +13,10 @@ function makeThread(id: string): ThreadSummary {
     forkedFromSeq: null,
     type: 'chat',
     afterAgentState: { status: 'idle' },
-    links: { self: `/api/v1/threads/${id}`, afterAgentStatus: `/api/v1/threads/${id}/after-agent-status` },
+    links: {
+      self: `/api/v1/threads/${id}`,
+      afterAgentStatus: `/api/v1/threads/${id}/after-agent-status`,
+    },
     provider: null,
     model: null,
   };

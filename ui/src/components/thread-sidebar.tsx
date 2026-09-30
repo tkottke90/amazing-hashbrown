@@ -283,7 +283,7 @@ export function ThreadSidebar() {
   const { url, route } = useLocation();
   const inboxCount = useSignal(0);
   const isMobile = useIsMobileViewport();
-  
+
   const mobileThreadCount = useSignal(4);
   const threadContainer = useRef<HTMLDivElement>(null);
 
@@ -292,7 +292,7 @@ export function ThreadSidebar() {
 
     const { height } = threadContainer.current.getBoundingClientRect();
 
-    mobileThreadCount.value = Math.floor((height - 54) / 54)
+    mobileThreadCount.value = Math.floor((height - 54) / 54);
   }, [threadContainer]);
 
   useEffect(() => {

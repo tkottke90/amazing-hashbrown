@@ -30,10 +30,7 @@ describe('WorkspaceSheet', () => {
     render(<WorkspaceSheet workspaceId="ws-1" />);
 
     expect(screen.getByRole('link', { name: /files/i })).toHaveAttribute('data-active', 'true');
-    expect(screen.getByRole('link', { name: /overview/i })).toHaveAttribute(
-      'data-active',
-      'false',
-    );
+    expect(screen.getByRole('link', { name: /overview/i })).toHaveAttribute('data-active', 'false');
   });
 
   it('shows the attention dot on Tasks when a task needing the user belongs to this workspace [unit]', () => {
@@ -44,7 +41,7 @@ describe('WorkspaceSheet', () => {
     expect(screen.getByTestId('tab-strip-attention-dot')).toBeInTheDocument();
   });
 
-  it('does not show the attention dot for a different workspace\'s attention task [unit]', () => {
+  it("does not show the attention dot for a different workspace's attention task [unit]", () => {
     tasks.value = [boardTask({ id: 't-1', workspaceId: 'ws-other' }, { lane: 'attention' })];
 
     render(<WorkspaceSheet workspaceId="ws-1" />);

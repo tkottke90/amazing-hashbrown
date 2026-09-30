@@ -29,8 +29,8 @@ export interface NavProps {
 }
 
 interface LayoutProps extends NavProps {
-  children: ComponentChildren,
-  
+  children: ComponentChildren;
+
   /**
    * Hide the bottom app bar
    */
@@ -40,15 +40,10 @@ interface LayoutProps extends NavProps {
    * Provide a custom Bottom App Bar which will be used in place
    * of the default one
    */
-  MobileAside?: ComponentType<NavProps>
+  MobileAside?: ComponentType<NavProps>;
 }
 
-export function Layout({
-  children,
-  MobileAside,
-  hideBottomBar,
-  ...sharedProps
-}: LayoutProps) {
+export function Layout({ children, MobileAside, hideBottomBar, ...sharedProps }: LayoutProps) {
   return (
     <div className="flex size-full flex-col overflow-hidden lg:flex-row">
       <aside
@@ -64,7 +59,8 @@ export function Layout({
         </div>
       </main>
 
-      {!hideBottomBar && ( MobileAside ? <MobileAside {...sharedProps} /> : <DefaultSheet {...sharedProps} /> )}
+      {!hideBottomBar &&
+        (MobileAside ? <MobileAside {...sharedProps} /> : <DefaultSheet {...sharedProps} />)}
     </div>
   );
 }
@@ -122,5 +118,5 @@ export function BabSheetContent({ children }: BaseProps) {
       </SheetHeader>
       <div className="overflow-y-auto px-4 h-full pb-4">{children ?? <ThreadSidebar />}</div>
     </SheetContent>
-  )
+  );
 }

@@ -1,12 +1,12 @@
-import { useComputed } from "@preact/signals";
+import { useComputed } from '@preact/signals';
 
-import { BabSheetContent, NavProps } from "@/components/layout";
-import { buttonVariants, Button } from "@/components/ui/button";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
-import { useUrlHash } from "@/hooks/use-hash";
-import { useNewThreadAction } from "@/hooks/use-thread";
-import { tasks } from "@/hooks/use-tasks";
-import { Menu, Plus, MessagesSquare, FolderCode, ListTodo, LayoutDashboard } from "lucide-preact";
+import { BabSheetContent, NavProps } from '@/components/layout';
+import { buttonVariants, Button } from '@/components/ui/button';
+import { Sheet, SheetTrigger } from '@/components/ui/sheet';
+import { useUrlHash } from '@/hooks/use-hash';
+import { useNewThreadAction } from '@/hooks/use-thread';
+import { tasks } from '@/hooks/use-tasks';
+import { Menu, Plus, MessagesSquare, FolderCode, ListTodo, LayoutDashboard } from 'lucide-preact';
 
 export function WorkspaceSheet({
   navStart,
@@ -29,13 +29,19 @@ export function WorkspaceSheet({
         className="fixed flex-col
          inset-x-0 bottom-0 z-40 flex items-start justify-between border-t border-border bg-background px-4 pt-4 lg:hidden"
       >
-        <div className="p-2 flex gap-2
+        <div
+          className="p-2 flex gap-2
         bg-card rounded w-full
         *:flex *:flex-1 *:flex-col *:px-2 *:py-2 *:rounded-lg *:items-center *:data-active:text-primary-foreground *:data-active:bg-primary *:data-active:font-semibold *:data-active:stroke-2 *:text-sm
-        ">
-          <a data-active={hash.value === 'overview'} href="#overview" ><LayoutDashboard className="size-[1em]" />&nbsp;Overview</a>
+        "
+        >
+          <a data-active={hash.value === 'overview'} href="#overview">
+            <LayoutDashboard className="size-[1em]" />
+            &nbsp;Overview
+          </a>
           <a data-active={hash.value === 'tasks'} href="#tasks" className="relative">
-            <ListTodo className="size-[1em]" />&nbsp;Tasks
+            <ListTodo className="size-[1em]" />
+            &nbsp;Tasks
             {hasAttention.value && (
               <span
                 data-testid="tab-strip-attention-dot"
@@ -43,8 +49,14 @@ export function WorkspaceSheet({
               />
             )}
           </a>
-          <a data-active={hash.value === 'files'} href="#files" ><FolderCode className="size-[1em]" />&nbsp;Files</a>
-          <a data-active={hash.value === 'chat'} href="#chat" ><MessagesSquare className="size-[1em]" />&nbsp;Chat</a>
+          <a data-active={hash.value === 'files'} href="#files">
+            <FolderCode className="size-[1em]" />
+            &nbsp;Files
+          </a>
+          <a data-active={hash.value === 'chat'} href="#chat">
+            <MessagesSquare className="size-[1em]" />
+            &nbsp;Chat
+          </a>
         </div>
         <div className="flex justify-evenly w-full py-2">
           <div className="flex flex-1 items-center gap-1">

@@ -7,9 +7,7 @@ describe('truncateStart', () => {
   });
 
   it('truncates from the start, keeping the trailing characters, once over the max length', () => {
-    expect(truncateStart('/app/config/projects/infisical-setup')).toBe(
-      '...ects/infisical-setup',
-    );
+    expect(truncateStart('/app/config/projects/infisical-setup')).toBe('...ects/infisical-setup');
   });
 
   it('respects a custom maxLength', () => {
