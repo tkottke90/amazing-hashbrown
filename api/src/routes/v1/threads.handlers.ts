@@ -18,11 +18,10 @@ import {
 } from '../../agents/tool-config.js';
 import type { ToolEntry } from '../../config/env.js';
 import { forkThreadCheckpoints } from '../../agents/thread-fork.js';
-import { ObservabilityCallbackHandler } from '../../agents/observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from '../../agents/turn-observability.js';
 import { getObservabilityStore } from '../../services/observability.js';
 import { buildThreadReport, renderThreadReportHtml } from '@tkottke90/thread-reports';
 import { getAfterAgentState, type AfterAgentState } from '../../agents/after-agent.js';
-import { env } from '../../config/env.js';
 
 // The client-facing shape (ui/src/types/thread-message.ts's ThreadMessage
 // union): id/kind/seq/status live as their own DB columns in
@@ -259,11 +258,14 @@ export async function generateTitleHandler(
 
   const prompt = `${TITLE_PROMPT_PREFIX}${truncated}`;
 
-  const obsStore = getObservabilityStore();
-  const traceId = obsStore.startTrace({
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    provider,
+    modelName,
+  );
+  const turnObs = startTurnObservability({
     threadId,
-    provider: provider ?? env.defaultProvider,
-    model: modelName ?? '',
+    provider: resolvedProvider,
+    model: resolvedModel,
     source: 'generate-title',
     // No separate system message for this source — `prompt` above is the
     // entire input passed to model.invoke(). Stored as systemPrompt for
@@ -272,34 +274,19 @@ export async function generateTitleHandler(
     // "the effective prompt," not "the system message."
     systemPrompt: prompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    obsStore,
-    env.observability.spanOutputPreviewChars,
-  );
 
   let responseContent: unknown;
+  let traceError: string | null = null;
   try {
-    const response = await model.invoke(prompt, { callbacks: [obsHandler] });
+    const response = await model.invoke(prompt, { callbacks: [turnObs.obsHandler] });
     responseContent = response.content;
   } catch (err) {
-    // A bare model.invoke() (no chain/graph wrapping it) never fires
-    // handleChainEnd on its own — confirmed empirically, see the design
-    // doc's "ObservabilityCallbackHandler integration" note — so the span
-    // buffered by handleLLMStart/End would otherwise never be saved.
-    await obsHandler.handleChainEnd();
-    obsStore.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-    });
-    return serverError(
-      `Title generation failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    traceError = err instanceof Error ? err.message : String(err);
+    await turnObs.end(traceError);
+    return serverError(`Title generation failed: ${traceError}`);
   }
 
-  await obsHandler.handleChainEnd();
-  obsStore.endTrace(traceId, {
-    totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-  });
+  await turnObs.end(traceError);
 
   const rawTitle =
     typeof responseContent === 'string' ? responseContent : String(responseContent ?? '');

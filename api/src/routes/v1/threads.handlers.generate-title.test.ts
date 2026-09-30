@@ -9,6 +9,7 @@ import { FakeListChatModel } from '@langchain/core/utils/testing';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ThreadStore } from '../../services/thread-store.js';
 import { bootObservability, getObservabilityStore } from '../../services/observability.js';
+import { configManager } from '../../config/env.js';
 import { generateTitleHandler } from './threads.handlers.js';
 
 // A fake model that always throws — the mocked "provider is unreachable"
@@ -40,10 +41,26 @@ describe('routes/v1/threads.handlers — generateTitleHandler', () => {
     const obsDb = openDatabase(join(dir, 'observability.db'));
     bootObservability(obsDb);
     obsStore = getObservabilityStore();
+
+    // generateTitleHandler now resolves the trace's provider/model through
+    // resolveTurnModel() (#219), which calls resolveProviderConfig() even
+    // though `model` here is always a directly-injected fake — a real
+    // caller always has a real provider configured already.
+    configManager.set('providers', [
+      {
+        name: 'local',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-title-model',
+      },
+    ]);
+    configManager.set('defaultProvider', 'local');
   });
   after(() => {
     store.close();
     rmSync(dir, { recursive: true });
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
   });
 
   it('returns 404 for an unknown thread', async () => {
