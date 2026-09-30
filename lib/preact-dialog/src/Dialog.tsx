@@ -138,7 +138,20 @@ export function Dialog({
           converts `_` to a space, so it compiles to `dialog[open] &` —
           "this element, when a `dialog[open]` ancestor exists."
         */}
-        <div className={`flex flex-col flex-1 min-h-0 ${contentClassName ?? ''}`}>
+        {/*
+          flex-auto (flex-basis: auto), not flex-1 (flex-basis: 0%): when the
+          <dialog> itself has no definite height (BottomSheet — only a
+          max-height cap, sized from content otherwise), a flex-basis: 0
+          child doesn't report its actual content size back to the ancestor
+          that's trying to size itself from content — WebKit collapses the
+          auto-height <dialog> down to roughly just this wrapper's shrink-0
+          header. flex-auto still fills all available space in a
+          definite-height dialog (Drawer's h-dvh, Modal being non-flex) the
+          same way flex-1 did, since a sole flex-grow:1 item absorbs
+          whatever space is left either way — it only changes behavior for
+          the auto-height case, where it's the fix.
+        */}
+        <div className={`flex flex-col flex-auto min-h-0 ${contentClassName ?? ''}`}>
           <div className={`flex items-center shrink-0 ${headerClassName ?? ''}`}>
             <h2 className="grow">{title}</h2>
             {!disableClose && (

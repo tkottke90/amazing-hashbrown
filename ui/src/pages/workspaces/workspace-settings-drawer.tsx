@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { patchWorkspace } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
+import { truncateStart } from '@/lib/utils';
 
 interface WorkspaceSettingsDrawerProps {
   workspace: Workspace;
@@ -15,7 +16,7 @@ export function WorkspaceSettingsDrawer({ workspace, onSaved }: WorkspaceSetting
   return (
     <Drawer
       title="Workspace settings"
-      className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
+      className="p-0! bg-background! rounded-none! border-0! border-l border-border"
       trigger={
         <Button size="sm" variant="outline">
           Edit
@@ -121,7 +122,9 @@ function WorkspaceSettingsForm({ workspace, onSaved }: WorkspaceSettingsFormProp
           <div class="flex flex-col gap-2 text-sm">
             <div class="flex justify-between">
               <span class="text-muted-foreground">Location</span>
-              <code class="text-xs bg-muted px-1.5 py-0.5 rounded">{workspace.location}</code>
+              <code class="text-xs bg-muted px-1.5 py-0.5 rounded" title={workspace.location}>
+                {truncateStart(workspace.location)}
+              </code>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">JavaScript</span>

@@ -17,6 +17,14 @@ export function slugify(input: string, maxLength = 60): string {
     .replace(/-+$/g, '');
 }
 
+// Truncates from the start instead of the end, so a long path keeps its
+// most identifying part (the innermost directory) visible rather than its
+// shared, less useful root.
+export function truncateStart(input: string, maxLength = 20): string {
+  if (input.length <= maxLength) return input;
+  return `...${input.slice(-maxLength)}`;
+}
+
 // crypto.randomUUID() only exists in secure contexts (HTTPS or localhost) —
 // it's undefined when this app is served over plain http:// to a LAN IP.
 // crypto.getRandomValues() has no such restriction, so build a UUID v4 from

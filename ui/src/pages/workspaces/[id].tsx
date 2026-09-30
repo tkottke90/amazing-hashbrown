@@ -12,13 +12,12 @@ import { WorkspaceMobileHeader } from '@/pages/workspaces/workspace-mobile-heade
 import { WorkspaceDetailsSheet } from '@/pages/workspaces/workspace-details-sheet';
 import { WorkspaceActionsSheet } from '@/pages/workspaces/workspace-actions-sheet';
 import {
-  WorkspaceTabStrip,
+  DETAIL_TABS,
   DETAIL_TAB_TITLE_SUFFIX,
   type DetailTab,
 } from '@/pages/workspaces/workspace-tab-strip';
 import {
   workspaces,
-  projects,
   refreshWorkspaces,
   deleteWorkspace,
   closeProject,
@@ -29,11 +28,13 @@ import { useIsDesktopViewport } from '@/hooks/use-media-query';
 import { TaskBoard } from '@/pages/workspaces/task-board/task-board';
 import { TaskListMobile, QuickAddSheet } from '@/pages/workspaces/task-board/task-list-mobile';
 import { useTitle } from '@/hooks/use-title';
-import { cn } from '@/lib/utils';
+import { cn, truncateStart } from '@/lib/utils';
 import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
 import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
 import { showToast } from '@/lib/toast';
 import { buildDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
+import { WorkspaceSheet } from './workspace.sheet';
+import { setHash, replaceHash, useUrlHash } from '@/hooks/use-hash';
 
 function OverviewTab({
   workspace,
@@ -152,8 +153,19 @@ function TasksTab({
 export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   const { route } = useLocation();
   const { setPageTitle } = useTitle();
-  const tab = useSignal<DetailTab>('overview');
+  const hash = useUrlHash();
+
+  // The URL hash is the source of truth for the active tab — this is what
+  // makes deep links and the browser back/forward buttons work across tabs.
+  // Tab changes navigate via setHash(); nothing assigns to tab directly.
+  const tab = useComputed<DetailTab>(() =>
+    (DETAIL_TABS as string[]).includes(hash.value) ? (hash.value as DetailTab) : 'overview',
+  );
   const desktop = useIsDesktopViewport();
+
+  useEffect(() => {
+    if (!hash.value) replaceHash('overview');
+  }, [hash.value]);
 
   // Mobile-only chrome state (below `lg`) — see the workspace mobile detail
   // redesign design. Declared unconditionally (not just when !desktop) so
@@ -254,7 +266,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
 
   return (
     <Layout
-      navStart={!desktop && id ? <WorkspaceTabStrip tab={tab} workspaceId={id} /> : undefined}
+      MobileAside={(navProps) => <WorkspaceSheet {...navProps} workspaceId={ws.id} />}
       navEnd={
         !desktop ? (
           <button
@@ -334,7 +346,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             </div>
 
             <div class="flex items-center gap-3 text-xs text-muted-foreground mb-3 flex-wrap">
-              <span class="font-mono bg-muted px-1.5 py-0.5 rounded">{ws.location}</span>
+              <span class="font-mono bg-muted px-1.5 py-0.5 rounded" title={ws.location}>
+                {truncateStart(ws.location)}
+              </span>
               {ws.git && (
                 <span
                   class="flex items-center gap-1"
@@ -376,12 +390,12 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             </div>
 
             <div class="flex items-center gap-1 -mb-px">
-              {(['overview', 'tasks', 'files', 'chat'] as DetailTab[]).map((t) => (
+              {DETAIL_TABS.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => {
-                    tab.value = t;
+                    setHash(t);
                   }}
                   class={cn(
                     'px-3 py-2 text-sm capitalize border-b-2 transition-colors',
@@ -438,7 +452,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                 if (id) void refreshTasks({ workspace_id: id });
               }}
               onGoToChat={() => {
-                tab.value = 'chat';
+                setHash('chat');
               }}
               quickAddOpen={quickAddOpen}
             />

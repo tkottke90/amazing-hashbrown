@@ -37,12 +37,18 @@ function Harness({
 }
 
 describe('WorkspaceDetailsSheet', () => {
-  it('always shows the location [unit]', () => {
+  it('always shows the location, truncated from the start past 20 characters [unit]', () => {
     render(<Harness workspace={baseWorkspace()} />);
 
-    expect(screen.getByTestId('details-location')).toHaveTextContent(
-      '/app/config/projects/infisical-setup',
-    );
+    const locationEl = screen.getByTestId('details-location');
+    expect(locationEl).toHaveTextContent('...ects/infisical-setup');
+    expect(locationEl).toHaveAttribute('title', '/app/config/projects/infisical-setup');
+  });
+
+  it('shows a short location in full [unit]', () => {
+    render(<Harness workspace={baseWorkspace({ location: '/app/ws' })} />);
+
+    expect(screen.getByTestId('details-location')).toHaveTextContent('/app/ws');
   });
 
   it('omits git/wiki/language rows when the workspace has none of them [unit]', () => {

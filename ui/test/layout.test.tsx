@@ -1,7 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/preact';
 
-import { Layout } from '@/components/layout';
+import { Layout, type NavProps } from '@/components/layout';
 import { ThemeProvider } from '@/hooks/use-theme';
+
+function StubMobileAside({ addLabel, onAddClick }: NavProps) {
+  return (
+    <div data-testid="stub-mobile-aside">
+      <button onClick={onAddClick}>{addLabel ?? 'stub add'}</button>
+    </div>
+  );
+}
 
 describe('Layout', () => {
   it('renders the aside and main content', () => {
@@ -96,5 +104,39 @@ describe('Layout', () => {
     expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+  });
+
+  it('renders a custom MobileAside in place of the default bottom nav, passing the shared NavProps through', () => {
+    const onAddClick = jest.fn();
+    render(
+      <ThemeProvider>
+        <Layout
+          aside={<div>Sidebar content</div>}
+          MobileAside={StubMobileAside}
+          addLabel="Upload file"
+          onAddClick={onAddClick}
+        >
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId('stub-mobile-aside')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Bottom navigation' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload file' }));
+    expect(onAddClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits a custom MobileAside too when hideBottomBar is set', () => {
+    render(
+      <ThemeProvider>
+        <Layout aside={<div>Sidebar content</div>} MobileAside={StubMobileAside} hideBottomBar>
+          <div>Page content</div>
+        </Layout>
+      </ThemeProvider>,
+    );
+
+    expect(screen.queryByTestId('stub-mobile-aside')).not.toBeInTheDocument();
   });
 });

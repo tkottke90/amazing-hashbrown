@@ -41,6 +41,12 @@ const suite: TestSuite = {
       expectedOutcome: 'The tab strip and bottom app bar hide, then reappear on blur',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Tap a tab, then press the browser back button',
+      expectedOutcome: 'The URL hash reflects the active tab, and back restores the previous tab',
+      test: () => {},
+    },
   ],
 };
 
@@ -160,9 +166,10 @@ test.describe(
       expect(fileRes.status(), 'file created').toBe(201);
 
       await goToWorkspace(page, ws.id);
-      // Plain button role, same as the desktop tab row and the pre-existing
-      // mobile task-board suites (getByRole('button', { name: /tasks/i })).
-      await page.getByRole('button', { name: /files/i }).click();
+      // WorkspaceSheet's mobile tabs are <a href="#tab"> (role=link), not
+      // buttons like the desktop tab row — they're hash-navigable so the
+      // browser's back/forward buttons and deep links work across tabs.
+      await page.getByRole('link', { name: /files/i }).click();
       await expect(page.getByText('README.md')).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
@@ -188,16 +195,38 @@ test.describe(
       const ws = await createWorkspace(request, 'mobile-chat-focus');
 
       await goToWorkspace(page, ws.id);
-      await page.getByRole('button', { name: /chat/i }).click();
+      await page.getByRole('link', { name: /chat/i }).click();
       await pauseBeforeAction(page, testInfo);
 
-      await expect(page.getByTestId('workspace-tab-strip')).toBeVisible();
+      // The tabs and the rest of the bar are one MobileAside now (see
+      // Layout's hideBottomBar) — they hide/show together, so this checks
+      // the whole bar rather than a standalone tab-strip element.
+      const bottomBar = page.getByRole('navigation', { name: 'Bottom navigation' });
+      await expect(bottomBar).toBeVisible();
 
       await page.getByPlaceholder('Message...').click();
-      await expect(page.getByTestId('workspace-tab-strip')).not.toBeVisible();
+      await expect(bottomBar).not.toBeVisible();
 
       await page.getByPlaceholder('Message...').blur();
-      await expect(page.getByTestId('workspace-tab-strip')).toBeVisible();
+      await expect(bottomBar).toBeVisible();
+    });
+
+    test('tapping a tab updates the URL hash, and the back button returns to the previous tab', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const ws = await createWorkspace(request, 'mobile-hash-nav');
+
+      await goToWorkspace(page, ws.id);
+      await expect(page).toHaveURL(/#overview$/);
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByRole('link', { name: /tasks/i }).click();
+      await expect(page).toHaveURL(/#tasks$/);
+      await expect(page.getByTestId('task-list-mobile')).toBeVisible();
+
+      await page.goBack();
+      await expect(page).toHaveURL(/#overview$/);
     });
   },
 );

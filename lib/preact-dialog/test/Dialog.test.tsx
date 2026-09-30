@@ -113,6 +113,19 @@ describe('Dialog', () => {
     const inner = dialog.querySelector('div');
     expect(inner?.className).toContain('custom-inner');
   });
+
+  // Regression guard for the WebKit auto-height clipping fix: a flex-basis: 0
+  // (flex-1) content wrapper doesn't report its content size back to a
+  // <dialog> with no definite height (e.g. BottomSheet), so WebKit collapses
+  // it to roughly just the header. See the comment above this wrapper in
+  // Dialog.tsx for the full explanation.
+  it('sizes the content wrapper with flex-auto, not flex-1', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+
+    const inner = getDialogEl(container).querySelector('div');
+    expect(inner?.className).toContain('flex-auto');
+    expect(inner?.className).not.toMatch(/(^|\s)flex-1(\s|$)/);
+  });
 });
 
 // Coverage for the controlled `open` signal: previously declared on

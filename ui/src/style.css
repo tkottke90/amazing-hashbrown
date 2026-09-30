@@ -10,6 +10,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  /* Bottom app bar clearance — the space mobile content needs so it isn't
+     hidden behind the fixed bottom nav. Keep in sync with the bar's actual
+     footprint in layout.tsx. */
+  --spacing-bab: 10rem;
+
   --color-blue-50: #f3f2ff;
   --color-blue-100: #e9e7ff;
   --color-blue-200: #d4d2ff;
