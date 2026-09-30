@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import {
   Plus,
@@ -44,6 +44,7 @@ import {
 import { queueState, refreshQueue } from '@/hooks/use-tasks';
 import { fetchTasks } from '@/services/tasks-api';
 import { confirmNavigateAway } from '@/hooks/use-settings-guard';
+import { useIsMobileViewport } from '@/hooks/use-is-mobile-viewport';
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -265,6 +266,12 @@ function QueueWidget() {
   );
 }
 
+export function clampThreads(threads: ThreadSummary[], maxCount: number) {
+  if (maxCount <= 0) return threads;
+
+  return threads.slice(0, maxCount);
+}
+
 function guardAnchorClick(e: MouseEvent) {
   if (!confirmNavigateAway()) {
     e.preventDefault();
@@ -275,6 +282,19 @@ function guardAnchorClick(e: MouseEvent) {
 export function ThreadSidebar() {
   const { url, route } = useLocation();
   const inboxCount = useSignal(0);
+  const isMobile = useIsMobileViewport();
+  
+  const mobileThreadCount = useSignal(4);
+  const threadContainer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!threadContainer.current) return;
+
+    const { height } = threadContainer.current.getBoundingClientRect();
+
+    mobileThreadCount.value = Math.floor((height - 54) / 54)
+    console.log(mobileThreadCount.value)
+  }, [threadContainer]);
 
   useEffect(() => {
     refreshThreadList();
@@ -308,8 +328,8 @@ export function ThreadSidebar() {
         New conversation
       </Button>
 
-      <div className="flex flex-1 flex-col gap-0.5">
-        {threads.value.map((thread) => (
+      <div className="flex flex-1 flex-col gap-0.5" ref={threadContainer}>
+        {clampThreads(threads.value, isMobile ? mobileThreadCount.value : -1).map((thread) => (
           <ThreadRow
             key={thread.id}
             thread={thread}

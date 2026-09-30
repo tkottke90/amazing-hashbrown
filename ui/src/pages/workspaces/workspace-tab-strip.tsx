@@ -13,7 +13,7 @@ export const DETAIL_TAB_TITLE_SUFFIX: Record<DetailTab, string> = {
   chat: ' - Chat',
 };
 
-const TABS: DetailTab[] = ['overview', 'tasks', 'files', 'chat'];
+export const DETAIL_TABS: DetailTab[] = ['overview', 'tasks', 'files', 'chat'];
 
 // Segmented tab control for the mobile workspace detail view, docked above
 // the bottom app bar (Layout's navStart) in place of the desktop underlined
@@ -31,7 +31,7 @@ export function WorkspaceTabStrip({
 
   return (
     <div data-testid="workspace-tab-strip" class="flex items-center gap-1 overflow-x-auto">
-      {TABS.map((t) => (
+      {DETAIL_TABS.map((t) => (
         <button
           key={t}
           type="button"
