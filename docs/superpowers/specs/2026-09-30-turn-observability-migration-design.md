@@ -72,7 +72,11 @@ Each function's inline block —
 ```ts
 const store = getObservabilityStore();
 const traceId = store.startTrace({ threadId, provider, model, source, systemPrompt });
-const obsHandler = new ObservabilityCallbackHandler(traceId, store, obsConfig.spanOutputPreviewChars);
+const obsHandler = new ObservabilityCallbackHandler(
+  traceId,
+  store,
+  obsConfig.spanOutputPreviewChars,
+);
 // ... streamEvents({ ...config, configurable: { ...config.configurable, trace_id: traceId }, callbacks: [obsHandler], ... })
 // ... finalizeTurn(..., obsHandler, resolvedProvider, resolvedModel, ...)
 // finally: store.endTrace(traceId, { totalTokens: ..., error: turnError })
@@ -81,8 +85,17 @@ const obsHandler = new ObservabilityCallbackHandler(traceId, store, obsConfig.sp
 — becomes:
 
 ```ts
-const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(effectiveProvider, effectiveModel);
-const turnObs = startTurnObservability({ threadId, provider: resolvedProvider, model: resolvedModel, source, systemPrompt });
+const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+  effectiveProvider,
+  effectiveModel,
+);
+const turnObs = startTurnObservability({
+  threadId,
+  provider: resolvedProvider,
+  model: resolvedModel,
+  source,
+  systemPrompt,
+});
 // ... streamEvents(turnObs.attach({ ...config, version: 'v2', context: {...}, recursionLimit, signal }))
 // ... finalizeTurn(..., turnObs.obsHandler, resolvedProvider, resolvedModel, ...)
 // finally: await turnObs.end(turnError)
@@ -107,7 +120,12 @@ const turnObs = startTurnObservability({ threadId, provider: resolvedProvider, m
 Each currently does:
 
 ```ts
-const traceId = obsStore.startTrace({ provider: provider ?? env.defaultProvider, model: modelName ?? '', source, systemPrompt });
+const traceId = obsStore.startTrace({
+  provider: provider ?? env.defaultProvider,
+  model: modelName ?? '',
+  source,
+  systemPrompt,
+});
 const obsHandler = new ObservabilityCallbackHandler(traceId, obsStore, spanOutputPreviewChars);
 // ... model.invoke(prompt, { callbacks: [obsHandler] })
 // await obsHandler.handleChainEnd();  // model.invoke() never fires it on its own
@@ -118,7 +136,12 @@ Becomes:
 
 ```ts
 const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(provider, modelName);
-const turnObs = startTurnObservability({ provider: resolvedProvider, model: resolvedModel, source, systemPrompt });
+const turnObs = startTurnObservability({
+  provider: resolvedProvider,
+  model: resolvedModel,
+  source,
+  systemPrompt,
+});
 // ... model.invoke(prompt, { callbacks: [turnObs.obsHandler] })
 // await turnObs.end(error)   // handleChainEnd() now happens inside end() — see §3.1
 ```
