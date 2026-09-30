@@ -5,10 +5,9 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { SseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
-import { getObservabilityStore } from '../services/observability.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import type { Workspace, WorkspaceStore } from '../services/workspace-store.js';
-import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { invalidateWorkspaceChatAgent, type ChatAgent } from './chat-agent.js';
 import { writeSseEvent } from './stream-handler.js';
 import { createSummaryBoundaryMessage } from './summary-boundary.js';
@@ -79,33 +78,29 @@ export async function maybeSummarizeWorkspace(
         : transcript;
     const prompt = `${SUMMARY_PROMPT_PREFIX}${truncated}`;
 
-    const obsStore = getObservabilityStore();
-    const traceId = obsStore.startTrace({
+    const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+      provider,
+      modelName,
+    );
+    const turnObs = startTurnObservability({
       threadId: workspace.threadId,
-      provider: provider ?? env.defaultProvider,
-      model: modelName ?? '',
+      provider: resolvedProvider,
+      model: resolvedModel,
       source: 'workspace-summary',
       systemPrompt: prompt,
     });
-    const obsHandler = new ObservabilityCallbackHandler(
-      traceId,
-      obsStore,
-      env.observability.spanOutputPreviewChars,
-    );
 
     let content: string;
+    let traceError: string | null = null;
     try {
-      const response = await model.invoke(prompt, { callbacks: [obsHandler] });
+      const response = await model.invoke(prompt, { callbacks: [turnObs.obsHandler] });
       content =
         typeof response.content === 'string' ? response.content : String(response.content ?? '');
+    } catch (err) {
+      traceError = err instanceof Error ? err.message : String(err);
+      throw err;
     } finally {
-      // A bare model.invoke() (no chain/graph wrapping it) never fires
-      // handleChainEnd on its own — see generateTitleHandler's identical
-      // note — so this must run whether the call above succeeded or threw.
-      await obsHandler.handleChainEnd();
-      obsStore.endTrace(traceId, {
-        totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      });
+      await turnObs.end(traceError);
     }
 
     const timestamp = new Date().toISOString();
