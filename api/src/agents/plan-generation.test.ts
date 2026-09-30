@@ -9,6 +9,7 @@ import { AIMessage, type BaseMessage } from '@langchain/core/messages';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { ChatResult } from '@langchain/core/outputs';
 import { bootObservability, getObservabilityStore } from '../services/observability.js';
+import { configManager } from '../config/env.js';
 import type { Workspace } from '../services/workspace-store.js';
 import type { FileNode } from '../services/workspace-files.js';
 import {
@@ -231,9 +232,25 @@ describe('agents/plan-generation', () => {
     before(() => {
       dir = mkdtempSync(join(tmpdir(), 'plan-generation-test-'));
       bootObservability(openDatabase(join(dir, 'observability.db')));
+      // runPathA/runPathB now resolve the trace's provider/model through
+      // resolveTurnModel() (#219), which calls resolveProviderConfig() even
+      // though `model` here is always a directly-injected fake — a real
+      // caller (tasks.route.ts) always configures a provider first
+      // (createProvider()), so this mirrors that.
+      configManager.set('providers', [
+        {
+          name: 'local',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'default-model',
+        },
+      ]);
+      configManager.set('defaultProvider', 'local');
     });
     after(() => {
       rmSync(dir, { recursive: true, force: true });
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
     });
 
     it('runPathA returns the model response content', async () => {

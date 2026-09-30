@@ -46,7 +46,10 @@ export interface TurnObservability {
 }
 
 export interface StartTurnObservabilityParams {
-  threadId: string;
+  // Optional — matches the store's own StartTraceParams: a turn with no
+  // thread yet (e.g. plan-generation.ts, which runs before any task/thread
+  // exists) still gets a trace, just with no threadId to attribute it to.
+  threadId?: string;
   taskId?: string;
   // Already resolved — see resolveTurnModel().
   provider: string;
