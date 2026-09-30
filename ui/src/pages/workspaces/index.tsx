@@ -339,7 +339,7 @@ export function CreateWorkspaceForm() {
                       ? 'None'
                       : wikiId.value === NEW_WIKI_VALUE
                         ? 'Create new wiki…'
-                        : (wikiDomains.value.find((d) => d.id === wikiId.value)?.domain ?? 'None')}
+                        : (wikiDomains.value.find((d) => d.id === wikiId.value)?.id ?? 'None')}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -347,7 +347,12 @@ export function CreateWorkspaceForm() {
                   <SelectItem value={NEW_WIKI_VALUE}>Create new wiki…</SelectItem>
                   {wikiDomains.value.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
-                      {d.domain}
+                      <div class="flex flex-col py-0.5">
+                        <span>{d.id}</span>
+                        <span class="text-xs text-muted-foreground max-w-[70ch] line-clamp-2">
+                          {d.domain}
+                        </span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
