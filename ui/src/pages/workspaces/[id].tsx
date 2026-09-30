@@ -28,7 +28,7 @@ import { useIsDesktopViewport } from '@/hooks/use-media-query';
 import { TaskBoard } from '@/pages/workspaces/task-board/task-board';
 import { TaskListMobile, QuickAddSheet } from '@/pages/workspaces/task-board/task-list-mobile';
 import { useTitle } from '@/hooks/use-title';
-import { cn } from '@/lib/utils';
+import { cn, truncateStart } from '@/lib/utils';
 import type { Workspace, DirectoryRemovalResult } from '@/services/workspaces-api';
 import { fetchGitStatus, type GitStatus } from '@/services/workspace-git-api';
 import { showToast } from '@/lib/toast';
@@ -346,7 +346,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             </div>
 
             <div class="flex items-center gap-3 text-xs text-muted-foreground mb-3 flex-wrap">
-              <span class="font-mono bg-muted px-1.5 py-0.5 rounded">{ws.location}</span>
+              <span class="font-mono bg-muted px-1.5 py-0.5 rounded" title={ws.location}>
+                {truncateStart(ws.location)}
+              </span>
               {ws.git && (
                 <span
                   class="flex items-center gap-1"

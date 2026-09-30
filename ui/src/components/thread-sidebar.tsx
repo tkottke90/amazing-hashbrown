@@ -293,7 +293,6 @@ export function ThreadSidebar() {
     const { height } = threadContainer.current.getBoundingClientRect();
 
     mobileThreadCount.value = Math.floor((height - 54) / 54)
-    console.log(mobileThreadCount.value)
   }, [threadContainer]);
 
   useEffect(() => {
