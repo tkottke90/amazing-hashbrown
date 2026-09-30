@@ -18,13 +18,12 @@ import {
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
-import { getObservabilityStore } from '../services/observability.js';
 import { getThreadStore } from '../services/thread-store.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { getWorkspaceStore, type Workspace } from '../services/workspace-store.js';
-import { ObservabilityCallbackHandler } from './observability-handler.js';
+import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
 import {
   recordUserMessage,
@@ -165,8 +164,10 @@ export async function streamWorkspaceChatToSse(
     effectiveModel,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    effectiveProvider,
+    effectiveModel,
+  );
   const config = {
     configurable: {
       thread_id: threadId,
@@ -180,20 +181,13 @@ export async function streamWorkspaceChatToSse(
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'workspace-chat',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const assistantSeq = recordAssistantStart(
     threadStore,
@@ -219,13 +213,9 @@ export async function streamWorkspaceChatToSse(
       async () => {
         const eventStream = agent.streamEvents(
           { messages: [{ role: 'human', content }] },
-          {
+          turnObs.attach({
             ...config,
-            // trace_id lets model-input-snapshot.middleware.ts record this turn's
-            // bound tools + effective system prompt onto the trace (issue #207).
-            configurable: { ...config.configurable, trace_id: traceId },
             version: 'v2',
-            callbacks: [obsHandler],
             context: {
               provider: effectiveProvider ?? env.defaultProvider,
               model: effectiveModel,
@@ -233,7 +223,7 @@ export async function streamWorkspaceChatToSse(
             },
             recursionLimit: env.agent?.recursionLimit ?? 100,
             signal: controller.signal,
-          },
+          }),
         );
 
         return pipeEvents(
@@ -267,7 +257,7 @@ export async function streamWorkspaceChatToSse(
       turnSentAt,
       assistantSeq,
       userSeq,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -338,10 +328,7 @@ export async function streamWorkspaceChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }
@@ -388,8 +375,10 @@ export async function resumeWorkspaceChatToSse(
     effectiveModel,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    effectiveProvider,
+    effectiveModel,
+  );
   const config = {
     configurable: {
       thread_id: threadId,
@@ -413,20 +402,13 @@ export async function resumeWorkspaceChatToSse(
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'workspace-chat',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const assistantSeq = recordAssistantStart(
     threadStore,
@@ -450,21 +432,20 @@ export async function resumeWorkspaceChatToSse(
       resolvedProvider,
       'sync',
       async () => {
-        const eventStream = agent.streamEvents(new Command({ resume: answer }), {
-          ...config,
-          // trace_id lets model-input-snapshot.middleware.ts record this turn's
-          // bound tools + effective system prompt onto the trace (issue #207).
-          configurable: { ...config.configurable, trace_id: traceId },
-          version: 'v2',
-          recursionLimit: env.agent?.recursionLimit ?? 100,
-          callbacks: [obsHandler],
-          context: {
-            provider: effectiveProvider ?? env.defaultProvider,
-            model: effectiveModel,
-            afterAgentEnabled: afterAgent,
-          },
-          signal: controller.signal,
-        });
+        const eventStream = agent.streamEvents(
+          new Command({ resume: answer }),
+          turnObs.attach({
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+            signal: controller.signal,
+          }),
+        );
 
         return pipeEvents(
           sink,
@@ -497,7 +478,7 @@ export async function resumeWorkspaceChatToSse(
       turnSentAt,
       assistantSeq,
       null,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -568,10 +549,7 @@ export async function resumeWorkspaceChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }
@@ -616,8 +594,10 @@ export async function retryWorkspaceChatToSse(
     effectiveModel,
   );
   const providerConfig = resolveProviderConfig(effectiveProvider);
-  const resolvedProvider = providerConfig.name;
-  const resolvedModel = effectiveModel ?? providerConfig.defaultModel!;
+  const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(
+    effectiveProvider,
+    effectiveModel,
+  );
   const config = {
     configurable: {
       thread_id: threadId,
@@ -644,20 +624,13 @@ export async function retryWorkspaceChatToSse(
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
-  const obsConfig = env.observability;
-  const store = getObservabilityStore();
-  const traceId = store.startTrace({
+  const turnObs = startTurnObservability({
     threadId,
     provider: resolvedProvider,
     model: resolvedModel,
     source: 'workspace-chat',
     systemPrompt,
   });
-  const obsHandler = new ObservabilityCallbackHandler(
-    traceId,
-    store,
-    obsConfig.spanOutputPreviewChars,
-  );
 
   const controller = new AbortController();
   setActiveSseWriter(threadId, sink, controller);
@@ -672,21 +645,20 @@ export async function retryWorkspaceChatToSse(
       resolvedProvider,
       'sync',
       async () => {
-        const eventStream = agent.streamEvents(null, {
-          ...config,
-          // trace_id lets model-input-snapshot.middleware.ts record this turn's
-          // bound tools + effective system prompt onto the trace (issue #207).
-          configurable: { ...config.configurable, trace_id: traceId },
-          version: 'v2',
-          recursionLimit: env.agent?.recursionLimit ?? 100,
-          callbacks: [obsHandler],
-          context: {
-            provider: effectiveProvider ?? env.defaultProvider,
-            model: effectiveModel,
-            afterAgentEnabled: afterAgent,
-          },
-          signal: controller.signal,
-        });
+        const eventStream = agent.streamEvents(
+          null,
+          turnObs.attach({
+            ...config,
+            version: 'v2',
+            recursionLimit: env.agent?.recursionLimit ?? 100,
+            context: {
+              provider: effectiveProvider ?? env.defaultProvider,
+              model: effectiveModel,
+              afterAgentEnabled: afterAgent,
+            },
+            signal: controller.signal,
+          }),
+        );
 
         return pipeEvents(
           sink,
@@ -719,7 +691,7 @@ export async function retryWorkspaceChatToSse(
       turnSentAt,
       assistantSeq,
       null,
-      obsHandler,
+      turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
     );
@@ -790,10 +762,7 @@ export async function retryWorkspaceChatToSse(
     );
     throw new ClassifiedTurnError(classified.message, classified.category);
   } finally {
-    store.endTrace(traceId, {
-      totalTokens: obsHandler.totalInputTokens + obsHandler.totalOutputTokens,
-      error: turnError,
-    });
+    await turnObs.end(turnError);
     endThreadTurn(threadId);
   }
 }
