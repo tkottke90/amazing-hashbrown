@@ -260,8 +260,12 @@ describe('CreateWorkspaceForm — Wiki binding section', () => {
   });
 
   it('shows only the wiki id in the trigger after selection, never the domain description (#217)', async () => {
+    // getByText trims/collapses the DOM's text before comparing but does not
+    // normalize the matcher string, so this must already be trimmed to match.
     const longDomain =
-      'This wiki tracks every device, service, and migration note for the home lab, '.repeat(4);
+      'This wiki tracks every device, service, and migration note for the home lab, '
+        .repeat(4)
+        .trim();
     mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: longDomain, tags: [] }]);
     render(<CreateWorkspaceForm />);
     await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
@@ -274,8 +278,12 @@ describe('CreateWorkspaceForm — Wiki binding section', () => {
   });
 
   it('clamps a long domain description in the open menu instead of letting it expand the layout (#217)', async () => {
+    // getByText trims/collapses the DOM's text before comparing but does not
+    // normalize the matcher string, so this must already be trimmed to match.
     const longDomain =
-      'This wiki tracks every device, service, and migration note for the home lab, '.repeat(4);
+      'This wiki tracks every device, service, and migration note for the home lab, '
+        .repeat(4)
+        .trim();
     mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: longDomain, tags: [] }]);
     render(<CreateWorkspaceForm />);
     await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
