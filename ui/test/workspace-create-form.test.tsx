@@ -241,9 +241,9 @@ describe('CreateWorkspaceForm — Wiki binding section', () => {
     mockFetchDomains.mockResolvedValue([]);
   });
 
-  it('shows None by default and lists fetched domains by their domain field', async () => {
+  it('shows None by default and lists fetched domains by id, with the domain description shown alongside it', async () => {
     mockFetchDomains.mockResolvedValue([
-      { id: 'wiki-1', domain: 'homelab', tags: [] },
+      { id: 'wiki-1', domain: 'A homelab services domain', tags: [] },
       { id: 'wiki-2', domain: 'nas-migration', tags: [] },
     ]);
     render(<CreateWorkspaceForm />);
@@ -253,8 +253,38 @@ describe('CreateWorkspaceForm — Wiki binding section', () => {
 
     fireEvent.click(getWikiTrigger());
     const listbox = await screen.findByRole('listbox');
-    expect(within(listbox).getByText('homelab')).toBeInTheDocument();
+    expect(within(listbox).getByText('wiki-1')).toBeInTheDocument();
+    expect(within(listbox).getByText('A homelab services domain')).toBeInTheDocument();
+    expect(within(listbox).getByText('wiki-2')).toBeInTheDocument();
     expect(within(listbox).getByText('nas-migration')).toBeInTheDocument();
+  });
+
+  it('shows only the wiki id in the trigger after selection, never the domain description (#217)', async () => {
+    const longDomain =
+      'This wiki tracks every device, service, and migration note for the home lab, '.repeat(4);
+    mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: longDomain, tags: [] }]);
+    render(<CreateWorkspaceForm />);
+    await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
+
+    fireEvent.click(getWikiTrigger());
+    const listbox = await screen.findByRole('listbox');
+    fireEvent.click(within(listbox).getByText('wiki-1'));
+
+    expect(getWikiTrigger().textContent).toBe('wiki-1');
+  });
+
+  it('clamps a long domain description in the open menu instead of letting it expand the layout (#217)', async () => {
+    const longDomain =
+      'This wiki tracks every device, service, and migration note for the home lab, '.repeat(4);
+    mockFetchDomains.mockResolvedValue([{ id: 'wiki-1', domain: longDomain, tags: [] }]);
+    render(<CreateWorkspaceForm />);
+    await waitFor(() => expect(getWikiTrigger()).not.toBeDisabled());
+
+    fireEvent.click(getWikiTrigger());
+    const listbox = await screen.findByRole('listbox');
+    const description = within(listbox).getByText(longDomain);
+
+    expect(description).toHaveClass('line-clamp-2');
   });
 
   it('submits the selected domain id as wikiId in Workspace mode', async () => {
