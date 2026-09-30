@@ -143,12 +143,12 @@ describe('agents/turn-observability', () => {
       );
     });
 
-    it(`end() closes the trace with the handler's total tokens and the given error [unit]`, () => {
+    it(`end() closes the trace with the handler's total tokens and the given error [unit]`, async () => {
       const obs = start();
       obs.obsHandler.totalInputTokens = 300;
       obs.obsHandler.totalOutputTokens = 120;
 
-      obs.end('boom');
+      await obs.end('boom');
 
       const trace = getObservabilityStore().getTrace(obs.traceId)!;
       expect(trace.totalTokens).to.equal(420);
@@ -156,10 +156,10 @@ describe('agents/turn-observability', () => {
       expect(trace.endedAt, 'a closed trace has an end time').to.be.a('string');
     });
 
-    it('end() only records the first outcome, so a later cleanup call cannot erase an error [unit]', () => {
+    it('end() only records the first outcome, so a later cleanup call cannot erase an error [unit]', async () => {
       const obs = start();
-      obs.end('boom');
-      obs.end(null);
+      await obs.end('boom');
+      await obs.end(null);
 
       expect(getObservabilityStore().getTrace(obs.traceId)!.error).to.equal('boom');
     });
