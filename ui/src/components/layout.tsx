@@ -69,7 +69,14 @@ export function Layout({
   );
 }
 
-function DefaultSheet({ navStart, navEnd, aside, addLabel, onAddClick, hideAddButton }: NavProps) {
+function DefaultSheet({
+  navStart,
+  navEnd,
+  aside,
+  addLabel = 'Add',
+  onAddClick,
+  hideAddButton,
+}: NavProps) {
   const { createNewThread } = useNewThreadAction();
 
   return (

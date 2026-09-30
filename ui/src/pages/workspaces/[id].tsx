@@ -266,7 +266,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
 
   return (
     <Layout
-      MobileAside={WorkspaceSheet}
+      MobileAside={(navProps) => <WorkspaceSheet {...navProps} workspaceId={ws.id} />}
       navEnd={
         !desktop ? (
           <button

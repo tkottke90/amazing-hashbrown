@@ -90,7 +90,9 @@ async function getTask(request: APIRequestContext, id: string) {
 
 async function openTasksTab(page: Page, workspaceId: string) {
   await page.goto(`/workspaces/${workspaceId}`);
-  await page.getByRole('button', { name: /tasks/i }).click();
+  // WorkspaceSheet's mobile tabs are <a href="#tab"> (role=link), not
+  // buttons — they're hash-navigable so back/forward and deep links work.
+  await page.getByRole('link', { name: /tasks/i }).click();
   await expect(page.getByTestId('task-list-mobile')).toBeVisible();
 }
 
@@ -236,7 +238,7 @@ test.describe(
       await expect(section(page, 'finished').getByTestId('task-card')).toHaveCount(1);
 
       await page.reload();
-      await page.getByRole('button', { name: /tasks/i }).click();
+      await page.getByRole('link', { name: /tasks/i }).click();
 
       await expect(section(page, 'finished').getByTestId('task-card')).toHaveCount(1);
     });
