@@ -27,16 +27,16 @@ Later phases, each its own spec: **Phase 2** — core UI (dashboard, new-run wiz
 
 ## Decisions (and why)
 
-| #   | Decision | Rationale |
-| --- | --- | --- |
-| D1  | New **Evaluation Report** grouping entity (`eval_reports` table + nullable `report_id` on `eval_runs`). | The PR #224 pain was about treating N suite runs as one unit; a nullable FK keeps ad hoc/legacy runs (including today's CLI runs) from being forced into a report. |
-| D2  | **Mutable `eval_runs` rows** with a `status` column (`queued`/`running`/`complete`/`stopped`/`interrupted`), created upfront when a report is submitted and updated in place — mirrors the existing `task_queue` table (`workspace-store.ts:547`), not a redesign. | The live-run screen needs per-suite/per-model progress as it happens; today's insert-once-at-completion model can't back that. `task_queue` already solves this exact shape of problem in this codebase. |
-| D3  | **Third provider-queue lane** (`eval`, ahead of `sync`/chat, ahead of `async`/automation) instead of a UI lock. No preemption — an eval only claims the next *freed* slot. | Solves the real hardware-contention problem (documented: two concurrent local-model requests can turn 15s into 5min) at the request layer, where `provider-queue.ts` already gates chat/automation — without blocking a user from using an unaffected provider or an unrelated part of the app. |
-| D4  | `ProviderQueue.acquireSlot`/`withSlot` gain an optional **`label`**, and `ProviderGate` tracks active labels alongside `activeCount`. | The design mockup shows a *reason* for a wait ("Waiting for an in-flight chat turn to finish"), which today's boolean `onWaitChange` can't produce — this is the smallest addition that makes it possible. |
-| D5  | **No new SSE endpoint.** New broadcast event kinds (`eval_run_progress`, `eval_report_completed`, …) ride the existing standing app-level channel (`events.route.ts`, one connection per tab, already consumed by `ui/src/hooks/use-live-events.ts`). | The mechanism already exists for exactly this purpose; a second one would be duplicate infrastructure. |
-| D6  | **CLI/backend trigger parity via a shared service function**, not HTTP. The CLI already talks to the DB directly (`bootEvaluations` is "shared by bin scripts and the API server"); report creation logic lives once and both the new `POST /reports` route and `bin/eval` call it directly. | Evaluation Report must not be a UI-exclusive concept — `/auto-eval-pr-comment` (Phase 4) runs in CI, where nothing is ever browser-triggered. |
-| D7  | **TTFT dropped from this phase** (and not committed to any phase yet). Cost/tokens-per-second are ported from `stream-handler.ts`'s existing per-provider rate-table logic into the harness instead. | TTFT doesn't exist anywhere in this codebase — chat included — and would require switching the harness from `.invoke()` to `.stream()` with no existing precedent. Cost/tps logic already exists and is a much smaller port. |
-| D8  | **No separate "failed" run status.** `complete` means "every scenario has a result," regardless of pass/fail/error mix; a scenario-level error is its own terminal outcome, not a run-level abort. | Keeps the run state machine small and matches how a mixed pass/fail run already reads today via `pass_rate`. |
+| #   | Decision                                                                                                                                                                                                                                                                                     | Rationale                                                                                                                                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | New **Evaluation Report** grouping entity (`eval_reports` table + nullable `report_id` on `eval_runs`).                                                                                                                                                                                      | The PR #224 pain was about treating N suite runs as one unit; a nullable FK keeps ad hoc/legacy runs (including today's CLI runs) from being forced into a report.                                                                                                                              |
+| D2  | **Mutable `eval_runs` rows** with a `status` column (`queued`/`running`/`complete`/`stopped`/`interrupted`), created upfront when a report is submitted and updated in place — mirrors the existing `task_queue` table (`workspace-store.ts:547`), not a redesign.                           | The live-run screen needs per-suite/per-model progress as it happens; today's insert-once-at-completion model can't back that. `task_queue` already solves this exact shape of problem in this codebase.                                                                                        |
+| D3  | **Third provider-queue lane** (`eval`, ahead of `sync`/chat, ahead of `async`/automation) instead of a UI lock. No preemption — an eval only claims the next _freed_ slot.                                                                                                                   | Solves the real hardware-contention problem (documented: two concurrent local-model requests can turn 15s into 5min) at the request layer, where `provider-queue.ts` already gates chat/automation — without blocking a user from using an unaffected provider or an unrelated part of the app. |
+| D4  | `ProviderQueue.acquireSlot`/`withSlot` gain an optional **`label`**, and `ProviderGate` tracks active labels alongside `activeCount`.                                                                                                                                                        | The design mockup shows a _reason_ for a wait ("Waiting for an in-flight chat turn to finish"), which today's boolean `onWaitChange` can't produce — this is the smallest addition that makes it possible.                                                                                      |
+| D5  | **No new SSE endpoint.** New broadcast event kinds (`eval_run_progress`, `eval_report_completed`, …) ride the existing standing app-level channel (`events.route.ts`, one connection per tab, already consumed by `ui/src/hooks/use-live-events.ts`).                                        | The mechanism already exists for exactly this purpose; a second one would be duplicate infrastructure.                                                                                                                                                                                          |
+| D6  | **CLI/backend trigger parity via a shared service function**, not HTTP. The CLI already talks to the DB directly (`bootEvaluations` is "shared by bin scripts and the API server"); report creation logic lives once and both the new `POST /reports` route and `bin/eval` call it directly. | Evaluation Report must not be a UI-exclusive concept — `/auto-eval-pr-comment` (Phase 4) runs in CI, where nothing is ever browser-triggered.                                                                                                                                                   |
+| D7  | **TTFT dropped from this phase** (and not committed to any phase yet). Cost/tokens-per-second are ported from `stream-handler.ts`'s existing per-provider rate-table logic into the harness instead.                                                                                         | TTFT doesn't exist anywhere in this codebase — chat included — and would require switching the harness from `.invoke()` to `.stream()` with no existing precedent. Cost/tps logic already exists and is a much smaller port.                                                                    |
+| D8  | **No separate "failed" run status.** `complete` means "every scenario has a result," regardless of pass/fail/error mix; a scenario-level error is its own terminal outcome, not a run-level abort.                                                                                           | Keeps the run state machine small and matches how a mixed pass/fail run already reads today via `pass_rate`.                                                                                                                                                                                    |
 
 ---
 
@@ -57,26 +57,26 @@ Later phases, each its own spec: **Phase 2** — core UI (dashboard, new-run wiz
 
 **`eval_reports`** (new table)
 
-| Field | Notes |
-| --- | --- |
-| `report_id` | Primary key |
-| `trigger_source` | `ui` \| `backend` \| `cli` — any of the three can produce a Report |
-| `app_version` | Pinned at creation |
-| `compare_against` | Nullable FK to another `report_id`; defaults to the most recent prior report on the same scope, user-changeable |
-| `created_at` / `completed_at` | `completed_at` is null while any child run is still `queued`/`running` |
-| `summary` | Nullable text, agent-authored, editable |
+| Field                         | Notes                                                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `report_id`                   | Primary key                                                                                                     |
+| `trigger_source`              | `ui` \| `backend` \| `cli` — any of the three can produce a Report                                              |
+| `app_version`                 | Pinned at creation                                                                                              |
+| `compare_against`             | Nullable FK to another `report_id`; defaults to the most recent prior report on the same scope, user-changeable |
+| `created_at` / `completed_at` | `completed_at` is null while any child run is still `queued`/`running`                                          |
+| `summary`                     | Nullable text, agent-authored, editable                                                                         |
 
 No `status` column on `eval_reports` — a report's status is derived from its child runs (`queued` if any run is `queued`, `running` if any is `running`, `complete` once all are), not stored redundantly.
 
 **`eval_runs`** (extends the existing table — the real change of this phase)
 
-| Field | Notes |
-| --- | --- |
-| `report_id` | Nullable FK to `eval_reports` |
-| `status` | `queued` \| `running` \| `complete` \| `stopped` \| `interrupted` |
-| `app_version` | |
-| `input_tokens` / `output_tokens` | Aggregate per run |
-| `tokens_per_second` | Ported from the chat cost logic |
+| Field                            | Notes                                                             |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `report_id`                      | Nullable FK to `eval_reports`                                     |
+| `status`                         | `queued` \| `running` \| `complete` \| `stopped` \| `interrupted` |
+| `app_version`                    |                                                                   |
+| `input_tokens` / `output_tokens` | Aggregate per run                                                 |
+| `tokens_per_second`              | Ported from the chat cost logic                                   |
 
 Row lifecycle: all `suite × model` rows for a report are created in `queued` status the moment the report is submitted, flip to `running` when the harness actually starts that pair, and reach `complete`/`stopped` at the end. `interrupted` is set by a boot-time sweep (below) for anything left `queued`/`running` from a dead process.
 
@@ -90,7 +90,7 @@ Adds `input_tokens` / `output_tokens` per scenario, same reasoning as the run-le
 
 **Harness wiring.** Every `invoke*Model` call in `lib/evaluations/src/runner.ts` wraps through `providerQueue.withSlot(providerName, 'eval', fn, { onWaitChange, label })` instead of calling the model directly. `onWaitChange(true)` keeps/moves the `eval_runs` row to `queued`; the `withSlot` promise resolving moves it to `running`.
 
-**Wait-reason labels.** Today's `ProviderGate` only tracks `activeCount` (a number) and anonymous queued entries — it has no way to say *what* currently holds a slot. `acquireSlot`/`withSlot` gain an optional `label` (e.g. `"chat turn"`, `"automation: nightly-regression"`, `"eval: error-recovery × qwen3:32b"`); `ProviderGate` keeps the active label(s) alongside `activeCount` so a waiter's `onWaitChange` can compose a human-readable reason for the UI.
+**Wait-reason labels.** Today's `ProviderGate` only tracks `activeCount` (a number) and anonymous queued entries — it has no way to say _what_ currently holds a slot. `acquireSlot`/`withSlot` gain an optional `label` (e.g. `"chat turn"`, `"automation: nightly-regression"`, `"eval: error-recovery × qwen3:32b"`); `ProviderGate` keeps the active label(s) alongside `activeCount` so a waiter's `onWaitChange` can compose a human-readable reason for the UI.
 
 **Server restart sweep.** On boot, anything left `queued`/`running` in `eval_runs` from a dead process is marked `interrupted` — same idea as `CronRegistry`/`WakeupRegistry` resyncing from the DB on boot rather than trusting in-memory state survived a restart.
 
@@ -98,15 +98,15 @@ Adds `input_tokens` / `output_tokens` per scenario, same reasoning as the run-le
 
 New router `api/src/routes/v1/evaluations.route.ts` + `evaluations.handlers.ts`, mounted at `/api/v1/evaluations`.
 
-| Route | Purpose |
-| --- | --- |
-| `POST /reports` | Create a report (suites, models, judge model, optional skill+version). Creates the `eval_reports` row and every `eval_runs` row in `queued` status upfront; returns `report_id` immediately, execution continues in the background |
-| `GET /reports` | List, filterable by suite / model / trigger_source / app_version / skill / since |
-| `GET /reports/:reportId` | Full detail: report + child runs + rollup stats. Serves both the live view and the finished report — only `status` differs |
-| `PATCH /reports/:reportId` | Edit `summary`, change `compare_against` |
-| `POST /reports/:reportId/stop` | "Stop after current" |
-| `GET /runs/:runId/results` | Scenario-level list for a drill-down view |
-| `GET /runs/:runId/diff?against=:otherRunId` | Single `(suite, model)` pair diff between two runs |
+| Route                                       | Purpose                                                                                                                                                                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /reports`                             | Create a report (suites, models, judge model, optional skill+version). Creates the `eval_reports` row and every `eval_runs` row in `queued` status upfront; returns `report_id` immediately, execution continues in the background |
+| `GET /reports`                              | List, filterable by suite / model / trigger_source / app_version / skill / since                                                                                                                                                   |
+| `GET /reports/:reportId`                    | Full detail: report + child runs + rollup stats. Serves both the live view and the finished report — only `status` differs                                                                                                         |
+| `PATCH /reports/:reportId`                  | Edit `summary`, change `compare_against`                                                                                                                                                                                           |
+| `POST /reports/:reportId/stop`              | "Stop after current"                                                                                                                                                                                                               |
+| `GET /runs/:runId/results`                  | Scenario-level list for a drill-down view                                                                                                                                                                                          |
+| `GET /runs/:runId/diff?against=:otherRunId` | Single `(suite, model)` pair diff between two runs                                                                                                                                                                                 |
 
 No new SSE endpoint (D5) — new broadcast event kinds ride the existing standing channel. Report-to-report compare needs no dedicated endpoint either — it's two `GET /reports/:id` calls diffed client-side; the data's already there.
 
@@ -118,7 +118,7 @@ No new SSE endpoint (D5) — new broadcast event kinds ride the existing standin
 
 - A scenario erroring (provider timeout, malformed response, rate limit) is recorded as its own terminal outcome on that `eval_results` row; the run moves on to the next scenario rather than aborting the `(suite, model)` pair.
 - `eval_runs.status` reaching `complete` means every scenario has a result, not that everything passed (D8) — pass/fail/error mix is already expressed via `pass_rate` and the per-scenario rows.
-- "Stop after current" sets a cooperative cancellation flag checked *between* scenarios (the in-flight scenario finishes normally). Any other `eval_runs` row for that report still `queued` — including ones waiting on the provider queue — aborts immediately via the `AbortSignal` `acquireSlot` already supports, moving straight to `stopped` without executing.
+- "Stop after current" sets a cooperative cancellation flag checked _between_ scenarios (the in-flight scenario finishes normally). Any other `eval_runs` row for that report still `queued` — including ones waiting on the provider queue — aborts immediately via the `AbortSignal` `acquireSlot` already supports, moving straight to `stopped` without executing.
 - Server restart mid-run is handled by the boot sweep (Section 2), not repeated here.
 - A judge model erroring while scoring a scenario marks that scenario's result as unscored/error rather than crashing the run.
 
