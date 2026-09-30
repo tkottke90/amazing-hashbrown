@@ -12,7 +12,7 @@ describe('BottomSheet', () => {
 
     expect(dialog.className).toContain('bottom-0');
     expect(dialog.className).toContain('w-full');
-    expect(dialog.className).toContain('max-h-[90vh]');
+    expect(dialog.className).toContain('max-h-[90dvh]');
   });
 
   it('slides up from fully off-screen below, easing out', () => {
