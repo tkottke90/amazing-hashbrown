@@ -332,6 +332,7 @@ implementation details that change without notice.
 | `actions-abandon-project`       | `ui/src/pages/workspaces/workspace-actions-sheet.tsx`     | Abandon project row in the mobile Actions sheet                                               |
 | `actions-delete-workspace`      | `ui/src/pages/workspaces/workspace-actions-sheet.tsx`     | Delete workspace row in the mobile Actions sheet                                              |
 | `files-mobile-back`             | `ui/src/pages/workspaces/files-tab.tsx`                   | Back-to-tree arrow in the mobile single-pane Files view                                       |
+| `wiki-orientation-badge`        | `ui/src/pages/wiki/orientation-badge.tsx`                 | The chat header's orientation badge; text content is the oriented wiki's domain id            |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
