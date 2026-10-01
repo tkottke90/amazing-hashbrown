@@ -72,16 +72,21 @@ test.describe(
       await mockWikiDocumentView(page);
       await page.goto('/wiki?view=document');
 
+      // Matches the literal `bg-sidebar-accent` class token only — the
+      // inactive-but-enabled button also carries `hover:bg-sidebar-accent`,
+      // which a plain substring regex would incorrectly match too.
+      const activeClass = /(^|\s)bg-sidebar-accent(\s|$)/;
+
       const focusButton = page.getByRole('button', { name: 'Focus Wiki' });
       await expect(focusButton).toBeEnabled();
-      await expect(focusButton).not.toHaveClass(/bg-sidebar-accent/);
+      await expect(focusButton).not.toHaveClass(activeClass);
 
       await pauseBeforeAction(page, testInfo);
       await focusButton.click();
 
       await expect(page.getByText(`Orient to the ${DOMAIN.id} wiki.`)).toBeVisible();
       await expect(page.getByTestId('wiki-orientation-badge')).toHaveText(DOMAIN.id);
-      await expect(focusButton).toHaveClass(/bg-sidebar-accent/);
+      await expect(focusButton).toHaveClass(activeClass);
     });
   },
 );
