@@ -538,8 +538,6 @@ export async function executeTask(
                 err,
                 sink,
                 threadStore,
-                agent,
-                config,
                 threadId,
                 partialState.segmentId,
                 turnSentAt,

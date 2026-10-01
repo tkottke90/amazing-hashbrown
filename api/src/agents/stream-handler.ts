@@ -188,6 +188,17 @@ export function extractPartialAssistantState(
   return { segmentId: fallbackMsgId, content: '', thoughtContent: '' };
 }
 
+// Pulls the interrupt value directly off a thrown GraphInterrupt, unwrapping
+// PipeEventsError if present. @langchain/langgraph's interrupt() embeds the
+// value on the error itself when it throws (`new GraphInterrupt([{id, value}])`)
+// — reading it here instead of re-querying checkpoint state via getState()
+// avoids a race against that checkpoint's own write, which can come back
+// empty on a thread's very first interrupt. See recoverThrownInterrupt.
+function extractInterruptFromError(err: unknown): { value: unknown } | undefined {
+  const source = err instanceof PipeEventsError ? err.sourceError : err;
+  return (source as { interrupts?: { value: unknown }[] } | undefined)?.interrupts?.[0];
+}
+
 // Shared by every SSE-handler catch block that needs the raw failure text
 // for endTrace()/failAssistant() — err is `unknown` in a catch clause.
 export function errorMessageOf(err: unknown): string {
@@ -484,20 +495,18 @@ export function dispatchHitlPrompt(
 // control-flow signal, which pipeEvents forwards as a PipeEventsError
 // preserving `.name` (see that class's own comment) — the same way the
 // graceful, stream-completed-normally path above already does: finalize
-// whatever partial content streamed before the throw, re-query checkpoint
-// state for the interrupt LangGraph still parked there, and dispatch it via
-// dispatchHitlPrompt. Returns null when `err` isn't a GraphInterrupt at all,
-// so the caller's own catch block falls through to its existing error
-// handling unchanged. Every turn handler that calls pipeEvents/finalizeTurn
-// (chat, workspace chat, wiki chat, task execution, headless notification
-// turns) binds shell_exec and is exposed to this same failure mode, so this
-// is the one place that recovery logic is written.
+// whatever partial content streamed before the throw, then read the
+// interrupt value directly off the caught error (extractInterruptFromError)
+// and dispatch it via dispatchHitlPrompt. Returns null when `err` isn't a
+// GraphInterrupt at all, so the caller's own catch block falls through to
+// its existing error handling unchanged. Every turn handler that calls
+// pipeEvents/finalizeTurn (chat, workspace chat, wiki chat, task execution,
+// headless notification turns) binds shell_exec and is exposed to this same
+// failure mode, so this is the one place that recovery logic is written.
 export async function recoverThrownInterrupt(
   err: unknown,
   sink: SseWriter,
   threadStore: ThreadStore,
-  agent: AgentWithGraph,
-  config: { configurable: { thread_id: string; workspaceId?: string } },
   threadId: string,
   msgId: string,
   turnSentAt: string,
@@ -518,17 +527,15 @@ export async function recoverThrownInterrupt(
     null,
   );
 
-  const state = await agent.graph.getState(config);
-  const interrupt = state.tasks?.[0]?.interrupts?.[0];
+  const interrupt = extractInterruptFromError(err);
   if (!interrupt) {
-    // Name matched but checkpoint has no interrupt — safety net, not the
-    // expected path. Logged (unlike a normal handled case) because this
-    // means LangGraph's own checkpoint write of the interrupt wasn't
-    // visible to this immediate read-back — worth knowing about, not just
-    // silently falling through to a generic failure.
-    logger.error('recoverThrownInterrupt: no interrupt found in checkpoint state after GraphInterrupt', {
+    // Name matched but the error itself carried no interrupts — safety net,
+    // not the expected path (interrupt() always sets this). Logged (unlike
+    // a normal handled case) since this means something produced a
+    // GraphInterrupt-named error outside the normal interrupt() path.
+    logger.error('recoverThrownInterrupt: no interrupts found on the caught GraphInterrupt', {
       threadId,
-      tasks: state.tasks,
+      err: serializeError(err),
     });
     failAssistant(
       threadStore,
@@ -1074,8 +1081,6 @@ export async function streamChatToSse(
       err,
       sink,
       threadStore,
-      agent,
-      config,
       threadId,
       msgId,
       turnSentAt,
@@ -1272,8 +1277,6 @@ export async function resumeChatToSse(
       err,
       sink,
       threadStore,
-      agent,
-      config,
       threadId,
       msgId,
       turnSentAt,
@@ -1469,8 +1472,6 @@ export async function retryChatToSse(
       err,
       sink,
       threadStore,
-      agent,
-      config,
       threadId,
       msgId,
       turnSentAt,

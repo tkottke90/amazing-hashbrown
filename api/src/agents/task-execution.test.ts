@@ -90,11 +90,21 @@ function fakeGraphInterruptAgent(
     streamEvents: (): AsyncIterable<any> => {
       async function* gen() {
         for (const e of eventsBeforeThrow) yield e;
-        throw Object.assign(new Error('Interrupted by shell_approval'), { name: 'GraphInterrupt' });
+        // recoverThrownInterrupt reads the interrupt value directly off this
+        // thrown error (.interrupts) rather than re-querying checkpoint
+        // state, so that's where the fake value needs to live now.
+        throw Object.assign(new Error('Interrupted by shell_approval'), {
+          name: 'GraphInterrupt',
+          interrupts: interruptValue ? [{ value: interruptValue }] : [],
+        });
       }
       return gen();
     },
     graph: {
+      // Unused by the GraphInterrupt-thrown path these fake agents exercise
+      // (recoverThrownInterrupt no longer calls getState() — see above), but
+      // left in place in case any test using this factory ever reaches the
+      // graceful finalizeTurn path too, which still needs it.
       getState: async () => ({
         tasks: interruptValue ? [{ interrupts: [{ value: interruptValue }] }] : [],
         config: { configurable: { checkpoint_id: 'cp-test' } },
@@ -1284,7 +1294,7 @@ describe('agents/task-execution', () => {
       expect((end!.payload as Record<string, unknown>).outcome).to.equal('waiting_on_user');
     });
 
-    it('falls back to failed (without throwing) when the error name matches but checkpoint state has no interrupt', async () => {
+    it('falls back to failed (without throwing) when the error name matches but carries no interrupt', async () => {
       const entry = makeGlobalEntry();
       const agent = fakeGraphInterruptAgent([], null);
 
