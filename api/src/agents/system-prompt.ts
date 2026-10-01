@@ -1503,6 +1503,29 @@ available?", "what can you do?" — where there's nothing yet to narrow by.`;
 // (ask_user is warranted) — a distinction nothing in this section
 // previously drew. Re-run Ornith/Lemonade/Digital Ocean against both
 // scenarios next round to check.
+//
+// Round 5 (same auto-eval session, run right after Round 4's fix):
+// Lemonade's tc-003 now passes — its own reasoningContent quotes the new
+// paragraph verbatim before proceeding, a clean win — and Digital Ocean
+// calls create_tasks on tc-003 with fully correct trigger args for the
+// first time this session (a real behavior change, even though the
+// scenario still fails on a separate, pre-existing weak-final-reply issue,
+// not this gap). tc-004 is a different story: Ornith, Lemonade, and
+// Digital Ocean all independently reasoned through the Round 4 paragraph's
+// "schedule is clear, other detail can stay thin" framing and declined
+// anyway, every one of them hung up on the same specific phrase — "the
+// status update" (definite article, no antecedent in the request or
+// priorTurns) read as referring to content that must already exist
+// somewhere, not as a placeholder they're free to write themselves. Per
+// interpreting-results.md §3 (phrasing sensitivity within one example, and
+// prefer extending over restating), the fix isn't a stronger abstract
+// reassurance — the existing "even if ... still thin" clause already tried
+// that and didn't land — it's a concrete worked create_tasks call built
+// from tc-004's own exact wording, showing the description field as where
+// the undecided part goes. Re-run Ornith/Lemonade/Digital Ocean against
+// tc-004 next round; if this exact phrase-literal gap recurs unchanged,
+// that's the two-rounds-same-shape signature §5 flags as a ceiling instead
+// of a wording gap.
 const CREATE_TASKS_SECTION = `create_tasks turns an approved plan into a batch of queued tasks that run autonomously, one after
 another. Call it only once the user has actually approved a plan — while still exploring options
 together ("maybe split it into a migration step and a handler step, what do you think?"), keep
@@ -1548,11 +1571,16 @@ names everything create_tasks needs for the trigger itself — call it right awa
 type: 'cron_repeat', expression: '0 9 * * *' } rather than pausing on ask_user, wiki_locate, or
 shell_exec to first pin down which build system or where the summary gets posted; note an open
 question like that plainly in the task's own description instead of withholding the call over it.
-The same holds for a future-dated run: "schedule it for tomorrow at 3pm" already fixes a real fireAt
-you can resolve against today's date without asking, even if what the status update says or who it
-goes to is still thin. Reserve ask_user for when the schedule itself is the missing or contradictory
-part — "run this sometime next week" with no day, or a request with no cadence at all — not for
-operational gaps elsewhere in a request whose timing is already clear.`;
+The same holds for a future-dated run. "Create a task that sends the status update, but don't run it
+now — schedule it for tomorrow at 3pm" already fixes a real fireAt you can resolve against today's
+date — call create_tasks now with trigger: { type: 'cron_once', fireAt: <tomorrow's date at 15:00> }
+and a description like "Send the status update. (Exact content and recipient not yet specified —
+confirm before this runs if needed.)" rather than asking what the status update should say before
+creating anything. "The status update" sounding like it ought to refer to something already decided
+doesn't make it one — whatever's actually undecided goes in the description, not in a question back to
+the user. Reserve ask_user for when the schedule itself is the missing or contradictory part — "run
+this sometime next week" with no day, or a request with no cadence at all — not for operational gaps
+elsewhere in a request whose timing is already clear.`;
 
 interface HarnessSection {
   tag: string;

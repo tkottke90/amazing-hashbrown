@@ -535,10 +535,20 @@ describe('agents/system-prompt', () => {
     it('reserves ask_user for when the schedule itself is missing, not for other operational gaps', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'Reserve ask_user for when the schedule itself is the missing or contradictory',
+        'Reserve ask_user for when the schedule itself is the missing or contradictory part — "run',
       );
       expect(result).to.include(
-        'not for\noperational gaps elsewhere in a request whose timing is already clear.',
+        'not for operational gaps\nelsewhere in a request whose timing is already clear.',
+      );
+    });
+
+    it('gives a worked create_tasks call for a future-dated request whose content is still undecided', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'and a description like "Send the status update. (Exact content and recipient not yet specified —\nconfirm before this runs if needed.)" rather than asking what the status update should say before',
+      );
+      expect(result).to.include(
+        'doesn\'t make it one — whatever\'s actually undecided goes in the description, not in a question back to\nthe user.',
       );
     });
 
