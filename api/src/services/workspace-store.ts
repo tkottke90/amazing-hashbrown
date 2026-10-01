@@ -787,8 +787,7 @@ export class WorkspaceStore extends BaseStore {
 
   getWorkspace(id: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get(id) as
-      | RawWorkspaceRow
-      | undefined;
+      RawWorkspaceRow | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -796,8 +795,7 @@ export class WorkspaceStore extends BaseStore {
   // the parent thread is type='workspace-chat' — see task-execution.ts.
   getWorkspaceByThreadId(threadId: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE thread_id = ?`).get(threadId) as
-      | RawWorkspaceRow
-      | undefined;
+      RawWorkspaceRow | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -1150,8 +1148,7 @@ export class WorkspaceStore extends BaseStore {
 
   getTask(id: string): Task | null {
     const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as
-      | RawTaskRow
-      | undefined;
+      RawTaskRow | undefined;
     return row ? mapTask(row) : null;
   }
 
@@ -1171,8 +1168,7 @@ export class WorkspaceStore extends BaseStore {
       .get(threadId) as RawTaskRow | undefined;
     if (row) return mapTask(row);
     const legacy = this.db.prepare(`SELECT * FROM tasks WHERE thread_id = ?`).get(threadId) as
-      | RawTaskRow
-      | undefined;
+      RawTaskRow | undefined;
     return legacy ? mapTask(legacy) : null;
   }
 
@@ -1520,8 +1516,7 @@ export class WorkspaceStore extends BaseStore {
 
   getQueueEntry(id: string): TaskQueueEntry | null {
     const row = this.db.prepare(`SELECT * FROM task_queue WHERE id = ?`).get(id) as
-      | RawQueueRow
-      | undefined;
+      RawQueueRow | undefined;
     return row ? mapQueueEntry(row) : null;
   }
 
@@ -1942,8 +1937,7 @@ export class WorkspaceStore extends BaseStore {
       )
       .run(now, id);
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      | { task_id: string }
-      | undefined;
+      { task_id: string } | undefined;
     if (row) {
       this.db
         .prepare(`UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?`)
@@ -1980,8 +1974,7 @@ export class WorkspaceStore extends BaseStore {
       )
       .run(now, id);
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      | { task_id: string }
-      | undefined;
+      { task_id: string } | undefined;
     if (row) {
       this.db
         .prepare(
