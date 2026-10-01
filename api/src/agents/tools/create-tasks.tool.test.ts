@@ -306,7 +306,7 @@ describe('agents/tools/create-tasks', () => {
 
     it('sends a cron_once task onto its schedule with a future fireAt', async () => {
       const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-      const result = await makeCreateTasksTool().invoke(
+      const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(
         { tasks: [{ title: 'send update', trigger: { type: 'cron_once', fireAt: future } }] },
         invokeConfig(workspaceId),
       );
@@ -359,7 +359,7 @@ describe('agents/tools/create-tasks', () => {
     });
 
     it('leaves a cron-triggered task with dependsOnIndexes pending (unscheduled) until its dependency resolves', async () => {
-      const result = await makeCreateTasksTool().invoke(
+      const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(
         {
           tasks: [
             { title: 'first' },
