@@ -8,6 +8,7 @@ import { bootWorkspaceStore, getWorkspaceStore } from '../../services/workspace-
 import { bootTaskScheduler } from '../../services/task-scheduler.js';
 import { TrackerRegistry } from '../../services/tracker-registry.js';
 import type { TrackerAdapter } from '../../services/tracker-adapter.js';
+import type { CronRegistry } from '../../services/cron-registry.js';
 import { makeCreateTasksTool } from './create-tasks.tool.js';
 
 function fakeAdapter(type: string, overrides: Partial<TrackerAdapter> = {}): TrackerAdapter {
@@ -253,6 +254,129 @@ describe('agents/tools/create-tasks', () => {
 
       expect(store.getTask(second.id)!.status).to.equal('ready');
       expect(store.listQueue().some((q) => q.taskId === second.id)).to.equal(true);
+    });
+  });
+
+  describe('trigger (scheduled tasks)', () => {
+    // No sinon in this repo — a minimal hand-rolled fake exposing only the
+    // one method the tool actually calls, matching cron-registry.test.ts's
+    // own injected-fake convention.
+    function fakeCronRegistry() {
+      let resyncAllCalls = 0;
+      return {
+        get resyncAllCalls() {
+          return resyncAllCalls;
+        },
+        resyncAll: () => {
+          resyncAllCalls++;
+        },
+      } as unknown as CronRegistry & { resyncAllCalls: number };
+    }
+
+    it('sends a cron_repeat task onto its schedule, not the queue, and syncs the cron registry once', async () => {
+      const cronRegistry = fakeCronRegistry();
+      const result = await makeCreateTasksTool(undefined, undefined, cronRegistry).invoke(
+        {
+          tasks: [
+            {
+              title: 'nightly build check',
+              trigger: { type: 'cron_repeat', expression: '0 9 * * *', timezone: 'UTC' },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+
+      const parsed = JSON.parse(String(result)) as {
+        created: {
+          id: string;
+          title: string;
+          schedule?: { description: string; nextFireAt: string | null };
+        }[];
+      };
+      const store = getWorkspaceStore();
+      const task = store.getTask(parsed.created[0]!.id)!;
+      expect(task.status).to.equal('scheduled');
+      expect(task.triggerType).to.equal('cron_repeat');
+      expect(store.listQueue().some((q) => q.taskId === task.id)).to.equal(false);
+      expect(parsed.created[0]!.schedule).to.not.equal(undefined);
+      expect(parsed.created[0]!.schedule!.nextFireAt).to.be.a('string');
+      expect(cronRegistry.resyncAllCalls).to.equal(1);
+    });
+
+    it('sends a cron_once task onto its schedule with a future fireAt', async () => {
+      const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(
+        { tasks: [{ title: 'send update', trigger: { type: 'cron_once', fireAt: future } }] },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string }[] };
+      const task = getWorkspaceStore().getTask(parsed.created[0]!.id)!;
+      expect(task.status).to.equal('scheduled');
+      expect(task.triggerType).to.equal('cron_once');
+    });
+
+    it('rejects the whole batch when a trigger is invalid, and never syncs the cron registry', async () => {
+      const cronRegistry = fakeCronRegistry();
+      const result = await makeCreateTasksTool(undefined, undefined, cronRegistry).invoke(
+        {
+          tasks: [
+            { title: 'good' },
+            { title: 'bad schedule', trigger: { type: 'cron_repeat', expression: 'not a cron' } },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+
+      expect(String(result)).to.include('Task 2');
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
+      expect(cronRegistry.resyncAllCalls).to.equal(0);
+    });
+
+    it('rejects a cron_once trigger whose fireAt has already passed', async () => {
+      const result = await makeCreateTasksTool().invoke(
+        {
+          tasks: [
+            {
+              title: 'too late',
+              trigger: { type: 'cron_once', fireAt: '2020-01-01T00:00:00.000Z' },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('Task 1');
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
+    });
+
+    it('does not sync the cron registry when no task in the batch has a trigger', async () => {
+      const cronRegistry = fakeCronRegistry();
+      await makeCreateTasksTool(undefined, undefined, cronRegistry).invoke(
+        { tasks: [{ title: 'plain' }] },
+        invokeConfig(workspaceId),
+      );
+      expect(cronRegistry.resyncAllCalls).to.equal(0);
+    });
+
+    it('leaves a cron-triggered task with dependsOnIndexes pending (unscheduled) until its dependency resolves', async () => {
+      const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(
+        {
+          tasks: [
+            { title: 'first' },
+            {
+              title: 'nightly, gated on first',
+              dependsOnIndexes: [0],
+              trigger: { type: 'cron_repeat', expression: '0 9 * * *' },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string }[] };
+      const store = getWorkspaceStore();
+      const second = store.getTask(parsed.created[1]!.id)!;
+      expect(second.status).to.equal('pending');
+      expect(store.listQueue().some((q) => q.taskId === second.id)).to.equal(false);
     });
   });
 });

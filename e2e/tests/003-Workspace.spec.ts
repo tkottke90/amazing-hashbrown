@@ -15,6 +15,7 @@ import {
   removeWorkspaceDir,
 } from '../lib/workspace-files.js';
 import { CreateTask } from './workspace/CreateTasks.js';
+import { CreateScheduledTasks } from './workspace/CreateScheduledTasks.js';
 import {
   createWorkspace,
   editorPane,
@@ -790,3 +791,4 @@ test.afterAll(async () => {
 
 suiteRunner(WorkspaceFileBrowser);
 suiteRunner(CreateTask);
+suiteRunner(CreateScheduledTasks);

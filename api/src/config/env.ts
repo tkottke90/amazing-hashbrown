@@ -3,6 +3,7 @@ import path from 'node:path';
 import { loadConfig } from '@tkottke90/config-manager';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+import { isValidTimeZone } from '../services/cron-schedule.js';
 
 loadDotenv();
 
@@ -58,6 +59,14 @@ export function parseFavoriteModels(raw: unknown): FavoriteModel[] {
     const parsed = FavoriteModelSchema.safeParse(entry);
     return parsed.success ? [parsed.data] : [];
   });
+}
+
+// The default IANA time zone used to resolve a cron schedule's timezone when
+// a caller (e.g. the chat agent, which has no browser to prefill from) omits
+// one. Falls back to 'UTC' for anything not a valid IANA zone name, rather
+// than failing config load over a bad hand-edited value.
+export function resolveServerTimezone(raw: unknown): string {
+  return typeof raw === 'string' && isValidTimeZone(raw) ? raw : 'UTC';
 }
 
 export const DatabaseSchema = z.object({
@@ -232,6 +241,7 @@ const AppConfigSchema = z.object({
   tempProjectsRoot: z.string().optional(),
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
+  timezone: z.string().default('UTC'),
   // Deliberately loose: entries are validated one by one in
   // env.favoriteModels (parseFavoriteModels) so a single malformed
   // hand-edited entry can't fail config loading.
@@ -298,6 +308,16 @@ export const env = {
   },
   get defaultProvider() {
     return (configManager.get('defaultProvider', '') ?? '') as string;
+  },
+  // The default timezone a cron schedule resolves to when its caller omits
+  // one (see cron-config.ts). A present-but-invalid configured value warns
+  // once per read and falls back to 'UTC' rather than failing to boot.
+  get timezone(): string {
+    const raw = configManager.get('timezone');
+    if (typeof raw === 'string' && raw !== '' && !isValidTimeZone(raw)) {
+      console.warn(`config: timezone "${raw}" is not a valid IANA time zone — using UTC`);
+    }
+    return resolveServerTimezone(raw);
   },
   get favoriteModels(): FavoriteModel[] {
     return parseFavoriteModels(configManager.get('favoriteModels'));

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
-import { isCronTrigger, type CronConfig } from './cron-config.js';
+import { isCronTrigger, statusForSavedSchedule, type CronConfig } from './cron-config.js';
 import { settleCronRun } from './cron-settlement.js';
 
 // ---------------------------------------------------------------------------
@@ -1459,8 +1459,23 @@ export class WorkspaceStore extends BaseStore {
           blockedReason: 'dependency_failed',
         });
       } else if (this.isTaskReady(dependency.taskId)) {
-        this.patchTask(dependency.taskId, { status: 'ready', assignedTo: 'agent' });
-        this.enqueueTask(dependency.taskId);
+        if (isCronTrigger(dependentTask.triggerType) && dependentTask.triggerConfig) {
+          // A cron-triggered dependent goes onto its schedule instead of
+          // into the queue once it's released — the cron registry (synced
+          // by withCronResync after this run settles) is what actually
+          // arms its timer. See cron-registry.ts's resyncAll().
+          const status = statusForSavedSchedule(
+            dependentTask.status,
+            dependentTask.triggerType,
+            dependentTask.triggerConfig as CronConfig,
+            this.countScheduledRuns(dependency.taskId),
+            new Date(),
+          );
+          if (status) this.patchTask(dependency.taskId, { status });
+        } else {
+          this.patchTask(dependency.taskId, { status: 'ready', assignedTo: 'agent' });
+          this.enqueueTask(dependency.taskId);
+        }
       }
     }
   }
@@ -1688,21 +1703,24 @@ export class WorkspaceStore extends BaseStore {
   }
 
   // Creates a batch of ordinary (origin='user') task rows in one
-  // transaction — all rows land or none do. Every row is forced to
-  // status='ready'/assigned_to='agent' and enqueued immediately, mirroring
-  // createSubAgentTask()'s create->patch->enqueue shape rather than trusting
-  // callers to pass the right status/assignedTo combination on NewTaskInput
-  // (which has no status field at all — createTask() alone can only ever
-  // insert 'pending'). Used by the create_tasks chat tool to turn an
-  // approved plan into queued, autonomously-executing work in one call.
-  // dependsOnIndexes references another task by its position in this same
-  // `inputs` array (not a real task id, which doesn't exist until after the
-  // insert below) — only earlier indices are allowed, which alone rules out
-  // any cycle within one batch without needing a graph traversal. A task
-  // with one or more dependencies is left at createTask()'s default
-  // 'pending' instead of being readied/enqueued — see
-  // releaseEligibleDependents() for how it's later picked up once its
-  // dependencies are satisfied.
+  // transaction — all rows land or none do. A zero-dependency row is forced
+  // straight to status='ready'/assigned_to='agent' and enqueued immediately,
+  // mirroring createSubAgentTask()'s create->patch->enqueue shape rather
+  // than trusting callers to pass the right status/assignedTo combination on
+  // NewTaskInput (which has no status field at all — createTask() alone can
+  // only ever insert 'pending') — unless it carries a cron trigger, in which
+  // case it goes onto its schedule ('scheduled') instead, same as a
+  // REST-created cron task (cron-config.ts's statusForSavedSchedule). Used
+  // by the create_tasks chat tool to turn an approved plan into queued (or
+  // scheduled), autonomously-executing work in one call. dependsOnIndexes
+  // references another task by its position in this same `inputs` array
+  // (not a real task id, which doesn't exist until after the insert below)
+  // — only earlier indices are allowed, which alone rules out any cycle
+  // within one batch without needing a graph traversal. A task with one or
+  // more dependencies is left at createTask()'s default 'pending' instead of
+  // being readied/scheduled/enqueued — see releaseEligibleDependents() for
+  // how it's later picked up (readied, or scheduled if it's a cron task)
+  // once its dependencies are satisfied.
   createTasks(inputs: (NewTaskInput & { dependsOnIndexes?: number[] })[]): Task[] {
     return this.db.transaction(() => {
       inputs.forEach((input, i) => {
@@ -1725,8 +1743,22 @@ export class WorkspaceStore extends BaseStore {
 
       return created.map((task) => {
         if (this.listTaskDependencies(task.id).length === 0) {
-          this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
-          this.enqueueTask(task.id, { triggerSource: 'chat' });
+          if (isCronTrigger(task.triggerType) && task.triggerConfig) {
+            // A cron-triggered task goes straight onto its schedule instead
+            // of the queue — the caller (create_tasks) is responsible for
+            // syncing the cron registry afterwards so its timer gets armed.
+            const status = statusForSavedSchedule(
+              task.status,
+              task.triggerType,
+              task.triggerConfig as CronConfig,
+              this.countScheduledRuns(task.id),
+              new Date(),
+            );
+            if (status) this.patchTask(task.id, { status });
+          } else {
+            this.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+            this.enqueueTask(task.id, { triggerSource: 'chat' });
+          }
         }
         return this.getTask(task.id)!;
       });

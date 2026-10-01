@@ -177,6 +177,15 @@ describe('services/cron-registry', () => {
       expect(registry.armedFor(pending.id)).to.equal(null);
     });
 
+    it('resyncAll() arms a task it has never synced before, not just ones in its own timer map [orchestration]', () => {
+      const task = repeatTask();
+      expect(registry.armedFor(task.id), 'sanity: nothing armed for it yet').to.equal(null);
+
+      registry.resyncAll();
+
+      expect(registry.armedFor(task.id)?.toISOString()).to.equal('2026-09-27T00:00:00.000Z');
+    });
+
     it('follows an edited schedule and drops a deleted task [orchestration]', () => {
       const task = repeatTask();
       registry.sync(task.id);
@@ -287,6 +296,29 @@ describe('services/cron-registry', () => {
         Error,
       );
       expect(registry.armedFor(task.id)?.toISOString()).to.equal('2026-09-27T00:00:00.000Z');
+    });
+
+    it('also arms a dependent cron task the run just released into scheduled, not only the task that ran [orchestration]', async () => {
+      const blocker = store.createTask({ title: 'blocker', assignedTo: 'agent' });
+      store.patchTask(blocker.id, { status: 'ready' });
+      const entry = store.enqueueTask(blocker.id);
+      const dependent = store.createTask({
+        title: 'nightly, gated on blocker',
+        triggerType: 'cron_repeat',
+        triggerConfig: REPEAT_CONFIG,
+      });
+      store.addTaskDependency(dependent.id, blocker.id);
+
+      const executor = withCronResync(
+        async () => {
+          store.completeQueueEntry(entry.id, 'done');
+        },
+        () => registry,
+      );
+      await executor({ ...entry, task: store.getTask(blocker.id)! });
+
+      expect(store.getTask(dependent.id)!.status).to.equal('scheduled');
+      expect(registry.armedFor(dependent.id)?.toISOString()).to.equal('2026-09-27T00:00:00.000Z');
     });
   });
 });

@@ -522,6 +522,36 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('run the check or apply the fix, then report\nwhat happened');
     });
 
+    it('calls create_tasks on a scheduling request that leaves non-scheduling detail open, instead of asking first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'A request can be a complete scheduling instruction even when it leaves other, non-scheduling detail\nopen.',
+      );
+      expect(result).to.include(
+        "note an open\nquestion like that plainly in the task's own description instead of withholding the call over it.",
+      );
+    });
+
+    it('reserves ask_user for when the schedule itself is missing, not for other operational gaps', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Reserve ask_user for when the schedule itself is the missing or contradictory part — "run',
+      );
+      expect(result).to.include(
+        'not for operational gaps\nelsewhere in a request whose timing is already clear.',
+      );
+    });
+
+    it('gives a worked create_tasks call for a future-dated request whose content is still undecided', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'and a description like "Send the status update. (Exact content and recipient not yet specified —\nconfirm before this runs if needed.)" rather than asking what the status update should say before',
+      );
+      expect(result).to.include(
+        "doesn't make it one — whatever's actually undecided goes in the description, not in a question back to\nthe user.",
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

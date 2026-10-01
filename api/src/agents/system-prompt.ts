@@ -1479,6 +1479,53 @@ available?", "what can you do?" — where there's nothing yet to narrow by.`;
 // ceiling — added a fourth paragraph applying IMAGE_SECTION's own "don't
 // second-guess a tool's result as fake or a placeholder" framing to this
 // tool's shape explicitly.
+//
+// Round 4, suites/task-creation.yaml's tc-003/tc-004 (2026-10-01, a 20-round
+// diagnostic-only run against local/Lemonade/Ornith/Digital Ocean, judge
+// local; log eval-logs/auto-eval-20261001114422.yaml, gitignored —
+// findings captured in this session's memory before being lost). With zero
+// code changes across all 20 rounds, Ornith (0/20 both scenarios), Digital
+// Ocean (5/20 tc-003, 0/20 tc-004), and Lemonade (1/20 tc-003, 2/20 tc-004)
+// essentially never called create_tasks for either scenario —
+// calledTools showed wiki_locate/ask_user/search_skills/shell_exec instead,
+// every time. Both scenarios are unambiguous scheduling requests ("checks
+// the build status every day at 9am UTC", "schedule it for tomorrow at
+// 3pm") that are missing *other* operational detail (which build system,
+// who the update goes to) — all three models treated that missing detail
+// as blocking the whole call, rather than recognizing that the one thing
+// create_tasks actually needs (the schedule) was already fully specified.
+// local, by contrast, called create_tasks correctly 18/20 times on both —
+// its failures are a separate, harness-side judge-scoring artifact, not
+// this gap (see this session's memory). Per interpreting-results.md §3,
+// added a fifth paragraph built directly from tc-003/tc-004's own scenario
+// wording, contrasting "the schedule is specified, other detail isn't"
+// (act now) against "the schedule itself is the missing/ambiguous part"
+// (ask_user is warranted) — a distinction nothing in this section
+// previously drew. Re-run Ornith/Lemonade/Digital Ocean against both
+// scenarios next round to check.
+//
+// Round 5 (same auto-eval session, run right after Round 4's fix):
+// Lemonade's tc-003 now passes — its own reasoningContent quotes the new
+// paragraph verbatim before proceeding, a clean win — and Digital Ocean
+// calls create_tasks on tc-003 with fully correct trigger args for the
+// first time this session (a real behavior change, even though the
+// scenario still fails on a separate, pre-existing weak-final-reply issue,
+// not this gap). tc-004 is a different story: Ornith, Lemonade, and
+// Digital Ocean all independently reasoned through the Round 4 paragraph's
+// "schedule is clear, other detail can stay thin" framing and declined
+// anyway, every one of them hung up on the same specific phrase — "the
+// status update" (definite article, no antecedent in the request or
+// priorTurns) read as referring to content that must already exist
+// somewhere, not as a placeholder they're free to write themselves. Per
+// interpreting-results.md §3 (phrasing sensitivity within one example, and
+// prefer extending over restating), the fix isn't a stronger abstract
+// reassurance — the existing "even if ... still thin" clause already tried
+// that and didn't land — it's a concrete worked create_tasks call built
+// from tc-004's own exact wording, showing the description field as where
+// the undecided part goes. Re-run Ornith/Lemonade/Digital Ocean against
+// tc-004 next round; if this exact phrase-literal gap recurs unchanged,
+// that's the two-rounds-same-shape signature §5 flags as a ceiling instead
+// of a wording gap.
 const CREATE_TASKS_SECTION = `create_tasks turns an approved plan into a batch of queued tasks that run autonomously, one after
 another. Call it only once the user has actually approved a plan — while still exploring options
 together ("maybe split it into a migration step and a handler step, what do you think?"), keep
@@ -1505,7 +1552,35 @@ ask about, the same way an image tool's returned bytes are real (see the image s
 fetched issue reading just "Issue #42: Refactor auth. Plan: migration, handler, tests." is genuinely
 everything there is, not truncated or faked, and is exactly what the approved plan refers to: map it
 straight onto task titles — migration, handler, tests — rather than declining to act because the
-description feels too brief to be trusted.`;
+description feels too brief to be trusted.
+
+By default a created task runs immediately once queued. Give a task a trigger when the user actually
+asked for a recurring or future-dated schedule instead of immediate work — "every day at 9am," "once
+a minute," "tomorrow afternoon," "next Monday." Use trigger: { type: 'cron_repeat', expression, ... }
+for something that repeats (a standard 5-field cron expression) and trigger: { type: 'cron_once',
+fireAt, ... } for a single future run (an ISO date-time). Leave timezone unset unless the user named
+one — it defaults to the server's configured timezone. This is a hard rule, not a style preference:
+only tell the user a task is scheduled or recurring when you actually set trigger and the tool's own
+response includes a schedule for it. If you created a task without trigger, it is a plain immediate
+task — say so, even if the user asked for a schedule and you weren't able to set one. Never describe
+a one-shot task as if it will run again, and never invent a schedule the tool didn't confirm.
+
+A request can be a complete scheduling instruction even when it leaves other, non-scheduling detail
+open. "Set up a task that checks the build status every day at 9am UTC and posts a summary" already
+names everything create_tasks needs for the trigger itself — call it right away with trigger: {
+type: 'cron_repeat', expression: '0 9 * * *' } rather than pausing on ask_user, wiki_locate, or
+shell_exec to first pin down which build system or where the summary gets posted; note an open
+question like that plainly in the task's own description instead of withholding the call over it.
+The same holds for a future-dated run. "Create a task that sends the status update, but don't run it
+now — schedule it for tomorrow at 3pm" already fixes a real fireAt you can resolve against today's
+date — call create_tasks now with trigger: { type: 'cron_once', fireAt: <tomorrow's date at 15:00> }
+and a description like "Send the status update. (Exact content and recipient not yet specified —
+confirm before this runs if needed.)" rather than asking what the status update should say before
+creating anything. "The status update" sounding like it ought to refer to something already decided
+doesn't make it one — whatever's actually undecided goes in the description, not in a question back to
+the user. Reserve ask_user for when the schedule itself is the missing or contradictory part — "run
+this sometime next week" with no day, or a request with no cadence at all — not for operational gaps
+elsewhere in a request whose timing is already clear.`;
 
 interface HarnessSection {
   tag: string;

@@ -46,3 +46,52 @@ scenarios:
       - path: trackerUrl
         match: equals
         value: 'https://github.com/octo/repo/issues/42'
+
+  - id: tc-003-recurring-request-sets-cron-repeat-trigger
+    name: Agent sets a cron_repeat trigger for a recurring request, instead of inventing a schedule
+    purpose: >
+      Given the user asks for a task that repeats on a schedule, confirms
+      create_tasks is called with a real cron_repeat trigger rather than
+      creating a plain one-shot task and merely describing it as recurring
+      in the reply. Reproduces the bug in
+      https://github.com/tkottke90/amazing-hashbrown/issues/240 — see
+      docs/superpowers/specs/2026-10-01-chat-scheduled-tasks-design.md.
+    type: tool-call
+    input: >
+      Set up a task that checks the build status every day at 9am UTC and
+      posts a summary. This should keep running every day, not just once.
+    tool: create_tasks
+    argChecks:
+      - path: tasks.0.trigger.type
+        match: equals
+        value: 'cron_repeat'
+      - path: tasks.0.trigger.expression
+        match: exists
+    responseRubric: >
+      The reply should describe the task as recurring/scheduled to run daily,
+      not as a one-time or immediate task.
+    responseMinScore: 7
+
+  - id: tc-004-future-dated-request-sets-cron-once-trigger
+    name: Agent sets a cron_once trigger for a future-dated request, instead of running it now
+    purpose: >
+      Given the user asks for a task to run once at a specific future time,
+      confirms create_tasks is called with a real cron_once trigger carrying
+      a future fireAt, rather than creating a task that runs immediately
+      while the reply falsely claims it was scheduled. Reproduces the bug in
+      https://github.com/tkottke90/amazing-hashbrown/issues/240.
+    type: tool-call
+    input: >
+      Create a task that sends the status update, but don't run it now —
+      schedule it for tomorrow at 3pm.
+    tool: create_tasks
+    argChecks:
+      - path: tasks.0.trigger.type
+        match: equals
+        value: 'cron_once'
+      - path: tasks.0.trigger.fireAt
+        match: exists
+    responseRubric: >
+      The reply should describe the task as scheduled for tomorrow afternoon,
+      not as something that already ran or will run immediately.
+    responseMinScore: 7
