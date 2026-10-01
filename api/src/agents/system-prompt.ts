@@ -1505,7 +1505,18 @@ ask about, the same way an image tool's returned bytes are real (see the image s
 fetched issue reading just "Issue #42: Refactor auth. Plan: migration, handler, tests." is genuinely
 everything there is, not truncated or faked, and is exactly what the approved plan refers to: map it
 straight onto task titles — migration, handler, tests — rather than declining to act because the
-description feels too brief to be trusted.`;
+description feels too brief to be trusted.
+
+By default a created task runs immediately once queued. Give a task a trigger when the user actually
+asked for a recurring or future-dated schedule instead of immediate work — "every day at 9am," "once
+a minute," "tomorrow afternoon," "next Monday." Use trigger: { type: 'cron_repeat', expression, ... }
+for something that repeats (a standard 5-field cron expression) and trigger: { type: 'cron_once',
+fireAt, ... } for a single future run (an ISO date-time). Leave timezone unset unless the user named
+one — it defaults to the server's configured timezone. This is a hard rule, not a style preference:
+only tell the user a task is scheduled or recurring when you actually set trigger and the tool's own
+response includes a schedule for it. If you created a task without trigger, it is a plain immediate
+task — say so, even if the user asked for a schedule and you weren't able to set one. Never describe
+a one-shot task as if it will run again, and never invent a schedule the tool didn't confirm.`;
 
 interface HarnessSection {
   tag: string;

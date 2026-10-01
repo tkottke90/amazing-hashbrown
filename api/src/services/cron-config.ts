@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import type { TaskStatus, TriggerType } from './workspace-store.js';
 import {
   cronExpressionError,
@@ -46,9 +47,14 @@ const isoDate = z
   .string()
   .refine((v) => !Number.isNaN(new Date(v).getTime()), { message: 'must be a valid date' });
 
+// Optional on input — a caller with no timezone of its own to prefill from
+// (the chat agent has no browser) falls back to the server-configured
+// default (env.timezone) rather than being required to guess one.
 const timezone = z
   .string()
-  .refine(isValidTimeZone, { message: 'must be a valid IANA time zone, e.g. America/Chicago' });
+  .refine(isValidTimeZone, { message: 'must be a valid IANA time zone, e.g. America/Chicago' })
+  .optional()
+  .transform((v) => v ?? env.timezone);
 
 const positiveIntOrNull = z.number().int().positive().nullable();
 

@@ -1,6 +1,11 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { CostEntrySchema, ContextWindowSchema, parseFavoriteModels } from './env.js';
+import {
+  CostEntrySchema,
+  ContextWindowSchema,
+  parseFavoriteModels,
+  resolveServerTimezone,
+} from './env.js';
 
 describe('config/env', () => {
   describe('ContextWindowSchema', () => {
@@ -74,6 +79,22 @@ describe('config/env', () => {
     it('returns an empty list when the config value is not an array [unit]', () => {
       expect(parseFavoriteModels(undefined)).to.deep.equal([]);
       expect(parseFavoriteModels({ provider: 'do', model: 'm' })).to.deep.equal([]);
+    });
+  });
+
+  describe('resolveServerTimezone', () => {
+    it('passes through a valid IANA time zone unchanged [unit]', () => {
+      expect(resolveServerTimezone('America/Chicago')).to.equal('America/Chicago');
+    });
+
+    it('falls back to UTC for a string that is not a valid IANA time zone [unit]', () => {
+      expect(resolveServerTimezone('Not/AZone')).to.equal('UTC');
+    });
+
+    it('falls back to UTC when the configured value is missing or not a string [unit]', () => {
+      expect(resolveServerTimezone(undefined)).to.equal('UTC');
+      expect(resolveServerTimezone(null)).to.equal('UTC');
+      expect(resolveServerTimezone(42)).to.equal('UTC');
     });
   });
 });

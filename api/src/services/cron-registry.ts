@@ -104,10 +104,16 @@ export class CronRegistry {
     }
   }
 
-  // Re-syncs every armed task — for bulk changes (a workspace delete) where
-  // the affected ids aren't at hand. Tasks that are gone get cleared.
+  // Re-syncs every armed task plus every task currently 'scheduled' in the
+  // database — for bulk changes (a workspace delete, a batch task creation)
+  // where the affected ids aren't at hand. Scanning the timer map alone
+  // would miss a task that has never been armed before (e.g. one just
+  // created), so this also reads listScheduledTasks(), the same query
+  // boot() uses. Tasks that are gone or no longer scheduled get cleared.
   resyncAll(): void {
-    for (const taskId of [...this.timers.keys()]) this.sync(taskId);
+    const ids = new Set<string>(this.timers.keys());
+    for (const task of this.store().listScheduledTasks()) ids.add(task.id);
+    for (const taskId of ids) this.sync(taskId);
   }
 
   // Starts one run for the given fire time if the task is idle on its
@@ -174,15 +180,19 @@ export class CronRegistry {
   }
 }
 
-// Wraps the task executor so every run — however it ends — re-syncs its
-// task's schedule afterwards: settlement usually puts a cron task back to
-// 'scheduled', and this arms its next fire.
+// Wraps the task executor so every run — however it ends — re-syncs
+// schedules afterwards: settlement usually puts a cron task back to
+// 'scheduled' (arming its next fire), and the run's completion can also
+// release a dependent cron task straight into 'scheduled' (a task created
+// with dependsOnIndexes on this one — see releaseEligibleDependents() in
+// workspace-store.ts). resyncAll() covers both the task that just ran and
+// any such dependent in one call, rather than syncing only entry.taskId.
 export function withCronResync(executor: TaskExecutor, registry: () => CronRegistry): TaskExecutor {
   return async (entry) => {
     try {
       await executor(entry);
     } finally {
-      registry().sync(entry.taskId);
+      registry().resyncAll();
     }
   };
 }

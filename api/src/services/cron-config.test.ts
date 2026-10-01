@@ -1,5 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { env } from '../config/env.js';
 import {
   describeTaskSchedule,
   resolveCronConfig,
@@ -125,6 +126,28 @@ describe('services/cron-config', () => {
         pausedReason: null,
         enabledAt: LATER.toISOString(),
       });
+    });
+  });
+
+  describe('timezone default (a caller with nothing to prefill from, e.g. the chat tool)', () => {
+    it('defaults an omitted timezone to the server-configured default for cron_repeat [unit]', () => {
+      const result = resolveCronConfig('cron_repeat', null, { expression: '0 0 * * *' }, NOW);
+      expect(result.ok && (result.config as CronRepeatConfig).timezone).to.equal(env.timezone);
+    });
+
+    it('defaults an omitted timezone to the server-configured default for cron_once [unit]', () => {
+      const result = resolveCronConfig('cron_once', null, { fireAt: LATER.toISOString() }, NOW);
+      expect(result.ok && (result.config as CronOnceConfig).timezone).to.equal(env.timezone);
+    });
+
+    it('keeps an explicitly provided timezone rather than the default [unit]', () => {
+      const result = resolveCronConfig(
+        'cron_repeat',
+        null,
+        { expression: '0 0 * * *', timezone: 'America/Chicago' },
+        NOW,
+      );
+      expect(result.ok && (result.config as CronRepeatConfig).timezone).to.equal('America/Chicago');
     });
   });
 

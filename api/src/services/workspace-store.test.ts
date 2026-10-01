@@ -885,6 +885,44 @@ describe('services/workspace-store', () => {
 
       expect(store.listTasks({})).to.deep.equal([]);
     });
+
+    const REPEAT_CONFIG = {
+      expression: '0 0 * * *',
+      timezone: 'UTC',
+      enabled: true,
+      maxIterations: null,
+      stopAfter: null,
+      maxConsecutiveFailures: 3,
+      enabledAt: '2026-01-01T00:00:00.000Z',
+      lastFiredAt: null,
+      consecutiveFailures: 0,
+      pausedReason: null,
+    };
+
+    it('sends a cron-triggered, zero-dependency task onto its schedule instead of the queue', () => {
+      const [task] = store.createTasks([
+        { title: 'nightly', triggerType: 'cron_repeat', triggerConfig: REPEAT_CONFIG },
+      ]);
+
+      expect(task!.status).to.equal('scheduled');
+      expect(store.listQueue().some((e) => e.taskId === task!.id)).to.equal(false);
+    });
+
+    it('still leaves a cron-triggered dependent at pending until its dependency exists', () => {
+      const [first, second] = store.createTasks([
+        { title: 'first' },
+        {
+          title: 'nightly, gated on first',
+          dependsOnIndexes: [0],
+          triggerType: 'cron_repeat',
+          triggerConfig: REPEAT_CONFIG,
+        },
+      ]);
+
+      expect(first!.status).to.equal('ready');
+      expect(second!.status).to.equal('pending');
+      expect(store.listQueue().some((e) => e.taskId === second!.id)).to.equal(false);
+    });
   });
 
   describe('task dependencies (schema, CRUD, gating)', () => {
@@ -1082,6 +1120,35 @@ describe('services/workspace-store', () => {
         store.completeQueueEntry(entryA.id, 'done');
 
         expect(store.getTask(b.id)!.status).to.equal('running'); // untouched
+      });
+
+      it('releases a cron-triggered dependent onto its schedule, not into the queue', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        store.patchTask(a.id, { status: 'ready' });
+        const entry = store.enqueueTask(a.id);
+        const b = store.createTask({
+          title: 'nightly, gated on a',
+          triggerType: 'cron_repeat',
+          triggerConfig: {
+            expression: '0 0 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            maxIterations: null,
+            stopAfter: null,
+            maxConsecutiveFailures: 3,
+            enabledAt: '2026-01-01T00:00:00.000Z',
+            lastFiredAt: null,
+            consecutiveFailures: 0,
+            pausedReason: null,
+          },
+        });
+        store.addTaskDependency(b.id, a.id);
+
+        store.completeQueueEntry(entry.id, 'done');
+
+        const updatedB = store.getTask(b.id)!;
+        expect(updatedB.status).to.equal('scheduled');
+        expect(store.listQueue().some((q) => q.taskId === b.id)).to.equal(false);
       });
     });
 
