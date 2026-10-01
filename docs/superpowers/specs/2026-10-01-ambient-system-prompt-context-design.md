@@ -1,8 +1,8 @@
 # Ambient System-Prompt Context — Design
 
 **Date:** 2026-10-01
-**Status:** Proposed
-**Related:** [Issue #244](https://github.com/tkottke90/amazing-hashbrown/issues/244), [Ambient context research](../../research/issue-244/01-ambient-context-survey.md), [Cron task triggers design](./2026-09-26-cron-task-triggers-design.md) (`env.timezone`)
+**Status:** Implemented
+**Related:** [Issue #244](https://github.com/tkottke90/amazing-hashbrown/issues/244), [Ambient context research](../../research/issue-244/01-ambient-context-survey.md), [Cron task triggers design](./2026-09-26-cron-task-triggers-design.md) (`env.timezone`), [Issue #245](https://github.com/tkottke90/amazing-hashbrown/issues/245) (shell_exec cwd follow-up), [Issue #246](https://github.com/tkottke90/amazing-hashbrown/issues/246) (model-identity follow-up)
 
 ---
 
@@ -40,8 +40,8 @@ A second, repo-specific problem surfaced during design: `buildSystemPrompt()`'s 
 - **OS/platform, locale.** Real precedent exists (Aider), but no failure mode exists in this repo. Not added; not filed as a follow-up either — there's nothing concrete to track yet.
 - **Session/thread identifiers as prompt text.** The research found this is not a pattern anywhere surveyed (LangGraph `thread_id`, OpenAI `conversation_id` are both pure app-layer addressing keys, never written into the model's own context). Not added.
 - **IDE/editor-style state.** Only found in unverified blog claims; Cursor's own docs don't confirm it. Not added.
-- **Working directory for plain (non-workspace) chat.** `shell_exec` runs with `undefined` cwd and `SHELL_EXECUTION_SECTION` says nothing about it; workspace chat already covers this via `buildWorkspaceContextBlock()`'s `Location on disk:` line. Plausible gap, no logged failure — **follow-up issue**, with a suggested eval scenario, rather than speculative code here.
-- **Model identity on provider/model switch.** Anthropic's stated rationale (a model can't infer its own identity from history when the user can swap models mid-conversation) matches this repo's architecture exactly — `resolveTurnModel(provider, modelName)` resolves per turn, and a thread's checkpointed history can span a provider/model switch. No eval reproduces a failure from this yet. **Follow-up issue**, with a suggested eval scenario, rather than speculative code here.
+- **Working directory for plain (non-workspace) chat.** `shell_exec` runs with `undefined` cwd and `SHELL_EXECUTION_SECTION` says nothing about it; workspace chat already covers this via `buildWorkspaceContextBlock()`'s `Location on disk:` line. Plausible gap, no logged failure — filed as [issue #245](https://github.com/tkottke90/amazing-hashbrown/issues/245), with a suggested eval scenario, rather than speculative code here.
+- **Model identity on provider/model switch.** Anthropic's stated rationale (a model can't infer its own identity from history when the user can swap models mid-conversation) matches this repo's architecture exactly — `resolveTurnModel(provider, modelName)` resolves per turn, and a thread's checkpointed history can span a provider/model switch. No eval reproduces a failure from this yet. Filed as [issue #246](https://github.com/tkottke90/amazing-hashbrown/issues/246), with a suggested eval scenario, rather than speculative code here.
 
 ---
 
@@ -128,13 +128,13 @@ Placed before `modelInputSnapshotMiddleware` wherever that middleware exists, so
 
 - **`ambient-context.test.ts` (unit).** `buildAmbientContext()` is a pure function: inject `now`/`timezone`, assert the exact rendered line; assert resolution to the given timezone rather than UTC or host-local using a case where that changes the calendar day (e.g. 11pm Pacific = the next day in UTC).
 - **`ambient-context.middleware.test.ts` (orchestration).** A stub `handler` capturing the `request` it receives, same style as `model-input-snapshot.middleware.test.ts`: assert the final `systemMessage.content` contains the base content plus the `<ambient_context>` block; assert two calls with different injected `now` produce different content — the test that directly proves the staleness problem (D1) is actually fixed on a single cached agent.
-- Each of the 5 wiring sites gets a thin existing-test addition asserting the middleware array includes it.
+- No separate wiring test at the 5 call sites. During implementation, `chat-agent.test.ts` turned out to never construct these builders or assert on middleware-array membership for any of them today (no provider/model double in that file), and `wiki-ingestion-agent.ts` has no test file at all — there was no existing precedent to extend, and the behavior that matters (the final prompt includes ambient context, freshly, per call) is already covered by the middleware's own isolated test above. Inventing an "array contains X" assertion with no precedent would be testing implementation, not behavior — the exact anti-pattern this repo's `AGENTS.md` warns against.
 
 ### 5. Verification
 
 Re-run `suites/task-creation.yaml`'s `tc-004` post-implementation and confirm the trace no longer shows a `shell_exec` call before `create_tasks` — the issue's own stated acceptance bar.
 
-### 6. Follow-up issues to file
+### 6. Follow-up issues filed
 
-1. **Plain-chat `shell_exec` has no stated working directory.** Needs an eval scenario reproducing a concrete failure before it's worth code (see Non-goals).
-2. **Model identity not restated across a provider/model switch mid-thread.** This repo's `resolveTurnModel`-per-turn + shared checkpointer architecture matches Anthropic's own stated failure precondition; needs an eval scenario to confirm before it's worth code (see Non-goals).
+1. [Issue #245](https://github.com/tkottke90/amazing-hashbrown/issues/245) — plain-chat `shell_exec` has no stated working directory. Needs an eval scenario reproducing a concrete failure before it's worth code (see Non-goals).
+2. [Issue #246](https://github.com/tkottke90/amazing-hashbrown/issues/246) — model identity not restated across a provider/model switch mid-thread. This repo's `resolveTurnModel`-per-turn + shared checkpointer architecture matches Anthropic's own stated failure precondition; needs an eval scenario to confirm before it's worth code (see Non-goals).
