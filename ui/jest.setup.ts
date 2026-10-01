@@ -39,6 +39,37 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   } as unknown as typeof IntersectionObserver;
 }
 
+// react-resizable-panels (ResizablePanelGroup) constructs a DOMRect directly
+// when computing hit regions; jsdom in this project doesn't define the
+// constructor globally.
+if (typeof globalThis.DOMRect === 'undefined') {
+  globalThis.DOMRect = class DOMRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+      this.top = y;
+      this.left = x;
+      this.right = x + width;
+      this.bottom = y + height;
+    }
+
+    toJSON() {
+      return { ...this };
+    }
+  } as unknown as typeof DOMRect;
+}
+
 // jsdom 20 doesn't implement <dialog>'s imperative API at all — needed by
 // @tkottke90/preact-dialog's Dialog/Drawer/Modal, which call showModal()/
 // close() directly on the underlying <dialog> element.
