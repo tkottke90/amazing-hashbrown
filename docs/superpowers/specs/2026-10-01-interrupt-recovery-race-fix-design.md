@@ -14,7 +14,7 @@ A task whose first-ever turn hits a `shell_exec` approval gate must reliably lan
 
 ## Problem
 
-`recoverThrownInterrupt()` (`api/src/agents/stream-handler.ts:495-...`) recovers a `GraphInterrupt` thrown mid-stream by LangGraph's `interrupt()` call (used by `shell_exec`'s approval gate, among others). After catching it, it does:
+`recoverThrownInterrupt()` (`api/src/agents/stream-handler.ts`) recovers a `GraphInterrupt` thrown mid-stream by LangGraph's `interrupt()` call (used by `shell_exec`'s approval gate, among others). After catching it, it does:
 
 ```ts
 const state = await agent.graph.getState(config);
