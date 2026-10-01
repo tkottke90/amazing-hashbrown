@@ -548,7 +548,7 @@ describe('agents/system-prompt', () => {
         'and a description like "Send the status update. (Exact content and recipient not yet specified —\nconfirm before this runs if needed.)" rather than asking what the status update should say before',
       );
       expect(result).to.include(
-        'doesn\'t make it one — whatever\'s actually undecided goes in the description, not in a question back to\nthe user.',
+        "doesn't make it one — whatever's actually undecided goes in the description, not in a question back to\nthe user.",
       );
     });
 
