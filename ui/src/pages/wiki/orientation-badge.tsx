@@ -6,7 +6,10 @@ export function OrientationBadge() {
   if (!domain) return null;
 
   return (
-    <div class="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+    <div
+      data-testid="wiki-orientation-badge"
+      class="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
+    >
       <BookOpen class="size-3 shrink-0" />
       <span class="font-medium">{domain}</span>
     </div>

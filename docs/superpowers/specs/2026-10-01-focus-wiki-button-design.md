@@ -70,7 +70,7 @@ function handleFocusWiki() {
   `handleViewMetadata` already guards on, but surfaced visually since there's
   no cached "last domain" to fall back to.
 - **Active-state highlight**: the row uses the same `bg-sidebar-accent
-  text-foreground` treatment as "View Metadata"'s active state, triggered by
+text-foreground` treatment as "View Metadata"'s active state, triggered by
   `wikiOrientedTo.value === domainId`. `wikiOrientedTo` (`use-wiki-ingestion.ts`)
   is already set by the `onWikiOriented` SSE callback and already drives
   `OrientationBadge` in the chat header — reusing it here means the sidebar

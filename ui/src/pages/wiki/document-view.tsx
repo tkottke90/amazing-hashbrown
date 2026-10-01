@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { BookOpen, Plus, FileText, Loader2 } from 'lucide-preact';
+import { BookOpen, Compass, Plus, FileText, Loader2 } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
@@ -15,7 +15,7 @@ import {
   refreshPages,
 } from '@/pages/wiki/use-wiki';
 import { fetchPage } from '@/services/wiki-api';
-import { sendWikiMessage } from '@/pages/wiki/use-wiki-ingestion';
+import { sendWikiMessage, newWikiThread, wikiOrientedTo } from '@/pages/wiki/use-wiki-ingestion';
 import { PAGE_TYPE_ICON, PAGE_TYPE_LABELS } from './page-type-icons';
 import {
   DOCUMENT_GROUP_ID,
@@ -172,6 +172,12 @@ export function DocumentView({ chatInputRef }: Props) {
     metadataLoading.value = false;
   }
 
+  function handleFocusWiki() {
+    if (!domainId) return;
+    newWikiThread();
+    void sendWikiMessage(`Orient to the ${domainId} wiki.`);
+  }
+
   function handlePageClick(filename: string) {
     metadataView.value = false;
     if (!domainId) return;
@@ -249,6 +255,25 @@ export function DocumentView({ chatInputRef }: Props) {
           >
             <BookOpen class="size-3.5" />
             View Metadata
+          </button>
+        </div>
+
+        {/* Focus Wiki button */}
+        <div class="flex items-center border-b border-border px-2 py-1.5">
+          <button
+            type="button"
+            onClick={handleFocusWiki}
+            disabled={!domainId}
+            class={`flex items-center gap-1 rounded p-1 text-xs transition-colors ${
+              !domainId
+                ? 'cursor-not-allowed text-muted-foreground/50'
+                : wikiOrientedTo.value === domainId
+                  ? 'bg-sidebar-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+            }`}
+          >
+            <Compass class="size-3.5" />
+            Focus Wiki
           </button>
         </div>
 
