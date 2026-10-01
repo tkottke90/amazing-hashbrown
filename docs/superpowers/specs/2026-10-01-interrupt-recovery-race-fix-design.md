@@ -1,7 +1,7 @@
 # Interrupt Recovery Race Fix — Design
 
 **Date:** 2026-10-01
-**Status:** Approved — not yet implemented
+**Status:** Implemented (`7559555`) — pending test/lint verification, see commit
 **Related:** [Issue #72](https://github.com/tkottke90/amazing-hashbrown/issues/72) (Cron Task Triggers), [Issue #240](https://github.com/tkottke90/amazing-hashbrown/issues/240) (the sibling gap this surfaced alongside)
 
 ---
