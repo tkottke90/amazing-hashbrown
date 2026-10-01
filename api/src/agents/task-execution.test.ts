@@ -90,11 +90,21 @@ function fakeGraphInterruptAgent(
     streamEvents: (): AsyncIterable<any> => {
       async function* gen() {
         for (const e of eventsBeforeThrow) yield e;
-        throw Object.assign(new Error('Interrupted by shell_approval'), { name: 'GraphInterrupt' });
+        // recoverThrownInterrupt reads the interrupt value directly off this
+        // thrown error (.interrupts) rather than re-querying checkpoint
+        // state, so that's where the fake value needs to live now.
+        throw Object.assign(new Error('Interrupted by shell_approval'), {
+          name: 'GraphInterrupt',
+          interrupts: interruptValue ? [{ value: interruptValue }] : [],
+        });
       }
       return gen();
     },
     graph: {
+      // Unused by the GraphInterrupt-thrown path these fake agents exercise
+      // (recoverThrownInterrupt no longer calls getState() — see above), but
+      // left in place in case any test using this factory ever reaches the
+      // graceful finalizeTurn path too, which still needs it.
       getState: async () => ({
         tasks: interruptValue ? [{ interrupts: [{ value: interruptValue }] }] : [],
         config: { configurable: { checkpoint_id: 'cp-test' } },
@@ -1284,7 +1294,7 @@ describe('agents/task-execution', () => {
       expect((end!.payload as Record<string, unknown>).outcome).to.equal('waiting_on_user');
     });
 
-    it('falls back to failed (without throwing) when the error name matches but checkpoint state has no interrupt', async () => {
+    it('falls back to failed (without throwing) when the error name matches but carries no interrupt', async () => {
       const entry = makeGlobalEntry();
       const agent = fakeGraphInterruptAgent([], null);
 
@@ -1299,6 +1309,44 @@ describe('agents/task-execution', () => {
       const task = store.getTask(entry.task.id)!;
       expect(task.status).to.equal('failed');
       expect(store.listQueue().find((q) => q.id === entry.id)).to.equal(undefined);
+      // The board summary must name the specific cause (no interrupt found in
+      // checkpoint state) rather than the old one-size-fits-all string, which
+      // was indistinguishable from a genuine persistence failure — see
+      // task-execution.ts's GraphInterrupt branch.
+      const queueEntry = store.getQueueEntry(entry.id)!;
+      expect(queueEntry.summary).to.include('checkpoint had no pending interrupt');
+    });
+
+    it('falls back to failed with a specific summary when the hitl_prompt fails to persist', async () => {
+      const entry = makeGlobalEntry();
+      const agent = fakeGraphInterruptAgent([], { kind: 'shell_approval', command: 'ls' });
+
+      // Surgical failure: everything thread-message-writer.ts writes before
+      // the interrupt (task_run_marker, the assistant 'streaming' row) is
+      // wrapped in that module's own safe() and swallows errors silently —
+      // recordHitlPrompt's insertMessage() call is deliberately the one
+      // exception (see stream-handler.ts's dispatchHitlPrompt), so stubbing
+      // just the hitl_prompt insert reproduces a real DB write failure at
+      // exactly that point without derailing thread/run setup beforehand.
+      const originalInsertMessage = threadStore.insertMessage.bind(threadStore);
+      threadStore.insertMessage = ((threadId, message) => {
+        if (message.kind === 'hitl_prompt') {
+          throw new Error('simulated hitl_prompt insert failure');
+        }
+        return originalInsertMessage(threadId, message);
+      }) as typeof threadStore.insertMessage;
+
+      try {
+        await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      } finally {
+        threadStore.insertMessage = originalInsertMessage;
+      }
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.status).to.equal('failed');
+      const queueEntry = store.getQueueEntry(entry.id)!;
+      expect(queueEntry.summary).to.include('Could not save the approval prompt');
+      expect(queueEntry.summary).to.include('simulated hitl_prompt insert failure');
     });
   });
 

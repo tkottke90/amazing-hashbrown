@@ -215,8 +215,6 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       err,
       sink,
       threadStore,
-      agent,
-      config,
       threadId,
       msgId,
       turnSentAt,

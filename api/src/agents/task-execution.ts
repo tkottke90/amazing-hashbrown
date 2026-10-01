@@ -538,8 +538,6 @@ export async function executeTask(
                 err,
                 sink,
                 threadStore,
-                agent,
-                config,
                 threadId,
                 partialState.segmentId,
                 turnSentAt,
@@ -555,12 +553,39 @@ export async function executeTask(
           store.parkQueueEntryForHitl(entry.id);
           if (mirrorThreadId) mirrorPendingTaskPrompts(threadStore, threadId, mirrorThreadId);
         } else {
-          // recovered === {interrupted: false} means recoverThrownInterrupt's
-          // own failAssistant/dispatchHitlPrompt already marked the row
-          // 'error' — recovered === null means the guard above never ran it.
-          // Either way, the queue entry still needs closing out.
-          traceError = 'Failed to record the approval prompt.';
-          await finishFailedRun('Failed to record the approval prompt.');
+          // recovered === {interrupted: false, reason: ...} means
+          // recoverThrownInterrupt's own failAssistant/dispatchHitlPrompt
+          // already marked the row 'error' for a specific, known cause —
+          // recovered === null means the hoisting guard above never even
+          // ran it (effectively unreachable: agent/config/turnSentAt are
+          // all assigned well before the stream starts). Either way, the
+          // queue entry still needs closing out — but the two known causes
+          // get their own message instead of one generic string covering
+          // both, so the board card actually says what went wrong.
+          const failureSummary =
+            recovered?.reason === 'no_interrupt_in_state'
+              ? 'Lost the approval prompt — the checkpoint had no pending interrupt right after the pause.'
+              : recovered?.reason === 'persist_failed'
+                ? `Could not save the approval prompt: ${recovered.detail ?? 'unknown database error'}`
+                : 'Failed to record the approval prompt.';
+          if (!recovered) {
+            logger.error('task-execution: recoverThrownInterrupt guard never ran', {
+              taskId: task.id,
+            });
+          }
+          traceError = failureSummary;
+          await finishFailedRun(failureSummary);
+        }
+        // A thrown GraphInterrupt that doesn't end in a real waiting_on_user
+        // pause is always a bug, not an ordinary failure — the approval
+        // prompt the user needed to answer is gone. One distinctly-named,
+        // greppable line for this whole class of bug, whichever of the
+        // causes above produced it.
+        if (finalOutcome !== 'waiting_on_user') {
+          logger.error(
+            'task-execution: GraphInterrupt did not produce a waiting_on_user pause — treating as failure',
+            { taskId: task.id, reason: recovered?.reason ?? 'recovery_guard_failed' },
+          );
         }
       } else {
         logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });

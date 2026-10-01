@@ -687,11 +687,21 @@ describe('agents/stream-handler', () => {
   // notification turns — dumped the raw error instead of a HITL prompt. See
   // this function's own comment in stream-handler.ts.
   describe('recoverThrownInterrupt', () => {
-    const TEST_CONFIG = { configurable: { thread_id: 't1' } };
-
-    function graphInterruptError(segmentId: string, content: string, thoughtContent = '') {
+    // interrupt() (@langchain/langgraph) embeds the interrupt value directly
+    // on the thrown GraphInterrupt as `.interrupts`, so faking a thrown
+    // interrupt here means putting it on the constructed error — not on a
+    // stubbed agent/getState(), which recoverThrownInterrupt no longer calls.
+    function graphInterruptError(
+      segmentId: string,
+      content: string,
+      thoughtContent = '',
+      interruptValue?: Record<string, unknown>,
+    ) {
       return new PipeEventsError(
-        Object.assign(new Error('Interrupted'), { name: 'GraphInterrupt' }),
+        Object.assign(new Error('Interrupted'), {
+          name: 'GraphInterrupt',
+          interrupts: interruptValue ? [{ value: interruptValue }] : [],
+        }),
         segmentId,
         content,
         thoughtContent,
@@ -702,14 +712,11 @@ describe('agents/stream-handler', () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       const { sink } = fakeSink();
-      const agent = stubAgent(null);
 
       const result = await recoverThrownInterrupt(
         new Error('boom'),
         sink,
         store,
-        agent,
-        TEST_CONFIG,
         't1',
         'msg1',
         new Date().toISOString(),
@@ -726,18 +733,15 @@ describe('agents/stream-handler', () => {
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       recordAssistantStart(store, 't1', 'seg-1', TEST_SENT_AT);
       const { sink, events } = fakeSink();
-      const agent = stubAgent({
-        kind: 'shell_approval',
-        command: 'ls -la',
-        reason: 'inspect the workspace',
-      });
 
       const result = await recoverThrownInterrupt(
-        graphInterruptError('seg-1', 'Running the command...'),
+        graphInterruptError('seg-1', 'Running the command...', '', {
+          kind: 'shell_approval',
+          command: 'ls -la',
+          reason: 'inspect the workspace',
+        }),
         sink,
         store,
-        agent,
-        TEST_CONFIG,
         't1',
         'seg-1',
         TEST_SENT_AT,
@@ -763,19 +767,16 @@ describe('agents/stream-handler', () => {
       rmSync(dir, { recursive: true });
     });
 
-    it('fails the row and returns interrupted:false when checkpoint state has no interrupt (safety net)', async () => {
+    it('fails the row and returns interrupted:false when the thrown error carries no interrupts (safety net)', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       recordAssistantStart(store, 't1', 'seg-2', TEST_SENT_AT);
       const { sink } = fakeSink();
-      const agent = stubAgent(null); // name matched but nothing parked in state
 
       const result = await recoverThrownInterrupt(
-        graphInterruptError('seg-2', 'partial'),
+        graphInterruptError('seg-2', 'partial'), // no interrupt value — name matched but nothing to recover
         sink,
         store,
-        agent,
-        TEST_CONFIG,
         't1',
         'seg-2',
         TEST_SENT_AT,
@@ -784,6 +785,7 @@ describe('agents/stream-handler', () => {
       );
 
       expect(result?.interrupted).to.equal(false);
+      expect(result?.reason).to.equal('no_interrupt_in_state');
       const assistantRow = store
         .getThreadMessages('t1')
         .find((m) => m.id === 'seg-2' && m.kind === 'assistant');
@@ -796,15 +798,16 @@ describe('agents/stream-handler', () => {
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       recordAssistantStart(store, 't1', 'seg-3', TEST_SENT_AT);
       const { sink, events } = fakeSink();
-      const agent = stubAgent({ kind: 'shell_approval', command: 'ls', reason: 'list' });
       store.close(); // recordHitlPrompt will throw against a closed DB
 
       const result = await recoverThrownInterrupt(
-        graphInterruptError('seg-3', 'partial'),
+        graphInterruptError('seg-3', 'partial', '', {
+          kind: 'shell_approval',
+          command: 'ls',
+          reason: 'list',
+        }),
         sink,
         store,
-        agent,
-        TEST_CONFIG,
         't1',
         'seg-3',
         TEST_SENT_AT,
@@ -813,6 +816,8 @@ describe('agents/stream-handler', () => {
       );
 
       expect(result?.interrupted).to.equal(false);
+      expect(result?.reason).to.equal('persist_failed');
+      expect(result?.detail).to.be.a('string').and.not.equal('');
       const emitted = events();
       expect(emitted.some((e) => e.type === 'stream_error')).to.equal(true);
       expect(emitted.some((e) => e.type === 'hitl_prompt')).to.equal(false);
@@ -824,14 +829,15 @@ describe('agents/stream-handler', () => {
       store.upsertThreadOnFirstMessage('t1', 'Hello');
       recordAssistantStart(store, 't1', 'seg-4', TEST_SENT_AT);
       const { sink } = fakeSink();
-      const agent = stubAgent({ kind: 'shell_approval', command: 'ls', reason: 'list' });
 
       await recoverThrownInterrupt(
-        graphInterruptError('seg-4', 'partial'),
+        graphInterruptError('seg-4', 'partial', '', {
+          kind: 'shell_approval',
+          command: 'ls',
+          reason: 'list',
+        }),
         sink,
         store,
-        agent,
-        TEST_CONFIG,
         't1',
         'seg-4',
         TEST_SENT_AT,
