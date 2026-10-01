@@ -116,12 +116,12 @@ and independent write-ups describe the UTC-vs-local mismatch this causes in
 practice: if a harness computes "today" in UTC while the user is, say, in US
 Mountain time in the evening, a scheduling request can resolve to the wrong
 calendar day. This is a secondary source (forum post / blog), not a vendor
-doc, but it's cited here only to characterize the *failure mode*, not to make
+doc, but it's cited here only to characterize the _failure mode_, not to make
 a vendor claim — and it is exactly the class of bug a bare `Date.now()` in
 UTC would reproduce in this repo.
 
 **Bottom line on timezone:** none of the primary sources found actually
-solve "resolve 'today' to the *user's* timezone" in a principled way — Aider
+solve "resolve 'today' to the _user's_ timezone" in a principled way — Aider
 punts to host-local, Anthropic's claude.ai prompt doesn't document its own
 timezone resolution (only that a date/time value is injected), and OpenAI's
 gpt-oss template just stamps a date with no timezone context at all. This
@@ -179,9 +179,9 @@ and corroborated by multiple independent decompiled-source repos), and
 Anthropic has issued takedown notices against mirrors of it. This block
 should therefore be read as **a plausible, widely-corroborated-but-vendor-
 unconfirmed reconstruction**, not an official Anthropic-published fact, in
-contrast to the claude.ai prompt in 2.1/2.5 which *is* vendor-confirmed.
+contrast to the claude.ai prompt in 2.1/2.5 which _is_ vendor-confirmed.
 It's included here because the shape (cwd, git-repo flag, platform, OS
-version, date, model) is a well-documented *convention* even if this
+version, date, model) is a well-documented _convention_ even if this
 specific instance's provenance is a leak rather than a publication.
 
 ### 2.3 Working directory / environment
@@ -216,7 +216,7 @@ defines a thread as:
 > checkpointer cannot save state or resume execution after an interrupt."
 
 This is **not** framed as something injected into the model's own context —
-it's a persistence/addressing key the *harness* uses to load the right
+it's a persistence/addressing key the _harness_ uses to load the right
 history before building the prompt, not ambient text the model is told about
 directly. Worth noting precisely because it's a different kind of "ambient
 context" than the others in this survey: infrastructure-level, not
@@ -236,8 +236,8 @@ its own system prompt.
 identifier — `task_queue.thread_id` for task runs (per `api/AGENTS.md`'s
 "Automated task runs" section) — used the same way: to address which
 history/state a turn continues, not as text injected into the prompt itself.
-No primary source surveyed here injects a raw session/thread ID *into the
-model's own visible context* as ambient metadata; it's uniformly an
+No primary source surveyed here injects a raw session/thread ID _into the
+model's own visible context_ as ambient metadata; it's uniformly an
 addressing mechanism the application layer uses, which argues against
 treating "session identifier" as a system-prompt-injection candidate the way
 date/platform are.
@@ -249,7 +249,7 @@ date/platform are.
 
 > "This iteration of Claude is Claude Sonnet 5."
 
-and, notably, explains *why* this needs to be stated explicitly rather than
+and, notably, explains _why_ this needs to be stated explicitly rather than
 assumed from training:
 
 > "The person can switch models mid-conversation, so earlier messages in
@@ -268,7 +268,7 @@ system message opens with the same convention:
 
 **Claude Code CLI environment block (unverified leak, see 2.2's caveat)**
 reportedly includes a literal `Model: claude-sonnet-4-20250514` line — i.e.
-the harness stamps the exact model ID/version string being used for *that*
+the harness stamps the exact model ID/version string being used for _that_
 call, distinct from the "Claude Sonnet 5" product-name framing in the
 claude.ai prompt. This is a useful distinction to carry into any design
 discussion: "which product/persona am I" (claude.ai's framing) vs. "which
@@ -295,7 +295,7 @@ normalizing whatever it finds (e.g. `en_US` → `English`) and feeding it
 straight into an instruction: `final_reminders.append(f"Reply in
 {user_lang}.\n")`. This is the clearest primary-source example found of
 locale as ambient context with an explicit, stated purpose (control the
-*reply language*, not just a cosmetic fact) rather than a vague "nice to
+_reply language_, not just a cosmetic fact) rather than a vague "nice to
 know."
 
 No other primary source surveyed documents locale injection as clearly as
@@ -318,7 +318,7 @@ repository, so it is **not** reported here as sourced — only Aider's is.
   an analog: `workspaceContext` passed into `buildSystemPrompt()`).
 - **Anthropic's `<anthropic_reminders>` mechanism (officially published,
   same source as 2.1/2.5).** The claude.ai prompt documents a convention of
-  injecting conditional, event-triggered reminders *mid-conversation*
+  injecting conditional, event-triggered reminders _mid-conversation_
   (`long_conversation_reminder`, `cyber_warning`, etc.) rather than only at
   conversation start — i.e., ambient context doesn't have to be a single
   static block built once; it can be refreshed/re-injected by the harness
@@ -376,8 +376,8 @@ either way, and that absence is itself a finding:
 
 1. **Timezone resolution.** Every primary source that injects a date either
    doesn't document how it resolves to a timezone (Anthropic's `claude.ai`
-   prompt) or resolves to the *host machine's* local timezone with no
-   attempt to use the *user's* timezone (Aider's `datetime.now().astimezone()`
+   prompt) or resolves to the _host machine's_ local timezone with no
+   attempt to use the _user's_ timezone (Aider's `datetime.now().astimezone()`
    with no explicit zone, OpenAI's `strftime_now` with no zone argument
    shown in the template). None of the harnesses surveyed demonstrate a
    principled "resolve to the user's own timezone" pattern — this looks
