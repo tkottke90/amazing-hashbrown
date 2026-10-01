@@ -35,12 +35,12 @@ and `GraphInterrupt` (`dist/errors.js`) has a public `.interrupts` field populat
 
 ## Decisions
 
-| Question                                                             | Decision                                                                                                                                                                                                          |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fix scope                                                              | **The shared `recoverThrownInterrupt()` function itself.** It's used by every turn type (chat, workspace chat, wiki chat, headless notifications, task runs) — the race is structural to the function, not task-specific, so every caller gets fixed at once. |
-| Keep `getState()` as a defensive fallback?                            | **No — remove it entirely.** The error's own `.interrupts` is the sole source of truth. If it's ever empty, that's a different, more clearly-anomalous failure, not something worth a checkpoint round-trip to double check. |
-| Alternative: retry `getState()` after a delay                         | **Rejected.** A band-aid, not a fix — adds latency to every interrupt, and is inherently non-deterministic to test. We have a real root-cause fix available. |
-| Alternative: never let interrupts throw mid-stream (always graceful)  | **Rejected.** Much larger blast radius (how `pipeEvents` consumes every turn's event stream), higher risk, and LangGraph's own design indicates this throw path isn't fully avoidable from our side. |
+| Question                                                             | Decision                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fix scope                                                            | **The shared `recoverThrownInterrupt()` function itself.** It's used by every turn type (chat, workspace chat, wiki chat, headless notifications, task runs) — the race is structural to the function, not task-specific, so every caller gets fixed at once. |
+| Keep `getState()` as a defensive fallback?                           | **No — remove it entirely.** The error's own `.interrupts` is the sole source of truth. If it's ever empty, that's a different, more clearly-anomalous failure, not something worth a checkpoint round-trip to double check.                                  |
+| Alternative: retry `getState()` after a delay                        | **Rejected.** A band-aid, not a fix — adds latency to every interrupt, and is inherently non-deterministic to test. We have a real root-cause fix available.                                                                                                  |
+| Alternative: never let interrupts throw mid-stream (always graceful) | **Rejected.** Much larger blast radius (how `pipeEvents` consumes every turn's event stream), higher risk, and LangGraph's own design indicates this throw path isn't fully avoidable from our side.                                                          |
 
 ---
 
@@ -95,7 +95,7 @@ All 10 call sites get the same mechanical update (drop the two now-unused args),
 
 ### 4. The remaining failure mode
 
-`reason: 'no_interrupt_in_state'` (and its board-summary text, and `task-execution.ts`'s invariant log) are unchanged in vocabulary — only *when* they fire changes: now it means "the caught error itself carried no interrupt value" (essentially never, barring a malformed error) rather than "the checkpoint didn't have it yet" (a routine timing problem). The log line in that branch updates its context from `{ threadId, tasks: state.tasks }` to `{ threadId, err: serializeError(err) }`, and its message text drops the now-inaccurate "checkpoint state" framing.
+`reason: 'no_interrupt_in_state'` (and its board-summary text, and `task-execution.ts`'s invariant log) are unchanged in vocabulary — only _when_ they fire changes: now it means "the caught error itself carried no interrupt value" (essentially never, barring a malformed error) rather than "the checkpoint didn't have it yet" (a routine timing problem). The log line in that branch updates its context from `{ threadId, tasks: state.tasks }` to `{ threadId, err: serializeError(err) }`, and its message text drops the now-inaccurate "checkpoint state" framing.
 
 `dispatchHitlPrompt`'s other failure mode (`persist_failed` — the DB write itself throwing) is untouched; it's downstream of extraction and doesn't care where the value came from.
 
@@ -117,5 +117,5 @@ No new "simulate the race" test is needed or meaningfully possible — the fix r
 ## Non-goals
 
 - Fixing `create_tasks`' inability to create cron-scheduled tasks (#240) — unrelated gap, tracked separately.
-- The two `@local` e2e suites from the earlier diagnostics-only plan — still outstanding, deferred until this fix lands (they'll want to assert the *correct* `waiting_on_user` outcome, which this fix is what actually makes true).
+- The two `@local` e2e suites from the earlier diagnostics-only plan — still outstanding, deferred until this fix lands (they'll want to assert the _correct_ `waiting_on_user` outcome, which this fix is what actually makes true).
 - Any change to how LangGraph itself persists checkpoints or interrupts — this fix works entirely within what the thrown error already provides.
