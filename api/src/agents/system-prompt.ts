@@ -1479,6 +1479,30 @@ available?", "what can you do?" — where there's nothing yet to narrow by.`;
 // ceiling — added a fourth paragraph applying IMAGE_SECTION's own "don't
 // second-guess a tool's result as fake or a placeholder" framing to this
 // tool's shape explicitly.
+//
+// Round 4, suites/task-creation.yaml's tc-003/tc-004 (2026-10-01, a 20-round
+// diagnostic-only run against local/Lemonade/Ornith/Digital Ocean, judge
+// local; log eval-logs/auto-eval-20261001114422.yaml, gitignored —
+// findings captured in this session's memory before being lost). With zero
+// code changes across all 20 rounds, Ornith (0/20 both scenarios), Digital
+// Ocean (5/20 tc-003, 0/20 tc-004), and Lemonade (1/20 tc-003, 2/20 tc-004)
+// essentially never called create_tasks for either scenario —
+// calledTools showed wiki_locate/ask_user/search_skills/shell_exec instead,
+// every time. Both scenarios are unambiguous scheduling requests ("checks
+// the build status every day at 9am UTC", "schedule it for tomorrow at
+// 3pm") that are missing *other* operational detail (which build system,
+// who the update goes to) — all three models treated that missing detail
+// as blocking the whole call, rather than recognizing that the one thing
+// create_tasks actually needs (the schedule) was already fully specified.
+// local, by contrast, called create_tasks correctly 18/20 times on both —
+// its failures are a separate, harness-side judge-scoring artifact, not
+// this gap (see this session's memory). Per interpreting-results.md §3,
+// added a fifth paragraph built directly from tc-003/tc-004's own scenario
+// wording, contrasting "the schedule is specified, other detail isn't"
+// (act now) against "the schedule itself is the missing/ambiguous part"
+// (ask_user is warranted) — a distinction nothing in this section
+// previously drew. Re-run Ornith/Lemonade/Digital Ocean against both
+// scenarios next round to check.
 const CREATE_TASKS_SECTION = `create_tasks turns an approved plan into a batch of queued tasks that run autonomously, one after
 another. Call it only once the user has actually approved a plan — while still exploring options
 together ("maybe split it into a migration step and a handler step, what do you think?"), keep
@@ -1516,7 +1540,19 @@ one — it defaults to the server's configured timezone. This is a hard rule, no
 only tell the user a task is scheduled or recurring when you actually set trigger and the tool's own
 response includes a schedule for it. If you created a task without trigger, it is a plain immediate
 task — say so, even if the user asked for a schedule and you weren't able to set one. Never describe
-a one-shot task as if it will run again, and never invent a schedule the tool didn't confirm.`;
+a one-shot task as if it will run again, and never invent a schedule the tool didn't confirm.
+
+A request can be a complete scheduling instruction even when it leaves other, non-scheduling detail
+open. "Set up a task that checks the build status every day at 9am UTC and posts a summary" already
+names everything create_tasks needs for the trigger itself — call it right away with trigger: {
+type: 'cron_repeat', expression: '0 9 * * *' } rather than pausing on ask_user, wiki_locate, or
+shell_exec to first pin down which build system or where the summary gets posted; note an open
+question like that plainly in the task's own description instead of withholding the call over it.
+The same holds for a future-dated run: "schedule it for tomorrow at 3pm" already fixes a real fireAt
+you can resolve against today's date without asking, even if what the status update says or who it
+goes to is still thin. Reserve ask_user for when the schedule itself is the missing or contradictory
+part — "run this sometime next week" with no day, or a request with no cadence at all — not for
+operational gaps elsewhere in a request whose timing is already clear.`;
 
 interface HarnessSection {
   tag: string;

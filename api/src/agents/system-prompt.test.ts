@@ -522,6 +522,26 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('run the check or apply the fix, then report\nwhat happened');
     });
 
+    it('calls create_tasks on a scheduling request that leaves non-scheduling detail open, instead of asking first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'A request can be a complete scheduling instruction even when it leaves other, non-scheduling detail\nopen.',
+      );
+      expect(result).to.include(
+        "note an open\nquestion like that plainly in the task's own description instead of withholding the call over it.",
+      );
+    });
+
+    it('reserves ask_user for when the schedule itself is missing, not for other operational gaps', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Reserve ask_user for when the schedule itself is the missing or contradictory',
+      );
+      expect(result).to.include(
+        'not for\noperational gaps elsewhere in a request whose timing is already clear.',
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });
