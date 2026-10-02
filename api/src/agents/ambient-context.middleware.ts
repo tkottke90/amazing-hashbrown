@@ -2,6 +2,7 @@ import { createMiddleware } from 'langchain';
 import { SystemMessage } from '@langchain/core/messages';
 import { env } from '../config/env.js';
 import { buildAmbientContext } from './ambient-context.js';
+import { getMessageText } from './message-content.js';
 
 // Fresh on every model call, regardless of how long the parent agent has
 // been cached — see tool-access.middleware.ts for the identical rationale
@@ -13,8 +14,13 @@ export function createAmbientContextMiddleware(getNow: () => Date = () => new Da
   return createMiddleware({
     name: 'AmbientContextMiddleware',
     wrapModelCall: async (request, handler) => {
-      const baseContent = request.systemMessage.content;
-      if (typeof baseContent !== 'string') return handler(request);
+      // See message-content.ts's header comment: request.systemMessage.content
+      // can arrive as a content-block array instead of a plain string once
+      // this turn's messages include structured multimodal content (e.g. an
+      // attached image). getMessageText() recovers the text either way, so
+      // ambient context still gets injected on a multimodal turn instead of
+      // silently being skipped.
+      const baseContent = getMessageText(request.systemMessage.content);
       const ambient = buildAmbientContext({ timezone: env.timezone, now: getNow() });
       const systemMessage = new SystemMessage(
         `${baseContent}\n\n<ambient_context>\n${ambient}\n</ambient_context>`,

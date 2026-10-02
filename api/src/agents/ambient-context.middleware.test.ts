@@ -56,17 +56,29 @@ describe('agents/ambient-context.middleware', () => {
     expect(seen[1]).to.include('2026-09-27 09:00 UTC');
   });
 
-  it(`passes the request through unmodified when the system message is not a plain string ${TestTypes.UNIT}`, async () => {
-    const middleware: AnyMiddleware = createAmbientContextMiddleware(() => new Date());
+  it(`still injects ambient context when the system message content is a structured array, not a plain string ${TestTypes.UNIT}`, async () => {
+    // Regression test: this used to pass the request through unmodified
+    // (skipping ambient context entirely) whenever systemMessage.content
+    // wasn't a plain string — which happens on any turn whose messages
+    // include structured multimodal content (e.g. an attached image), not
+    // just some theoretical case. getMessageText() must recover the text so
+    // this middleware keeps doing its job on a multimodal turn too.
+    const middleware: AnyMiddleware = createAmbientContextMiddleware(
+      () => new Date('2026-09-26T17:05:00.000Z'),
+    );
     const structured = new SystemMessage({ content: [{ type: 'text', text: 'structured' }] });
-    const request = fakeRequest(structured);
-    let seen: unknown;
+    let seenContent: unknown;
 
-    await middleware.wrapModelCall(request, async (req: unknown) => {
-      seen = req;
-      return {};
-    });
+    await middleware.wrapModelCall(
+      fakeRequest(structured),
+      async (req: { systemMessage: SystemMessage }) => {
+        seenContent = req.systemMessage.content;
+        return {};
+      },
+    );
 
-    expect(seen).to.equal(request);
+    expect(seenContent).to.equal(
+      'structured\n\n<ambient_context>\nCurrent date and time: 2026-09-26 17:05 UTC. "Today," "tomorrow," and similar relative dates resolve against this.\n</ambient_context>',
+    );
   });
 });

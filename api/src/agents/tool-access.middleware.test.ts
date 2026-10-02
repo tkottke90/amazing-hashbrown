@@ -232,6 +232,33 @@ describe('agents/tool-access.middleware', () => {
     });
   });
 
+  describe('structured (non-string) system message content', () => {
+    // Regression test: systemMessage.content arrives as a content-block
+    // array rather than a plain string once this turn's messages include
+    // structured multimodal content (e.g. an attached image) — this used to
+    // make the middleware skip section filtering and instruction injection
+    // entirely for that call, silently degrading the system prompt on every
+    // turn with an attachment.
+    it('still filters harness sections and injects instructions when systemMessage.content is a block array', async () => {
+      toolsConfig['shell_exec'] = { enabled: false };
+      toolsConfig['web_fetch'] = { instructions: 'Always summarize concisely.' };
+      const harnessText =
+        '<identity>\nalways here\n</identity>\n\n<web_fetch>\nfetch guidance\n</web_fetch>\n\n<shell_execution>\nshell guidance\n</shell_execution>';
+      const request = {
+        ...fakeRequest(['web_fetch', 'shell_exec'], 't1'),
+        systemMessage: new SystemMessage({ content: [{ type: 'text', text: harnessText }] }),
+      };
+
+      const { systemContent } = await runMiddleware(middleware, request);
+
+      expect(systemContent).to.not.include('<shell_execution>');
+      expect(systemContent).to.include('<web_fetch>');
+      expect(systemContent).to.include('<identity>');
+      expect(systemContent).to.include('<tool_guidance:web_fetch>');
+      expect(systemContent).to.include('Always summarize concisely.');
+    });
+  });
+
   describe('required-tool injection (issue #172)', () => {
     it('appends a required-tool block for a requested id that is bound/enabled', async () => {
       const { systemContent } = await runMiddleware(
