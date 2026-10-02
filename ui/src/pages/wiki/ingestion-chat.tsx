@@ -32,7 +32,7 @@ export function IngestionChat({ chatInputRef }: Props) {
   const inputValue = useSignal('');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const copied = useSignal(false);
-  const stagedAttachment = useSignal<StagedAttachment | null>(null);
+  const stagedAttachments = useSignal<StagedAttachment[]>([]);
   const forceScrollTrigger = useSignal(0);
 
   function handleCopyThreadId() {
@@ -64,9 +64,9 @@ export function IngestionChat({ chatInputRef }: Props) {
     if (!content) return;
     forceScrollTrigger.value++;
     inputValue.value = '';
-    const attachmentId = stagedAttachment.value?.id;
-    stagedAttachment.value = null;
-    void sendWikiMessage(content, attachmentId);
+    const attachments = stagedAttachments.value;
+    stagedAttachments.value = [];
+    void sendWikiMessage(content, attachments);
   }
 
   const resolvedProvider =
@@ -168,9 +168,9 @@ export function IngestionChat({ chatInputRef }: Props) {
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}
           threadId={wikiThreadId.value}
-          attachment={stagedAttachment.value}
-          onAttachmentChange={(attachment) => {
-            stagedAttachment.value = attachment;
+          attachments={stagedAttachments.value}
+          onAttachmentsChange={(next) => {
+            stagedAttachments.value = next;
           }}
         />
       </div>

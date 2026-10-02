@@ -23,7 +23,7 @@ export function WorkspaceChatTab({
   onInputFocusChange?: (focused: boolean) => void;
 }) {
   const inputValue = useSignal('');
-  const stagedAttachment = useSignal<StagedAttachment | null>(null);
+  const stagedAttachments = useSignal<StagedAttachment[]>([]);
   const forceScrollTrigger = useSignal(0);
   // Local, button-driven loading state for the on-demand summarize request —
   // distinct from thread.isSummarizing (SSE-driven, only fires for the
@@ -59,9 +59,9 @@ export function WorkspaceChatTab({
     if (!content) return;
     forceScrollTrigger.value++;
     inputValue.value = '';
-    const attachmentId = stagedAttachment.value?.id;
-    stagedAttachment.value = null;
-    thread.sendMessage(content, attachmentId).catch(console.error);
+    const attachments = stagedAttachments.value;
+    stagedAttachments.value = [];
+    thread.sendMessage(content, attachments).catch(console.error);
   }
 
   async function handleSummarizeClick() {
@@ -185,9 +185,9 @@ export function WorkspaceChatTab({
             onModelSelect={thread.setThreadModel}
             threadId={workspace.threadId}
             workspaceId={workspace.id}
-            attachment={stagedAttachment.value}
-            onAttachmentChange={(attachment) => {
-              stagedAttachment.value = attachment;
+            attachments={stagedAttachments.value}
+            onAttachmentsChange={(next) => {
+              stagedAttachments.value = next;
             }}
           />
         </div>

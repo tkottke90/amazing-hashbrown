@@ -1,13 +1,16 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 
 import {
   ChatMessage,
-  ChatMessageAttachmentWarningAction,
   ChatMessageCopyAction,
   ChatMessageForkAction,
   ChatMessageSaveAction,
 } from '@/components/chat-message';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+function allTiles() {
+  return document.querySelectorAll('[data-slot="chat-message-attachment"]');
+}
 
 const NOW = Date.now();
 
@@ -85,16 +88,18 @@ describe('ChatMessage', () => {
   });
 
   describe('attachment preview', () => {
-    it('renders an image thumbnail sourced from the artifacts endpoint', () => {
+    it('renders an image thumbnail sourced from the artifacts endpoint, as a clickable tile', () => {
       render(
         <ChatMessage
           message="check this out"
           sentAt={new Date()}
-          attachment={{ id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png' }}
+          attachments={[{ id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png' }]}
         />,
       );
-      const img = screen.getByAltText('photo.png') as HTMLImageElement;
+      const tile = allTiles()[0] as HTMLElement;
+      const img = within(tile).getByAltText('photo.png') as HTMLImageElement;
       expect(img.src).toContain('/api/v1/artifacts/artifact-1');
+      expect(within(tile).getByRole('button')).toBeInTheDocument();
     });
 
     it.each([
@@ -107,10 +112,11 @@ describe('ChatMessage', () => {
         <ChatMessage
           message="see attached"
           sentAt={new Date()}
-          attachment={{ id: 'artifact-1', filename, mimeType: 'application/octet-stream' }}
+          attachments={[{ id: 'artifact-1', filename, mimeType: 'application/octet-stream' }]}
         />,
       );
-      expect(screen.getByText(expectedText)).toBeInTheDocument();
+      const tile = allTiles()[0] as HTMLElement;
+      expect(within(tile).getByText(expectedText)).toBeInTheDocument();
     });
 
     it('falls back to a generic gray box for an unrecognized extension', () => {
@@ -118,31 +124,109 @@ describe('ChatMessage', () => {
         <ChatMessage
           message="see attached"
           sentAt={new Date()}
-          attachment={{
-            id: 'artifact-1',
-            filename: 'data.xyz',
-            mimeType: 'application/octet-stream',
-          }}
+          attachments={[
+            { id: 'artifact-1', filename: 'data.xyz', mimeType: 'application/octet-stream' },
+          ]}
         />,
       );
-      const box = screen.getByText('XYZ');
+      const tile = allTiles()[0] as HTMLElement;
+      const box = within(tile).getByText('XYZ');
       expect(box).toHaveClass('bg-gray-100');
     });
 
-    it('renders nothing extra when no attachment is provided', () => {
+    it('renders nothing extra when no attachments are provided', () => {
       render(<ChatMessage message="hi" sentAt={new Date()} />);
-      expect(document.querySelector('[data-slot="chat-message-attachment"]')).toBeNull();
+      expect(allTiles()).toHaveLength(0);
     });
-  });
 
-  describe('ChatMessageAttachmentWarningAction', () => {
-    it('renders a button with a tooltip explaining the exclusion', () => {
+    it('renders one tile per attachment, in order, up to the 4-attachment cap', () => {
+      render(
+        <ChatMessage
+          message="several files"
+          sentAt={new Date()}
+          attachments={[
+            { id: 'a1', filename: 'one.png', mimeType: 'image/png' },
+            { id: 'a2', filename: 'two.txt', mimeType: 'text/plain' },
+          ]}
+        />,
+      );
+      const tiles = allTiles();
+      expect(tiles).toHaveLength(2);
+      expect(within(tiles[0] as HTMLElement).getByAltText('one.png')).toBeInTheDocument();
+      expect(within(tiles[1] as HTMLElement).getByText('TXT')).toBeInTheDocument();
+    });
+
+    it('wires the tile up as the modal trigger for an image lightbox', () => {
+      // The preact-dialog mock (test/__mocks__/preact-dialog.tsx) renders a
+      // Modal's content unconditionally rather than toggling it on open/
+      // close — same as every other dialog test in this codebase — so this
+      // asserts the lightbox content exists (distinct from the tile's own
+      // thumbnail, found via its object-contain vs. object-cover class)
+      // rather than simulating an actual open.
+      render(
+        <ChatMessage
+          message="check this out"
+          sentAt={new Date()}
+          attachments={[{ id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png' }]}
+        />,
+      );
+      const images = screen.getAllByAltText('photo.png') as HTMLImageElement[];
+      expect(images).toHaveLength(2);
+      const lightboxImg = images.find((img) => img.className.includes('object-contain'));
+      expect(lightboxImg?.src).toContain('/api/v1/artifacts/artifact-1');
+    });
+
+    it('wires the tile up as the modal trigger for a non-image download dialog', () => {
+      render(
+        <ChatMessage
+          message="see attached"
+          sentAt={new Date()}
+          attachments={[{ id: 'artifact-1', filename: 'notes.txt', mimeType: 'text/plain' }]}
+        />,
+      );
+      const link = screen.getByRole('link', { name: /download/i }) as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/api/v1/artifacts/artifact-1');
+      expect(link.getAttribute('download')).toBe('notes.txt');
+    });
+
+    it('shows the excluded badge only on the attachment the server marked not included', () => {
       render(
         <TooltipProvider>
-          <ChatMessageAttachmentWarningAction />
+          <ChatMessage
+            message="mixed outcome"
+            sentAt={new Date()}
+            attachments={[
+              { id: 'included', filename: 'ok.txt', mimeType: 'text/plain', included: true },
+              {
+                id: 'excluded',
+                filename: 'photo.png',
+                mimeType: 'image/png',
+                included: false,
+                exclusionReason: 'vision_unsupported',
+              },
+            ]}
+          />
         </TooltipProvider>,
       );
-      expect(screen.getByRole('button', { name: 'Attachments Not Processed' })).toBeInTheDocument();
+      const tiles = allTiles();
+      expect(
+        within(tiles[0] as HTMLElement).queryByRole('button', { name: /not processed/i }),
+      ).toBeNull();
+      expect(
+        within(tiles[1] as HTMLElement).getByRole('button', { name: /not processed/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('shows no excluded badge while an attachment is still unresolved (included undefined)', () => {
+      render(
+        <ChatMessage
+          message="just sent"
+          sentAt={new Date()}
+          attachments={[{ id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png' }]}
+        />,
+      );
+      const tile = allTiles()[0] as HTMLElement;
+      expect(within(tile).queryByRole('button', { name: /not processed/i })).toBeNull();
     });
   });
 

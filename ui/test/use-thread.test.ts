@@ -16,6 +16,7 @@ import {
   type ThreadInstance,
 } from '@/hooks/use-thread';
 import { providers, defaultProviderName } from '@/hooks/use-providers';
+import type { StagedAttachment } from '@/components/chat-input';
 
 const mockConsumeSsePost = sse.consumeSsePost as jest.MockedFunction<typeof sse.consumeSsePost>;
 
@@ -227,29 +228,141 @@ describe('use-thread — AfterAgent status after a turn (issue #205)', () => {
   });
 });
 
-describe('use-thread — sendMessage attachmentId', () => {
-  it('includes attachmentId in the POST body when provided', async () => {
+describe('use-thread — sendMessage attachments', () => {
+  const staged: StagedAttachment[] = [
+    {
+      id: 'artifact-1',
+      displayFilename: 'photo.png',
+      mimeType: 'image/png',
+      requiresVision: true,
+      previewUrl: 'blob:local-preview',
+    },
+  ];
+
+  it('includes attachmentIds in the POST body when attachments are provided', async () => {
     respondWith([{ type: 'stream_done', durationMs: 10 }]);
 
     const thread = newThread('t8');
-    await thread.sendMessage('Look at this image.', 'artifact-1');
+    await thread.sendMessage('Look at this image.', staged);
 
     expect(mockConsumeSsePost).toHaveBeenCalledWith(
       '/api/v1/chat/t8',
-      expect.objectContaining({ attachmentId: 'artifact-1' }),
+      expect.objectContaining({ attachmentIds: ['artifact-1'] }),
       expect.any(Function),
       expect.anything(),
     );
   });
 
-  it('omits attachmentId from the POST body when not provided', async () => {
+  it('omits attachmentIds from the POST body when not provided', async () => {
     respondWith([{ type: 'stream_done', durationMs: 10 }]);
 
     const thread = newThread('t9');
     await thread.sendMessage('Just text, no attachment.');
 
     const [, body] = mockConsumeSsePost.mock.calls[0]!;
-    expect(body).not.toHaveProperty('attachmentId');
+    expect(body).not.toHaveProperty('attachmentIds');
+  });
+
+  it('renders the optimistic bubble with attachments (and their previewUrl) immediately, before any SSE event', async () => {
+    respondWith([{ type: 'stream_done', durationMs: 10 }]);
+
+    const thread = newThread('t8b');
+    const send = thread.sendMessage('Look at this image.', staged);
+
+    const userMsg = thread.messages.value.find((m) => m.kind === 'user');
+    expect(userMsg?.kind).toBe('user');
+    expect(userMsg?.kind === 'user' && userMsg.attachments).toEqual([
+      {
+        id: 'artifact-1',
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        previewUrl: 'blob:local-preview',
+      },
+    ]);
+    await send;
+  });
+
+  it("patches the optimistic bubble's attachments with the server's included/exclusionReason from stream_done, preserving previewUrl", async () => {
+    respondWith([
+      {
+        type: 'stream_done',
+        durationMs: 10,
+        attachments: [
+          {
+            id: 'artifact-1',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            included: false,
+            exclusionReason: 'vision_unsupported',
+          },
+        ],
+      },
+    ]);
+
+    const thread = newThread('t8c');
+    await thread.sendMessage('Look at this image.', staged);
+
+    const userMsg = thread.messages.value.find((m) => m.kind === 'user');
+    expect(userMsg?.kind === 'user' && userMsg.attachments).toEqual([
+      {
+        id: 'artifact-1',
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        previewUrl: 'blob:local-preview',
+        included: false,
+        exclusionReason: 'vision_unsupported',
+      },
+    ]);
+  });
+
+  it('also patches attachments from stream_error — the actual fix for the live SSE stream never reporting the outcome', async () => {
+    respondWith([
+      {
+        type: 'stream_error',
+        error: 'Context size has been exceeded',
+        attachments: [
+          { id: 'artifact-1', filename: 'photo.png', mimeType: 'image/png', included: true },
+        ],
+      },
+    ]);
+
+    const thread = newThread('t8d');
+    await thread.sendMessage('Look at this image.', staged);
+
+    const userMsg = thread.messages.value.find((m) => m.kind === 'user');
+    expect(userMsg?.kind === 'user' && userMsg.attachments?.[0]?.included).toBe(true);
+  });
+});
+
+describe('use-thread — legacy singular attachment normalization on hydrate', () => {
+  it('normalizes a pre-#256 singular `attachment` payload into a one-item `attachments` array', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            kind: 'user',
+            id: 'u1',
+            content: 'see attached',
+            sentAt: '2026-01-01T00:00:00.000Z',
+            attachment: {
+              id: 'artifact-1',
+              filename: 'notes.txt',
+              mimeType: 'text/plain',
+              included: true,
+            },
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t-legacy');
+    await thread.hydrate();
+
+    const userMsg = thread.messages.value.find((m) => m.kind === 'user');
+    expect(userMsg?.kind === 'user' && userMsg.attachments).toEqual([
+      { id: 'artifact-1', filename: 'notes.txt', mimeType: 'text/plain', included: true },
+    ]);
   });
 });
 

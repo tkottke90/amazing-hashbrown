@@ -24,7 +24,7 @@ export function ThreadView() {
   const { route } = useLocation();
   const { setPageTitle } = useTitle();
   const inputValue = useSignal('');
-  const stagedAttachment = useSignal<StagedAttachment | null>(null);
+  const stagedAttachments = useSignal<StagedAttachment[]>([]);
   const forceScrollTrigger = useSignal(0);
   const thread = useThreadInstance(activeThreadId.value);
 
@@ -45,9 +45,9 @@ export function ThreadView() {
     if (!content) return;
     forceScrollTrigger.value++;
     inputValue.value = '';
-    const attachmentId = stagedAttachment.value?.id;
-    stagedAttachment.value = null;
-    thread.sendMessage(content, attachmentId).catch(console.error);
+    const attachments = stagedAttachments.value;
+    stagedAttachments.value = [];
+    thread.sendMessage(content, attachments).catch(console.error);
   }
 
   const allMessages = thread.messages.value;
@@ -119,9 +119,9 @@ export function ThreadView() {
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}
           threadId={activeThreadId.value}
-          attachment={stagedAttachment.value}
-          onAttachmentChange={(attachment) => {
-            stagedAttachment.value = attachment;
+          attachments={stagedAttachments.value}
+          onAttachmentsChange={(next) => {
+            stagedAttachments.value = next;
           }}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />

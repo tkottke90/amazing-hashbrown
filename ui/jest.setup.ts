@@ -84,6 +84,17 @@ if (!HTMLDialogElement.prototype.close) {
   };
 }
 
+// jsdom doesn't implement the Blob URL registry — chat-input.tsx's stageFile
+// uses these for an attachment's local instant preview (see
+// attachment-tile.tsx's blur-up swap). Individual tests may still override
+// createObjectURL with their own jest.fn() to assert on it.
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => 'blob:mock';
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = () => {};
+}
+
 if (typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
