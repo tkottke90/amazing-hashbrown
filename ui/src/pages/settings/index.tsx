@@ -5,6 +5,7 @@ import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
 import { GeneralPanel } from '@/pages/settings/general-panel';
 import { McpServersPanel } from '@/pages/settings/mcp-servers-panel';
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
+import { NotificationsPanel } from '@/pages/settings/notifications-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
 import { SkillsPanel } from '@/pages/settings/skills-panel';
 import { StoragePanel } from '@/pages/settings/storage-panel';
@@ -40,6 +41,8 @@ function ActivePanel({ section }: { section: SettingsSlug }) {
       return <McpServersPanel />;
     case 'skills':
       return <SkillsPanel />;
+    case 'notifications':
+      return <NotificationsPanel />;
     default:
       return <GeneralPanel />;
   }

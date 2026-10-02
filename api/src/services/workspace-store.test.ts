@@ -171,6 +171,37 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('task creation provenance (migration 36)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-trigger-source-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('defaults triggerSource to "user" when omitted', () => {
+      const task = store.createTask({ title: 't' });
+      expect(task.triggerSource).to.equal('user');
+
+      const reloaded = store.getTask(task.id)!;
+      expect(reloaded.triggerSource).to.equal('user');
+    });
+
+    it('persists triggerSource: "webhook" when passed', () => {
+      const task = store.createTask({ title: 't', triggerSource: 'webhook' });
+      expect(task.triggerSource).to.equal('webhook');
+
+      const reloaded = store.getTask(task.id)!;
+      expect(reloaded.triggerSource).to.equal('webhook');
+    });
+  });
+
   describe('project close process columns (migration 25)', () => {
     let store: WorkspaceStore;
     let dir: string;

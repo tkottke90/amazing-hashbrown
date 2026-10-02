@@ -17,6 +17,8 @@ import { triggersRouter } from './triggers.route.js';
 import { mcpServersRouter } from './mcp-servers.route.js';
 import { toolSettingsRouter } from './tool-settings.route.js';
 import { eventsRouter } from './events.route.js';
+import { webhooksRouter } from './webhooks.route.js';
+import { apiKeysRouter } from './api-keys.route.js';
 
 export const v1Router = Router();
 
@@ -38,3 +40,5 @@ v1Router.use('/trackers', trackersRouter);
 v1Router.use('/triggers', triggersRouter);
 v1Router.use('/mcp-servers', mcpServersRouter);
 v1Router.use('/tool-settings', toolSettingsRouter);
+v1Router.use('/webhooks', webhooksRouter);
+v1Router.use('/api-keys', apiKeysRouter);

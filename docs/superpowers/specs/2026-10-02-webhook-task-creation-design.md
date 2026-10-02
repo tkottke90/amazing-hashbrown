@@ -37,7 +37,7 @@ revisited casually:
   pick up.
 - **`status` in the webhook payload only ever accepts `'pending'` or
   `'ready'`.** Any other value is a `400`. Critically, `status: 'ready'`
-  does **not** take effect unless `assignedTo` was *explicitly* `'agent'` in
+  does **not** take effect unless `assignedTo` was _explicitly_ `'agent'` in
   the same request — see "Status/assignedTo/workspace resolution" below.
   This preserves an existing invariant: nothing in this codebase has ever
   produced a task with `status: 'ready'` and `assignedTo !== 'agent'`
@@ -89,10 +89,10 @@ delete, no audit trail, since none was requested.
 ALTER TABLE tasks ADD COLUMN trigger_source TEXT NOT NULL DEFAULT 'user';
 ```
 
-Records how a *task* was created (`'user'` or `'webhook'`). This is
+Records how a _task_ was created (`'user'` or `'webhook'`). This is
 intentionally a separate, narrower type from `task_queue.trigger_source`
 (`TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' |
-'agent'`), which records what started a *run*. They share a column name and
+'agent'`), which records what started a _run_. They share a column name and
 a `'webhook'` value by coincidence of English, not by shared type — `tasks`
 only ever needs `'user' | 'webhook'` today, and values like `'schedule'` or
 `'catch_up'` don't mean anything for how a task was created.
@@ -121,12 +121,12 @@ Wired into `api/src/index.ts` alongside the other `boot*Store(db)` calls.
 
 ## API surface
 
-| File | Purpose |
-|---|---|
-| `api/src/services/api-key-store.ts` | `ApiKeyStore`: `create(name)`, `list()` (no hash/secret), `rotate(id)`, `revoke(id)`, `verify(secret)` (hash + lookup). |
-| `api/src/middleware/api-key-auth.ts` | Express middleware: parses `Authorization: Bearer <key>`; `401` if missing, malformed, or unknown. Mounted only on the webhook route. |
+| File                                                           | Purpose                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/src/services/api-key-store.ts`                            | `ApiKeyStore`: `create(name)`, `list()` (no hash/secret), `rotate(id)`, `revoke(id)`, `verify(secret)` (hash + lookup).                                                                                                                                                            |
+| `api/src/middleware/api-key-auth.ts`                           | Express middleware: parses `Authorization: Bearer <key>`; `401` if missing, malformed, or unknown. Mounted only on the webhook route.                                                                                                                                              |
 | `api/src/routes/v1/api-keys.route.ts` + `api-keys.handlers.ts` | `POST /api/v1/api-keys` (create, `{ name }`), `GET /api/v1/api-keys` (list), `POST /api/v1/api-keys/:id/rotate`, `DELETE /api/v1/api-keys/:id` (revoke). Not bearer-gated — first-party UI endpoints, same trust level as every other route in this currently-unauthenticated app. |
-| `api/src/routes/v1/webhooks.route.ts` + `webhooks.handlers.ts` | `POST /api/v1/webhooks/tasks`, gated by `api-key-auth` + a rate limiter. |
+| `api/src/routes/v1/webhooks.route.ts` + `webhooks.handlers.ts` | `POST /api/v1/webhooks/tasks`, gated by `api-key-auth` + a rate limiter.                                                                                                                                                                                                           |
 
 A distinct `webhooks.route.ts` (rather than extending `triggers.route.ts`)
 keeps "create a task" cleanly separate from "run an existing task," and
@@ -177,6 +177,7 @@ already exists for a given task id, which is structurally impossible for a
 task this same request just created with a fresh id.
 
 **Responses:**
+
 - `201` — the created task, in the same boarded shape `POST /api/v1/tasks`
   returns.
 - `400` — missing `title`, unknown `x-workspace-id`, or invalid `status`.
@@ -223,12 +224,12 @@ Folds into the existing Settings sub-nav pattern
 reachable at `/settings?section=notifications`, exactly like every other
 settings section:
 
-| File | Change |
-|---|---|
-| `ui/src/pages/settings/settings-nav.tsx` | Add `'notifications'` to the `SettingsSlug` union and `{ label: 'Notifications', slug: 'notifications' }` to `NAV_ITEMS`. `VALID_SLUGS` picks it up automatically. |
+| File                                                  | Change                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ui/src/pages/settings/settings-nav.tsx`              | Add `'notifications'` to the `SettingsSlug` union and `{ label: 'Notifications', slug: 'notifications' }` to `NAV_ITEMS`. `VALID_SLUGS` picks it up automatically.                                                                                                                                                                                                             |
 | `ui/src/pages/settings/notifications-panel.tsx` (new) | One panel (no nested sub-nav — only one sub-section exists today), following the layout of `mcp-servers-panel.tsx`/`trackers-section.tsx`. Contains a "Webhooks" heading with: (1) the static endpoint URL, read-only + copy button, same pattern as `task-drawer.tsx`'s webhook-URL display; (2) a table of API keys (name, created date) with New / Rotate / Revoke actions. |
-| `ui/src/pages/settings/index.tsx` | Add the `'notifications'` case to `ActivePanel`'s switch, import `NotificationsPanel`. |
-| `ui/src/services/api-keys-api.ts` (new) | File-per-domain API client over the shared `request<T>()` wrapper, matching `tasks-api.ts`'s convention, for the four `api-keys` endpoints. |
+| `ui/src/pages/settings/index.tsx`                     | Add the `'notifications'` case to `ActivePanel`'s switch, import `NotificationsPanel`.                                                                                                                                                                                                                                                                                         |
+| `ui/src/services/api-keys-api.ts` (new)               | File-per-domain API client over the shared `request<T>()` wrapper, matching `tasks-api.ts`'s convention, for the four `api-keys` endpoints.                                                                                                                                                                                                                                    |
 
 **Reveal-once flow:** on create or rotate, the response's `key` is shown in
 a one-time dialog (plain text, copy button, explicit "you won't see this

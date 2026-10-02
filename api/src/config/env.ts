@@ -242,6 +242,11 @@ const AppConfigSchema = z.object({
   providers: z.array(ProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   timezone: z.string().default('UTC'),
+  // Per-IP cap on POST /api/v1/webhooks/tasks — that endpoint may be
+  // exposed to the public internet, unlike the rest of this app's
+  // currently-unauthenticated routes, so it needs its own brute-force/DoS
+  // guard. See docs/superpowers/specs/2026-10-02-webhook-task-creation-design.md.
+  webhookRateLimitPerMinute: z.number().default(60),
   // Deliberately loose: entries are validated one by one in
   // env.favoriteModels (parseFavoriteModels) so a single malformed
   // hand-edited entry can't fail config loading.
@@ -294,6 +299,9 @@ export const env = {
   get tempProjectsRoot() {
     const configured = configManager.get('tempProjectsRoot') as string | undefined;
     return configured || path.join(os.tmpdir(), 'projects');
+  },
+  get webhookRateLimitPerMinute() {
+    return configManager.getNumber('webhookRateLimitPerMinute', 60) as number;
   },
   get providers(): ProviderConfig[] {
     try {

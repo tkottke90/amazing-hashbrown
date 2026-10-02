@@ -12,10 +12,11 @@ const NAV_LABELS = [
   'Cost rates',
   'MCP Servers',
   'Skills',
+  'Notifications',
 ];
 
 describe('SettingsNav', () => {
-  it('renders all 10 nav labels', () => {
+  it('renders all 11 nav labels', () => {
     const onNavigate = jest.fn();
     render(<SettingsNav activeSlug="general" onNavigate={onNavigate} />);
     for (const label of NAV_LABELS) {
@@ -46,10 +47,17 @@ describe('SettingsNav', () => {
     expect(onNavigate).toHaveBeenCalledWith('mcp-servers');
   });
 
+  it('calls onNavigate with "notifications" when Notifications is clicked', () => {
+    const onNavigate = jest.fn();
+    render(<SettingsNav activeSlug="general" onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByText('Notifications'));
+    expect(onNavigate).toHaveBeenCalledWith('notifications');
+  });
+
   it('has data-slot="settings-nav-item" on every button', () => {
     render(<SettingsNav activeSlug="general" onNavigate={jest.fn()} />);
     const items = screen.getAllByRole('button');
-    expect(items.length).toBe(10);
+    expect(items.length).toBe(11);
     for (const item of items) {
       expect(item).toHaveAttribute('data-slot', 'settings-nav-item');
     }

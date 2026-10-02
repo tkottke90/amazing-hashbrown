@@ -10,7 +10,8 @@ export type SettingsSlug =
   | 'tools'
   | 'cost-rates'
   | 'mcp-servers'
-  | 'skills';
+  | 'skills'
+  | 'notifications';
 
 const NAV_ITEMS: { label: string; slug: SettingsSlug }[] = [
   { label: 'General', slug: 'general' },
@@ -23,6 +24,7 @@ const NAV_ITEMS: { label: string; slug: SettingsSlug }[] = [
   { label: 'Cost rates', slug: 'cost-rates' },
   { label: 'MCP Servers', slug: 'mcp-servers' },
   { label: 'Skills', slug: 'skills' },
+  { label: 'Notifications', slug: 'notifications' },
 ];
 
 interface SettingsNavProps {
