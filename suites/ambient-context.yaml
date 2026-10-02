@@ -1,0 +1,65 @@
+suite:
+  id: ambient-context
+  name: Ambient Context
+  purpose: >
+    Verifies the agent has ambient awareness of its own situation — starting
+    with current date/time (issue #244) — without needing a tool call to
+    discover it. Each scenario here isolates one ambient fact behind the
+    simplest possible prompt, deliberately avoiding any other tool-choice
+    complexity (e.g. create_tasks's scheduling logic, tracked in
+    suites/task-creation.yaml) so a failure here can only mean the ambient
+    fact itself is missing or wrong — never a confound from an unrelated
+    tool-selection decision. New ambient-context.ts providers should add a
+    scenario here alongside their implementation.
+  passingThreshold: 1.0
+
+scenarios:
+  - id: ac-001-knows-current-date-without-tool
+    name: Agent states the current date without calling a tool to find it out
+    purpose: >
+      Direct regression test for issue #244: before the ambient-context
+      middleware existed, a plain date question had no answer anywhere in the
+      system prompt, so models reached for shell_exec to read the system
+      clock just to answer it. This isolates exactly that capability — a bare
+      date question, no scheduling, no create_tasks — so it can only fail on
+      a regression to the ambient date/time fact itself, never because of the
+      separate create_tasks tool-avoidance gap suites/task-creation.yaml's
+      tc-003/tc-004 track.
+    type: tool-call
+    input: >
+      What's today's date?
+    tool: '!shell_exec'
+    argChecks: []
+    # The tool assertion alone proves no tool call was needed; it can't see a
+    # reply that abstains from the tool but still dodges the question (e.g.
+    # "I don't have access to today's date"). The judge can't verify the
+    # stated date is *correct* (it has no more reliable access to "now" than
+    # the model does), only that the model answered as if it directly knows —
+    # exact-date correctness is already covered deterministically by
+    # api/src/agents/ambient-context.test.ts.
+    responseRubric: >
+      Score 10 if the reply states a specific calendar date as if it directly
+      knows today's date (for example "Today is October 2, 2026"), with no
+      hedging. Score 0 if the reply says it doesn't know, declines to answer,
+      or asks the user what today's date is.
+    responseMinScore: 7
+
+  - id: ac-002-knows-tomorrow-without-tool
+    name: Agent resolves "tomorrow" to a concrete date without calling a tool
+    purpose: >
+      Companion to ac-001, one step closer to tc-004's actual shape (resolving
+      a relative date) but still fully isolated from create_tasks — proves the
+      ambient date/time fact alone is sufficient to do the "tomorrow"
+      arithmetic, independent of whether the model goes on to decide to call
+      any scheduling tool at all.
+    type: tool-call
+    input: >
+      What's tomorrow's date?
+    tool: '!shell_exec'
+    argChecks: []
+    responseRubric: >
+      Score 10 if the reply states a specific calendar date for tomorrow (one
+      day after today) as if it directly knows today's date, with no hedging.
+      Score 0 if the reply says it doesn't know, declines to answer, or asks
+      the user what today's date is.
+    responseMinScore: 7
