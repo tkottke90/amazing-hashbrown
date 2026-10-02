@@ -142,6 +142,13 @@ export interface Task {
   // deliver a completion-notification turn into parentThreadId instead of
   // (only) mirroring task_queue's own status.
   origin: 'user' | 'agent';
+  // How this *task* was created ('webhook' = POST /api/v1/webhooks/tasks).
+  // Deliberately separate from `origin` above, which is load-bearing in the
+  // scheduler's dequeue logic (origin='agent' gets dispatch-group/
+  // single-flight treatment) — never add a value here to `origin` instead.
+  // Also distinct from task_queue's own trigger_source/TriggerSource, which
+  // records what started a *run*, not how the task itself was created.
+  triggerSource: 'user' | 'webhook';
   parentThreadId: string | null;
   dispatchGroupId: string | null;
   role: string | null;
@@ -200,6 +207,7 @@ export interface NewTaskInput {
   trackerId?: string | null;
   plan?: PlanStep[] | null;
   origin?: 'user' | 'agent';
+  triggerSource?: 'user' | 'webhook';
   parentThreadId?: string | null;
   dispatchGroupId?: string | null;
   role?: string | null;
@@ -320,6 +328,7 @@ interface RawTaskRow {
   thread_id: string | null;
   resume_answer: string | null;
   origin: 'user' | 'agent';
+  trigger_source: 'user' | 'webhook';
   parent_thread_id: string | null;
   dispatch_group_id: string | null;
   role: string | null;
@@ -413,6 +422,7 @@ function mapTask(row: RawTaskRow): Task {
     threadId: row.thread_id,
     resumeAnswer: row.resume_answer,
     origin: row.origin,
+    triggerSource: row.trigger_source,
     parentThreadId: row.parent_thread_id,
     dispatchGroupId: row.dispatch_group_id,
     role: row.role,
@@ -669,6 +679,14 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_task_queue_task_id ON task_queue(task_id);
       CREATE INDEX IF NOT EXISTS idx_task_queue_thread_id ON task_queue(thread_id);
     `,
+  },
+  {
+    version: 36,
+    // How a *task* was created (webhook task creation, #252) — distinct
+    // from task_queue.trigger_source above, which records what started a
+    // *run*. 'schedule'/'catch_up' etc. don't apply to creation, so this is
+    // deliberately a narrower type than TriggerSource.
+    sql: `ALTER TABLE tasks ADD COLUMN trigger_source TEXT NOT NULL DEFAULT 'user';`,
   },
 ];
 
@@ -1190,8 +1208,8 @@ export class WorkspaceStore extends BaseStore {
     this.db
       .prepare(
         `INSERT INTO tasks
-           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, parent_thread_id, dispatch_group_id, role, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, trigger_source, parent_thread_id, dispatch_group_id, role, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -1208,6 +1226,7 @@ export class WorkspaceStore extends BaseStore {
         input.trackerId ?? null,
         input.plan ? JSON.stringify(input.plan) : null,
         input.origin ?? 'user',
+        input.triggerSource ?? 'user',
         input.parentThreadId ?? null,
         input.dispatchGroupId ?? null,
         input.role ?? null,
