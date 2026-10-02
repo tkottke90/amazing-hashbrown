@@ -46,6 +46,7 @@ import { scheduleWakeupTool } from '../api/src/agents/tools/schedule-wakeup.tool
 import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
+import { buildAmbientContext } from '../api/src/agents/ambient-context.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { fakeGenerateImageTool } from './eval-fixtures.js';
 
@@ -291,7 +292,7 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     // generateTitleHandler) that never attaches this prompt in real usage.
     const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
     const simulatedTask = suite?.suite.simulatedTask;
-    const systemPrompt =
+    const baseSystemPrompt =
       suite?.suite.appliesHarnessSystemPrompt === false
         ? undefined
         : buildSystemPrompt(
@@ -308,6 +309,21 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
                 })
               : undefined,
           );
+    // Splices in the same <ambient_context> block ambientContextMiddleware
+    // appends on every real model call (api/src/agents/ambient-context.
+    // middleware.ts) — bin/eval.ts builds the prompt directly rather than
+    // through one of the 5 createAgent() sites that carry that middleware,
+    // so without this every eval run was missing it entirely (issue #244's
+    // eval gap). Rides the same appliesHarnessSystemPrompt gate: a suite
+    // that opts out models a code path that never carries this middleware
+    // in production either.
+    const systemPrompt =
+      baseSystemPrompt === undefined
+        ? undefined
+        : `${baseSystemPrompt}\n\n<ambient_context>\n${buildAmbientContext({
+            timezone: env.timezone,
+            now: suite?.suite.simulatedNow ? new Date(suite.suite.simulatedNow) : undefined,
+          })}\n</ambient_context>`;
 
     const result = await runEval({
       suiteId,
