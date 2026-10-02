@@ -6,16 +6,16 @@ multimodal tool support is unrelated and not covered here.
 
 **Versions inspected (this repo's `node_modules` at time of writing):**
 
-| Package | Version |
-|---|---|
-| `@langchain/core` | 1.2.2 |
-| `langchain` | 1.5.2 |
-| `@langchain/ollama` | 1.3.0 |
-| `ollama` (JS client) | 0.6.3 |
-| `@langchain/openai` | 1.5.5 |
-| `openai` (Node SDK) | 6.45.0 |
-| `@langchain/anthropic` | 1.5.1 |
-| `@anthropic-ai/sdk` | 0.103.0 |
+| Package                | Version |
+| ---------------------- | ------- |
+| `@langchain/core`      | 1.2.2   |
+| `langchain`            | 1.5.2   |
+| `@langchain/ollama`    | 1.3.0   |
+| `ollama` (JS client)   | 0.6.3   |
+| `@langchain/openai`    | 1.5.5   |
+| `openai` (Node SDK)    | 6.45.0  |
+| `@langchain/anthropic` | 1.5.1   |
+| `@anthropic-ai/sdk`    | 0.103.0 |
 
 Context for this research: `api/src/agents/tools/get-tool-key.tool.ts` +
 `api/src/services/tool-content-store.ts` implement an on-demand "fetch offloaded
@@ -44,7 +44,7 @@ export type Standard = Text | Reasoning | NonStandard | Tools.Standard | Multimo
 
 ```ts
 // node_modules/@langchain/core/dist/messages/content/multimodal.d.ts:62-65
-type Image = Data & { readonly type: "image"; };
+type Image = Data & { readonly type: 'image' };
 ```
 
 So **yes** — nothing in `@langchain/core`'s TypeScript types stops a tool from
@@ -63,8 +63,9 @@ where the real answer lives:
 ```js
 // node_modules/@langchain/ollama/dist/utils.cjs — convertToolMessageToOllama
 function convertToolMessageToOllama(message) {
-	if (typeof message.content !== "string") throw new Error("Non string tool message content is not supported");
-	return [{ role: "tool", content: message.content }];
+  if (typeof message.content !== 'string')
+    throw new Error('Non string tool message content is not supported');
+  return [{ role: 'tool', content: message.content }];
 }
 ```
 
@@ -90,9 +91,10 @@ Two separate converters exist in `node_modules/@langchain/openai/dist/converters
       content: message.contentBlocks.filter((block) => block.type === "text")
   };
   ```
-  The function's own doc comment states this directly: *"tool: Returns only
-  text content blocks with tool_call_id preserved"* vs. *"user (default):
-  Returns multi-modal content including text, images, audio, and files"*
+
+  The function's own doc comment states this directly: _"tool: Returns only
+  text content blocks with tool_call_id preserved"_ vs. _"user (default):
+  Returns multi-modal content including text, images, audio, and files"_
   (completions.cjs, JSDoc above the function, ~line 408-413).
 
 - **Legacy/v0 path** (`convertMessagesToCompletionsMessageParams`, the default
@@ -111,7 +113,7 @@ Two separate converters exist in `node_modules/@langchain/openai/dist/converters
   ```
 
   So this path would actually **construct** a `{role: "tool", content: [{type:
-  "image_url", ...}], tool_call_id}` payload — something the real OpenAI API
+"image_url", ...}], tool_call_id}` payload — something the real OpenAI API
   does not support (see below). This is not verified against a live OpenAI
   call, but it does not match OpenAI's documented/typed schema, so it would be
   expected to fail server-side (undocumented/unsupported combination), not
@@ -176,11 +178,11 @@ Anthropic's documented schema (§4 below) exactly.
 
 ### Summary table — ToolMessage → wire format
 
-| Provider integration | Image in `ToolMessage.content`? | Behavior |
-|---|---|---|
-| `@langchain/ollama` `ChatOllama` | ❌ | Throws `Error("Non string tool message content is not supported")` for any non-string content — hard failure |
-| `@langchain/openai` `ChatOpenAI` | ❌ | "v1" path: silently strips to text-only. Legacy path: would forward an `image_url` part into a `role: "tool"` payload that OpenAI's documented/typed schema doesn't support (expected to fail server-side; not live-verified) |
-| `@langchain/anthropic` `ChatAnthropic` | ✅ | Correctly rewrites the `ToolMessage` into a `tool_result` block inside a synthesized `user` message, with the image properly nested as an Anthropic `image` block |
+| Provider integration                   | Image in `ToolMessage.content`? | Behavior                                                                                                                                                                                                                      |
+| -------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@langchain/ollama` `ChatOllama`       | ❌                              | Throws `Error("Non string tool message content is not supported")` for any non-string content — hard failure                                                                                                                  |
+| `@langchain/openai` `ChatOpenAI`       | ❌                              | "v1" path: silently strips to text-only. Legacy path: would forward an `image_url` part into a `role: "tool"` payload that OpenAI's documented/typed schema doesn't support (expected to fail server-side; not live-verified) |
+| `@langchain/anthropic` `ChatAnthropic` | ✅                              | Correctly rewrites the `ToolMessage` into a `tool_result` block inside a synthesized `user` message, with the image properly nested as an Anthropic `image` block                                                             |
 
 **This alone rules out "just return a multimodal ToolMessage" as a
 cross-provider solution** — it only works for Anthropic, hard-errors for
@@ -233,9 +235,10 @@ unrelated one for `"system"` in context-truncation logic (prompt.go:41).
 **Conclusion:** at the Go server/templating-infrastructure level, Ollama does
 not appear to special-case `images` by role — it would attempt to process
 `images` on a `tool`-role message the same as any other. However:
+
 - This is **not documented or exemplified** behavior; relying on it is relying
   on an implementation detail, not a contract.
-- Whether the image is actually *inserted into the rendered prompt* for a
+- Whether the image is actually _inserted into the rendered prompt_ for a
   `tool`-role message still depends on each model's own chat template (a
   per-model Go/Jinja template), which is not something verifiable in general —
   this was not checked further and should be treated as **unconfirmed**.
@@ -308,11 +311,19 @@ this:
 
 ```ts
 export interface ToolResultBlockParam {
-    tool_use_id: string;
-    type: 'tool_result';
-    cache_control?: CacheControlEphemeral | null;
-    content?: string | Array<TextBlockParam | ImageBlockParam | SearchResultBlockParam | DocumentBlockParam | ToolReferenceBlockParam>;
-    is_error?: boolean;
+  tool_use_id: string;
+  type: 'tool_result';
+  cache_control?: CacheControlEphemeral | null;
+  content?:
+    | string
+    | Array<
+        | TextBlockParam
+        | ImageBlockParam
+        | SearchResultBlockParam
+        | DocumentBlockParam
+        | ToolReferenceBlockParam
+      >;
+  is_error?: boolean;
 }
 ```
 
@@ -333,30 +344,34 @@ export interface ToolResultBlockParam {
         "tool_use_id": "toolu_01A09q90qw90lq917835lq9",
         "content": [
           { "type": "text", "text": "15 degrees" },
-          { "type": "image", "source": { "type": "base64", "media_type": "image/jpeg", "data": "/9j/4AAQSkZJRg..." } }
+          {
+            "type": "image",
+            "source": { "type": "base64", "media_type": "image/jpeg", "data": "/9j/4AAQSkZJRg..." }
+          }
         ]
       }
     ]
   }
   ```
-  The same page states the content options explicitly: *"a list of nested
+
+  The same page states the content options explicitly: _"a list of nested
   content blocks... These content blocks can use the `text`, `image`,
-  `document`, or `search_result` types."*
+  `document`, or `search_result` types."_
 
 - `build-with-claude/vision` independently corroborates this, discussing
   "images nested inside `tool_result` content (for example, screenshots
   returned to the computer use tool)" and a validation rule specific to that
-  case: *"the API rejects a `tool_result` image that exceeds the model's
+  case: _"the API rejects a `tool_result` image that exceeds the model's
   limits with a validation error instead of downscaling it, so resize those
-  images in your application before returning them."*
+  images in your application before returning them."_
 
 **Important structural note:** Anthropic's Messages API has **no top-level
 `tool` role at all**. `tool_result` is a content-block type nested inside a
 `role: "user"` message (and `tool_use` is a content-block type nested inside a
-`role: "assistant"` message) — per `handle-tool-calls`: *"Unlike APIs that
+`role: "assistant"` message) — per `handle-tool-calls`: _"Unlike APIs that
 separate tool use or use special roles like `tool` or `function`, the Claude
 API integrates tools directly into the `user` and `assistant` message
-structure."* This is exactly what `@langchain/anthropic`'s `_ensureMessageContents`
+structure."_ This is exactly what `@langchain/anthropic`'s `_ensureMessageContents`
 (§1d) is doing when it rewrites a LangChain `ToolMessage` into a `HumanMessage`
 wrapping a `tool_result` block — it's not a hack, it's matching Anthropic's
 actual wire contract.
@@ -378,6 +393,7 @@ cross-provider mechanism for image delivery:
 
 The one thing all three providers **do** agree on, with full, documented
 support, is: **a `user`-role message can contain an image.**
+
 - Ollama: documented and exemplified `images` field on `role: "user"`
   (api.md:296-307, 960-988).
 - OpenAI: `ChatCompletionUserMessageParam.content` accepts
@@ -392,14 +408,14 @@ Yes. Inspected `node_modules/langchain/dist/agents/middleware.d.ts` and
 `node_modules/langchain/dist/agents/middleware/types.d.ts` (package `langchain`
 v1.5.2). `createMiddleware` exposes these lifecycle hooks:
 
-| Hook | When it runs |
-|---|---|
-| `beforeAgent` | Once, at the very start of the agent invocation |
-| `beforeModel` | **Before every model invocation** — i.e., before the first call, and again before every subsequent call, including the one right after a round of tool execution |
-| `wrapModelCall` | Wraps a single model invocation (can rewrite the request / response) |
-| `wrapToolCall` | Wraps a single tool invocation; handler returns `ToolMessage \| Command` — can "post-process tool results" and even return a `Command` for advanced control flow |
-| `afterModel` | After the model responds, **before** any tool calls it requested are executed |
-| `afterAgent` | Once, at the very end |
+| Hook            | When it runs                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `beforeAgent`   | Once, at the very start of the agent invocation                                                                                                                  |
+| `beforeModel`   | **Before every model invocation** — i.e., before the first call, and again before every subsequent call, including the one right after a round of tool execution |
+| `wrapModelCall` | Wraps a single model invocation (can rewrite the request / response)                                                                                             |
+| `wrapToolCall`  | Wraps a single tool invocation; handler returns `ToolMessage \| Command` — can "post-process tool results" and even return a `Command` for advanced control flow |
+| `afterModel`    | After the model responds, **before** any tool calls it requested are executed                                                                                    |
+| `afterAgent`    | Once, at the very end                                                                                                                                            |
 
 The agent's built-in state explicitly includes the full message history as a
 plain, mutable-via-update array:
@@ -479,6 +495,7 @@ Reasoning, in order of weight:
    handles correctly and routinely.
 
 **What's confirmed vs. not:**
+
 - Confirmed via source/types for all three providers: tool-result/tool-message
   image support (or lack thereof) — §1–4.
 - Confirmed via source: `createMiddleware`'s `beforeModel` hook exists, runs
