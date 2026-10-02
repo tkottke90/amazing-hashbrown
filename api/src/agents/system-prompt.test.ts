@@ -35,6 +35,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
       expect(result).to.include('</web_fetch>');
+      expect(result).to.include('<attachment>');
+      expect(result).to.include('</attachment>');
       expect(result).to.include('<wiki_ingest>');
       expect(result).to.include('</wiki_ingest>');
       expect(result).to.include('<rlm>');
@@ -53,17 +55,18 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(13);
-      expect(closes).to.equal(13);
+      expect(opens).to.equal(14);
+      expect(closes).to.equal(14);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const notationTagIndex = result.indexOf('<notation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
+      const attachmentTagIndex = result.indexOf('<attachment>');
       const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
       const rlmTagIndex = result.indexOf('<rlm>');
       const shellTagIndex = result.indexOf('<shell_execution>');
@@ -77,6 +80,7 @@ describe('agents/system-prompt', () => {
       expect(notationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
+      expect(attachmentTagIndex).to.be.greaterThan(-1);
       expect(wikiIngestTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(shellTagIndex).to.be.greaterThan(-1);
@@ -89,7 +93,8 @@ describe('agents/system-prompt', () => {
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
       expect(notationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
-      expect(webFetchTagIndex).to.be.lessThan(wikiIngestTagIndex);
+      expect(webFetchTagIndex).to.be.lessThan(attachmentTagIndex);
+      expect(attachmentTagIndex).to.be.lessThan(wikiIngestTagIndex);
       expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
       expect(shellTagIndex).to.be.lessThan(waitingTagIndex);
@@ -711,6 +716,7 @@ describe('agents/system-prompt', () => {
       'wiki_add_cross_link',
       'wiki_rebaseline_source',
       'web_fetch',
+      'get_tool_key',
       'rlm_query',
       'shell_exec',
       'schedule_wakeup',
@@ -727,6 +733,7 @@ describe('agents/system-prompt', () => {
         'memory',
         'wiki_navigation',
         'web_fetch',
+        'attachment',
         'wiki_ingest',
         'rlm',
         'shell_execution',
@@ -781,6 +788,18 @@ describe('agents/system-prompt', () => {
       const available = new Set(['web_fetch', 'wiki_create_page']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.include('<wiki_ingest>');
+    });
+
+    it('removes attachment when get_tool_key is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<attachment>');
+    });
+
+    it('keeps attachment when get_tool_key is available, independent of web_fetch', () => {
+      const available = new Set(['get_tool_key']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<attachment>');
     });
 
     it('removes rlm when rlm_query is unavailable', () => {

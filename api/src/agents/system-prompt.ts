@@ -980,6 +980,30 @@ in your current toolset, don't try to satisfy it — not by calling anything und
 not by asking the user for missing details like a title. Present the stub's summary and key concepts
 as your answer instead, and say plainly that you don't currently have write access to store it.`;
 
+// A second get_tool_key producer alongside web_fetch (see WEB_FETCH_SECTION
+// above) — gated on get_tool_key itself, not on web_fetch, since an
+// attachment can be offloaded in chat/workspace-chat/wiki-ingestion turns
+// whether or not web_fetch is bound there. Taught as its own section rather
+// than folded into WEB_FETCH_SECTION so the mechanism reads correctly even
+// when web_fetch isn't bound at all.
+const ATTACHMENT_SECTION = `When the user attaches a file to their message, you'll see a notice appended to what they wrote.
+
+A short attachment either appears inline (prefixed Attached file "name":) or, if it was too large
+to include inline, as a compact stub — recognisable by the same opening line web_fetch's offloaded
+results use:
+
+  ── CONTENT OFFLOADED ──────────────────
+
+with "kind: attachment" in its frontmatter. It contains a short summary and an explicit
+"to read the full file" instruction showing the exact get_tool_key call to make, with the stub's own
+threadId and toolKey — call it with those values copied verbatim, the same mechanism web_fetch's
+stubs use.
+
+If the attachment couldn't be included at all (the current model doesn't support image input, or the
+file's bytes were no longer available), you'll see a short bracketed notice saying so instead — treat
+that as the user having tried to share a file, not as nothing having happened. Say plainly that you
+can't see it and why, rather than silently ignoring the attempt or guessing at its contents.`;
+
 // Split out of WEB_FETCH_SECTION (issue #154) — this content only makes sense
 // when wiki_create_page is actually bound; see filterHarnessSections() below
 // and docs/superpowers/specs/2026-09-13-tool-scoped-system-prompt-sections-design.md.
@@ -1622,6 +1646,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'notation', content: NOTATION_SECTION },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
+  { tag: 'attachment', content: ATTACHMENT_SECTION, requiresAnyOf: ['get_tool_key'] },
   {
     tag: 'wiki_ingest',
     content: WIKI_INGEST_SECTION,

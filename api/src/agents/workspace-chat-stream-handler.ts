@@ -24,7 +24,10 @@ import { createProvider, resolveProviderConfig } from '../services/provider-fact
 import { getProviderQueue } from '../services/provider-queue.js';
 import { getWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
+import { getObservabilityStore } from '../services/observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
+import { markArtifactReferenced } from '../artifacts/artifact-store.js';
+import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 import {
   recordUserMessage,
   recordAssistantStart,
@@ -125,6 +128,7 @@ export async function streamWorkspaceChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
+  attachmentId?: string,
   deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
@@ -168,16 +172,32 @@ export async function streamWorkspaceChatToSse(
     effectiveProvider,
     effectiveModel,
   );
+  const msgId = randomUUID();
+  const turnSentAt = new Date().toISOString();
+
+  const resolution = await resolveAttachmentForTurn(
+    attachmentId,
+    threadId,
+    effectiveProvider,
+    effectiveModel,
+  );
   const config = {
     configurable: {
       thread_id: threadId,
       workspaceId: workspace.id,
+      attachmentInjection: resolution?.injection,
     },
   };
-  const msgId = randomUUID();
-  const turnSentAt = new Date().toISOString();
 
-  const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
+  const userSeq = recordUserMessage(
+    threadStore,
+    threadId,
+    randomUUID(),
+    content,
+    turnSentAt,
+    resolution?.record,
+  );
+  if (resolution) await markArtifactReferenced(resolution.record.id);
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
@@ -188,6 +208,12 @@ export async function streamWorkspaceChatToSse(
     source: 'workspace-chat',
     systemPrompt,
   });
+
+  if (resolution) {
+    getObservabilityStore().saveSpans([
+      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
+    ]);
+  }
 
   const assistantSeq = recordAssistantStart(
     threadStore,

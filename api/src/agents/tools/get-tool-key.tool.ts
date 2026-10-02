@@ -25,15 +25,15 @@ export const getToolKeyTool = tool(
   {
     name: 'get_tool_key',
     description:
-      'Read back content that was offloaded to the KV store by an earlier tool call (currently only ' +
-      'web_fetch, when its result was too large to return inline) because you need the actual text for ' +
-      'something other than saving it to the wiki — answering a question in detail, quoting, or ' +
-      "summarizing beyond the stub's own summary. Requires a real threadId and toolKey copied verbatim " +
-      "from that stub's frontmatter (the block starting '── CONTENT OFFLOADED ──'). Do not fabricate " +
-      'these values — if there is no stub with a real toolKey in this conversation, there is nothing to ' +
-      'exchange; the content already in front of you is everything there is. For wiki ingestion, do not ' +
-      'call this first — pass corpus:{threadId, toolKey} directly to wiki_create_page, which resolves the ' +
-      'reference itself.',
+      'Read back content that was offloaded to the KV store — by web_fetch, when its result was too ' +
+      'large to return inline, or by a large text file the user attached to their message — because ' +
+      'you need the actual text for something other than saving it to the wiki — answering a question ' +
+      "in detail, quoting, or summarizing beyond the stub's own summary. Requires a real threadId and " +
+      "toolKey copied verbatim from that stub's frontmatter (the block starting " +
+      "'── CONTENT OFFLOADED ──'). Do not fabricate these values — if there is no stub with a real " +
+      'toolKey in this conversation, there is nothing to exchange; the content already in front of you ' +
+      'is everything there is. For wiki ingestion, do not call this first — pass ' +
+      'corpus:{threadId, toolKey} directly to wiki_create_page, which resolves the reference itself.',
     schema: GetToolKeySchema,
   },
 );
