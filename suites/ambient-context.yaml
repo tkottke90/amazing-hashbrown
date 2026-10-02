@@ -12,6 +12,13 @@ suite:
     tool-selection decision. New ambient-context.ts providers should add a
     scenario here alongside their implementation.
   passingThreshold: 1.0
+  # Pins "now" to a fixed, deliberately-unlikely-to-coincide date so a
+  # correct-looking answer can't pass by accident (a real diagnostic run
+  # caught exactly this: a model's own training-time/template date happened
+  # to match the real day the eval ran). This also lets the scenarios below
+  # assert the *exact* expected date instead of only "a date was stated" —
+  # see bin/eval.ts's suite.simulatedNow wiring.
+  simulatedNow: '2026-06-15T12:00:00.000Z'
 
 scenarios:
   - id: ac-001-knows-current-date-without-tool
@@ -32,16 +39,17 @@ scenarios:
     argChecks: []
     # The tool assertion alone proves no tool call was needed; it can't see a
     # reply that abstains from the tool but still dodges the question (e.g.
-    # "I don't have access to today's date"). The judge can't verify the
-    # stated date is *correct* (it has no more reliable access to "now" than
-    # the model does), only that the model answered as if it directly knows —
-    # exact-date correctness is already covered deterministically by
-    # api/src/agents/ambient-context.test.ts.
+    # "I don't have access to today's date"), or one that states a plausible
+    # but wrong date (a real diagnostic run caught exactly this — a model's
+    # own independent date source happened to look right, scoring a pass
+    # that proved nothing about this feature). The suite's simulatedNow pins
+    # a known answer, so the judge can now check correctness directly rather
+    # than only "a date was stated with no hedging."
     responseRubric: >
-      Score 10 if the reply states a specific calendar date as if it directly
-      knows today's date (for example "Today is October 2, 2026"), with no
-      hedging. Score 0 if the reply says it doesn't know, declines to answer,
-      or asks the user what today's date is.
+      Score 10 if the reply states the current date as June 15, 2026 (any
+      reasonable format — "6/15/2026", "2026-06-15", "June 15th, 2026" all
+      count). Score 0 if it states a different date, says it doesn't know,
+      declines to answer, or asks the user what today's date is.
     responseMinScore: 7
 
   - id: ac-002-knows-tomorrow-without-tool
@@ -58,8 +66,8 @@ scenarios:
     tool: '!shell_exec'
     argChecks: []
     responseRubric: >
-      Score 10 if the reply states a specific calendar date for tomorrow (one
-      day after today) as if it directly knows today's date, with no hedging.
-      Score 0 if the reply says it doesn't know, declines to answer, or asks
-      the user what today's date is.
+      Score 10 if the reply states tomorrow's date as June 16, 2026 (any
+      reasonable format — "6/16/2026", "2026-06-16", "June 16th, 2026" all
+      count). Score 0 if it states a different date, says it doesn't know,
+      declines to answer, or asks the user what today's date is.
     responseMinScore: 7

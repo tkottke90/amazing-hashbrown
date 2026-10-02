@@ -633,6 +633,36 @@ describe('SuiteSchema', () => {
     });
     assert.equal(result.suite.appliesHarnessSystemPrompt, false);
   });
+
+  it('accepts an optional simulatedNow ISO datetime string', () => {
+    const result = SuiteSchema.parse({
+      suite: {
+        id: 's1',
+        name: 'Suite 1',
+        purpose: 'Purpose',
+        simulatedNow: '2026-06-15T12:00:00.000Z',
+      },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedNow, '2026-06-15T12:00:00.000Z');
+  });
+
+  it('omits simulatedNow by default, leaving ambient context on the real current time', () => {
+    const result = SuiteSchema.parse({
+      suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose' },
+      scenarios: [minimalScenario],
+    });
+    assert.equal(result.suite.simulatedNow, undefined);
+  });
+
+  it('throws on a simulatedNow that is not a valid ISO datetime string', () => {
+    assert.throws(() =>
+      SuiteSchema.parse({
+        suite: { id: 's1', name: 'Suite 1', purpose: 'Purpose', simulatedNow: 'June 15th' },
+        scenarios: [minimalScenario],
+      }),
+    );
+  });
 });
 
 describe('EvalRunSchema', () => {

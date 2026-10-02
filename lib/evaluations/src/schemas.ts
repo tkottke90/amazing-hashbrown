@@ -210,6 +210,16 @@ export const SuiteSchema = z.object({
     // suites/after-agent.yaml, suites/thread-titles.yaml) — attaching it
     // there would test a combination that never happens in production.
     appliesHarnessSystemPrompt: z.boolean().default(true),
+    // Pins "now" for ambient-context.ts's date/time provider (issue #244's
+    // eval gap — bin/eval.ts never exercised ambientContextMiddleware,
+    // since it builds the prompt directly rather than through one of the 5
+    // createAgent() sites that carry it) so a suite can assert an exact
+    // expected date instead of only "a date was stated." Omitted means the
+    // real current time, same as buildAmbientContext()'s own `now?: Date`
+    // default — most suites don't care about pinning a date and shouldn't
+    // have to. Rides the same appliesHarnessSystemPrompt gate as ambient
+    // context itself (see bin/eval.ts) — irrelevant when that's false.
+    simulatedNow: z.string().datetime().optional(),
     // Suite-level simulated automated-task run. When set, bin/eval.ts renders
     // it through the real buildTaskContextBlock() (api/src/agents/
     // task-context.ts) and passes that as buildSystemPrompt()'s context
