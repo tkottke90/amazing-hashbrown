@@ -206,3 +206,46 @@ scenarios:
         result:
           text: 'Best match: "engineering" (domain: engineering, score 15).'
     tool: '!get_tool_key'
+
+  - id: GTK-005-rereference-image
+    name: Agent re-fetches a previously attached image via get_tool_key when asked to look again
+    purpose: >
+      Verifies the agent calls get_tool_key with the threadId/toolKey copied verbatim from an
+      earlier image attachment's follow-up notation when the user asks to revisit that image —
+      exercising the on-demand binary re-fetch path added for issue #255
+      (api/src/agents/binary-content-fetch.middleware.ts), not just the text-offload path GTK-001
+      covers. The notation text mirrors exactly what attachment-awareness.middleware.ts appends to
+      a real multimodal attachment turn.
+    type: tool-call
+    input: |
+      I attached a photo of the server rack a few turns ago.
+
+      (You can re-fetch this image later via get_tool_key({ threadId: "eval-thread-9f2a", toolKey: "att_7c3d1b90" }).)
+
+      Can you look at that photo again and tell me what's on the second shelf from the top?
+    tool: get_tool_key
+    argChecks:
+      - path: threadId
+        match: equals
+        value: 'eval-thread-9f2a'
+      - path: toolKey
+        match: equals
+        value: 'att_7c3d1b90'
+
+  - id: GTK-006-no-fabricated-image-key
+    name: Agent does not fabricate a threadId/toolKey for an image re-reference when no real stub exists
+    purpose: >
+      Seeds an ordinary prior turn with no image attachment and no offloaded stub anywhere in the
+      conversation, then asks the agent to "look at that photo again" — a prompt that invites
+      fabricating a threadId/toolKey pair the same way GTK-003 guards against for text. get_tool_key
+      requires a real key from an actual stub; since none exists here, the agent must not call it
+      or claim to have looked at an image that was never attached.
+    type: tool-sequence
+    input: 'Can you look at that photo again and tell me what is on the second shelf?'
+    priorTurns:
+      - tool: wiki_search
+        args:
+          query: 'server rack maintenance'
+        result:
+          text: 'No matching pages found for "server rack maintenance".'
+    tool: '!get_tool_key'

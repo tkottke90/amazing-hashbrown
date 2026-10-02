@@ -35,7 +35,10 @@ export function createAttachmentAwarenessMiddleware() {
 
       if (injection.kind === 'multimodal') {
         messages[lastHumanIdx] = new HumanMessage({
-          content: [{ type: 'text', text: existingText }, injection.imageBlock],
+          content: [
+            { type: 'text', text: `${existingText}\n\n${injection.followUpNotation}` },
+            injection.imageBlock,
+          ],
           id: lastHuman.id,
         });
       } else {
