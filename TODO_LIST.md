@@ -763,6 +763,7 @@ Items are ordered first by priority/necessity, then by dependency.
 - Payload: `{ type: 'wiki_updated', pageTitle: string, pageKind: string, wikiName: string }`
 - The UI should render this as a subtle inline indicator in the message stream (e.g. a small "📖 Wiki updated: _Entity Name_" chip), not a full message bubble
 - Emitted by AfterAgent Middleware after a successful `wiki.commitPage()` call
+- Update `handleEvent` in `ui/src/hooks/use-thread.ts` and add a corresponding `ThreadMessage` kind (`wiki_update`) to render it
 
 ---
 
@@ -779,4 +780,3 @@ Items are ordered first by priority/necessity, then by dependency.
 - Originated from investigating why a real agent turn with an attached image produced two back-to-back generic greetings instead of answering the user's actual question; the root cause (a middleware silently dropping system-prompt sections when message content is a structured array) is already fixed and unit-tested — this item is the separate, still-open follow-up question of whether the model itself behaves well once it's handed a complete prompt on a multimodal turn
 
 **Dependencies:** none
-- Update `handleEvent` in `ui/src/hooks/use-thread.ts` and add a corresponding `ThreadMessage` kind (`wiki_update`) to render it
