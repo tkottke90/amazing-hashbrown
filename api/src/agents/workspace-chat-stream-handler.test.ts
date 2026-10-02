@@ -12,6 +12,7 @@ import { configManager } from '../config/env.js';
 import { bootThreadStore, getThreadStore } from '../services/thread-store.js';
 import { WorkspaceStore, bootWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { bootTaskScheduler } from '../services/task-scheduler.js';
+import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
 import {
   setActiveSseWriter,
   clearActiveSseWriter,
@@ -283,6 +284,7 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         depsFor(fakeAbortingAgent(threadId)),
       ),
     );
@@ -312,6 +314,7 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         depsFor(fakeThrowingAgent()),
       ),
     );
@@ -334,6 +337,7 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
         'hello',
         Date.now(),
         NAMED_OPENAI_PROVIDER,
+        undefined,
         undefined,
         undefined,
         depsFor(fakeForbiddenAgent()),
@@ -455,6 +459,7 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
           undefined,
           undefined,
           undefined,
+          undefined,
           depsFor(agent),
         ),
       );
@@ -510,6 +515,146 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
 
       expectTraceIdPassed(captured);
     });
+  });
+});
+
+// Regression coverage for the PDF-upload bug report: workspace chat never
+// threaded attachmentId through at all before this fix, so an attachment's
+// UI record and observability span simply never existed for this pipeline —
+// see stream-handler.test.ts's identical 'attachment observability spans'
+// describe for the main-chat sibling of these tests.
+describe('agents/workspace-chat-stream-handler — attachment observability spans', () => {
+  const TEST_PROVIDER = 'workspace-attachment-span-test-provider';
+  let workspaceStore: WorkspaceStore;
+  let workspace: Workspace;
+  let dir: string;
+
+  function fakeThrowingAgent() {
+    return {
+      streamEvents: (): AsyncIterable<never> => {
+        throw new Error('simulated stream failure');
+      },
+      graph: {
+        getState: async () => ({
+          tasks: [],
+          config: { configurable: { checkpoint_id: 'cp-test' } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  function depsFor(agent: unknown): WorkspaceChatStreamDeps {
+    return {
+      getWorkspaceChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+    };
+  }
+
+  async function expectClassifiedTurnError(promise: Promise<void>): Promise<void> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).to.be.instanceOf(ClassifiedTurnError);
+      return;
+    }
+    throw new Error('expected streamWorkspaceChatToSse to throw');
+  }
+
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'workspace-chat-attachment-span-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    workspaceStore = new WorkspaceStore(db);
+    bootWorkspaceStore(db);
+    bootThreadStore(db);
+    bootObservability(db);
+    bootTaskScheduler();
+    await bootArtifactStore(join(dir, 'artifacts'));
+    configManager.set('providers', [
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', TEST_PROVIDER);
+
+    workspace = workspaceStore.createWorkspace({ name: 'W', location: '/tmp/w' });
+  });
+
+  after(() => {
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function getAttachmentSpans(threadId: string) {
+    const traces = getObservabilityStore().find({ threadId });
+    expect(traces, 'the turn should open exactly one trace').to.have.length(1);
+    const trace = getObservabilityStore().getTrace(traces[0].traceId);
+    expect(trace, 'the trace must be readable back').to.not.equal(null);
+    return trace!.spans.filter((s) => s.type === 'attachment');
+  }
+
+  it('records an attachment-included span and persists the attachment on the user message [orchestration]', async () => {
+    const threadId = randomUUID();
+    const w = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+    const id = await storeArtifact({
+      mimeType: 'text/plain',
+      original: Buffer.from('hello'),
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+      extractedText: 'hello',
+    });
+
+    await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        fakeRes().res,
+        w,
+        threadId,
+        'about this file',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        id,
+        depsFor(fakeThrowingAgent()),
+      ),
+    );
+
+    const spans = getAttachmentSpans(threadId);
+    expect(spans).to.have.length(1);
+    expect(spans[0].name).to.equal('attachment-included');
+
+    const userMessage = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'user');
+    expect(
+      (userMessage?.payload as { attachment?: { filename?: string } }).attachment?.filename,
+      'the user-facing thread record must note the attachment, same as main chat',
+    ).to.equal('notes.txt');
+  });
+
+  it('records no attachment span when the turn has no attachmentId [orchestration]', async () => {
+    const threadId = randomUUID();
+    const w = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+
+    await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        fakeRes().res,
+        w,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeThrowingAgent()),
+      ),
+    );
+
+    expect(getAttachmentSpans(threadId)).to.have.length(0);
   });
 });
 

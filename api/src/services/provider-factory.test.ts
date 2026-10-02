@@ -1,4 +1,5 @@
-import { describe, it } from 'mocha';
+import { createServer, type Server } from 'node:http';
+import { describe, it, after } from 'mocha';
 import { expect } from 'chai';
 import { ChatOllama } from '@langchain/ollama';
 import { ChatOpenAI } from '@langchain/openai';
@@ -10,9 +11,30 @@ import {
   hasOllamaVisionCapability,
   resolveVisionCapability,
   resolveVisionCapabilityFromConfig,
+  fetchModelDetails,
   FALLBACK_VISION_CAPABILITIES,
 } from './provider-factory.js';
 import type { ProviderConfig } from '../config/env.js';
+
+// Minimal local HTTP server standing in for an OpenAI-compatible /models
+// endpoint — there's no sinon in this repo's toolchain and fetchModelDetails
+// constructs its own `OpenAI` client internally (same as fetchModelIds), so
+// a real HTTP call is the only way to exercise a specific response body.
+// Each test starts its own server (different port each time, via `0`) and
+// closes it in `after` to avoid leaking across test files.
+function startModelsServer(body: unknown): Promise<{ baseUrl: string; close: () => void }> {
+  return new Promise((resolve) => {
+    const server: Server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve({ baseUrl: `http://127.0.0.1:${port}`, close: () => server.close() });
+    });
+  });
+}
 
 function stubOllamaClient(capabilities: string[] | undefined, fail = false): Pick<Ollama, 'show'> {
   return {
@@ -211,11 +233,105 @@ describe('services/provider-factory', () => {
       const result = await resolveVisionCapabilityFromConfig(ollamaConfig, 'llama3');
       expect(result).to.equal(false);
     });
+
+    it('returns true when rawDetails.labels includes "vision"', async () => {
+      const result = await resolveVisionCapabilityFromConfig(openaiConfig, 'custom-model', {
+        id: 'custom-model',
+        labels: ['custom', 'vision', 'tool-calling'],
+      });
+      expect(result).to.equal(true);
+    });
+
+    it('falls through to the existing fallback chain when rawDetails has no labels', async () => {
+      FALLBACK_VISION_CAPABILITIES.openai['labelless-model'] = true;
+      try {
+        const result = await resolveVisionCapabilityFromConfig(openaiConfig, 'labelless-model', {
+          id: 'labelless-model',
+        });
+        expect(result).to.equal(true);
+      } finally {
+        delete FALLBACK_VISION_CAPABILITIES.openai['labelless-model'];
+      }
+    });
+
+    it('falls through to the existing fallback chain when rawDetails is omitted entirely', async () => {
+      // Regression guard: default behavior (today's 2-arg call shape) must
+      // stay exactly as it was before this 3rd param existed.
+      expect(await resolveVisionCapabilityFromConfig(openaiConfig, 'not-a-real-model-id')).to.equal(
+        false,
+      );
+    });
+
+    it('ignores rawDetails for ollama even if it has a vision label', async () => {
+      const result = await resolveVisionCapabilityFromConfig(ollamaConfig, 'llama3', {
+        id: 'llama3',
+        labels: ['vision'],
+      });
+      expect(result).to.equal(false);
+    });
+
+    // Note: resolveVisionCapabilityFromConfig itself doesn't special-case
+    // anthropic vs openai beyond the ollama branch above — it trusts
+    // whatever rawDetails a caller passes. The real guarantee that
+    // anthropic/ollama never get a populated rawDetails lives in the
+    // callers (resolveVisionCapability below, and providers.route.ts),
+    // which only ever fetch/pass one for 'openai'-type providers.
+  });
+
+  describe('fetchModelDetails()', () => {
+    let close: (() => void) | undefined;
+    after(() => close?.());
+
+    it('surfaces an extra field (labels) present on a real /models response', async () => {
+      const server = await startModelsServer({
+        object: 'list',
+        data: [
+          { id: 'vision-model', object: 'model', owned_by: 'lemonade', labels: ['vision'] },
+          { id: 'text-model', object: 'model', owned_by: 'lemonade', labels: ['tool-calling'] },
+        ],
+      });
+      close = server.close;
+
+      const details = await fetchModelDetails({
+        name: 'lemonade',
+        type: 'openai',
+        baseUrl: server.baseUrl,
+        apiKey: 'sk-test',
+        defaultModel: 'vision-model',
+      });
+
+      expect(details).to.have.length(2);
+      expect(details.find((d) => d.id === 'vision-model')?.labels).to.deep.equal(['vision']);
+      expect(details.find((d) => d.id === 'text-model')?.labels).to.deep.equal(['tool-calling']);
+    });
+
+    it('returns [] for a non-openai provider without making any request', async () => {
+      expect(await fetchModelDetails(ollamaConfig)).to.deep.equal([]);
+      expect(await fetchModelDetails(anthropicConfig)).to.deep.equal([]);
+    });
+
+    it('returns [] (not throw) when the request fails', async () => {
+      const details = await fetchModelDetails({
+        name: 'unreachable',
+        type: 'openai',
+        baseUrl: 'http://127.0.0.1:1',
+        defaultModel: 'whatever',
+      });
+      expect(details).to.deep.equal([]);
+    });
   });
 
   describe('resolveVisionCapability()', () => {
     it('resolves false for an unknown provider name rather than throwing', async () => {
       expect(await resolveVisionCapability('no-such-provider', 'whatever')).to.equal(false);
     });
+
+    // resolveVisionCapability resolves a provider by name against the live
+    // env.providers singleton this test suite doesn't seed, so its
+    // openai-only fetchModelDetails() dispatch isn't exercised end-to-end
+    // here — fetchModelDetails()'s own describe block above covers the
+    // actual per-type dispatch logic ("returns [] for a non-openai provider
+    // without making any request") at the pure-function level this wrapper
+    // delegates to, same split as createProvider()'s describe block above.
   });
 });

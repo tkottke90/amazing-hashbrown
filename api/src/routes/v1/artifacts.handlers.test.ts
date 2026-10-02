@@ -8,7 +8,11 @@ import {
   getArtifactMeta,
   storeArtifact,
 } from '../../artifacts/artifact-store.js';
-import { uploadArtifactHandler, deleteArtifactHandler } from './artifacts.handlers.js';
+import {
+  uploadArtifactHandler,
+  deleteArtifactHandler,
+  resolveEffectiveMimeType,
+} from './artifacts.handlers.js';
 
 // A real, valid 1x1 transparent PNG — small enough to embed inline, but a
 // genuine image sharp can decode (verified against real `sharp` output, not
@@ -137,6 +141,97 @@ describe('routes/v1/artifacts.handlers', () => {
       expect(result.ok).to.equal(true);
       if (!result.ok) return;
       expect(result.data.displayFilename).to.equal('notes.txt');
+    });
+
+    it('accepts a previously-rejected text/* type (text/csv)', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'text/csv',
+        original: Buffer.from('a,b,c'),
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.mimeType).to.equal('text/csv');
+      expect(result.data.requiresVision).to.equal(false);
+    });
+
+    it('accepts application/json', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'application/json',
+        original: Buffer.from('{"a":1}'),
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.mimeType).to.equal('application/json');
+    });
+
+    it('normalizes a YAML MIME alias and accepts the upload', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'application/x-yaml',
+        original: Buffer.from('a: 1'),
+        displayFilename: 'config.yaml',
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.mimeType).to.equal('application/yaml');
+    });
+
+    it('sniffs a generic MIME type from the .yaml extension and accepts the upload', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'application/octet-stream',
+        original: Buffer.from('a: 1'),
+        displayFilename: 'config.yaml',
+      });
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.mimeType).to.equal('application/yaml');
+    });
+
+    it('still rejects a generic MIME type with an unrecognized extension', async () => {
+      const result = await uploadArtifactHandler({
+        mimeType: 'application/octet-stream',
+        original: Buffer.from('whatever'),
+        displayFilename: 'notes.log',
+      });
+
+      expect(result.ok).to.equal(false);
+      if (result.ok) return;
+      expect(result.status).to.equal(400);
+      expect(result.error).to.match(/unsupported file type/i);
+    });
+  });
+
+  describe('resolveEffectiveMimeType', () => {
+    it('normalizes every known YAML alias to application/yaml', () => {
+      expect(resolveEffectiveMimeType('application/x-yaml', 'a.yaml')).to.equal('application/yaml');
+      expect(resolveEffectiveMimeType('text/yaml', 'a.yaml')).to.equal('application/yaml');
+      expect(resolveEffectiveMimeType('text/x-yaml', 'a.yaml')).to.equal('application/yaml');
+    });
+
+    it('sniffs a generic/empty type from a recognized extension', () => {
+      expect(resolveEffectiveMimeType('application/octet-stream', 'config.yaml')).to.equal(
+        'application/yaml',
+      );
+      expect(resolveEffectiveMimeType('application/octet-stream', 'config.yml')).to.equal(
+        'application/yaml',
+      );
+      expect(resolveEffectiveMimeType('', 'data.json')).to.equal('application/json');
+      expect(resolveEffectiveMimeType('', 'notes.md')).to.equal('text/markdown');
+      expect(resolveEffectiveMimeType('', 'notes.txt')).to.equal('text/plain');
+    });
+
+    it('passes a generic type through unchanged for an unrecognized extension', () => {
+      expect(resolveEffectiveMimeType('application/octet-stream', 'notes.log')).to.equal(
+        'application/octet-stream',
+      );
+      expect(resolveEffectiveMimeType('', 'notes.log')).to.equal('');
+    });
+
+    it('never overrides an explicit, non-generic type even if the extension disagrees', () => {
+      expect(resolveEffectiveMimeType('text/plain', 'config.yaml')).to.equal('text/plain');
     });
   });
 

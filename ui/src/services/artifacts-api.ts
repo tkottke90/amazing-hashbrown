@@ -4,7 +4,7 @@
 // multipart upload can carry any MIME type regardless of what the picker
 // suggested.
 export const ACCEPTED_ATTACHMENT_TYPES =
-  'image/*,.pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown';
+  'image/*,text/*,.pdf,.docx,.json,.yaml,.yml,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json,application/yaml';
 
 export interface UploadedArtifact {
   id: string;

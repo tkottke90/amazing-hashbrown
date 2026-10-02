@@ -51,7 +51,11 @@ export async function classifyArtifact(
     return { requiresVision: false, extractedText: value };
   }
 
-  if (mimeType === 'text/plain' || mimeType === 'text/markdown') {
+  if (
+    mimeType.startsWith('text/') ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/yaml'
+  ) {
     return { requiresVision: false, extractedText: buffer.toString('utf-8') };
   }
 

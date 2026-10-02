@@ -17,6 +17,9 @@ import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getThreadStore } from '../services/thread-store.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
+import { getObservabilityStore } from '../services/observability.js';
+import { markArtifactReferenced } from '../artifacts/artifact-store.js';
+import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 import {
   recordUserMessage,
   recordAssistantStart,
@@ -43,19 +46,33 @@ export async function streamWikiChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
+  attachmentId?: string,
   deps: WikiChatStreamDeps = {},
 ): Promise<void> {
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
   const { agent, systemPrompt } = await resolveWikiIngestionAgent(provider, model);
   const providerConfig = resolveProviderConfig(provider);
   const { provider: resolvedProvider, model: resolvedModel } = resolveTurnModel(provider, model);
-  const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const threadStore = getThreadStore();
   const turnSentAt = new Date().toISOString();
 
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'wiki');
-  const userSeq = recordUserMessage(threadStore, threadId, randomUUID(), content, turnSentAt);
+
+  const resolution = await resolveAttachmentForTurn(attachmentId, threadId, provider, model);
+  const config = {
+    configurable: { thread_id: threadId, attachmentInjection: resolution?.injection },
+  };
+
+  const userSeq = recordUserMessage(
+    threadStore,
+    threadId,
+    randomUUID(),
+    content,
+    turnSentAt,
+    resolution?.record,
+  );
+  if (resolution) await markArtifactReferenced(resolution.record.id);
 
   const turnObs = startTurnObservability({
     threadId,
@@ -64,6 +81,12 @@ export async function streamWikiChatToSse(
     source: 'wiki-ingestion',
     systemPrompt,
   });
+
+  if (resolution) {
+    getObservabilityStore().saveSpans([
+      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
+    ]);
+  }
 
   const assistantSeq = recordAssistantStart(
     threadStore,
