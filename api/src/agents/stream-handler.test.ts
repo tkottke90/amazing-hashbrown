@@ -18,7 +18,6 @@ import {
   ClassifiedTurnError,
   extractPartialAssistantState,
   drainAndRecordWikiUpdates,
-  resolveAttachmentForTurn,
   streamChatToSse,
   resumeChatToSse,
   retryChatToSse,
@@ -1224,102 +1223,10 @@ describe('agents/stream-handler', () => {
     });
   });
 
-  describe('resolveAttachmentForTurn', () => {
-    let dir: string;
-
-    before(async () => {
-      dir = mkdtempSync(join(tmpdir(), 'stream-handler-attachment-test-'));
-      await bootArtifactStore(dir);
-    });
-    after(() => {
-      rmSync(dir, { recursive: true, force: true });
-    });
-
-    it('passes plain content through unchanged when no attachmentId is given', async () => {
-      const result = await resolveAttachmentForTurn(undefined, 'hello', 'p', 'm');
-      expect(result).to.deep.equal({ llmContent: 'hello', record: undefined });
-    });
-
-    it('passes plain content through unchanged for an unknown attachmentId', async () => {
-      const result = await resolveAttachmentForTurn('nonexistent', 'hello', 'p', 'm');
-      expect(result).to.deep.equal({ llmContent: 'hello', record: undefined });
-    });
-
-    it('excludes a vision-required attachment when the model lacks vision support', async () => {
-      const id = await storeArtifact({
-        mimeType: 'image/png',
-        original: Buffer.from('fake-image-bytes'),
-        displayFilename: 'photo.png',
-        requiresVision: true,
-      });
-
-      const result = await resolveAttachmentForTurn(
-        id,
-        'look at this',
-        'p',
-        'm',
-        async () => false,
-      );
-
-      expect(result.llmContent).to.equal('look at this');
-      expect(result.record).to.deep.equal({
-        id,
-        filename: 'photo.png',
-        mimeType: 'image/png',
-        included: false,
-      });
-    });
-
-    it('builds a multimodal content block for a vision-required attachment when the model supports vision', async () => {
-      const original = Buffer.from('fake-image-bytes');
-      const id = await storeArtifact({
-        mimeType: 'image/png',
-        original,
-        displayFilename: 'photo.png',
-        requiresVision: true,
-      });
-
-      const result = await resolveAttachmentForTurn(id, 'look at this', 'p', 'm', async () => true);
-
-      expect(result.llmContent).to.deep.equal([
-        { type: 'text', text: 'look at this' },
-        { type: 'image', mimeType: 'image/png', data: original.toString('base64') },
-      ]);
-      expect(result.record).to.deep.equal({
-        id,
-        filename: 'photo.png',
-        mimeType: 'image/png',
-        included: true,
-      });
-    });
-
-    it('merges extracted text for a document attachment without ever checking vision capability', async () => {
-      const id = await storeArtifact({
-        mimeType: 'text/plain',
-        original: Buffer.from('the doc bytes'),
-        displayFilename: 'notes.txt',
-        requiresVision: false,
-        extractedText: 'the extracted notes',
-      });
-
-      let checkVisionCalled = false;
-      const result = await resolveAttachmentForTurn(id, 'here is a doc', 'p', 'm', async () => {
-        checkVisionCalled = true;
-        return false;
-      });
-
-      expect(checkVisionCalled).to.equal(false);
-      expect(result.llmContent).to.equal(
-        'here is a doc\n\n---\nAttached file "notes.txt":\nthe extracted notes',
-      );
-      expect(result.record).to.deep.equal({
-        id,
-        filename: 'notes.txt',
-        mimeType: 'text/plain',
-        included: true,
-      });
-    });
-  });
+  // resolveAttachmentForTurn moved to attachment-resolution.ts (and its unit
+  // tests to attachment-resolution.test.ts) when the attachment pipeline
+  // became shared across chat/workspace-chat/wiki-ingestion — see
+  // docs/superpowers/specs/<phase-1-design>.md.
 
   // Regression coverage for issue #196: an interactive chat turn that's
   // explicitly Stopped (via the new /stop route calling stopActiveTurn(),
@@ -1799,6 +1706,174 @@ describe('agents/stream-handler', () => {
 
         expectTraceIdPassed(threadId, captured);
       });
+    });
+  });
+
+  describe('attachment observability spans', () => {
+    const TEST_PROVIDER = 'attachment-span-test-provider';
+    let store: ThreadStore;
+    let dir: string;
+
+    // Throws inside streamEvents — the span this describe block tests is
+    // recorded well before that call (right after startTurnObservability,
+    // before recordAssistantStart), so every test here can reuse the same
+    // "fails later" agent and assert purely on what got persisted before
+    // the throw, same pattern as the 'trace_id plumbing' describe above.
+    function fakeThrowingAgent() {
+      return {
+        streamEvents: (): AsyncIterable<never> => {
+          throw new Error('simulated stream failure');
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    function depsFor(agent: unknown): ChatStreamDeps {
+      return {
+        getChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+      };
+    }
+
+    async function expectClassifiedTurnError(promise: Promise<void>): Promise<void> {
+      try {
+        await promise;
+      } catch (err) {
+        expect(err).to.be.instanceOf(ClassifiedTurnError);
+        return;
+      }
+      throw new Error('expected streamChatToSse to throw');
+    }
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'stream-handler-attachment-span-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new ThreadStore(db);
+      bootThreadStore(db);
+      bootObservability(db);
+      await bootArtifactStore(join(dir, 'artifacts'));
+      configManager.set('providers', [
+        {
+          name: TEST_PROVIDER,
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'test-model',
+        },
+      ]);
+      configManager.set('defaultProvider', TEST_PROVIDER);
+    });
+
+    after(() => {
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function getAttachmentSpans(threadId: string) {
+      const traces = getObservabilityStore().find({ threadId });
+      expect(traces, 'the turn should open exactly one trace').to.have.length(1);
+      const trace = getObservabilityStore().getTrace(traces[0].traceId);
+      expect(trace, 'the trace must be readable back').to.not.equal(null);
+      return trace!.spans.filter((s) => s.type === 'attachment');
+    }
+
+    it('records an attachment-included span when the attachment is included [orchestration]', async () => {
+      const threadId = randomUUID();
+      const id = await storeArtifact({
+        mimeType: 'text/plain',
+        original: Buffer.from('hello'),
+        displayFilename: 'notes.txt',
+        requiresVision: false,
+        extractedText: 'hello',
+      });
+
+      await expectClassifiedTurnError(
+        streamChatToSse(
+          fakeRes().res,
+          threadId,
+          'about this file',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          id,
+          depsFor(fakeThrowingAgent()),
+        ),
+      );
+
+      const spans = getAttachmentSpans(threadId);
+      expect(spans).to.have.length(1);
+      expect(spans[0].name).to.equal('attachment-included');
+      expect(JSON.parse(spans[0].outputPreview!)).to.deep.equal({
+        artifactId: id,
+        filename: 'notes.txt',
+        mimeType: 'text/plain',
+        included: true,
+      });
+    });
+
+    it('records an attachment-excluded span with exclusionReason when the attachment is excluded [orchestration]', async () => {
+      const threadId = randomUUID();
+      const id = await storeArtifact({
+        mimeType: 'image/png',
+        original: Buffer.from('fake-image-bytes'),
+        displayFilename: 'photo.png',
+        requiresVision: true,
+      });
+
+      // No real Ollama instance is listening at TEST_PROVIDER's baseUrl, so
+      // the live vision-capability check fails closed (false) — exercising
+      // the real exclusion path end-to-end, not an injected stub.
+      await expectClassifiedTurnError(
+        streamChatToSse(
+          fakeRes().res,
+          threadId,
+          'look at this',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          id,
+          depsFor(fakeThrowingAgent()),
+        ),
+      );
+
+      const spans = getAttachmentSpans(threadId);
+      expect(spans).to.have.length(1);
+      expect(spans[0].name).to.equal('attachment-excluded');
+      expect(JSON.parse(spans[0].outputPreview!)).to.deep.equal({
+        artifactId: id,
+        filename: 'photo.png',
+        mimeType: 'image/png',
+        included: false,
+        exclusionReason: 'vision_unsupported',
+      });
+    });
+
+    it('records no attachment span when the turn has no attachmentId [orchestration]', async () => {
+      const threadId = randomUUID();
+
+      await expectClassifiedTurnError(
+        streamChatToSse(
+          fakeRes().res,
+          threadId,
+          'hello',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          depsFor(fakeThrowingAgent()),
+        ),
+      );
+
+      expect(getAttachmentSpans(threadId)).to.have.length(0);
     });
   });
 });

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
-import type { MessageContent } from '@langchain/core/messages';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatSSEEvent, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 import { classifyChatError } from './error-classification.js';
@@ -11,6 +10,7 @@ import { endThreadTurn } from './pending-thread-turns.js';
 import { env } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
+import { getObservabilityStore } from '../services/observability.js';
 import { drainPendingWikiUpdates } from './after-agent.js';
 import {
   recordUserMessage,
@@ -24,18 +24,13 @@ import {
   resolveHitlPrompt,
   recordWikiUpdate,
   recordResourceCard,
-  type UserMessageAttachment,
   type AssistantMetrics,
 } from './thread-message-writer.js';
 import { extractToolResultContent } from './tool-output.js';
-import {
-  getArtifactMeta,
-  getArtifact,
-  getExtractedText,
-  markArtifactReferenced,
-} from '../artifacts/artifact-store.js';
-import { resolveVisionCapability, resolveProviderConfig } from '../services/provider-factory.js';
+import { markArtifactReferenced } from '../artifacts/artifact-store.js';
+import { resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 
 // ---- SSE write helper ----
 
@@ -806,100 +801,6 @@ export function makeLiveSseWriter(
   };
 }
 
-// ---- Attachment vision-gate ----
-
-export interface ResolvedAttachmentForTurn {
-  llmContent: MessageContent;
-  // undefined when there was no attachmentId, or it didn't resolve to a
-  // real artifact — nothing to persist or mark referenced in that case.
-  record: UserMessageAttachment | undefined;
-}
-
-// Extracted as its own exported function so the vision-gate decision is
-// unit-testable independent of the full agent/streaming pipeline in
-// streamChatToSse below. `content` is always what gets persisted to
-// thread_messages (via recordUserMessage) — this only decides what
-// actually gets handed to the LLM. `checkVision` defaults to the real
-// env-resolving resolveVisionCapability but is injectable — needed
-// because tests otherwise have no way to make it resolve `true` without
-// a real, fully-configured provider in the live env config.
-export async function resolveAttachmentForTurn(
-  attachmentId: string | undefined,
-  content: string,
-  providerName: string | undefined,
-  modelId: string | undefined,
-  checkVision: (
-    providerName: string | undefined,
-    modelId: string,
-  ) => Promise<boolean> = resolveVisionCapability,
-): Promise<ResolvedAttachmentForTurn> {
-  if (!attachmentId) return { llmContent: content, record: undefined };
-
-  const meta = getArtifactMeta(attachmentId);
-  if (!meta) return { llmContent: content, record: undefined };
-
-  // Only resolve capability when it's actually decisive — a document that
-  // doesn't require vision never needs this (and skips the Ollama
-  // live-query network call entirely for the common non-image case).
-  const visionGateOk = !meta.requiresVision || (await checkVision(providerName, modelId ?? ''));
-
-  if (!visionGateOk) {
-    return {
-      llmContent: content,
-      record: {
-        id: attachmentId,
-        filename: meta.displayFilename,
-        mimeType: meta.mimeType,
-        included: false,
-      },
-    };
-  }
-
-  if (meta.mimeType.startsWith('image/')) {
-    const artifact = await getArtifact(attachmentId);
-    if (!artifact) {
-      // Corrupted/missing state — meta exists but the bytes don't. Fall
-      // back to plain text rather than crash the turn.
-      return {
-        llmContent: content,
-        record: {
-          id: attachmentId,
-          filename: meta.displayFilename,
-          mimeType: meta.mimeType,
-          included: false,
-        },
-      };
-    }
-    return {
-      llmContent: [
-        { type: 'text', text: content },
-        {
-          type: 'image',
-          mimeType: meta.mimeType,
-          data: artifact.original.toString('base64'),
-        },
-      ],
-      record: {
-        id: attachmentId,
-        filename: meta.displayFilename,
-        mimeType: meta.mimeType,
-        included: true,
-      },
-    };
-  }
-
-  const extractedText = await getExtractedText(attachmentId);
-  return {
-    llmContent: `${content}\n\n---\nAttached file "${meta.displayFilename}":\n${extractedText ?? ''}`,
-    record: {
-      id: attachmentId,
-      filename: meta.displayFilename,
-      mimeType: meta.mimeType,
-      included: true,
-    },
-  };
-}
-
 // ---- Public handlers ----
 
 // Test-only seam — mirrors task-execution.ts's ExecuteTaskDeps: getChatAgent()
@@ -955,17 +856,19 @@ export async function streamChatToSse(
     effectiveProvider,
     effectiveModel,
   );
-  const config = { configurable: { thread_id: threadId } };
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
   const sink = makeLiveSseWriter(res, threadStore, threadId);
 
-  const { llmContent, record: attachmentRecord } = await resolveAttachmentForTurn(
+  const resolution = await resolveAttachmentForTurn(
     attachmentId,
-    content,
+    threadId,
     effectiveProvider,
     effectiveModel,
   );
+  const config = {
+    configurable: { thread_id: threadId, attachmentInjection: resolution?.injection },
+  };
 
   const userSeq = recordUserMessage(
     threadStore,
@@ -973,12 +876,12 @@ export async function streamChatToSse(
     randomUUID(),
     content,
     turnSentAt,
-    attachmentRecord,
+    resolution?.record,
   );
   // Regardless of whether the attachment ended up included or excluded —
   // an excluded attachment was still resolved by this send, not
   // abandoned, so it must not be swept by the orphaned-upload GC.
-  if (attachmentRecord) await markArtifactReferenced(attachmentRecord.id);
+  if (resolution) await markArtifactReferenced(resolution.record.id);
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
@@ -989,6 +892,15 @@ export async function streamChatToSse(
     source: 'chat',
     systemPrompt,
   });
+
+  // Documents, outside the live SSE stream and the chip UI, whether this
+  // turn's attachment actually reached the model and why not when it
+  // didn't — see docs/superpowers/specs/2026-10-02-chat-attachment-fixes-design.md §6.
+  if (resolution) {
+    getObservabilityStore().saveSpans([
+      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
+    ]);
+  }
 
   const assistantSeq = recordAssistantStart(
     threadStore,
@@ -1013,7 +925,7 @@ export async function streamChatToSse(
       'sync',
       async () => {
         const eventStream = agent.streamEvents(
-          { messages: [{ role: 'human', content: llmContent }] },
+          { messages: [{ role: 'human', content }] },
           turnObs.attach({
             ...config,
             version: 'v2',

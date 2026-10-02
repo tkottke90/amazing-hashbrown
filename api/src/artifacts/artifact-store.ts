@@ -227,16 +227,29 @@ export async function getArtifact(id: string): Promise<Artifact | undefined> {
   if (!meta) return undefined;
 
   const dir = artifactDir(id);
-  const original = await readFile(path.join(dir, meta.originalFilename));
+  try {
+    const original = await readFile(path.join(dir, meta.originalFilename));
 
-  if (!meta.hasVariants) {
-    return { mimeType: meta.mimeType, original, web: null, preview: null };
+    if (!meta.hasVariants) {
+      return { mimeType: meta.mimeType, original, web: null, preview: null };
+    }
+
+    const [web, preview] = await Promise.all([
+      readFile(path.join(dir, WEB_FILENAME)),
+      readFile(path.join(dir, PREVIEW_FILENAME)),
+    ]);
+
+    return { mimeType: meta.mimeType, original, web, preview };
+  } catch (err) {
+    // Corrupted/missing state — meta resolved but the bytes on disk didn't
+    // (e.g. manual deletion, a partial write that never completed). Callers
+    // (e.g. resolveAttachmentForTurn in stream-handler.ts) already treat
+    // `undefined` as this exact case; without this guard a plain ENOENT
+    // would propagate as an uncaught rejection instead.
+    logger.warn('getArtifact: metadata resolved but bytes are unreadable on disk', {
+      id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
   }
-
-  const [web, preview] = await Promise.all([
-    readFile(path.join(dir, WEB_FILENAME)),
-    readFile(path.join(dir, PREVIEW_FILENAME)),
-  ]);
-
-  return { mimeType: meta.mimeType, original, web, preview };
 }

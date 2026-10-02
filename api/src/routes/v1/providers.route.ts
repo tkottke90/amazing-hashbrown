@@ -5,6 +5,8 @@ import {
   listModelsOrThrow,
   listEmbeddingModels,
   resolveVisionCapabilityFromConfig,
+  fetchModelDetails,
+  type RawModelDetails,
 } from '../../services/provider-factory.js';
 import { unmaskApiKey } from './settings.handlers.js';
 import { resolveAvailableFavorites } from '../../services/favorite-models.js';
@@ -16,11 +18,18 @@ providersRouter.get('/', async (_req, res) => {
   const results = await Promise.all(
     env.providers.map(async (p) => {
       const liveIds = await listModels(p);
+      // Fetched once per provider (not once per model below) so an
+      // openai-type provider with N models doesn't refetch its entire
+      // /models list N times just to read each one's labels.
+      const rawDetailsById =
+        p.type === 'openai'
+          ? new Map((await fetchModelDetails(p)).map((d) => [d.id, d]))
+          : new Map<string, RawModelDetails>();
       const pricingMap = new Map((p.models ?? []).map((m) => [m.id, m]));
       const models = await Promise.all(
         liveIds.map(async (id) => {
           const pricing = pricingMap.get(id);
-          const imageInput = await resolveVisionCapabilityFromConfig(p, id);
+          const imageInput = await resolveVisionCapabilityFromConfig(p, id, rawDetailsById.get(id));
           return {
             id,
             imageInput,

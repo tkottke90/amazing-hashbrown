@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
@@ -97,6 +97,16 @@ describe('artifacts/artifact-store', () => {
       expect(meta!.origin).to.equal('agent-generated');
       expect(meta!.threadId).to.equal('thread-1');
       expect(meta!.taskId).to.equal('task-1');
+    });
+
+    it('returns undefined (not a rejected promise) when metadata resolves but the bytes are gone from disk', async () => {
+      const id = await storeArtifact(makeInput());
+      const meta = getArtifactMeta(id)!;
+      // Simulate corruption/loss: metadata still resolves via the in-memory
+      // index, but the original file on disk has been removed out-of-band.
+      unlinkSync(join(dir, id, meta.originalFilename));
+
+      expect(await getArtifact(id)).to.equal(undefined);
     });
   });
 

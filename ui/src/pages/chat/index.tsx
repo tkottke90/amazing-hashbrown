@@ -119,6 +119,7 @@ export function ThreadView() {
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}
           threadId={activeThreadId.value}
+          attachment={stagedAttachment.value}
           onAttachmentChange={(attachment) => {
             stagedAttachment.value = attachment;
           }}

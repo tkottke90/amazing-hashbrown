@@ -255,10 +255,11 @@ wikiRouter.get('/domains/:id/pages/*', async (req, res) => {
 // POST /api/v1/wiki/chat/:threadId
 wikiRouter.post('/chat/:threadId', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model } = req.body as {
+  const { content, provider, model, attachmentId } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
+    attachmentId?: string;
   };
 
   if (!threadId || !content?.trim()) {
@@ -272,7 +273,15 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
 
   try {
     req.logger.info('Wiki ingestion inference started', { threadId, provider, model });
-    await streamWikiChatToSse(res, threadId, content.trim(), startedAt, provider, model);
+    await streamWikiChatToSse(
+      res,
+      threadId,
+      content.trim(),
+      startedAt,
+      provider,
+      model,
+      attachmentId,
+    );
   } catch (err) {
     req.logger.error('Wiki chat stream error', { err: serializeError(err) });
     const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;

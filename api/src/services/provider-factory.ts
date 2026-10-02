@@ -109,6 +109,39 @@ async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {
   }
 }
 
+// A model-list entry carrying whatever extra fields the server actually
+// returned, beyond the id every provider type gives us. Some OpenAI-
+// compatible servers (e.g. Lemonade) extend their /models response with a
+// `labels` array describing model capabilities (observed in the wild:
+// ["custom", "vision", "tool-calling", "mtp"]) — real OpenAI/Anthropic never
+// send this, so it's always undefined for them.
+export interface RawModelDetails {
+  id: string;
+  labels?: string[];
+}
+
+/**
+ * Raw /models entries for openai-type providers — same client.models.list()
+ * call fetchModelIds()'s openai branch already makes, but keeping the full
+ * entry instead of mapping straight to `.id` so extra fields like `labels`
+ * (duck-typed, since the openai SDK's response type won't declare them) are
+ * available to callers like resolveVisionCapabilityFromConfig(). Best-
+ * effort, matching listModels()'s convention: any failure (network error,
+ * bad key, provider down) degrades to an empty array rather than throwing.
+ * Returns [] immediately for any non-openai provider type, since only
+ * openai-type /models responses are known to carry this extra data.
+ */
+export async function fetchModelDetails(provider: ProviderConfig): Promise<RawModelDetails[]> {
+  if (provider.type !== 'openai') return [];
+  try {
+    const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
+    const response = await client.models.list();
+    return response.data as RawModelDetails[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Best-effort — swallows any failure (network error, bad key, provider
  * down) into an empty list. Used where the caller has no way to surface a
@@ -243,15 +276,19 @@ export const FALLBACK_VISION_CAPABILITIES: Record<
  *
  * Ollama uses the live capabilities check above; OpenAI/Anthropic use
  * LangChain's beta `.profile.imageInputs` (camelCase — the real
- * @langchain/core@1.2.2 field name) with FALLBACK_VISION_CAPABILITIES as a
- * last resort. Never throws: a misconfigured provider (e.g. Anthropic with
- * no resolvable apiKey, which throws synchronously at construction) or an
- * unknown model both resolve to `false` — the conservative default, since
- * sending unsupported content is worse than an unnecessary warning.
+ * @langchain/core@1.2.2 field name), then an openai-type provider's own
+ * `labels` field (if the caller passed one in via `rawDetails` — see
+ * RawModelDetails/fetchModelDetails above, e.g. Lemonade's "vision" label),
+ * with FALLBACK_VISION_CAPABILITIES as a last resort. Never throws: a
+ * misconfigured provider (e.g. Anthropic with no resolvable apiKey, which
+ * throws synchronously at construction) or an unknown model both resolve to
+ * `false` — the conservative default, since sending unsupported content is
+ * worse than an unnecessary warning.
  */
 export async function resolveVisionCapabilityFromConfig(
   providerConfig: ProviderConfig,
   modelId: string,
+  rawDetails?: RawModelDetails,
 ): Promise<boolean> {
   if (providerConfig.type === 'ollama') {
     const client = new Ollama({ host: providerConfig.baseUrl });
@@ -262,6 +299,7 @@ export async function resolveVisionCapabilityFromConfig(
     const llm = createProviderFromConfig(providerConfig, modelId);
     return (
       llm.profile?.imageInputs ??
+      rawDetails?.labels?.includes('vision') ??
       FALLBACK_VISION_CAPABILITIES[providerConfig.type][modelId] ??
       false
     );
@@ -274,7 +312,12 @@ export async function resolveVisionCapabilityFromConfig(
  * Resolves whether a given provider/model combination (looked up by
  * provider name against the live env config, same fallback chain as
  * createProvider()) accepts image input. See
- * resolveVisionCapabilityFromConfig() for the actual logic.
+ * resolveVisionCapabilityFromConfig() for the actual logic. For an
+ * openai-type provider, does its own one-off fetchModelDetails() call to
+ * find the model's raw labels — proportionate here since this only runs
+ * once per attachment-bearing turn, unlike GET /api/v1/providers's listing
+ * loop (providers.route.ts), which fetches details once per provider up
+ * front and passes them in directly to avoid refetching per model.
  */
 export async function resolveVisionCapability(
   providerName: string | undefined,
@@ -286,5 +329,12 @@ export async function resolveVisionCapability(
   } catch {
     return false;
   }
-  return resolveVisionCapabilityFromConfig(providerConfig, modelId);
+
+  let rawDetails: RawModelDetails | undefined;
+  if (providerConfig.type === 'openai') {
+    const details = await fetchModelDetails(providerConfig);
+    rawDetails = details.find((d) => d.id === modelId);
+  }
+
+  return resolveVisionCapabilityFromConfig(providerConfig, modelId, rawDetails);
 }

@@ -44,15 +44,54 @@ const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordproces
 const ALLOWED_NON_IMAGE_MIME_TYPES = new Set([
   'application/pdf',
   DOCX_MIME_TYPE,
-  'text/plain',
-  'text/markdown',
+  'application/json',
+  'application/yaml',
 ]);
 
 // The client's file-picker `accept` attribute is a UX nicety only — a
 // multipart upload can carry any MIME type regardless of what the picker
-// suggested, so this is the real gate.
+// suggested, so this is the real gate. `text/*` is accepted wholesale:
+// nothing about being served as text/* implies a format needs special
+// parsing, it's always safe to decode as UTF-8 (see classifyArtifact).
 function isAllowedMimeType(mimeType: string): boolean {
-  return mimeType.startsWith('image/') || ALLOWED_NON_IMAGE_MIME_TYPES.has(mimeType);
+  return (
+    mimeType.startsWith('image/') ||
+    mimeType.startsWith('text/') ||
+    ALLOWED_NON_IMAGE_MIME_TYPES.has(mimeType)
+  );
+}
+
+const EXTENSION_MIME_FALLBACK: Record<string, string> = {
+  yaml: 'application/yaml',
+  yml: 'application/yaml',
+  json: 'application/json',
+  md: 'text/markdown',
+  txt: 'text/plain',
+};
+
+// Browsers report YAML particularly inconsistently (application/x-yaml,
+// text/yaml, text/x-yaml, or a generic/empty type depending on OS) since it
+// has no single universally-registered MIME type — normalize every variant
+// to one canonical value so everything downstream (classifyArtifact, the
+// allow-list) only ever has to handle 'application/yaml'.
+const YAML_MIME_ALIASES = new Set(['application/x-yaml', 'text/yaml', 'text/x-yaml']);
+
+// Resolves what the upload should actually be treated as, correcting for
+// two distinct browser quirks: an outright wrong-but-recognized YAML alias,
+// and a generic/empty type the browser falls back to when it doesn't
+// recognize the extension at all (chiefly YAML, but also covers any
+// extension the browser's own MIME database doesn't know). Only overrides
+// the reported type for the specific extensions listed above — this is not
+// a blanket "trust any extension" fallback.
+export function resolveEffectiveMimeType(reportedMimeType: string, filename: string): string {
+  if (YAML_MIME_ALIASES.has(reportedMimeType)) return 'application/yaml';
+
+  if (reportedMimeType && reportedMimeType !== 'application/octet-stream') {
+    return reportedMimeType;
+  }
+
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return (ext && EXTENSION_MIME_FALLBACK[ext]) || reportedMimeType;
 }
 
 export interface UploadArtifactInput {
@@ -70,14 +109,16 @@ export interface UploadArtifactInput {
 export async function uploadArtifactHandler(
   input: UploadArtifactInput,
 ): Promise<HandlerResult<ArtifactMeta>> {
-  if (!isAllowedMimeType(input.mimeType)) {
-    return invalid(`Unsupported file type: "${input.mimeType}"`);
+  const effectiveMimeType = resolveEffectiveMimeType(input.mimeType, input.displayFilename ?? '');
+
+  if (!isAllowedMimeType(effectiveMimeType)) {
+    return invalid(`Unsupported file type: "${effectiveMimeType}"`);
   }
 
   let web: Buffer | undefined;
   let preview: Buffer | undefined;
 
-  if (input.mimeType.startsWith('image/')) {
+  if (effectiveMimeType.startsWith('image/')) {
     try {
       ({ web, preview } = await processImage(input.original));
     } catch (err) {
@@ -90,13 +131,13 @@ export async function uploadArtifactHandler(
   let requiresVision: boolean;
   let extractedText: string | null;
   try {
-    ({ requiresVision, extractedText } = await classifyArtifact(input.mimeType, input.original));
+    ({ requiresVision, extractedText } = await classifyArtifact(effectiveMimeType, input.original));
   } catch (err) {
     return invalid(`Failed to process file: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const id = await storeArtifact({
-    mimeType: input.mimeType,
+    mimeType: effectiveMimeType,
     original: input.original,
     web,
     preview,

@@ -82,11 +82,12 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
 
 workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, afterAgent } = req.body as {
+  const { content, provider, model, afterAgent, attachmentId } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
     afterAgent?: boolean;
+    attachmentId?: string;
   };
 
   if (!content?.trim()) {
@@ -110,6 +111,7 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
       provider,
       model,
       afterAgent,
+      attachmentId,
     );
   } catch (err) {
     req.logger.error('Workspace chat stream error', { err: serializeError(err) });

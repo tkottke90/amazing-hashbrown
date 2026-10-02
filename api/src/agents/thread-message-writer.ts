@@ -37,6 +37,12 @@ export interface UserMessageAttachment {
   // multimodal/merged-text variant handed to the LLM, so history always
   // shows what the user wrote regardless of `included`.
   included: boolean;
+  // Populated only when included is false. 'vision_unsupported': the
+  // attachment required vision and the active model didn't support it.
+  // 'artifact_missing': the artifact's metadata resolved but its bytes were
+  // gone from disk (corrupted/missing state, stream-handler.ts's existing
+  // fallback path).
+  exclusionReason?: 'vision_unsupported' | 'artifact_missing';
 }
 
 export function recordUserMessage(

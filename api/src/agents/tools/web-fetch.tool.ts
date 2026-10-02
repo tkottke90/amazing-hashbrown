@@ -3,9 +3,7 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { fetchUrl } from '../../services/web-fetch.js';
 import { storeToolContent } from '../../services/tool-content-store.js';
-import { toolStub, type StubSection } from './tool-stub.js';
-
-const STUB_THRESHOLD_CHARS = 10_000;
+import { toolStub, STUB_THRESHOLD_CHARS, type StubSection } from './tool-stub.js';
 
 const WebFetchInputSchema = z.object({
   url: z

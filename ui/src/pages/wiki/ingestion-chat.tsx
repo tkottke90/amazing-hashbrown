@@ -168,6 +168,7 @@ export function IngestionChat({ chatInputRef }: Props) {
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}
           threadId={wikiThreadId.value}
+          attachment={stagedAttachment.value}
           onAttachmentChange={(attachment) => {
             stagedAttachment.value = attachment;
           }}

@@ -8,7 +8,25 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
-  return <ChatInput value={value} onValueChange={setValue} onSend={() => {}} {...props} />;
+  const [attachment, setAttachment] = useState(props.attachment ?? null);
+  return (
+    <ChatInput
+      value={value}
+      onValueChange={setValue}
+      onSend={() => {}}
+      {...props}
+      // Attachment stays internally controlled even when a test passes its
+      // own onAttachmentChange spy — that spy is for assertions, not a
+      // replacement for the state that actually drives the chip's render,
+      // same reason `value`'s own internal setValue above is never
+      // overridden by a caller-supplied onValueChange.
+      attachment={props.attachment ?? attachment}
+      onAttachmentChange={(next) => {
+        setAttachment(next);
+        props.onAttachmentChange?.(next);
+      }}
+    />
+  );
 }
 
 // jsdom has no `onpointerdown` IDL property, so Preact falls back to
@@ -350,6 +368,48 @@ describe('ChatInput — file attachment', () => {
     fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
 
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // Regression test for #251: the chip used to be driven by ChatInput's own
+  // private signal, separate from whatever the parent passed/tracked — so a
+  // parent clearing its own copy on send never cleared the rendered chip.
+  // Now attachment is a single controlled prop: the chip must track it
+  // exactly, with no state of ChatInput's own to drift out of sync.
+  it('renders the chip purely from the controlled attachment prop, with no internal state of its own', () => {
+    const uploaded = {
+      id: 'artifact-1',
+      mimeType: 'text/plain',
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+    };
+    const { rerender } = render(
+      <ChatInput
+        value=""
+        onValueChange={() => {}}
+        onSend={() => {}}
+        threadId="t1"
+        attachment={uploaded}
+        onAttachmentChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+
+    // Simulating exactly what a page's handleSend does: clear its own
+    // tracked attachment and pass null back down — this must be the only
+    // thing needed to make the chip disappear.
+    rerender(
+      <ChatInput
+        value=""
+        onValueChange={() => {}}
+        onSend={() => {}}
+        threadId="t1"
+        attachment={null}
+        onAttachmentChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
   });
 });
 
