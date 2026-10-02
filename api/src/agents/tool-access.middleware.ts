@@ -8,6 +8,7 @@ import {
 import { getToolInstructions } from './tool-config.js';
 import { filterHarnessSections } from './system-prompt.js';
 import { buildRequiredToolBlocks } from './tool-syntax.js';
+import { getMessageText } from './message-content.js';
 import { toolSyntaxStateSchema } from './middleware/tool-syntax.middleware.js';
 import { env, type ToolEntry } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
@@ -142,16 +143,13 @@ export function createToolAccessMiddleware(
 
       const allBlocks = [...instructionBlocks, ...requiredToolBlocks];
 
-      const baseContent = request.systemMessage.content;
-      if (typeof baseContent !== 'string') {
-        // Structured (non-string) system message content is not something
-        // this app produces today (buildSystemPrompt() always returns a
-        // plain string) — fail safe rather than risk corrupting it.
-        logger.warn(
-          'tool-access: systemMessage.content is not a string, skipping section filtering and instruction injection',
-        );
-        return handler({ ...request, tools });
-      }
+      // request.systemMessage.content arrives as a content-block array
+      // rather than a plain string once this turn's messages include
+      // structured multimodal content (e.g. an attached image) — see
+      // message-content.ts's own header comment. getMessageText() recovers
+      // the readable text either way, so filtering/injection below always
+      // runs instead of silently skipping it for a multimodal turn.
+      const baseContent = getMessageText(request.systemMessage.content);
 
       // Gate tool-scoped harness sections (issue #154) on this call's actual
       // bound-tool set — must happen unconditionally here, not only when
