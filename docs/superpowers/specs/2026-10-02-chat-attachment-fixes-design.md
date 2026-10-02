@@ -44,6 +44,12 @@ independent gaps found in real use, all tracked under #251:
    YAML, source files, etc.) with "Unsupported file type", even though they
    need no special processing to be read as text.
 
+Separately, scope was expanded during design review to add observability
+into the attachment pipeline: today, whether a file was uploaded, whether it
+was actually handed to the model, or excluded (and why) leaves no record
+anywhere a developer can inspect after the fact — only the live SSE stream
+and the chip UI reflect it in the moment.
+
 ---
 
 ## 2. Scope
@@ -62,9 +68,17 @@ independent gaps found in real use, all tracked under #251:
   extension when the browser reports a generic/empty type (chiefly a
   problem for `.yaml`/`.yml`, which has no single universally-registered
   MIME type).
+- Recording, in the Observability trace/span system, whether an attachment
+  was included in or excluded from an LLM request on a given turn, and why.
 
 **Explicitly out of scope:**
 
+- A new Observability trace for the upload event itself (see §6.1) — the
+  upload's on-disk location is already fully reconstructable from
+  `ArtifactMeta` (persisted at upload time, per #125), and every existing
+  trace source models an LLM invocation (`provider`/`model` are `NOT NULL`
+  columns); stretching that schema to also model a standalone non-LLM event
+  was weighed and declined in favor of using data that already exists.
 - Any change to image handling, PDF/DOCX extraction, or the vision-gate
   decision logic itself (§6 of the original design) — only *what counts as
   vision-capable* changes, not what happens once that's known.
@@ -311,7 +325,132 @@ suggested.
 
 ---
 
-## 6. Error Handling & Edge Cases
+## 6. Observability: Attachment Events
+
+Three facts about an attachment's lifecycle should be inspectable after the
+fact, not just visible live in the UI during the turn that produced them:
+that a file was uploaded and where it lives on disk; that it was included in
+a model request; and that it was excluded, with an explicit reason — not
+just a bare boolean.
+
+### 6.1 "Uploaded" — no new code needed
+
+Observability's trace/span tables (`lib/observability/src/store.ts`) model
+LLM invocations specifically: `observability_traces.provider` and `.model`
+are `TEXT NOT NULL`, every `TraceSource` value wraps a model call, and
+upload happens over a bare REST call (`POST /api/v1/artifacts`) before any
+chat turn or trace exists. Forcing a standalone trace to exist for a
+non-LLM event would mean migrating those columns to nullable and inventing
+the concept of a traceless/model-less trace for the first time in this
+codebase — a real schema change to serve one event type.
+
+That data already exists without it: `ArtifactMeta` (`api/src/artifacts/artifact-store.ts`)
+already persists `id`, `originalFilename`, and `threadId` at upload time,
+per #125, and an artifact's on-disk location is always the deterministic
+`path.join(artifactRoot, id, originalFilename)` — fully reconstructable
+from fields already on disk in `meta.json`, for every upload, whether or
+not it's ever sent. No code change is needed to satisfy this item.
+
+### 6.2 "Included" / "Excluded" — new spans on the real turn trace
+
+Unlike upload, these two events happen *inside* an already-running chat
+turn, which already gets a real trace via `startTurnObservability`
+(`api/src/agents/turn-observability.ts`) — so they fit the existing model
+directly, as a new span type on that trace, no schema migration required
+(`observability_spans.type` is a plain `TEXT` column — `SpanTypeSchema` is
+an application-level zod enum, not a DB constraint, so adding a value to it
+needs no migration, unlike §6.1's hypothetical).
+
+**`SpanTypeSchema`** (`lib/llm-common-types/src/traces/types.ts`) gains a
+third value:
+
+```typescript
+export const SpanTypeSchema = z.enum(['llm-call', 'tool-call', 'attachment']);
+```
+
+**`UserMessageAttachment`** (`api/src/agents/thread-message-writer.ts`)
+gains an optional reason, populated whenever `included` is `false` — today
+it's only ever a bare boolean, which is exactly the gap item #3 of this
+scope expansion calls out: knowing a file was excluded without knowing why
+isn't enough to debug a report like #251's:
+
+```typescript
+export interface UserMessageAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  included: boolean;
+  // Populated only when included is false. 'vision_unsupported': the
+  // attachment required vision and the active model didn't support it.
+  // 'artifact_missing': the artifact's metadata resolved but its bytes
+  // were gone from disk (corrupted/missing state, stream-handler.ts's
+  // existing fallback path).
+  exclusionReason?: 'vision_unsupported' | 'artifact_missing';
+}
+```
+
+`resolveAttachmentForTurn` (`stream-handler.ts:826-901`) sets
+`exclusionReason` on both of its existing exclusion paths (`!visionGateOk`,
+and the missing-artifact-bytes fallback) instead of just `included: false`
+— this is also persisted into `thread_messages.payload.attachment` via the
+existing `recordUserMessage` call, so the reason is available anywhere that
+record already flows, not only in the new span.
+
+**Recording the span**: `resolveAttachmentForTurn` already runs (and
+`attachmentRecord` is already computed) *before* `startTurnObservability`
+creates the turn's `traceId` (`stream-handler.ts:963` vs. `:985`) — no
+reordering needed, since nothing about resolving the attachment depends on
+the trace existing. Once `turnObs.traceId` is available, if
+`attachmentRecord` is present:
+
+```typescript
+if (attachmentRecord) {
+  getObservabilityStore().saveSpans([
+    {
+      spanId: randomUUID(),
+      traceId: turnObs.traceId,
+      parentSpanId: null,
+      type: 'attachment',
+      name: attachmentRecord.included ? 'attachment-included' : 'attachment-excluded',
+      startedAt: turnSentAt,
+      endedAt: turnSentAt,
+      latencyMs: 0,
+      inputTokens: null,
+      outputTokens: null,
+      inputPreview: null,
+      outputPreview: JSON.stringify({
+        artifactId: attachmentRecord.id,
+        filename: attachmentRecord.filename,
+        mimeType: attachmentRecord.mimeType,
+        included: attachmentRecord.included,
+        ...(attachmentRecord.exclusionReason
+          ? { exclusionReason: attachmentRecord.exclusionReason }
+          : {}),
+      }),
+      error: null,
+    },
+  ]);
+}
+```
+
+`getObservabilityStore()` (`api/src/services/observability.ts`) is the same
+singleton `startTurnObservability` itself calls internally — `saveSpans` is
+a plain batch insert on the store, not something that has to go through
+`ObservabilityCallbackHandler`'s LangChain-callback-driven lifecycle, so no
+new plumbing is needed to call it directly here. The metadata goes in
+`outputPreview` as a JSON string — the same convention `tool-call` spans
+already use for structured data (`observability-handler.ts:143,157`), since
+neither table has a dedicated metadata column.
+
+Scoped to `streamChatToSse` only, matching where `resolveAttachmentForTurn`
+is actually called today — `workspace-chat` and `wiki-ingestion` sends
+don't currently route attachments through this function at all, which is a
+pre-existing gap outside #251 and this scope expansion, not something this
+change introduces or fixes.
+
+---
+
+## 7. Error Handling & Edge Cases
 
 - **Generic/empty MIME type for an unrecognized extension** (e.g. a `.log`
   file reported as `application/octet-stream`): `resolveEffectiveMimeType`
@@ -339,7 +478,7 @@ suggested.
 
 ---
 
-## 7. Testing Plan
+## 8. Testing Plan
 
 - **`ChatInput` (Jest, `ui/test/chat-input.test.tsx`)**: sending a message
   via the controlled `attachment` prop results in the parent's
@@ -362,6 +501,16 @@ suggested.
   `requiresVision: false` and the raw text for representative `text/*`
   types beyond the two previously supported (e.g. `text/csv`), plus
   `application/json` and `application/yaml`.
+- **`stream-handler.ts` (Mocha/Chai)**: `resolveAttachmentForTurn` sets
+  `exclusionReason: 'vision_unsupported'` when the vision gate fails, and
+  `'artifact_missing'` when the artifact's bytes are gone, and leaves
+  `exclusionReason` undefined on a successful inclusion — extending the
+  existing `resolveAttachmentForTurn` describe block
+  (`stream-handler.test.ts:1227`). An orchestration-level test on
+  `streamChatToSse` spies `getObservabilityStore().saveSpans` and asserts an
+  `'attachment'`-type span is recorded with the right `name` and
+  `outputPreview` contents for both an included and an excluded attachment,
+  and that no such span is recorded when `attachmentId` is absent.
 - **`artifacts.handlers.ts` (Mocha/Chai)**: `resolveEffectiveMimeType` —
   each YAML alias normalizes to `application/yaml`; a generic/empty type
   with a recognized extension resolves via the fallback map; a generic type
