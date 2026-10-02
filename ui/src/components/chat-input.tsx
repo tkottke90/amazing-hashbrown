@@ -76,12 +76,18 @@ export interface ChatInputProps {
    */
   threadId?: string;
   /**
-   * Fires whenever the staged attachment changes — on a successful
-   * upload, and back to `null` after an explicit remove. The caller
-   * (which owns sending the message) reads this to include the
-   * attachment id in the send call and to clear it once sent.
+   * The currently staged attachment, owned by the caller — same controlled
+   * pattern as `value`/`onValueChange`. The caller (which owns sending the
+   * message) clears this to `null` once a message is sent, which is what
+   * makes the chip disappear; `ChatInput` itself holds no attachment state.
    */
-  onAttachmentChange?: (attachment: StagedAttachment | null) => void;
+  attachment: StagedAttachment | null;
+  /**
+   * Fires whenever the staged attachment changes — on a successful
+   * upload, and back to `null` after an explicit remove. The caller is
+   * expected to store this value and pass it back as `attachment`.
+   */
+  onAttachmentChange: (attachment: StagedAttachment | null) => void;
   /**
    * Scopes the slash-command menu to a workspace: its own .agents/skills are
    * listed (badged "repo") alongside the global skills. Omit for the global
@@ -155,6 +161,7 @@ export function ChatInput({
   activeModel,
   onModelSelect,
   threadId,
+  attachment,
   onAttachmentChange,
   workspaceId,
 }: ChatInputProps) {
@@ -192,7 +199,6 @@ export function ChatInput({
   // needing to touch that shared component.
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const stagedAttachment = useSignal<StagedAttachment | null>(null);
   const attachmentError = useSignal<string | null>(null);
   const dragging = useSignal(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -204,21 +210,19 @@ export function ChatInput({
     // Only one attachment per message — replace, don't accumulate. Best
     // effort: a failed cleanup of the old one just leaves an orphan for
     // the GC sweep to clean up later, not a reason to block the new upload.
-    const previous = stagedAttachment.value;
+    const previous = attachment;
     if (previous) {
       deleteArtifact(previous.id).catch(() => {});
     }
 
     try {
       const uploaded = await uploadArtifact(file, threadId);
-      stagedAttachment.value = uploaded;
-      onAttachmentChange?.(uploaded);
+      onAttachmentChange(uploaded);
     } catch (err) {
-      stagedAttachment.value = null;
       // Only notify the parent when the visible attachment actually
       // changes — a failed first upload (no previous attachment) leaves
       // the parent's state at null already, so there's nothing to report.
-      if (previous) onAttachmentChange?.(null);
+      if (previous) onAttachmentChange(null);
       attachmentError.value = err instanceof Error ? err.message : 'Upload failed';
     }
   }
@@ -231,10 +235,9 @@ export function ChatInput({
   }
 
   function handleRemoveAttachment() {
-    const current = stagedAttachment.value;
-    stagedAttachment.value = null;
+    const current = attachment;
     attachmentError.value = null;
-    onAttachmentChange?.(null);
+    onAttachmentChange(null);
     if (current) {
       // Removed before send — delete server-side too. Best effort: clear
       // local state either way, per the design's error-handling section;
@@ -264,7 +267,7 @@ export function ChatInput({
   const activeModelImageInput =
     providers?.find((p) => p.name === activeProvider)?.models.find((m) => m.id === activeModel)
       ?.imageInput ?? false;
-  const showVisionWarning = !!stagedAttachment.value?.requiresVision && !activeModelImageInput;
+  const showVisionWarning = !!attachment?.requiresVision && !activeModelImageInput;
 
   // App-controlled open state for the "Provider" sub-menu, mirroring
   // ProviderModelPicker's own per-provider Subs (see the comment there and
@@ -634,16 +637,16 @@ export function ChatInput({
           gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
         }}
       >
-        {header || stagedAttachment.value || attachmentError.value ? (
+        {header || attachment || attachmentError.value ? (
           <div
             data-slot="chat-input-header"
             style={{ gridArea: 'header' }}
             className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
           >
             {header}
-            {stagedAttachment.value && (
+            {attachment && (
               <ChatInputChip onRemove={handleRemoveAttachment}>
-                {stagedAttachment.value.displayFilename}
+                {attachment.displayFilename}
               </ChatInputChip>
             )}
             {attachmentError.value && (

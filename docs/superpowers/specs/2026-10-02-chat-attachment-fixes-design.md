@@ -80,8 +80,8 @@ and the chip UI reflect it in the moment.
   columns); stretching that schema to also model a standalone non-LLM event
   was weighed and declined in favor of using data that already exists.
 - Any change to image handling, PDF/DOCX extraction, or the vision-gate
-  decision logic itself (§6 of the original design) — only *what counts as
-  vision-capable* changes, not what happens once that's known.
+  decision logic itself (§6 of the original design) — only _what counts as
+  vision-capable_ changes, not what happens once that's known.
 - A generic, provider-agnostic "capabilities" abstraction. This only reads
   one known field (`labels`) from one known shape (OpenAI-compatible
   `/models` responses) that happens to appear in the wild (Lemonade) —
@@ -203,15 +203,13 @@ infrastructure needed for a call that happens once per send.
 `resolveVisionCapabilityFromConfig(p, id)` once per model, inside a loop
 over `liveIds` (itself already the result of one `listModels(p)` call). If
 that function did its own fetch per call, an `openai`-type provider with N
-models would re-fetch the *entire* model list N times for one endpoint
+models would re-fetch the _entire_ model list N times for one endpoint
 response. Instead:
 
 ```typescript
 const liveIds = await listModels(p);
 const rawDetailsById =
-  p.type === 'openai'
-    ? new Map((await fetchModelDetails(p)).map((d) => [d.id, d]))
-    : new Map();
+  p.type === 'openai' ? new Map((await fetchModelDetails(p)).map((d) => [d.id, d])) : new Map();
 // ...
 const imageInput = await resolveVisionCapabilityFromConfig(p, id, rawDetailsById.get(id));
 ```
@@ -296,7 +294,11 @@ a format needs special parsing — it's always safe to decode as UTF-8.
 ### 5.3 Classification (`artifact-classifier.ts`)
 
 ```typescript
-if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/yaml') {
+if (
+  mimeType.startsWith('text/') ||
+  mimeType === 'application/json' ||
+  mimeType === 'application/yaml'
+) {
   return { requiresVision: false, extractedText: buffer.toString('utf-8') };
 }
 ```
@@ -353,7 +355,7 @@ not it's ever sent. No code change is needed to satisfy this item.
 
 ### 6.2 "Included" / "Excluded" — new spans on the real turn trace
 
-Unlike upload, these two events happen *inside* an already-running chat
+Unlike upload, these two events happen _inside_ an already-running chat
 turn, which already gets a real trace via `startTurnObservability`
 (`api/src/agents/turn-observability.ts`) — so they fit the existing model
 directly, as a new span type on that trace, no schema migration required
@@ -397,7 +399,7 @@ existing `recordUserMessage` call, so the reason is available anywhere that
 record already flows, not only in the new span.
 
 **Recording the span**: `resolveAttachmentForTurn` already runs (and
-`attachmentRecord` is already computed) *before* `startTurnObservability`
+`attachmentRecord` is already computed) _before_ `startTurnObservability`
 creates the turn's `traceId` (`stream-handler.ts:963` vs. `:985`) — no
 reordering needed, since nothing about resolving the attachment depends on
 the trace existing. Once `turnObs.traceId` is available, if
@@ -524,4 +526,4 @@ change introduces or fixes.
   the model response per `e2e/AGENTS.md`'s SSE-mocking pattern rather than
   requiring a real LLM. A second scenario mocks a provider's `/models`
   response with a `labels: ['vision']` entry and asserts the vision warning
-  does *not* appear for that model.
+  does _not_ appear for that model.

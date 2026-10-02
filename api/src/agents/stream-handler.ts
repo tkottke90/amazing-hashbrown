@@ -11,6 +11,7 @@ import { endThreadTurn } from './pending-thread-turns.js';
 import { env } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
+import { getObservabilityStore } from '../services/observability.js';
 import { drainPendingWikiUpdates } from './after-agent.js';
 import {
   recordUserMessage,
@@ -851,6 +852,7 @@ export async function resolveAttachmentForTurn(
         filename: meta.displayFilename,
         mimeType: meta.mimeType,
         included: false,
+        exclusionReason: 'vision_unsupported',
       },
     };
   }
@@ -867,6 +869,7 @@ export async function resolveAttachmentForTurn(
           filename: meta.displayFilename,
           mimeType: meta.mimeType,
           included: false,
+          exclusionReason: 'artifact_missing',
         },
       };
     }
@@ -989,6 +992,37 @@ export async function streamChatToSse(
     source: 'chat',
     systemPrompt,
   });
+
+  // Documents, outside the live SSE stream and the chip UI, whether this
+  // turn's attachment actually reached the model and why not when it
+  // didn't — see docs/superpowers/specs/2026-10-02-chat-attachment-fixes-design.md §6.
+  if (attachmentRecord) {
+    getObservabilityStore().saveSpans([
+      {
+        spanId: randomUUID(),
+        traceId: turnObs.traceId,
+        parentSpanId: null,
+        type: 'attachment',
+        name: attachmentRecord.included ? 'attachment-included' : 'attachment-excluded',
+        startedAt: turnSentAt,
+        endedAt: turnSentAt,
+        latencyMs: 0,
+        inputTokens: null,
+        outputTokens: null,
+        inputPreview: null,
+        outputPreview: JSON.stringify({
+          artifactId: attachmentRecord.id,
+          filename: attachmentRecord.filename,
+          mimeType: attachmentRecord.mimeType,
+          included: attachmentRecord.included,
+          ...(attachmentRecord.exclusionReason
+            ? { exclusionReason: attachmentRecord.exclusionReason }
+            : {}),
+        }),
+        error: null,
+      },
+    ]);
+  }
 
   const assistantSeq = recordAssistantStart(
     threadStore,

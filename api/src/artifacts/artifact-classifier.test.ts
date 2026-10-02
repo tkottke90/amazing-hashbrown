@@ -88,6 +88,21 @@ describe('artifacts/artifact-classifier', () => {
     });
   });
 
+  it('classifies text/csv as not requiring vision, reading the raw bytes', async () => {
+    const result = await classifyArtifact('text/csv', Buffer.from('a,b,c\n1,2,3'));
+    expect(result).to.deep.equal({ requiresVision: false, extractedText: 'a,b,c\n1,2,3' });
+  });
+
+  it('classifies application/json as not requiring vision, reading the raw bytes', async () => {
+    const result = await classifyArtifact('application/json', Buffer.from('{"a":1}'));
+    expect(result).to.deep.equal({ requiresVision: false, extractedText: '{"a":1}' });
+  });
+
+  it('classifies application/yaml as not requiring vision, reading the raw bytes', async () => {
+    const result = await classifyArtifact('application/yaml', Buffer.from('a: 1\nb: 2'));
+    expect(result).to.deep.equal({ requiresVision: false, extractedText: 'a: 1\nb: 2' });
+  });
+
   it('throws for an unrecognized MIME type (programmer error, not a user-facing case)', async () => {
     let threw = false;
     try {
