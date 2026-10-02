@@ -326,6 +326,7 @@ This project uses an **Evaluation Harness** (`lib/evaluations`, `bin/eval*`) to 
 2. **When filing a bug involving LLM output**: add a failing eval scenario that reproduces the bug _before_ writing the fix. Reference the issue number in the scenario `id` (e.g. `bug-42-agent-refuses-tool-call`).
 3. **When fixing an LLM-facing bug**: the failing eval must be green before the PR is merged.
 4. **Scenario `purpose` field is required**: it must answer "why does this test matter?" — not just describe what it tests.
+5. **The user runs the actual evals.** An agent session typically has no network path to the local model providers (Ollama, Lemonade, etc.) suites are evaluated against, so it cannot execute `npm run eval` itself and confirm a real pass/fail. When a change needs an eval run — a new scenario per rule 1, a bug-reproduction scenario per rule 2, or confirming rule 3's "green before merge" — write the scenario(s), then hand off explicitly: tell the user which suite(s) changed and give them the exact runnable command (`npm run eval -- --suite <id> --model <provider> --judge-model <provider>`), or point them at the `auto-eval-loop` skill if they'd rather have the iterate-until-green workflow run instead of a single manual pass. Never report a scenario as passing, or a fix as eval-verified, without having actually seen a run's output — "this should pass" is not a result.
 
 ### Quick reference
 

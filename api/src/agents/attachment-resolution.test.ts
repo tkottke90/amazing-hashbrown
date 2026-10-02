@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { bootArtifactStore, storeArtifact, getArtifactMeta } from '../artifacts/artifact-store.js';
-import { getToolContent } from '../services/tool-content-store.js';
+import { getToolContent, getToolContentEntry } from '../services/tool-content-store.js';
 import { STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
 import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 
@@ -48,10 +48,20 @@ describe('resolveAttachmentsForTurn [unit]', () => {
       exclusionReason: 'vision_unsupported',
     });
     expect(result.injections[0]!.kind).to.equal('excluded');
-    expect((result.injections[0] as { notation: string }).notation).to.include('photo.png');
-    expect((result.injections[0] as { notation: string }).notation).to.include(
-      'does not support image input',
-    );
+    const notation = (result.injections[0] as { notation: string }).notation;
+    expect(notation).to.include('photo.png');
+    expect(notation).to.include('does not support image input');
+    expect(notation).to.include('retried via get_tool_key({ threadId: "thread-1"');
+
+    // The embedded toolKey must resolve to a binary pointer at the real
+    // attachmentId, so a later turn with a vision-capable model can still
+    // retrieve the image this turn couldn't include.
+    const toolKeyMatch = notation.match(/toolKey:\s*"([^"]+)"/);
+    expect(toolKeyMatch, 'excluded notation must embed a real toolKey').to.not.equal(null);
+    expect(getToolContentEntry('thread-1', toolKeyMatch![1]!)).to.deep.equal({
+      kind: 'binary',
+      attachmentId: id,
+    });
   });
 
   it('excludes with exclusionReason "artifact_missing" when the artifact bytes are gone from disk', async () => {
@@ -93,16 +103,53 @@ describe('resolveAttachmentsForTurn [unit]', () => {
 
     const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
 
-    expect(result.injections[0]).to.deep.equal({
-      kind: 'multimodal',
-      imageBlock: { type: 'image', mimeType: 'image/png', data: original.toString('base64') },
+    expect(result.injections[0]!.kind).to.equal('multimodal');
+    const injection = result.injections[0] as {
+      kind: 'multimodal';
+      imageBlock: { type: 'image'; mimeType: string; data: string };
+      followUpNotation: string;
+    };
+    expect(injection.imageBlock).to.deep.equal({
+      type: 'image',
+      mimeType: 'image/png',
+      data: original.toString('base64'),
     });
+    expect(injection.followUpNotation).to.include('get_tool_key({ threadId: "thread-1"');
     expect(result.records[0]).to.deep.equal({
       id,
       filename: 'photo.png',
       mimeType: 'image/png',
       included: true,
     });
+
+    // The toolKey embedded in the follow-up notation must resolve to a
+    // binary pointer at the real attachmentId, so a later turn can re-fetch
+    // the same image via get_tool_key.
+    const toolKeyMatch = injection.followUpNotation.match(/toolKey:\s*"([^"]+)"/);
+    expect(toolKeyMatch, 'followUpNotation must embed a real toolKey').to.not.equal(null);
+    expect(getToolContentEntry('thread-1', toolKeyMatch![1]!)).to.deep.equal({
+      kind: 'binary',
+      attachmentId: id,
+    });
+  });
+
+  it('mints a different toolKey each time the same attachment is resolved again', async () => {
+    const id = await storeArtifact({
+      mimeType: 'image/png',
+      original: Buffer.from('fake-image-bytes'),
+      displayFilename: 'photo.png',
+      requiresVision: true,
+    });
+
+    const first = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
+    const second = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
+
+    const firstNotation = (first.injections[0] as { followUpNotation: string }).followUpNotation;
+    const secondNotation = (second.injections[0] as { followUpNotation: string }).followUpNotation;
+    const firstKey = firstNotation.match(/toolKey:\s*"([^"]+)"/)![1];
+    const secondKey = secondNotation.match(/toolKey:\s*"([^"]+)"/)![1];
+
+    expect(firstKey).to.not.equal(secondKey);
   });
 
   it('inlines extracted text for a small document attachment without ever checking vision capability', async () => {

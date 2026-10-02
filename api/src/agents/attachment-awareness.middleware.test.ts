@@ -84,7 +84,7 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     expect(result!.messages[0]!.content).to.equal('look at this\n\n[could not be included]');
   });
 
-  it('replaces the last human message content with a text+image array for a single multimodal injection', async () => {
+  it('replaces the last human message content with a text+image array for a single multimodal injection, including the follow-up notation', async () => {
     const middleware = createAttachmentAwarenessMiddleware();
     const original = new HumanMessage({ content: 'look at this', id: 'msg-3' });
     const result = await callBeforeAgent(
@@ -94,13 +94,17 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
         {
           kind: 'multimodal',
           imageBlock: { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
+          followUpNotation: '(You can re-fetch this image later via get_tool_key(...).)',
         },
       ]),
     );
 
     expect(result!.messages[0]!.id).to.equal('msg-3');
     expect(result!.messages[0]!.content).to.deep.equal([
-      { type: 'text', text: 'look at this' },
+      {
+        type: 'text',
+        text: 'look at this\n\n(You can re-fetch this image later via get_tool_key(...).)',
+      },
       { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
     ]);
   });
@@ -112,13 +116,21 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
       middleware,
       makeState([original]),
       makeRuntime([
-        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' } },
-        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/jpeg', data: 'BBB' } },
+        {
+          kind: 'multimodal',
+          imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+          followUpNotation: 'notation-1',
+        },
+        {
+          kind: 'multimodal',
+          imageBlock: { type: 'image', mimeType: 'image/jpeg', data: 'BBB' },
+          followUpNotation: 'notation-2',
+        },
       ]),
     );
 
     expect(result!.messages[0]!.content).to.deep.equal([
-      { type: 'text', text: 'compare these' },
+      { type: 'text', text: 'compare these\n\nnotation-1\n\nnotation-2' },
       { type: 'image', mimeType: 'image/png', data: 'AAA' },
       { type: 'image', mimeType: 'image/jpeg', data: 'BBB' },
     ]);
@@ -149,12 +161,19 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
       makeState([original]),
       makeRuntime([
         { kind: 'text', notation: 'Attached file "notes.txt":\nhello' },
-        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' } },
+        {
+          kind: 'multimodal',
+          imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+          followUpNotation: 'notation-1',
+        },
       ]),
     );
 
     expect(result!.messages[0]!.content).to.deep.equal([
-      { type: 'text', text: 'mixed batch\n\nAttached file "notes.txt":\nhello' },
+      {
+        type: 'text',
+        text: 'mixed batch\n\nAttached file "notes.txt":\nhello\n\nnotation-1',
+      },
       { type: 'image', mimeType: 'image/png', data: 'AAA' },
     ]);
   });

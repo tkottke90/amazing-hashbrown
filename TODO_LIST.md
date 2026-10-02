@@ -52,6 +52,7 @@ Items are ordered first by priority/necessity, then by dependency.
 11. [Background Process Wake-ups](#background-process-wake-ups) — depends on: [Timed Agent Wake-ups](#timed-agent-wake-ups) (complete); wake the agent when a background shell process exits
 12. [Parked Task Runs](#parked-task-runs) — depends on: #1, [Timed Agent Wake-ups](#timed-agent-wake-ups) (complete); lets a task run wait instead of settling
 13. [Agent-Created One-off Reminders](#agent-created-one-off-reminders) — depends on: [Trigger System](#trigger-system) (complete); `create_tasks` can't create `cron_once` tasks yet
+14. [Multimodal Input Robustness Eval Coverage](#multimodal-input-robustness-eval-coverage) — depends on: none; eval harness has no way to simulate an attached image on a scenario, so there's no automated coverage for how a model actually behaves on a real multimodal turn
 
 ---
 
@@ -763,3 +764,19 @@ Items are ordered first by priority/necessity, then by dependency.
 - The UI should render this as a subtle inline indicator in the message stream (e.g. a small "📖 Wiki updated: _Entity Name_" chip), not a full message bubble
 - Emitted by AfterAgent Middleware after a successful `wiki.commitPage()` call
 - Update `handleEvent` in `ui/src/hooks/use-thread.ts` and add a corresponding `ThreadMessage` kind (`wiki_update`) to render it
+
+---
+
+### Multimodal Input Robustness Eval Coverage
+
+**Goal:** Give the eval harness (`lib/evaluations`) a way to simulate an image attachment on a scenario, so a suite can assert the agent stays on-topic and coherent on a real multimodal turn instead of degenerating into a generic, context-free reply.
+
+**Ideas / Requirements:**
+
+- Scope this precisely: it's about model behavior/robustness on a multimodal turn, not about `tool-access.middleware.ts`/`ambient-context.middleware.ts`'s own correctness — those are fully covered by their own unit tests (`message-content.ts` and its regression tests, added alongside the fix this item followed from). The eval harness never invokes either middleware's `wrapModelCall` hook at all — `bin/eval.ts` builds the system prompt and ambient-context block directly as plain strings rather than through one of the 5 `createAgent()` call sites (the same pre-existing gap issue #244 already worked around for ambient context — see `schemas.ts`'s `simulatedNow` comment) — so no eval scenario can add coverage for that code regardless of this item landing.
+- Add an optional field (e.g. `simulatedImageAttachment: boolean`) to the scenario schema(s) it's relevant for in `lib/evaluations/src/schemas.ts` — `tool-call` and `llm-judge` are the natural fits, matching how `suites/ambient-context.yaml`'s existing scenarios are shaped
+- Wire `runner.ts` to build the scenario's `HumanMessage` as a `[{type:'text',...}, {type:'image', mimeType, data}]` content array when set — the same shape `api/src/agents/stream-handler.ts`'s `resolveAttachmentForTurn()` produces in production — using one small, fixed, deterministic fixture image (not per-scenario base64 authoring, to keep scenarios deterministic and YAML readable)
+- Add scenario(s) once the harness supports this — likely in `suites/ambient-context.yaml` or a new dedicated suite — asserting the model doesn't fall back to a canned greeting and actually engages with the attached content and the accompanying question
+- Originated from investigating why a real agent turn with an attached image produced two back-to-back generic greetings instead of answering the user's actual question; the root cause (a middleware silently dropping system-prompt sections when message content is a structured array) is already fixed and unit-tested — this item is the separate, still-open follow-up question of whether the model itself behaves well once it's handed a complete prompt on a multimodal turn
+
+**Dependencies:** none

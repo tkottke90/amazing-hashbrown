@@ -36,14 +36,17 @@ export function createAttachmentAwarenessMiddleware() {
       // Every text/excluded injection's notation accumulates onto one text
       // block (same shape a single notation produced before); every
       // multimodal injection contributes one image block, trailing that
-      // text block in injection order. Zero image blocks keeps `content` a
-      // plain string — unchanged shape/behavior for the common no-image
-      // case, rather than always wrapping in a content array.
+      // text block in injection order, and its followUpNotation (the
+      // get_tool_key re-fetch hint) folds into the same combined text block
+      // rather than living only alongside its own image. Zero image blocks
+      // keeps `content` a plain string — unchanged shape/behavior for the
+      // common no-image case, rather than always wrapping in a content array.
       let combinedText = existingText;
       const imageBlocks: Extract<AttachmentInjection, { kind: 'multimodal' }>['imageBlock'][] = [];
       for (const injection of injections) {
         if (injection.kind === 'multimodal') {
           imageBlocks.push(injection.imageBlock);
+          combinedText = `${combinedText}\n\n${injection.followUpNotation}`;
         } else {
           combinedText = `${combinedText}\n\n${injection.notation}`;
         }

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { SpanRecord } from '@tkottke90/llm-common-types/traces';
 import { getArtifactMeta, getArtifact, getExtractedText } from '../artifacts/artifact-store.js';
 import { resolveVisionCapability } from '../services/provider-factory.js';
-import { storeToolContent } from '../services/tool-content-store.js';
+import { storeToolContent, storeBinaryToolContent } from '../services/tool-content-store.js';
 import { toolStub, STUB_THRESHOLD_CHARS, type StubSection } from './tools/tool-stub.js';
 import type { UserMessageAttachment } from './thread-message-writer.js';
 
@@ -10,10 +10,16 @@ import type { UserMessageAttachment } from './thread-message-writer.js';
 // resolved attachment, applied to the turn's last HumanMessage — see
 // attachment-awareness.middleware.ts. `text`/`excluded` both append a string
 // to the existing text content; `multimodal` replaces it with a
-// text+image content array (today's working vision path, unchanged).
+// text+image content array (today's working vision path, unchanged), plus
+// followUpNotation appended alongside it so the agent can re-fetch the same
+// image later via get_tool_key (see binary-content-fetch.middleware.ts).
 export type AttachmentInjection =
   | { kind: 'text'; notation: string }
-  | { kind: 'multimodal'; imageBlock: { type: 'image'; mimeType: string; data: string } }
+  | {
+      kind: 'multimodal';
+      imageBlock: { type: 'image'; mimeType: string; data: string };
+      followUpNotation: string;
+    }
   | { kind: 'excluded'; notation: string };
 
 export interface AttachmentResolution {
@@ -50,6 +56,18 @@ async function resolveOneAttachment(
   const visionGateOk = !meta.requiresVision || (await checkVision(providerName, modelId ?? ''));
 
   if (!visionGateOk) {
+    // Only a real image can be re-fetched later via get_tool_key — the
+    // beforeModel injection in binary-content-fetch.middleware.ts knows how
+    // to re-attach a raw image, not a scanned/image-only PDF (also
+    // requiresVision, but a different re-delivery problem this feature
+    // doesn't solve).
+    let retryNotation = '';
+    if (meta.mimeType.startsWith('image/')) {
+      const toolKey = `att_${randomBytes(4).toString('hex')}`;
+      storeBinaryToolContent(threadId, toolKey, attachmentId);
+      retryNotation = ` If a vision-capable model becomes active later in this conversation, it can be retried via get_tool_key({ threadId: "${threadId}", toolKey: "${toolKey}" }).`;
+    }
+
     return {
       record: {
         id: attachmentId,
@@ -60,7 +78,7 @@ async function resolveOneAttachment(
       },
       injection: {
         kind: 'excluded',
-        notation: `[The user attached "${meta.displayFilename}" (${meta.mimeType}) but it could not be included: the current model does not support image input.]`,
+        notation: `[The user attached "${meta.displayFilename}" (${meta.mimeType}) but it could not be included: the current model does not support image input.${retryNotation}]`,
       },
     };
   }
@@ -84,6 +102,9 @@ async function resolveOneAttachment(
         },
       };
     }
+    const toolKey = `att_${randomBytes(4).toString('hex')}`;
+    storeBinaryToolContent(threadId, toolKey, attachmentId);
+
     return {
       record: {
         id: attachmentId,
@@ -98,6 +119,7 @@ async function resolveOneAttachment(
           mimeType: meta.mimeType,
           data: artifact.original.toString('base64'),
         },
+        followUpNotation: `(You can re-fetch this image later via get_tool_key({ threadId: "${threadId}", toolKey: "${toolKey}" }).)`,
       },
     };
   }
