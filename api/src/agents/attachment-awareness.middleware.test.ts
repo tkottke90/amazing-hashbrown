@@ -8,8 +8,8 @@ function makeState(messages: BaseMessage[]): { messages: BaseMessage[] } {
   return { messages };
 }
 
-function makeRuntime(attachmentInjection?: AttachmentInjection) {
-  return { configurable: attachmentInjection ? { attachmentInjection } : {} };
+function makeRuntime(attachmentInjections?: AttachmentInjection[]) {
+  return { configurable: attachmentInjections ? { attachmentInjections } : {} };
 }
 
 interface BeforeAgentResult {
@@ -27,7 +27,7 @@ async function callBeforeAgent(
 }
 
 describe('agents/attachment-awareness.middleware [unit]', () => {
-  it('returns undefined when there is no attachmentInjection in configurable', async () => {
+  it('returns undefined when there is no attachmentInjections in configurable', async () => {
     const middleware = createAttachmentAwarenessMiddleware();
     const result = await callBeforeAgent(
       middleware,
@@ -37,12 +37,22 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     expect(result).to.equal(undefined);
   });
 
+  it('returns undefined for an empty attachmentInjections array', async () => {
+    const middleware = createAttachmentAwarenessMiddleware();
+    const result = await callBeforeAgent(
+      middleware,
+      makeState([new HumanMessage('hello')]),
+      makeRuntime([]),
+    );
+    expect(result).to.equal(undefined);
+  });
+
   it('returns undefined when there is no human message to rewrite', async () => {
     const middleware = createAttachmentAwarenessMiddleware();
     const result = await callBeforeAgent(
       middleware,
       makeState([new AIMessage('hi there')]),
-      makeRuntime({ kind: 'text', notation: 'some notation' }),
+      makeRuntime([{ kind: 'text', notation: 'some notation' }]),
     );
     expect(result).to.equal(undefined);
   });
@@ -53,7 +63,7 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     const result = await callBeforeAgent(
       middleware,
       makeState([original]),
-      makeRuntime({ kind: 'text', notation: 'Attached file "notes.txt":\nhello' }),
+      makeRuntime([{ kind: 'text', notation: 'Attached file "notes.txt":\nhello' }]),
     );
 
     expect(result!.messages[0]!.id).to.equal('msg-1');
@@ -68,28 +78,84 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     const result = await callBeforeAgent(
       middleware,
       makeState([original]),
-      makeRuntime({ kind: 'excluded', notation: '[could not be included]' }),
+      makeRuntime([{ kind: 'excluded', notation: '[could not be included]' }]),
     );
 
     expect(result!.messages[0]!.content).to.equal('look at this\n\n[could not be included]');
   });
 
-  it('replaces the last human message content with a text+image array for a multimodal injection', async () => {
+  it('replaces the last human message content with a text+image array for a single multimodal injection', async () => {
     const middleware = createAttachmentAwarenessMiddleware();
     const original = new HumanMessage({ content: 'look at this', id: 'msg-3' });
     const result = await callBeforeAgent(
       middleware,
       makeState([original]),
-      makeRuntime({
-        kind: 'multimodal',
-        imageBlock: { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
-      }),
+      makeRuntime([
+        {
+          kind: 'multimodal',
+          imageBlock: { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
+        },
+      ]),
     );
 
     expect(result!.messages[0]!.id).to.equal('msg-3');
     expect(result!.messages[0]!.content).to.deep.equal([
       { type: 'text', text: 'look at this' },
       { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
+    ]);
+  });
+
+  it('combines several multimodal injections into one text block followed by every image block, in order', async () => {
+    const middleware = createAttachmentAwarenessMiddleware();
+    const original = new HumanMessage({ content: 'compare these', id: 'msg-4' });
+    const result = await callBeforeAgent(
+      middleware,
+      makeState([original]),
+      makeRuntime([
+        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' } },
+        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/jpeg', data: 'BBB' } },
+      ]),
+    );
+
+    expect(result!.messages[0]!.content).to.deep.equal([
+      { type: 'text', text: 'compare these' },
+      { type: 'image', mimeType: 'image/png', data: 'AAA' },
+      { type: 'image', mimeType: 'image/jpeg', data: 'BBB' },
+    ]);
+  });
+
+  it('keeps content a plain string when every injection is text/excluded (no images), concatenated in order', async () => {
+    const middleware = createAttachmentAwarenessMiddleware();
+    const original = new HumanMessage({ content: 'two files', id: 'msg-5' });
+    const result = await callBeforeAgent(
+      middleware,
+      makeState([original]),
+      makeRuntime([
+        { kind: 'text', notation: 'Attached file "a.txt":\nfirst' },
+        { kind: 'excluded', notation: '[could not include b.pdf]' },
+      ]),
+    );
+
+    expect(result!.messages[0]!.content).to.equal(
+      'two files\n\nAttached file "a.txt":\nfirst\n\n[could not include b.pdf]',
+    );
+  });
+
+  it('puts every image block after one combined text block for a mix of text and multimodal injections', async () => {
+    const middleware = createAttachmentAwarenessMiddleware();
+    const original = new HumanMessage({ content: 'mixed batch', id: 'msg-6' });
+    const result = await callBeforeAgent(
+      middleware,
+      makeState([original]),
+      makeRuntime([
+        { kind: 'text', notation: 'Attached file "notes.txt":\nhello' },
+        { kind: 'multimodal', imageBlock: { type: 'image', mimeType: 'image/png', data: 'AAA' } },
+      ]),
+    );
+
+    expect(result!.messages[0]!.content).to.deep.equal([
+      { type: 'text', text: 'mixed batch\n\nAttached file "notes.txt":\nhello' },
+      { type: 'image', mimeType: 'image/png', data: 'AAA' },
     ]);
   });
 
@@ -101,7 +167,7 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     const result = await callBeforeAgent(
       middleware,
       makeState([first, ai, second]),
-      makeRuntime({ kind: 'text', notation: 'notation' }),
+      makeRuntime([{ kind: 'text', notation: 'notation' }]),
     );
 
     expect(result!.messages[0]).to.equal(first);

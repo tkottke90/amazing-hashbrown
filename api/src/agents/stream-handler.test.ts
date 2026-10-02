@@ -1176,6 +1176,19 @@ describe('agents/stream-handler', () => {
       expect(err.message).to.equal('rate limited');
       expect(err.category).to.equal('rate_limit');
     });
+
+    it('leaves attachments undefined when the turn never resolved any', () => {
+      const err = new ClassifiedTurnError('rate limited', 'rate_limit');
+      expect(err.attachments).to.equal(undefined);
+    });
+
+    it('carries the resolved attachments it was constructed with', () => {
+      const attachments = [
+        { id: 'att-1', filename: 'notes.txt', mimeType: 'text/plain', included: true },
+      ];
+      const err = new ClassifiedTurnError('rate limited', 'rate_limit', attachments);
+      expect(err.attachments).to.deep.equal(attachments);
+    });
   });
 
   describe('drainAndRecordWikiUpdates', () => {
@@ -1802,7 +1815,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           undefined,
-          id,
+          [id],
           depsFor(fakeThrowingAgent()),
         ),
       );
@@ -1816,6 +1829,76 @@ describe('agents/stream-handler', () => {
         mimeType: 'text/plain',
         included: true,
       });
+    });
+
+    it('records a span per attachment for a multi-attachment turn, and persists an attachments array [orchestration]', async () => {
+      const threadId = randomUUID();
+      const firstId = await storeArtifact({
+        mimeType: 'text/plain',
+        original: Buffer.from('hello'),
+        displayFilename: 'notes.txt',
+        requiresVision: false,
+        extractedText: 'hello',
+      });
+      const secondId = await storeArtifact({
+        mimeType: 'text/markdown',
+        original: Buffer.from('world'),
+        displayFilename: 'notes.md',
+        requiresVision: false,
+        extractedText: 'world',
+      });
+
+      await expectClassifiedTurnError(
+        streamChatToSse(
+          fakeRes().res,
+          threadId,
+          'about these files',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          [firstId, secondId],
+          depsFor(fakeThrowingAgent()),
+        ),
+      );
+
+      const spans = getAttachmentSpans(threadId);
+      expect(spans).to.have.length(2);
+
+      const userMessage = store.getThreadMessages(threadId).find((m) => m.kind === 'user');
+      const payload = userMessage?.payload as { attachments: { id: string }[] } | undefined;
+      expect(payload?.attachments.map((a) => a.id)).to.deep.equal([firstId, secondId]);
+    });
+
+    it('carries the resolved attachments on the thrown ClassifiedTurnError, so the route can put them on stream_error [orchestration]', async () => {
+      const threadId = randomUUID();
+      const id = await storeArtifact({
+        mimeType: 'text/plain',
+        original: Buffer.from('hello'),
+        displayFilename: 'notes.txt',
+        requiresVision: false,
+        extractedText: 'hello',
+      });
+
+      try {
+        await streamChatToSse(
+          fakeRes().res,
+          threadId,
+          'about this file',
+          Date.now(),
+          undefined,
+          undefined,
+          undefined,
+          [id],
+          depsFor(fakeThrowingAgent()),
+        );
+        throw new Error('expected streamChatToSse to throw');
+      } catch (err) {
+        expect(err).to.be.instanceOf(ClassifiedTurnError);
+        expect((err as ClassifiedTurnError).attachments).to.deep.equal([
+          { id, filename: 'notes.txt', mimeType: 'text/plain', included: true },
+        ]);
+      }
     });
 
     it('records an attachment-excluded span with exclusionReason when the attachment is excluded [orchestration]', async () => {
@@ -1839,7 +1922,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           undefined,
-          id,
+          [id],
           depsFor(fakeThrowingAgent()),
         ),
       );

@@ -27,7 +27,7 @@ import { resolveTurnModel, startTurnObservability } from './turn-observability.j
 import { getObservabilityStore } from '../services/observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
-import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
+import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 import {
   recordUserMessage,
   recordAssistantStart,
@@ -128,7 +128,7 @@ export async function streamWorkspaceChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
-  attachmentId?: string,
+  attachmentIds?: string[],
   deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
@@ -175,17 +175,19 @@ export async function streamWorkspaceChatToSse(
   const msgId = randomUUID();
   const turnSentAt = new Date().toISOString();
 
-  const resolution = await resolveAttachmentForTurn(
-    attachmentId,
-    threadId,
-    effectiveProvider,
-    effectiveModel,
-  );
+  const { records: attachmentRecords, injections: attachmentInjections } =
+    await resolveAttachmentsForTurn(
+      attachmentIds ?? [],
+      threadId,
+      effectiveProvider,
+      effectiveModel,
+    );
+  const turnAttachments = attachmentRecords.length ? attachmentRecords : undefined;
   const config = {
     configurable: {
       thread_id: threadId,
       workspaceId: workspace.id,
-      attachmentInjection: resolution?.injection,
+      attachmentInjections,
     },
   };
 
@@ -195,9 +197,9 @@ export async function streamWorkspaceChatToSse(
     randomUUID(),
     content,
     turnSentAt,
-    resolution?.record,
+    turnAttachments,
   );
-  if (resolution) await markArtifactReferenced(resolution.record.id);
+  for (const record of attachmentRecords) await markArtifactReferenced(record.id);
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
@@ -209,10 +211,10 @@ export async function streamWorkspaceChatToSse(
     systemPrompt,
   });
 
-  if (resolution) {
-    getObservabilityStore().saveSpans([
-      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
-    ]);
+  if (attachmentRecords.length) {
+    getObservabilityStore().saveSpans(
+      attachmentRecords.map((record) => buildAttachmentSpan(turnObs.traceId, turnSentAt, record)),
+    );
   }
 
   const assistantSeq = recordAssistantStart(
@@ -286,6 +288,9 @@ export async function streamWorkspaceChatToSse(
       turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
+      undefined,
+      false,
+      turnAttachments,
     );
 
     await maybeSummarizeWorkspace(
@@ -328,14 +333,18 @@ export async function streamWorkspaceChatToSse(
         'Stopped.',
         'cancelled',
       );
-      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+      throw new ClassifiedTurnError('Stopped.', 'cancelled', turnAttachments);
     }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
       writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, {
+        type: 'stream_done',
+        durationMs: Date.now() - startedAt,
+        ...(turnAttachments ? { attachments: turnAttachments } : {}),
+      });
       return;
     }
     const classified = classifyChatError(err, providerConfig.type);
@@ -350,7 +359,7 @@ export async function streamWorkspaceChatToSse(
       turnError,
       classified.category,
     );
-    throw new ClassifiedTurnError(classified.message, classified.category);
+    throw new ClassifiedTurnError(classified.message, classified.category, turnAttachments);
   } finally {
     await turnObs.end(turnError);
     endThreadTurn(threadId);

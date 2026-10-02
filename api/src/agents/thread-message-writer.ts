@@ -3,6 +3,9 @@ import type { ThreadStore } from '../services/thread-store.js';
 import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import type { UserMessageAttachment } from '@tkottke90/llm-common-types/chat';
+
+export type { UserMessageAttachment };
 
 // The actual "what to write" logic behind persisting a live chat turn to
 // thread_messages, extracted from stream-handler.ts so it's testable
@@ -27,37 +30,19 @@ function safe<T>(threadId: string, action: string, fn: () => T): T | null {
   }
 }
 
-export interface UserMessageAttachment {
-  id: string;
-  filename: string;
-  mimeType: string;
-  // Whether the model actually received this attachment (false when it
-  // required vision and the active model didn't support it) — the stored
-  // `content` is always the plain text the user typed, never the
-  // multimodal/merged-text variant handed to the LLM, so history always
-  // shows what the user wrote regardless of `included`.
-  included: boolean;
-  // Populated only when included is false. 'vision_unsupported': the
-  // attachment required vision and the active model didn't support it.
-  // 'artifact_missing': the artifact's metadata resolved but its bytes were
-  // gone from disk (corrupted/missing state, stream-handler.ts's existing
-  // fallback path).
-  exclusionReason?: 'vision_unsupported' | 'artifact_missing';
-}
-
 export function recordUserMessage(
   store: ThreadStore,
   threadId: string,
   id: string,
   content: string,
   sentAt: string,
-  attachment?: UserMessageAttachment,
+  attachments?: UserMessageAttachment[],
 ): number | null {
   return safe(threadId, 'recordUserMessage', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'user',
-      payload: { content, sentAt, ...(attachment ? { attachment } : {}) },
+      payload: { content, sentAt, ...(attachments?.length ? { attachments } : {}) },
     }).seq;
   });
 }

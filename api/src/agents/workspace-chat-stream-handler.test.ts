@@ -617,7 +617,7 @@ describe('agents/workspace-chat-stream-handler — attachment observability span
         undefined,
         undefined,
         undefined,
-        id,
+        [id],
         depsFor(fakeThrowingAgent()),
       ),
     );
@@ -630,7 +630,8 @@ describe('agents/workspace-chat-stream-handler — attachment observability span
       .getThreadMessages(threadId)
       .find((m) => m.kind === 'user');
     expect(
-      (userMessage?.payload as { attachment?: { filename?: string } }).attachment?.filename,
+      (userMessage?.payload as { attachments?: { filename?: string }[] }).attachments?.[0]
+        ?.filename,
       'the user-facing thread record must note the attachment, same as main chat',
     ).to.equal('notes.txt');
   });
@@ -655,6 +656,47 @@ describe('agents/workspace-chat-stream-handler — attachment observability span
     );
 
     expect(getAttachmentSpans(threadId)).to.have.length(0);
+  });
+
+  it('records a span per attachment for a multi-attachment turn [orchestration]', async () => {
+    const threadId = randomUUID();
+    const w = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+    const firstId = await storeArtifact({
+      mimeType: 'text/plain',
+      original: Buffer.from('hello'),
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+      extractedText: 'hello',
+    });
+    const secondId = await storeArtifact({
+      mimeType: 'text/markdown',
+      original: Buffer.from('world'),
+      displayFilename: 'notes.md',
+      requiresVision: false,
+      extractedText: 'world',
+    });
+
+    await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        fakeRes().res,
+        w,
+        threadId,
+        'about these files',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        [firstId, secondId],
+        depsFor(fakeThrowingAgent()),
+      ),
+    );
+
+    expect(getAttachmentSpans(threadId)).to.have.length(2);
+    const userMessage = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'user');
+    const payload = userMessage?.payload as { attachments: { id: string }[] } | undefined;
+    expect(payload?.attachments.map((a) => a.id)).to.deep.equal([firstId, secondId]);
   });
 });
 

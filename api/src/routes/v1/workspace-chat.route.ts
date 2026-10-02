@@ -82,16 +82,20 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
 
 workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, afterAgent, attachmentId } = req.body as {
+  const { content, provider, model, afterAgent, attachmentIds } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
     afterAgent?: boolean;
-    attachmentId?: string;
+    attachmentIds?: string[];
   };
 
   if (!content?.trim()) {
     res.status(400).json({ error: 'content is required' });
+    return;
+  }
+  if (attachmentIds && attachmentIds.length > 4) {
+    res.status(400).json({ error: 'A message may carry at most 4 attachments' });
     return;
   }
 
@@ -111,15 +115,17 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
       provider,
       model,
       afterAgent,
-      attachmentId,
+      attachmentIds,
     );
   } catch (err) {
     req.logger.error('Workspace chat stream error', { err: serializeError(err) });
     const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    const attachments = err instanceof ClassifiedTurnError ? err.attachments : undefined;
     writeSseEvent(toSink(res), {
       type: 'stream_error',
       error: String(err),
       ...(errorCategory ? { errorCategory } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     });
   } finally {
     stopKeepalive();

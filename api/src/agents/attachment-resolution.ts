@@ -24,13 +24,12 @@ export interface AttachmentResolution {
   injection: AttachmentInjection;
 }
 
-// Pipeline-agnostic: resolves what a turn's attachmentId means for both the
-// UI-facing thread record and the LLM-facing message, independent of which
-// chat surface (main/workspace/wiki-ingestion) is asking. Each stream
-// handler calls this once per turn and threads the result through
-// recordUserMessage (record) and the agent's configurable (injection) —
-// see docs/superpowers/specs/<phase-1-design>.md.
-export async function resolveAttachmentForTurn(
+// Resolves a single attachmentId — the per-item logic shared by
+// resolveAttachmentsForTurn below. Not exported: every caller goes through
+// the plural entry point now, which is what actually gets a thread_id/
+// provider/model and a (memoized) vision check applied consistently across
+// however many ids a turn carries.
+async function resolveOneAttachment(
   attachmentId: string | undefined,
   threadId: string,
   providerName: string | undefined,
@@ -152,6 +151,51 @@ export async function resolveAttachmentForTurn(
       ),
     },
   };
+}
+
+// Pipeline-agnostic: resolves what a turn's attachmentIds mean for both the
+// UI-facing thread record and the LLM-facing message, independent of which
+// chat surface (main/workspace/wiki-ingestion) is asking. Each stream
+// handler calls this once per turn and threads the result through
+// recordUserMessage (records) and the agent's configurable (injections) —
+// see docs/superpowers/specs/2026-10-02-multi-attachment-preview-design.md.
+//
+// checkVision is memoized across the call: a turn with several
+// vision-gated images must still only make the (live, Ollama-querying)
+// capability check once, not once per image — resolveOneAttachment's own
+// comment already calls out avoiding that call for the common non-vision
+// case, and multi-image shouldn't multiply it either.
+export async function resolveAttachmentsForTurn(
+  attachmentIds: string[],
+  threadId: string,
+  providerName: string | undefined,
+  modelId: string | undefined,
+  checkVision: (
+    providerName: string | undefined,
+    modelId: string,
+  ) => Promise<boolean> = resolveVisionCapability,
+): Promise<{ records: UserMessageAttachment[]; injections: AttachmentInjection[] }> {
+  let cachedVisionCheck: Promise<boolean> | undefined;
+  const memoizedCheckVision = (pn: string | undefined, m: string): Promise<boolean> => {
+    if (!cachedVisionCheck) cachedVisionCheck = checkVision(pn, m);
+    return cachedVisionCheck;
+  };
+
+  const records: UserMessageAttachment[] = [];
+  const injections: AttachmentInjection[] = [];
+  for (const attachmentId of attachmentIds) {
+    const result = await resolveOneAttachment(
+      attachmentId,
+      threadId,
+      providerName,
+      modelId,
+      memoizedCheckVision,
+    );
+    if (!result) continue;
+    records.push(result.record);
+    injections.push(result.injection);
+  }
+  return { records, injections };
 }
 
 // Shared span shape for the three chat pipelines — see

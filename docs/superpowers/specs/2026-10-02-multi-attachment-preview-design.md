@@ -47,7 +47,7 @@ server-side vision-gate resolution, and the provider-facing message content
   are unchanged — no new upload capability ships here.
 - Letting `Send` fire while an upload is still in flight. Files still fully
   upload before `Send` is usable, same as today's flow — this spec only
-  fixes the *silent* version of that (see "Fixing the staging race" below).
+  fixes the _silent_ version of that (see "Fixing the staging race" below).
 - Attachment-only sends (no text). Unchanged — `canSend` still requires
   non-empty text.
 
@@ -117,7 +117,7 @@ above).
   `attachmentError: "Only 4 attachments allowed per message — 2 files were skipped."`
 - **Fixing the staging race**: today, `canSend` doesn't check upload status
   at all, so pressing Enter/Send while a file is still uploading silently
-  sends the message *without* it (the `attachment` signal hasn't updated
+  sends the message _without_ it (the `attachment` signal hasn't updated
   yet). A new `uploadsInFlight` counter signal increments when `stageFile`
   starts and decrements when it settles; `canSend` additionally requires
   `uploadsInFlight === 0`. While uploads are pending, the header shows a
@@ -137,7 +137,7 @@ above).
 `stageFile` creates `URL.createObjectURL(file)` for image attachments only,
 stored as `previewUrl` on the staged item (local-only; never sent to the
 server). This exists purely to avoid a network round-trip delay on the
-*first* render of the optimistic bubble's thumbnail — by the time `Send` is
+_first_ render of the optimistic bubble's thumbnail — by the time `Send` is
 pressed the upload itself has already finished (per "Fixing the staging
 race" above), but fetching `/api/v1/artifacts/:id` over the network can
 still take a moment. `AttachmentTile` renders the local blob URL immediately

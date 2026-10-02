@@ -23,6 +23,24 @@ export const ChatErrorCategorySchema = z.enum([
 ]);
 export type ChatErrorCategory = z.infer<typeof ChatErrorCategorySchema>;
 
+// One attachment's outcome on a turn, carried on both the user message's
+// persisted payload (api's thread-message-writer.ts) and the stream_done /
+// stream_error SSE events below — a single shared shape so the UI never has
+// to reconcile two hand-duplicated versions of it. `included` is optional:
+// the client's own optimistic bubble renders this shape before the server
+// has decided it, with `included` genuinely absent rather than false.
+export const UserMessageAttachmentSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  included: z.boolean().optional(),
+  // 'vision_unsupported': required vision and the active model didn't
+  // support it. 'artifact_missing': metadata resolved but the artifact's
+  // bytes were gone from disk. Present only when included is false.
+  exclusionReason: z.enum(['vision_unsupported', 'artifact_missing']).optional(),
+});
+export type UserMessageAttachment = z.infer<typeof UserMessageAttachmentSchema>;
+
 // `seq` is the persisted display-order value from `thread_messages.seq` (see
 // docs/Design/2026-07-18-persistent-conversation-memory-design.md). It is
 // optional here because it is only known once the corresponding row has been
@@ -111,6 +129,12 @@ const StreamDoneSchema = z.object({
   // user message (absent on HITL-resume/retry turns).
   assistantSeq: z.number().optional(),
   userSeq: z.number().optional(),
+  // Per-attachment outcome (included/excluded) for every attachment this
+  // turn resolved — lets the UI patch the already-rendered optimistic user
+  // bubble with the authoritative result instead of waiting for a reload.
+  // See StreamErrorSchema's twin comment: a turn can fail after attachments
+  // already resolved, so both terminal events carry it.
+  attachments: UserMessageAttachmentSchema.array().optional(),
 });
 
 const StreamErrorSchema = z.object({
@@ -121,6 +145,10 @@ const StreamErrorSchema = z.object({
   // unclassified/pre-existing failure, in which case the UI falls back to a
   // generic message.
   errorCategory: ChatErrorCategorySchema.optional(),
+  // See StreamDoneSchema's twin comment — attachment resolution happens
+  // before the LLM call, so a turn that fails after that point still has a
+  // per-attachment outcome worth patching into the UI.
+  attachments: UserMessageAttachmentSchema.array().optional(),
 });
 
 const WikiUpdatedSchema = z.object({
