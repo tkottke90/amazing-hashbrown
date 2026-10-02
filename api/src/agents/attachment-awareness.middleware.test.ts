@@ -74,7 +74,7 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
     expect(result!.messages[0]!.content).to.equal('look at this\n\n[could not be included]');
   });
 
-  it('replaces the last human message content with a text+image array for a multimodal injection', async () => {
+  it('replaces the last human message content with a text+image array for a multimodal injection, including the follow-up notation', async () => {
     const middleware = createAttachmentAwarenessMiddleware();
     const original = new HumanMessage({ content: 'look at this', id: 'msg-3' });
     const result = await callBeforeAgent(
@@ -83,12 +83,16 @@ describe('agents/attachment-awareness.middleware [unit]', () => {
       makeRuntime({
         kind: 'multimodal',
         imageBlock: { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
+        followUpNotation: '(You can re-fetch this image later via get_tool_key(...).)',
       }),
     );
 
     expect(result!.messages[0]!.id).to.equal('msg-3');
     expect(result!.messages[0]!.content).to.deep.equal([
-      { type: 'text', text: 'look at this' },
+      {
+        type: 'text',
+        text: 'look at this\n\n(You can re-fetch this image later via get_tool_key(...).)',
+      },
       { type: 'image', mimeType: 'image/png', data: 'YmFzZTY0' },
     ]);
   });

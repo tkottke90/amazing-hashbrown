@@ -40,6 +40,7 @@ import { boundaryAwareTrim } from './summary-boundary.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
+import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
@@ -412,6 +413,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, globalSkills),
       attachmentAwarenessMiddleware,
+      binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
@@ -514,6 +516,7 @@ async function buildWorkspaceChatAgent(
       ),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       attachmentAwarenessMiddleware,
+      binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
@@ -664,11 +667,13 @@ export async function buildTaskAgent(
       ),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       // Harmless no-op here (an automated task run never carries a chat
-      // attachmentId), but buildTaskAgent's declared return type pins
-      // `agent` to the exact ChatAgent structural type derived from
-      // buildChatAgent's middleware tuple — this keeps that tuple shape
-      // matching rather than loosening the type.
+      // attachmentId, so pendingImageFetch never gets set either), but
+      // buildTaskAgent's declared return type pins `agent` to the exact
+      // ChatAgent structural type derived from buildChatAgent's middleware
+      // tuple — this keeps that tuple shape matching rather than loosening
+      // the type. Both attachment middlewares ride along for this reason.
       attachmentAwarenessMiddleware,
+      binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       toolAccessMiddleware,
