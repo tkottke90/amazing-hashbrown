@@ -4,6 +4,8 @@ export {
   type ChatSSEEvent,
   ChatErrorCategorySchema,
   type ChatErrorCategory,
+  UserMessageAttachmentSchema,
+  type UserMessageAttachment,
 } from './sse-events.js';
 export {
   AppBroadcastEventSchema,

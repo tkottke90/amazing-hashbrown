@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
-import type { ChatSSEEvent, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import type {
+  ChatSSEEvent,
+  ChatErrorCategory,
+  UserMessageAttachment,
+} from '@tkottke90/llm-common-types/chat';
 import { classifyChatError } from './error-classification.js';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
 import { setActiveSseWriter, getActiveSseWriter, type SseWriter } from './active-sse-writer.js';
@@ -30,7 +34,7 @@ import { extractToolResultContent } from './tool-output.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
-import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
+import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 
 // ---- SSE write helper ----
 
@@ -157,11 +161,18 @@ export class PipeEventsError extends Error {
 // re-deriving the provider/classification itself. See error-classification.ts.
 export class ClassifiedTurnError extends Error {
   readonly category: ChatErrorCategory;
+  // Per-attachment outcomes already resolved before the turn failed (see
+  // attachment-resolution.ts) — carried here because the route-layer catch
+  // that builds the stream_error event has no other way to reach them once
+  // control leaves the stream handler's own closure. Absent for a turn that
+  // never had attachments, or whose failure happened before resolution.
+  readonly attachments?: UserMessageAttachment[];
 
-  constructor(message: string, category: ChatErrorCategory) {
+  constructor(message: string, category: ChatErrorCategory, attachments?: UserMessageAttachment[]) {
     super(message);
     this.name = 'ClassifiedTurnError';
     this.category = category;
+    this.attachments = attachments;
   }
 }
 
@@ -604,6 +615,12 @@ export async function finalizeTurn(
   // before it's ever written or shown, is what keeps that queue row's
   // completion the only thing task-execution.ts has to reconcile.
   discardInterrupt = false,
+  // Per-attachment outcomes this turn resolved — only the three main-turn
+  // callers (streamChatToSse and its workspace/wiki siblings) ever have
+  // any; resume/retry/headless/task callers never resolve attachments and
+  // leave this undefined. Included on every stream_done write below so the
+  // live UI can patch the optimistic bubble without a reload.
+  attachments?: UserMessageAttachment[],
 ): Promise<{ interrupted: boolean }> {
   const durationMs = Date.now() - startedAt;
   const config = { configurable: { thread_id: threadId } };
@@ -731,6 +748,7 @@ export async function finalizeTurn(
         type: 'stream_error',
         error: emptyResponseMessage,
         errorCategory: 'context_length',
+        ...(attachments?.length ? { attachments } : {}),
       });
       return { interrupted: false };
     }
@@ -740,6 +758,7 @@ export async function finalizeTurn(
       durationMs,
       ...(assistantSeq !== null ? { assistantSeq } : {}),
       ...(userSeq !== null ? { userSeq } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     });
     return { interrupted: false };
   }
@@ -835,7 +854,7 @@ export async function streamChatToSse(
   provider?: string,
   model?: string,
   afterAgent?: boolean,
-  attachmentId?: string,
+  attachmentIds?: string[],
   deps: ChatStreamDeps = {},
 ): Promise<void> {
   if (refuseIfThreadBusy(res, threadId)) return;
@@ -860,14 +879,16 @@ export async function streamChatToSse(
   const turnSentAt = new Date().toISOString();
   const sink = makeLiveSseWriter(res, threadStore, threadId);
 
-  const resolution = await resolveAttachmentForTurn(
-    attachmentId,
-    threadId,
-    effectiveProvider,
-    effectiveModel,
-  );
+  const { records: attachmentRecords, injections: attachmentInjections } =
+    await resolveAttachmentsForTurn(
+      attachmentIds ?? [],
+      threadId,
+      effectiveProvider,
+      effectiveModel,
+    );
+  const turnAttachments = attachmentRecords.length ? attachmentRecords : undefined;
   const config = {
-    configurable: { thread_id: threadId, attachmentInjection: resolution?.injection },
+    configurable: { thread_id: threadId, attachmentInjections },
   };
 
   const userSeq = recordUserMessage(
@@ -876,12 +897,12 @@ export async function streamChatToSse(
     randomUUID(),
     content,
     turnSentAt,
-    resolution?.record,
+    turnAttachments,
   );
-  // Regardless of whether the attachment ended up included or excluded —
+  // Regardless of whether an attachment ended up included or excluded —
   // an excluded attachment was still resolved by this send, not
   // abandoned, so it must not be swept by the orphaned-upload GC.
-  if (resolution) await markArtifactReferenced(resolution.record.id);
+  for (const record of attachmentRecords) await markArtifactReferenced(record.id);
 
   drainAndRecordWikiUpdates(sink, threadStore, threadId);
 
@@ -893,13 +914,13 @@ export async function streamChatToSse(
     systemPrompt,
   });
 
-  // Documents, outside the live SSE stream and the chip UI, whether this
-  // turn's attachment actually reached the model and why not when it
+  // Documents, outside the live SSE stream and the chip UI, whether each of
+  // this turn's attachments actually reached the model and why not when it
   // didn't — see docs/superpowers/specs/2026-10-02-chat-attachment-fixes-design.md §6.
-  if (resolution) {
-    getObservabilityStore().saveSpans([
-      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
-    ]);
+  if (attachmentRecords.length) {
+    getObservabilityStore().saveSpans(
+      attachmentRecords.map((record) => buildAttachmentSpan(turnObs.traceId, turnSentAt, record)),
+    );
   }
 
   const assistantSeq = recordAssistantStart(
@@ -977,6 +998,9 @@ export async function streamChatToSse(
       turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
+      undefined,
+      false,
+      turnAttachments,
     );
   } catch (err) {
     const recovered = await recoverThrownInterrupt(
@@ -1008,14 +1032,18 @@ export async function streamChatToSse(
         'Stopped.',
         'cancelled',
       );
-      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+      throw new ClassifiedTurnError('Stopped.', 'cancelled', turnAttachments);
     }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
       writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, {
+        type: 'stream_done',
+        durationMs: Date.now() - startedAt,
+        ...(turnAttachments ? { attachments: turnAttachments } : {}),
+      });
       return;
     }
     const classified = classifyChatError(err, providerConfig.type);
@@ -1030,7 +1058,7 @@ export async function streamChatToSse(
       turnError,
       classified.category,
     );
-    throw new ClassifiedTurnError(classified.message, classified.category);
+    throw new ClassifiedTurnError(classified.message, classified.category, turnAttachments);
   } finally {
     await turnObs.end(turnError);
     endThreadTurn(threadId);

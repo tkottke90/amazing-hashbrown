@@ -63,39 +63,73 @@ describe('agents/thread-message-writer', () => {
       expect(store.getMessage('no-such-thread', 'u2')).to.equal(null);
     });
 
-    it('persists an included attachment alongside content', () => {
-      recordUserMessage(store, 't1', 'u3', 'look at this', '2026-07-18T00:00:00.000Z', {
-        id: 'artifact-1',
-        filename: 'photo.png',
-        mimeType: 'image/png',
-        included: true,
-      });
-
-      const msg = store.getMessage('t1', 'u3')!;
-      expect(msg.payload).to.deep.equal({
-        content: 'look at this',
-        sentAt: '2026-07-18T00:00:00.000Z',
-        attachment: {
+    it('persists an included attachment alongside content, as a one-item array', () => {
+      recordUserMessage(store, 't1', 'u3', 'look at this', '2026-07-18T00:00:00.000Z', [
+        {
           id: 'artifact-1',
           filename: 'photo.png',
           mimeType: 'image/png',
           included: true,
         },
+      ]);
+
+      const msg = store.getMessage('t1', 'u3')!;
+      expect(msg.payload).to.deep.equal({
+        content: 'look at this',
+        sentAt: '2026-07-18T00:00:00.000Z',
+        attachments: [
+          {
+            id: 'artifact-1',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            included: true,
+          },
+        ],
       });
     });
 
     it('persists an excluded attachment — content stays the plain text the user typed', () => {
-      recordUserMessage(store, 't1', 'u4', 'look at this', '2026-07-18T00:00:00.000Z', {
-        id: 'artifact-2',
-        filename: 'photo.png',
-        mimeType: 'image/png',
-        included: false,
-      });
+      recordUserMessage(store, 't1', 'u4', 'look at this', '2026-07-18T00:00:00.000Z', [
+        {
+          id: 'artifact-2',
+          filename: 'photo.png',
+          mimeType: 'image/png',
+          included: false,
+        },
+      ]);
 
       const msg = store.getMessage('t1', 'u4')!;
-      const payload = msg.payload as { content: string; attachment: { included: boolean } };
+      const payload = msg.payload as { content: string; attachments: { included: boolean }[] };
       expect(payload.content).to.equal('look at this');
-      expect(payload.attachment.included).to.equal(false);
+      expect(payload.attachments[0]!.included).to.equal(false);
+    });
+
+    it('persists several attachments, each with its own independent outcome', () => {
+      recordUserMessage(store, 't1', 'u5', 'two files', '2026-07-18T00:00:00.000Z', [
+        { id: 'artifact-3', filename: 'notes.txt', mimeType: 'text/plain', included: true },
+        {
+          id: 'artifact-4',
+          filename: 'photo.png',
+          mimeType: 'image/png',
+          included: false,
+          exclusionReason: 'vision_unsupported',
+        },
+      ]);
+
+      const msg = store.getMessage('t1', 'u5')!;
+      const payload = msg.payload as { attachments: { id: string }[] };
+      expect(payload.attachments).to.have.lengthOf(2);
+      expect(payload.attachments.map((a) => a.id)).to.deep.equal(['artifact-3', 'artifact-4']);
+    });
+
+    it('omits the attachments key entirely for an empty array, same as no attachments at all', () => {
+      recordUserMessage(store, 't1', 'u6', 'no files', '2026-07-18T00:00:00.000Z', []);
+
+      const msg = store.getMessage('t1', 'u6')!;
+      expect(msg.payload).to.deep.equal({
+        content: 'no files',
+        sentAt: '2026-07-18T00:00:00.000Z',
+      });
     });
   });
 

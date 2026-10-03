@@ -2,28 +2,28 @@ import { useState } from 'preact/hooks';
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { act } from 'preact/test-utils';
 
-import { ChatInput, ChatInputChip } from '@/components/chat-input';
+import { ChatInput, ChatInputChip, type StagedAttachment } from '@/components/chat-input';
 import { MODEL_SUBMENU_CLOSE_GRACE_MS } from '@/components/provider-model-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
-  const [attachment, setAttachment] = useState(props.attachment ?? null);
+  const [attachments, setAttachments] = useState<StagedAttachment[]>(props.attachments ?? []);
   return (
     <ChatInput
       value={value}
       onValueChange={setValue}
       onSend={() => {}}
       {...props}
-      // Attachment stays internally controlled even when a test passes its
-      // own onAttachmentChange spy — that spy is for assertions, not a
-      // replacement for the state that actually drives the chip's render,
-      // same reason `value`'s own internal setValue above is never
+      // Attachments stay internally controlled even when a test passes its
+      // own onAttachmentsChange spy — that spy is for assertions, not a
+      // replacement for the state that actually drives the chip row's
+      // render, same reason `value`'s own internal setValue above is never
       // overridden by a caller-supplied onValueChange.
-      attachment={props.attachment ?? attachment}
-      onAttachmentChange={(next) => {
-        setAttachment(next);
-        props.onAttachmentChange?.(next);
+      attachments={props.attachments ?? attachments}
+      onAttachmentsChange={(next) => {
+        setAttachments(next);
+        props.onAttachmentsChange?.(next);
       }}
     />
   );
@@ -75,8 +75,11 @@ function firePointerEvent(
 // `element.dispatchEvent(new Event('change', {bubbles:true}))` — bypassing
 // the wrapper entirely — reaches the listener correctly and is exactly what
 // a real browser does on file selection, so that's what this drives instead.
-function fireFileInputChange(input: HTMLInputElement, file: File) {
-  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+function fireFileInputChange(input: HTMLInputElement, files: File | File[]) {
+  Object.defineProperty(input, 'files', {
+    value: Array.isArray(files) ? files : [files],
+    configurable: true,
+  });
   input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 }
 
@@ -295,10 +298,29 @@ describe('ChatInput — file attachment', () => {
     }) as unknown as typeof fetch;
   }
 
-  it('uploads a selected file and renders a chip, calling onAttachmentChange', async () => {
+  // Each upload's response is keyed off the FormData's own file name, so a
+  // batch of several files resolves to distinct ids/filenames instead of
+  // all colliding on one canned response.
+  function mockUploadEchoingFilename() {
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = init?.body as FormData;
+      const file = body.get('file') as File;
+      return {
+        ok: true,
+        json: async () => ({
+          id: `artifact-${file.name}`,
+          mimeType: file.type,
+          displayFilename: file.name,
+          requiresVision: false,
+        }),
+      };
+    }) as unknown as typeof fetch;
+  }
+
+  it('uploads a selected file and renders a chip, calling onAttachmentsChange', async () => {
     mockUploadSuccess();
-    const onAttachmentChange = jest.fn();
-    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+    const onAttachmentsChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentsChange={onAttachmentsChange} />);
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['bytes'], 'photo.png', { type: 'image/png' });
@@ -309,55 +331,136 @@ describe('ChatInput — file attachment', () => {
       '/api/v1/artifacts',
       expect.objectContaining({ method: 'POST' }),
     );
-    expect(onAttachmentChange).toHaveBeenCalledWith(
+    expect(onAttachmentsChange).toHaveBeenCalledWith([
       expect.objectContaining({ id: 'artifact-1', displayFilename: 'photo.png' }),
+    ]);
+  });
+
+  it('uploads several selected files at once, staging each independently', async () => {
+    mockUploadEchoingFilename();
+    render(<ControlledChatInput threadId="t1" />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, [
+      new File(['a'], 'one.png', { type: 'image/png' }),
+      new File(['b'], 'two.txt', { type: 'text/plain' }),
+    ]);
+
+    await waitFor(() => expect(screen.getByText('one.png')).toBeInTheDocument());
+    expect(screen.getByText('two.txt')).toBeInTheDocument();
+  });
+
+  it('dropping several files stages all of them, same as the file picker', async () => {
+    mockUploadEchoingFilename();
+    render(<ControlledChatInput threadId="t1" />);
+
+    const dropZone = document.querySelector('[data-slot="chat-input"]') as HTMLElement;
+    fireEvent.drop(dropZone, {
+      dataTransfer: {
+        files: [
+          new File(['a'], 'one.png', { type: 'image/png' }),
+          new File(['b'], 'two.txt', { type: 'text/plain' }),
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText('one.png')).toBeInTheDocument());
+    expect(screen.getByText('two.txt')).toBeInTheDocument();
+  });
+
+  it('truncates to the remaining slots and reports a count when staging would exceed the 4-attachment cap', async () => {
+    mockUploadEchoingFilename();
+    render(<ControlledChatInput threadId="t1" />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(
+      input,
+      ['one', 'two', 'three', 'four', 'five'].map(
+        (name) => new File(['x'], `${name}.txt`, { type: 'text/plain' }),
+      ),
+    );
+
+    await waitFor(() => expect(screen.getByText('four.txt')).toBeInTheDocument());
+    expect(screen.queryByText('five.txt')).not.toBeInTheDocument();
+    expect(screen.getByText(/only 4 attachments allowed/i)).toBeInTheDocument();
+  });
+
+  it('disables Send while an upload is in flight, even with text present, and shows a spinner chip', async () => {
+    let resolveUpload!: (value: unknown) => void;
+    global.fetch = jest.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    ) as unknown as typeof fetch;
+
+    render(<ControlledChatInput threadId="t1" value="hello" />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled(),
+    );
+    expect(screen.getByText('photo.png', { exact: false })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveUpload({
+        ok: true,
+        json: async () => ({
+          id: 'artifact-1',
+          mimeType: 'image/png',
+          displayFilename: 'photo.png',
+          requiresVision: false,
+        }),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Send message' })).not.toBeDisabled(),
     );
   });
 
-  it('shows an inline error and does not call onAttachmentChange when the upload fails', async () => {
+  it('shows an inline error and does not call onAttachmentsChange when the upload fails', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       json: async () => ({ error: 'Unsupported file type' }),
     }) as unknown as typeof fetch;
-    const onAttachmentChange = jest.fn();
-    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+    const onAttachmentsChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentsChange={onAttachmentsChange} />);
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireFileInputChange(input, new File(['bytes'], 'bad.zip', { type: 'application/zip' }));
 
     await waitFor(() => expect(screen.getByText('Unsupported file type')).toBeInTheDocument());
-    expect(onAttachmentChange).not.toHaveBeenCalled();
+    expect(onAttachmentsChange).not.toHaveBeenCalled();
   });
 
-  it('clicking the chip remove button deletes the artifact and clears the attachment', async () => {
-    mockUploadSuccess();
-    const onAttachmentChange = jest.fn();
-    render(<ControlledChatInput threadId="t1" onAttachmentChange={onAttachmentChange} />);
+  it('clicking a chip remove button deletes that artifact and removes only that attachment', async () => {
+    mockUploadEchoingFilename();
+    const onAttachmentsChange = jest.fn();
+    render(<ControlledChatInput threadId="t1" onAttachmentsChange={onAttachmentsChange} />);
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireFileInputChange(input, new File(['bytes'], 'photo.png', { type: 'image/png' }));
-    await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument());
+    fireFileInputChange(input, [
+      new File(['a'], 'one.png', { type: 'image/png' }),
+      new File(['b'], 'two.txt', { type: 'text/plain' }),
+    ]);
+    // Wait for the real chips (with a Remove button), not the in-flight
+    // spinner chip — which renders the same filename text immediately,
+    // before either upload has actually resolved.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(2));
 
     global.fetch = jest.fn().mockResolvedValue({ ok: true }) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]!);
 
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/v1/artifacts/artifact-1',
+      '/api/v1/artifacts/artifact-one.png',
       expect.objectContaining({ method: 'DELETE' }),
     );
-    expect(screen.queryByText('photo.png')).not.toBeInTheDocument();
-    expect(onAttachmentChange).toHaveBeenLastCalledWith(null);
-  });
-
-  it('dropping a file uploads it the same way as the file picker', async () => {
-    mockUploadSuccess({ displayFilename: 'dropped.png' });
-    render(<ControlledChatInput threadId="t1" />);
-
-    const dropZone = document.querySelector('[data-slot="chat-input"]') as HTMLElement;
-    const file = new File(['bytes'], 'dropped.png', { type: 'image/png' });
-    fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
-
-    await waitFor(() => expect(screen.getByText('dropped.png')).toBeInTheDocument());
+    expect(screen.queryByText('one.png')).not.toBeInTheDocument();
+    expect(screen.getByText('two.txt')).toBeInTheDocument();
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ displayFilename: 'two.txt' }),
+    ]);
   });
 
   it('does nothing on drop/select when no threadId is given', () => {
@@ -373,10 +476,10 @@ describe('ChatInput — file attachment', () => {
   // Regression test for #251: the chip used to be driven by ChatInput's own
   // private signal, separate from whatever the parent passed/tracked — so a
   // parent clearing its own copy on send never cleared the rendered chip.
-  // Now attachment is a single controlled prop: the chip must track it
-  // exactly, with no state of ChatInput's own to drift out of sync.
-  it('renders the chip purely from the controlled attachment prop, with no internal state of its own', () => {
-    const uploaded = {
+  // Now attachments is a single controlled array prop: the chips must track
+  // it exactly, with no state of ChatInput's own to drift out of sync.
+  it('renders chips purely from the controlled attachments prop, with no internal state of its own', () => {
+    const uploaded: StagedAttachment = {
       id: 'artifact-1',
       mimeType: 'text/plain',
       displayFilename: 'notes.txt',
@@ -388,15 +491,15 @@ describe('ChatInput — file attachment', () => {
         onValueChange={() => {}}
         onSend={() => {}}
         threadId="t1"
-        attachment={uploaded}
-        onAttachmentChange={() => {}}
+        attachments={[uploaded]}
+        onAttachmentsChange={() => {}}
       />,
     );
 
     expect(screen.getByText('notes.txt')).toBeInTheDocument();
 
     // Simulating exactly what a page's handleSend does: clear its own
-    // tracked attachment and pass null back down — this must be the only
+    // tracked attachments and pass [] back down — this must be the only
     // thing needed to make the chip disappear.
     rerender(
       <ChatInput
@@ -404,8 +507,8 @@ describe('ChatInput — file attachment', () => {
         onValueChange={() => {}}
         onSend={() => {}}
         threadId="t1"
-        attachment={null}
-        onAttachmentChange={() => {}}
+        attachments={[]}
+        onAttachmentsChange={() => {}}
       />,
     );
 
@@ -473,6 +576,48 @@ describe('ChatInput — vision-capability warning badge', () => {
 
   it('shows the warning badge when no model is known for the provider (conservative default)', async () => {
     renderWithStagedImage([{ name: 'ollama', type: 'ollama', models: [] }]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /does not support image input/ }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('shows the warning badge when any staged attachment requires vision, not only the first', async () => {
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = init?.body as FormData;
+      const file = body.get('file') as File;
+      const isSecond = file.name === 'photo.png';
+      return {
+        ok: true,
+        json: async () => ({
+          id: isSecond ? 'artifact-2' : 'artifact-1',
+          mimeType: file.type,
+          displayFilename: file.name,
+          requiresVision: isSecond,
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    render(
+      <TooltipProvider>
+        <ControlledChatInput
+          threadId="t1"
+          activeProvider="ollama"
+          activeModel="llava"
+          providers={[
+            { name: 'ollama', type: 'ollama', models: [{ id: 'llava', imageInput: false }] },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, [
+      new File(['a'], 'notes.txt', { type: 'text/plain' }),
+      new File(['b'], 'photo.png', { type: 'image/png' }),
+    ]);
 
     await waitFor(() =>
       expect(

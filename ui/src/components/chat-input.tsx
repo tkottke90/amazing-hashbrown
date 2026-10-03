@@ -2,9 +2,9 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { flushSync } from 'preact/compat';
-import { Plus, Send, Square, X, AlertTriangle } from 'lucide-preact';
+import { Plus, Send, Square, X, AlertTriangle, Loader2 } from 'lucide-preact';
 
-import { cn } from '@/lib/utils';
+import { cn, randomUUID } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { TextEllipsis } from '@/components/text-ellipsis';
@@ -38,7 +38,17 @@ import { FavoriteModelItems } from '@/components/favorite-model-items';
 import { openThreadToolsDrawer } from '@/hooks/use-thread-tools';
 import { ThreadToolsDrawer } from '@/components/thread-tools-drawer';
 
-export type StagedAttachment = UploadedArtifact;
+// `previewUrl` is UI-local only (a blob: URL from the just-picked File,
+// image attachments only) — never sent to the server. It exists purely so
+// the optimistic message bubble (use-thread.ts's sendMessage) can render a
+// thumbnail instantly instead of waiting on a network fetch of the real
+// artifact; see attachment-tile.tsx's blur-up swap.
+export type StagedAttachment = UploadedArtifact & { previewUrl?: string };
+
+// Caps the composer header row and the sent message bubble's tile row at a
+// size that doesn't need to scroll — see the design spec's "Staging
+// behavior" section.
+export const MAX_ATTACHMENTS_PER_MESSAGE = 4;
 
 export interface ChatInputProps {
   /**
@@ -76,18 +86,19 @@ export interface ChatInputProps {
    */
   threadId?: string;
   /**
-   * The currently staged attachment, owned by the caller — same controlled
-   * pattern as `value`/`onValueChange`. The caller (which owns sending the
-   * message) clears this to `null` once a message is sent, which is what
-   * makes the chip disappear; `ChatInput` itself holds no attachment state.
+   * The currently staged attachments (up to MAX_ATTACHMENTS_PER_MESSAGE),
+   * owned by the caller — same controlled pattern as `value`/`onValueChange`.
+   * The caller (which owns sending the message) clears this to `[]` once a
+   * message is sent, which is what makes the chips disappear; `ChatInput`
+   * itself holds no attachment state.
    */
-  attachment: StagedAttachment | null;
+  attachments: StagedAttachment[];
   /**
-   * Fires whenever the staged attachment changes — on a successful
-   * upload, and back to `null` after an explicit remove. The caller is
-   * expected to store this value and pass it back as `attachment`.
+   * Fires whenever the staged attachment list changes — appended to on a
+   * successful upload, filtered after an explicit remove. The caller is
+   * expected to store this value and pass it back as `attachments`.
    */
-  onAttachmentChange: (attachment: StagedAttachment | null) => void;
+  onAttachmentsChange: (attachments: StagedAttachment[]) => void;
   /**
    * Scopes the slash-command menu to a workspace: its own .agents/skills are
    * listed (badged "repo") alongside the global skills. Omit for the global
@@ -161,11 +172,13 @@ export function ChatInput({
   activeModel,
   onModelSelect,
   threadId,
-  attachment,
-  onAttachmentChange,
+  attachments,
+  onAttachmentsChange,
   workspaceId,
 }: ChatInputProps) {
-  const canSend = !disabled && !isGenerating && value.trim().length > 0;
+  const uploadsInFlight = useSignal<{ localId: string; filename: string }[]>([]);
+  const canSend =
+    !disabled && !isGenerating && value.trim().length > 0 && uploadsInFlight.value.length === 0;
 
   const menuOpen = useSignal(false);
   const menuItems = useSignal<SkillInfo[]>([]);
@@ -199,51 +212,93 @@ export function ChatInput({
   // needing to touch that shared component.
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const attachmentError = useSignal<string | null>(null);
+  const attachmentErrors = useSignal<string[]>([]);
   const dragging = useSignal(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Mirrors the controlled `attachments` prop, kept in sync every render —
+  // but `stageFile` also writes to it directly (ahead of the next render)
+  // the instant an upload resolves. Without that, two uploads staged
+  // together both close over the same `attachments` snapshot from when
+  // they started; whichever resolves second would call
+  // `onAttachmentsChange([...attachments, ...])` against that stale
+  // snapshot and silently clobber the first one's append instead of
+  // merging. Reading/writing this ref instead of the prop directly is what
+  // keeps concurrent uploads from racing each other.
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  // Appends one file's upload to the staged list — never replaces. Multiple
+  // files land here one call per file (see stageFiles below), each tracked
+  // independently in uploadsInFlight so a slow upload doesn't block the
+  // others, and so Send can be disabled for the exact duration any of them
+  // is still in flight (see canSend above) — this is what fixes the latent
+  // race where today's single-attachment flow lets Send fire before the
+  // upload promise resolves, silently sending without the file.
   async function stageFile(file: File) {
     if (!threadId) return;
-    attachmentError.value = null;
+    const localId = randomUUID();
+    uploadsInFlight.value = [...uploadsInFlight.value, { localId, filename: file.name }];
 
-    // Only one attachment per message — replace, don't accumulate. Best
-    // effort: a failed cleanup of the old one just leaves an orphan for
-    // the GC sweep to clean up later, not a reason to block the new upload.
-    const previous = attachment;
-    if (previous) {
-      deleteArtifact(previous.id).catch(() => {});
-    }
-
+    // Local-only instant preview for images — swapped for the real artifact
+    // thumbnail once it loads over the network (see attachment-tile.tsx).
+    // Never sent to the server. Created inside the try below, not before
+    // it: a failure here must still release the uploadsInFlight entry, not
+    // leave Send disabled forever.
+    let previewUrl: string | undefined;
     try {
+      previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
       const uploaded = await uploadArtifact(file, threadId);
-      onAttachmentChange(uploaded);
+      const next = [...attachmentsRef.current, { ...uploaded, previewUrl }];
+      attachmentsRef.current = next;
+      onAttachmentsChange(next);
     } catch (err) {
-      // Only notify the parent when the visible attachment actually
-      // changes — a failed first upload (no previous attachment) leaves
-      // the parent's state at null already, so there's nothing to report.
-      if (previous) onAttachmentChange(null);
-      attachmentError.value = err instanceof Error ? err.message : 'Upload failed';
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      attachmentErrors.value = [
+        ...attachmentErrors.value,
+        err instanceof Error ? err.message : 'Upload failed',
+      ];
+    } finally {
+      uploadsInFlight.value = uploadsInFlight.value.filter((u) => u.localId !== localId);
     }
+  }
+
+  // Stages as many of `files` as fit under the cap, uploading each one
+  // independently (stageFile appends on its own completion, so these all
+  // run concurrently rather than queued). Anything past the remaining slot
+  // count is rejected with a count-naming error instead of silently dropped.
+  function stageFiles(files: File[]) {
+    const remainingSlots =
+      MAX_ATTACHMENTS_PER_MESSAGE - attachmentsRef.current.length - uploadsInFlight.value.length;
+    const toUpload = files.slice(0, Math.max(0, remainingSlots));
+    const skipped = files.length - toUpload.length;
+    if (skipped > 0) {
+      attachmentErrors.value = [
+        ...attachmentErrors.value,
+        `Only ${MAX_ATTACHMENTS_PER_MESSAGE} attachments allowed per message — ${skipped} file${skipped === 1 ? '' : 's'} ${skipped === 1 ? 'was' : 'were'} skipped.`,
+      ];
+    }
+    for (const file of toUpload) void stageFile(file);
   }
 
   function handleFileInputChange(event: JSX.TargetedEvent<HTMLInputElement>) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    // Reset so selecting the same file again still fires onChange.
+    const files = Array.from((event.target as HTMLInputElement).files ?? []);
+    // Reset so selecting the same file(s) again still fires onChange.
     (event.target as HTMLInputElement).value = '';
-    if (file) void stageFile(file);
+    if (files.length) stageFiles(files);
   }
 
-  function handleRemoveAttachment() {
-    const current = attachment;
-    attachmentError.value = null;
-    onAttachmentChange(null);
-    if (current) {
-      // Removed before send — delete server-side too. Best effort: clear
-      // local state either way, per the design's error-handling section;
-      // a failed delete just leaves an orphan for the GC sweep.
-      deleteArtifact(current.id).catch(() => {});
-    }
+  function handleRemoveAttachment(id: string) {
+    const current = attachmentsRef.current.find((a) => a.id === id);
+    if (!current) return;
+    const next = attachmentsRef.current.filter((a) => a.id !== id);
+    attachmentsRef.current = next;
+    onAttachmentsChange(next);
+    if (current.previewUrl) URL.revokeObjectURL(current.previewUrl);
+    // Removed before send — delete server-side too. Best effort: clear
+    // local state either way, per the design's error-handling section;
+    // a failed delete just leaves an orphan for the GC sweep.
+    deleteArtifact(current.id).catch(() => {});
   }
 
   function handleDragOver(event: JSX.TargetedDragEvent<HTMLDivElement>) {
@@ -260,14 +315,14 @@ export function ChatInput({
     if (!threadId) return;
     event.preventDefault();
     dragging.value = false;
-    const file = event.dataTransfer?.files[0];
-    if (file) void stageFile(file);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length) stageFiles(files);
   }
 
   const activeModelImageInput =
     providers?.find((p) => p.name === activeProvider)?.models.find((m) => m.id === activeModel)
       ?.imageInput ?? false;
-  const showVisionWarning = !!attachment?.requiresVision && !activeModelImageInput;
+  const showVisionWarning = attachments.some((a) => a.requiresVision) && !activeModelImageInput;
 
   // App-controlled open state for the "Provider" sub-menu, mirroring
   // ProviderModelPicker's own per-provider Subs (see the comment there and
@@ -555,6 +610,7 @@ export function ChatInput({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept={ACCEPTED_ATTACHMENT_TYPES}
         onChange={handleFileInputChange}
         className="hidden"
@@ -637,21 +693,32 @@ export function ChatInput({
           gridTemplateAreas: `"header header header" "input input input" "actions actions send"`,
         }}
       >
-        {header || attachment || attachmentError.value ? (
+        {header ||
+        attachments.length > 0 ||
+        uploadsInFlight.value.length > 0 ||
+        attachmentErrors.value.length > 0 ? (
           <div
             data-slot="chat-input-header"
             style={{ gridArea: 'header' }}
             className="flex min-w-0 flex-wrap items-center gap-1 empty:hidden"
           >
             {header}
-            {attachment && (
-              <ChatInputChip onRemove={handleRemoveAttachment}>
-                {attachment.displayFilename}
+            {attachments.map((a) => (
+              <ChatInputChip key={a.id} onRemove={() => handleRemoveAttachment(a.id)}>
+                {a.displayFilename}
               </ChatInputChip>
-            )}
-            {attachmentError.value && (
-              <span className="text-xs text-destructive">{attachmentError.value}</span>
-            )}
+            ))}
+            {uploadsInFlight.value.map((u) => (
+              <ChatInputChip key={u.localId} className="opacity-60">
+                <Loader2 className="mr-1 inline size-3 animate-spin" />
+                {u.filename}
+              </ChatInputChip>
+            ))}
+            {attachmentErrors.value.map((message, i) => (
+              <span key={i} className="text-xs text-destructive">
+                {message}
+              </span>
+            ))}
           </div>
         ) : null}
 
@@ -757,8 +824,8 @@ export function ChatInput({
                     <AlertTriangle className="size-3 text-destructive" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    {activeModel} doesn&apos;t support image input — this attachment won&apos;t be
-                    sent to the model.
+                    {activeModel} doesn&apos;t support image input — the image attachment won&apos;t
+                    be sent to the model.
                   </TooltipContent>
                 </Tooltip>
               )}

@@ -19,7 +19,7 @@ import { getThreadStore } from '../services/thread-store.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
-import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
+import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 import {
   recordUserMessage,
   recordAssistantStart,
@@ -46,7 +46,7 @@ export async function streamWikiChatToSse(
   startedAt: number,
   provider?: string,
   model?: string,
-  attachmentId?: string,
+  attachmentIds?: string[],
   deps: WikiChatStreamDeps = {},
 ): Promise<void> {
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
@@ -59,9 +59,11 @@ export async function streamWikiChatToSse(
 
   threadStore.upsertThreadOnFirstMessage(threadId, content.slice(0, 50), 'wiki');
 
-  const resolution = await resolveAttachmentForTurn(attachmentId, threadId, provider, model);
+  const { records: attachmentRecords, injections: attachmentInjections } =
+    await resolveAttachmentsForTurn(attachmentIds ?? [], threadId, provider, model);
+  const turnAttachments = attachmentRecords.length ? attachmentRecords : undefined;
   const config = {
-    configurable: { thread_id: threadId, attachmentInjection: resolution?.injection },
+    configurable: { thread_id: threadId, attachmentInjections },
   };
 
   const userSeq = recordUserMessage(
@@ -70,9 +72,9 @@ export async function streamWikiChatToSse(
     randomUUID(),
     content,
     turnSentAt,
-    resolution?.record,
+    turnAttachments,
   );
-  if (resolution) await markArtifactReferenced(resolution.record.id);
+  for (const record of attachmentRecords) await markArtifactReferenced(record.id);
 
   const turnObs = startTurnObservability({
     threadId,
@@ -82,10 +84,10 @@ export async function streamWikiChatToSse(
     systemPrompt,
   });
 
-  if (resolution) {
-    getObservabilityStore().saveSpans([
-      buildAttachmentSpan(turnObs.traceId, turnSentAt, resolution.record),
-    ]);
+  if (attachmentRecords.length) {
+    getObservabilityStore().saveSpans(
+      attachmentRecords.map((record) => buildAttachmentSpan(turnObs.traceId, turnSentAt, record)),
+    );
   }
 
   const assistantSeq = recordAssistantStart(
@@ -150,6 +152,9 @@ export async function streamWikiChatToSse(
       turnObs.obsHandler,
       resolvedProvider,
       resolvedModel,
+      undefined,
+      false,
+      turnAttachments,
     );
   } catch (err) {
     const recovered = await recoverThrownInterrupt(
@@ -181,14 +186,18 @@ export async function streamWikiChatToSse(
         'Stopped.',
         'cancelled',
       );
-      throw new ClassifiedTurnError('Stopped.', 'cancelled');
+      throw new ClassifiedTurnError('Stopped.', 'cancelled', turnAttachments);
     }
     if ((err as Error).name === 'GraphRecursionError') {
       const msg =
         'I ran out of steps before finishing. You can reply with instructions to continue, or ask me to summarize what I accomplished so far.';
       finalizeAssistant(threadStore, threadId, segmentId, msg, '', turnSentAt, null);
       writeSseEvent(sink, { type: 'text_delta', messageId: segmentId, delta: msg });
-      writeSseEvent(sink, { type: 'stream_done', durationMs: Date.now() - startedAt });
+      writeSseEvent(sink, {
+        type: 'stream_done',
+        durationMs: Date.now() - startedAt,
+        ...(turnAttachments ? { attachments: turnAttachments } : {}),
+      });
       return;
     }
     const classified = classifyChatError(err, providerConfig.type);
@@ -203,7 +212,7 @@ export async function streamWikiChatToSse(
       turnError,
       classified.category,
     );
-    throw new ClassifiedTurnError(classified.message, classified.category);
+    throw new ClassifiedTurnError(classified.message, classified.category, turnAttachments);
   } finally {
     await turnObs.end(turnError);
     endThreadTurn(threadId);

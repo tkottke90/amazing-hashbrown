@@ -255,15 +255,19 @@ wikiRouter.get('/domains/:id/pages/*', async (req, res) => {
 // POST /api/v1/wiki/chat/:threadId
 wikiRouter.post('/chat/:threadId', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, attachmentId } = req.body as {
+  const { content, provider, model, attachmentIds } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
-    attachmentId?: string;
+    attachmentIds?: string[];
   };
 
   if (!threadId || !content?.trim()) {
     res.status(400).json({ error: 'threadId and content are required' });
+    return;
+  }
+  if (attachmentIds && attachmentIds.length > 4) {
+    res.status(400).json({ error: 'A message may carry at most 4 attachments' });
     return;
   }
 
@@ -280,15 +284,17 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
       startedAt,
       provider,
       model,
-      attachmentId,
+      attachmentIds,
     );
   } catch (err) {
     req.logger.error('Wiki chat stream error', { err: serializeError(err) });
     const errorCategory = err instanceof ClassifiedTurnError ? err.category : undefined;
+    const attachments = err instanceof ClassifiedTurnError ? err.attachments : undefined;
     writeSseEvent(toSink(res), {
       type: 'stream_error',
       error: String(err),
       ...(errorCategory ? { errorCategory } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     });
   } finally {
     stopKeepalive();

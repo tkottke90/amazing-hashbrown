@@ -1,4 +1,8 @@
-import type { HitlKind, ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
+import type {
+  HitlKind,
+  ChatErrorCategory,
+  UserMessageAttachment,
+} from '@tkottke90/llm-common-types/chat';
 import type { TriggerSource } from '@/services/tasks-api';
 
 export type AssistantStatus = 'streaming' | 'done' | 'error';
@@ -16,14 +20,17 @@ export type ThreadMessage =
       content: string;
       sentAt: Date;
       seq?: number;
-      // Absent for a message sent before this field existed, or the
-      // optimistic local bubble before it round-trips (see use-thread.ts's
-      // sendMessage) — the message just renders with no attachment preview
-      // in either case. `included` is the server-side vision-gate decision
-      // (api's stream-handler.ts's resolveAttachmentForTurn): false means
-      // the user uploaded it anyway despite the warning badge, and it was
-      // excluded from what the model actually received.
-      attachment?: { id: string; filename: string; mimeType: string; included: boolean };
+      // Absent for a message persisted before this field existed. Present
+      // (as an array, up to 4 items) from the moment the optimistic local
+      // bubble is built (see use-thread.ts's sendMessage) — each item's
+      // `included` starts undefined (not yet resolved) and is patched to a
+      // real boolean once the turn's stream_done/stream_error event carries
+      // the server's vision-gate decision (api's attachment-resolution.ts).
+      // `included: false` means the user sent it anyway despite the warning
+      // badge, and it was excluded from what the model actually received.
+      // `previewUrl` is UI-local only (chat-input.tsx's stageFile) — a blob:
+      // URL for the just-picked file, never part of the server's payload.
+      attachments?: (UserMessageAttachment & { previewUrl?: string })[];
     }
   | {
       kind: 'assistant';

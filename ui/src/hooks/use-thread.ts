@@ -1,8 +1,13 @@
 import { signal, batch, computed, effect } from '@preact/signals';
 import type { Signal } from '@preact/signals';
-import type { AfterAgentState, ChatSSEEvent } from '@tkottke90/llm-common-types/chat';
+import type {
+  AfterAgentState,
+  ChatSSEEvent,
+  UserMessageAttachment,
+} from '@tkottke90/llm-common-types/chat';
 import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
 import type { TriggerSource } from '../services/tasks-api';
+import type { StagedAttachment } from '../components/chat-input';
 import { consumeSsePost, SseHttpError } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
@@ -128,13 +133,20 @@ export const activeThreadAfterAgentState = computed<AfterAgentState>(
 );
 
 // The server returns sentAt as an ISO string (JSON has no Date type);
-// ThreadMessage expects a real Date for user/assistant kinds.
+// ThreadMessage expects a real Date for user/assistant kinds. Also
+// normalizes a legacy singular `attachment` (pre-#256 persisted rows) into
+// the current `attachments` array shape, so old history keeps rendering
+// without every downstream consumer needing to special-case it.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function reviveMessage(raw: any): ThreadMessage {
-  if (typeof raw.sentAt === 'string') {
-    return { ...raw, sentAt: new Date(raw.sentAt) } as ThreadMessage;
+  const withAttachments =
+    raw.kind === 'user' && !raw.attachments && raw.attachment
+      ? { ...raw, attachments: [raw.attachment] }
+      : raw;
+  if (typeof withAttachments.sentAt === 'string') {
+    return { ...withAttachments, sentAt: new Date(withAttachments.sentAt) } as ThreadMessage;
   }
-  return raw as ThreadMessage;
+  return withAttachments as ThreadMessage;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +221,7 @@ export interface ThreadInstance {
   markBackgroundTurn: (active: boolean) => void;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
-  sendMessage: (content: string, attachmentId?: string) => Promise<void>;
+  sendMessage: (content: string, attachments?: StagedAttachment[]) => Promise<void>;
   submitHitlAnswer: (promptId: string, answer: string) => Promise<void>;
   retryTurn: () => Promise<void>;
   stopGeneration: () => void;
@@ -442,7 +454,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             seq: evt.seq,
           },
         ];
-        applyTurnSeq(evt.assistantSeq, evt.userSeq);
+        applyTurnResult(evt.assistantSeq, evt.userSeq);
         batch(() => {
           pendingHitlId.value = evt.promptId;
           isStreaming.value = false;
@@ -546,7 +558,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             ? { ...m, status: 'done', durationMs: evt.durationMs }
             : m,
         );
-        applyTurnSeq(evt.assistantSeq, evt.userSeq);
+        applyTurnResult(evt.assistantSeq, evt.userSeq, evt.attachments);
         batch(() => {
           isStreaming.value = false;
           isWaitingForProvider.value = false;
@@ -565,6 +577,10 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             ? { ...m, status: 'error', error: evt.error, errorCategory: evt.errorCategory }
             : m,
         );
+        // A failed turn can still have resolved attachments (resolution
+        // happens before the LLM call) — this is the actual fix for the
+        // live SSE stream never patching attachment outcomes back in.
+        applyTurnResult(undefined, undefined, evt.attachments);
         batch(() => {
           isStreaming.value = false;
           isWaitingForProvider.value = false;
@@ -578,17 +594,36 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   }
 
   // Patches the current turn's user/assistant local messages with their real
-  // server-assigned seq — carried on the terminal event since neither has a
-  // dedicated SSE event of its own. Lets "fork from here" work immediately on
-  // a message from the current live session, without waiting for a reload.
-  function applyTurnSeq(assistantSeq: number | undefined, userSeq: number | undefined): void {
-    if (assistantSeq === undefined && userSeq === undefined) return;
+  // server-assigned seq, and — now — each attachment's authoritative
+  // included/exclusionReason outcome, carried on the terminal event since
+  // none of these round-trip via a dedicated SSE event of their own. Lets
+  // "fork from here" work immediately, and is the actual fix for the
+  // optimistic attachment preview never getting patched with the real
+  // outcome (see the design spec): the patch merges by id rather than
+  // replacing the array outright, so each item's local-only `previewUrl`
+  // (absent from the server's payload) survives the merge.
+  function applyTurnResult(
+    assistantSeq: number | undefined,
+    userSeq: number | undefined,
+    attachments?: UserMessageAttachment[],
+  ): void {
+    if (assistantSeq === undefined && userSeq === undefined && attachments === undefined) return;
     messages.value = messages.value.map((m) => {
       if (assistantSeq !== undefined && m.kind === 'assistant' && m.id === _currentAssistantId) {
         return { ...m, seq: assistantSeq };
       }
-      if (userSeq !== undefined && m.kind === 'user' && m.id === _currentUserId) {
-        return { ...m, seq: userSeq };
+      if (m.kind === 'user' && m.id === _currentUserId) {
+        const withSeq = userSeq !== undefined ? { ...m, seq: userSeq } : m;
+        if (!attachments?.length || !withSeq.attachments?.length) return withSeq;
+        return {
+          ...withSeq,
+          attachments: withSeq.attachments.map((a) => {
+            const resolved = attachments.find((r) => r.id === a.id);
+            return resolved
+              ? { ...a, included: resolved.included, exclusionReason: resolved.exclusionReason }
+              : a;
+          }),
+        };
       }
       return m;
     });
@@ -614,7 +649,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     void hydrate();
   }
 
-  async function sendMessage(content: string, attachmentId?: string): Promise<void> {
+  async function sendMessage(content: string, attachments?: StagedAttachment[]): Promise<void> {
     const userId = randomUUID();
     const assistantId = randomUUID();
     _currentUserId = userId;
@@ -625,10 +660,28 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     batch(() => {
       messages.value = [
         ...messages.value,
-        // The optimistic bubble omits `attachment` — whether it was actually
-        // included is a server-side (vision-gate) decision that only exists
-        // once the turn round-trips; the preview appears then, not instantly.
-        { kind: 'user', id: userId, content, sentAt: new Date() },
+        {
+          kind: 'user',
+          id: userId,
+          content,
+          sentAt: new Date(),
+          // Rendered immediately from the staged upload's own metadata —
+          // `included` is deliberately left unset until the turn resolves
+          // (applyTurnResult patches it in from stream_done/stream_error),
+          // which is what actually fixes the optimistic-bubble gap this
+          // was built for. `previewUrl` carries the local blob preview
+          // through so the tile's blur-up swap works on first render too.
+          ...(attachments?.length
+            ? {
+                attachments: attachments.map((a) => ({
+                  id: a.id,
+                  filename: a.displayFilename,
+                  mimeType: a.mimeType,
+                  previewUrl: a.previewUrl,
+                })),
+              }
+            : {}),
+        },
         {
           kind: 'assistant',
           id: assistantId,
@@ -649,7 +702,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
           ...(modelSelection
             ? { provider: modelSelection.provider, model: modelSelection.model }
             : {}),
-          ...(attachmentId ? { attachmentId } : {}),
+          ...(attachments?.length ? { attachmentIds: attachments.map((a) => a.id) } : {}),
         },
         handleEvent,
         _abortController.signal,

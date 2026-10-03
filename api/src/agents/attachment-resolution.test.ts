@@ -7,9 +7,9 @@ import { expect } from 'chai';
 import { bootArtifactStore, storeArtifact, getArtifactMeta } from '../artifacts/artifact-store.js';
 import { getToolContent, getToolContentEntry } from '../services/tool-content-store.js';
 import { STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
-import { resolveAttachmentForTurn, buildAttachmentSpan } from './attachment-resolution.js';
+import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 
-describe('resolveAttachmentForTurn [unit]', () => {
+describe('resolveAttachmentsForTurn [unit]', () => {
   let dir: string;
 
   before(async () => {
@@ -20,14 +20,14 @@ describe('resolveAttachmentForTurn [unit]', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolves to undefined when no attachmentId is given', async () => {
-    const result = await resolveAttachmentForTurn(undefined, 'thread-1', 'p', 'm');
-    expect(result).to.equal(undefined);
+  it('resolves to empty arrays for an empty attachmentIds list', async () => {
+    const result = await resolveAttachmentsForTurn([], 'thread-1', 'p', 'm');
+    expect(result).to.deep.equal({ records: [], injections: [] });
   });
 
-  it('resolves to undefined for an unknown attachmentId', async () => {
-    const result = await resolveAttachmentForTurn('nonexistent', 'thread-1', 'p', 'm');
-    expect(result).to.equal(undefined);
+  it('skips an unknown attachmentId, contributing nothing to either array', async () => {
+    const result = await resolveAttachmentsForTurn(['nonexistent'], 'thread-1', 'p', 'm');
+    expect(result).to.deep.equal({ records: [], injections: [] });
   });
 
   it('excludes a vision-required attachment when the model lacks vision support, with a notice the agent can relay', async () => {
@@ -38,17 +38,17 @@ describe('resolveAttachmentForTurn [unit]', () => {
       requiresVision: true,
     });
 
-    const result = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => false);
+    const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => false);
 
-    expect(result?.record).to.deep.equal({
+    expect(result.records[0]).to.deep.equal({
       id,
       filename: 'photo.png',
       mimeType: 'image/png',
       included: false,
       exclusionReason: 'vision_unsupported',
     });
-    expect(result?.injection.kind).to.equal('excluded');
-    const notation = (result?.injection as { notation: string }).notation;
+    expect(result.injections[0]!.kind).to.equal('excluded');
+    const notation = (result.injections[0] as { notation: string }).notation;
     expect(notation).to.include('photo.png');
     expect(notation).to.include('does not support image input');
     expect(notation).to.include('retried via get_tool_key({ threadId: "thread-1"');
@@ -73,21 +73,23 @@ describe('resolveAttachmentForTurn [unit]', () => {
     });
     const meta = getArtifactMeta(id)!;
     // Simulate corruption/loss: metadata resolves, but the bytes on disk
-    // don't — the fallback path resolveAttachmentForTurn exercises when
+    // don't — the fallback path resolveAttachmentsForTurn exercises when
     // getArtifact() returns undefined despite a valid meta lookup.
     unlinkSync(join(dir, id, meta.originalFilename));
 
-    const result = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => true);
+    const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
 
-    expect(result?.record).to.deep.equal({
+    expect(result.records[0]).to.deep.equal({
       id,
       filename: 'photo.png',
       mimeType: 'image/png',
       included: false,
       exclusionReason: 'artifact_missing',
     });
-    expect(result?.injection.kind).to.equal('excluded');
-    expect((result?.injection as { notation: string }).notation).to.include('no longer available');
+    expect(result.injections[0]!.kind).to.equal('excluded');
+    expect((result.injections[0] as { notation: string }).notation).to.include(
+      'no longer available',
+    );
   });
 
   it('builds a multimodal injection for a vision-required attachment when the model supports vision', async () => {
@@ -99,10 +101,10 @@ describe('resolveAttachmentForTurn [unit]', () => {
       requiresVision: true,
     });
 
-    const result = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => true);
+    const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
 
-    expect(result?.injection.kind).to.equal('multimodal');
-    const injection = result?.injection as {
+    expect(result.injections[0]!.kind).to.equal('multimodal');
+    const injection = result.injections[0] as {
       kind: 'multimodal';
       imageBlock: { type: 'image'; mimeType: string; data: string };
       followUpNotation: string;
@@ -113,7 +115,7 @@ describe('resolveAttachmentForTurn [unit]', () => {
       data: original.toString('base64'),
     });
     expect(injection.followUpNotation).to.include('get_tool_key({ threadId: "thread-1"');
-    expect(result?.record).to.deep.equal({
+    expect(result.records[0]).to.deep.equal({
       id,
       filename: 'photo.png',
       mimeType: 'image/png',
@@ -139,11 +141,11 @@ describe('resolveAttachmentForTurn [unit]', () => {
       requiresVision: true,
     });
 
-    const first = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => true);
-    const second = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => true);
+    const first = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
+    const second = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => true);
 
-    const firstNotation = (first?.injection as { followUpNotation: string }).followUpNotation;
-    const secondNotation = (second?.injection as { followUpNotation: string }).followUpNotation;
+    const firstNotation = (first.injections[0] as { followUpNotation: string }).followUpNotation;
+    const secondNotation = (second.injections[0] as { followUpNotation: string }).followUpNotation;
     const firstKey = firstNotation.match(/toolKey:\s*"([^"]+)"/)![1];
     const secondKey = secondNotation.match(/toolKey:\s*"([^"]+)"/)![1];
 
@@ -160,17 +162,17 @@ describe('resolveAttachmentForTurn [unit]', () => {
     });
 
     let checkVisionCalled = false;
-    const result = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm', async () => {
+    const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm', async () => {
       checkVisionCalled = true;
       return false;
     });
 
     expect(checkVisionCalled).to.equal(false);
-    expect(result?.injection).to.deep.equal({
+    expect(result.injections[0]).to.deep.equal({
       kind: 'text',
       notation: '---\nAttached file "notes.txt":\nthe extracted notes',
     });
-    expect(result?.record).to.deep.equal({
+    expect(result.records[0]).to.deep.equal({
       id,
       filename: 'notes.txt',
       mimeType: 'text/plain',
@@ -189,10 +191,10 @@ describe('resolveAttachmentForTurn [unit]', () => {
       extractedText: bigText,
     });
 
-    const result = await resolveAttachmentForTurn(id, threadId, 'p', 'm');
+    const result = await resolveAttachmentsForTurn([id], threadId, 'p', 'm');
 
-    expect(result?.injection.kind).to.equal('text');
-    const notation = (result?.injection as { notation: string }).notation;
+    expect(result.injections[0]!.kind).to.equal('text');
+    const notation = (result.injections[0] as { notation: string }).notation;
     expect(notation).to.include('── CONTENT OFFLOADED ──');
     expect(notation).to.include('kind: attachment');
     expect(notation).to.include('report.md');
@@ -217,11 +219,124 @@ describe('resolveAttachmentForTurn [unit]', () => {
       extractedText: exactText,
     });
 
-    const result = await resolveAttachmentForTurn(id, 'thread-1', 'p', 'm');
+    const result = await resolveAttachmentsForTurn([id], 'thread-1', 'p', 'm');
 
-    expect(result?.injection).to.deep.equal({
+    expect(result.injections[0]).to.deep.equal({
       kind: 'text',
       notation: `---\nAttached file "exact.txt":\n${exactText}`,
+    });
+  });
+
+  it('preserves order across a multi-id turn, resolving each id independently', async () => {
+    const imageId = await storeArtifact({
+      mimeType: 'image/png',
+      original: Buffer.from('fake-image-bytes'),
+      displayFilename: 'photo.png',
+      requiresVision: true,
+    });
+    const docId = await storeArtifact({
+      mimeType: 'text/plain',
+      original: Buffer.from('the doc bytes'),
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+      extractedText: 'the extracted notes',
+    });
+
+    const result = await resolveAttachmentsForTurn(
+      [imageId, docId],
+      'thread-1',
+      'p',
+      'm',
+      async () => true,
+    );
+
+    expect(result.records.map((r) => r.id)).to.deep.equal([imageId, docId]);
+    expect(result.injections[0]!.kind).to.equal('multimodal');
+    expect(result.injections[1]!.kind).to.equal('text');
+  });
+
+  it('calls checkVision at most once across several vision-gated attachments on the same turn', async () => {
+    const firstImage = await storeArtifact({
+      mimeType: 'image/png',
+      original: Buffer.from('fake-image-bytes-1'),
+      displayFilename: 'photo-1.png',
+      requiresVision: true,
+    });
+    const secondImage = await storeArtifact({
+      mimeType: 'image/png',
+      original: Buffer.from('fake-image-bytes-2'),
+      displayFilename: 'photo-2.png',
+      requiresVision: true,
+    });
+
+    let callCount = 0;
+    await resolveAttachmentsForTurn([firstImage, secondImage], 'thread-1', 'p', 'm', async () => {
+      callCount++;
+      return true;
+    });
+
+    expect(callCount).to.equal(1);
+  });
+
+  it('resolves sibling ids normally when one id in the batch has no artifact metadata', async () => {
+    const docId = await storeArtifact({
+      mimeType: 'text/plain',
+      original: Buffer.from('the doc bytes'),
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+      extractedText: 'the extracted notes',
+    });
+
+    const result = await resolveAttachmentsForTurn(
+      ['nonexistent', docId],
+      'thread-1',
+      'p',
+      'm',
+      async () => true,
+    );
+
+    expect(result.records).to.have.lengthOf(1);
+    expect(result.records[0]!.id).to.equal(docId);
+  });
+
+  it('produces independent outcomes for a mixed excluded-image / included-doc batch sharing one vision decision', async () => {
+    const imageId = await storeArtifact({
+      mimeType: 'image/png',
+      original: Buffer.from('fake-image-bytes'),
+      displayFilename: 'photo.png',
+      requiresVision: true,
+    });
+    const docId = await storeArtifact({
+      mimeType: 'text/plain',
+      original: Buffer.from('the doc bytes'),
+      displayFilename: 'notes.txt',
+      requiresVision: false,
+      extractedText: 'the extracted notes',
+    });
+
+    // The model lacks vision: the image is excluded, but the doc — which
+    // never requires vision — still resolves as included, independently.
+    const result = await resolveAttachmentsForTurn(
+      [imageId, docId],
+      'thread-1',
+      'p',
+      'm',
+      async () => false,
+    );
+
+    expect(result.records).to.have.lengthOf(2);
+    expect(result.records[0]).to.deep.equal({
+      id: imageId,
+      filename: 'photo.png',
+      mimeType: 'image/png',
+      included: false,
+      exclusionReason: 'vision_unsupported',
+    });
+    expect(result.records[1]).to.deep.equal({
+      id: docId,
+      filename: 'notes.txt',
+      mimeType: 'text/plain',
+      included: true,
     });
   });
 });
