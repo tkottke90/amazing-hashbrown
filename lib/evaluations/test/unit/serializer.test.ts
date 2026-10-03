@@ -325,6 +325,148 @@ describe('writeResultHtml', () => {
     }
   });
 
+  it('shows a text-embedded-tool-call badge and the parsed tool name when malformedToolCall is set (issue #227)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-malformed-tool-call-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          malformedToolCall: {
+            parsedToolName: 'wiki_search',
+            raw: '<tool_call><function=wiki_search>{}</function></tool_call>',
+          },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('text-embedded tool call'));
+      assert.ok(html.includes('wiki_search'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows a prose-question badge and the raw text when proseQuestion is set (issue #227)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-prose-question-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'ask_user',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'ask_user',
+          toolCalled: null,
+          fieldResults: [],
+          score: 0,
+          proseQuestion: { raw: 'Did you mean personal or work?' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('prose question'));
+      assert.ok(html.includes('Did you mean personal or work?'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the malformed-tool-call/prose-question badges when neither field is set', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-no-malformed-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: true,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: 'wiki_search',
+          fieldResults: [],
+          score: 1,
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(!html.includes('text-embedded tool call'));
+      assert.ok(!html.includes('prose question'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows a text-embedded-tool-call badge on an llm-judge result alongside the normal judge score/reasoning (issue #227)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-judge-malformed-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-judge',
+          name: 'LLM judge scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'llm-judge',
+          rubric: 'Does the reply answer the question?',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-judge',
+        passed: false,
+        details: {
+          type: 'llm-judge',
+          score: 2,
+          reasoning: 'The reply was a raw tool call block, not an answer.',
+          judgeModel: 'test-model',
+          biasRisk: false,
+          malformedToolCall: { parsedToolName: 'wiki_search', raw: '<tool_call>...' },
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('text-embedded tool call'));
+      assert.ok(html.includes('The reply was a raw tool call block, not an answer.'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('shows response metadata when no tool was called and no invalidToolCalls exist', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'eval-html-response-metadata-'));
     try {

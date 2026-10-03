@@ -15,6 +15,11 @@
     {% else %}
       <span class="badge badge-fail">✗ fail</span>
     {% endif %}
+    {% if details.malformedToolCall %}
+      <span class="badge badge-malformed">⚠ text-embedded tool call</span>
+    {% elif details.proseQuestion %}
+      <span class="badge badge-prose-question">⚠ prose question</span>
+    {% endif %}
   </td>
   <td>{{ scenario.name if scenario else result.scenarioId }}</td>
   <td><span class="badge badge-type">{{ details.type }}</span></td>
@@ -53,6 +58,13 @@
         </div>
         <div style="margin-top:0.5rem"><strong>Judge feedback:</strong></div>
         <pre>{{ details.reasoning }}</pre>
+        {% if details.malformedToolCall %}
+          <div style="margin-top:0.5rem">
+            <span class="badge badge-malformed">⚠ text-embedded tool call</span>
+            The model's reply was a tool call emitted as text (parsed as <code>{{ details.malformedToolCall.parsedToolName or '(unknown)' }}</code>), not a genuine answer — the low score above may reflect that, not reasoning quality:
+          </div>
+          <pre>{{ details.malformedToolCall.raw }}</pre>
+        {% endif %}
       {% elif details.type === 'structured' %}
         <div style="margin-top:0.5rem"><strong>Field checks ({{ (details.score * 100) | round(0) }}% passed):</strong></div>
         <table class="field-check-table">
@@ -89,6 +101,22 @@
           Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% elif details.calledTools and details.calledTools.length %}<span class="badge badge-fail">wrong tool: {{ details.calledTools | join(', ') }}</span>{% else %}<span class="badge badge-fail">none</span>{% endif %}
         </div>
         {% if not details.toolCalled %}
+          {% if details.malformedToolCall %}
+            <div style="margin-top:0.5rem">
+              <span class="badge badge-malformed">⚠ text-embedded tool call</span>
+              The model emitted a tool call as plain text and the provider did not parse it
+              (parsed as <code>{{ details.malformedToolCall.parsedToolName or '(unknown)' }}</code>).
+              Check the provider/server's tool-call parser or chat template for this model:
+            </div>
+            <pre>{{ details.malformedToolCall.raw }}</pre>
+          {% endif %}
+          {% if details.proseQuestion %}
+            <div style="margin-top:0.5rem">
+              <span class="badge badge-prose-question">⚠ prose question</span>
+              The model asked a clarifying question in plain text instead of calling <code>ask_user</code>:
+            </div>
+            <pre>{{ details.proseQuestion.raw }}</pre>
+          {% endif %}
           {% if details.invalidToolCalls and details.invalidToolCalls.length %}
             <div style="margin-top:0.5rem">
               <span class="badge badge-fail">⚠ malformed tool call</span>

@@ -10,6 +10,7 @@ import {
   getEvaluationsStore,
   loadSuites,
   loadSuite,
+  getFailureCategory,
   type Suite,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
@@ -270,6 +271,17 @@ interface SuiteOutcome {
   passed: boolean;
   passRate?: number;
   errored?: boolean;
+  // Counts of malformed_tool_call/prose_question results (issue #227) —
+  // see getFailureCategory. Omitted (not zeroed) on the runtime-error catch
+  // path below, where no results exist to count.
+  failureCategoryCounts?: Record<string, number>;
+}
+
+// Shared by runOneSuite's per-suite print and the full-sweep summary table,
+// so the same counts aren't formatted two different ways.
+function formatFailureCategoryCounts(counts: Record<string, number> | undefined): string {
+  const entries = Object.entries(counts ?? {});
+  return entries.length > 0 ? entries.map(([k, v]) => `${k}: ${v}`).join(', ') : '';
 }
 
 // Runs one suite end to end (eval + printed summary + optional --llm-review)
@@ -356,11 +368,18 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     const { run } = result;
     const icon = run.passed ? '✓' : '✗';
     const status = run.passed ? 'PASS' : 'FAIL';
+    const failureCategoryCounts = result.results.reduce<Record<string, number>>((acc, r) => {
+      const category = getFailureCategory(r.details);
+      if (category) acc[category] = (acc[category] ?? 0) + 1;
+      return acc;
+    }, {});
 
     console.log(`\n${icon} ${status} — ${run.suiteId}`);
     console.log(
       `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
     );
+    const categoryLine = formatFailureCategoryCounts(failureCategoryCounts);
+    if (categoryLine) console.log(`  ⚠ ${categoryLine}`);
     console.log(`  Latency:   ${run.totalLatencyMs}ms`);
     console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
     console.log(`\n  Result:    ${result.yamlPath}`);
@@ -376,7 +395,7 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       });
     }
 
-    return { suiteId, passed: run.passed, passRate: run.passRate };
+    return { suiteId, passed: run.passed, passRate: run.passRate, failureCategoryCounts };
   } catch (err) {
     console.error(`\nRuntime error running suite "${suiteId}": ${String(err)}`);
     return { suiteId, passed: false, errored: true };
@@ -415,7 +434,9 @@ for (const o of outcomes) {
   const icon = o.errored ? '⚠' : o.passed ? '✓' : '✗';
   const label = o.errored ? 'ERROR' : o.passed ? 'PASS' : 'FAIL';
   const rate = o.passRate !== undefined ? `  ${(o.passRate * 100).toFixed(1)}%` : '';
-  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}`);
+  const categoryLine = formatFailureCategoryCounts(o.failureCategoryCounts);
+  const counts = categoryLine ? `  (${categoryLine})` : '';
+  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}${counts}`);
 }
 const passedCount = outcomes.filter((o) => o.passed).length;
 console.log(`\n${passedCount}/${outcomes.length} suite(s) passed\n`);

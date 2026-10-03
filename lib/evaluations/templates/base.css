@@ -181,6 +181,14 @@ h3 {
   background: var(--warn-bg);
   color: var(--warn);
 }
+.badge-malformed {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.badge-prose-question {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
 
 .status-bar {
   display: flex;
