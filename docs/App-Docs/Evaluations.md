@@ -81,15 +81,16 @@ errored (printed in the final summary table with an `⚠ ERROR` row).
 
 ## Available Suites
 
-| Suite id                | Scenarios | Purpose                                                                                                                                                                                                                                              |
-| ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `wiki-navigation`       | 12        | Chat agent correctly sequences `wiki_locate`/`wiki_orient`/`wiki_search`/`wiki_read_page` and recovers sensibly from ambiguous, no-match, and unknown-id cases.                                                                                      |
-| `wiki-recall-quality`   | 3         | Final answers read as natural recall (not a wiki-internals status report) and don't fabricate steps beyond what's actually stored. Complements `wiki-navigation` — that suite tests tool sequencing, this one tests the resulting text quality.      |
-| `wiki-search`           | 4         | Chat agent can search the knowledge base and return relevant, coherent, honest answers — the wiki-to-chat feature's acceptance criteria.                                                                                                             |
-| `tool-calling`          | 2         | Chat agent actually invokes the correct built-in tool when a prompt calls for it, rather than just describing what it would do.                                                                                                                      |
-| `instruction-hierarchy` | 3         | Adversarial user-supplied instructions (simulated hostile/malformed `AGENT.md` content) cannot override the harness's own tool-orchestration rules.                                                                                                  |
-| `after-agent`           | 17        | AfterAgent Middleware's individual prompts (summarize/classify/extract/merge) behave correctly, tested directly against the same prompts the pipeline uses — **does not** attach the harness system prompt (see `appliesHarnessSystemPrompt` below). |
-| `thread-titles`         | 7         | `POST /api/v1/threads/:id/generate-title` produces a short, accurate title — **does not** attach the harness system prompt.                                                                                                                          |
+| Suite id                 | Scenarios | Purpose                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `wiki-navigation`        | 12        | Chat agent correctly sequences `wiki_locate`/`wiki_orient`/`wiki_search`/`wiki_read_page` and recovers sensibly from ambiguous, no-match, and unknown-id cases.                                                                                                                                                                                        |
+| `wiki-recall-quality`    | 3         | Final answers read as natural recall (not a wiki-internals status report) and don't fabricate steps beyond what's actually stored. Complements `wiki-navigation` — that suite tests tool sequencing, this one tests the resulting text quality.                                                                                                        |
+| `wiki-search`            | 4         | Chat agent can search the knowledge base and return relevant, coherent, honest answers — the wiki-to-chat feature's acceptance criteria.                                                                                                                                                                                                               |
+| `tool-calling`           | 2         | Chat agent actually invokes the correct built-in tool when a prompt calls for it, rather than just describing what it would do.                                                                                                                                                                                                                        |
+| `instruction-hierarchy`  | 3         | Adversarial user-supplied instructions (simulated hostile/malformed `AGENT.md` content) cannot override the harness's own tool-orchestration rules.                                                                                                                                                                                                    |
+| `after-agent`            | 17        | AfterAgent Middleware's individual prompts (summarize/classify/extract/merge) behave correctly, tested directly against the same prompts the pipeline uses — **does not** attach the harness system prompt (see `appliesHarnessSystemPrompt` below).                                                                                                   |
+| `thread-titles`          | 7         | `POST /api/v1/threads/:id/generate-title` produces a short, accurate title — **does not** attach the harness system prompt.                                                                                                                                                                                                                            |
+| `provider-compatibility` | 5         | Deliberately trivial transport-level scenarios — **run this first** against any new model/provider pairing. A `malformed_tool_call`/`prose_question` result here signals a provider/transport configuration problem, not something to fix by tuning a prompt. See [Failure Categories](#failure-categories-malformed_tool_call--prose_question) below. |
 
 New suite files are auto-discovered by directory scan — dropping a new `suites/whatever.yaml`
 file requires no registration anywhere.
@@ -126,6 +127,23 @@ schemas live in `lib/evaluations/src/schemas.ts`; summary:
 scenario's own final invoke. `llm-judge` never binds real tools to the model even when
 `priorTurns` is set — it's scoring the model's follow-up text, not a fresh tool-call decision, so
 there's nothing for it to call.
+
+## Failure Categories: `malformed_tool_call` / `prose_question`
+
+These are cross-cutting failure **categories**, not new scenario types — they can attach to any
+`tool-call`, `tool-sequence`, or `llm-judge` result. A model/provider pairing sometimes emits a
+tool call as plain text instead of populating the structured `tool_calls` field (e.g. a raw
+`<tool_call>...</tool_call>` block), or answers an `ask_user`-worthy clarification in prose
+instead of calling `ask_user`. Both previously looked identical to "the model declined to act"
+(`toolCalled: null, calledTools: []`), which made a provider transport bug indistinguishable from
+a genuine model reasoning failure — see issue #227.
+
+A detected case still counts as an ordinary failure toward the suite's pass rate (no exclusion) —
+it's surfaced, not scored away, since the task genuinely didn't get done. You'll see it in three
+places: the CLI's per-suite summary line, the multi-suite sweep table's parenthetical counts, and
+a badge on the scenario's row in the HTML report (with the parsed tool name or raw matched text in
+the expandable detail panel). Run `provider-compatibility` (above) first against any new
+model/provider — it's the suite designed to surface these cleanly.
 
 ## Debugging: `DEBUG_LLM_HTTP`
 
@@ -165,6 +183,10 @@ Every run writes to `eval-results/` at the project root:
   every scenario's `ScenarioResult`.
 - `<suite-id>-<timestamp>.html` — written unless `--no-html`. A browsable report with the same
   data, plus collapsible per-scenario detail panels.
+
+A `tool-call`/`tool-sequence`/`llm-judge` result's `details` may additionally carry optional
+`malformedToolCall`/`proseQuestion` fields when detected (see Failure Categories above) — both
+additive, so result YAML written before this existed still parses unchanged.
 
 When the shared SQLite database is reachable, results are **also** written there
 (`eval_runs`/`eval_results` tables) — this is what `npm run eval:calibrate` and

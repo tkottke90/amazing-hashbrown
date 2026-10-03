@@ -369,7 +369,7 @@ Results are written to `eval-results/`. HTML reports are self-contained and open
 
 ### Suite files
 
-Bundled suites live in `suites/` and are checked into git. Each file defines one suite. The `wiki-search.yaml` suite is the canonical example and the first acceptance test for the agent's knowledge base feature.
+Bundled suites live in `suites/` and are checked into git. Each file defines one suite. The `wiki-search.yaml` suite is the canonical example and the first acceptance test for the agent's knowledge base feature. `provider-compatibility.yaml` is the recommended first suite to run against a new model/provider pairing — see `docs/App-Docs/Evaluations.md`.
 
 ### Scenario types
 
