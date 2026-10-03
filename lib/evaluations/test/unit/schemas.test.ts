@@ -729,3 +729,60 @@ describe('JsonOf helper', () => {
     assert.equal(result.type, 'skipped');
   });
 });
+
+describe('ScenarioResultDetailsSchema — malformedToolCall / proseQuestion', () => {
+  it('parses a tool-call result carrying malformedToolCall', () => {
+    const result = ScenarioResultDetailsSchema.parse({
+      type: 'tool-call',
+      expectedTool: 'wiki_search',
+      toolCalled: null,
+      fieldResults: [],
+      score: 0,
+      malformedToolCall: { parsedToolName: 'wiki_search', raw: '<tool_call>...' },
+    });
+    assert.equal(result.type, 'tool-call');
+    assert.deepEqual(result.type === 'tool-call' ? result.malformedToolCall : undefined, {
+      parsedToolName: 'wiki_search',
+      raw: '<tool_call>...',
+    });
+  });
+
+  it('parses a tool-sequence result carrying proseQuestion', () => {
+    const result = ScenarioResultDetailsSchema.parse({
+      type: 'tool-sequence',
+      expectedTool: 'ask_user',
+      toolCalled: null,
+      fieldResults: [],
+      score: 0,
+      proseQuestion: { raw: 'Which domain did you mean?' },
+    });
+    assert.equal(result.type, 'tool-sequence');
+    assert.deepEqual(result.type === 'tool-sequence' ? result.proseQuestion : undefined, {
+      raw: 'Which domain did you mean?',
+    });
+  });
+
+  it('parses an llm-judge result carrying malformedToolCall', () => {
+    const result = ScenarioResultDetailsSchema.parse({
+      type: 'llm-judge',
+      score: 2,
+      reasoning: 'Raw tool call text, not a real answer.',
+      judgeModel: 'test-model',
+      biasRisk: false,
+      malformedToolCall: { parsedToolName: null, raw: '<tool_call>...' },
+    });
+    assert.equal(result.type, 'llm-judge');
+  });
+
+  it('still parses pre-existing tool-call results with neither field present, no migration needed', () => {
+    const result = ScenarioResultDetailsSchema.parse({
+      type: 'tool-call',
+      expectedTool: 'wiki_search',
+      toolCalled: 'wiki_search',
+      fieldResults: [],
+      score: 1,
+    });
+    assert.equal(result.type, 'tool-call');
+    assert.equal(result.type === 'tool-call' ? result.malformedToolCall : 'n/a', undefined);
+  });
+});

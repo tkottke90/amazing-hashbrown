@@ -452,20 +452,22 @@ function fakeTool(name: string): BindToolsInput {
   return { name } as unknown as BindToolsInput;
 }
 
-describe('executeScenario — tool-call responseRubric', () => {
-  // A tools-bound model whose single reply calls the given tools (possibly
-  // none) and says `content`.
-  function makeReplyingModel(content: string, toolCallNames: string[] = []): BaseChatModel {
-    return {
-      bindTools: () => ({
-        invoke: async () => ({
-          tool_calls: toolCallNames.map((name, i) => ({ id: `call-${i}`, name, args: {} })),
-          content,
-        }),
+// A tools-bound model whose single reply calls the given tools (possibly
+// none) and says `content` — unlike makeCapturingBindToolsModel, this lets a
+// test control tool_calls and content independently, which the malformed-
+// tool-call/prose-question tests need (empty tool_calls, specific text).
+function makeReplyingModel(content: string, toolCallNames: string[] = []): BaseChatModel {
+  return {
+    bindTools: () => ({
+      invoke: async () => ({
+        tool_calls: toolCallNames.map((name, i) => ({ id: `call-${i}`, name, args: {} })),
+        content,
       }),
-    } as unknown as BaseChatModel;
-  }
+    }),
+  } as unknown as BaseChatModel;
+}
 
+describe('executeScenario — tool-call responseRubric', () => {
   // A judge that records the prompt it was given and returns a fixed score.
   function makeRecordingJudge(score: number): { judge: BaseChatModel; prompts: string[] } {
     const prompts: string[] = [];
@@ -738,6 +740,204 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
 
     assert.equal(result.passed, false);
     assert.ok(result.actualOutput.includes('gatedSkill'));
+  });
+});
+
+// Issue #227: a model/provider pairing can emit a tool call as plain text
+// instead of populating AIMessage.tool_calls, or answer an ask_user-worthy
+// clarification in prose instead of calling ask_user. Both currently looked
+// identical to "the model declined to act" — these tests confirm the
+// detector's output is correctly attached to the result and, for a negated
+// scenario, correctly flips what would otherwise be a false pass.
+describe('executeScenario — malformed tool call / prose question detection (issue #227)', () => {
+  function makeToolCallScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'mtc-tc-1',
+      name: 'Malformed tool call tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: 'Search the knowledge base for coffee.',
+      tool: 'wiki_search',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  function makeToolSequenceScenario(
+    overrides: Partial<ToolSequenceScenario> = {},
+  ): ToolSequenceScenario {
+    return {
+      id: 'mtc-ts-1',
+      name: 'Malformed tool call tool-sequence scenario',
+      purpose: 'Testing',
+      type: 'tool-sequence',
+      input: 'Great, now search that domain for coffee.',
+      priorTurns: [{ tool: 'wiki_locate', args: {}, result: { text: 'Matched domain: user.' } }],
+      tool: 'wiki_search',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  it('tool-call: annotates malformedToolCall when the model emits the call as text [unit]', async () => {
+    const scenario = makeToolCallScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(
+        '<tool_call><function=wiki_search>{"query": "coffee"}</function></tool_call>',
+      ),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.deepEqual(result.details.malformedToolCall?.parsedToolName, 'wiki_search');
+    }
+  });
+
+  it('tool-call: negated scenario fails (not a false pass) when the forbidden tool appears as text [unit]', async () => {
+    const scenario = makeToolCallScenario({ tool: '!schedule_wakeup' });
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('<function=schedule_wakeup>{"delaySeconds": 600}'),
+      tools: [fakeTool('schedule_wakeup')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, 'schedule_wakeup');
+    }
+  });
+
+  it('tool-call: annotates proseQuestion when ask_user is expected but the model asks in plain text [unit]', async () => {
+    const scenario = makeToolCallScenario({ tool: 'ask_user' });
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('Did you mean the personal domain or the work domain?'),
+      tools: [fakeTool('ask_user')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(
+        result.details.proseQuestion?.raw,
+        'Did you mean the personal domain or the work domain?',
+      );
+    }
+  });
+
+  it('tool-call: does not false-positive on ordinary prose with zero tool calls [unit]', async () => {
+    const scenario = makeToolCallScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('I was not able to find anything about that.'),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall, undefined);
+      assert.equal(result.details.proseQuestion, undefined);
+    }
+  });
+
+  it('llm-judge: annotates malformedToolCall alongside the normal judge score/reasoning [unit]', async () => {
+    const scenario: LlmJudgeScenario = {
+      id: 'mtc-judge-1',
+      name: 'Malformed tool call llm-judge scenario',
+      purpose: 'Testing',
+      type: 'llm-judge',
+      input: 'Search the knowledge base for coffee.',
+      rubric: 'Does the reply answer the question?',
+      minScore: 7,
+    };
+    const { model } = makeCapturingModel(
+      '<tool_call>{"name": "wiki_search", "arguments": {"query": "coffee"}}</tool_call>',
+    );
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(2, 'The reply was a raw tool call block, not an answer.'),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'llm-judge');
+    if (result.details.type === 'llm-judge') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, 'wiki_search');
+      assert.equal(result.details.score, 2);
+      assert.equal(result.details.reasoning, 'The reply was a raw tool call block, not an answer.');
+    }
+  });
+
+  it('tool-sequence: annotates malformedToolCall when the model emits the call as text [unit]', async () => {
+    const scenario = makeToolSequenceScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(
+        '<tool_call><function=wiki_search>{"query": "coffee"}</function></tool_call>',
+      ),
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, 'wiki_search');
+    }
+  });
+
+  it('tool-sequence: negated scenario fails (not a false pass) when the forbidden tool appears as text [unit]', async () => {
+    const scenario = makeToolSequenceScenario({ tool: '!schedule_wakeup' });
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('<function=schedule_wakeup>{"delaySeconds": 600}'),
+      tools: [fakeTool('schedule_wakeup'), fakeTool('wiki_locate')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0);
+    assert.equal(result.details.type, 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, 'schedule_wakeup');
+    }
   });
 });
 
