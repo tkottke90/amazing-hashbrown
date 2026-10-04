@@ -873,11 +873,20 @@ export function computeRunSummary(
     passed,
     passRate,
     totalScenarios: results.length,
+    scoredScenarios: scorable.length,
     passedScenarios,
     totalLatencyMs,
     estimatedCostUsd,
     systemPrompt: systemPrompt ?? null,
   };
+}
+
+// run.scoredScenarios is the denominator passRate was actually computed
+// against; older YAML/DB results predate the field, so fall back to
+// totalScenarios (which is what they were effectively scored against before
+// this distinction existed).
+export function getScoredScenarios(run: EvalRun): number {
+  return run.scoredScenarios ?? run.totalScenarios;
 }
 
 export async function runEval(config: RunConfig): Promise<RunResult> {

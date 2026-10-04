@@ -12,6 +12,7 @@ import {
   type Suite,
 } from './schemas.js';
 import type { ComparisonResult } from './comparator.js';
+import { getScoredScenarios } from './runner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, '../templates');
@@ -83,12 +84,16 @@ export async function writeResultHtml(
   const styles = await readFile(join(TEMPLATES_DIR, 'base.css'), 'utf-8');
   const env = getNjkEnv();
   const scenariosById = Object.fromEntries(suite.scenarios.map((s) => [s.id, s]));
+  const scored = getScoredScenarios(run);
+  const skipped = run.totalScenarios - scored;
   const html = env.render('result.njk', {
     run,
     results,
     suiteName: suite.suite.name,
     scenariosById,
     styles,
+    scored,
+    skipped,
   });
   const ts = sanitizeTimestamp(run.startedAt);
   const filePath = join(resultPath, `${run.suiteId}-${ts}.html`);

@@ -62,7 +62,9 @@ export function getScoredScenarios(run: EvalRun): number {
 
 ### 3. `lib/evaluations/src/store.ts`
 
-New migration, version 9 (next free number after version 8 — see the version-number comment block at the top of `MIGRATIONS`):
+New migration, version 37.
+
+> **Correction (found during implementation planning):** this doc originally said version 9, treating `store.ts`'s own `MIGRATIONS` array as if it were the whole picture. It isn't — `schema_migrations` is one table shared by every store on the connection (`BaseStore.runMigrations`), and version 9 is already claimed by `lib/observability/src/store.ts`, with versions in use climbing to 36 elsewhere (`api/src/services/workspace-store.ts`). Version 9 would have silently never run. 37 is the next free number across the whole repo as of this writing.
 
 ```ts
 {
@@ -70,7 +72,7 @@ New migration, version 9 (next free number after version 8 — see the version-n
   // computed from (see runner.ts's computeRunSummary / getScoredScenarios).
   // Nullable, no backfill: existing rows read back as NULL and fall through
   // getScoredScenarios() to totalScenarios, same as pre-existing YAML files.
-  version: 9,
+  version: 37,
   sql: `ALTER TABLE eval_runs ADD COLUMN scored_scenarios INTEGER;`,
 },
 ```
@@ -82,7 +84,7 @@ Update `saveRun`'s `INSERT` (column list + `run.scoredScenarios ?? null`), `RawE
 - **`bin/eval.ts`** (single-suite summary, ~line 379): change
 
   ```ts
-  `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`
+  `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`;
   ```
 
   to use `getScoredScenarios(run)` as the denominator, and append a skip note when `run.totalScenarios > scored`:

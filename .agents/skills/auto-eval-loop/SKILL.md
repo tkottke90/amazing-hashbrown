@@ -147,11 +147,14 @@ front of you.
 Field notes:
 
 - `score` / `total`: `score` is the raw count of passed scenarios (not a
-  percentage), `total` is the suite's scenario count — both come straight
-  from the result YAML's `run.passedScenarios` / `run.totalScenarios`. `total`
-  isn't in the original spec this skill was built from, but without it a
-  bare `score: 9` is meaningless once suites have different scenario counts
-  — keep it.
+  percentage), from the result YAML's `run.passedScenarios`. `total` is the
+  scorable-scenario count — `run.scoredScenarios`, falling back to
+  `run.totalScenarios` for older result files that predate that field — not
+  the raw scenario count, which can include skipped/pending-human scenarios
+  that were never part of the denominator `run.passRate` was computed
+  against. `total` isn't in the original spec this skill was built from, but
+  without it a bare `score: 9` is meaningless once suites have different
+  scenario counts — keep it.
 - `result`: `pass` or `fail`, taken directly from the result YAML's
   `run.passed` (which already accounts for the suite's own
   `passingThreshold` — don't recompute this from `score`/`total` yourself).

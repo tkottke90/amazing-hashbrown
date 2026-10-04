@@ -252,6 +252,11 @@ export const EvalRunSchema = z.object({
   passed: z.boolean(),
   passRate: z.number(),
   totalScenarios: z.number().int(),
+  // The scorable-scenario count passRate was actually computed against
+  // (excludes skipped/pending-human results). Optional so pre-existing
+  // YAML/DB results without it still parse — see getScoredScenarios() in
+  // runner.ts for the fallback-to-totalScenarios behavior.
+  scoredScenarios: z.number().int().optional(),
   passedScenarios: z.number().int(),
   totalLatencyMs: z.number(),
   estimatedCostUsd: z.number(),

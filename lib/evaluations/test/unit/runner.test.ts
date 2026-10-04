@@ -8,6 +8,7 @@ import {
   extractToolCallData,
   executeScenario,
   computeRunSummary,
+  getScoredScenarios,
   type RunConfig,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
@@ -19,6 +20,7 @@ import type {
   ToolSequenceScenario,
   ScenarioResult,
   Suite,
+  EvalRun,
 } from '../../src/schemas.js';
 
 // Throws if any method is called — proves the skip short-circuit never
@@ -1137,6 +1139,7 @@ describe('computeRunSummary', () => {
     const suite = makeSuite([]);
     const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
     assert.equal(run.totalScenarios, 2);
+    assert.equal(run.scoredScenarios, 1);
     assert.equal(run.passedScenarios, 1);
     assert.equal(run.passRate, 1);
     assert.equal(run.passed, true);
@@ -1155,8 +1158,28 @@ describe('computeRunSummary', () => {
     const suite = makeSuite([]);
     const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
     assert.equal(run.totalScenarios, 2);
+    assert.equal(run.scoredScenarios, 1);
     assert.equal(run.passedScenarios, 0);
     assert.equal(run.passRate, 0);
+  });
+
+  it('a skipped human scenario reduces scoredScenarios but not totalScenarios', () => {
+    const results: ScenarioResult[] = [
+      makeResult({ scenarioId: 'sc-pass', passed: true }),
+      makeResult({ scenarioId: 'sc-pass-2', passed: true }),
+      makeResult({
+        scenarioId: 'sc-human-pending',
+        passed: false,
+        score: null,
+        details: { type: 'human', status: 'pending' },
+      }),
+    ];
+    const suite = makeSuite([]);
+    const run = computeRunSummary(results, suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
+    assert.equal(run.totalScenarios, 3);
+    assert.equal(run.scoredScenarios, 2);
+    assert.equal(run.passedScenarios, 2);
+    assert.equal(run.passRate, 1); // 2/2 scored, not 2/3 total
   });
 
   it('sets systemPrompt to the given value when provided', () => {
@@ -1177,5 +1200,36 @@ describe('computeRunSummary', () => {
     const suite = makeSuite([]);
     const run = computeRunSummary([], suite, 'run-1', 'model-a', 'model-a', '2026-01-01');
     assert.equal(run.systemPrompt, null);
+  });
+
+  describe('getScoredScenarios', () => {
+    it('returns scoredScenarios when present', () => {
+      const suite = makeSuite([]);
+      const run = computeRunSummary(
+        [makeResult({ scenarioId: 'sc-1', passed: true })],
+        suite,
+        'run-1',
+        'model-a',
+        'model-a',
+        '2026-01-01',
+      );
+      assert.equal(getScoredScenarios(run), run.scoredScenarios);
+    });
+
+    it('falls back to totalScenarios for a result without scoredScenarios (pre-existing YAML/DB data)', () => {
+      const legacyRun: EvalRun = {
+        id: 'run-1',
+        suiteId: 'test-suite',
+        model: 'model-a',
+        startedAt: '2026-01-01',
+        passed: true,
+        passRate: 1,
+        totalScenarios: 3,
+        passedScenarios: 3,
+        totalLatencyMs: 0,
+        estimatedCostUsd: 0,
+      };
+      assert.equal(getScoredScenarios(legacyRun), 3);
+    });
   });
 });
