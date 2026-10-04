@@ -115,18 +115,43 @@ schemas live in `lib/evaluations/src/schemas.ts`; summary:
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | `deterministic` | Exact/contains/regex match against expected text.                                                                                                                                                             | No             |
 | `semantic`      | Embedding similarity against `expectedSimilarTo`, threshold `minSimilarity`. Needs embeddings enabled.                                                                                                        | No             |
-| `llm-judge`     | A judge model scores the response 0–10 against a free-text `rubric`, threshold `minScore`. Can seed `priorTurns` (see below) to judge a response given prior tool-call results already "in" the conversation. | No — see below |
+| `llm-judge`     | A judge model scores the response 0–10 against a free-text `rubric`, threshold `minScore`. Can seed `turns` (see below) to judge a response given prior tool-call results already "in" the conversation. | No — see below |
 | `structured`    | Model invoked with `withStructuredOutput()` against a JSON Schema; scored by `fieldChecks`.                                                                                                                   | No             |
 | `tool-call`     | Asserts the model calls a specific `tool`, optionally with `argChecks` on its arguments.                                                                                                                      | Yes            |
-| `tool-sequence` | Like `tool-call`, but seeds one or more `priorTurns` (prior tool call + result pairs) before the final invoke, simulating a conversation already in progress.                                                 | Yes            |
+| `tool-sequence` | Like `tool-call`, but always seeds `turns` or `steps` (see below) before the final invoke, simulating a conversation already in progress.                                                 | Yes            |
 | `human`         | Deferred to an interactive terminal review after the automated run (skipped entirely under `--ci`).                                                                                                           | No             |
 
-`llm-judge` and `tool-sequence` share the same `priorTurns` seeding mechanism
-(`buildSeededMessages()` in `lib/evaluations/src/runner.ts`) — each entry becomes a synthetic
-`AIMessage(tool_call)` + `ToolMessage(result)` pair injected into the conversation before the
-scenario's own final invoke. `llm-judge` never binds real tools to the model even when
-`priorTurns` is set — it's scoring the model's follow-up text, not a fresh tool-call decision, so
-there's nothing for it to call.
+### Seeded history (`turns`) and multi-step conversations (`steps`)
+
+`deterministic`, `llm-judge`, and `tool-sequence` scenarios can replace the plain `input: 'text'`
+string with one of two fields (see `lib/evaluations/src/schemas.ts` for the exact zod shapes —
+this replaced the old `priorTurns` field, issue #235):
+
+- **`turns`** — a fixed, ordered list of `{ user: 'text' }` | `{ tool, args, result }` entries,
+  simulating a conversation that already happened before the model's one real invocation at the
+  end. A `{ tool }` entry becomes a synthetic `AIMessage(tool_call)` + `ToolMessage(result)` pair
+  (`buildTurnMessages()` in `lib/evaluations/src/runner.ts`); a `{ user }` entry becomes a
+  `HumanMessage`. The list must open with a `{ user }` entry — some providers' chat templates
+  reject a conversation that opens with an assistant tool call — and a reply can be placed
+  *after* the tool turn it actually answers, instead of always being forced first the way the old
+  `input` + `priorTurns` split required. `llm-judge` never binds real tools to the model even
+  when `turns` is set — it's scoring the model's follow-up text, not a fresh tool-call decision,
+  so there's nothing for it to call.
+- **`steps`** — an ordered list of *live* turns: the model is actually invoked once per step, in
+  order, with each real response feeding into the next step's history (`runIntermediateSteps()`
+  in `lib/evaluations/src/runner.ts`). Only the scenario's own top-level fields
+  (`tool`/`argChecks`, `rubric`, or `match`/`expected`) score the *last* step by default; an
+  intermediate step only gets scored if it sets its own `assert` (same shape as the matching
+  top-level fields). If an intermediate step's response includes a tool call, its `mocks` field
+  (keyed by tool name) supplies a synthetic result to feed back so the conversation can continue
+  — a tool call with no matching mock is a scenario error, not a silent no-op. Failures don't stop
+  later steps from running (continue-on-failure): the overall scenario passes only if every
+  asserted step (intermediate and final) passed. `turns` and `steps` can combine — `turns` supplies
+  fixed history before step 1.
+
+Every `ScenarioResult` for a `turns`/`steps` scenario carries a `conversation` field — the full
+seeded + live transcript, in order — and (when `steps` was used) a `details.steps` array with
+each intermediate step's own pass/fail. Both the HTML report and `eval:compare` render them.
 
 ## Failure Categories: `malformed_tool_call` / `prose_question`
 

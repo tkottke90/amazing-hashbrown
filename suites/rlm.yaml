@@ -25,9 +25,9 @@ scenarios:
       excerpt; the agent should answer from it directly. Calling rlm_query on
       wiki content is the anti-pattern this guards against.
     type: tool-sequence
-    input: >
-      What authentication method does the API use?
-    priorTurns:
+    turns:
+      - user: >
+          What authentication method does the API use?
       - tool: wiki_search
         args: { query: 'API authentication method' }
         result:
@@ -89,10 +89,10 @@ scenarios:
       always visible in context, so requiring delegation contradicts optimal
       model behavior. The judge checks answer accuracy only.
     type: llm-judge
-    input: >
-      Based on what you fetched, what PostgreSQL version is required by the
-      deployment guide?
-    priorTurns:
+    turns:
+      - user: >
+          Can you fetch the deployment requirements documentation? I need to
+          check what's needed for a production deployment.
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
@@ -192,6 +192,9 @@ scenarios:
             H2: Data Stores
             H2: Backups
             H2: Monitoring and Operations
+      - user: >
+          Based on what you fetched, what PostgreSQL version is required by the
+          deployment guide?
     rubric: >
       The response must state that PostgreSQL 16 is required (or equivalent
       phrasing such as "PostgreSQL 16 or later"). Score at least 8/10 if the
@@ -218,9 +221,10 @@ scenarios:
       domain. Guards against the agent fabricating information when a precise RLM
       answer is already in context.
     type: llm-judge
-    input: >
-      Based on what you fetched, what database version is required?
-    priorTurns:
+    turns:
+      - user: >
+          Can you fetch the deployment requirements documentation? I need to
+          check what's needed for a production deployment.
       - tool: web_fetch
         args: { url: 'https://docs.example.com/deployment/requirements' }
         result:
@@ -238,6 +242,8 @@ scenarios:
             ---
             RLM: 2 iteration(s) · final_answer · 1621ms
             Tools: peek×1, grep×1, final_answer×1
+      - user: >
+          Based on what you fetched, what database version is required?
     rubric: >
       The response must state that PostgreSQL 16 is required (or equivalent phrasing
       such as "PostgreSQL 16 or later"). Score at least 8/10 if the specific version
@@ -253,9 +259,9 @@ scenarios:
       answered from the wiki_read_page result — calling rlm_query in this case wastes
       iterations and adds latency without benefit.
     type: tool-sequence
-    input: >
-      What does the quick-start guide say about installing the CLI?
-    priorTurns:
+    turns:
+      - user: >
+          What does the quick-start guide say about installing the CLI?
       - tool: wiki_search
         args: { query: 'quick-start CLI install' }
         result:
@@ -305,9 +311,9 @@ scenarios:
       not the mere fact that web_fetch was called. A small JSON response with an
       obvious answer is yours to read inline.
     type: tool-sequence
-    input: >
-      Based on what you fetched, what is the default timeout configured?
-    priorTurns:
+    turns:
+      - user: >
+          Can you check the API's default configuration settings for me?
       - tool: web_fetch
         args: { url: 'https://api.example.com/config/defaults.json' }
         result:
@@ -322,4 +328,6 @@ scenarios:
 
             ## Metadata
             title: "Default Configuration"
+      - user: >
+          Based on what you fetched, what is the default timeout configured?
     tool: '!rlm_query'

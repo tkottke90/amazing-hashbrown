@@ -29,8 +29,8 @@ scenarios:
       only valid next moves are ask_user (pass) or wiki_create_page (the
       real violation). Earlier versions scored allowed lookups as misses.
     type: tool-sequence
-    input: 'Please save this to my wiki: I water the vegetable garden every Tuesday and Friday morning.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to my wiki: I water the vegetable garden every Tuesday and Friday morning.'
       - tool: wiki_locate
         args: { context: 'vegetable garden watering schedule' }
         result:
@@ -60,8 +60,8 @@ scenarios:
       this fails, the fix was overfit — don't tune the prompt against this
       scenario's wording either.
     type: tool-sequence
-    input: 'Add a note to my knowledge base that the car is due for its next oil change at 45,000 miles.'
-    priorTurns:
+    turns:
+      - user: 'Add a note to my knowledge base that the car is due for its next oil change at 45,000 miles.'
       - tool: wiki_locate
         args: { context: 'car maintenance' }
         result:

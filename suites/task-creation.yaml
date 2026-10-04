@@ -17,13 +17,13 @@ scenarios:
       anything, confirms the agent continues discussing rather than
       prematurely creating tasks.
     type: tool-sequence
-    priorTurns:
+    turns:
+      - user: >
+          I'm thinking about how to tackle the auth refactor — maybe split it
+          into a migration step and a handler step? What do you think?
       - tool: wiki_search
         args: { query: 'auth refactor patterns' }
         result: { text: 'No relevant wiki pages found.' }
-    input: >
-      I'm thinking about how to tackle the auth refactor — maybe split it
-      into a migration step and a handler step? What do you think?
     tool: '!create_tasks'
 
   - id: tc-002-tracker-url-passed-not-retyped
@@ -35,12 +35,15 @@ scenarios:
       re-typing/paraphrasing the issue from memory into each task's
       description.
     type: tool-sequence
-    priorTurns:
+    turns:
+      - user: >
+          Can you take a look at https://github.com/octo/repo/issues/42 and
+          help me plan out the work?
       - tool: web_fetch
         args: { url: 'https://github.com/octo/repo/issues/42' }
         result: { text: 'Issue #42: Refactor auth. Plan: migration, handler, tests.' }
-    input: >
-      Yes, let's go with that plan — set up the tasks.
+      - user: >
+          Yes, let's go with that plan — set up the tasks.
     tool: create_tasks
     argChecks:
       - path: trackerUrl

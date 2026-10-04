@@ -70,8 +70,8 @@ scenarios:
     # save), so the input now credits the fetch correctly instead of baiting
     # a pronoun-pedantry stumble.
     type: tool-sequence
-    input: 'Great — now save that article you fetched to the wiki, please.'
-    priorTurns:
+    turns:
+      - user: 'Can you look up this article on vector databases? https://docs.example.com/concepts/vector-databases'
       - tool: web_fetch
         args: { url: 'https://docs.example.com/concepts/vector-databases' }
         result:
@@ -97,6 +97,7 @@ scenarios:
           {
             text: 'Best match: "engineering" (domain: engineering, score 17). wiki_orient({ wikiId: "engineering" }) shows its structure if you need it.',
           }
+      - user: 'Great — now save that article you fetched to the wiki, please.'
     # Round-1 auto-eval fix (2026-08-26 loop): the argCheck used to check a
     # top-level `content` path, but wiki_create_page's own zod schema
     # (api/src/agents/tools/wiki-create-page.tool.ts) has no such field — the
@@ -124,8 +125,8 @@ scenarios:
       content — confirming it uses the fetched data rather than fabricating.
       Uses llm-judge because the exact phrasing is not deterministic.
     type: llm-judge
-    input: 'Based on what you fetched, what is the default timeout configured?'
-    priorTurns:
+    turns:
+      - user: 'Can you fetch the default configuration from https://api.example.com/config/defaults.json?'
       - tool: web_fetch
         args: { url: 'https://api.example.com/config/defaults.json' }
         result:
@@ -137,6 +138,7 @@ scenarios:
               "cacheEnabled": true,
               "logLevel": "info"
             }
+      - user: 'Based on what you fetched, what is the default timeout configured?'
     rubric: >
       The response must reference the timeout value from the fetched JSON
       (30000 ms, or 30 seconds, or equivalent). Score at least 8/10 if the
@@ -154,14 +156,15 @@ scenarios:
       after a failed fetch is a trust-breaking hallucination; this scenario
       guards against it.
     type: llm-judge
-    input: 'Can you summarise what was on that page?'
-    priorTurns:
+    turns:
+      - user: 'Can you check what is on https://internal.example.com/restricted/data?'
       - tool: web_fetch
         args: { url: 'https://internal.example.com/restricted/data' }
         result:
           text: >-
             Failed to fetch https://internal.example.com/restricted/data:
             HTTP 403 Forbidden (HTTP 403).
+      - user: 'Can you summarise what was on that page?'
     rubric: >
       Hard requirement: the response must NOT fabricate or invent any content
       from the page (topics, facts, summaries of what the page "probably" says).

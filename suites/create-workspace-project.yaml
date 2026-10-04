@@ -58,8 +58,8 @@ scenarios:
       confirmation step must actually lead somewhere, not just stall.
     type: tool-sequence
     gatedSkill: create-workspace
-    input: 'Yes, that looks right.'
-    priorTurns:
+    turns:
+      - user: 'Set up a new workspace called "Homelab Ops" at ~/projects/homelab-ops — the goal is to track and automate home server maintenance.'
       - tool: ask_user
         args:
           {
@@ -67,6 +67,7 @@ scenarios:
             kind: 'yes_no',
           }
         result: { text: 'User answered: yes' }
+      - user: 'Yes, that looks right.'
     tool: create_workspace
     argChecks:
       - path: name
@@ -83,11 +84,12 @@ scenarios:
       instruction after a rejection, not routing around it silently.
     type: tool-sequence
     gatedSkill: create-workspace
-    input: 'Hmm, okay.'
-    priorTurns:
+    turns:
+      - user: 'Create a workspace called "Homelab Ops" — no git repo needed for this one.'
       - tool: create_workspace
         args: { name: 'Homelab Ops', git: false }
         result: { text: 'A workspace named "Homelab Ops" already exists.' }
+      - user: 'Hmm, okay.'
     tool: '!create_workspace'
 
   - id: cwp-008-workspace-creates-new-dedicated-wiki
@@ -103,8 +105,8 @@ scenarios:
       must be create_workspace carrying newWikiName.
     type: tool-sequence
     gatedSkill: create-workspace
-    input: 'Yes, go ahead.'
-    priorTurns:
+    turns:
+      - user: 'Create a workspace called "Image Archive" with its own dedicated wiki named "Image Archive Notes".'
       - tool: ask_user
         args:
           {
@@ -112,6 +114,7 @@ scenarios:
             kind: 'yes_no',
           }
         result: { text: 'User answered: yes' }
+      - user: 'Yes, go ahead.'
     tool: create_workspace
     argChecks:
       - path: name
@@ -145,8 +148,8 @@ scenarios:
       the next tool call is create_project with the collected fields.
     type: tool-sequence
     gatedSkill: create-project
-    input: 'Yep, go ahead.'
-    priorTurns:
+    turns:
+      - user: 'Create a project "Ship Homepage Redesign" at ~/projects/ship-homepage-redesign, win condition "the new homepage is live in production".'
       - tool: ask_user
         args:
           {
@@ -154,6 +157,7 @@ scenarios:
             kind: 'yes_no',
           }
         result: { text: 'User answered: yes' }
+      - user: 'Yep, go ahead.'
     tool: create_project
     argChecks:
       - path: name
@@ -174,10 +178,11 @@ scenarios:
       silently retrying.
     type: tool-sequence
     gatedSkill: create-project
-    input: 'Hmm, okay.'
-    priorTurns:
+    turns:
+      - user: 'Create a project called "Ship Homepage Redesign," win condition: the new homepage is live in production.'
       - tool: create_project
         args:
           { name: 'Ship Homepage Redesign', winCondition: 'the new homepage is live in production' }
         result: { text: 'A workspace named "Ship Homepage Redesign" already exists.' }
+      - user: 'Hmm, okay.'
     tool: '!create_project'

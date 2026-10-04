@@ -55,16 +55,16 @@ scenarios:
       inspected the project) rather than reflexively opening the old
       transcript because the kickoff offered it.
     type: tool-sequence
-    input: |
-      Begin work on this task now: Weekly dependency audit.
-      This is run #3 (started manually).
+    turns:
+      - user: |
+          Begin work on this task now: Weekly dependency audit.
+          This is run #3 (started manually).
 
-      Previous run — #2, 2026-09-19 09:00 UTC, done:
-      "Audit complete: 0 advisories of any severity; nothing was open."
-      Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
+          Previous run — #2, 2026-09-19 09:00 UTC, done:
+          "Audit complete: 0 advisories of any severity; nothing was open."
+          Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
 
-      Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
-    priorTurns:
+          Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
       - tool: shell_exec
         args: { command: 'cat package.json' }
         result:
@@ -90,16 +90,16 @@ scenarios:
       the agent has to judge sufficiency itself rather than recognise an
       example. Opening the transcript here wastes a turn and context.
     type: tool-sequence
-    input: |
-      Begin work on this task now: Weekly dependency audit.
-      This is run #3 (started manually).
+    turns:
+      - user: |
+          Begin work on this task now: Weekly dependency audit.
+          This is run #3 (started manually).
 
-      Previous run — #2, 2026-09-19 09:00 UTC, done:
-      "All 14 dependencies are on their latest patch versions; no advisories were reported."
-      Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
+          Previous run — #2, 2026-09-19 09:00 UTC, done:
+          "All 14 dependencies are on their latest patch versions; no advisories were reported."
+          Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
 
-      Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
-    priorTurns:
+          Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
       - tool: shell_exec
         args: { command: 'cat package.json' }
         result:

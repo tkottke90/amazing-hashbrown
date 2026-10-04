@@ -33,9 +33,13 @@ const BaseScenario = z.object({
 // Shared by deterministic, llm-judge, and tool-sequence scenarios — declared
 // here (ahead of all three) so any of them can reference it. Each entry
 // becomes its own AIMessage(tool_call) + ToolMessage(result) pair via
-// runner.ts's buildSeededMessages(), simulating a turn that already
-// "happened".
-export const PriorToolTurnSchema = z
+// runner.ts's buildTurnMessages(), simulating a turn that already
+// "happened". Formerly PriorToolTurnSchema — renamed when `turns` replaced
+// the separate `input` + `priorTurns` split (issue #235): this is now one
+// of the two entry kinds an ordered `turns` list can hold, the other being
+// a live `{ user }` entry (see userTurn() below). Unchanged shape, so every
+// existing seeded scenario still parses once migrated onto `turns`.
+export const ToolTurnSchema = z
   .object({
     tool: z.string().min(1),
     args: z.record(z.string(), z.unknown()).default({}),
@@ -43,15 +47,69 @@ export const PriorToolTurnSchema = z
   })
   .strict();
 
+// A live user message within a `turns` or `steps` list. Parameterized per
+// scenario type over its own assertion shape — composition over one
+// generic `{ role, content, meta }` turn type every scenario kind would
+// have to squeeze its real (and very different) assertion fields into; see
+// AGENTS.md's composition-over-customization principle.
+//
+// `assert` is only meaningful on a `steps` entry that isn't the list's last
+// one — the last step (or the sole live turn in a plain `turns` seed) is
+// always scored by the scenario's own top-level fields (tool/argChecks,
+// rubric, or match/expected), matching today's single-response behavior
+// unchanged. `mocks` supplies synthetic tool results (keyed by tool name)
+// for any tool call the model makes mid-step, so a `steps` conversation can
+// continue past it — see runner.ts's executeScenario.
+function userTurn<A extends z.ZodTypeAny>(assert: A) {
+  return z
+    .object({
+      user: z.string().min(1),
+      assert: assert.optional(),
+      mocks: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+    })
+    .strict();
+}
+
+// A `turns`/`steps` array must open with a `{ user }` entry — some
+// providers' chat templates reject a conversation that opens with an
+// assistant tool call (issue #235's Dev Notes) — enforced here, on the
+// array itself, rather than as an object-level .superRefine on the owning
+// scenario schema: a .superRefine wraps the schema in ZodEffects, and
+// z.discriminatedUnion (ScenarioSchema, below) requires every member to be
+// a plain ZodObject so it can read `.shape.type` directly.
+function orderedTurns<T extends z.ZodTypeAny>(turn: T, minLength: number) {
+  return z.array(turn).min(minLength).refine((arr) => 'user' in arr[0]!, {
+    message: 'must start with a `user` entry — a conversation cannot open with a seeded tool call',
+  });
+}
+
+export const DeterministicStepAssertSchema = z
+  .object({
+    match: z.enum(['contains', 'exact', 'regex']),
+    expected: z.string().min(1),
+  })
+  .strict();
+
+export const DeterministicTurnSchema = z.union([
+  ToolTurnSchema,
+  userTurn(DeterministicStepAssertSchema),
+]);
+
 export const DeterministicScenarioSchema = BaseScenario.extend({
   type: z.literal('deterministic'),
   match: z.enum(['contains', 'exact', 'regex']),
   expected: z.string().min(1),
-  // Optional — same seeding path as llm-judge/tool-sequence, so a
-  // deterministic string match can assert on a final answer synthesized
-  // AFTER simulated tool results (e.g. "did the reply repeat the seeded
-  // stdout verbatim?"), not just a cold-start reply.
-  priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
+  // Required unless `turns` or `steps` is set (see validateScenarioTurns in
+  // loader.ts — not enforceable here without breaking the discriminated
+  // union, per orderedTurns's comment above).
+  input: z.string().min(1).optional(),
+  // Fixed seeded history replacing the old `input` + `priorTurns` split —
+  // one ordered list, so a reply can be written after the tool turns it
+  // actually answers instead of always being forced first.
+  turns: orderedTurns(DeterministicTurnSchema, 2).optional(),
+  // Multiple live turns — the model responds to each in order, its real
+  // response feeding the next turn's history. See issue #235 (b).
+  steps: orderedTurns(userTurn(DeterministicStepAssertSchema), 2).optional(),
 }).strict();
 
 export const SemanticScenarioSchema = BaseScenario.extend({
@@ -60,16 +118,22 @@ export const SemanticScenarioSchema = BaseScenario.extend({
   minSimilarity: z.number().min(0).max(1).default(0.75),
 }).strict();
 
+export const LlmJudgeStepAssertSchema = z
+  .object({
+    rubric: z.string().min(1),
+    minScore: z.number().min(0).max(10).default(7),
+  })
+  .strict();
+
+export const LlmJudgeTurnSchema = z.union([ToolTurnSchema, userTurn(LlmJudgeStepAssertSchema)]);
+
 export const LlmJudgeScenarioSchema = BaseScenario.extend({
   type: z.literal('llm-judge'),
   rubric: z.string().min(1),
   minScore: z.number().min(0).max(10).default(7),
-  // Optional — mirrors ToolSequenceScenarioSchema.priorTurns exactly (same
-  // schema, same buildSeededMessages()/withSystemPrompt() seeding path in
-  // runner.ts), so a judge can score a final answer synthesized AFTER
-  // simulated tool results, not just a cold-start reply. Omitted for
-  // llm-judge scenarios that don't need seeded history.
-  priorTurns: z.array(PriorToolTurnSchema).min(1).optional(),
+  input: z.string().min(1).optional(),
+  turns: orderedTurns(LlmJudgeTurnSchema, 2).optional(),
+  steps: orderedTurns(userTurn(LlmJudgeStepAssertSchema), 2).optional(),
 }).strict();
 
 const FieldCheckSchema = z
@@ -126,14 +190,36 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   responseMinScore: z.number().min(0).max(10).optional(),
 }).strict();
 
+// Unlike the scenario-level `tool` field, a step's `tool` does not support
+// the '!'-prefix negation form — negation only makes sense for the final
+// response (the thing a tool-sequence scenario is actually about); an
+// intermediate step asserting "no forbidden call yet" has little value, and
+// adding it would mean duplicating the negation branch runToolSequence
+// already has for the top-level case. Can be added if a real scenario needs
+// it.
+const ToolSequenceStepAssertSchema = z
+  .object({
+    tool: z.string().min(1),
+    argChecks: z.array(FieldCheckSchema).optional(),
+    minScore: z.number().min(0).max(1).default(1),
+  })
+  .strict();
+
+export const ToolSequenceTurnSchema = z.union([
+  ToolTurnSchema,
+  userTurn(ToolSequenceStepAssertSchema),
+]);
+
 export const ToolSequenceScenarioSchema = BaseScenario.extend({
   type: z.literal('tool-sequence'),
-  // Prior tool calls to seed into the conversation before the final invoke —
-  // each becomes its own AIMessage(tool_call) + ToolMessage(result) pair, in
-  // order, simulating turns that already "happened". An array (not a single
-  // object) so this generalizes to N chained prior tool calls, matching how
-  // a real ReAct loop can chain arbitrarily many tool calls.
-  priorTurns: z.array(PriorToolTurnSchema).min(1),
+  input: z.string().min(1).optional(),
+  // A tool-sequence scenario always represents "a conversation already in
+  // progress" — replaces the old mandatory `priorTurns.min(1)`. At least
+  // one of `turns`/`steps` is required (see validateScenarioTurns in
+  // loader.ts); `input` alone never seeds anything, so a plain tool-call
+  // scenario should be used instead.
+  turns: orderedTurns(ToolSequenceTurnSchema, 2).optional(),
+  steps: orderedTurns(userTurn(ToolSequenceStepAssertSchema), 2).optional(),
   // Expected tool name. A '!' prefix inverts the assertion — '!rlm_query'
   // passes only when rlm_query is NOT among the turn's tool calls (see
   // executors/tool-sequence.ts). Negation is tool-sequence-only (tool-call
@@ -267,11 +353,39 @@ export const EvalRunSchema = z.object({
   systemPrompt: z.string().nullable().optional(),
 });
 
+// One `steps` entry's outcome (issue #235 (b) — multi-step conversations).
+// `details` is deliberately typed as the *same* discriminated union a whole
+// ScenarioResult's `details` uses (via z.lazy, since that union is only
+// defined further down this file and TS/zod can't forward-reference it
+// directly) — a step's outcome is structurally the same "what happened, was
+// it right" shape a full scenario result already is, so this reuses it
+// rather than inventing a parallel shape.
+export const StepResultSchema = z.object({
+  index: z.number().int().min(0),
+  actualOutput: z.string(),
+  latencyMs: z.number(),
+  passed: z.boolean(),
+  score: z.number(),
+  details: z.lazy(() => ScenarioResultDetailsSchema),
+});
+
+// The full turn-by-turn transcript actually sent to and received from the
+// model for a `turns`/`steps` scenario — populated so the HTML report,
+// result YAML, and eval:compare can show exactly what the model saw at each
+// point (issue #235's Expected Behavior), not just the final input/output
+// pair plain-`input` scenarios already show via `actualOutput`.
+export const ConversationEntrySchema = z.object({
+  role: z.enum(['user', 'assistant', 'tool']),
+  content: z.string(),
+  toolCalls: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.unknown()) })).optional(),
+});
+
 const DeterministicDetails = z.object({
   type: z.literal('deterministic'),
   match: z.enum(['contains', 'exact', 'regex']),
   expected: z.string(),
   passed: z.boolean(),
+  steps: z.array(StepResultSchema).optional(),
 });
 
 const SemanticDetails = z.object({
@@ -296,6 +410,7 @@ const LlmJudgeDetails = z.object({
   judgeModel: z.string(),
   biasRisk: z.boolean(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
+  steps: z.array(StepResultSchema).optional(),
 });
 
 const HumanDetails = z.object({
@@ -385,6 +500,7 @@ const ToolSequenceDetails = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+  steps: z.array(StepResultSchema).optional(),
 });
 
 // Independent of the scenario's own declared type (tool-call, etc.) —
@@ -415,6 +531,11 @@ export const ScenarioResultSchema = z.object({
   latencyMs: z.number(),
   estimatedCostUsd: z.number(),
   details: ScenarioResultDetailsSchema,
+  // Full turn-by-turn transcript — see ConversationEntrySchema above. Only
+  // populated for scenarios that used `turns`/`steps`; omitted for plain-
+  // `input` scenarios, where scenario.input + actualOutput already show
+  // everything there is to see.
+  conversation: z.array(ConversationEntrySchema).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -447,6 +568,39 @@ export const JsonOf = <T extends z.ZodType>(schema: T) =>
     }
   });
 
+// Cross-field invariants for `input`/`turns`/`steps` on the three scenario
+// types that support seeding/multi-step (issue #235). Not expressed as a
+// zod .superRefine on the scenario schemas themselves — see orderedTurns's
+// comment above for why that would break ScenarioSchema's discriminated
+// union. Called from loader.ts right after SuiteSchema parses; returns a
+// human-readable violation message, or null when the scenario is fine.
+export function validateScenarioTurns(scenario: Scenario): string | null {
+  if (
+    scenario.type !== 'deterministic' &&
+    scenario.type !== 'llm-judge' &&
+    scenario.type !== 'tool-sequence'
+  ) {
+    return null;
+  }
+  const hasInput = Boolean(scenario.input);
+  const hasTurns = Boolean(scenario.turns);
+  const hasSteps = Boolean(scenario.steps);
+
+  if (hasSteps && hasInput) {
+    return 'input must be omitted when steps is set — steps replaces the single input concept for multi-step scenarios';
+  }
+  if (scenario.type === 'tool-sequence') {
+    if (!hasTurns && !hasSteps) {
+      return 'tool-sequence scenarios must set turns or steps — it always represents a conversation already in progress; use a tool-call scenario if there is nothing to seed';
+    }
+    return null;
+  }
+  if (!hasSteps && hasInput === hasTurns) {
+    return 'exactly one of input or turns must be set';
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
@@ -456,7 +610,15 @@ export type Scenario = z.infer<typeof ScenarioSchema>;
 export type DeterministicScenario = z.infer<typeof DeterministicScenarioSchema>;
 export type SemanticScenario = z.infer<typeof SemanticScenarioSchema>;
 export type LlmJudgeScenario = z.infer<typeof LlmJudgeScenarioSchema>;
-export type PriorToolTurn = z.infer<typeof PriorToolTurnSchema>;
+export type ToolTurn = z.infer<typeof ToolTurnSchema>;
+export type DeterministicTurn = z.infer<typeof DeterministicTurnSchema>;
+export type LlmJudgeTurn = z.infer<typeof LlmJudgeTurnSchema>;
+export type ToolSequenceTurn = z.infer<typeof ToolSequenceTurnSchema>;
+export type StepResult = z.infer<typeof StepResultSchema>;
+export type ConversationEntry = z.infer<typeof ConversationEntrySchema>;
+export type DeterministicStepAssert = z.infer<typeof DeterministicStepAssertSchema>;
+export type LlmJudgeStepAssert = z.infer<typeof LlmJudgeStepAssertSchema>;
+export type ToolSequenceStepAssert = z.infer<typeof ToolSequenceStepAssertSchema>;
 export type StructuredScenario = z.infer<typeof StructuredScenarioSchema>;
 export type ToolCallScenario = z.infer<typeof ToolCallScenarioSchema>;
 export type ToolSequenceScenario = z.infer<typeof ToolSequenceScenarioSchema>;

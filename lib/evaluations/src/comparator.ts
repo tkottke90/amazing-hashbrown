@@ -5,11 +5,11 @@ export interface ScenarioComparison {
   type: Scenario['type'];
   runA: Pick<
     ScenarioResult,
-    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details' | 'conversation'
   > | null;
   runB: Pick<
     ScenarioResult,
-    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'
+    'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details' | 'conversation'
   > | null;
   change: 'pass→pass' | 'pass→fail' | 'fail→pass' | 'fail→fail' | 'pending' | 'added' | 'removed';
 }
@@ -30,13 +30,19 @@ export interface ComparisonResult {
 
 function pickResult(
   r: ScenarioResult,
-): Pick<ScenarioResult, 'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details'> {
+): Pick<
+  ScenarioResult,
+  'passed' | 'score' | 'latencyMs' | 'estimatedCostUsd' | 'details' | 'conversation'
+> {
   return {
     passed: r.passed,
     score: r.score,
     latencyMs: r.latencyMs,
     estimatedCostUsd: r.estimatedCostUsd,
     details: r.details,
+    // Issue #235 — so eval:compare's HTML can show the full seeded/live
+    // conversation for a turns/steps scenario, not just its final score.
+    conversation: r.conversation,
   };
 }
 

@@ -38,8 +38,8 @@ scenarios:
     # wiki_search tool-call as text since llm-judge doesn't bind tools. See
     # wnav-005's matching fix in wiki-navigation.yaml for the full writeup.
     type: llm-judge
-    input: 'Search the knowledge base for information about deep-sea marine biology research.'
-    priorTurns:
+    turns:
+      - user: 'Search the knowledge base for information about deep-sea marine biology research.'
       - tool: wiki_locate
         args: { context: 'deep-sea marine biology research' }
         result: { text: 'No domain matches. Available domains: user, self.' }
@@ -78,8 +78,8 @@ scenarios:
       point of storing a procedure is getting the actual steps back, not a
       pointer to their existence.
     type: llm-judge
-    input: 'How do I generate a new NPM token for Verdaccio?'
-    priorTurns:
+    turns:
+      - user: 'How do I generate a new NPM token for Verdaccio?'
       - tool: wiki_search
         args: { query: 'verdaccio npm token' }
         result:
@@ -126,8 +126,8 @@ scenarios:
       with a plausible-sounding guess is worse than one that says what it
       doesn't know yet.
     type: llm-judge
-    input: 'How do I generate a new NPM token for Verdaccio?'
-    priorTurns:
+    turns:
+      - user: 'How do I generate a new NPM token for Verdaccio?'
       - tool: wiki_search
         args: { query: 'verdaccio npm token' }
         result:

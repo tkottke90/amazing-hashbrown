@@ -18,8 +18,8 @@ scenarios:
       summary. Checks the agent resolves the KV reference itself via get_tool_key, copying the
       threadId/toolKey verbatim from the stub.
     type: tool-sequence
-    input: 'I need the exact wording from that migration case study section — can you get me the full text?'
-    priorTurns:
+    turns:
+      - user: 'I need the exact wording from that migration case study section — can you get me the full text?'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -54,8 +54,8 @@ scenarios:
       actually composes into a grounded answer. Uses llm-judge since the exact phrasing is not
       deterministic.
     type: llm-judge
-    input: 'According to that guide, which specific consensus protocol does it recommend for a 5-node cluster favoring availability over strict consistency?'
-    priorTurns:
+    turns:
+      - user: 'Can you look up a guide on distributed systems for me — something covering CAP theorem and consensus protocols?'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -85,6 +85,7 @@ scenarios:
             For availability-favoring deployments on a 5-node cluster, the guide recommends a
             leaderless gossip-based protocol instead of Raft or Paxos, citing lower coordination
             overhead under partition.
+      - user: 'According to that guide, which specific consensus protocol does it recommend for a 5-node cluster favoring availability over strict consistency?'
     rubric: >
       The response must reference the leaderless gossip-based protocol recommendation for an
       availability-favoring 5-node cluster, drawn from the resolved full text. Score at least 8/10
@@ -103,8 +104,8 @@ scenarios:
       failure mode already documented in web-fetch.yaml's wfetch-003 auto-eval history for
       wiki_create_page's corpus reference.
     type: tool-sequence
-    input: 'Can you use the tool key to pull the full raw text of what you just fetched?'
-    priorTurns:
+    turns:
+      - user: 'Can you look up a quick overview of vector databases for me?'
       - tool: web_fetch
         args:
           url: 'https://docs.example.com/concepts/vector-databases'
@@ -118,6 +119,7 @@ scenarios:
             ## Metadata
             title: "Vector Databases — Concepts"
             description: "An overview of vector database systems and their role in RAG."
+      - user: 'Can you use the tool key to pull the full raw text of what you just fetched?'
     tool: '!get_tool_key'
 
   - id: GTK-004a-prefers-wiki-create-page
@@ -127,8 +129,8 @@ scenarios:
       it. Confirms the direct-write instruction still drives wiki_create_page (mirrors
       instruction-sensitivity.yaml's E-11) even now that get_tool_key exists as an alternative.
     type: tool-sequence
-    input: 'Great — save that to the wiki, please.'
-    priorTurns:
+    turns:
+      - user: 'Can you look up some information on distributed systems concepts for me?'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -158,6 +160,7 @@ scenarios:
           context: 'distributed systems concepts'
         result:
           text: 'Best match: "engineering" (domain: engineering, score 15).'
+      - user: 'Great — save that to the wiki, please.'
     tool: wiki_create_page
     argChecks:
       - path: corpus.threadId
@@ -174,8 +177,8 @@ scenarios:
       Proves the anti-pattern guidance holds: no wasted round-trip resolving the KV reference
       itself just to hand it back to wiki_create_page as corpus.raw.
     type: tool-sequence
-    input: 'Great — save that to the wiki, please.'
-    priorTurns:
+    turns:
+      - user: 'Can you look up some information on distributed systems concepts for me?'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -205,6 +208,7 @@ scenarios:
           context: 'distributed systems concepts'
         result:
           text: 'Best match: "engineering" (domain: engineering, score 15).'
+      - user: 'Great — save that to the wiki, please.'
     tool: '!get_tool_key'
 
   - id: GTK-005-rereference-image
@@ -241,8 +245,8 @@ scenarios:
       requires a real key from an actual stub; since none exists here, the agent must not call it
       or claim to have looked at an image that was never attached.
     type: tool-sequence
-    input: 'Can you look at that photo again and tell me what is on the second shelf?'
-    priorTurns:
+    turns:
+      - user: 'Can you look at that photo again and tell me what is on the second shelf?'
       - tool: wiki_search
         args:
           query: 'server rack maintenance'

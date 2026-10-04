@@ -63,7 +63,6 @@ scenarios:
       rather than fabricating content. Hallucinated facts cause user trust
       erosion and are harder to detect than silence.
     type: llm-judge
-    input: 'Search your wiki for information about quantum entanglement experiments performed in 2025.'
     # llm-judge scenarios never bind or execute tools (runner.ts invokeModel
     # is a plain, single-shot model.invoke() with no ReAct loop — see the
     # same lesson already documented on shell-execution.yaml's se-007 and
@@ -74,7 +73,8 @@ scenarios:
     # empty wiki_search call — matching wiki-search.tool.ts's real
     # no-results response verbatim — lets the model respond to an actual
     # "nothing found" result instead.
-    priorTurns:
+    turns:
+      - user: 'Search your wiki for information about quantum entanglement experiments performed in 2025.'
       - tool: wiki_search
         args: { query: 'quantum entanglement experiments 2025' }
         result: { text: 'No results found for the given query.' }

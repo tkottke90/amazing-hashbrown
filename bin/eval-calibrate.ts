@@ -66,7 +66,17 @@ for (const result of judgeResults) {
 
   process.stdout.write(`\nJudge Calibration — ${idx} of ${judgeResults.length}\n`);
   printDivider();
-  process.stdout.write(`\nInput:\n  ${scenario.input}\n`);
+  // A migrated/multi-step llm-judge scenario (issue #235) has `turns`/
+  // `steps` instead of a plain `input` string — fall back to a one-line
+  // summary of the user turns so the reviewer still sees what was asked,
+  // rather than printing "undefined".
+  const inputSummary =
+    scenario.input ??
+    (scenario.turns ?? scenario.steps ?? [])
+      .filter((t): t is { user: string } => 'user' in t)
+      .map((t) => t.user)
+      .join(' → ');
+  process.stdout.write(`\nInput:\n  ${inputSummary}\n`);
   process.stdout.write(`\nOutput:\n`);
   for (const line of result.actualOutput.split('\n')) {
     process.stdout.write(`  ${line}\n`);

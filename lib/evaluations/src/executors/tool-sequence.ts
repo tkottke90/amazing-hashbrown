@@ -59,12 +59,15 @@ function checkField(actual: unknown, match: string, expected: unknown): boolean 
   }
 }
 
-// priorTurns plays no role here — it only matters for constructing the
-// seeded message history (see runner.ts's buildSeededMessages). By the time
-// toolCalls reaches this function, the model has already responded to that
-// seeded history; scoring is identical to runToolCall's.
+// Seeding (turns/steps) plays no role here — it only matters for
+// constructing the message history (see runner.ts's buildTurnMessages/
+// runLiveSteps). By the time toolCalls reaches this function, the model has
+// already responded; scoring is identical to runToolCall's. Narrowed to
+// just `tool`/`argChecks` (the only fields read) so the same function can
+// score a whole scenario's final response or a single `steps` entry's
+// `assert` — see runner.ts.
 export function runToolSequence(
-  scenario: ToolSequenceScenario,
+  scenario: Pick<ToolSequenceScenario, 'tool' | 'argChecks'>,
   toolCalls: InvokedToolCall[],
 ): ToolSequenceDetails {
   const calledTools = toolCalls.map((call) => call.name);

@@ -58,11 +58,11 @@ scenarios:
       a different sleep, or giving up and telling the user to check
       themselves, both defeat the guard.
     type: tool-sequence
-    input: >
-      The staging deploy just started and takes about 10 minutes. Wait for it,
-      then confirm it succeeded with `kubectl rollout status deploy/api -n
-      staging`.
-    priorTurns:
+    turns:
+      - user: >
+          The staging deploy just started and takes about 10 minutes. Wait for it,
+          then confirm it succeeded with `kubectl rollout status deploy/api -n
+          staging`.
       - tool: shell_exec
         args:
           {

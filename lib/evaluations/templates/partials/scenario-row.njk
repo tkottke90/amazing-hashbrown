@@ -39,8 +39,55 @@
       {% if scenario %}
         <div><strong>Purpose:</strong></div>
         <pre>{{ scenario.purpose }}</pre>
-        <div style="margin-top:0.5rem"><strong>Input:</strong></div>
-        <pre>{{ scenario.input }}</pre>
+        {% if scenario.input %}
+          <div style="margin-top:0.5rem"><strong>Input:</strong></div>
+          <pre>{{ scenario.input }}</pre>
+        {% endif %}
+      {% endif %}
+
+      {% if result.conversation and result.conversation.length %}
+        <div style="margin-top:0.5rem"><strong>Conversation (seeded + live, in order — issue #235):</strong></div>
+        <div class="conversation-transcript">
+          {% for entry in result.conversation %}
+            <div class="conversation-entry conversation-entry-{{ entry.role }}">
+              <span class="badge badge-type">{{ entry.role }}</span>
+              {% if entry.content %}<pre>{{ entry.content }}</pre>{% endif %}
+              {% if entry.toolCalls and entry.toolCalls.length %}
+                {% for call in entry.toolCalls %}
+                  <pre>→ {{ call.name }}({{ call.args | dump }})</pre>
+                {% endfor %}
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if details.steps and details.steps.length %}
+        <div style="margin-top:0.5rem"><strong>Per-step results ({{ details.steps.length }} intermediate step(s) asserted):</strong></div>
+        <table class="field-check-table">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Output</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for step in details.steps %}
+            <tr>
+              <td>{{ step.index }}</td>
+              <td><code>{{ step.actualOutput }}</code></td>
+              <td>
+                {% if step.passed %}
+                  <span class="badge badge-pass">✓ pass</span>
+                {% else %}
+                  <span class="badge badge-fail">✗ fail</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       {% endif %}
 
       <div style="margin-top:0.5rem"><strong>Output:</strong></div>

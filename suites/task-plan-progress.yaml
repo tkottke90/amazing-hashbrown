@@ -35,8 +35,8 @@ scenarios:
       to mark step 1 done via update_plan rather than moving on silently and
       leaving the checklist stale for the human watching the Task Drawer.
     type: tool-sequence
-    input: 'Begin work on this task now: Add a greet() helper.'
-    priorTurns:
+    turns:
+      - user: 'Begin work on this task now: Add a greet() helper.'
       - tool: shell_exec
         args:
           {
@@ -65,8 +65,8 @@ scenarios:
       ends the run with complete_task "done" instead of trailing off (which
       task-execution records as a failed run).
     type: tool-sequence
-    input: 'Begin work on this task now: Add a greet() helper.'
-    priorTurns:
+    turns:
+      - user: 'Begin work on this task now: Add a greet() helper.'
       - tool: shell_exec
         args: { command: 'npm test -- src/greet.test.ts' }
         result: { exitCode: 0, stdout: "1 passing (4ms)\n", stderr: '' }
@@ -94,8 +94,8 @@ scenarios:
       would be accepted but leave the checklist stale — the exact failure
       from issue #203.
     type: tool-sequence
-    input: 'Begin work on this task now: Add a greet() helper.'
-    priorTurns:
+    turns:
+      - user: 'Begin work on this task now: Add a greet() helper.'
       - tool: update_plan
         args: { updates: [{ step: 1, done: true }] }
         result:
@@ -122,8 +122,8 @@ scenarios:
       complete_task — which would end the run with two thirds of the plan
       undone.
     type: tool-sequence
-    input: 'Begin work on this task now: Add a greet() helper.'
-    priorTurns:
+    turns:
+      - user: 'Begin work on this task now: Add a greet() helper.'
       - tool: shell_exec
         args: { command: 'cat src/greet.ts' }
         result:

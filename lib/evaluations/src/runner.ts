@@ -19,6 +19,7 @@ import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executo
 import type {
   EvalRun,
   ScenarioResult,
+  ScenarioResultDetails,
   Suite,
   Scenario,
   DeterministicScenario,
@@ -28,7 +29,12 @@ import type {
   ToolCallScenario,
   ToolSequenceScenario,
   HumanScenario,
-  PriorToolTurn,
+  ToolTurn,
+  StepResult,
+  ConversationEntry,
+  DeterministicStepAssert,
+  LlmJudgeStepAssert,
+  ToolSequenceStepAssert,
 } from './schemas.js';
 import type { EvaluationsStore } from './store.js';
 
@@ -244,25 +250,129 @@ async function invokeStructuredModel(
   return { parsed, content: JSON.stringify(parsed), latencyMs };
 }
 
-// Seeds a synthetic conversation history — as if `priorTurns` had already
-// happened — for tool-sequence and llm-judge scenarios. Each turn becomes its
-// own AIMessage(tool_call) + ToolMessage(result) pair, in order, so the final
-// invoke() sees a conversation where those tool calls already completed.
-export function buildSeededMessages(input: string, priorTurns: PriorToolTurn[]): BaseMessage[] {
-  const messages: BaseMessage[] = [new HumanMessage(input)];
-  priorTurns.forEach((turn, i) => {
-    const toolCallId = `eval-seed-${i}`;
-    messages.push(
-      new AIMessage({
-        content: '',
-        tool_calls: [{ id: toolCallId, name: turn.tool, args: turn.args }],
-      }),
-    );
-    messages.push(
-      new ToolMessage({ tool_call_id: toolCallId, content: JSON.stringify(turn.result) }),
-    );
-  });
+// Walks an ordered `turns` list (issue #235), building the exact message
+// sequence the author wrote — a `{ tool }` entry becomes a synthetic
+// AIMessage(tool_call) + ToolMessage(result) pair, a `{ user }` entry
+// becomes a HumanMessage, in order. Fixes the bug buildSeededMessages (this
+// function's predecessor) had: it always put the scenario's `input` first,
+// so a reply that answers something later in `priorTurns` was shown to the
+// model before the question it was answering. One invocation always
+// happens, at the end, on whatever this produces — this function only
+// fixes order, nothing else; see runIntermediateSteps below for the
+// separate multi-invocation (`steps`) mechanism.
+export function buildTurnMessages(turns: Array<ToolTurn | { user: string }>): BaseMessage[] {
+  const messages: BaseMessage[] = [];
+  let toolSeedIndex = 0;
+  for (const turn of turns) {
+    if ('tool' in turn) {
+      const toolCallId = `eval-seed-${toolSeedIndex++}`;
+      messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: toolCallId, name: turn.tool, args: turn.args }],
+        }),
+      );
+      messages.push(
+        new ToolMessage({ tool_call_id: toolCallId, content: JSON.stringify(turn.result) }),
+      );
+    } else {
+      messages.push(new HumanMessage(turn.user));
+    }
+  }
   return messages;
+}
+
+// Reconstructs the full transcript (issue #235's "show the full
+// conversation" requirement) from the actual BaseMessage history — rather
+// than tracking it in parallel while building that history, which would
+// risk drifting out of sync with what was really sent.
+export function messagesToConversation(messages: BaseMessage[]): ConversationEntry[] {
+  return messages.map((m): ConversationEntry => {
+    if (m instanceof HumanMessage) {
+      return { role: 'user', content: extractContent(m) };
+    }
+    if (m instanceof AIMessage) {
+      const toolCalls = (m.tool_calls ?? []).map((c) => ({ name: c.name, args: c.args }));
+      return { role: 'assistant', content: extractContent(m), ...(toolCalls.length ? { toolCalls } : {}) };
+    }
+    return { role: 'tool', content: extractContent(m) };
+  });
+}
+
+interface Step<TAssert> {
+  user: string;
+  assert?: TAssert;
+  mocks?: Record<string, Record<string, unknown>>;
+}
+
+interface StepResponse {
+  content: string;
+  latencyMs: number;
+  toolCalls: InvokedToolCall[];
+}
+
+// Runs every step but the last through a real model invocation, advancing
+// the conversation after each — issue #235 (b)'s multi-step mechanism.
+// Deliberately stops one step short of the end: the scenario's existing
+// single-invoke code (identical for a plain `input` string, a `turns`-only
+// seed, or this) handles the final invocation, including everything
+// type-specific (skill gating, malformed-tool-call detection, response
+// rubrics) that would otherwise have to be duplicated here. Callers append
+// the last step's HumanMessage to this function's returned `messages` and
+// fall straight into that existing code.
+//
+// Resolves the open "tool calls during a live step" design question via
+// per-step `mocks` keyed by tool name (the issue's own first-listed
+// option — "fits the existing never make real calls in developer tests
+// rule"). A tool call with no matching mock throws: there is nothing to
+// feed back, and silently dropping it would leave the next invocation
+// looking at a conversation the provider's own chat template may reject
+// (an AIMessage tool call with no following ToolMessage).
+async function runIntermediateSteps<TAssert>(
+  initialMessages: BaseMessage[],
+  steps: Array<Step<TAssert>>,
+  invoke: (messages: BaseMessage[]) => Promise<StepResponse>,
+  scoreStep: (
+    step: Step<TAssert>,
+    response: StepResponse,
+  ) => Promise<{ passed: boolean; score: number; details: ScenarioResultDetails }>,
+): Promise<{ messages: BaseMessage[]; stepResults: StepResult[] }> {
+  let messages = initialMessages;
+  const stepResults: StepResult[] = [];
+  for (const [index, step] of steps.entries()) {
+    messages = [...messages, new HumanMessage(step.user)];
+    const response = await invoke(messages);
+    const toolCallEntries = response.toolCalls.map((call, i) => ({
+      id: `eval-step-${index}-${i}`,
+      name: call.name,
+      args: call.args,
+    }));
+    messages = [...messages, new AIMessage({ content: response.content, tool_calls: toolCallEntries })];
+    for (const [i, call] of response.toolCalls.entries()) {
+      const mockResult = step.mocks?.[call.name];
+      if (!mockResult) {
+        throw new Error(
+          `step ${index} ("${step.user}") called tool "${call.name}" with no mocks["${call.name}"] entry — nothing to feed back, cannot continue the conversation`,
+        );
+      }
+      messages = [
+        ...messages,
+        new ToolMessage({ tool_call_id: toolCallEntries[i]!.id, content: JSON.stringify(mockResult) }),
+      ];
+    }
+    if (step.assert) {
+      const scored = await scoreStep(step, response);
+      stepResults.push({
+        index,
+        actualOutput: response.content,
+        latencyMs: response.latencyMs,
+        passed: scored.passed,
+        score: scored.score,
+        details: scored.details,
+      });
+    }
+  }
+  return { messages, stepResults };
 }
 
 // Prepends a SystemMessage ahead of the given input when a systemPrompt is
@@ -461,18 +571,48 @@ export async function executeScenario(
   try {
     if (scenario.type === 'deterministic') {
       const s = scenario as DeterministicScenario;
-      const input = s.priorTurns
-        ? withSystemPrompt(buildSeededMessages(s.input, s.priorTurns), config.systemPrompt)
-        : withSystemPrompt(s.input, config.systemPrompt);
+      let messages: BaseMessage[] | undefined;
+      let stepResults: StepResult[] = [];
+      if (s.steps) {
+        const invoke = async (msgs: BaseMessage[]): Promise<StepResponse> => {
+          const { content, latencyMs } = await invokeModel(
+            config.model,
+            withSystemPrompt(msgs, config.systemPrompt),
+          );
+          return { content, latencyMs, toolCalls: [] };
+        };
+        const scoreStep = async (step: Step<DeterministicStepAssert>, response: StepResponse) => {
+          const details = runDeterministic(step.assert!, response.content);
+          return { passed: details.passed, score: details.passed ? 1 : 0, details };
+        };
+        const seeded = s.turns ? buildTurnMessages(s.turns) : [];
+        const intermediate = await runIntermediateSteps(
+          seeded,
+          s.steps.slice(0, -1),
+          invoke,
+          scoreStep,
+        );
+        messages = [...intermediate.messages, new HumanMessage(s.steps[s.steps.length - 1]!.user)];
+        stepResults = intermediate.stepResults;
+      } else if (s.turns) {
+        messages = buildTurnMessages(s.turns);
+      }
+      const input = messages
+        ? withSystemPrompt(messages, config.systemPrompt)
+        : withSystemPrompt(s.input!, config.systemPrompt);
       const { content, latencyMs } = await invokeModel(config.model, input);
       const details = runDeterministic(s, content);
+      const passed = details.passed && stepResults.every((r) => r.passed);
       return {
         ...baseResult,
-        passed: details.passed,
-        score: details.passed ? 1 : 0,
+        passed,
+        score: passed ? 1 : 0,
         actualOutput: content,
         latencyMs,
-        details,
+        details: stepResults.length > 0 ? { ...details, steps: stepResults } : details,
+        ...(messages
+          ? { conversation: messagesToConversation([...messages, new AIMessage(content)]) }
+          : {}),
       };
     }
 
@@ -499,12 +639,45 @@ export async function executeScenario(
 
     if (scenario.type === 'llm-judge') {
       const s = scenario as LlmJudgeScenario;
-      // Not bound to tools (unlike tool-call/tool-sequence) — priorTurns here
-      // simulate tool calls that already happened, so the model should
-      // synthesize a final text answer from them, not call a real tool again.
-      const input = s.priorTurns
-        ? withSystemPrompt(buildSeededMessages(s.input, s.priorTurns), config.systemPrompt)
-        : withSystemPrompt(s.input, config.systemPrompt);
+      // Not bound to tools (unlike tool-call/tool-sequence) — turns/steps
+      // here simulate tool calls that already happened, so the model
+      // should synthesize a final text answer from them, not call a real
+      // tool again.
+      let messages: BaseMessage[] | undefined;
+      let stepResults: StepResult[] = [];
+      if (s.steps) {
+        const invoke = async (msgs: BaseMessage[]): Promise<StepResponse> => {
+          const { content, latencyMs } = await invokeModel(
+            config.model,
+            withSystemPrompt(msgs, config.systemPrompt),
+          );
+          return { content, latencyMs, toolCalls: [] };
+        };
+        const scoreStep = async (step: Step<LlmJudgeStepAssert>, response: StepResponse) => {
+          const details = await runLlmJudge(
+            { input: step.user, rubric: step.assert!.rubric },
+            response.content,
+            config.modelId,
+            config.judgeModel,
+            config.judgeModelId,
+          );
+          return { passed: details.score >= step.assert!.minScore, score: details.score / 10, details };
+        };
+        const seeded = s.turns ? buildTurnMessages(s.turns) : [];
+        const intermediate = await runIntermediateSteps(
+          seeded,
+          s.steps.slice(0, -1),
+          invoke,
+          scoreStep,
+        );
+        messages = [...intermediate.messages, new HumanMessage(s.steps[s.steps.length - 1]!.user)];
+        stepResults = intermediate.stepResults;
+      } else if (s.turns) {
+        messages = buildTurnMessages(s.turns);
+      }
+      const input = messages
+        ? withSystemPrompt(messages, config.systemPrompt)
+        : withSystemPrompt(s.input!, config.systemPrompt);
       const { content, latencyMs } = await invokeModel(config.model, input);
       const details = await runLlmJudge(
         s,
@@ -524,8 +697,9 @@ export async function executeScenario(
         content,
         (config.tools ?? []).map(toolName),
       );
-      const judgeDetails = malformedToolCall ? { ...details, malformedToolCall } : details;
-      const passed = details.score >= s.minScore;
+      const judgeDetailsBase = malformedToolCall ? { ...details, malformedToolCall } : details;
+      const judgeDetails = stepResults.length > 0 ? { ...judgeDetailsBase, steps: stepResults } : judgeDetailsBase;
+      const passed = details.score >= s.minScore && stepResults.every((r) => r.passed);
       return {
         ...baseResult,
         passed,
@@ -533,6 +707,9 @@ export async function executeScenario(
         actualOutput: content,
         latencyMs,
         details: judgeDetails,
+        ...(messages
+          ? { conversation: messagesToConversation([...messages, new AIMessage(content)]) }
+          : {}),
       };
     }
 
@@ -697,16 +874,10 @@ export async function executeScenario(
       }
       const excluded = new Set(scenario.excludeTools ?? []);
       const scenarioTools = excluded.size
-        ? config.tools.filter((t) => {
-            const name =
-              typeof t === 'object' && t !== null && 'name' in t
-                ? (t as { name: string }).name
-                : '';
-            return !excluded.has(name);
-          })
+        ? config.tools.filter((t) => !excluded.has(toolName(t)))
         : config.tools;
-      const seeded = buildSeededMessages(s.input, s.priorTurns);
-      let modelInput: BaseMessage[] = seeded;
+      const seeded = s.turns ? buildTurnMessages(s.turns) : [];
+      let gatedMessages: BaseMessage[] = seeded;
       let toolsForCall = scenarioTools;
       if (s.gatedSkill) {
         if (!config.skillGatedToolsMiddleware) {
@@ -719,7 +890,7 @@ export async function executeScenario(
           s.gatedSkill,
           config.skillExpansionMiddleware,
         );
-        modelInput = resolved.messages;
+        gatedMessages = resolved.messages;
         toolsForCall = await resolveGatedTools(
           scenarioTools,
           resolved.activeGatedSkill,
@@ -730,12 +901,48 @@ export async function executeScenario(
         config.filterHarnessSections && config.systemPrompt
           ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
           : config.systemPrompt;
+      // #tool-name detection (issue #172) needs *some* literal scenario text
+      // to scan — the first user turn/step, since `input` no longer exists
+      // for tool-sequence scenarios now that `turns`/`steps` always carries
+      // that text instead (see ToolSequenceScenarioSchema).
+      const scenarioInputText =
+        s.turns?.find((t): t is { user: string } => 'user' in t)?.user ?? s.steps?.[0]?.user ?? '';
       const finalSystemPrompt = withRequiredToolBlocks(
         effectiveSystemPrompt,
-        s.input,
+        scenarioInputText,
         new Set(toolsForCall.map(toolName)),
         config,
       );
+
+      let messages: BaseMessage[] = gatedMessages;
+      let stepResults: StepResult[] = [];
+      if (s.steps) {
+        const invoke = async (msgs: BaseMessage[]): Promise<StepResponse> => {
+          const result = await invokeToolCallModel(
+            config.model,
+            withSystemPrompt(msgs, finalSystemPrompt),
+            toolsForCall,
+          );
+          return { content: result.content, latencyMs: result.latencyMs, toolCalls: result.toolCalls };
+        };
+        const scoreStep = async (step: Step<ToolSequenceStepAssert>, response: StepResponse) => {
+          const details = runToolSequence(step.assert!, response.toolCalls);
+          return {
+            passed: details.toolCalled === step.assert!.tool && details.score >= step.assert!.minScore,
+            score: details.score,
+            details,
+          };
+        };
+        const intermediate = await runIntermediateSteps(
+          messages,
+          s.steps.slice(0, -1),
+          invoke,
+          scoreStep,
+        );
+        messages = [...intermediate.messages, new HumanMessage(s.steps[s.steps.length - 1]!.user)];
+        stepResults = intermediate.stepResults;
+      }
+
       const {
         toolCalls,
         invalidToolCalls,
@@ -745,7 +952,7 @@ export async function executeScenario(
         latencyMs,
       } = await invokeToolCallModel(
         config.model,
-        withSystemPrompt(modelInput, finalSystemPrompt),
+        withSystemPrompt(messages, finalSystemPrompt),
         toolsForCall,
       );
       // See the tool-call branch's identical comment — matched against the
@@ -760,7 +967,7 @@ export async function executeScenario(
         detectProseQuestion(content)
           ? { raw: content }
           : null;
-      const details = {
+      const detailsBase = {
         ...runToolSequence(s, toolCalls),
         invalidToolCalls,
         responseMetadata,
@@ -774,11 +981,17 @@ export async function executeScenario(
       const forbiddenTool = s.tool.startsWith('!') ? s.tool.slice(1) : null;
       const malformedForbiddenHit =
         forbiddenTool !== null && malformedToolCall?.parsedToolName === forbiddenTool;
-      const passed =
+      const toolPassed =
         forbiddenTool !== null
-          ? details.toolCalled === null && !malformedForbiddenHit
-          : details.toolCalled === s.tool && details.score >= s.minScore;
-      const effectiveScore = malformedForbiddenHit ? 0 : details.score;
+          ? detailsBase.toolCalled === null && !malformedForbiddenHit
+          : detailsBase.toolCalled === s.tool && detailsBase.score >= s.minScore;
+      const effectiveScore = malformedForbiddenHit ? 0 : detailsBase.score;
+      const passed = toolPassed && stepResults.every((r) => r.passed);
+      const details = stepResults.length > 0 ? { ...detailsBase, steps: stepResults } : detailsBase;
+      const finalResponseMessage = new AIMessage({
+        content,
+        tool_calls: toolCalls.map((c, i) => ({ id: `eval-final-${i}`, name: c.name, args: c.args })),
+      });
       return {
         ...baseResult,
         passed,
@@ -786,6 +999,7 @@ export async function executeScenario(
         actualOutput: content,
         latencyMs,
         details,
+        conversation: messagesToConversation([...messages, finalResponseMessage]),
       };
     }
 

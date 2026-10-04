@@ -84,8 +84,8 @@ scenarios:
       ones — the general "any image-producing tool must hand off to
       upload_image" contract.
     type: tool-sequence
-    input: Generate an image of a red dragon and embed it in your response.
-    priorTurns:
+    turns:
+      - user: Generate an image of a red dragon and embed it in your response.
       - tool: generate_image
         args: { prompt: 'a red dragon' }
         result: { imageBase64: 'ZmFrZS1kcmFnb24tYnl0ZXM=', mimeType: 'image/png' }
