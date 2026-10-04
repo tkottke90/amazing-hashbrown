@@ -56,6 +56,10 @@ export type {
 export { compareRuns } from './comparator.js';
 export type { ComparisonResult, ScenarioComparison } from './comparator.js';
 
+// Failure category reporting
+export { getFailureCategory } from './failure-category.js';
+export type { FailureCategory } from './failure-category.js';
+
 // Serializer
 export {
   writeResultYaml,

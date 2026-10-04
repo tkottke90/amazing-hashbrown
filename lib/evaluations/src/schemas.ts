@@ -275,12 +275,22 @@ const SemanticDetails = z.object({
   threshold: z.number(),
 });
 
+// Populated when the model emitted a tool call as plain text instead of a
+// structured tool_calls entry (e.g. a raw <tool_call>...</tool_call> block)
+// — a provider/model transport failure, not a reasoning failure. See
+// malformed-tool-call.ts's detectMalformedToolCall and issue #227.
+const MalformedToolCallInfoSchema = z.object({
+  parsedToolName: z.string().nullable(),
+  raw: z.string(),
+});
+
 const LlmJudgeDetails = z.object({
   type: z.literal('llm-judge'),
   score: z.number(),
   reasoning: z.string(),
   judgeModel: z.string(),
   biasRisk: z.boolean(),
+  malformedToolCall: MalformedToolCallInfoSchema.optional(),
 });
 
 const HumanDetails = z.object({
@@ -321,6 +331,14 @@ const ResponseJudgeDetails = z.object({
   biasRisk: z.boolean(),
 });
 
+// Populated when the scenario expected ask_user (or '!ask_user') and the
+// model answered a clarifying question in prose instead of calling it — a
+// related provider/model transport failure. See malformed-tool-call.ts's
+// detectProseQuestion and issue #227.
+const ProseQuestionInfoSchema = z.object({
+  raw: z.string(),
+});
+
 const ToolCallDetails = z.object({
   type: z.literal('tool-call'),
   // Present only when the scenario sets responseRubric.
@@ -343,6 +361,8 @@ const ToolCallDetails = z.object({
   // Ollama "thinking" models can put chain-of-thought here instead of
   // actualOutput — see runner.ts's extractToolCallData.
   reasoningContent: z.string().optional(),
+  malformedToolCall: MalformedToolCallInfoSchema.optional(),
+  proseQuestion: ProseQuestionInfoSchema.optional(),
 });
 
 const ToolSequenceDetails = z.object({
@@ -358,6 +378,8 @@ const ToolSequenceDetails = z.object({
   invalidToolCalls: z.array(InvalidToolCallSchema).optional(),
   responseMetadata: z.record(z.string(), z.unknown()).optional(),
   reasoningContent: z.string().optional(),
+  malformedToolCall: MalformedToolCallInfoSchema.optional(),
+  proseQuestion: ProseQuestionInfoSchema.optional(),
 });
 
 // Independent of the scenario's own declared type (tool-call, etc.) —

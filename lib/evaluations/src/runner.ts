@@ -14,6 +14,7 @@ import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
 import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
 import { runToolSequence } from './executors/tool-sequence.js';
+import { detectMalformedToolCall, detectProseQuestion } from './malformed-tool-call.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -512,6 +513,18 @@ export async function executeScenario(
         config.judgeModel,
         config.judgeModelId,
       );
+      // llm-judge binds no tools, so a text-embedded tool call always shows
+      // up as plain content here — this is the ws-002/ws-003 repro from
+      // issue #227: a low judge score caused by raw tool-call text, not a
+      // genuinely bad answer. Matched against the full harness catalog
+      // (config.tools), not a per-scenario bound subset, since none is ever
+      // bound for this scenario type. See malformed-tool-call-detection
+      // design doc D7.
+      const malformedToolCall = detectMalformedToolCall(
+        content,
+        (config.tools ?? []).map(toolName),
+      );
+      const judgeDetails = malformedToolCall ? { ...details, malformedToolCall } : details;
       const passed = details.score >= s.minScore;
       return {
         ...baseResult,
@@ -519,7 +532,7 @@ export async function executeScenario(
         score: details.score / 10,
         actualOutput: content,
         latencyMs,
-        details,
+        details: judgeDetails,
       };
     }
 
@@ -599,22 +612,48 @@ export async function executeScenario(
         withSystemPrompt(modelInput, finalSystemPrompt),
         toolsForCall,
       );
+      // Matched against the full harness catalog (config.tools), not
+      // toolsForCall/scenarioTools, so the shape stays reachable even when
+      // excludeTools/gatedSkill narrow what's actually bound this turn — see
+      // malformed-tool-call-detection design doc D7.
+      const malformedToolCall =
+        toolCalls.length === 0
+          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          : null;
+      const proseQuestion =
+        toolCalls.length === 0 &&
+        (s.tool === 'ask_user' || s.tool === '!ask_user') &&
+        detectProseQuestion(content)
+          ? { raw: content }
+          : null;
       const toolDetails = {
         ...runToolCall(s, toolCalls),
         invalidToolCalls,
         responseMetadata,
         reasoningContent,
+        ...(malformedToolCall ? { malformedToolCall } : {}),
+        ...(proseQuestion ? { proseQuestion } : {}),
       };
       // For a negated tool ('!name'), toolCalled is null exactly when the
-      // forbidden tool was correctly NOT called — see runToolCall.
-      const toolPassed = s.tool.startsWith('!')
-        ? toolDetails.toolCalled === null
-        : toolDetails.toolCalled === s.tool && toolDetails.score >= s.minScore;
+      // forbidden tool was correctly NOT called — see runToolCall. But if
+      // the forbidden tool's name was recovered from text instead, the
+      // model still produced the forbidden call — that must not read as a
+      // pass, and the score must reflect the failure too (not just
+      // `passed`), since the responseRubric branch below still reads
+      // `toolDetails.score` directly.
+      const forbiddenTool = s.tool.startsWith('!') ? s.tool.slice(1) : null;
+      const malformedForbiddenHit =
+        forbiddenTool !== null && malformedToolCall?.parsedToolName === forbiddenTool;
+      const toolPassed =
+        forbiddenTool !== null
+          ? toolDetails.toolCalled === null && !malformedForbiddenHit
+          : toolDetails.toolCalled === s.tool && toolDetails.score >= s.minScore;
+      const effectiveScore = malformedForbiddenHit ? 0 : toolDetails.score;
       if (!s.responseRubric) {
         return {
           ...baseResult,
           passed: toolPassed,
-          score: toolDetails.score,
+          score: effectiveScore,
           actualOutput: content,
           latencyMs,
           details: toolDetails,
@@ -635,7 +674,7 @@ export async function executeScenario(
         passed: toolPassed && judged.score >= responseMinScore,
         // The weaker of the two checks, so a good tool choice can't mask a
         // failing reply in score-based summaries.
-        score: Math.min(toolDetails.score, judged.score / 10),
+        score: Math.min(effectiveScore, judged.score / 10),
         actualOutput: content,
         latencyMs,
         details: {
@@ -709,21 +748,41 @@ export async function executeScenario(
         withSystemPrompt(modelInput, finalSystemPrompt),
         toolsForCall,
       );
+      // See the tool-call branch's identical comment — matched against the
+      // full harness catalog, not toolsForCall/scenarioTools.
+      const malformedToolCall =
+        toolCalls.length === 0
+          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          : null;
+      const proseQuestion =
+        toolCalls.length === 0 &&
+        (s.tool === 'ask_user' || s.tool === '!ask_user') &&
+        detectProseQuestion(content)
+          ? { raw: content }
+          : null;
       const details = {
         ...runToolSequence(s, toolCalls),
         invalidToolCalls,
         responseMetadata,
         reasoningContent,
+        ...(malformedToolCall ? { malformedToolCall } : {}),
+        ...(proseQuestion ? { proseQuestion } : {}),
       };
-      // For a negated tool ('!name'), toolCalled is null exactly when the
-      // forbidden tool was correctly NOT called — see runToolSequence.
-      const passed = s.tool.startsWith('!')
-        ? details.toolCalled === null
-        : details.toolCalled === s.tool && details.score >= s.minScore;
+      // See the tool-call branch's identical comment — a text-embedded
+      // forbidden call must not read as a pass, and the score must reflect
+      // the failure.
+      const forbiddenTool = s.tool.startsWith('!') ? s.tool.slice(1) : null;
+      const malformedForbiddenHit =
+        forbiddenTool !== null && malformedToolCall?.parsedToolName === forbiddenTool;
+      const passed =
+        forbiddenTool !== null
+          ? details.toolCalled === null && !malformedForbiddenHit
+          : details.toolCalled === s.tool && details.score >= s.minScore;
+      const effectiveScore = malformedForbiddenHit ? 0 : details.score;
       return {
         ...baseResult,
         passed,
-        score: details.score,
+        score: effectiveScore,
         actualOutput: content,
         latencyMs,
         details,

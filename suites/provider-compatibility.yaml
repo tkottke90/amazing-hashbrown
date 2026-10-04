@@ -1,0 +1,118 @@
+suite:
+  id: provider-compatibility
+  name: Provider Compatibility
+  purpose: >
+    Deliberately trivial, transport-level scenarios — run this suite FIRST
+    against any new model/provider pairing (see issue #227). A
+    malformed_tool_call or prose_question result here means the
+    provider/server can't reliably emit structured tool calls (e.g. a
+    chat-template mismatch), which is a configuration problem to fix at the
+    provider/server level, not a prompting problem to chase by tuning the
+    system prompt. Any failure on this suite should be investigated before
+    trusting results from any other suite against the same provider.
+  passingThreshold: 1.0
+
+scenarios:
+  - id: pc-001-single-tool-no-args
+    name: Model calls a zero-argument tool via structured tool_calls
+    purpose: >
+      Simplest possible structured-call case. If this fails as
+      malformed_tool_call, the provider cannot do structured tool calls at
+      all for even the most trivial case — confirms the transport, not the
+      model's reasoning, is broken.
+    type: tool-call
+    input: 'Browse the knowledge base. What domains are available? Do not search for anything specific yet.'
+    tool: wiki_locate
+
+  - id: pc-002-single-tool-one-string-arg
+    name: Model calls a tool with a single string argument via structured tool_calls
+    purpose: >
+      Confirms the provider can pass a simple string argument through
+      structured tool_calls, not just invoke a tool with no payload. Uses
+      "favorite color" deliberately — system-prompt.ts's own
+      WIKI_NAVIGATION_SECTION names this exact topic as the canonical
+      domain-exclusive example that skips wiki_locate, so a compliant
+      model goes straight to wiki_search regardless of provider. An
+      earlier version of this scenario used "morning routines," which
+      round 1 of the 2026-10-04 auto-eval run showed three of four
+      providers (Lemonade, Ornith, Digital Ocean) routing through
+      wiki_locate first — correctly, per the system prompt's own
+      "not domain-exclusive" rule. That made it a navigation-logic test
+      by accident, not the trivial transport test this scenario is meant
+      to be — don't revert to an ambiguous topic.
+    type: tool-call
+    input: 'Search the knowledge base for anything about my favorite color.'
+    tool: wiki_search
+    argChecks:
+      - path: query
+        match: exists
+
+  - id: pc-003-nested-object-args
+    name: Model calls a tool with nested/object-shaped arguments via structured tool_calls
+    purpose: >
+      Confirms the provider can serialize a nested object argument
+      (corpus.raw), not just a flat string/number arg — nested JSON is a
+      more likely place for a provider to fall back to text-embedded
+      output than a single flat argument.
+    type: tool-call
+    input: >
+      Save this to the knowledge base as a new page in the "user" wiki: just
+      write "this is a test note" as the body.
+    tool: wiki_create_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: corpus.raw
+        match: exists
+
+  - id: pc-004-two-step-follow-up
+    name: Model correctly follows up with a second structured tool call given a seeded prior result
+    purpose: >
+      Confirms structured tool_calls survive a multi-turn exchange, not
+      just a single cold-start turn — some providers degrade to
+      text-embedded calls specifically on a follow-up turn after a seeded
+      tool result, which a single-turn-only suite would never catch.
+      Mirrors wiki-navigation's wnav-013 pattern exactly.
+    type: tool-sequence
+    input: 'What programming languages do I use most at work?'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'programming languages used at work' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 18). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+    tool: wiki_search
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: query
+        match: exists
+
+  - id: pc-005-unambiguous-clarification-calls-ask-user
+    name: Model calls ask_user via structured tool_calls, not prose, when clarification is unambiguously called for
+    purpose: >
+      Checks the related-but-distinct prose_question failure mode: a model
+      that would otherwise reason "I should ask the user" but emits the
+      question as plain text instead of a structured ask_user call. Uses a
+      seeded tool-sequence (the proven pattern from wiki-navigation's
+      wnav-004 and instruction-hierarchy's ih-002) rather than a cold
+      prompt, since a bare cold prompt has no working precedent in this
+      harness and risks a false negative in a suite that only runs once
+      (no gatedSkill here — this suite tests raw transport, not
+      skill-gating).
+    type: tool-sequence
+    input: 'Look into the knowledge base for this and get back to me.'
+    priorTurns:
+      - tool: wiki_locate
+        args: { context: 'training and fitness scheduling' }
+        result:
+          {
+            text: 'Multiple domains match equally well: health-fitness, homelab. Narrow the context, or ask the user to pick one.',
+          }
+    tool: ask_user
+    argChecks:
+      - path: question
+        match: exists
