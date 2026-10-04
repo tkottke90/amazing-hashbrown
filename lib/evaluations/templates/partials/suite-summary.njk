@@ -1,6 +1,6 @@
 <div class="summary-stats">
   <div class="stat">
-    <span class="num">{{ run.passedScenarios }} / {{ run.totalScenarios }}</span>
+    <span class="num">{{ run.passedScenarios }} / {{ scored }}{% if skipped %} <span class="skip-note">({{ skipped }} skipped)</span>{% endif %}</span>
     <span class="lbl">Scenarios passed</span>
   </div>
   <div class="stat">

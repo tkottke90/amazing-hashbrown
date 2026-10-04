@@ -44,7 +44,7 @@ export { loadSuites, loadSuite } from './loader.js';
 export type { SuiteLoaderConfig } from './loader.js';
 
 // Runner
-export { runEval } from './runner.js';
+export { runEval, getScoredScenarios } from './runner.js';
 export type {
   RunConfig,
   RunResult,

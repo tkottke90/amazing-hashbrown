@@ -11,6 +11,7 @@ import {
   loadSuites,
   loadSuite,
   getFailureCategory,
+  getScoredScenarios,
   type Suite,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
@@ -374,9 +375,13 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       return acc;
     }, {});
 
+    const scored = getScoredScenarios(run);
+    const skipped = run.totalScenarios - scored;
+    const skipNote = skipped > 0 ? ` (${skipped} skipped)` : '';
+
     console.log(`\n${icon} ${status} — ${run.suiteId}`);
     console.log(
-      `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${run.totalScenarios} scenarios)`,
+      `  Pass rate: ${(run.passRate * 100).toFixed(1)}%  (${run.passedScenarios}/${scored} scenarios)${skipNote}`,
     );
     const categoryLine = formatFailureCategoryCounts(failureCategoryCounts);
     if (categoryLine) console.log(`  ⚠ ${categoryLine}`);

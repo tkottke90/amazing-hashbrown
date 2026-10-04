@@ -13,14 +13,15 @@ import {
 
 // schema_migrations is one shared table across every store on the shared db
 // connection (see BaseStore.runMigrations) — version numbers must be unique
-// across the whole app, not just within this file. Known versions in use
-// elsewhere: 1 (ObservabilityStore), 2 (CostStore), 4 (ThreadStore),
-// 5 (ObservabilityStore), 7 (ObservabilityStore, system_prompt column).
-// Check every *.MIGRATIONS array in the repo before picking the next number
-// here — don't just increment the last one in this file.
+// across the whole app, not just within this file. Versions 9-36 are in use
+// across api/src/services/*-store.ts and lib/observability/src/*.ts (e.g.
+// observability's own version 9, workspace-store.ts's version 36 as of this
+// writing). Check every *.MIGRATIONS array in the repo before picking the
+// next number here — don't just increment the last one in this file.
 // Version 3: EvaluationsStore (eval_runs/eval_results)
 // Version 6: EvaluationsStore judge_calibrations
 // Version 8: EvaluationsStore eval_runs.system_prompt column
+// Version 37: EvaluationsStore eval_runs.scored_scenarios column
 const MIGRATIONS: DbMigration[] = [
   {
     version: 3,
@@ -86,6 +87,16 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE eval_runs ADD COLUMN system_prompt TEXT;
     `,
   },
+  {
+    // Surfaces the scorable-scenario denominator passRate was actually
+    // computed from (see runner.ts's computeRunSummary / getScoredScenarios).
+    // Nullable, no backfill: existing rows read back as NULL and fall through
+    // getScoredScenarios() to totalScenarios, same as pre-existing YAML files.
+    version: 37,
+    sql: `
+      ALTER TABLE eval_runs ADD COLUMN scored_scenarios INTEGER;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -103,6 +114,7 @@ const RawEvalRunSchema = z
     passed: z.number().transform(Boolean),
     pass_rate: z.number(),
     total_scenarios: z.number(),
+    scored_scenarios: z.number().nullable(),
     passed_scenarios: z.number(),
     total_latency_ms: z.number(),
     estimated_cost_usd: z.number(),
@@ -118,6 +130,7 @@ const RawEvalRunSchema = z
     passed: row.passed,
     passRate: row.pass_rate,
     totalScenarios: row.total_scenarios,
+    scoredScenarios: row.scored_scenarios ?? undefined,
     passedScenarios: row.passed_scenarios,
     totalLatencyMs: row.total_latency_ms,
     estimatedCostUsd: row.estimated_cost_usd,
@@ -232,9 +245,9 @@ export class EvaluationsStore extends BaseStore {
     const insertRun = this.db.prepare(
       `INSERT INTO eval_runs
          (run_id, suite_id, model, judge_model, started_at, ended_at,
-          passed, pass_rate, total_scenarios, passed_scenarios,
+          passed, pass_rate, total_scenarios, scored_scenarios, passed_scenarios,
           total_latency_ms, estimated_cost_usd, system_prompt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertResult = this.db.prepare(
@@ -255,6 +268,7 @@ export class EvaluationsStore extends BaseStore {
         run.passed ? 1 : 0,
         run.passRate,
         run.totalScenarios,
+        run.scoredScenarios ?? null,
         run.passedScenarios,
         run.totalLatencyMs,
         run.estimatedCostUsd,

@@ -74,6 +74,24 @@ describe('EvaluationsStore', () => {
       assert.equal(found, null);
     });
 
+    it('round-trips scoredScenarios as undefined when not set (pre-migration row)', () => {
+      const run = makeRun();
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.ok(found);
+      assert.equal(found.scoredScenarios, undefined);
+    });
+
+    it('round-trips a given scoredScenarios value exactly', () => {
+      const run = makeRun({ totalScenarios: 4, scoredScenarios: 3 });
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const found = store.findRunById(run.id);
+      assert.ok(found);
+      assert.equal(found.scoredScenarios, 3);
+    });
+
     it('round-trips a non-null systemPrompt', () => {
       const run = makeRun({ systemPrompt: 'You have no built-in memory of this specific user.' });
       store.saveRun(run, [makeResult(run.id)]);

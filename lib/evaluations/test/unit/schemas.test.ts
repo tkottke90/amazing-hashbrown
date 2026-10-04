@@ -693,6 +693,16 @@ describe('EvalRunSchema', () => {
     const result = EvalRunSchema.parse({ ...minimalRun, systemPrompt: null });
     assert.equal(result.systemPrompt, null);
   });
+
+  it('parses without scoredScenarios (pre-existing YAML/DB results)', () => {
+    const result = EvalRunSchema.parse(minimalRun);
+    assert.equal(result.scoredScenarios, undefined);
+  });
+
+  it('accepts a scoredScenarios value', () => {
+    const result = EvalRunSchema.parse({ ...minimalRun, scoredScenarios: 1 });
+    assert.equal(result.scoredScenarios, 1);
+  });
 });
 
 describe('JsonOf helper', () => {
