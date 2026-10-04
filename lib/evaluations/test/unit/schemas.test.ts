@@ -331,7 +331,11 @@ describe('LlmJudgeScenarioSchema', () => {
       turns: [{ user: 'x' }, { tool: 'wiki_search', result: { text: 'found it' } }],
     });
     assert.equal(result.turns?.length, 2);
-    assert.deepEqual(result.turns?.[1], { tool: 'wiki_search', args: {}, result: { text: 'found it' } });
+    assert.deepEqual(result.turns?.[1], {
+      tool: 'wiki_search',
+      args: {},
+      result: { text: 'found it' },
+    });
   });
 
   it('accepts multiple chained tool turns after the opening user turn [unit]', () => {
@@ -403,7 +407,11 @@ describe('ToolSequenceScenarioSchema', () => {
     });
     assert.equal(result.minScore, 1);
     assert.equal(result.argChecks, undefined);
-    assert.deepEqual(result.turns[1], { tool: 'generate_image', args: {}, result: { imageBase64: 'abc' } });
+    assert.deepEqual(result.turns[1], {
+      tool: 'generate_image',
+      args: {},
+      result: { imageBase64: 'abc' },
+    });
   });
 
   it('accepts explicit tool-turn args and multiple chained turns [unit]', () => {
@@ -422,7 +430,7 @@ describe('ToolSequenceScenarioSchema', () => {
     assert.equal(result.turns.length, 3);
   });
 
-  it('accepts a reply turn placed after the tool turns it answers (issue #235\'s actual fix) [unit]', () => {
+  it("accepts a reply turn placed after the tool turns it answers (issue #235's actual fix) [unit]", () => {
     const result = ToolSequenceScenarioSchema.parse({
       id: 'x',
       name: 'x',
@@ -430,7 +438,11 @@ describe('ToolSequenceScenarioSchema', () => {
       type: 'tool-sequence',
       turns: [
         { user: 'Create a project "Ship Homepage Redesign"...' },
-        { tool: 'ask_user', args: { question: 'Create project...?' }, result: { text: 'User answered: yes' } },
+        {
+          tool: 'ask_user',
+          args: { question: 'Create project...?' },
+          result: { text: 'User answered: yes' },
+        },
         { user: 'Yep, go ahead.' },
       ],
       tool: 'create_project',
@@ -459,10 +471,7 @@ describe('ToolSequenceScenarioSchema', () => {
         name: 'x',
         purpose: 'x',
         type: 'tool-sequence',
-        turns: [
-          { tool: 'generate_image', result: { imageBase64: 'abc' } },
-          { user: 'x' },
-        ],
+        turns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }, { user: 'x' }],
         tool: 'upload_image',
       }),
     );

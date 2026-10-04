@@ -27,7 +27,7 @@ For `DeterministicScenarioSchema`, `LlmJudgeScenarioSchema`, and
 
 - `priorTurns` is removed.
 - `turns: Turn[]` is added — an ordered list of `{ user }` | `{ tool, args,
-  result }` entries, replacing the `input` + `priorTurns` split. `turns[0]`
+result }` entries, replacing the `input` + `priorTurns` split. `turns[0]`
   must be a `{ user }` entry (schema-level `.superRefine`, per the issue's
   "Consider rejecting..." note — some providers' chat templates reject a
   conversation opening with an assistant tool call).
@@ -37,7 +37,7 @@ For `DeterministicScenarioSchema`, `LlmJudgeScenarioSchema`, and
   `llm-judge` (both optional alone, XOR enforced by `.superRefine`).
   `tool-sequence` requires `turns` unconditionally (it always represents
   "a conversation already in progress" — same requirement `priorTurns.
-  min(1)` enforced before).
+min(1)` enforced before).
 
 `turns` is NOT added to `tool-call`/`semantic`/`structured`/`human` — none
 of them ever seeded history, and the issue's scope is specifically the three
@@ -62,8 +62,8 @@ just the issue's affected list), mechanically convert:
 input: 'X'
 priorTurns:
   - tool: foo
-    args: {...}
-    result: {...}
+    args: { ... }
+    result: { ... }
 ```
 
 into:
@@ -72,8 +72,8 @@ into:
 turns:
   - user: 'X'
   - tool: foo
-    args: {...}
-    result: {...}
+    args: { ... }
+    result: { ... }
 ```
 
 This is order-preserving — `buildTurnMessages(turns)` on the migrated form

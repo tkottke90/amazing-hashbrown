@@ -33,7 +33,9 @@ async function loadFromDir(dir: string, map: Map<string, Suite>): Promise<void> 
     for (const scenario of result.data.scenarios) {
       const violation = validateScenarioTurns(scenario);
       if (violation) {
-        throw new Error(`Invalid suite definition in ${filePath}, scenario "${scenario.id}": ${violation}`);
+        throw new Error(
+          `Invalid suite definition in ${filePath}, scenario "${scenario.id}": ${violation}`,
+        );
       }
     }
     map.set(result.data.suite.id, result.data);

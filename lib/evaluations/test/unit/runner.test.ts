@@ -178,7 +178,10 @@ describe('messagesToConversation (issue #235 — full-transcript reporting)', ()
   it('maps each message kind to its conversation role', () => {
     const entries = messagesToConversation([
       new HumanMessage('hi'),
-      new AIMessage({ content: '', tool_calls: [{ id: '1', name: 'wiki_search', args: { q: 'x' } }] }),
+      new AIMessage({
+        content: '',
+        tool_calls: [{ id: '1', name: 'wiki_search', args: { q: 'x' } }],
+      }),
       new ToolMessage({ tool_call_id: '1', content: '{"text":"found"}' }),
       new AIMessage('here you go'),
     ]);
@@ -198,7 +201,10 @@ describe('withSystemPrompt', () => {
   });
 
   it('returns message-array input unchanged when no systemPrompt is given', () => {
-    const messages = buildTurnMessages([{ user: 'x' }, { tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const messages = buildTurnMessages([
+      { user: 'x' },
+      { tool: 'tool_a', args: {}, result: { out: 'a' } },
+    ]);
     assert.equal(withSystemPrompt(messages), messages);
   });
 
@@ -213,7 +219,10 @@ describe('withSystemPrompt', () => {
   });
 
   it('prepends a SystemMessage ahead of existing messages when systemPrompt is given', () => {
-    const messages = buildTurnMessages([{ user: 'x' }, { tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const messages = buildTurnMessages([
+      { user: 'x' },
+      { tool: 'tool_a', args: {}, result: { out: 'a' } },
+    ]);
     const result = withSystemPrompt(messages, 'be nice') as (typeof messages)[number][];
     assert.equal(result.length, messages.length + 1);
     assert.ok(result[0] instanceof SystemMessage);
@@ -1300,7 +1309,10 @@ describe('computeRunSummary', () => {
 // tool call, then a plain text answer) rather than the same thing every
 // time (unlike makeReplyingModel/makeCapturingBindToolsModel above).
 function makeSequencedBindToolsModel(
-  responses: Array<{ toolCalls?: Array<{ name: string; args: Record<string, unknown> }>; content: string }>,
+  responses: Array<{
+    toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
+    content: string;
+  }>,
 ): { model: BaseChatModel; getInputs: () => unknown[] } {
   let i = 0;
   const inputs: unknown[] = [];
@@ -1311,7 +1323,11 @@ function makeSequencedBindToolsModel(
         const next = responses[i] ?? responses[responses.length - 1]!;
         i++;
         return {
-          tool_calls: (next.toolCalls ?? []).map((c, idx) => ({ id: `seq-${idx}`, name: c.name, args: c.args })),
+          tool_calls: (next.toolCalls ?? []).map((c, idx) => ({
+            id: `seq-${idx}`,
+            name: c.name,
+            args: c.args,
+          })),
           content: next.content,
         };
       },
@@ -1436,7 +1452,10 @@ describe('executeScenario — steps (issue #235 (b), multi-step conversations)',
       purpose: 'p',
       type: 'tool-sequence',
       steps: [
-        { user: 'find the engineering wiki', mocks: { wiki_locate: { text: 'Matched domain: engineering.' } } },
+        {
+          user: 'find the engineering wiki',
+          mocks: { wiki_locate: { text: 'Matched domain: engineering.' } },
+        },
         { user: 'now search it for "deploy"' },
       ],
       tool: 'wiki_search',
@@ -1447,7 +1466,11 @@ describe('executeScenario — steps (issue #235 (b), multi-step conversations)',
       { toolCalls: [{ name: 'wiki_locate', args: {} }], content: '' },
       { toolCalls: [{ name: 'wiki_search', args: { query: 'deploy' } }], content: '' },
     ]);
-    const config: RunConfig = { ...makeRunConfig(), model, tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')] };
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
 
     const result = await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
 
@@ -1477,7 +1500,11 @@ describe('executeScenario — steps (issue #235 (b), multi-step conversations)',
       { toolCalls: [{ name: 'wiki_locate', args: {} }], content: '' },
       { toolCalls: [{ name: 'wiki_search', args: { query: 'deploy' } }], content: '' },
     ]);
-    const config: RunConfig = { ...makeRunConfig(), model, tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')] };
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
 
     // executeScenario's own try/catch turns this into a failed result
     // rather than propagating — assert on that, matching how every other
@@ -1501,7 +1528,10 @@ describe('migration equivalence (issue #235) — turns produces the same message
 
     assert.equal(migrated.length, 3);
     assert.ok(migrated[0] instanceof HumanMessage);
-    assert.equal(migrated[0].content, 'Please save this to my wiki: the deploy runbook is in #ops.');
+    assert.equal(
+      migrated[0].content,
+      'Please save this to my wiki: the deploy runbook is in #ops.',
+    );
     assert.ok(migrated[1] instanceof AIMessage);
     assert.ok(migrated[2] instanceof ToolMessage);
   });

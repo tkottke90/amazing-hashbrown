@@ -78,9 +78,13 @@ function userTurn<A extends z.ZodTypeAny>(assert: A) {
 // z.discriminatedUnion (ScenarioSchema, below) requires every member to be
 // a plain ZodObject so it can read `.shape.type` directly.
 function orderedTurns<T extends z.ZodTypeAny>(turn: T, minLength: number) {
-  return z.array(turn).min(minLength).refine((arr) => 'user' in arr[0]!, {
-    message: 'must start with a `user` entry — a conversation cannot open with a seeded tool call',
-  });
+  return z
+    .array(turn)
+    .min(minLength)
+    .refine((arr) => 'user' in (arr[0]! as object), {
+      message:
+        'must start with a `user` entry — a conversation cannot open with a seeded tool call',
+    });
 }
 
 export const DeterministicStepAssertSchema = z
@@ -353,22 +357,6 @@ export const EvalRunSchema = z.object({
   systemPrompt: z.string().nullable().optional(),
 });
 
-// One `steps` entry's outcome (issue #235 (b) — multi-step conversations).
-// `details` is deliberately typed as the *same* discriminated union a whole
-// ScenarioResult's `details` uses (via z.lazy, since that union is only
-// defined further down this file and TS/zod can't forward-reference it
-// directly) — a step's outcome is structurally the same "what happened, was
-// it right" shape a full scenario result already is, so this reuses it
-// rather than inventing a parallel shape.
-export const StepResultSchema = z.object({
-  index: z.number().int().min(0),
-  actualOutput: z.string(),
-  latencyMs: z.number(),
-  passed: z.boolean(),
-  score: z.number(),
-  details: z.lazy(() => ScenarioResultDetailsSchema),
-});
-
 // The full turn-by-turn transcript actually sent to and received from the
 // model for a `turns`/`steps` scenario — populated so the HTML report,
 // result YAML, and eval:compare can show exactly what the model saw at each
@@ -377,15 +365,29 @@ export const StepResultSchema = z.object({
 export const ConversationEntrySchema = z.object({
   role: z.enum(['user', 'assistant', 'tool']),
   content: z.string(),
-  toolCalls: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.unknown()) })).optional(),
+  toolCalls: z
+    .array(z.object({ name: z.string(), args: z.record(z.string(), z.unknown()) }))
+    .optional(),
 });
 
-const DeterministicDetails = z.object({
+// "Base" shape (no `steps` field) for the three detail types a `steps`
+// entry can actually produce (deterministic/llm-judge/tool-sequence are
+// the only scenario types `steps` exists on). StepResultSchema's `details`
+// is typed as a union of these bases, not the full ScenarioResultDetails
+// union below — a step's own details never recursively contains further
+// `steps` (runDeterministic/runLlmJudge/runToolSequence, which produce
+// these, never populate one), and typing it that way would make
+// StepResultSchema and ScenarioResultDetailsSchema mutually
+// self-referential at the TYPE level (TS7022/TS2454 — neither can finish
+// inferring its own type), not just at the schema-composition level z.lazy
+// normally resolves. Each full *Details type below is this base
+// `.extend()`-ed with `steps`, so the duplication is one line, not a
+// parallel shape.
+const DeterministicDetailsBase = z.object({
   type: z.literal('deterministic'),
   match: z.enum(['contains', 'exact', 'regex']),
   expected: z.string(),
   passed: z.boolean(),
-  steps: z.array(StepResultSchema).optional(),
 });
 
 const SemanticDetails = z.object({
@@ -403,14 +405,13 @@ const MalformedToolCallInfoSchema = z.object({
   raw: z.string(),
 });
 
-const LlmJudgeDetails = z.object({
+const LlmJudgeDetailsBase = z.object({
   type: z.literal('llm-judge'),
   score: z.number(),
   reasoning: z.string(),
   judgeModel: z.string(),
   biasRisk: z.boolean(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
-  steps: z.array(StepResultSchema).optional(),
 });
 
 const HumanDetails = z.object({
@@ -485,7 +486,7 @@ const ToolCallDetails = z.object({
   proseQuestion: ProseQuestionInfoSchema.optional(),
 });
 
-const ToolSequenceDetails = z.object({
+const ToolSequenceDetailsBase = z.object({
   type: z.literal('tool-sequence'),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
@@ -500,6 +501,30 @@ const ToolSequenceDetails = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+});
+
+// One `steps` entry's outcome (issue #235 (b) — multi-step conversations).
+// See the comment on DeterministicDetailsBase above for why `details` is
+// a union of the *Base schemas rather than the full ScenarioResultDetails
+// union.
+export const StepResultSchema = z.object({
+  index: z.number().int().min(0),
+  actualOutput: z.string(),
+  latencyMs: z.number(),
+  passed: z.boolean(),
+  score: z.number(),
+  details: z.union([DeterministicDetailsBase, LlmJudgeDetailsBase, ToolSequenceDetailsBase]),
+});
+
+const DeterministicDetails = DeterministicDetailsBase.extend({
+  steps: z.array(StepResultSchema).optional(),
+});
+
+const LlmJudgeDetails = LlmJudgeDetailsBase.extend({
+  steps: z.array(StepResultSchema).optional(),
+});
+
+const ToolSequenceDetails = ToolSequenceDetailsBase.extend({
   steps: z.array(StepResultSchema).optional(),
 });
 

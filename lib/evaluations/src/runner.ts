@@ -19,7 +19,6 @@ import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executo
 import type {
   EvalRun,
   ScenarioResult,
-  ScenarioResultDetails,
   Suite,
   Scenario,
   DeterministicScenario,
@@ -293,7 +292,11 @@ export function messagesToConversation(messages: BaseMessage[]): ConversationEnt
     }
     if (m instanceof AIMessage) {
       const toolCalls = (m.tool_calls ?? []).map((c) => ({ name: c.name, args: c.args }));
-      return { role: 'assistant', content: extractContent(m), ...(toolCalls.length ? { toolCalls } : {}) };
+      return {
+        role: 'assistant',
+        content: extractContent(m),
+        ...(toolCalls.length ? { toolCalls } : {}),
+      };
     }
     return { role: 'tool', content: extractContent(m) };
   });
@@ -335,7 +338,7 @@ async function runIntermediateSteps<TAssert>(
   scoreStep: (
     step: Step<TAssert>,
     response: StepResponse,
-  ) => Promise<{ passed: boolean; score: number; details: ScenarioResultDetails }>,
+  ) => Promise<{ passed: boolean; score: number; details: StepResult['details'] }>,
 ): Promise<{ messages: BaseMessage[]; stepResults: StepResult[] }> {
   let messages = initialMessages;
   const stepResults: StepResult[] = [];
@@ -347,7 +350,10 @@ async function runIntermediateSteps<TAssert>(
       name: call.name,
       args: call.args,
     }));
-    messages = [...messages, new AIMessage({ content: response.content, tool_calls: toolCallEntries })];
+    messages = [
+      ...messages,
+      new AIMessage({ content: response.content, tool_calls: toolCallEntries }),
+    ];
     for (const [i, call] of response.toolCalls.entries()) {
       const mockResult = step.mocks?.[call.name];
       if (!mockResult) {
@@ -357,7 +363,10 @@ async function runIntermediateSteps<TAssert>(
       }
       messages = [
         ...messages,
-        new ToolMessage({ tool_call_id: toolCallEntries[i]!.id, content: JSON.stringify(mockResult) }),
+        new ToolMessage({
+          tool_call_id: toolCallEntries[i]!.id,
+          content: JSON.stringify(mockResult),
+        }),
       ];
     }
     if (step.assert) {
@@ -661,7 +670,11 @@ export async function executeScenario(
             config.judgeModel,
             config.judgeModelId,
           );
-          return { passed: details.score >= step.assert!.minScore, score: details.score / 10, details };
+          return {
+            passed: details.score >= step.assert!.minScore,
+            score: details.score / 10,
+            details,
+          };
         };
         const seeded = s.turns ? buildTurnMessages(s.turns) : [];
         const intermediate = await runIntermediateSteps(
@@ -698,7 +711,8 @@ export async function executeScenario(
         (config.tools ?? []).map(toolName),
       );
       const judgeDetailsBase = malformedToolCall ? { ...details, malformedToolCall } : details;
-      const judgeDetails = stepResults.length > 0 ? { ...judgeDetailsBase, steps: stepResults } : judgeDetailsBase;
+      const judgeDetails =
+        stepResults.length > 0 ? { ...judgeDetailsBase, steps: stepResults } : judgeDetailsBase;
       const passed = details.score >= s.minScore && stepResults.every((r) => r.passed);
       return {
         ...baseResult,
@@ -923,12 +937,17 @@ export async function executeScenario(
             withSystemPrompt(msgs, finalSystemPrompt),
             toolsForCall,
           );
-          return { content: result.content, latencyMs: result.latencyMs, toolCalls: result.toolCalls };
+          return {
+            content: result.content,
+            latencyMs: result.latencyMs,
+            toolCalls: result.toolCalls,
+          };
         };
         const scoreStep = async (step: Step<ToolSequenceStepAssert>, response: StepResponse) => {
           const details = runToolSequence(step.assert!, response.toolCalls);
           return {
-            passed: details.toolCalled === step.assert!.tool && details.score >= step.assert!.minScore,
+            passed:
+              details.toolCalled === step.assert!.tool && details.score >= step.assert!.minScore,
             score: details.score,
             details,
           };
@@ -990,7 +1009,11 @@ export async function executeScenario(
       const details = stepResults.length > 0 ? { ...detailsBase, steps: stepResults } : detailsBase;
       const finalResponseMessage = new AIMessage({
         content,
-        tool_calls: toolCalls.map((c, i) => ({ id: `eval-final-${i}`, name: c.name, args: c.args })),
+        tool_calls: toolCalls.map((c, i) => ({
+          id: `eval-final-${i}`,
+          name: c.name,
+          args: c.args,
+        })),
       });
       return {
         ...baseResult,
