@@ -301,10 +301,17 @@ describe('agents/task-context', () => {
       new URL('../../../suites/scheduled-task-runs.yaml', import.meta.url),
     );
     const suite = parse(readFileSync(suitePath, 'utf-8')) as {
-      scenarios: { id: string; input: string }[];
+      scenarios: { id: string; input?: string; turns?: Array<{ user?: string }> }[];
     };
-    const inputOf = (id: string) =>
-      suite.scenarios.find((s) => s.id === id)?.input.replace(/\n+$/, '');
+    // A tool-sequence scenario (issue #235) has no plain `input` — its
+    // kickoff is the first `{ user }` turn instead, since `turns` always
+    // opens with one. Every scenario in this suite still starts with the
+    // same literal kickoff text either way.
+    const inputOf = (id: string) => {
+      const scenario = suite.scenarios.find((s) => s.id === id);
+      const raw = scenario?.input ?? scenario?.turns?.[0]?.user;
+      return raw?.replace(/\n+$/, '');
+    };
 
     // The run history both scenarios describe: this is manual run #3 of the
     // task; run #2 finished at 2026-09-19 09:00 UTC; run #1 before that.
