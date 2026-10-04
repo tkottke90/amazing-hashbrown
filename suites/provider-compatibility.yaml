@@ -28,9 +28,20 @@ scenarios:
     name: Model calls a tool with a single string argument via structured tool_calls
     purpose: >
       Confirms the provider can pass a simple string argument through
-      structured tool_calls, not just invoke a tool with no payload.
+      structured tool_calls, not just invoke a tool with no payload. Uses
+      "favorite color" deliberately — system-prompt.ts's own
+      WIKI_NAVIGATION_SECTION names this exact topic as the canonical
+      domain-exclusive example that skips wiki_locate, so a compliant
+      model goes straight to wiki_search regardless of provider. An
+      earlier version of this scenario used "morning routines," which
+      round 1 of the 2026-10-04 auto-eval run showed three of four
+      providers (Lemonade, Ornith, Digital Ocean) routing through
+      wiki_locate first — correctly, per the system prompt's own
+      "not domain-exclusive" rule. That made it a navigation-logic test
+      by accident, not the trivial transport test this scenario is meant
+      to be — don't revert to an ambiguous topic.
     type: tool-call
-    input: 'Search the knowledge base for anything about morning routines.'
+    input: 'Search the knowledge base for anything about my favorite color.'
     tool: wiki_search
     argChecks:
       - path: query
