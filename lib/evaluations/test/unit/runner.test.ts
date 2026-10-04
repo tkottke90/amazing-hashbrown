@@ -3,7 +3,8 @@ import { describe, it } from 'mocha';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import {
-  buildSeededMessages,
+  buildTurnMessages,
+  messagesToConversation,
   withSystemPrompt,
   extractToolCallData,
   executeScenario,
@@ -89,17 +90,19 @@ function makeSuite(scenarios: Suite['scenarios']): Suite {
   };
 }
 
-describe('buildSeededMessages', () => {
-  it('starts with a HumanMessage carrying the input', () => {
-    const messages = buildSeededMessages('generate a dragon', [
+describe('buildTurnMessages', () => {
+  it('turns a leading { user } entry into a HumanMessage', () => {
+    const messages = buildTurnMessages([
+      { user: 'generate a dragon' },
       { tool: 'generate_image', args: { prompt: 'a dragon' }, result: { imageBase64: 'abc' } },
     ]);
     assert.ok(messages[0] instanceof HumanMessage);
     assert.equal(messages[0].content, 'generate a dragon');
   });
 
-  it('appends one AIMessage(tool_call) + ToolMessage(result) pair per prior turn', () => {
-    const messages = buildSeededMessages('x', [
+  it('turns a { tool } entry into an AIMessage(tool_call) + ToolMessage(result) pair', () => {
+    const messages = buildTurnMessages([
+      { user: 'x' },
       { tool: 'generate_image', args: { prompt: 'a dragon' }, result: { imageBase64: 'abc' } },
     ]);
 
@@ -119,8 +122,9 @@ describe('buildSeededMessages', () => {
     assert.equal(toolMsg.content, JSON.stringify({ imageBase64: 'abc' }));
   });
 
-  it('chains multiple prior turns in order, each with a distinct tool_call_id', () => {
-    const messages = buildSeededMessages('x', [
+  it('chains multiple tool turns in order, each with a distinct tool_call_id', () => {
+    const messages = buildTurnMessages([
+      { user: 'x' },
       { tool: 'tool_a', args: { a: 1 }, result: { out: 'a' } },
       { tool: 'tool_b', args: { b: 2 }, result: { out: 'b' } },
     ]);
@@ -143,6 +147,51 @@ describe('buildSeededMessages', () => {
 
     assert.notEqual(aiA.tool_calls?.[0]?.id, aiB.tool_calls?.[0]?.id);
   });
+
+  it("places a reply after the tool turns it answers — issue #235's actual fix [unit]", () => {
+    // Before #235, a scenario like this always put the reply first, so the
+    // model saw the answer before the question it was answering.
+    const messages = buildTurnMessages([
+      { user: 'Create a project "Ship Homepage Redesign"...' },
+      {
+        tool: 'ask_user',
+        args: { question: 'Create project...?' },
+        result: { text: 'User answered: yes' },
+      },
+      { user: 'Yep, go ahead.' },
+    ]);
+
+    assert.equal(messages.length, 4);
+    assert.ok(messages[0] instanceof HumanMessage);
+    assert.equal(messages[0].content, 'Create a project "Ship Homepage Redesign"...');
+    assert.ok(messages[1] instanceof AIMessage);
+    assert.ok(messages[2] instanceof ToolMessage);
+    // The reply is the LAST message, after the tool call+result it answers
+    // — not the first, as buildSeededMessages (this function's
+    // predecessor) always produced regardless of what the YAML intended.
+    assert.ok(messages[3] instanceof HumanMessage);
+    assert.equal(messages[3].content, 'Yep, go ahead.');
+  });
+});
+
+describe('messagesToConversation (issue #235 — full-transcript reporting)', () => {
+  it('maps each message kind to its conversation role', () => {
+    const entries = messagesToConversation([
+      new HumanMessage('hi'),
+      new AIMessage({
+        content: '',
+        tool_calls: [{ id: '1', name: 'wiki_search', args: { q: 'x' } }],
+      }),
+      new ToolMessage({ tool_call_id: '1', content: '{"text":"found"}' }),
+      new AIMessage('here you go'),
+    ]);
+    assert.deepEqual(entries, [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: '', toolCalls: [{ name: 'wiki_search', args: { q: 'x' } }] },
+      { role: 'tool', content: '{"text":"found"}' },
+      { role: 'assistant', content: 'here you go' },
+    ]);
+  });
 });
 
 describe('withSystemPrompt', () => {
@@ -152,7 +201,10 @@ describe('withSystemPrompt', () => {
   });
 
   it('returns message-array input unchanged when no systemPrompt is given', () => {
-    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const messages = buildTurnMessages([
+      { user: 'x' },
+      { tool: 'tool_a', args: {}, result: { out: 'a' } },
+    ]);
     assert.equal(withSystemPrompt(messages), messages);
   });
 
@@ -167,7 +219,10 @@ describe('withSystemPrompt', () => {
   });
 
   it('prepends a SystemMessage ahead of existing messages when systemPrompt is given', () => {
-    const messages = buildSeededMessages('x', [{ tool: 'tool_a', args: {}, result: { out: 'a' } }]);
+    const messages = buildTurnMessages([
+      { user: 'x' },
+      { tool: 'tool_a', args: {}, result: { out: 'a' } },
+    ]);
     const result = withSystemPrompt(messages, 'be nice') as (typeof messages)[number][];
     assert.equal(result.length, messages.length + 1);
     assert.ok(result[0] instanceof SystemMessage);
@@ -304,7 +359,7 @@ describe('executeScenario — llm-judge', () => {
     };
   }
 
-  it('invokes the model with the plain string input when neither systemPrompt nor priorTurns is set', async () => {
+  it('invokes the model with the plain string input when neither systemPrompt nor turns is set', async () => {
     const scenario = makeScenario();
     const suite = makeSuite([scenario]);
     const { model, getLastInput } = makeCapturingModel('I have nothing on you yet.');
@@ -340,9 +395,13 @@ describe('executeScenario — llm-judge', () => {
     assert.equal(input[1].content, 'what do you know about me?');
   });
 
-  it('seeds priorTurns into the conversation before invoking', async () => {
+  it('seeds turns into the conversation before invoking', async () => {
     const scenario = makeScenario({
-      priorTurns: [{ tool: 'wiki_search', args: { query: 'q' }, result: { text: 'found it' } }],
+      input: undefined,
+      turns: [
+        { user: 'what do you know about me?' },
+        { tool: 'wiki_search', args: { query: 'q' }, result: { text: 'found it' } },
+      ],
     });
     const suite = makeSuite([scenario]);
     const { model, getLastInput } = makeCapturingModel('Here is what I found.');
@@ -365,7 +424,11 @@ describe('executeScenario — llm-judge', () => {
 
   it('does not bind tools for llm-judge, even when config.tools is set', async () => {
     const scenario = makeScenario({
-      priorTurns: [{ tool: 'wiki_search', args: {}, result: { text: 'found it' } }],
+      input: undefined,
+      turns: [
+        { user: 'what do you know about me?' },
+        { tool: 'wiki_search', args: {}, result: { text: 'found it' } },
+      ],
     });
     const suite = makeSuite([scenario]);
     const { model, getLastInput } = makeCapturingModel('Here is what I found.');
@@ -675,8 +738,11 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
       name: 'Gated tool-sequence scenario',
       purpose: 'Testing',
       type: 'tool-sequence',
-      input: 'Yes, that looks right.',
-      priorTurns: [{ tool: 'ask_user', args: { question: 'confirm?' }, result: { text: 'yes' } }],
+      turns: [
+        { user: 'confirm?' },
+        { tool: 'ask_user', args: { question: 'confirm?' }, result: { text: 'yes' } },
+        { user: 'Yes, that looks right.' },
+      ],
       tool: GATED.name as string,
       minScore: 1,
       gatedSkill: 'fake-skill',
@@ -773,8 +839,11 @@ describe('executeScenario — malformed tool call / prose question detection (is
       name: 'Malformed tool call tool-sequence scenario',
       purpose: 'Testing',
       type: 'tool-sequence',
-      input: 'Great, now search that domain for coffee.',
-      priorTurns: [{ tool: 'wiki_locate', args: {}, result: { text: 'Matched domain: user.' } }],
+      turns: [
+        { user: 'Locate the right domain, then search it for coffee.' },
+        { tool: 'wiki_locate', args: {}, result: { text: 'Matched domain: user.' } },
+        { user: 'Great, now search that domain for coffee.' },
+      ],
       tool: 'wiki_search',
       minScore: 1,
       ...overrides,
@@ -1231,5 +1300,239 @@ describe('computeRunSummary', () => {
       };
       assert.equal(getScoredScenarios(legacyRun), 3);
     });
+  });
+});
+
+// A tools-bound model that returns a different canned response on each
+// successive invoke() call — needed for the multi-step (`steps`) tests
+// below, where the model must respond differently at each step (first a
+// tool call, then a plain text answer) rather than the same thing every
+// time (unlike makeReplyingModel/makeCapturingBindToolsModel above).
+function makeSequencedBindToolsModel(
+  responses: Array<{
+    toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
+    content: string;
+  }>,
+): { model: BaseChatModel; getInputs: () => unknown[] } {
+  let i = 0;
+  const inputs: unknown[] = [];
+  const model = {
+    bindTools: () => ({
+      invoke: async (input: unknown) => {
+        inputs.push(input);
+        const next = responses[i] ?? responses[responses.length - 1]!;
+        i++;
+        return {
+          tool_calls: (next.toolCalls ?? []).map((c, idx) => ({
+            id: `seq-${idx}`,
+            name: c.name,
+            args: c.args,
+          })),
+          content: next.content,
+        };
+      },
+    }),
+  } as unknown as BaseChatModel;
+  return { model, getInputs: () => inputs };
+}
+
+describe('executeScenario — turns ordering regression (issue #235)', () => {
+  it('invokes the model with the reply after the tool turn it answers, not before', async () => {
+    const scenario: ToolSequenceScenario = {
+      id: 'cwp-006-regression',
+      name: 'Confirms before creating a project',
+      purpose: 'p',
+      type: 'tool-sequence',
+      turns: [
+        { user: 'Create a project "Ship Homepage Redesign".' },
+        {
+          tool: 'ask_user',
+          args: { question: 'Create project "Ship Homepage Redesign"?' },
+          result: { text: 'User answered: yes' },
+        },
+        { user: 'Yep, go ahead.' },
+      ],
+      tool: 'create_project',
+      minScore: 1,
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel('create_project');
+    const config: RunConfig = { ...makeRunConfig(), model, tools: [fakeTool('create_project')] };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as unknown[];
+    assert.ok(Array.isArray(input));
+    assert.equal(input.length, 4);
+    assert.ok(input[0] instanceof HumanMessage);
+    assert.equal((input[0] as HumanMessage).content, 'Create a project "Ship Homepage Redesign".');
+    assert.ok(input[1] instanceof AIMessage);
+    assert.ok(input[2] instanceof ToolMessage);
+    // The reply is the LAST message the model actually sees — the bug
+    // #235 fixed put it first instead.
+    assert.ok(input[3] instanceof HumanMessage);
+    assert.equal((input[3] as HumanMessage).content, 'Yep, go ahead.');
+  });
+});
+
+describe('executeScenario — steps (issue #235 (b), multi-step conversations)', () => {
+  it('deterministic: scores an intermediate step with its own assert, then the final step with the top-level fields', async () => {
+    const scenario: DeterministicScenario = {
+      id: 'multi-det-1',
+      name: 'Multi-step deterministic',
+      purpose: 'p',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'final answer',
+      steps: [
+        { user: 'first question', assert: { match: 'contains', expected: 'intermediate answer' } },
+        { user: 'second question' },
+      ],
+    };
+    const suite = makeSuite([scenario]);
+    let call = 0;
+    const model = {
+      invoke: async () => {
+        call++;
+        return { content: call === 1 ? 'intermediate answer here' : 'the final answer is this' };
+      },
+    } as unknown as BaseChatModel;
+    const config: RunConfig = { ...makeRunConfig(), model };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.equal(result.passed, true);
+    assert.equal(result.actualOutput, 'the final answer is this');
+    assert.ok(result.details.type === 'deterministic');
+    if (result.details.type === 'deterministic') {
+      assert.equal(result.details.steps?.length, 1);
+      assert.equal(result.details.steps?.[0]?.passed, true);
+      assert.equal(result.details.steps?.[0]?.index, 0);
+    }
+    // conversation carries both steps' turns plus both responses.
+    assert.equal(result.conversation?.length, 4);
+  });
+
+  it('deterministic: an intermediate step failing its assert fails the whole scenario, but the final step still runs', async () => {
+    const scenario: DeterministicScenario = {
+      id: 'multi-det-2',
+      name: 'Multi-step deterministic, failing intermediate',
+      purpose: 'p',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'final answer',
+      steps: [
+        { user: 'first question', assert: { match: 'contains', expected: 'never appears' } },
+        { user: 'second question' },
+      ],
+    };
+    const suite = makeSuite([scenario]);
+    const model = {
+      invoke: async () => ({ content: 'the final answer is this' }),
+    } as unknown as BaseChatModel;
+    const config: RunConfig = { ...makeRunConfig(), model };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    // Continue-on-failure (issue #235's resolved design question): the
+    // final step still ran and still matched, but the overall scenario
+    // fails because the intermediate step's assert didn't.
+    assert.equal(result.passed, false);
+    assert.ok(result.details.type === 'deterministic');
+    if (result.details.type === 'deterministic') {
+      assert.equal(result.details.passed, true); // final-step assertion alone
+      assert.equal(result.details.steps?.[0]?.passed, false);
+    }
+  });
+
+  it('tool-sequence: feeds a mocked tool result back so the conversation can continue past an intermediate tool call', async () => {
+    const scenario: ToolSequenceScenario = {
+      id: 'multi-ts-1',
+      name: 'Multi-step tool-sequence with a mocked intermediate tool call',
+      purpose: 'p',
+      type: 'tool-sequence',
+      steps: [
+        {
+          user: 'find the engineering wiki',
+          mocks: { wiki_locate: { text: 'Matched domain: engineering.' } },
+        },
+        { user: 'now search it for "deploy"' },
+      ],
+      tool: 'wiki_search',
+      minScore: 1,
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getInputs } = makeSequencedBindToolsModel([
+      { toolCalls: [{ name: 'wiki_locate', args: {} }], content: '' },
+      { toolCalls: [{ name: 'wiki_search', args: { query: 'deploy' } }], content: '' },
+    ]);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.details.type === 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.equal(result.details.toolCalled, 'wiki_search');
+    }
+    // Second invocation's messages must include a ToolMessage synthesized
+    // from the mock, standing in for wiki_locate's real result.
+    const secondCallMessages = getInputs()[1] as unknown[];
+    assert.ok(secondCallMessages.some((m) => m instanceof ToolMessage));
+  });
+
+  it('tool-sequence: throws when an intermediate step calls a tool with no matching mock', async () => {
+    const scenario: ToolSequenceScenario = {
+      id: 'multi-ts-2',
+      name: 'Multi-step tool-sequence with an unmocked intermediate tool call',
+      purpose: 'p',
+      type: 'tool-sequence',
+      steps: [{ user: 'find the engineering wiki' }, { user: 'now search it for "deploy"' }],
+      tool: 'wiki_search',
+      minScore: 1,
+    };
+    const suite = makeSuite([scenario]);
+    const { model } = makeSequencedBindToolsModel([
+      { toolCalls: [{ name: 'wiki_locate', args: {} }], content: '' },
+      { toolCalls: [{ name: 'wiki_search', args: { query: 'deploy' } }], content: '' },
+    ]);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
+
+    // executeScenario's own try/catch turns this into a failed result
+    // rather than propagating — assert on that, matching how every other
+    // scenario-execution error already behaves (see the catch block at the
+    // bottom of executeScenario).
+    const result = await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+    assert.equal(result.passed, false);
+    assert.match(result.actualOutput, /no mocks\["wiki_locate"\] entry/);
+  });
+});
+
+describe('migration equivalence (issue #235) — turns produces the same messages buildSeededMessages used to', () => {
+  it('a correctly-ordered migrated scenario (input first, then its old priorTurns) is unaffected', () => {
+    // This is exactly what the migration script does to every scenario
+    // NOT on issue #235's affected list: `input` becomes the first `user`
+    // entry, followed by the old `priorTurns`, unchanged and in order.
+    const migrated = buildTurnMessages([
+      { user: 'Please save this to my wiki: the deploy runbook is in #ops.' },
+      { tool: 'wiki_search', args: { query: 'ops' }, result: { text: 'no existing page' } },
+    ]);
+
+    assert.equal(migrated.length, 3);
+    assert.ok(migrated[0] instanceof HumanMessage);
+    assert.equal(
+      migrated[0].content,
+      'Please save this to my wiki: the deploy runbook is in #ops.',
+    );
+    assert.ok(migrated[1] instanceof AIMessage);
+    assert.ok(migrated[2] instanceof ToolMessage);
   });
 });

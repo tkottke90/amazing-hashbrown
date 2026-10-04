@@ -95,6 +95,39 @@
       {% if sc.runA and sc.runB %}
       <tr>
         <td colspan="8" style="padding-top:0;padding-bottom:0.5rem">
+          {% if (sc.runA.conversation and sc.runA.conversation.length) or (sc.runB.conversation and sc.runB.conversation.length) %}
+          <details>
+            <summary>Conversation (seeded + live, in order — issue #235)</summary>
+            <div class="detail-panel" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+              <div>
+                <h3>Run A</h3>
+                {% if sc.runA.conversation and sc.runA.conversation.length %}
+                <div class="conversation-transcript">
+                  {% for entry in sc.runA.conversation %}
+                    <div class="conversation-entry conversation-entry-{{ entry.role }}">
+                      <span class="badge badge-type">{{ entry.role }}</span>
+                      {% if entry.content %}<pre>{{ entry.content }}</pre>{% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+                {% else %}—{% endif %}
+              </div>
+              <div>
+                <h3>Run B</h3>
+                {% if sc.runB.conversation and sc.runB.conversation.length %}
+                <div class="conversation-transcript">
+                  {% for entry in sc.runB.conversation %}
+                    <div class="conversation-entry conversation-entry-{{ entry.role }}">
+                      <span class="badge badge-type">{{ entry.role }}</span>
+                      {% if entry.content %}<pre>{{ entry.content }}</pre>{% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+                {% else %}—{% endif %}
+              </div>
+            </div>
+          </details>
+          {% endif %}
           {% if sc.runA.details.type === 'llm-judge' or sc.runB.details.type === 'llm-judge' %}
           <details>
             <summary>Judge reasoning</summary>

@@ -35,8 +35,8 @@ scenarios:
       Given wiki_locate already returned a clean match, confirms the next
       call is wiki_orient on that exact domain.
     type: tool-sequence
-    input: 'What do we already know in the knowledge base before I ask my question?'
-    priorTurns:
+    turns:
+      - user: 'What do we already know in the knowledge base before I ask my question?'
       - tool: wiki_locate
         args: { context: 'personal preferences' }
         result:
@@ -56,8 +56,8 @@ scenarios:
       page, confirms the agent reads that specific page rather than
       re-searching or guessing.
     type: tool-sequence
-    input: 'What do I prefer for my morning routine?'
-    priorTurns:
+    turns:
+      - user: 'What do I prefer for my morning routine?'
       - tool: wiki_locate
         args: { context: 'morning routine preferences' }
         result:
@@ -85,8 +85,8 @@ scenarios:
       Given wiki_locate returns tied candidates, confirms the agent asks
       the user to disambiguate rather than picking one arbitrarily.
     type: tool-sequence
-    input: 'Look into the knowledge base for this and get back to me.'
-    priorTurns:
+    turns:
+      - user: 'Look into the knowledge base for this and get back to me.'
       - tool: wiki_locate
         args: { context: 'training and fitness scheduling' }
         result:
@@ -134,8 +134,8 @@ scenarios:
     # schema's own default. If this still fails after a real eval run,
     # iterate the section wording, not this scenario.
     type: llm-judge
-    input: 'Search the knowledge base for information about deep-sea marine biology research.'
-    priorTurns:
+    turns:
+      - user: 'Search the knowledge base for information about deep-sea marine biology research.'
       - tool: wiki_locate
         args: { context: 'deep-sea marine biology research' }
         # Matches wiki-locate.tool.ts's real no-match response format exactly
@@ -188,8 +188,8 @@ scenarios:
       available") — that was a stricter requirement than the tool's
       own contract, not a real gap.
     type: tool-sequence
-    input: 'Check the archive wiki for anything relevant.'
-    priorTurns:
+    turns:
+      - user: 'Check the archive wiki for anything relevant.'
       - tool: wiki_orient
         args: { wikiId: 'archive' }
         result:
@@ -259,8 +259,8 @@ scenarios:
       request, so once the tie is narrowed the correct next call is a
       scoped wiki_search, not a wiki_orient detour.
     type: tool-sequence
-    input: 'What have I told you I prefer for my morning routine?'
-    priorTurns:
+    turns:
+      - user: 'What have I told you I prefer for my morning routine?'
       - tool: wiki_locate
         args: { context: 'morning routine preferences' }
         result:
@@ -360,8 +360,8 @@ scenarios:
       the existing page rather than creating a duplicate, once it has
       enough information to do so.
     type: tool-sequence
-    input: 'Update that page — I actually work from home three days a week now, not two.'
-    priorTurns:
+    turns:
+      - user: 'What does my work-from-home schedule look like?'
       - tool: wiki_locate
         args: { context: 'work schedule' }
         result:
@@ -380,6 +380,7 @@ scenarios:
           {
             text: '# Work Schedule\n\nType: entity\nTags: work\n\nWorks 9-5 Monday through Friday, working from home two days a week.',
           }
+      - user: 'Update that page — I actually work from home three days a week now, not two.'
     tool: wiki_update_page
     argChecks:
       - path: wikiId
@@ -398,8 +399,8 @@ scenarios:
       existing page. Companion to wnav-011 — same "deferred pending write
       tools" origin, see that scenario's purpose note.
     type: tool-sequence
-    input: 'Add a note that I just started learning to play the violin.'
-    priorTurns:
+    turns:
+      - user: 'Add a note that I just started learning to play the violin.'
       - tool: wiki_locate
         args: { context: 'hobbies' }
         result:
@@ -429,8 +430,8 @@ scenarios:
       wiki_search gaining a wikiId parameter — as opposed to wnav-009, which
       only covers the narrower multi-candidate tie-break edge case.
     type: tool-sequence
-    input: 'What programming languages do I use most at work?'
-    priorTurns:
+    turns:
+      - user: 'What programming languages do I use most at work?'
       - tool: wiki_locate
         args: { context: 'programming languages used at work' }
         result:

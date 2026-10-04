@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import { readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { SuiteSchema, type Suite } from './schemas.js';
+import { SuiteSchema, validateScenarioTurns, type Suite } from './schemas.js';
 
 export interface SuiteLoaderConfig {
   bundledPath: string;
@@ -29,6 +29,14 @@ async function loadFromDir(dir: string, map: Map<string, Suite>): Promise<void> 
       throw new Error(
         `Invalid suite definition in ${filePath}:\n${result.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')}`,
       );
+    }
+    for (const scenario of result.data.scenarios) {
+      const violation = validateScenarioTurns(scenario);
+      if (violation) {
+        throw new Error(
+          `Invalid suite definition in ${filePath}, scenario "${scenario.id}": ${violation}`,
+        );
+      }
     }
     map.set(result.data.suite.id, result.data);
   }

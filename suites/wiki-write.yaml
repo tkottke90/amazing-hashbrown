@@ -52,8 +52,8 @@ scenarios:
       here (contrast wwrite-004's purpose, where the same disposition
       reproduced consistently for Qwen even with an exhaustive index).
     type: tool-sequence
-    input: 'Draft a wiki page for "home network topology" and show me what it would look like — don''t save it yet.'
-    priorTurns:
+    turns:
+      - user: 'Draft a wiki page for "home network topology" and show me what it would look like — don''t save it yet.'
       - tool: wiki_locate
         args: { context: 'home network topology' }
         result:
@@ -86,8 +86,8 @@ scenarios:
       Added alongside issue #79 (see
       docs/superpowers/specs/2026-08-26-project-wiki-write-restriction-design.md).
     type: tool-sequence
-    input: 'Okay, use the right one then.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to the other-project-wiki as "Deploy Notes": deploy steps for the staging environment.'
       - tool: wiki_create_page
         args:
           {
@@ -100,6 +100,7 @@ scenarios:
           {
             text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
           }
+      - user: 'Okay, use the right one then.'
     tool: wiki_create_page
     argChecks:
       - path: wikiId
@@ -114,8 +115,8 @@ scenarios:
       the retried call rather than only apologizing or repeating the same
       rejected wikiId.
     type: tool-sequence
-    input: 'Right, try that again on the correct wiki.'
-    priorTurns:
+    turns:
+      - user: 'Can you update entities/deploy-notes.md on the other-project-wiki to say: updated deploy steps for the staging environment?'
       - tool: wiki_update_page
         args:
           {
@@ -127,6 +128,7 @@ scenarios:
           {
             text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
           }
+      - user: 'Right, try that again on the correct wiki.'
     tool: wiki_update_page
     argChecks:
       - path: wikiId
@@ -143,8 +145,8 @@ scenarios:
       differs from wiki_create_page/wiki_update_page (fromPage/toPage
       instead of content).
     type: tool-sequence
-    input: 'Okay, add that link on the correct wiki instead.'
-    priorTurns:
+    turns:
+      - user: 'Can you link entities/deploy-notes.md to entities/staging-environment.md on the other-project-wiki wiki?'
       - tool: wiki_add_cross_link
         args:
           {
@@ -156,6 +158,7 @@ scenarios:
           {
             text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
           }
+      - user: 'Okay, add that link on the correct wiki instead.'
     tool: wiki_add_cross_link
     argChecks:
       - path: wikiId
@@ -170,14 +173,15 @@ scenarios:
       for a tool with a minimal schema (just wikiId and rawFilePath, no
       content-shaped argument to distract the model from the correction).
     type: tool-sequence
-    input: 'Use the project wiki for that instead.'
-    priorTurns:
+    turns:
+      - user: 'Can you rebaseline the source for raw/articles/deploy-guide.md on the other-project-wiki wiki?'
       - tool: wiki_rebaseline_source
         args: { wikiId: 'other-project-wiki', rawFilePath: 'raw/articles/deploy-guide.md' }
         result:
           {
             text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
           }
+      - user: 'Use the project wiki for that instead.'
     tool: wiki_rebaseline_source
     argChecks:
       - path: wikiId
@@ -213,8 +217,8 @@ scenarios:
       model's tool-use decision, not a per-scenario gap — noted here and on
       wwrite-001 rather than duplicated as two separate "mysteries."
     type: tool-sequence
-    input: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
-    priorTurns:
+    turns:
+      - user: 'Show me what it would look like if we updated that page to say I now work from home three days a week instead of two, without saving it.'
       - tool: wiki_read_page
         args: { wikiId: 'user', path: 'entities/work-schedule.md' }
         result:
@@ -247,8 +251,8 @@ scenarios:
       tool result it's already been given, hence llm-judge over the final
       response rather than tool-sequence over the next call.
     type: llm-judge
-    input: 'Okay, go ahead and save that.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to the other-project-wiki as "Deploy Notes": deploy steps for the staging environment.'
       - tool: wiki_create_page
         args:
           {
@@ -261,6 +265,7 @@ scenarios:
           {
             text: 'This workspace is restricted to writing wiki "acme-project" — "other-project-wiki" is not allowed here — use wiki "acme-project" instead.',
           }
+      - user: 'Okay, go ahead and save that.'
     rubric: >
       The response should: (1) clearly explain to the user that this
       workspace can only write to its own project wiki ("acme-project") and
@@ -285,8 +290,8 @@ scenarios:
       correct wiki named in the message, so the right move is to pick a
       different domain or ask the user.
     type: llm-judge
-    input: 'Okay, go ahead and save that.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to the video-streaming wiki as "NodeJS Stream Backpressure": notes on handling backpressure with NodeJS streams in the image upload pipeline.'
       - tool: wiki_create_page
         args:
           {
@@ -302,6 +307,7 @@ scenarios:
           {
             text: 'Wiki "video-streaming" belongs to another workspace and can''t be written from here. Choose a different wiki (wiki_locate can help), or ask the user where this should go.',
           }
+      - user: 'Okay, go ahead and save that.'
     rubric: >
       The response should: (1) tell the user the note was not saved to
       "video-streaming" because that wiki belongs to another workspace, (2)
@@ -339,8 +345,8 @@ scenarios:
       something specific to any one scenario's wording. Left as a known
       ceiling.
     type: tool-sequence
-    input: 'Please save this to the wiki: our home network uses a mesh router system with three access points covering the house.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to the wiki: our home network uses a mesh router system with three access points covering the house.'
       - tool: wiki_create_page
         args:
           {
@@ -388,8 +394,8 @@ scenarios:
       ceiling rather than chased further, same treatment as ornith's
       wwrite-002 gap above.
     type: tool-sequence
-    input: 'Please save this to the wiki: my favorite programming language is Rust.'
-    priorTurns:
+    turns:
+      - user: 'Please save this to the wiki: my favorite programming language is Rust.'
       - tool: wiki_locate
         args: { context: 'favorite programming language' }
         result:

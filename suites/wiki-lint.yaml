@@ -17,8 +17,8 @@ scenarios:
       scenario run cold without established context, matching the same fix
       applied to wwrite-001 in suites/wiki-write.yaml).
     type: tool-sequence
-    input: 'Can you check the wiki for any issues or problems?'
-    priorTurns:
+    turns:
+      - user: 'Can you check the wiki for any issues or problems?'
       - tool: wiki_locate
         args: { context: 'wiki health check' }
         result:
@@ -52,8 +52,8 @@ scenarios:
       wiki_rebaseline_source with the correct wikiId and rawFilePath from the
       finding's page field — exercising the new SDK method and tool wrapper.
     type: tool-sequence
-    input: 'Fix the raw source drift issue found in the user wiki.'
-    priorTurns:
+    turns:
+      - user: 'Can you check the user wiki for any issues?'
       - tool: wiki_locate
         args: { context: 'raw source drift' }
         result:
@@ -67,6 +67,7 @@ scenarios:
 
             ### Warnings
             - [source_drift] raw/articles/some-article.md: Stored sha256 does not match file contents (raw/ was modified).
+      - user: 'Fix the raw source drift issue found in the user wiki.'
     tool: wiki_rebaseline_source
     argChecks:
       - path: wikiId
@@ -83,8 +84,8 @@ scenarios:
       wiki_register_domain with the directory name from the finding as wikiId —
       exercising the new register() SDK method and tool wrapper.
     type: tool-sequence
-    input: 'Register the untracked wiki directory the linter found.'
-    priorTurns:
+    turns:
+      - user: 'Can you check the user wiki for any issues?'
       - tool: wiki_locate
         args: { context: 'registry sync untracked wiki' }
         result:
@@ -98,6 +99,7 @@ scenarios:
 
             ### Warnings
             - [registry_sync]: Wiki directory "projects" is on disk but missing from the registry.
+      - user: 'Register the untracked wiki directory the linter found.'
     tool: wiki_register_domain
     argChecks:
       - path: wikiId
@@ -123,8 +125,8 @@ scenarios:
       turn for bob.md below seeds the target-page content the models kept
       (reasonably) fetching before linking.
     type: tool-sequence
-    input: 'Fix the orphaned page the linter found in the user wiki.'
-    priorTurns:
+    turns:
+      - user: 'Can you check the user wiki for any issues?'
       - tool: wiki_locate
         args: { context: 'orphaned page' }
         result:
@@ -154,6 +156,7 @@ scenarios:
           text: |
             # Bob
             Bob is a senior engineer on the platform team. He owns the backend infrastructure.
+      - user: 'Fix the orphaned page the linter found in the user wiki.'
     tool: wiki_add_cross_link
     argChecks:
       - path: wikiId
@@ -177,8 +180,8 @@ scenarios:
       agent calls wiki_update_page with the correct wikiId, path, and a confidence
       value — exercising the newly exposed confidence param on the tool schema.
     type: tool-sequence
-    input: 'Address the quality issue the linter flagged for the bob page.'
-    priorTurns:
+    turns:
+      - user: 'Can you check the user wiki for any issues?'
       - tool: wiki_locate
         args: { context: 'quality finding confidence' }
         result:
@@ -198,6 +201,7 @@ scenarios:
           text: |
             # Bob
             Bob is a senior engineer on the platform team. He owns the backend infrastructure.
+      - user: 'Address the quality issue the linter flagged for the bob page.'
     tool: wiki_update_page
     argChecks:
       - path: wikiId

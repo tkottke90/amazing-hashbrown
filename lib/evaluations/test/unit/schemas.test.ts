@@ -3,6 +3,7 @@ import { describe, it } from 'mocha';
 import {
   ScenarioSchema,
   HumanScenarioSchema,
+  DeterministicScenarioSchema,
   LlmJudgeScenarioSchema,
   SemanticScenarioSchema,
   StructuredScenarioSchema,
@@ -12,6 +13,7 @@ import {
   EvalRunSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
+  validateScenarioTurns,
 } from '../../src/schemas.js';
 import { z } from 'zod';
 
@@ -145,15 +147,17 @@ describe('ScenarioSchema', () => {
       id: 'test-7',
       name: 'Test',
       purpose: 'Purpose',
-      input: 'Input',
       type: 'tool-sequence',
-      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      turns: [{ user: 'Input' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
       tool: 'upload_image',
     });
     assert.equal(result.type, 'tool-sequence');
     if (result.type === 'tool-sequence') {
       assert.equal(result.minScore, 1);
-      assert.deepEqual(result.priorTurns[0].args, {});
+      assert.deepEqual(result.turns, [
+        { user: 'Input' },
+        { tool: 'generate_image', args: {}, result: { imageBase64: 'abc' } },
+      ]);
     }
   });
 
@@ -305,7 +309,7 @@ describe('ToolCallScenarioSchema', () => {
 });
 
 describe('LlmJudgeScenarioSchema', () => {
-  it('parses without priorTurns (existing behavior unchanged)', () => {
+  it('parses with a plain input string and no turns (existing behavior unchanged) [unit]', () => {
     const result = LlmJudgeScenarioSchema.parse({
       id: 'x',
       name: 'x',
@@ -314,40 +318,69 @@ describe('LlmJudgeScenarioSchema', () => {
       type: 'llm-judge',
       rubric: 'r',
     });
-    assert.equal(result.priorTurns, undefined);
+    assert.equal(result.turns, undefined);
   });
 
-  it('parses with a valid priorTurns array, defaulting turn args to {}', () => {
+  it('parses with a valid turns array opening on a user entry, defaulting tool-turn args to {} [unit]', () => {
     const result = LlmJudgeScenarioSchema.parse({
       id: 'x',
       name: 'x',
       purpose: 'x',
-      input: 'x',
       type: 'llm-judge',
       rubric: 'r',
-      priorTurns: [{ tool: 'wiki_search', result: { text: 'found it' } }],
+      turns: [{ user: 'x' }, { tool: 'wiki_search', result: { text: 'found it' } }],
     });
-    assert.equal(result.priorTurns?.length, 1);
-    assert.deepEqual(result.priorTurns?.[0].args, {});
+    assert.equal(result.turns?.length, 2);
+    assert.deepEqual(result.turns?.[1], {
+      tool: 'wiki_search',
+      args: {},
+      result: { text: 'found it' },
+    });
   });
 
-  it('accepts multiple chained prior turns', () => {
+  it('accepts multiple chained tool turns after the opening user turn [unit]', () => {
     const result = LlmJudgeScenarioSchema.parse({
       id: 'x',
       name: 'x',
       purpose: 'x',
-      input: 'x',
       type: 'llm-judge',
       rubric: 'r',
-      priorTurns: [
+      turns: [
+        { user: 'x' },
         { tool: 'wiki_search', args: { query: 'q' }, result: { text: 'a' } },
         { tool: 'wiki_read_page', args: { path: 'p' }, result: { text: 'b' } },
       ],
     });
-    assert.equal(result.priorTurns?.length, 2);
+    assert.equal(result.turns?.length, 3);
   });
 
-  it('throws when priorTurns is explicitly empty', () => {
+  it('throws when turns does not open with a user entry (issue #235) [unit]', () => {
+    assert.throws(() =>
+      LlmJudgeScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        type: 'llm-judge',
+        rubric: 'r',
+        turns: [{ tool: 'wiki_search', result: { text: 'a' } }, { user: 'x' }],
+      }),
+    );
+  });
+
+  it('throws when turns has fewer than 2 entries [unit]', () => {
+    assert.throws(() =>
+      LlmJudgeScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        type: 'llm-judge',
+        rubric: 'r',
+        turns: [{ user: 'x' }],
+      }),
+    );
+  });
+
+  it('rejects the old priorTurns field now that turns replaces it [unit]', () => {
     assert.throws(() =>
       LlmJudgeScenarioSchema.parse({
         id: 'x',
@@ -356,75 +389,107 @@ describe('LlmJudgeScenarioSchema', () => {
         input: 'x',
         type: 'llm-judge',
         rubric: 'r',
-        priorTurns: [],
+        priorTurns: [{ tool: 'wiki_search', result: { text: 'a' } }],
       }),
     );
   });
 });
 
 describe('ToolSequenceScenarioSchema', () => {
-  it('defaults minScore to 1, argChecks omitted, and turn args default to {}', () => {
+  it('defaults minScore to 1, argChecks omitted, and tool-turn args default to {} [unit]', () => {
     const result = ToolSequenceScenarioSchema.parse({
       id: 'x',
       name: 'x',
       purpose: 'x',
-      input: 'x',
       type: 'tool-sequence',
-      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      turns: [{ user: 'x' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
       tool: 'upload_image',
     });
     assert.equal(result.minScore, 1);
     assert.equal(result.argChecks, undefined);
-    assert.deepEqual(result.priorTurns[0].args, {});
+    assert.deepEqual(result.turns[1], {
+      tool: 'generate_image',
+      args: {},
+      result: { imageBase64: 'abc' },
+    });
   });
 
-  it('accepts explicit prior turn args and multiple chained turns', () => {
+  it('accepts explicit tool-turn args and multiple chained turns [unit]', () => {
     const result = ToolSequenceScenarioSchema.parse({
       id: 'x',
       name: 'x',
       purpose: 'x',
-      input: 'x',
       type: 'tool-sequence',
-      priorTurns: [
+      turns: [
+        { user: 'x' },
         { tool: 'tool_a', args: { a: 1 }, result: { out: 'a' } },
         { tool: 'tool_b', args: { b: 2 }, result: { out: 'b' } },
       ],
       tool: 'upload_image',
     });
-    assert.equal(result.priorTurns.length, 2);
-    assert.deepEqual(result.priorTurns[0].args, { a: 1 });
-    assert.deepEqual(result.priorTurns[1].args, { b: 2 });
+    assert.equal(result.turns.length, 3);
   });
 
-  it('accepts argChecks using the same shape as tool-call', () => {
+  it("accepts a reply turn placed after the tool turns it answers (issue #235's actual fix) [unit]", () => {
     const result = ToolSequenceScenarioSchema.parse({
       id: 'x',
       name: 'x',
       purpose: 'x',
-      input: 'x',
       type: 'tool-sequence',
-      priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      turns: [
+        { user: 'Create a project "Ship Homepage Redesign"...' },
+        {
+          tool: 'ask_user',
+          args: { question: 'Create project...?' },
+          result: { text: 'User answered: yes' },
+        },
+        { user: 'Yep, go ahead.' },
+      ],
+      tool: 'create_project',
+    });
+    assert.equal(result.turns.length, 3);
+    assert.deepEqual(result.turns[2], { user: 'Yep, go ahead.' });
+  });
+
+  it('accepts argChecks using the same shape as tool-call [unit]', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      type: 'tool-sequence',
+      turns: [{ user: 'x' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
       tool: 'upload_image',
       argChecks: [{ path: 'imageBase64', match: 'equals', value: 'abc' }],
     });
     assert.equal(result.argChecks?.[0].match, 'equals');
   });
 
-  it('throws when priorTurns is empty', () => {
+  it('throws when turns does not open with a user entry [unit]', () => {
     assert.throws(() =>
       ToolSequenceScenarioSchema.parse({
         id: 'x',
         name: 'x',
         purpose: 'x',
-        input: 'x',
         type: 'tool-sequence',
-        priorTurns: [],
+        turns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }, { user: 'x' }],
         tool: 'upload_image',
       }),
     );
   });
 
-  it('throws when tool is missing', () => {
+  it('throws when tool is missing [unit]', () => {
+    assert.throws(() =>
+      ToolSequenceScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        type: 'tool-sequence',
+        turns: [{ user: 'x' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      }),
+    );
+  });
+
+  it('rejects the old priorTurns field now that turns replaces it [unit]', () => {
     assert.throws(() =>
       ToolSequenceScenarioSchema.parse({
         id: 'x',
@@ -433,8 +498,125 @@ describe('ToolSequenceScenarioSchema', () => {
         input: 'x',
         type: 'tool-sequence',
         priorTurns: [{ tool: 'generate_image', result: { imageBase64: 'abc' } }],
+        tool: 'upload_image',
       }),
     );
+  });
+});
+
+describe('DeterministicScenarioSchema turns/steps (issue #235)', () => {
+  it('parses with a plain input string and no turns (existing behavior unchanged) [unit]', () => {
+    const result = DeterministicScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+    });
+    assert.equal(result.input, 'x');
+    assert.equal(result.turns, undefined);
+  });
+
+  it('parses a steps array with an intermediate assert and the default last-step assertion [unit]', () => {
+    const result = DeterministicScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'final',
+      steps: [
+        { user: 'first', assert: { match: 'contains', expected: 'intermediate' } },
+        { user: 'second' },
+      ],
+    });
+    assert.equal(result.steps?.length, 2);
+    assert.equal(result.steps?.[0].assert?.expected, 'intermediate');
+    assert.equal(result.steps?.[1].assert, undefined);
+  });
+
+  it('accepts per-step mocks keyed by tool name [unit]', () => {
+    const result = DeterministicScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'final',
+      steps: [
+        { user: 'first', mocks: { wiki_search: { text: 'mocked result' } } },
+        { user: 'second' },
+      ],
+    });
+    assert.deepEqual(result.steps?.[0].mocks, { wiki_search: { text: 'mocked result' } });
+  });
+});
+
+describe('validateScenarioTurns (issue #235 — cross-field invariants)', () => {
+  const base = { id: 'x', name: 'x', purpose: 'x' } as const;
+
+  it('allows a deterministic scenario with only input', () => {
+    const scenario = DeterministicScenarioSchema.parse({
+      ...base,
+      input: 'x',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+    });
+    assert.equal(validateScenarioTurns(scenario), null);
+  });
+
+  it('rejects a deterministic scenario with neither input nor turns', () => {
+    const scenario = DeterministicScenarioSchema.parse({
+      ...base,
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+    });
+    assert.match(validateScenarioTurns(scenario) ?? '', /exactly one of input or turns/);
+  });
+
+  it('rejects a steps scenario that also sets input', () => {
+    const scenario = DeterministicScenarioSchema.parse({
+      ...base,
+      input: 'x',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'e',
+      steps: [{ user: 'a' }, { user: 'b' }],
+    });
+    assert.match(validateScenarioTurns(scenario) ?? '', /input must be omitted when steps is set/);
+  });
+
+  it('rejects a tool-sequence scenario with neither turns nor steps', () => {
+    const scenario = ToolSequenceScenarioSchema.parse({
+      ...base,
+      type: 'tool-sequence',
+      tool: 'upload_image',
+    });
+    assert.match(validateScenarioTurns(scenario) ?? '', /must set turns or steps/);
+  });
+
+  it('allows a tool-sequence scenario with only steps (no turns prefix)', () => {
+    const scenario = ToolSequenceScenarioSchema.parse({
+      ...base,
+      type: 'tool-sequence',
+      tool: 'upload_image',
+      steps: [{ user: 'a' }, { user: 'b' }],
+    });
+    assert.equal(validateScenarioTurns(scenario), null);
+  });
+
+  it('ignores scenario types that never had priorTurns', () => {
+    const scenario = ToolCallScenarioSchema.parse({
+      ...base,
+      input: 'x',
+      type: 'tool-call',
+      tool: 'upload_image',
+    });
+    assert.equal(validateScenarioTurns(scenario), null);
   });
 });
 

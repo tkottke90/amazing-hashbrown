@@ -75,8 +75,8 @@ scenarios:
       tool result, which a single-turn-only suite would never catch.
       Mirrors wiki-navigation's wnav-013 pattern exactly.
     type: tool-sequence
-    input: 'What programming languages do I use most at work?'
-    priorTurns:
+    turns:
+      - user: 'What programming languages do I use most at work?'
       - tool: wiki_locate
         args: { context: 'programming languages used at work' }
         result:
@@ -104,8 +104,8 @@ scenarios:
       (no gatedSkill here — this suite tests raw transport, not
       skill-gating).
     type: tool-sequence
-    input: 'Look into the knowledge base for this and get back to me.'
-    priorTurns:
+    turns:
+      - user: 'Look into the knowledge base for this and get back to me.'
       - tool: wiki_locate
         args: { context: 'training and fitness scheduling' }
         result:

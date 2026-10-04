@@ -1,0 +1,50 @@
+# Baseline scores for this repo's eval suites (suites/*.yaml), tracked in
+# git so "what's the baseline for this eval" and "is this a real
+# regression" have a durable, point-in-time answer instead of only living
+# in whoever's memory last ran the suite by hand.
+#
+# This file is NOT meant to be hand-edited for real entries — it's written
+# and updated by the `/auto-update-baseline` skill
+# (.agents/skills/auto-update-baseline/SKILL.md), which runs N frozen
+# rounds of a suite against a chosen provider/model + judge, averages the
+# scores, and overwrites the entry below for that (suite, provider+model)
+# pair. It is safe to hand-edit metadata (e.g. fixing a typo'd branch name)
+# but never hand-write a score/total you didn't get from an actual eval
+# run — a fabricated baseline defeats the point of this file.
+#
+# Schema — baselines.<suite-id>.<provider-model-slug>:
+#
+#   provider:   the `name` of the provider in config/config.yaml used to
+#               run the suite (e.g. "lemonade", "ornith").
+#   model:      human-readable model name actually served by that
+#               provider (e.g. "GLM-4.7-Flash"), for humans reading this
+#               file — not necessarily the same string as the provider's
+#               `defaultModel` config value.
+#   judgeModel: the provider name used as the judge for llm-judge-type
+#               scenarios in this run (often the same as `provider`, but
+#               not always).
+#   score:      the AVERAGE of `run.passedScenarios` across `rounds`
+#               frozen rounds — a raw count, not a percentage. These
+#               suites have measured sampling variance (see the
+#               wiki-navigation design doc's flakiness notes), so a
+#               baseline from a single run would misreport "is this a
+#               real regression" more often than it should.
+#   total:      `run.scoredScenarios` (the denominator passRate was
+#               computed against) from the last of the N rounds. Pinned
+#               here so a baseline doesn't silently go stale if the
+#               suite's scenario count changes later without the
+#               baseline being refreshed.
+#   rounds:     N, the number of frozen rounds averaged into `score`.
+#               Defaults to 5 (matching issue #235's own validation-plan
+#               wording) unless the skill was told to use a different N.
+#   updatedAt:  ISO 8601 timestamp of when this entry was last written.
+#   branch:     git branch the rounds were run from.
+#   commit:     git commit SHA the rounds were run against.
+#
+# This file starts empty: no suite has actually been run against a real
+# model provider from the environment that authored this file (no
+# config/config.yaml, no reachable local model provider), so there is no
+# honest score to seed it with. Run `/auto-update-baseline` once a
+# provider is configured to populate real entries here.
+
+baselines: {}

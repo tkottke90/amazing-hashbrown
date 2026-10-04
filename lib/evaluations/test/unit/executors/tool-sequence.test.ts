@@ -12,9 +12,14 @@ function makeScenario(
     id: 'x',
     name: 'x',
     purpose: 'x',
-    input: 'x',
     type: 'tool-sequence',
-    priorTurns: [{ tool: 'generate_image', args: { prompt: 'x' }, result: { imageBase64: 'abc' } }],
+    // runToolSequence only reads `tool`/`argChecks` (see its narrowed Pick
+    // signature) — `turns` plays no role in scoring, so these fixtures
+    // don't need a realistic one.
+    turns: [
+      { user: 'x' },
+      { tool: 'generate_image', args: { prompt: 'x' }, result: { imageBase64: 'abc' } },
+    ],
     tool,
     argChecks,
     minScore,

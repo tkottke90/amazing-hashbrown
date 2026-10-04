@@ -323,6 +323,28 @@ summary {
   border-radius: 0;
 }
 
+/* Full seeded/live transcript for a turns/steps scenario (issue #235) —
+   reuses .detail-panel's font size/color but as a bordered stack of turns
+   rather than one flat <pre>, so a reviewer can tell which line came from
+   whom at a glance. */
+.conversation-transcript {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.conversation-entry {
+  padding: 0.4rem 0.5rem;
+  border-left: 2px solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.conversation-entry-user {
+  border-left-color: var(--accent);
+}
+.conversation-entry pre {
+  margin-top: 0.25rem;
+}
+
 .field-check-table {
   width: 100%;
   margin-top: 0.4rem;

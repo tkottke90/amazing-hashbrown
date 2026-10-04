@@ -18,8 +18,8 @@ scenarios:
       wiki_create_page with the KV corpus reference. Positive control — should
       reliably pass.
     type: tool-sequence
-    input: 'Look up information about distributed systems and give me a summary.'
-    priorTurns:
+    turns:
+      - user: 'Look up information about distributed systems and give me a summary.'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -66,8 +66,8 @@ scenarios:
       - wiki_add_cross_link
       - wiki_rebaseline_source
       - wiki_register_domain
-    input: 'Look up information about distributed systems and give me a summary.'
-    priorTurns:
+    turns:
+      - user: 'Look up information about distributed systems and give me a summary.'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -103,8 +103,8 @@ scenarios:
       Fail = Option B required; Pass = Option A safe. Run across multiple models
       and aggregate results before making the design decision.
     type: tool-sequence
-    input: 'Look up information about distributed systems and give me a summary.'
-    priorTurns:
+    turns:
+      - user: 'Look up information about distributed systems and give me a summary.'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'
@@ -142,8 +142,8 @@ scenarios:
       - wiki_add_cross_link
       - wiki_rebaseline_source
       - wiki_register_domain
-    input: 'Look up information about distributed systems and give me a summary.'
-    priorTurns:
+    turns:
+      - user: 'Look up information about distributed systems and give me a summary.'
       - tool: web_fetch
         args:
           url: 'https://example.com/distributed-systems'

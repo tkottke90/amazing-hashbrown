@@ -7,8 +7,12 @@ interface DeterministicDetails {
   passed: boolean;
 }
 
+// Narrowed to just the two fields actually read, so the same function can
+// score a whole scenario's final response (the full DeterministicScenario)
+// or a single `steps` entry's `assert` (just { match, expected }) — see
+// runner.ts's scoring of StepAssertion.
 export function runDeterministic(
-  scenario: DeterministicScenario,
+  scenario: Pick<DeterministicScenario, 'match' | 'expected'>,
   actualOutput: string,
 ): DeterministicDetails {
   let passed: boolean;
