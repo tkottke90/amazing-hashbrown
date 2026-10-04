@@ -1,0 +1,97 @@
+suite:
+  id: workspace-chat-context
+  name: Workspace Chat Context
+  purpose: >
+    Verifies workspace-chat-specific facts added to buildWorkspaceContextBlock()
+    for issue #248 — description, workspace age, and summary recency. Each
+    scenario isolates one fact behind the simplest possible prompt, the same
+    isolation discipline suites/ambient-context.yaml uses for universal
+    ambient facts, so a failure here can only mean the workspace-chat fact
+    itself is missing or wrong. Unlike ambient-context.yaml's universal
+    current-time provider, these facts are rendered once into the cached
+    workspace system-prompt block rather than refreshed per model call (see
+    docs/superpowers/specs/2026-10-04-workspace-chat-ambient-context-design.md
+    §3) — the age/recency scenarios below exist specifically to check that
+    the model can compute "how long ago" itself from the absolute timestamps
+    in that block plus the ambient current-time fact, rather than the harness
+    precomputing the relative phrase.
+  passingThreshold: 1.0
+  # Same reasoning as ambient-context.yaml: pins "now" so an answer can be
+  # scored for exact/approximate correctness rather than only "a plausible
+  # relative phrase."
+  simulatedNow: '2026-06-15T12:00:00.000Z'
+  simulatedWorkspace:
+    name: Hashbrown Docs Refresh
+    location: /home/user/workspaces/hashbrown-docs-refresh
+    description: Rewriting the onboarding docs so new contributors don't need a Slack thread to get started.
+    createdAt: '2026-03-10T09:00:00.000Z' # ~3 months before simulatedNow
+    olderSummaries:
+      - path: .hashbrown/summaries/2026-05-20T10-00-00-000Z.md
+        timestamp: '2026-05-20T10-00-00-000Z' # ~3.5 weeks before simulatedNow
+
+scenarios:
+  - id: wcc-001-knows-description-without-tool
+    name: Agent states the workspace's description without calling a tool
+    purpose: >
+      Regression test for #248's description-surfacing gap: description was
+      a real field on the Workspace row but had no path into
+      WorkspaceChatContext/buildWorkspaceContextBlock() at all, so the agent
+      had no way to answer a direct question about it short of guessing.
+    type: tool-call
+    input: >
+      What is this workspace for?
+    tool: '!shell_exec'
+    argChecks: []
+    responseRubric: >
+      Score 10 if the reply reflects that this workspace is about rewriting
+      onboarding docs so new contributors don't need a Slack thread to get
+      started (close paraphrase is fine). Score 0 if it states a different
+      purpose, says it doesn't know, declines to answer, or asks the user
+      what the workspace is for.
+    responseMinScore: 7
+
+  - id: wcc-002-resolves-workspace-age-without-tool
+    name: Agent estimates how old the workspace is without calling a tool
+    purpose: >
+      Checks the "model does the arithmetic" bet from the design doc's §3:
+      the workspace's absolute createdAt and the ambient current-time fact
+      are both already in context — this proves that's sufficient, without
+      the harness precomputing a relative phrase (which would go stale
+      between the agent-build time it'd be computed at and whenever a
+      long-lived cached workspace agent actually serves this turn).
+    type: tool-call
+    input: >
+      Roughly how old is this workspace — when was it created, relative to
+      now?
+    tool: '!shell_exec'
+    argChecks: []
+    responseRubric: >
+      Score 10 if the reply states the workspace was created around March
+      10, 2026 and/or describes that as roughly 3 months before the current
+      date (anywhere from "about 2.5 months" to "about 3.5 months" counts,
+      as does stating the absolute date alone). Score 0 if it states a
+      different age/date, says it doesn't know, declines to answer, or asks
+      the user when the workspace was created.
+    responseMinScore: 7
+
+  - id: wcc-003-resolves-summary-recency-without-tool
+    name: Agent estimates how long ago the last older summary was generated
+    purpose: >
+      Direct test of #248's original observation — "summary recency has no
+      relative framing" — now that buildWorkspaceContextBlock() both carries
+      the summary's absolute timestamp and instructs the model to compare it
+      against the ambient current-time fact.
+    type: tool-call
+    input: >
+      How long ago was the most recent of the earlier (non-latest) summaries
+      generated?
+    tool: '!shell_exec'
+    argChecks: []
+    responseRubric: >
+      Score 10 if the reply states the summary was generated around May 20,
+      2026 and/or describes that as roughly 3 to 4 weeks before the current
+      date (anywhere from "about 3 weeks" to "about a month" counts, as does
+      stating the absolute date alone). Score 0 if it states a different
+      age/date, says it doesn't know, declines to answer, or asks the user
+      when the summary was generated.
+    responseMinScore: 7
