@@ -12,7 +12,7 @@ date/time) shared by all five agent-builder call sites. Workspace chat
 additionally carries its own cached, build-time system-prompt block
 (`buildWorkspaceContextBlock()`, `api/src/agents/chat-agent.ts`) with
 workspace-specific facts (name, location, goal, wiki domain, prior-work
-summaries). This issue asked which *additional* workspace-chat-specific
+summaries). This issue asked which _additional_ workspace-chat-specific
 facts are worth adding to that block, evaluated against real failure modes
 rather than speculative usefulness.
 
@@ -23,7 +23,7 @@ findings that reshape scope before any implementation:
    is baked into the system prompt once, at agent-build time, and the built
    agent is cached per `workspaceId` (`_workspaceAgents` in `chat-agent.ts`),
    invalidated only on goal/systemPrompt/wikiId changes or a new summary —
-   never on a timer, never per-turn. Any *relative-time* phrasing
+   never on a timer, never per-turn. Any _relative-time_ phrasing
    ("generated 3 days ago") baked into that block would go stale exactly the
    way the pre-#244 bare-date bug did: frozen at whatever it was when the
    agent was last built, silently wrong by the time a long-lived cached agent
@@ -40,12 +40,12 @@ findings that reshape scope before any implementation:
 
 ## 2. Candidate Evaluation
 
-| # | Candidate | Verdict | Evidence |
-|---|---|---|---|
-| 1 | `description` not surfaced in chat context | **Confirmed** | `Workspace.description` exists, is distinct from `goal` (which *is* surfaced), and `WorkspaceChatContext`/`buildWorkspaceContextBlock()` have no path to it at all. A plain omission, not a judgment call. |
-| 2 | Summary recency has no relative framing | **Confirmed** | The model already receives absolute `olderSummaries[].timestamp` values (cached, safe — they never change once written) and a fresh current-time fact (ambient, ratified by #244). Nothing today tells the model to compare the two. |
-| 3 | Workspace age / staleness (`createdAt`, `updatedAt`, `lastChange`) | **Confirmed, narrowed to `createdAt` only** | `createdAt` is immutable post-creation — safe to cache, same relative-framing gap as summaries. `lastChange` is **rejected**: per finding 2 above, it doesn't track what it claims to. Recommend a separate follow-up issue to wire `touchWorkspace()` into real activity (chat turns, task runs) before reconsidering it as an ambient fact. `updatedAt` is redundant with `createdAt`/`lastChange` for this purpose (it moves on *any* field patch, including unrelated metadata edits) and isn't worth a third, confusing "recency" fact. |
-| 4 | Task/kanban snapshot | **Deferred, out of scope for this issue** | Needs new aggregation (`listTasks()` + `board-rules.ts`'s lane computation), not a reframe of an existing field — a meaningfully different cost category. Tracked as a separate follow-up issue per the original issue's own flag that this is "worth naming but not assuming is worth the cost." |
+| #   | Candidate                                                          | Verdict                                     | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `description` not surfaced in chat context                         | **Confirmed**                               | `Workspace.description` exists, is distinct from `goal` (which _is_ surfaced), and `WorkspaceChatContext`/`buildWorkspaceContextBlock()` have no path to it at all. A plain omission, not a judgment call.                                                                                                                                                                                                                                                                                                                                   |
+| 2   | Summary recency has no relative framing                            | **Confirmed**                               | The model already receives absolute `olderSummaries[].timestamp` values (cached, safe — they never change once written) and a fresh current-time fact (ambient, ratified by #244). Nothing today tells the model to compare the two.                                                                                                                                                                                                                                                                                                         |
+| 3   | Workspace age / staleness (`createdAt`, `updatedAt`, `lastChange`) | **Confirmed, narrowed to `createdAt` only** | `createdAt` is immutable post-creation — safe to cache, same relative-framing gap as summaries. `lastChange` is **rejected**: per finding 2 above, it doesn't track what it claims to. Recommend a separate follow-up issue to wire `touchWorkspace()` into real activity (chat turns, task runs) before reconsidering it as an ambient fact. `updatedAt` is redundant with `createdAt`/`lastChange` for this purpose (it moves on _any_ field patch, including unrelated metadata edits) and isn't worth a third, confusing "recency" fact. |
+| 4   | Task/kanban snapshot                                               | **Deferred, out of scope for this issue**   | Needs new aggregation (`listTasks()` + `board-rules.ts`'s lane computation), not a reframe of an existing field — a meaningfully different cost category. Tracked as a separate follow-up issue per the original issue's own flag that this is "worth naming but not assuming is worth the cost."                                                                                                                                                                                                                                            |
 
 (A fifth candidate — surfacing the workspace's on-disk location for
 `shell_exec` — was raised and dropped during brainstorming: `Location on
@@ -54,6 +54,7 @@ disk: ${ctx.location}` is already an unconditional line in
 passed to `makeShellExecTool()` as its working directory. No gap exists.)
 
 **Two follow-up issues to file separately** (not part of this design):
+
 - Wire `touchWorkspace()` into real workspace activity, then reconsider
   surfacing `lastChange`/"last touched" as an ambient fact.
 - Task/kanban open/overdue counts as workspace chat context (candidate 4).
@@ -75,7 +76,7 @@ Three approaches were weighed:
   new provider/middleware concept, a per-turn DB read, and non-trivial new
   code for what is fundamentally subtraction between two values the model
   can already see.
-- **Chosen — let the model do the arithmetic.** Expose only *absolute*
+- **Chosen — let the model do the arithmetic.** Expose only _absolute_
   timestamps (both of which are safe to cache: `createdAt` never changes,
   and `olderSummaries[].timestamp` is already cached today), and add one
   instruction inviting the model to compare them against the already-fresh
@@ -86,19 +87,21 @@ Three approaches were weighed:
 
 This is a deliberate bet that model date-arithmetic is reliable enough to
 not need harness-guaranteed phrasing — which is exactly what the eval
-scenarios in §5 exist to check, and exactly why this stays an *addition* to
+scenarios in §5 exist to check, and exactly why this stays an _addition_ to
 the existing `ambient-context.yaml` discipline of "don't ship a provider
 without a scenario that would catch it regressing."
 
 ## 4. Implementation
 
 **`api/src/agents/chat-agent.ts`** (`WorkspaceChatContext` interface):
+
 - Add `description: string | null`
 - Add `createdAt: string`
 
 **`buildWorkspaceContextBlock()`**:
+
 - Render `description` conditionally (same pattern as `goal`): `Description:
-  ${ctx.description}`, placed directly after the opening "working within"
+${ctx.description}`, placed directly after the opening "working within"
   line, before `Goal:`.
 - Render `createdAt` unconditionally (it's always set) via the existing
   `formatRunTime()` helper (`task-context.ts`, already used for run
@@ -113,6 +116,7 @@ without a scenario that would catch it regressing."
   — see §5.
 
 **`api/src/agents/workspace-chat-stream-handler.ts`** (`buildWorkspaceContext()`):
+
 - Copy `workspace.description` and `workspace.createdAt` through into the
   returned `WorkspaceChatContext`, alongside the existing fields. No new
   I/O — `workspace` is already the full row.
@@ -130,6 +134,7 @@ workspace-chat-specific, cached block, per the chosen approach in §3.
 
 **Unit tests** (`chat-agent.test.ts`, new — `buildWorkspaceContextBlock` has
 no dedicated tests today):
+
 - Renders `Description: ...` when `ctx.description` is set; omits the line
   when `null` (mirrors the existing `goal`/`wikiDomain` conditional pattern).
 - Renders `Created: ...` via `formatRunTime`, always (not conditional).
@@ -155,7 +160,7 @@ question with no competing tool-choice complexity), with a pinned
   and pinned `simulatedNow` (`tool-call` + `responseRubric`, same shape as
   `ambient-context.yaml`'s date scenarios — scoring an approximate-but-correct
   relative phrase, e.g. "about 3 months").
-- Agent states roughly how long ago the most recent *older* summary was
+- Agent states roughly how long ago the most recent _older_ summary was
   generated, given a seeded `olderSummaries` entry and pinned `simulatedNow`.
 
 **Per root `AGENTS.md`'s Evaluation-Driven Development rules, these
