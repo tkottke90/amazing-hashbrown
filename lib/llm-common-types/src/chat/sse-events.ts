@@ -20,6 +20,14 @@ export const ChatErrorCategorySchema = z.enum([
   // server couldn't reach the provider. See
   // docs/superpowers/specs/2026-09-27-agent-wait-design.md §1.
   'connection_lost',
+  // LangGraph's own PregelRunner threw a bare `Error("Abort")` with no
+  // provider/status/type information — it does this whenever the run's
+  // internal AbortSignal fires (see error-classification.ts's own comment
+  // on this category for how that's told apart from a real user Stop,
+  // which is classified 'cancelled' before classifyChatError ever runs).
+  // Distinct from 'unknown': this is a recognized, named failure shape,
+  // just one the thrower gives us no further detail about.
+  'interrupted',
 ]);
 export type ChatErrorCategory = z.infer<typeof ChatErrorCategorySchema>;
 

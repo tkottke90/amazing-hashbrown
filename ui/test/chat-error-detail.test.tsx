@@ -33,4 +33,14 @@ describe('ChatErrorDetail', () => {
     render(<ChatErrorDetail category="cancelled" detail="Stopped." />);
     expect(screen.getByText('Show details')).toBeInTheDocument();
   });
+
+  it('renders distinct copy for the interrupted category, not the generic message', () => {
+    render(<ChatErrorDetail category="interrupted" />);
+    expect(
+      screen.getByText(
+        'The run was interrupted unexpectedly. This is usually transient — try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong. Please try again.')).not.toBeInTheDocument();
+  });
 });

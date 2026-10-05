@@ -236,6 +236,40 @@ describe('agents/error-classification', () => {
     });
   });
 
+  // LangGraph's own PregelRunner discards the real failure reason whenever
+  // the turn's AbortSignal (or a signal derived from it) fires outside of a
+  // real user Stop — see error-classification.ts's classifyFrameworkAbort
+  // for how this was confirmed against the installed @langchain/langgraph.
+  describe('classifyChatError — shared framework-abort check (runs before any provider matcher)', () => {
+    it('classifies a bare Error with message "Abort" as interrupted, not unknown', () => {
+      const err = new Error('Abort');
+      expect(classifyChatError(err, 'ollama').category).to.equal('interrupted');
+    });
+
+    it('classifies a platform AbortError as interrupted', () => {
+      const err = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+      expect(classifyChatError(err, 'anthropic').category).to.equal('interrupted');
+    });
+
+    it('classifies a platform TimeoutError as interrupted', () => {
+      const err = Object.assign(new Error('The operation was aborted due to timeout'), {
+        name: 'TimeoutError',
+      });
+      expect(classifyChatError(err, 'openai').category).to.equal('interrupted');
+    });
+
+    it('classifies a PipeEventsError-wrapped bare Abort as interrupted [unit]', () => {
+      const source = new Error('Abort');
+      const wrapped = new PipeEventsError(source, 'seg-1', 'partial', '');
+      expect(classifyChatError(wrapped, 'ollama').category).to.equal('interrupted');
+    });
+
+    it('does not misclassify an unrelated error whose message merely contains "abort" as interrupted', () => {
+      const err = new Error('user asked to abort the deployment');
+      expect(classifyChatError(err, 'ollama').category).to.equal('unknown');
+    });
+  });
+
   describe('classifyChatError — shared network check (runs before any provider matcher)', () => {
     it('classifies an Anthropic APIConnectionError as network', () => {
       const err = new AnthropicAPIError(undefined, undefined, 'Connection error.', undefined);

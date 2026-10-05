@@ -588,10 +588,21 @@ export async function executeTask(
           );
         }
       } else {
-        logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
         finalOutcome = 'failed';
         const outOfSteps = (err as Error).name === 'GraphRecursionError';
         const classified = classifyChatError(err, defaultProviderType());
+        // category/elapsedMs are here specifically so an 'interrupted'
+        // classification (LangGraph's own framework-level abort — see
+        // error-classification.ts's classifyFrameworkAbort) is correlatable
+        // after the fact: how soon after the turn started it fired is the
+        // one signal available to narrow down what aborted the run's
+        // signal, since the thrown error itself carries no further detail.
+        logger.error('task-execution: run failed', {
+          taskId: task.id,
+          category: classified.category,
+          elapsedMs: turnSentAt !== undefined ? Date.now() - Date.parse(turnSentAt) : undefined,
+          err: serializeError(err),
+        });
         traceError = outOfSteps
           ? 'Ran out of steps before completing this task.'
           : classified.message;
