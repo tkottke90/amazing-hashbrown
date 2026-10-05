@@ -404,12 +404,17 @@ describe('buildWorkspaceContextBlock()', () => {
     const block = buildWorkspaceContextBlock(
       makeContext({
         olderSummaries: [
-          { path: '.hashbrown/summaries/2026-05-20T10-00-00-000Z.md', timestamp: '2026-05-20T10-00-00-000Z' },
+          {
+            path: '.hashbrown/summaries/2026-05-20T10-00-00-000Z.md',
+            timestamp: '2026-05-20T10-00-00-000Z',
+          },
         ],
       }),
     );
 
-    expect(block).to.include('- .hashbrown/summaries/2026-05-20T10-00-00-000Z.md (generated 2026-05-20T10-00-00-000Z)');
+    expect(block).to.include(
+      '- .hashbrown/summaries/2026-05-20T10-00-00-000Z.md (generated 2026-05-20T10-00-00-000Z)',
+    );
     expect(block).to.include('already everything needed to answer');
     expect(block).to.include('already complete and exhaustive, not a truncated preview');
     expect(block).to.not.include('read via shell if needed');
