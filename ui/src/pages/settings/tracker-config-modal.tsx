@@ -4,6 +4,7 @@ import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { CredentialValueField } from '@/components/credential-value-field';
 import { verifyGithubToken, type AuthField, type Tracker } from '@/services/trackers-api';
 import type { JSX } from 'preact';
 
@@ -58,6 +59,14 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
   const removed = useSignal<Record<string, boolean>>({});
   const testState = useSignal<TestState>({ status: 'idle' });
 
+  function updateFieldValue(key: string, next: string) {
+    values.value = { ...values.value, [key]: next };
+    if (removed.value[key]) {
+      removed.value = { ...removed.value, [key]: false };
+    }
+    testState.value = { status: 'idle' };
+  }
+
   async function runVerify() {
     testState.value = { status: 'loading' };
     try {
@@ -111,35 +120,48 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
         const isRemoved = removed.value[field.key] === true;
         return (
           <div key={field.key} class="space-y-1.5">
-            <div class="flex items-center justify-between">
-              <Label htmlFor={`tracker-${tracker.type}-${field.key}`}>{field.label}</Label>
-              {stored &&
-                (isRemoved ? (
-                  <span class="text-xs text-destructive">Will be removed on save</span>
-                ) : (
-                  <span class="text-xs text-muted-foreground">Currently set</span>
-                ))}
-            </div>
-            <div class="flex gap-2">
-              <Input
-                id={`tracker-${tracker.type}-${field.key}`}
-                type={field.type === 'password' ? 'password' : 'text'}
-                value={values.value[field.key] ?? ''}
-                disabled={isRemoved}
-                onInput={(e) => {
-                  values.value = {
-                    ...values.value,
-                    [field.key]: (e.target as HTMLInputElement).value,
-                  };
-                  if (removed.value[field.key]) {
-                    removed.value = { ...removed.value, [field.key]: false };
-                  }
-                  testState.value = { status: 'idle' };
-                }}
-                placeholder={stored ? 'Leave blank to keep the saved value' : ''}
-                required={field.required && !stored}
-                class="flex-1"
-              />
+            {/* CredentialValueField renders its own label + toggle row, so
+                the stored-status indicator here would otherwise double up
+                with it — folded into that field's helperText instead. */}
+            {!field.supportsEnvRef && (
+              <div class="flex items-center justify-between">
+                <Label htmlFor={`tracker-${tracker.type}-${field.key}`}>{field.label}</Label>
+                {stored &&
+                  (isRemoved ? (
+                    <span class="text-xs text-destructive">Will be removed on save</span>
+                  ) : (
+                    <span class="text-xs text-muted-foreground">Currently set</span>
+                  ))}
+              </div>
+            )}
+            <div class="flex gap-2 items-start">
+              {field.supportsEnvRef ? (
+                <div class="flex-1">
+                  <CredentialValueField
+                    id={`tracker-${tracker.type}-${field.key}`}
+                    label={field.label}
+                    value={values.value[field.key] ?? ''}
+                    onChange={(next) => updateFieldValue(field.key, next)}
+                    disabled={isRemoved}
+                    suggestedEnvName="GH_TOKEN"
+                    placeholder={stored ? 'Leave blank to keep the saved value' : undefined}
+                    helperText={
+                      stored ? (isRemoved ? 'Will be removed on save' : 'Currently set') : undefined
+                    }
+                  />
+                </div>
+              ) : (
+                <Input
+                  id={`tracker-${tracker.type}-${field.key}`}
+                  type={field.type === 'password' ? 'password' : 'text'}
+                  value={values.value[field.key] ?? ''}
+                  disabled={isRemoved}
+                  onInput={(e) => updateFieldValue(field.key, (e.target as HTMLInputElement).value)}
+                  placeholder={stored ? 'Leave blank to keep the saved value' : ''}
+                  required={field.required && !stored}
+                  class="flex-1"
+                />
+              )}
               {stored && (
                 <Button
                   type="button"

@@ -7,6 +7,9 @@ export interface AuthField {
   label: string;
   type: 'text' | 'password' | 'select';
   required: boolean;
+  // When true, this field renders with the literal-value/env-var-reference
+  // toggle (CredentialValueField) instead of a plain input.
+  supportsEnvRef?: boolean;
 }
 
 export interface Tracker {

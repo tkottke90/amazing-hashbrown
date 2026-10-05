@@ -75,7 +75,7 @@ surfaces, one underlying concept, no shared implementation.
   the existing tracker adapter's scope (GitHub is the only registered
   tracker type today).
 - Any change to how literal (non-env-ref) `shell_exec` values are displayed
-  — they are unmasked today and stay that way; only the *input* UX for
+  — they are unmasked today and stay that way; only the _input_ UX for
   choosing literal-vs-env-var gains the shared component.
 
 ---
@@ -164,6 +164,7 @@ since `unmaskApiKey` already just returns the stored raw string verbatim).
 **Frontend** — new `ui/src/components/credential-value-field.tsx`:
 
 A toggle between:
+
 - **Literal value** — masked password input (prefilled with the `****`
   sentinel when a secret is already stored), the default mode.
 - **From environment variable** — a plain-text name input (prefilled with a
@@ -175,7 +176,7 @@ Used by:
 
 1. The new Git Credentials settings section (§4).
 2. `TrackerConfigModal`'s token field (`ui/src/pages/settings/tracker-config-modal.tsx`) — retrofit, replacing its current plain masked `Input`.
-3. Each shell_exec env row's *value* input in `tool-settings-drawer.tsx` — retrofit. The row's *key* name (e.g. `GH_TOKEN`, `PATH`) stays a freeform text input, since not every key is a secret and the key name is independent of where its value comes from. A user who needs a mixed literal like `${HOME}/bin` still picks "Literal value" and types it directly — the backend's existing `ENV_REF_RE` scan inside `validateShellEnv()` doesn't care which UI mode produced the string, so this is a pure UX improvement with no behavior regression.
+3. Each shell_exec env row's _value_ input in `tool-settings-drawer.tsx` — retrofit. The row's _key_ name (e.g. `GH_TOKEN`, `PATH`) stays a freeform text input, since not every key is a secret and the key name is independent of where its value comes from. A user who needs a mixed literal like `${HOME}/bin` still picks "Literal value" and types it directly — the backend's existing `ENV_REF_RE` scan inside `validateShellEnv()` doesn't care which UI mode produced the string, so this is a pure UX improvement with no behavior regression.
 
 ### 3. Actually fixing git auth
 

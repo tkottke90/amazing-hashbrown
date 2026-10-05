@@ -175,7 +175,12 @@ describe('ToolSettingsDrawer', () => {
       fireEvent.input(input, { target: { value: 'GH_TOKEN' } });
       fireEvent.keyDown(input, { key: 'Enter' });
       // Entry is still addable — no suggestions, but no hard failure either.
-      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
+      // Falls back to referencing a host var of the same name, shown as the
+      // bare name since the row's value field is in env mode.
+      expect(
+        screen.getByRole('switch', { name: 'Source GH_TOKEN from an environment variable' }),
+      ).toBeChecked();
+      expect(screen.getByLabelText('GH_TOKEN')).toHaveValue('GH_TOKEN');
     });
 
     // Issue #220: the input pointed at a datalist id that didn't exist, so
@@ -188,14 +193,18 @@ describe('ToolSettingsDrawer', () => {
       expect(document.getElementById(listId!)?.tagName).toBe('DATALIST');
     });
 
-    it('adds an entry via the Add button, pre-filling a ${NAME} lookup [unit]', async () => {
+    it('adds an entry via the Add button, falling back to a ${NAME} lookup when untouched [unit]', async () => {
       openShellDrawer(shellTool());
       fireEvent.input(await screen.findByLabelText('Add variable name'), {
         target: { value: 'GH_TOKEN' },
       });
-      expect(screen.getByLabelText('Value for new variable')).toHaveValue('${GH_TOKEN}');
+      // The add-row's value field is left untouched — no live preview
+      // before Add is clicked, just a sensible fallback once it is.
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
+      expect(
+        screen.getByRole('switch', { name: 'Source GH_TOKEN from an environment variable' }),
+      ).toBeChecked();
+      expect(screen.getByLabelText('GH_TOKEN')).toHaveValue('GH_TOKEN');
       expect(screen.getByLabelText('Add variable name')).toHaveValue('');
     });
 
@@ -204,11 +213,11 @@ describe('ToolSettingsDrawer', () => {
       fireEvent.input(await screen.findByLabelText('Add variable name'), {
         target: { value: 'TOOLS_DIR' },
       });
-      fireEvent.input(screen.getByLabelText('Value for new variable'), {
+      fireEvent.input(screen.getByLabelText('Value'), {
         target: { value: '/opt/tools' },
       });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(screen.getByLabelText('Value for TOOLS_DIR')).toHaveValue('/opt/tools');
+      expect(screen.getByLabelText('TOOLS_DIR')).toHaveValue('/opt/tools');
     });
 
     // The screenshot in #220 shows "${GH_TOKEN}" typed into the name field.
@@ -217,7 +226,10 @@ describe('ToolSettingsDrawer', () => {
       const input = await screen.findByLabelText('Add variable name');
       fireEvent.input(input, { target: { value: '${GH_TOKEN}' } });
       fireEvent.keyDown(input, { key: 'Enter' });
-      expect(screen.getByLabelText('Value for GH_TOKEN')).toHaveValue('${GH_TOKEN}');
+      expect(
+        screen.getByRole('switch', { name: 'Source GH_TOKEN from an environment variable' }),
+      ).toBeChecked();
+      expect(screen.getByLabelText('GH_TOKEN')).toHaveValue('GH_TOKEN');
     });
 
     it('warns on a lowercase name [unit]', async () => {
@@ -225,14 +237,17 @@ describe('ToolSettingsDrawer', () => {
       const input = await screen.findByLabelText('Add variable name');
       fireEvent.input(input, { target: { value: 'gh_token' } });
       fireEvent.keyDown(input, { key: 'Enter' });
-      expect(screen.getByLabelText('Value for gh_token')).toBeInTheDocument();
+      expect(screen.getByLabelText('gh_token')).toBeInTheDocument();
       expect(screen.getByText(/uppercase names/i)).toBeInTheDocument();
     });
 
     it('shows stored values in editable inputs and saves edits [unit]', async () => {
       mockPatch.mockResolvedValue(tool({ toolId: 'shell_exec' }));
       openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}', PATH: '${HOME}/bin' } }));
-      const value = await screen.findByLabelText('Value for PATH');
+      // PATH's value mixes a lookup with literal text ("${HOME}/bin"), so
+      // it's not a pure env reference — it stays in literal mode, shown
+      // exactly as stored.
+      const value = await screen.findByLabelText('PATH');
       expect(value).toHaveValue('${HOME}/bin');
       fireEvent.input(value, { target: { value: '/opt/bin:/usr/bin' } });
       fireEvent.click(screen.getByText('Save'));
@@ -278,19 +293,16 @@ describe('ToolSettingsDrawer', () => {
       openShellDrawer(shellTool({ env: { GH_TOKEN: '${GH_TOKEN}', PATH: '${NOPE}' } }));
       fireEvent.click(await screen.findByText('Save'));
 
-      const pathValue = await screen.findByLabelText('Value for PATH');
-      await waitFor(() => expect(pathValue).toHaveAttribute('aria-invalid', 'true'));
-      const errorId = pathValue.getAttribute('aria-describedby')!;
-      expect(document.getElementById(errorId)).toHaveTextContent(/references \$\{NOPE\}/);
-      expect(screen.getByLabelText('Value for GH_TOKEN')).not.toHaveAttribute(
-        'aria-invalid',
-        'true',
-      );
+      await waitFor(() => expect(screen.getByText(/references \$\{NOPE\}/)).toBeInTheDocument());
+      // Only PATH's row shows an error — GH_TOKEN's row has none.
+      expect(screen.getAllByText(/references \$\{NOPE\}/)).toHaveLength(1);
       expect(screen.getByText('1 environment variable is invalid.')).toBeInTheDocument();
 
-      // Editing the row clears its error.
-      fireEvent.input(pathValue, { target: { value: '/usr/bin' } });
-      expect(pathValue).not.toHaveAttribute('aria-invalid', 'true');
+      // Editing the row clears its error. PATH's value ("${NOPE}") is a
+      // pure env reference, so its row renders in env mode — the visible
+      // input holds the bare name.
+      fireEvent.input(screen.getByLabelText('PATH'), { target: { value: 'HOME' } });
+      expect(screen.queryByText(/references \$\{NOPE\}/)).not.toBeInTheDocument();
     });
   });
 

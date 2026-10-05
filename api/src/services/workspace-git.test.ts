@@ -11,9 +11,18 @@ import {
   createBranch,
   withLock,
   GitOperationInProgressError,
+  translateGitAuthError,
   type GitStatus,
 } from './workspace-git.js';
 import type { ExecFileFn } from './workspace-provision.js';
+
+const GIT_AUTH_ERROR =
+  "fatal: could not read Username for 'https://github.com': No such device or address";
+
+function decodeBasicHeader(authArg: string): string {
+  const basic = authArg.split('Basic ')[1]!;
+  return Buffer.from(basic, 'base64').toString('utf8');
+}
 
 // Same shape as workspace-provision.test.ts's makeStub, but impl gets the
 // full args tuple so a test can branch behavior per git subcommand (e.g.
@@ -149,6 +158,38 @@ describe('services/workspace-git', () => {
       await fetchRemote('/tmp/ws', stub);
       expect(calls).to.deep.equal([['git', ['fetch'], { cwd: '/tmp/ws', timeout: 60_000 }]]);
     });
+
+    it('omits auth args when no token is passed, unchanged from today', async () => {
+      const { stub, calls } = makeStub();
+      await fetchRemote('/tmp/ws', stub, undefined);
+      expect(calls).to.deep.equal([['git', ['fetch'], { cwd: '/tmp/ws', timeout: 60_000 }]]);
+    });
+
+    it('prepends a -c extraHeader arg when a token is passed explicitly', async () => {
+      const { stub, calls } = makeStub();
+      await fetchRemote('/tmp/ws', stub, 'ghp_x');
+      const [cmd, args, opts] = calls[0] as [string, string[], unknown];
+      expect(cmd).to.equal('git');
+      expect(args.slice(2)).to.deep.equal(['fetch']);
+      expect(args[0]).to.equal('-c');
+      expect(decodeBasicHeader(args[1]!)).to.equal('x-access-token:ghp_x');
+      expect(opts).to.deep.equal({ cwd: '/tmp/ws', timeout: 60_000 });
+    });
+
+    it('translates the git auth error instead of surfacing it raw', async () => {
+      const { stub } = makeStub(() => {
+        throw new Error(`Command failed: git fetch\n${GIT_AUTH_ERROR}`);
+      });
+
+      let error: Error | undefined;
+      try {
+        await fetchRemote('/tmp/ws', stub);
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error?.message).to.include('Git fetch failed');
+      expect(error?.message).to.include('Settings → Workspaces → Git');
+    });
   });
 
   describe('syncFastForward()', () => {
@@ -176,6 +217,19 @@ describe('services/workspace-git', () => {
         error = err as Error;
       }
       expect(error?.message).to.equal('fatal: Not possible to fast-forward, aborting.');
+    });
+
+    it('puts auth args on the fetch leg only — the local merge needs none', async () => {
+      const { stub, calls } = makeStub();
+      await syncFastForward('/tmp/ws', stub, 'ghp_x');
+      expect(calls).to.have.length(2);
+      const [, fetchArgs] = calls[0] as [string, string[], unknown];
+      expect(fetchArgs[0]).to.equal('-c');
+      expect(calls[1]).to.deep.equal([
+        'git',
+        ['merge', '--ff-only', '@{u}'],
+        { cwd: '/tmp/ws', timeout: 60_000 },
+      ]);
     });
   });
 
@@ -216,6 +270,78 @@ describe('services/workspace-git', () => {
         ['git', ['branch', '--show-current'], { cwd: '/tmp/ws', timeout: 10_000 }],
         ['git', ['push', '-u', 'origin', '--', 'feature-x'], { cwd: '/tmp/ws', timeout: 60_000 }],
       ]);
+    });
+
+    it('prepends auth args to a plain push when a token is passed', async () => {
+      const { stub, calls } = makeStub();
+      await pushBranch('/tmp/ws', stub, 'ghp_x');
+
+      const pushCall = calls[1] as [string, string[], unknown];
+      expect(pushCall[1][0]).to.equal('-c');
+      expect(decodeBasicHeader(pushCall[1][1] as string)).to.equal('x-access-token:ghp_x');
+      expect(pushCall[1].slice(2)).to.deep.equal(['push']);
+      // The upstream probe itself carries no auth args — it's a local read.
+      expect((calls[0] as [string, string[], unknown])[1]).to.deep.equal([
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        '@{u}',
+      ]);
+    });
+
+    it('prepends auth args to the first-push -u branch when a token is passed', async () => {
+      const { stub, calls } = makeStub((_cmd, args) => {
+        if (Array.isArray(args) && args.includes('rev-parse')) {
+          throw new Error('fatal: no upstream configured for branch');
+        }
+        if (Array.isArray(args) && args.includes('branch')) {
+          return { stdout: 'feature-x\n', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      await pushBranch('/tmp/ws', stub, 'ghp_x');
+
+      const pushCall = calls[2] as [string, string[], unknown];
+      expect(decodeBasicHeader(pushCall[1][1] as string)).to.equal('x-access-token:ghp_x');
+      expect(pushCall[1].slice(2)).to.deep.equal(['push', '-u', 'origin', '--', 'feature-x']);
+    });
+
+    it('translates the git auth error instead of surfacing it raw', async () => {
+      const { stub } = makeStub((_cmd, args) => {
+        if (Array.isArray(args) && args.includes('push')) {
+          throw new Error(`Command failed: git push\n${GIT_AUTH_ERROR}`);
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      let error: Error | undefined;
+      try {
+        await pushBranch('/tmp/ws', stub);
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error?.message).to.include('Git push failed');
+      expect(error?.message).to.include('Settings → Workspaces → Git');
+    });
+  });
+
+  describe('translateGitAuthError()', () => {
+    it('rewrites the "could not read Username" error with the operation verb', () => {
+      const message = translateGitAuthError(GIT_AUTH_ERROR, 'push');
+      expect(message).to.include('Git push failed');
+      expect(message).to.include('Settings → Workspaces → Git');
+    });
+
+    it('matches even when execFile wraps the git stderr in a larger message', () => {
+      const wrapped = `Command failed: git fetch\n${GIT_AUTH_ERROR}\n`;
+      const message = translateGitAuthError(wrapped, 'fetch');
+      expect(message).to.include('Git fetch failed');
+    });
+
+    it('passes through an unrelated error unchanged', () => {
+      const original = 'fatal: Not possible to fast-forward, aborting.';
+      expect(translateGitAuthError(original, 'push')).to.equal(original);
     });
   });
 

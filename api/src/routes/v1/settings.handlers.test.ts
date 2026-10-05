@@ -231,14 +231,30 @@ describe('routes/v1/settings.handlers', () => {
     });
 
     it('masks trackers github token to "****" when set [unit]', () => {
-      const envWithToken = makeEnv({
+      // The stored token must be seeded into actual config.yaml (not via
+      // makeEnv) — get() reads the raw file directly (issue #220: building
+      // a secret's display from the resolved env.* getter would leak a
+      // resolved ${VAR} reference's real value).
+      writeYaml(tmpDir, {
         workspaces: { tasks: { trackers: { github: { token: 'ghp_real_token' } } } },
       });
-      const result = getSettingsSectionHandler('trackers', envWithToken, makeConfig(tmpDir));
+      const result = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
       expect(result.ok).to.equal(true);
       if (result.ok) {
         const data = result.data as { github: { token?: string } };
         expect(data.github.token).to.equal('****');
+      }
+    });
+
+    it('shows trackers github token as its ${VAR} reference, not masked, when stored as an env lookup [unit]', () => {
+      writeYaml(tmpDir, {
+        workspaces: { tasks: { trackers: { github: { token: '${GH_TOKEN}' } } } },
+      });
+      const result = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal('${GH_TOKEN}');
       }
     });
 
@@ -248,6 +264,54 @@ describe('routes/v1/settings.handlers', () => {
       if (result.ok) {
         const data = result.data as { github: { token?: string } };
         expect(data.github.token).to.equal(undefined);
+      }
+    });
+
+    it('masks git-credentials github token to "****" when set [unit]', () => {
+      writeYaml(tmpDir, { workspaces: { git: { github: { token: 'ghp_git_token' } } } });
+      const result = getSettingsSectionHandler('git-credentials', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal('****');
+      }
+    });
+
+    it('shows git-credentials github token as its ${VAR} reference when stored as an env lookup [unit]', () => {
+      writeYaml(tmpDir, { workspaces: { git: { github: { token: '${GH_TOKEN}' } } } });
+      const result = getSettingsSectionHandler('git-credentials', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal('${GH_TOKEN}');
+      }
+    });
+
+    it('omits git-credentials github token from GET when not set [unit]', () => {
+      const result = getSettingsSectionHandler('git-credentials', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { github: { token?: string } };
+        expect(data.github.token).to.equal(undefined);
+      }
+    });
+
+    // The two slugs share the `workspaces` top-level YAML key. get() must
+    // never cross-contaminate: reading one slug's section shows only that
+    // slug's stored value, even when the other is also set.
+    it('getSettingsSectionHandler keeps trackers and git-credentials tokens independent [unit]', () => {
+      writeYaml(tmpDir, {
+        workspaces: {
+          tasks: { trackers: { github: { token: 'ghp_tracker_token' } } },
+          git: { github: { token: 'ghp_git_token' } },
+        },
+      });
+      const trackers = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
+      const gitCreds = getSettingsSectionHandler('git-credentials', makeEnv(), makeConfig(tmpDir));
+      expect(trackers.ok && gitCreds.ok).to.equal(true);
+      if (trackers.ok && gitCreds.ok) {
+        expect((trackers.data as { github: { token?: string } }).github.token).to.equal('****');
+        expect((gitCreds.data as { github: { token?: string } }).github.token).to.equal('****');
       }
     });
 
@@ -522,7 +586,9 @@ describe('routes/v1/settings.handlers', () => {
     });
 
     it('preserves stored trackers github token when incoming is "****" [unit]', async () => {
-      const envWithToken = makeEnv({
+      // Seeded into config.yaml directly, same reason as the GET test
+      // above — write() resolves the "stored" value from the raw file.
+      writeYaml(tmpDir, {
         workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
       });
       const config = makeConfig(tmpDir);
@@ -537,7 +603,7 @@ describe('routes/v1/settings.handlers', () => {
         'trackers',
         { github: { token: '****' } },
         config,
-        envWithToken,
+        makeEnv(),
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
@@ -551,8 +617,66 @@ describe('routes/v1/settings.handlers', () => {
       expect(workspaces.tasks.trackers.github.token).to.equal('ghp_stored_token');
     });
 
+    it('preserves stored trackers github token when it is a ${VAR} reference [unit]', async () => {
+      writeYaml(tmpDir, {
+        workspaces: { tasks: { trackers: { github: { token: '${GH_TOKEN}' } } } },
+      });
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '****' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as {
+        tasks: { trackers: { github: { token: string } } };
+      };
+      expect(workspaces.tasks.trackers.github.token).to.equal('${GH_TOKEN}');
+    });
+
+    it('rejects a trackers github token referencing a ${VAR} that is not set [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+      delete process.env['SETTINGS_TEST_UNSET_VAR'];
+
+      const result = await patchSettingsSectionHandler(
+        'trackers',
+        { github: { token: '${SETTINGS_TEST_UNSET_VAR}' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.fieldErrors?.['github.token']?.[0]).to.include('SETTINGS_TEST_UNSET_VAR');
+      }
+    });
+
     it('clears trackers github token when incoming is empty string [unit]', async () => {
-      const envWithToken = makeEnv({
+      writeYaml(tmpDir, {
         workspaces: { tasks: { trackers: { github: { token: 'ghp_stored_token' } } } },
       });
       const config = makeConfig(tmpDir);
@@ -567,7 +691,7 @@ describe('routes/v1/settings.handlers', () => {
         'trackers',
         { github: { token: '' } },
         config,
-        envWithToken,
+        makeEnv(),
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
@@ -579,6 +703,136 @@ describe('routes/v1/settings.handlers', () => {
         tasks: { trackers: { github: { token: string } } };
       };
       expect(workspaces.tasks.trackers.github.token).to.equal('');
+    });
+
+    it('writes git-credentials github token nested under workspaces.git [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'git-credentials',
+        { github: { token: 'ghp_new_git_token' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as { git: { github: { token: string } } };
+      expect(workspaces.git.github.token).to.equal('ghp_new_git_token');
+    });
+
+    it('preserves stored git-credentials github token when incoming is "****" [unit]', async () => {
+      writeYaml(tmpDir, { workspaces: { git: { github: { token: 'ghp_stored_git_token' } } } });
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      await patchSettingsSectionHandler(
+        'git-credentials',
+        { github: { token: '****' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      const written = readYaml(tmpDir);
+      const workspaces = written.workspaces as { git: { github: { token: string } } };
+      expect(workspaces.git.github.token).to.equal('ghp_stored_git_token');
+    });
+
+    it('rejects a git-credentials github token referencing a ${VAR} that is not set [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+      delete process.env['SETTINGS_TEST_UNSET_VAR'];
+
+      const result = await patchSettingsSectionHandler(
+        'git-credentials',
+        { github: { token: '${SETTINGS_TEST_UNSET_VAR}' } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.fieldErrors?.['github.token']?.[0]).to.include('SETTINGS_TEST_UNSET_VAR');
+      }
+    });
+
+    // The real-world bug this guards against: mergeConfigYaml() is a
+    // shallow merge at the top-level YAML key, and both `trackers` and
+    // `git-credentials` write under the same `workspaces` key. Saving
+    // either one must never wipe out whatever the other already stored.
+    describe('workspaces subtree is not clobbered across slugs', () => {
+      async function patchSlug(slug: string, token: string, config: ConfigManagerAccessor) {
+        const {
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        } = makeSideEffects();
+        await patchSettingsSectionHandler(
+          slug,
+          { github: { token } },
+          config,
+          makeEnv(),
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        );
+      }
+
+      it('saving git-credentials after trackers preserves both [unit]', async () => {
+        const config = makeConfig(tmpDir);
+        await patchSlug('trackers', 'ghp_tracker_token', config);
+        await patchSlug('git-credentials', 'ghp_git_token', config);
+
+        const workspaces = readYaml(tmpDir).workspaces as {
+          tasks: { trackers: { github: { token: string } } };
+          git: { github: { token: string } };
+        };
+        expect(workspaces.tasks.trackers.github.token).to.equal('ghp_tracker_token');
+        expect(workspaces.git.github.token).to.equal('ghp_git_token');
+      });
+
+      it('saving trackers after git-credentials preserves both [unit]', async () => {
+        const config = makeConfig(tmpDir);
+        await patchSlug('git-credentials', 'ghp_git_token', config);
+        await patchSlug('trackers', 'ghp_tracker_token', config);
+
+        const workspaces = readYaml(tmpDir).workspaces as {
+          tasks: { trackers: { github: { token: string } } };
+          git: { github: { token: string } };
+        };
+        expect(workspaces.tasks.trackers.github.token).to.equal('ghp_tracker_token');
+        expect(workspaces.git.github.token).to.equal('ghp_git_token');
+      });
     });
 
     it('clears apiKey when incoming is empty string for model-providers [unit]', async () => {
