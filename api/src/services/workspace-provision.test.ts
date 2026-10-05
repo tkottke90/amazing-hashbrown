@@ -140,6 +140,58 @@ describe('services/workspace-provision', () => {
       expect(error?.message).to.equal('Repository not found');
     });
 
+    it('omits auth args when no token is passed, unchanged from today', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository(
+        '/tmp/ws',
+        { git: true, remoteUrl: 'https://example.com/org/repo.git' },
+        stub,
+        undefined,
+      );
+      expect(calls).to.deep.equal([
+        [
+          'git',
+          ['clone', '--', 'https://example.com/org/repo.git', '.'],
+          { cwd: '/tmp/ws', timeout: 60_000 },
+        ],
+      ]);
+    });
+
+    it('prepends a -c extraHeader arg to the clone when a token is passed', async () => {
+      const { stub, calls } = makeStub();
+      await provisionGitRepository(
+        '/tmp/ws',
+        { git: true, remoteUrl: 'https://example.com/org/repo.git' },
+        stub,
+        'ghp_x',
+      );
+      const [cmd, args, opts] = calls[0] as [string, string[], unknown];
+      expect(cmd).to.equal('git');
+      expect(args[0]).to.equal('-c');
+      expect(args.slice(2)).to.deep.equal(['clone', '--', 'https://example.com/org/repo.git', '.']);
+      expect(opts).to.deep.equal({ cwd: '/tmp/ws', timeout: 60_000 });
+    });
+
+    it('translates a clone auth error instead of surfacing it raw', async () => {
+      const { stub } = makeStub(() => {
+        throw new Error(
+          "Command failed: git clone\nfatal: could not read Username for 'https://github.com': No such device or address",
+        );
+      });
+      let error: Error | undefined;
+      try {
+        await provisionGitRepository(
+          '/tmp/ws',
+          { git: true, remoteUrl: 'https://example.com/org/repo.git' },
+          stub,
+        );
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error?.message).to.include('Git clone failed');
+      expect(error?.message).to.include('Settings → Workspaces → Git');
+    });
+
     it('propagates an init rejection', async () => {
       const { stub } = makeStub(() => {
         throw new Error('git not found');

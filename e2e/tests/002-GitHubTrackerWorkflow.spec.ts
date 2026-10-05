@@ -96,7 +96,10 @@ export const GitHubTrackerWorkflow: TestSuite = {
 
         const dialog = page.locator('dialog[open]');
         await expect(dialog).toBeVisible();
-        await dialog.getByLabel('Personal access token').fill(GITHUB_TOKEN!);
+        // exact: true — the token field now has a sibling "source from
+        // environment variable" toggle switch whose own accessible name
+        // contains "Personal access token" as a substring too.
+        await dialog.getByLabel('Personal access token', { exact: true }).fill(GITHUB_TOKEN!);
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
         await dialog.getByRole('button', { name: 'Verify' }).click();

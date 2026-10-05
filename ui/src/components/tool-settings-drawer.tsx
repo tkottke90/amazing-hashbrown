@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { CredentialValueField } from '@/components/credential-value-field';
 import { showToast } from '@/lib/toast';
 import {
   patchToolSetting,
@@ -119,8 +120,10 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   const envEntries = useSignal<EnvEntry[]>([]);
   const envNameQuery = useSignal('');
   const newEnvValue = useSignal('');
-  // Until the user types a value, it follows the name as a ${NAME} lookup.
-  const newEnvValueTouched = useSignal(false);
+  // Bumped on every successful addEnvEntry() so the add-row's
+  // CredentialValueField (keyed on this) remounts fresh — otherwise its
+  // internal literal/env-var toggle state would persist across adds.
+  const addRowKey = useSignal(0);
   const envWarn = useSignal<string | null>(null);
   const envErrors = useSignal<Record<string, string>>({});
 
@@ -153,7 +156,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
     envEntries.value = Object.entries(tool.env ?? {}).map(([name, value]) => ({ name, value }));
     envNameQuery.value = '';
     newEnvValue.value = '';
-    newEnvValueTouched.value = false;
+    addRowKey.value++;
     envWarn.value = null;
     envErrors.value = {};
     saveError.value = null;
@@ -171,17 +174,18 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   function setNewEnvName(raw: string) {
     envNameQuery.value = raw;
     envWarn.value = null;
-    if (!newEnvValueTouched.value) newEnvValue.value = lookupFor(normalizeEnvName(raw));
   }
 
   function addEnvEntry() {
     const name = normalizeEnvName(envNameQuery.value);
     if (!name || envEntries.value.some((e) => e.name === name)) return;
-    const value = newEnvValueTouched.value ? newEnvValue.value : lookupFor(name);
+    // An untouched value field defaults to referencing a host var of the
+    // same name — the common case — rather than adding an empty row.
+    const value = newEnvValue.value || lookupFor(name);
     envEntries.value = [...envEntries.value, { name, value }];
     envNameQuery.value = '';
     newEnvValue.value = '';
-    newEnvValueTouched.value = false;
+    addRowKey.value++;
     envWarn.value = ENV_VAR_NAME_RE.test(name)
       ? null
       : 'config-manager only supports uppercase names — save will be rejected';
@@ -467,19 +471,18 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
                 const error = envErrors.value[entry.name];
                 const errorId = `tool-settings-shell-env-error-${i}`;
                 return (
-                  <div key={entry.name} class="space-y-1">
-                    <div class="flex items-center gap-2">
-                      <span class="w-40 shrink-0 truncate text-sm" title={entry.name}>
-                        {entry.name}
-                      </span>
-                      <Input
-                        className="min-w-0 flex-1 font-mono text-xs"
-                        aria-label={`Value for ${entry.name}`}
-                        aria-invalid={error ? true : undefined}
-                        aria-describedby={error ? errorId : undefined}
-                        value={entry.value}
-                        onInput={(e) => updateEnvValue(i, (e.target as HTMLInputElement).value)}
-                      />
+                  <div key={entry.name} class="space-y-1 rounded-md border border-border/60 p-2">
+                    <div class="flex items-start gap-2">
+                      <div class="min-w-0 flex-1">
+                        <CredentialValueField
+                          id={`tool-settings-shell-env-value-${i}`}
+                          label={entry.name}
+                          masked={false}
+                          value={entry.value}
+                          onChange={(next) => updateEnvValue(i, next)}
+                          suggestedEnvName={entry.name}
+                        />
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -511,17 +514,19 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
                       onKeyDown={(e) => onEnvAddKeyDown(e as KeyboardEvent)}
                     />
                   </div>
-                  <Input
-                    className="min-w-0 flex-1 font-mono text-xs"
-                    aria-label="Value for new variable"
-                    placeholder="${VAR} or a literal"
-                    value={newEnvValue.value}
-                    onInput={(e) => {
-                      newEnvValue.value = (e.target as HTMLInputElement).value;
-                      newEnvValueTouched.value = true;
-                    }}
-                    onKeyDown={(e) => onEnvAddKeyDown(e as KeyboardEvent)}
-                  />
+                  <div class="min-w-0 flex-1">
+                    <CredentialValueField
+                      key={addRowKey.value}
+                      id="tool-settings-shell-env-new-value"
+                      label="Value"
+                      masked={false}
+                      value={newEnvValue.value}
+                      onChange={(next) => (newEnvValue.value = next)}
+                      suggestedEnvName={normalizeEnvName(envNameQuery.value) || undefined}
+                      placeholder="a literal value"
+                      onKeyDown={(e) => onEnvAddKeyDown(e)}
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
