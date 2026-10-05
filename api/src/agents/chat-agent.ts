@@ -487,8 +487,18 @@ export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
   if (ctx.olderSummaries.length > 0) {
     lines.push(
       '',
-      '## Earlier summaries (read via shell if needed)',
+      '## Earlier summaries',
       ...ctx.olderSummaries.map((s) => `- ${s.path} (generated ${s.timestamp})`),
+      '',
+      'This list is already complete and exhaustive, not a truncated preview — there is ' +
+        'nothing to double-check by listing the directory, even if a question about ' +
+        '"earlier" or "non-latest" summaries sounds like it implies more than what\'s shown ' +
+        'here. ("Non-latest" distinguishes this list from the separate "Prior work summary" ' +
+        'above, the one that is the latest — it is not a hint that this list is partial.) ' +
+        'The path and generation timestamp above are already everything needed to answer ' +
+        'which summaries exist or how long ago one was generated — compare the timestamp ' +
+        'against <ambient_context> directly rather than running a shell command to check. ' +
+        "Reach for shell_exec only when the user asks what a summary's content actually says.",
     );
   }
   return lines.join('\n');
