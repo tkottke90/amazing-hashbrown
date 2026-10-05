@@ -61,6 +61,86 @@ describe('use-thread — hasThreadInstance', () => {
   });
 });
 
+describe('use-thread — live hitl_prompt SSE field passthrough (regression)', () => {
+  // Previously this handler hand-picked a fixed field list that dropped
+  // command/reason (shell_approval), stepsUsed/recursionLimit
+  // (recursion_limit_warning), and would have dropped summary
+  // (loop_stagnation_warning) too — meaning these only ever rendered after
+  // a page reload via the REST/revive path, never on first live paint.
+  it('carries summary through on first live paint for a loop_stagnation_warning-sourced prompt', async () => {
+    respondWith([
+      {
+        type: 'hitl_prompt',
+        messageId: 'm1',
+        promptId: 'p1',
+        question: "I don't think this is making progress. What would you like me to do?",
+        kind: 'multiple_choice',
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        summary: 'Repeated the same shell_exec check 5 times with no new information.',
+        seq: 1,
+      },
+    ]);
+
+    const thread = newThread('t-live-hitl');
+    await thread.sendMessage('go');
+
+    const prompt = thread.messages.value.find((m) => m.kind === 'hitl_prompt');
+    expect(prompt).toBeDefined();
+    expect((prompt as { summary?: string }).summary).toBe(
+      'Repeated the same shell_exec check 5 times with no new information.',
+    );
+  });
+
+  it('carries stepsUsed/recursionLimit through on first live paint for a recursion_limit_warning-sourced prompt', async () => {
+    respondWith([
+      {
+        type: 'hitl_prompt',
+        messageId: 'm2',
+        promptId: 'p2',
+        question: "I've been working for 75 LLM calls and want to check in.",
+        kind: 'multiple_choice',
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        stepsUsed: 75,
+        recursionLimit: 100,
+        seq: 1,
+      },
+    ]);
+
+    const thread = newThread('t-live-hitl-2');
+    await thread.sendMessage('go');
+
+    const prompt = thread.messages.value.find((m) => m.kind === 'hitl_prompt');
+    expect(prompt).toBeDefined();
+    expect((prompt as { stepsUsed?: number }).stepsUsed).toBe(75);
+    expect((prompt as { recursionLimit?: number }).recursionLimit).toBe(100);
+  });
+
+  it('carries command/reason through on first live paint for a shell_approval prompt', async () => {
+    respondWith([
+      {
+        type: 'hitl_prompt',
+        messageId: 'm3',
+        promptId: 'p3',
+        question: 'Approve command execution?',
+        kind: 'shell_approval',
+        command: 'rm -rf /tmp/scratch',
+        reason: 'cleaning up a temp dir',
+        seq: 1,
+      },
+    ]);
+
+    const thread = newThread('t-live-hitl-3');
+    await thread.sendMessage('go');
+
+    const prompt = thread.messages.value.find((m) => m.kind === 'hitl_prompt');
+    expect(prompt).toBeDefined();
+    expect((prompt as { command?: string }).command).toBe('rm -rf /tmp/scratch');
+    expect((prompt as { reason?: string }).reason).toBe('cleaning up a temp dir');
+  });
+});
+
 describe('use-thread — continuation-bubble splitting', () => {
   it('starts a new assistant bubble for text that arrives after a mid-turn tool call', async () => {
     respondWith([

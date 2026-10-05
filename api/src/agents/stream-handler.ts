@@ -444,6 +444,33 @@ export function dispatchHitlPrompt(
         ...(assistantSeq !== null ? { assistantSeq } : {}),
         ...(userSeq !== null ? { userSeq } : {}),
       });
+    } else if (interruptValue.kind === 'loop_stagnation_warning') {
+      const { question, choices, summary } = interruptValue as {
+        question: string;
+        choices: string[];
+        summary: string;
+      };
+      const seq = recordHitlPrompt(threadStore, threadId, promptId, {
+        question,
+        promptKind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        summary,
+        ...(taskId ? { taskId } : {}),
+      });
+      writeSseEvent(sink, {
+        type: 'hitl_prompt',
+        messageId: msgId,
+        promptId,
+        question,
+        kind: 'multiple_choice',
+        choices,
+        allowFreeText: true,
+        summary,
+        seq,
+        ...(assistantSeq !== null ? { assistantSeq } : {}),
+        ...(userSeq !== null ? { userSeq } : {}),
+      });
     } else {
       const { question, kind, choices, allowFreeText, approveLabel, approveType, rejectLabel } =
         interruptValue as {

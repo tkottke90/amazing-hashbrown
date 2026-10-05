@@ -3,11 +3,44 @@ import { expect } from 'chai';
 import {
   CostEntrySchema,
   ContextWindowSchema,
+  LoopGuardSchema,
   parseFavoriteModels,
   resolveServerTimezone,
 } from './env.js';
 
 describe('config/env', () => {
+  describe('LoopGuardSchema', () => {
+    it('defaults all fields when given an empty object', () => {
+      const result = LoopGuardSchema.parse({});
+      expect(result).to.deep.equal({
+        enabled: true,
+        stagnationNudgeThreshold: 3,
+        stagnationReflectionThreshold: 5,
+        streakReflectionThreshold: 10,
+      });
+    });
+
+    it('rejects when stagnationReflectionThreshold does not exceed stagnationNudgeThreshold', () => {
+      expect(() =>
+        LoopGuardSchema.parse({
+          stagnationNudgeThreshold: 5,
+          stagnationReflectionThreshold: 5,
+        }),
+      ).to.throw();
+      expect(() =>
+        LoopGuardSchema.parse({
+          stagnationNudgeThreshold: 5,
+          stagnationReflectionThreshold: 3,
+        }),
+      ).to.throw();
+    });
+
+    it('round-trips enabled: false', () => {
+      const result = LoopGuardSchema.parse({ enabled: false });
+      expect(result.enabled).to.equal(false);
+    });
+  });
+
   describe('ContextWindowSchema', () => {
     it('defaults all fields when given an empty object', () => {
       const result = ContextWindowSchema.parse({});

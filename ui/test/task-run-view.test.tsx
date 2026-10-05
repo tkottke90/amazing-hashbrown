@@ -200,3 +200,60 @@ describe('HitlPromptMessage — copied task question', () => {
     expect(screen.queryByTestId('hitl-open-run')).not.toBeInTheDocument();
   });
 });
+
+describe('HitlPromptMessage — loop guard summary subheading', () => {
+  it('renders the summary subheading on a loop_stagnation_warning-sourced multiple_choice prompt [unit]', () => {
+    const prompt: HitlThreadMessage = {
+      kind: 'hitl_prompt',
+      id: 'lg-1',
+      promptId: 'lg-1',
+      question: "I don't think this is making progress. What would you like me to do?",
+      promptKind: 'multiple_choice',
+      choices: ['Continue working', 'Stop and summarize what you have done so far'],
+      allowFreeText: true,
+      summary: 'Repeated the same shell_exec check 5 times with no new information.',
+      status: 'pending',
+    };
+    render(<HitlPromptMessage message={prompt} onAnswer={() => {}} />);
+    expect(
+      screen.getByText('Repeated the same shell_exec check 5 times with no new information.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows both subheadings together when both stepsUsed and summary are present [unit]', () => {
+    const prompt: HitlThreadMessage = {
+      kind: 'hitl_prompt',
+      id: 'lg-2',
+      promptId: 'lg-2',
+      question: 'Check in?',
+      promptKind: 'multiple_choice',
+      choices: ['Continue working', 'Stop and summarize what you have done so far'],
+      stepsUsed: 75,
+      recursionLimit: 100,
+      summary: 'Also stagnant on a tool call.',
+      status: 'pending',
+    };
+    render(<HitlPromptMessage message={prompt} onAnswer={() => {}} />);
+    expect(screen.getByText('75 LLM calls completed (limit: 100)')).toBeInTheDocument();
+    expect(screen.getByText('Also stagnant on a tool call.')).toBeInTheDocument();
+  });
+
+  it('renders no summary subheading when summary is absent [unit]', () => {
+    const prompt: HitlThreadMessage = {
+      kind: 'hitl_prompt',
+      id: 'lg-3',
+      promptId: 'lg-3',
+      question: 'Check in?',
+      promptKind: 'multiple_choice',
+      choices: ['Continue working', 'Stop and summarize what you have done so far'],
+      stepsUsed: 50,
+      recursionLimit: 100,
+      status: 'pending',
+    };
+    const { container } = render(<HitlPromptMessage message={prompt} onAnswer={() => {}} />);
+    // Only the stepsUsed subheading paragraph should be present — no second
+    // one from a summary that was never set.
+    const subheadings = container.querySelectorAll('p.text-xs.text-muted-foreground');
+    expect(subheadings).toHaveLength(1);
+  });
+});

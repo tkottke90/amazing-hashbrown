@@ -146,6 +146,9 @@ export function HitlPromptMessage({ message, onAnswer, className }: HitlPromptMe
               {message.stepsUsed} LLM calls completed (limit: {message.recursionLimit})
             </p>
           )}
+          {message.summary !== undefined && (
+            <p className="text-xs text-muted-foreground px-4 pt-2 pb-0">{message.summary}</p>
+          )}
           {message.choices?.map((raw) => {
             const { label, description } = parseChoice(raw);
             return (

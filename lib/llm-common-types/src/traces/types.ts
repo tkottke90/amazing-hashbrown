@@ -23,6 +23,8 @@ export const TraceSourceSchema = z.enum([
   // notification (sub-agent-notification.ts).
   'wakeup',
   'sub-agent-notification',
+  // The loop guard's own reflection call (api/src/agents/loop-reflection.ts).
+  'loop-guard',
 ]);
 
 export const SpanRecordSchema = z.object({

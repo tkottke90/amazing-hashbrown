@@ -148,14 +148,42 @@ export const RolesConfigSchema = z.record(z.string(), RoleSchema).default({});
 
 export type RoleConfig = z.infer<typeof RoleSchema>;
 
+// Loop guard — extends the recursion-guard middleware's step-count check-in
+// with two signals that catch an agent repeating itself even while well
+// under the step ceiling: stagnation (a tool returning materially the same
+// output call after call) and a long unbroken streak of tool calls with no
+// plain-text check-in (no repeats, but nothing pausing to explain itself
+// either). See docs/superpowers/specs/2026-10-05-loop-guard-stagnation-reflection-design.md.
+export const LoopGuardSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    // Consecutive same-tool/same-(normalized-)output calls before a cheap,
+    // no-extra-LLM-call nudge is injected.
+    stagnationNudgeThreshold: z.number().int().positive().default(3),
+    // Same stagnation streak persisting past the nudge (it didn't help) ->
+    // triggers the heavier reflection LLM call instead.
+    stagnationReflectionThreshold: z.number().int().positive().default(5),
+    // Consecutive tool-call turns, any tools, with zero repeats and no plain
+    // reply in between -> also triggers reflection, independent of stagnation.
+    streakReflectionThreshold: z.number().int().positive().default(10),
+  })
+  .refine((v) => v.stagnationReflectionThreshold > v.stagnationNudgeThreshold, {
+    message: 'stagnationReflectionThreshold must be greater than stagnationNudgeThreshold',
+    path: ['stagnationReflectionThreshold'],
+  });
+
+export type LoopGuardConfig = z.infer<typeof LoopGuardSchema>;
+
 export const AgentSchema = z.object({
   recursionLimit: z.number().int().positive().default(100),
   recursionWarnThreshold: z.number().min(0.1).max(0.99).default(0.75),
   // A sub-agent run gets a much smaller hard ceiling than an interactive/task
-  // agent — it has no soft-interrupt recursion-guard middleware (that uses
-  // interrupt(), which would suspend a graph nothing is watching to resume),
-  // so this is its only backstop against runaway looping.
+  // agent. It now also carries the recursion-guard middleware itself (in
+  // "throw" escalation mode — see recursion-guard.middleware.ts), so this
+  // ceiling is a second, independent backstop underneath that, not the sole
+  // protection it used to be.
   subAgentRecursionLimit: z.number().int().positive().default(25),
+  loopGuard: LoopGuardSchema.default({}),
 });
 
 export type AgentConfig = z.infer<typeof AgentSchema>;

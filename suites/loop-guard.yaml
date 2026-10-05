@@ -1,0 +1,120 @@
+suite:
+  id: loop-guard
+  name: Loop Guard
+  purpose: >
+    Verifies the loop guard's nudge/reflection ladder actually changes agent
+    behavior once stagnation or a long unbroken tool-call streak is seeded —
+    not just that the counters fire (unit tests already cover that), but that
+    the model responds to the injected guidance by trying something different
+    or stopping, instead of repeating itself indefinitely. See issue #266 and
+    docs/superpowers/specs/2026-10-05-loop-guard-stagnation-reflection-design.md.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: lg-001-stagnation-past-nudge-changes-approach
+    name: Agent changes approach after repeated identical shell_exec results
+    purpose: >
+      Seeds 3 byte-identical shell_exec tool/result pairs chasing the same
+      search — the real "Abort" investigation shape from issue #266, where
+      an agent re-ran grep for a literal string ~20 times with no new
+      findings. Past the nudge threshold, the agent's next tool call should
+      not simply repeat the exact same stagnant command.
+    type: tool-sequence
+    turns:
+      - user: >
+          Find every place the literal string "Abort" appears in this repo.
+      - tool: shell_exec
+        args: { command: 'grep -r Abort .', reason: 'searching for literal Abort string' }
+        result: { text: "no matches\n" }
+      - tool: shell_exec
+        args: { command: 'grep -r Abort .', reason: 'searching for literal Abort string' }
+        result: { text: "no matches\n" }
+      - tool: shell_exec
+        args: { command: 'grep -r Abort .', reason: 'searching for literal Abort string' }
+        result: { text: "no matches\n" }
+    tool: '!shell_exec'
+    argChecks: []
+
+  - id: lg-002-long-varied-streak-pauses-to-check-in
+    name: Agent pauses to check in after a long unbroken tool-call streak with no repeats
+    purpose: >
+      Seeds 10 varied, non-repeating tool calls — the raw-streak path, where
+      nothing ever stagnates (every call looks different) but nothing pauses
+      to explain itself either. Past the raw-streak threshold, the agent's
+      next action should not be another silent tool call.
+    type: tool-sequence
+    turns:
+      - user: >
+          Investigate how the task queue handles retries and summarize what
+          you find as you go.
+      - tool: shell_exec
+        args: { command: 'ls api/src/agents', reason: 'orienting in the agents folder' }
+        result: { text: "chat-agent.ts\ntask-execution.ts\nrecursion-guard.middleware.ts\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -n retry api/src/agents/task-execution.ts',
+            reason: 'looking for retry logic',
+          }
+        result: { text: "no matches\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -rn retry api/src/services',
+            reason: 'checking services for retry handling',
+          }
+        result: { text: "provider-queue.ts:42: // retried on transient failure\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'cat api/src/services/provider-queue.ts',
+            reason: 'reading the retry implementation',
+          }
+        result: { text: "export async function withSlot(...) { /* ... */ }\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -n withSlot api/src/agents/task-execution.ts',
+            reason: 'finding where withSlot is used',
+          }
+        result: { text: "task-execution.ts:118: await getProviderQueue().withSlot(...)\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'sed -n "100,130p" api/src/agents/task-execution.ts',
+            reason: 'reading the surrounding context',
+          }
+        result: { text: "  // ...\n  await getProviderQueue().withSlot(...)\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -n maxConcurrency api/src/config/env.ts',
+            reason: 'checking concurrency config',
+          }
+        result: { text: "env.ts:31:  maxConcurrency: z.number().int().optional(),\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -rn maxConcurrency api/src/services/provider-queue.ts',
+            reason: 'checking how concurrency is enforced',
+          }
+        result: { text: "provider-queue.ts:55:  const limit = config.maxConcurrency ?? 1;\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'grep -n completeQueueEntry api/src/services/workspace-store.ts',
+            reason: 'checking how a queue entry is completed',
+          }
+        result: { text: "workspace-store.ts:210: completeQueueEntry(id, status) { /* ... */ }\n" }
+      - tool: shell_exec
+        args:
+          {
+            command: 'cat api/src/services/cron-settlement.ts',
+            reason: 'checking retry/backoff on scheduled failures',
+          }
+        result:
+          {
+            text: "export function settleCronRun(...) { /* auto-pause after N consecutive scheduled failures */ }\n",
+          }
+    tool: '!shell_exec'
+    argChecks: []

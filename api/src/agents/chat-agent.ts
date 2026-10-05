@@ -407,10 +407,12 @@ async function buildChatAgent(provider?: string, model?: string) {
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
-      createRecursionGuardMiddleware(
-        env.agent?.recursionLimit ?? 100,
-        env.agent?.recursionWarnThreshold ?? 0.75,
-      ),
+      createRecursionGuardMiddleware({
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+        loopGuard: env.agent?.loopGuard,
+        escalationMode: 'interrupt',
+      }),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, globalSkills),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
@@ -533,10 +535,12 @@ async function buildWorkspaceChatAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
-      createRecursionGuardMiddleware(
-        env.agent?.recursionLimit ?? 100,
-        env.agent?.recursionWarnThreshold ?? 0.75,
-      ),
+      createRecursionGuardMiddleware({
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+        loopGuard: env.agent?.loopGuard,
+        escalationMode: 'interrupt',
+      }),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
@@ -684,10 +688,12 @@ export async function buildTaskAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
-      createRecursionGuardMiddleware(
-        env.agent?.recursionLimit ?? 100,
-        env.agent?.recursionWarnThreshold ?? 0.75,
-      ),
+      createRecursionGuardMiddleware({
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+        loopGuard: env.agent?.loopGuard,
+        escalationMode: 'interrupt',
+      }),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       // Harmless no-op here (an automated task run never carries a chat
       // attachmentId, so pendingImageFetch never gets set either), but
@@ -740,11 +746,16 @@ export async function buildTaskAgent(
 //     no-op pass-through when absent, and this filter has already narrowed
 //     the tools array to the config-driven sub-agent set before that
 //     middleware ever runs.
-//   - omits createRecursionGuardMiddleware (also interrupt()-based) and the
-//     skill-gating middlewares (the only tools they gate — create-workspace/
-//     create-project — aren't in this tool list). Its only recursion
-//     backstop is the smaller hard env.agent.subAgentRecursionLimit ceiling
-//     passed at the agent.streamEvents() call site in task-execution.ts.
+//   - now carries createRecursionGuardMiddleware too, configured in "throw"
+//     escalation mode (see recursion-guard.middleware.ts) instead of the
+//     interrupt()-based mode Chat/Task use — nothing can resume an
+//     interrupt() in a sub-agent run, so every trigger (step count,
+//     stagnation, or a long unbroken tool-call streak) stops the run and
+//     reports back to the parent via a thrown StagnationLimitError instead.
+//     The smaller hard env.agent.subAgentRecursionLimit ceiling remains a
+//     second, independent backstop underneath it. Omits the skill-gating
+//     middlewares (the only tools they gate — create-workspace/create-project
+//     — aren't in this tool list).
 // See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3 and
 // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6.
 // ---------------------------------------------------------------------------
@@ -801,6 +812,12 @@ export async function buildSubAgentAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      createRecursionGuardMiddleware({
+        recursionLimit: env.agent?.subAgentRecursionLimit ?? 25,
+        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+        loopGuard: env.agent?.loopGuard,
+        escalationMode: 'throw',
+      }),
       createContextWindowMiddleware(env.chat?.contextWindow),
       toolAccessMiddleware,
       ambientContextMiddleware,
