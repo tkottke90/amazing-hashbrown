@@ -60,7 +60,7 @@ import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
 import { skillsManager } from '../services/skills-manager.js';
 import { resolveWorkspaceSkills, type SkillReader } from '../services/workspace-skills.js';
-import { buildTaskContextBlock } from './task-context.js';
+import { buildTaskContextBlock, formatRunTime } from './task-context.js';
 
 // Set once at startup (see api/src/index.ts) with the same shared db
 // connection every other store uses. SqliteSaver accepts the connection
@@ -438,7 +438,16 @@ export type ChatAgent = Awaited<ReturnType<typeof buildChatAgent>>['agent'];
 export interface WorkspaceChatContext {
   name: string;
   goal: string | null;
+  description: string | null;
   location: string;
+  // ISO timestamp — the workspace's creation time, immutable thereafter.
+  // Rendered alongside an instruction inviting the model to compare it (and
+  // the olderSummaries timestamps below) against the ambient current-time
+  // fact, rather than precomputing "N days ago" here: this block is cached
+  // at agent-build time and reused across many turns (see
+  // invalidateWorkspaceChatAgent), so a harness-baked relative phrase would
+  // go stale the same way a bare Date.now() did before #244.
+  createdAt: string;
   systemPrompt: string | null;
   // Resolved wiki domain name (not the raw id) for the workspace's bound
   // wiki, or null when the workspace has none configured.
@@ -454,11 +463,15 @@ export interface WorkspaceChatContext {
   olderSummaries: { path: string; timestamp: string }[];
 }
 
-function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
+export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
   const lines = [
     `You are working within the workspace "${ctx.name}".`,
     `Location on disk: ${ctx.location}`,
+    `Created: ${formatRunTime(ctx.createdAt, env.timezone)}`,
+    '(Dates above and in the summaries list below are absolute — compare them against the ' +
+      'current date/time in <ambient_context> to judge how recent or old something is.)',
   ];
+  if (ctx.description) lines.push(`Description: ${ctx.description}`);
   if (ctx.goal) lines.push(`Goal: ${ctx.goal}`);
   if (ctx.wikiDomain) {
     lines.push(
@@ -474,8 +487,18 @@ function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
   if (ctx.olderSummaries.length > 0) {
     lines.push(
       '',
-      '## Earlier summaries (read via shell if needed)',
+      '## Earlier summaries',
       ...ctx.olderSummaries.map((s) => `- ${s.path} (generated ${s.timestamp})`),
+      '',
+      'This list is already complete and exhaustive, not a truncated preview — there is ' +
+        'nothing to double-check by listing the directory, even if a question about ' +
+        '"earlier" or "non-latest" summaries sounds like it implies more than what\'s shown ' +
+        'here. ("Non-latest" distinguishes this list from the separate "Prior work summary" ' +
+        'above, the one that is the latest — it is not a hint that this list is partial.) ' +
+        'The path and generation timestamp above are already everything needed to answer ' +
+        'which summaries exist or how long ago one was generated — compare the timestamp ' +
+        'against <ambient_context> directly rather than running a shell command to check. ' +
+        "Reach for shell_exec only when the user asks what a summary's content actually says.",
     );
   }
   return lines.join('\n');

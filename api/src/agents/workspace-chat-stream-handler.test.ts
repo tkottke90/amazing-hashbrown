@@ -778,4 +778,17 @@ describe('agents/workspace-chat-stream-handler — buildWorkspaceContext() summa
       log.restore();
     }
   });
+
+  it('carries the workspace description and creation time through, issue #248', async () => {
+    const described = workspaceStore.createWorkspace({
+      name: 'Described workspace',
+      location: mkdtempSync(join(dir, 'ws-described-')),
+      description: 'A workspace for testing.',
+    });
+
+    const ctx = await buildWorkspaceContext(described);
+
+    expect(ctx.description).to.equal('A workspace for testing.');
+    expect(ctx.createdAt).to.equal(described.createdAt);
+  });
 });

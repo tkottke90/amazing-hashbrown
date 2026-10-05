@@ -47,6 +47,7 @@ import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.
 import { scheduleWakeupTool } from '../api/src/agents/tools/schedule-wakeup.tool.js';
 import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
+import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
 import { buildSystemPrompt, filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { buildAmbientContext } from '../api/src/agents/ambient-context.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
@@ -305,6 +306,7 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     // generateTitleHandler) that never attaches this prompt in real usage.
     const suite = preloadedSuite ?? (await loadSuite(suiteId, { bundledPath: suitesPath }));
     const simulatedTask = suite?.suite.simulatedTask;
+    const simulatedWorkspace = suite?.suite.simulatedWorkspace;
     const baseSystemPrompt =
       suite?.suite.appliesHarnessSystemPrompt === false
         ? undefined
@@ -312,7 +314,11 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
             suite?.suite.simulatedUserInstructions,
             // suite.simulatedTask (see suites/task-plan-progress.yaml) puts
             // the real task-run context block into the prompt, the same way
-            // buildTaskAgent() does in production.
+            // buildTaskAgent() does in production. suite.simulatedWorkspace
+            // (see suites/workspace-chat-context.yaml, issue #248) does the
+            // same for a workspace-chat turn via buildWorkspaceContextBlock()
+            // instead — mutually exclusive with simulatedTask, since those
+            // model two different production agent-builder call sites.
             simulatedTask
               ? buildTaskContextBlock({
                   title: simulatedTask.title,
@@ -320,7 +326,22 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
                   outcome: simulatedTask.outcome ?? null,
                   plan: simulatedTask.plan ?? null,
                 })
-              : undefined,
+              : simulatedWorkspace
+                ? buildWorkspaceContextBlock({
+                    name: simulatedWorkspace.name,
+                    location: simulatedWorkspace.location,
+                    goal: simulatedWorkspace.goal ?? null,
+                    description: simulatedWorkspace.description ?? null,
+                    createdAt:
+                      simulatedWorkspace.createdAt ??
+                      suite?.suite.simulatedNow ??
+                      new Date().toISOString(),
+                    systemPrompt: null,
+                    wikiDomain: null,
+                    latestSummary: null,
+                    olderSummaries: simulatedWorkspace.olderSummaries ?? [],
+                  })
+                : undefined,
           );
     // Splices in the same <ambient_context> block ambientContextMiddleware
     // appends on every real model call (api/src/agents/ambient-context.

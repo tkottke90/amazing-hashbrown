@@ -324,6 +324,25 @@ export const SuiteSchema = z.object({
         plan: z.array(z.object({ step: z.string(), done: z.boolean() })).optional(),
       })
       .optional(),
+    // Suite-level simulated workspace, for suites exercising workspace-chat
+    // context (issue #248). When set, bin/eval.ts renders it through the
+    // real buildWorkspaceContextBlock() (api/src/agents/chat-agent.ts) and
+    // passes that as buildSystemPrompt()'s context block — same mechanism as
+    // simulatedTask above, mutually exclusive with it (a scenario models
+    // either a task run or a workspace-chat turn, never both — the two are
+    // different production agent-builder call sites). Fields not exposed
+    // here (systemPrompt, wikiDomain, latestSummary) default to null/empty
+    // in bin/eval.ts, since no suite needs to seed them yet.
+    simulatedWorkspace: z
+      .object({
+        name: z.string().min(1),
+        location: z.string().min(1),
+        goal: z.string().optional(),
+        description: z.string().optional(),
+        createdAt: z.string().datetime().optional(),
+        olderSummaries: z.array(z.object({ path: z.string(), timestamp: z.string() })).optional(),
+      })
+      .optional(),
   }),
   scenarios: z.array(ScenarioSchema).min(1),
 });

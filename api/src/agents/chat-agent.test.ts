@@ -13,7 +13,11 @@ import {
   STATIC_CHAT_TOOLS,
   WAKEUP_TOOLS,
   buildWorkspaceScopedTools,
+  buildWorkspaceContextBlock,
+  type WorkspaceChatContext,
 } from './chat-agent.js';
+import { formatRunTime } from './task-context.js';
+import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
@@ -351,5 +355,68 @@ describe('agents/chat-agent', () => {
         expect(seenMessages.length).to.equal(messages.length);
       });
     });
+  });
+});
+
+describe('buildWorkspaceContextBlock()', () => {
+  function makeContext(overrides: Partial<WorkspaceChatContext> = {}): WorkspaceChatContext {
+    return {
+      name: 'Test Workspace',
+      goal: null,
+      description: null,
+      location: '/tmp/workspace',
+      createdAt: '2026-06-15T12:00:00.000Z',
+      systemPrompt: null,
+      wikiDomain: null,
+      latestSummary: null,
+      olderSummaries: [],
+      ...overrides,
+    };
+  }
+
+  it('renders the workspace description when set, issue #248', () => {
+    const block = buildWorkspaceContextBlock(makeContext({ description: 'A test project.' }));
+
+    expect(block).to.include('Description: A test project.');
+  });
+
+  it('omits the description line when the workspace has none, issue #248', () => {
+    const block = buildWorkspaceContextBlock(makeContext({ description: null }));
+
+    expect(block).to.not.include('Description:');
+  });
+
+  it('renders the workspace creation time via formatRunTime, issue #248', () => {
+    const block = buildWorkspaceContextBlock(
+      makeContext({ createdAt: '2026-01-01T00:00:00.000Z' }),
+    );
+
+    expect(block).to.include(`Created: ${formatRunTime('2026-01-01T00:00:00.000Z', env.timezone)}`);
+  });
+
+  it('invites the model to compare dated facts against the current-time fact, issue #248', () => {
+    const block = buildWorkspaceContextBlock(makeContext());
+
+    expect(block).to.include('<ambient_context>');
+  });
+
+  it('tells the model the older-summaries manifest already answers recency questions, issue #248', () => {
+    const block = buildWorkspaceContextBlock(
+      makeContext({
+        olderSummaries: [
+          {
+            path: '.hashbrown/summaries/2026-05-20T10-00-00-000Z.md',
+            timestamp: '2026-05-20T10-00-00-000Z',
+          },
+        ],
+      }),
+    );
+
+    expect(block).to.include(
+      '- .hashbrown/summaries/2026-05-20T10-00-00-000Z.md (generated 2026-05-20T10-00-00-000Z)',
+    );
+    expect(block).to.include('already everything needed to answer');
+    expect(block).to.include('already complete and exhaustive, not a truncated preview');
+    expect(block).to.not.include('read via shell if needed');
   });
 });

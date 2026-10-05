@@ -102,7 +102,9 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
   return {
     name: workspace.name,
     goal: workspace.goal,
+    description: workspace.description,
     location: workspace.location,
+    createdAt: workspace.createdAt,
     systemPrompt: workspace.systemPrompt,
     wikiDomain,
     latestSummary,
