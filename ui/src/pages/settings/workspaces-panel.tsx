@@ -2,11 +2,13 @@ import { useSignal } from '@preact/signals';
 import { cn } from '@/lib/utils';
 import { useTitle } from '@/hooks/use-title';
 import { TrackersSection } from './trackers-section';
+import { GitCredentialsSection } from './git-credentials-section';
 
-type WorkspacesSubsection = 'trackers';
+type WorkspacesSubsection = 'trackers' | 'git-credentials';
 
 const SUBSECTIONS: { label: string; slug: WorkspacesSubsection }[] = [
   { label: 'Trackers', slug: 'trackers' },
+  { label: 'Git', slug: 'git-credentials' },
 ];
 
 export function WorkspacesPanel() {
@@ -41,6 +43,7 @@ export function WorkspacesPanel() {
       </div>
       <div class="min-h-0 flex-1">
         {activeSubsection.value === 'trackers' && <TrackersSection />}
+        {activeSubsection.value === 'git-credentials' && <GitCredentialsSection />}
       </div>
     </div>
   );

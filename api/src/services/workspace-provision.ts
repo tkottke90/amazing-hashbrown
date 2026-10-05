@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { env } from '../config/env.js';
+import { buildGitAuthArgs } from './git-credentials.js';
+import { translateGitAuthError } from './workspace-git.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,15 +51,23 @@ export async function provisionGitRepository(
   location: string,
   opts: GitProvisionOptions,
   execFileFn: ExecFileFn = execFileAsync,
+  token: string | undefined = env.workspaces.git?.github?.token,
 ): Promise<void> {
   if (!opts.git) return;
 
   const remoteUrl = opts.remoteUrl?.trim();
   if (remoteUrl) {
-    await execFileFn('git', ['clone', '--', remoteUrl, '.'], {
-      cwd: location,
-      timeout: GIT_CLONE_TIMEOUT_MS,
-    });
+    const authArgs = buildGitAuthArgs(token);
+    try {
+      await execFileFn('git', [...authArgs, 'clone', '--', remoteUrl, '.'], {
+        cwd: location,
+        timeout: GIT_CLONE_TIMEOUT_MS,
+      });
+    } catch (err) {
+      throw new Error(
+        translateGitAuthError(err instanceof Error ? err.message : String(err), 'clone'),
+      );
+    }
   } else {
     await execFileFn('git', ['init'], { cwd: location, timeout: GIT_INIT_TIMEOUT_MS });
   }

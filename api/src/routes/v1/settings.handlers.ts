@@ -20,6 +20,8 @@ import {
   type CostEntry,
   type RLMConfig,
 } from '../../config/env.js';
+import { logger } from '../../config/logger.js';
+import { describeCredential, validateCredentialValue } from '../../config/credential-value.js';
 
 // ---- HandlerResult (mirrors artifacts.handlers.ts) ----------------------------
 
@@ -94,6 +96,17 @@ export function unmaskApiKey(
   return incoming;
 }
 
+// A credential field (git-credentials/trackers github token) may be unset,
+// a literal secret, or a ${VAR} reference — the last of those is safe to
+// show verbatim (it's not the secret), so only the literal case reuses the
+// MASK sentinel above.
+function displayCredential(raw: string | undefined): string | undefined {
+  const display = describeCredential(raw);
+  if (display.mode === 'unset') return undefined;
+  if (display.mode === 'env') return `\${${display.name}}`;
+  return MASK;
+}
+
 // ---- YAML config write -------------------------------------------------------
 
 // Exported for reuse by tool-settings.handlers.ts, which needs the same
@@ -114,6 +127,28 @@ export function mergeConfigYaml(configDir: string, updates: Record<string, unkno
   const current = readConfigYaml(configDir);
   const merged = { ...current, ...updates };
   fs.writeFileSync(configPath, yaml.stringify(merged), 'utf8');
+}
+
+// The `workspaces` section exactly as written in config.yaml, lookups
+// unresolved — mirrors tool-settings.handlers.ts's readRawToolsConfig()
+// for the same reason (issue #220): building a settings response, or the
+// "currently stored value" used to resolve the MASK sentinel on write,
+// from the resolved env.workspaces getter would either leak a resolved
+// secret or silently replace a stored ${VAR} reference with its resolved
+// literal value. Both the `trackers` and `git-credentials` slugs below
+// read through this instead of env.workspaces, and both must merge their
+// write into the *whole* object this returns — mergeConfigYaml()'s
+// top-level merge would otherwise let one slug's save wipe out the other's
+// subtree, since both live under the same `workspaces` key.
+export function readRawWorkspacesConfig(configDir: string): z.infer<typeof WorkspacesSchema> {
+  const parsed = WorkspacesSchema.safeParse(readConfigYaml(configDir)['workspaces']);
+  if (!parsed.success) {
+    logger.warn('config.yaml workspaces section failed validation; showing defaults', {
+      issues: parsed.error.issues.map((i) => i.message),
+    });
+    return {};
+  }
+  return parsed.data;
 }
 
 // ---- Section shapes -------------------------------------------------------------
@@ -150,6 +185,8 @@ export type AgentBehaviorSettings = {
 export type CostRatesSettings = { costs: Record<string, CostEntry> };
 
 export type TrackersSettings = { github: z.infer<typeof GithubTrackerSchema> };
+
+export type GitCredentialsSettings = { github: z.infer<typeof GithubTrackerSchema> };
 
 // ---- Slug definitions ---------------------------------------------------------
 
@@ -192,6 +229,18 @@ export function validateFavoriteModels(
     seen.add(key);
   }
   return errors;
+}
+
+// Shared by the `trackers` and `git-credentials` slugs below — both patch
+// a single `{ github: { token } }` shape. Skips validation for the MASK
+// sentinel/undefined (an unchanged or cleared field), and otherwise checks
+// a ${VAR}-shaped token against validateCredentialValue (config/credential-value.ts).
+function validateGithubTokenField(v: unknown): Record<string, string[]> | null {
+  const data = v as { github?: { token?: string } };
+  const token = data.github?.token;
+  if (token === undefined || token === MASK) return null;
+  const error = validateCredentialValue(token);
+  return error ? { 'github.token': [error] } : null;
 }
 
 const SLUG_MAP: Record<string, SlugDef> = {
@@ -348,14 +397,43 @@ const SLUG_MAP: Record<string, SlugDef> = {
   },
 
   trackers: {
-    get: (env) => ({
-      github: { token: maskApiKey(env.workspaces.tasks?.trackers?.github?.token) },
-    }),
+    get: (_env, config) => {
+      const raw = readRawWorkspacesConfig(config.getConfigDir());
+      return { github: { token: displayCredential(raw.tasks?.trackers?.github?.token) } };
+    },
     patchSchema: z.object({ github: GithubTrackerSchema.partial().optional() }).partial(),
-    write: (v, configDir, env) => {
+    validate: (v) => validateGithubTokenField(v),
+    write: (v, configDir) => {
       const data = v as { github?: { token?: string } };
-      const token = unmaskApiKey(data.github?.token, env.workspaces.tasks?.trackers?.github?.token);
-      mergeConfigYaml(configDir, { workspaces: { tasks: { trackers: { github: { token } } } } });
+      const current = readRawWorkspacesConfig(configDir);
+      const token = unmaskApiKey(data.github?.token, current.tasks?.trackers?.github?.token);
+      mergeConfigYaml(configDir, {
+        workspaces: {
+          ...current,
+          tasks: { ...current.tasks, trackers: { ...current.tasks?.trackers, github: { token } } },
+        },
+      });
+    },
+  },
+
+  // Authenticates workspace/project git clone/fetch/sync/push over HTTPS —
+  // deliberately a separate stored value from `trackers.github.token`
+  // above (one authenticates git itself, the other the issue-tracker API);
+  // see api/src/services/git-credentials.ts for where it's consumed.
+  'git-credentials': {
+    get: (_env, config) => {
+      const raw = readRawWorkspacesConfig(config.getConfigDir());
+      return { github: { token: displayCredential(raw.git?.github?.token) } };
+    },
+    patchSchema: z.object({ github: GithubTrackerSchema.partial().optional() }).partial(),
+    validate: (v) => validateGithubTokenField(v),
+    write: (v, configDir) => {
+      const data = v as { github?: { token?: string } };
+      const current = readRawWorkspacesConfig(configDir);
+      const token = unmaskApiKey(data.github?.token, current.git?.github?.token);
+      mergeConfigYaml(configDir, {
+        workspaces: { ...current, git: { ...current.git, github: { token } } },
+      });
     },
   },
 

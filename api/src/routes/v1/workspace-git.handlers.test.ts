@@ -178,6 +178,46 @@ describe('routes/v1/workspace-git.handlers', () => {
     });
   });
 
+  describe('git auth error translation (issue #181)', () => {
+    const GIT_AUTH_ERROR =
+      "Command failed: git fetch\nfatal: could not read Username for 'https://github.com': No such device or address";
+
+    it('fetchHandler surfaces the translated auth error, not the raw git message', async () => {
+      const ws = makeWorkspace({ git: true });
+      const execFileFn = (async () => {
+        throw new Error(GIT_AUTH_ERROR);
+      }) as unknown as ExecFileFn;
+
+      const result = await fetchHandler(store, ws.id, execFileFn);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.error).to.include('Git fetch failed');
+        expect(result.error).to.include('Settings → Workspaces → Git');
+        expect(result.error).to.not.include('could not read Username');
+      }
+    });
+
+    it('pushHandler surfaces the translated auth error, not the raw git message', async () => {
+      const ws = makeWorkspace({ git: true });
+      const execFileFn = (async (_cmd: string, args: unknown) => {
+        if (Array.isArray(args) && args.includes('push')) {
+          throw new Error(GIT_AUTH_ERROR.replace('git fetch', 'git push'));
+        }
+        return { stdout: '', stderr: '' };
+      }) as unknown as ExecFileFn;
+
+      const result = await pushHandler(store, ws.id, execFileFn);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(400);
+        expect(result.error).to.include('Git push failed');
+        expect(result.error).to.include('Settings → Workspaces → Git');
+        expect(result.error).to.not.include('could not read Username');
+      }
+    });
+  });
+
   describe('cache invalidation on a successful mutation', () => {
     it('invalidates the file tree cache so a follow-up tree fetch reflects a disk change', async () => {
       const ws = makeWorkspace({ git: true });

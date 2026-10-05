@@ -312,17 +312,28 @@ test.describe(
       let drawer = await openShellExec(page);
       await pauseBeforeAction(page, testInfo);
 
+      // The add-row's value field (now a CredentialValueField, labeled
+      // "Value" — a sibling toggle switches it into/out of env-reference
+      // mode) left in literal mode and typed with "${HOME}" directly.
       await drawer.getByLabel('Add variable name').fill('E2E_HOME_220');
-      await drawer.getByLabel('Value for new variable').fill('${HOME}');
+      // exact: true — this field's own "source from environment variable"
+      // toggle switch carries "Value" as a substring of its own aria-label.
+      await drawer.getByLabel('Value', { exact: true }).fill('${HOME}');
       await drawer.getByRole('button', { name: 'Add', exact: true }).click();
       await drawer.getByRole('button', { name: 'Save' }).click();
       await expect(drawer).toBeHidden();
 
       // Regression for #220: the reopened drawer must show the stored lookup,
-      // not HOME's resolved path.
+      // not HOME's resolved path. Each row's CredentialValueField is now
+      // labeled by the variable name itself (not "Value for <NAME>"); "${HOME}"
+      // is a pure env reference, so the row renders in env mode — its visible
+      // input holds the bare name "HOME", not the full "${HOME}" string.
       drawer = await openShellExec(page);
-      const value = drawer.getByLabel('Value for E2E_HOME_220');
-      await expect(value).toHaveValue('${HOME}');
+      await expect(
+        drawer.getByRole('switch', { name: 'Source E2E_HOME_220 from an environment variable' }),
+      ).toBeChecked();
+      const value = drawer.getByLabel('E2E_HOME_220', { exact: true });
+      await expect(value).toHaveValue('HOME');
 
       await drawer
         .getByRole('button', { name: 'Remove environment variable E2E_HOME_220' })
@@ -331,7 +342,7 @@ test.describe(
       await expect(drawer).toBeHidden();
 
       drawer = await openShellExec(page);
-      await expect(drawer.getByLabel('Value for E2E_HOME_220')).toHaveCount(0);
+      await expect(drawer.getByLabel('E2E_HOME_220')).toHaveCount(0);
     });
 
     test('a row referencing an unset variable shows its error in place @user-workflow', async ({
@@ -341,14 +352,14 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
 
       await drawer.getByLabel('Add variable name').fill('E2E_BAD_220');
-      await drawer.getByLabel('Value for new variable').fill('${E2E_UNSET_VAR_220}');
+      await drawer.getByLabel('Value', { exact: true }).fill('${E2E_UNSET_VAR_220}');
       await drawer.getByRole('button', { name: 'Add', exact: true }).click();
       await drawer.getByRole('button', { name: 'Save' }).click();
 
-      const value = drawer.getByLabel('Value for E2E_BAD_220');
-      await expect(value).toHaveAttribute('aria-invalid', 'true');
-      const errorId = await value.getAttribute('aria-describedby');
-      await expect(drawer.locator(`[id="${errorId}"]`)).toContainText('E2E_UNSET_VAR_220');
+      // The row's error renders as a sibling paragraph below its
+      // CredentialValueField (not an aria-invalid/aria-describedby pair on
+      // the input itself).
+      await expect(drawer.getByText(/E2E_UNSET_VAR_220/)).toBeVisible();
       await expect(drawer).toBeVisible();
     });
   },

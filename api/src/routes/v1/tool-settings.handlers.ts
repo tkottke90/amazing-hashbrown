@@ -15,6 +15,7 @@ import {
 } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { readConfigYaml, mergeConfigYaml } from './settings.handlers.js';
+import { ENV_VAR_NAME_RE, validateEnvRefName } from '../../config/credential-value.js';
 
 // ---- HandlerResult (mirrors mcp-servers.handlers.ts) ----------------------
 
@@ -45,12 +46,15 @@ function badRequest(error: string, fieldErrors?: Record<string, string[]>): Hand
 
 // ---- shell_exec env validation (issues #189, #220) --------------------------
 
-// config-manager's interpolateEnvVars() only matches
-// /\$\{([A-Z_][A-Z0-9_]*)\}/g — lowercase names stay literal strings.
-export const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+// ENV_VAR_NAME_RE / validateEnvRefName are shared with the git-credentials
+// and trackers settings slugs (config/credential-value.ts) — same
+// config-manager interpolation shape, same "not set" message.
+//
 // Every lookup inside a value. Values may be a lookup, a literal or a mix
 // ("${HOME}/bin") — literals are stored in config.yaml as plain text, which
-// the drawer's helper text states.
+// the drawer's helper text states. Unlike credential-value.ts's isEnvRef
+// (whole-string anchored, for single-scalar secret fields), this scans for
+// every reference inside a value that may also contain literal text.
 const ENV_REF_RE = /\$\{([A-Z_][A-Z0-9_]*)\}/g;
 
 // Messages name the row and the fix, never the submitted value — a value may
@@ -71,17 +75,16 @@ function validateShellEnv(env: Record<string, unknown>): HandlerResult<Record<st
       continue;
     }
     // A missing variable would silently resolve to an empty string at load.
-    const missing = [...rawValue.matchAll(ENV_REF_RE)]
-      .map((m) => m[1]!)
-      .filter((name) => !(name in process.env));
-    for (const name of new Set(missing)) {
-      fail(
-        key,
-        `references \${${name}}, which isn't set in the API's environment. ` +
-          'Set it and restart the API, or remove the reference.',
-      );
+    const refNames = new Set([...rawValue.matchAll(ENV_REF_RE)].map((m) => m[1]!));
+    let hasError = false;
+    for (const name of refNames) {
+      const error = validateEnvRefName(name);
+      if (error) {
+        fail(key, error);
+        hasError = true;
+      }
     }
-    if (missing.length === 0) validated[key] = rawValue;
+    if (!hasError) validated[key] = rawValue;
   }
 
   const rows = Object.keys(fieldErrors).length;

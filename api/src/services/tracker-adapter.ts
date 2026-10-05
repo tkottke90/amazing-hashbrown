@@ -18,6 +18,10 @@ export interface AuthField {
   label: string;
   type: 'text' | 'password' | 'select';
   required: boolean;
+  // When true, the Settings UI renders this field with the literal-value/
+  // environment-variable-reference toggle (CredentialValueField) instead
+  // of a plain input — see docs/superpowers/specs/2026-10-05-git-credentials-design.md.
+  supportsEnvRef?: boolean;
 }
 
 export interface TrackerAdapter {

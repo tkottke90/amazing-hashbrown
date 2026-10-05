@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ExecFileFn } from './workspace-provision.js';
+import { env } from '../config/env.js';
+import { buildGitAuthArgs } from './git-credentials.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -120,23 +122,60 @@ function assertSafeRefName(value: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Auth error translation
+// ---------------------------------------------------------------------------
+
+export type GitNetworkOperation = 'clone' | 'fetch' | 'push';
+
+// Git's own stderr on this failure ("fatal: could not read Username for
+// 'https://github.com': No such device or address") gives the user no
+// actionable next step — there's no TTY to prompt on and no credential
+// helper configured. execFile's rejection typically wraps that stderr
+// inside a larger "Command failed: ..." message, so this matches as a
+// substring, not an exact string. Any other git error (merge conflict,
+// network failure, repo not found, a token present but lacking access)
+// passes through unchanged.
+const GIT_AUTH_ERROR_SNIPPET = 'could not read Username for';
+
+export function translateGitAuthError(message: string, operation: GitNetworkOperation): string {
+  if (!message.includes(GIT_AUTH_ERROR_SNIPPET)) return message;
+  return (
+    `Git ${operation} failed: no GitHub credentials are configured for workspace git ` +
+    'operations. Add a token in Settings → Workspaces → Git.'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Fetch / sync / push
 // ---------------------------------------------------------------------------
 
 export async function fetchRemote(
   location: string,
   execFileFn: ExecFileFn = execFileAsync,
+  token: string | undefined = env.workspaces.git?.github?.token,
 ): Promise<void> {
-  await execFileFn('git', ['fetch'], { cwd: location, timeout: GIT_NETWORK_TIMEOUT_MS });
+  const authArgs = buildGitAuthArgs(token);
+  try {
+    await execFileFn('git', [...authArgs, 'fetch'], {
+      cwd: location,
+      timeout: GIT_NETWORK_TIMEOUT_MS,
+    });
+  } catch (err) {
+    throw new Error(
+      translateGitAuthError(err instanceof Error ? err.message : String(err), 'fetch'),
+    );
+  }
 }
 
 // Fetch, then fast-forward-only merge — refuses (git's own error surfaces
 // unmodified) rather than auto-resolving a conflict or a diverged history.
+// The merge is local — no network, no credentials needed.
 export async function syncFastForward(
   location: string,
   execFileFn: ExecFileFn = execFileAsync,
+  token: string | undefined = env.workspaces.git?.github?.token,
 ): Promise<void> {
-  await execFileFn('git', ['fetch'], { cwd: location, timeout: GIT_NETWORK_TIMEOUT_MS });
+  await fetchRemote(location, execFileFn, token);
   await execFileFn('git', ['merge', '--ff-only', '@{u}'], {
     cwd: location,
     timeout: GIT_NETWORK_TIMEOUT_MS,
@@ -170,17 +209,28 @@ async function getCurrentBranch(location: string, execFileFn: ExecFileFn): Promi
 export async function pushBranch(
   location: string,
   execFileFn: ExecFileFn = execFileAsync,
+  token: string | undefined = env.workspaces.git?.github?.token,
 ): Promise<void> {
-  if (await hasUpstream(location, execFileFn)) {
-    await execFileFn('git', ['push'], { cwd: location, timeout: GIT_NETWORK_TIMEOUT_MS });
-    return;
-  }
+  const authArgs = buildGitAuthArgs(token);
+  try {
+    if (await hasUpstream(location, execFileFn)) {
+      await execFileFn('git', [...authArgs, 'push'], {
+        cwd: location,
+        timeout: GIT_NETWORK_TIMEOUT_MS,
+      });
+      return;
+    }
 
-  const branch = await getCurrentBranch(location, execFileFn);
-  await execFileFn('git', ['push', '-u', 'origin', '--', branch], {
-    cwd: location,
-    timeout: GIT_NETWORK_TIMEOUT_MS,
-  });
+    const branch = await getCurrentBranch(location, execFileFn);
+    await execFileFn('git', [...authArgs, 'push', '-u', 'origin', '--', branch], {
+      cwd: location,
+      timeout: GIT_NETWORK_TIMEOUT_MS,
+    });
+  } catch (err) {
+    throw new Error(
+      translateGitAuthError(err instanceof Error ? err.message : String(err), 'push'),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -259,7 +259,17 @@ export const TasksConfigSchema = z.object({
   trackers: TrackersConfigSchema.optional(),
 });
 
+// Authenticates git network operations (clone/fetch/sync/push) for
+// workspaces and projects — deliberately separate from
+// TasksConfigSchema's tracker token above, since one authenticates git
+// itself and the other the GitHub issue-tracker API; a user who wants one
+// PAT for both points both fields at the same ${ENV_VAR}.
+export const GitCredentialsSchema = z.object({
+  github: z.object({ token: z.string().optional() }).optional(),
+});
+
 export const WorkspacesSchema = z.object({
+  git: GitCredentialsSchema.optional(),
   tasks: TasksConfigSchema.optional(),
 });
 
