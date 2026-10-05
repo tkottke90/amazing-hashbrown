@@ -24,7 +24,7 @@ This design extends the existing middleware to add two new trigger signals (stag
 
 ## Non-goals
 
-- Oscillation between *different* tools that each individually look fine (e.g. bouncing between two tools with no shared state ever changing). That's a design-time tool-description problem, not something a runtime counter can reliably catch. Not handled here.
+- Oscillation between _different_ tools that each individually look fine (e.g. bouncing between two tools with no shared state ever changing). That's a design-time tool-description problem, not something a runtime counter can reliably catch. Not handled here.
 - Semantic/embedding similarity for detecting "similar" tool calls — considered and rejected (see the issue discussion): it's imprecise in the direction that matters (genuinely different commands probing different files can both be unproductive, while scoring as dissimilar) and swaps a deterministic, unit-testable check for a non-deterministic model-distance threshold.
 - Changing the existing step-count check-in's behavior, thresholds, or UI. It is untouched — stagnation and streak are two additional, independent signals checked in the same `beforeModel` hook.
 - Tuning the exact default threshold values to a final, validated number. Defaults below are starting points; Issue #266's own dev notes already call out shipping observability ahead of behavior change so real data can inform tuning. This design only commits to the mechanism and a reasonable starting point.
@@ -37,7 +37,7 @@ Early framing for this treated "fingerprint and nudge" and "periodic reflection"
 
 1. **Nudge** — a deterministic, zero-extra-cost tripwire. Fires once when a tool's output has stagnated (same tool, materially the same output, N times in a row). No model judgment is needed here: repeated identical output is already objective evidence nothing new is happening.
 2. **Reflection** — a genuine judgment call, reached two ways: stagnation persisting past the nudge (the nudge didn't help), or a long streak of tool calls accumulating with **no repeats at all** (every call looks different, so stagnation never trips, but nothing has paused to explain itself either — this is the shape the real "Abort" investigation took). Because "is 10 different-looking tool calls actually converging" is not something a counter can answer, reflection is a real, separate LLM call — structurally the same pattern the existing `afterAgentMiddleware` already uses (its own small, scoped prompt, not the main model grading its own work).
-3. **Escalate** — reached only if reflection's own verdict says the run isn't converging. No additional magic-number threshold is needed at this rung; the reflection call's judgment is the gate. What escalation *does* is the one place context matters: chat and task runs reuse the existing `interrupt()`-and-park pattern (already correct); sub-agents — which have no park-and-resume path — stop the run and report back to the parent, the same way a task reports back to the user.
+3. **Escalate** — reached only if reflection's own verdict says the run isn't converging. No additional magic-number threshold is needed at this rung; the reflection call's judgment is the gate. What escalation _does_ is the one place context matters: chat and task runs reuse the existing `interrupt()`-and-park pattern (already correct); sub-agents — which have no park-and-resume path — stop the run and report back to the parent, the same way a task reports back to the user.
 
 ---
 
@@ -80,7 +80,7 @@ agent:
 
 Added to `recursion-guard.middleware.ts`'s existing `beforeModel` hook, computed fresh each call — the same pattern the existing step counter already uses (`state.messages.filter(isAIMessage).length`), so neither new signal needs out-of-band bookkeeping or anything to lose on a resume.
 
-**Stagnation streak:** walking backward from the most recent `ToolMessage`, count consecutive entries that share the same tool name and a *normalized* output (trim whitespace, strip ISO-8601 timestamp substrings via regex) equal to the most recent one. Stop at the first entry that doesn't match.
+**Stagnation streak:** walking backward from the most recent `ToolMessage`, count consecutive entries that share the same tool name and a _normalized_ output (trim whitespace, strip ISO-8601 timestamp substrings via regex) equal to the most recent one. Stop at the first entry that doesn't match.
 
 **Raw streak:** count consecutive tool-call turns (an `AIMessage` carrying a tool call, followed by its `ToolMessage`) since the last plain-text assistant reply or the last `HumanMessage`. Resets on either.
 
@@ -203,17 +203,17 @@ Seeds N synthetic prior tool-call/result pairs directly into the conversation (t
 
 ## Files Changed
 
-| File | Change |
-| --- | --- |
-| `api/src/config/env.ts` | Add `LoopGuardSchema` / `agent.loopGuard` config block |
-| `api/src/agents/recursion-guard.middleware.ts` | Add stagnation + raw streak detection, nudge injection, reflection trigger, escalation branch (interrupt vs. throw); export `StagnationLimitError` |
-| `api/src/agents/loop-reflection.ts` | New file — `evaluateLoopProgress()`, the reflection LLM call |
-| `api/src/agents/chat-agent.ts` | `buildSubAgentAgent` gains the loop-guard middleware (new), configured in throw-mode; `buildChatAgent`/`buildTaskAgent` calls updated in place (no new wiring, same call site) |
-| `api/src/agents/task-execution.ts` | New catch branch for `StagnationLimitError` → `deliverSubAgentCompletion(task, 'failed', summary)` |
-| `api/src/agents/thread-message-writer.ts` | Add `'loop_stagnation_warning'` to `promptKind`, add `summary?` field |
-| `lib/llm-common-types/src/chat/hitl.ts` | Same `HitlPromptFields` additions on the shared type |
-| `ui/src/components/hitl-prompt-message.tsx` | Surface `summary` as a subheading for `loop_stagnation_warning`, same pattern as `recursion_limit_warning` |
-| `suites/loop-guard.yaml` | New eval suite — `tool-sequence` scenarios seeding stagnant/streak tool-call histories |
-| `api/src/agents/recursion-guard.middleware.test.ts` | New stagnation/streak/threshold unit tests |
-| `api/src/agents/loop-reflection.test.ts` | New unit tests for `evaluateLoopProgress()` |
-| `api/src/agents/task-execution.test.ts` | New orchestration test for the `StagnationLimitError` branch |
+| File                                                | Change                                                                                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api/src/config/env.ts`                             | Add `LoopGuardSchema` / `agent.loopGuard` config block                                                                                                                         |
+| `api/src/agents/recursion-guard.middleware.ts`      | Add stagnation + raw streak detection, nudge injection, reflection trigger, escalation branch (interrupt vs. throw); export `StagnationLimitError`                             |
+| `api/src/agents/loop-reflection.ts`                 | New file — `evaluateLoopProgress()`, the reflection LLM call                                                                                                                   |
+| `api/src/agents/chat-agent.ts`                      | `buildSubAgentAgent` gains the loop-guard middleware (new), configured in throw-mode; `buildChatAgent`/`buildTaskAgent` calls updated in place (no new wiring, same call site) |
+| `api/src/agents/task-execution.ts`                  | New catch branch for `StagnationLimitError` → `deliverSubAgentCompletion(task, 'failed', summary)`                                                                             |
+| `api/src/agents/thread-message-writer.ts`           | Add `'loop_stagnation_warning'` to `promptKind`, add `summary?` field                                                                                                          |
+| `lib/llm-common-types/src/chat/hitl.ts`             | Same `HitlPromptFields` additions on the shared type                                                                                                                           |
+| `ui/src/components/hitl-prompt-message.tsx`         | Surface `summary` as a subheading for `loop_stagnation_warning`, same pattern as `recursion_limit_warning`                                                                     |
+| `suites/loop-guard.yaml`                            | New eval suite — `tool-sequence` scenarios seeding stagnant/streak tool-call histories                                                                                         |
+| `api/src/agents/recursion-guard.middleware.test.ts` | New stagnation/streak/threshold unit tests                                                                                                                                     |
+| `api/src/agents/loop-reflection.test.ts`            | New unit tests for `evaluateLoopProgress()`                                                                                                                                    |
+| `api/src/agents/task-execution.test.ts`             | New orchestration test for the `StagnationLimitError` branch                                                                                                                   |
