@@ -183,7 +183,12 @@ export const AgentSchema = z.object({
   // ceiling is a second, independent backstop underneath that, not the sole
   // protection it used to be.
   subAgentRecursionLimit: z.number().int().positive().default(25),
-  loopGuard: LoopGuardSchema.default({}),
+  loopGuard: LoopGuardSchema.default({
+    enabled: true,
+    stagnationNudgeThreshold: 3,
+    stagnationReflectionThreshold: 5,
+    streakReflectionThreshold: 10,
+  }),
 });
 
 export type AgentConfig = z.infer<typeof AgentSchema>;

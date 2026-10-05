@@ -60,10 +60,12 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
-      createRecursionGuardMiddleware(
-        env.agent?.recursionLimit ?? 100,
-        env.agent?.recursionWarnThreshold ?? 0.75,
-      ),
+      createRecursionGuardMiddleware({
+        recursionLimit: env.agent?.recursionLimit ?? 100,
+        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+        loopGuard: env.agent?.loopGuard,
+        escalationMode: 'interrupt',
+      }),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
