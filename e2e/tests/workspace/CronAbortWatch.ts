@@ -45,9 +45,16 @@ async function waitForManualSend(
   await expect(stopButton).toBeVisible({ timeout: MANUAL_SEND_TIMEOUT_MS });
 }
 
+// Deliberately avoids the word "plan" — create_tasks's `plan` field is
+// typed as an array of checklist-step strings (create-tasks.tool.ts), and a
+// prompt that says "whose plan is X" invites the model to hand back a bare
+// string there instead of an array, which fails the tool's own input schema
+// before the run even starts (a real failure hit while manually running
+// this suite — see CreateScheduledTasks.ts's Scenario 1/3 prompts, which
+// avoid "plan" the same way, for the proven-safe phrasing this now matches).
 const PROMPT =
-  'Create a task titled "Abort watch" whose plan is just to log a short message — no tools, ' +
-  'nothing else. Schedule it to run every minute, starting now.';
+  'Create a task titled "Abort watch" that just logs a short message — nothing else. Schedule ' +
+  'it to run every minute, starting now.';
 
 export const CronAbortWatch: TestSuite = {
   id: 102,
