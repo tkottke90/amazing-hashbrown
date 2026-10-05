@@ -38,6 +38,7 @@ import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import {
   resolveTurnModel,
   startTurnObservability,
+  warnIfAmbientRunnableConfig,
   type TurnObservability,
 } from './turn-observability.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
@@ -372,6 +373,7 @@ export async function executeTask(
           provider,
           'async',
           async () => {
+            warnIfAmbientRunnableConfig({ taskId: task.id, threadId });
             const rawStream = resolvedAgent.streamEvents(
               input,
               resolvedTurnObs.attach({
