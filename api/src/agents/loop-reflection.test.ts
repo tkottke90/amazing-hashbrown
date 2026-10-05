@@ -107,7 +107,8 @@ describe('agents/loop-reflection', () => {
       });
 
       expect(result.converging).to.equal(false);
-      expect(result.summary).to.be.a('string').and.not.empty;
+      expect(result.summary).to.be.a('string');
+      expect(result.summary.length).to.be.greaterThan(0);
     });
   });
 });
