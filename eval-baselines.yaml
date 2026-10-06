@@ -61,7 +61,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-05T22:56:46.691Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -73,7 +73,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-05T23:28:09.008Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -85,7 +85,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-05T23:42:38.739Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -97,8 +97,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:12:29.592Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     agent-wait:
       {
@@ -112,7 +112,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:15:00.698Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -124,7 +124,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:18:29.755Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -136,7 +136,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:26:17.465Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -148,8 +148,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:43:28.962Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     ambient-context:
       {
@@ -163,7 +163,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:45:25.634Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -175,7 +175,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:46:43.383Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -187,7 +187,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:48:43.547Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -199,8 +199,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:50:36.214Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     create-workspace-project:
       {
@@ -214,7 +214,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T00:58:36.731Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -226,7 +226,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T01:05:36.838Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -238,7 +238,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T01:20:36.498Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -250,8 +250,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T01:38:36.861Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     explicit-tool-syntax:
       {
@@ -265,7 +265,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T01:41:26.868Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -277,7 +277,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T01:44:44.018Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -289,7 +289,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T02:03:34.852Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -301,8 +301,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T02:07:18.227Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     get-tool-key:
       {
@@ -316,7 +316,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T02:12:52.508Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -328,7 +328,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T02:20:49.502Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -340,7 +340,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T02:44:58.761Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -352,8 +352,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:03:20.729Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     instruction-hierarchy-preferences:
       {
@@ -367,7 +367,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:04:56.576Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -379,7 +379,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:06:36.612Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -391,7 +391,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:21:46.203Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -403,8 +403,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:24:25.506Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     instruction-hierarchy:
       {
@@ -418,7 +418,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:27:10.790Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -430,7 +430,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:28:25.385Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -442,7 +442,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:34:40.774Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -454,8 +454,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:44:01.827Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     instruction-sensitivity:
       {
@@ -469,7 +469,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:48:06.935Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -481,7 +481,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T03:50:36.087Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -493,7 +493,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:00:10.459Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -505,8 +505,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:18:49.987Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     provider-compatibility:
       {
@@ -520,7 +520,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:21:30.207Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -532,7 +532,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:25:09.654Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -544,7 +544,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:32:59.119Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -556,8 +556,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:39:18.395Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     rlm:
       {
@@ -571,7 +571,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:42:26.109Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -583,7 +583,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T04:46:59.560Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -595,7 +595,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:06:04.788Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -607,8 +607,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:11:18.495Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     scheduled-task-runs:
       {
@@ -622,7 +622,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:14:21.962Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -634,7 +634,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:23:12.587Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -646,7 +646,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:40:19.075Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -658,8 +658,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:48:43.146Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     shell-execution:
       {
@@ -673,7 +673,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:52:48.895Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -685,7 +685,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T05:58:14.044Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -697,7 +697,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T06:09:59.134Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -709,8 +709,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T06:15:47.199Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     task-creation:
       {
@@ -724,7 +724,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T06:20:48.221Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -736,7 +736,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T06:27:48.843Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -748,7 +748,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T06:50:04.953Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -760,8 +760,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:02:14.161Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     task-plan-generation:
       {
@@ -775,7 +775,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:08:22.104Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -787,7 +787,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:20:15.915Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -799,7 +799,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:26:05.885Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -811,8 +811,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:39:58.243Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     task-plan-progress:
       {
@@ -826,7 +826,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:41:28.734Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -838,7 +838,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T07:43:06.149Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -850,7 +850,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:07:35.418Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -862,8 +862,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:10:01.975Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     thread-titles:
       {
@@ -877,7 +877,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:14:36.387Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -889,7 +889,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:26:00.668Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -901,7 +901,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:29:44.913Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -913,8 +913,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:36:02.950Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     tool-calling:
       {
@@ -928,7 +928,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:37:16.468Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -940,7 +940,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:38:46.378Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -952,7 +952,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:43:53.757Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -964,8 +964,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:45:31.200Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     web-fetch:
       {
@@ -979,7 +979,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:49:41.591Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -991,7 +991,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T08:54:39.090Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1003,7 +1003,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:04:51.601Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1015,8 +1015,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:10:29.612Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     wiki-lint:
       {
@@ -1030,7 +1030,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:13:17.566Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1042,7 +1042,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:17:35.032Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1054,7 +1054,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:28:28.870Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1066,8 +1066,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:34:45.213Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     wiki-navigation:
       {
@@ -1081,7 +1081,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:40:24.542Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1093,7 +1093,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T09:48:59.119Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1105,7 +1105,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:02:30.154Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1117,8 +1117,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:16:44.553Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     wiki-recall-quality:
       {
@@ -1132,7 +1132,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:20:11.297Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1144,7 +1144,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:23:05.903Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1156,7 +1156,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:28:59.514Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1168,8 +1168,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:33:08.187Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     wiki-search:
       {
@@ -1183,7 +1183,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:36:05.322Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1195,7 +1195,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:39:11.375Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1207,7 +1207,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:42:55.379Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1219,8 +1219,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:47:30.731Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     wiki-write:
       {
@@ -1234,7 +1234,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T10:56:17.455Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1246,7 +1246,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T11:09:29.746Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1258,7 +1258,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T11:56:25.654Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1270,8 +1270,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:16:04.743Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     workspace-chat-context:
       {
@@ -1285,7 +1285,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:20:15.969Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1297,7 +1297,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:24:01.469Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1309,7 +1309,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:28:54.374Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1321,8 +1321,8 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:33:15.069Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
     workspace-summary:
       {
@@ -1336,7 +1336,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:37:52.601Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         lemonade-glm47flash:
           {
@@ -1348,7 +1348,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:46:32.901Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         ornith-15:
           {
@@ -1360,7 +1360,7 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T12:52:37.413Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
           },
         digitalocean-glm53flash:
           {
@@ -1372,7 +1372,58 @@ baselines:
             rounds: 5,
             updatedAt: 2026-10-06T13:13:46.376Z,
             branch: main,
-            commit: ea3c42e461d2df5f405344f5be4decb5470d699b,
-          },
+            commit: ea3c42e461d2df5f405344f5be4decb5470d699b
+          }
       },
+    loop-guard:
+      {
+        ollama-gptoss20b:
+          {
+            provider: local,
+            model: GPT-OSS-20B,
+            judgeModel: local,
+            score: 1,
+            total: 2,
+            rounds: 5,
+            updatedAt: 2026-10-06T17:49:09.008Z,
+            branch: claude/inspiring-cori-xseck5,
+            commit: 9b0d87b765c9672443cb2e85f3a0eaa81c1cd265
+          },
+        lemonade-glm47flash:
+          {
+            provider: Lemonade,
+            model: GLM-4.7-Flash,
+            judgeModel: local,
+            score: 1.4,
+            total: 2,
+            rounds: 5,
+            updatedAt: 2026-10-06T17:49:14.107Z,
+            branch: claude/inspiring-cori-xseck5,
+            commit: 9b0d87b765c9672443cb2e85f3a0eaa81c1cd265
+          },
+        ornith-15:
+          {
+            provider: Ornith,
+            model: Ornith-1.5,
+            judgeModel: local,
+            score: 1.6,
+            total: 2,
+            rounds: 5,
+            updatedAt: 2026-10-06T17:49:19.349Z,
+            branch: claude/inspiring-cori-xseck5,
+            commit: 9b0d87b765c9672443cb2e85f3a0eaa81c1cd265
+          },
+        digitalocean-glm53flash:
+          {
+            provider: Digital Ocean,
+            model: GLM-5.3-Flash,
+            judgeModel: local,
+            score: 1.4,
+            total: 2,
+            rounds: 5,
+            updatedAt: 2026-10-06T17:49:24.561Z,
+            branch: claude/inspiring-cori-xseck5,
+            commit: 9b0d87b765c9672443cb2e85f3a0eaa81c1cd265
+          }
+      }
   }
