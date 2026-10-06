@@ -17,8 +17,16 @@ scenarios:
       Seeds 3 byte-identical shell_exec tool/result pairs chasing the same
       search — the real "Abort" investigation shape from issue #266, where
       an agent re-ran grep for a literal string ~20 times with no new
-      findings. Past the nudge threshold, the agent's next tool call should
-      not simply repeat the exact same stagnant command.
+      findings — followed by the exact nudge HumanMessage
+      recursion-guard.middleware.ts injects once stagnationNudgeThreshold is
+      reached (copied verbatim from its template there, filled in for
+      shell_exec x3). The harness's tool-sequence executor calls the model
+      directly on the seeded history (see runner.ts/tool-sequence.ts) — it
+      never runs the real middleware — so without this seeded turn the
+      scenario would only measure the model's own unprompted tendency to
+      stop, not whether it responds to our nudge. The agent's next tool
+      call, now that it has actually seen the nudge, should not simply
+      repeat the exact same stagnant command.
     type: tool-sequence
     turns:
       - user: >
@@ -32,6 +40,11 @@ scenarios:
       - tool: shell_exec
         args: { command: 'grep -r Abort .', reason: 'searching for literal Abort string' }
         result: { text: "no matches\n" }
+      - user: >
+          You've called `shell_exec` 3 times in a row with materially the
+          same result. Before trying again: state what you've actually
+          confirmed so far, and either try a clearly different approach or
+          conclude the investigation.
     tool: '!shell_exec'
     argChecks: []
 
@@ -40,8 +53,20 @@ scenarios:
     purpose: >
       Seeds 10 varied, non-repeating tool calls — the raw-streak path, where
       nothing ever stagnates (every call looks different) but nothing pauses
-      to explain itself either. Past the raw-streak threshold, the agent's
-      next action should not be another silent tool call.
+      to explain itself either — followed by a seeded guidance HumanMessage
+      standing in for what loop-reflection.ts's evaluateLoopProgress() would
+      inject on a converging:true verdict. That guidance text is genuinely
+      LLM-generated at runtime (see buildReflectionPrompt in
+      loop-reflection.ts), so there is no single real string to copy
+      verbatim the way lg-001's fixed nudge template allows — this is a
+      representative stand-in, written in the same spirit the real prompt
+      asks for ("a short instruction for what to do next"), not the literal
+      production text. Like lg-001, the harness calls the model directly on
+      the seeded history and never runs the real middleware, so without
+      this turn the scenario would only measure the model's own unprompted
+      behavior. Past the raw-streak threshold, and having now actually seen
+      guidance to check in, the agent's next action should not be another
+      silent tool call.
     type: tool-sequence
     turns:
       - user: >
@@ -116,5 +141,11 @@ scenarios:
           {
             text: "export function settleCronRun(...) { /* auto-pause after N consecutive scheduled failures */ }\n",
           }
+      - user: >
+          You've made 10 tool calls in a row without pausing to check in,
+          even though nothing you found repeated. Before continuing:
+          summarize what you've actually confirmed so far, and only make
+          another tool call if there's a specific, concrete next step you
+          haven't already tried.
     tool: '!shell_exec'
     argChecks: []
