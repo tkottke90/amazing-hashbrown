@@ -345,6 +345,9 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama --ci
 # summarize which scenarios failed and why (requires the `claude` CLI)
 npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-review
 
+# Check a provider is reproducible: run suites N times, diff per-scenario outcomes
+npm run eval:probe -- --suite wiki-navigation --model ollama --judge-model claude --runs 3
+
 # --judge-model is required (no same-model fallback). Every run also pins
 # temperature 0 and a fixed seed (--seed, default 42) for both model and judge.
 

@@ -81,6 +81,33 @@ judge, overriding whatever `config.yaml` sets for that provider's everyday chat 
   parameter, so a Claude judge cannot be fully seeded — this is a permanent API limitation, not a
   bug to fix.
 
+#### Checking determinism: `eval:probe`
+
+To confirm a provider really is reproducible, run the same suite(s) several times and diff the
+per-scenario outcomes:
+
+```bash
+npm run eval:probe -- --suite wiki-navigation,create-workspace-project \
+  --model ollama,lemonade --judge-model claude --runs 3
+```
+
+Runs are sequential (grouped by model, then suite) and use `--ci --no-html`. `--seed` is passed
+through if given. The report lists, per suite/model pair, the pass count of each run and every
+scenario whose outcome changed (`P F P`), marking those that used the judge. Per-run console logs
+and a `probe.json` are written to `eval-logs/probe-<timestamp>/`.
+
+| Exit code | Meaning                                                                                |
+| --------- | -------------------------------------------------------------------------------------- |
+| `0`       | Every scenario had the same outcome in every run.                                      |
+| `1`       | At least one scenario varied between identical runs.                                   |
+| `2`       | Usage error, or `eval` itself exited 2 (e.g. unknown provider name); no verdict given. |
+| `3`       | A pair errored (no result produced) and nothing else varied — incomplete, not a pass.  |
+
+Reading a `VARIED` result: a scenario that does not use the judge and still varied means the model
+under test changed output on identical input — if one provider varies and another is stable, that
+server is probably ignoring `seed`. Judge-dependent scenarios can vary from either side, and a
+Claude judge cannot be seeded, so some variance there is expected.
+
 ### Exit codes
 
 | Code | Meaning                                                                                                                                  |
