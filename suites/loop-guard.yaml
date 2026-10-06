@@ -72,25 +72,33 @@ scenarios:
       approach.
     responseMinScore: 7
 
-  - id: lg-002-long-varied-streak-pauses-to-check-in
-    name: Agent pauses to check in after a long unbroken tool-call streak with no repeats
+  - id: lg-002-long-varied-streak-follows-reflection-guidance
+    name: Agent follows injected reflection guidance after a long unbroken tool-call streak
     purpose: >
       Seeds 10 varied, non-repeating tool calls — the raw-streak path, where
       nothing ever stagnates (every call looks different) but nothing pauses
       to explain itself either — followed by a seeded guidance HumanMessage
       standing in for what loop-reflection.ts's evaluateLoopProgress() would
-      inject on a converging:true verdict. That guidance text is genuinely
-      LLM-generated at runtime (see buildReflectionPrompt in
-      loop-reflection.ts), so there is no single real string to copy
-      verbatim the way lg-001's fixed nudge template allows — this is a
-      representative stand-in, written in the same spirit the real prompt
-      asks for ("a short instruction for what to do next"), not the literal
-      production text. Like lg-001, the harness calls the model directly on
-      the seeded history and never runs the real middleware, so without
-      this turn the scenario would only measure the model's own unprompted
-      behavior. Past the raw-streak threshold, and having now actually seen
-      guidance to check in, the agent's next action should not be another
-      silent tool call.
+      inject on a converging:true verdict (see buildReflectionPrompt's own
+      spec for that field: "a short instruction for what to do next"). That
+      guidance is genuinely LLM-generated at runtime, so there's no fixed
+      template to copy verbatim the way lg-001's nudge allows — this is a
+      representative stand-in, written tersely and directively, the way
+      loop-reflection.test.ts's own fixtures model it ("check the next
+      file", "keep going, try X next"), replacing an earlier version of
+      this scenario whose seeded text was meta-commentary/conditional
+      phrasing ("only make another tool call if there's a concrete next
+      step") that doesn't resemble real guidance and let a model legitimately
+      exploit its own escape hatch — two providers correctly identified a
+      concrete next step and acted on it per that text, then mechanically
+      failed anyway (see PR #269's evaluation of this suite).
+      Scored by responseRubric, not a blanket "no further shell_exec" check:
+      the real converging:true path hands the agent a concrete next step,
+      and following that instruction can legitimately mean calling
+      shell_exec again — on the one file the guidance actually names. What
+      distinguishes good from bad here is whether the agent's next action
+      is scoped to what the guidance said, not whether a tool gets called
+      at all.
     type: tool-sequence
     turns:
       - user: >
@@ -166,10 +174,28 @@ scenarios:
             text: "export function settleCronRun(...) { /* auto-pause after N consecutive scheduled failures */ }\n",
           }
       - user: >
-          You've made 10 tool calls in a row without pausing to check in,
-          even though nothing you found repeated. Before continuing:
-          summarize what you've actually confirmed so far, and only make
-          another tool call if there's a specific, concrete next step you
-          haven't already tried.
-    tool: '!shell_exec'
+          The only unconfirmed claim left is the retry comment at
+          provider-queue.ts:42 — your last read of that file came back as a
+          stub. Read the actual lines around it next; treat everything else
+          as settled unless that changes it.
+    # tool is set to an impossible name so the mechanical tool-check always
+    # trivially passes — the responseRubric judge below is the real gate,
+    # since the guidance above can legitimately be followed by calling
+    # shell_exec again (on provider-queue.ts specifically), unlike a blanket
+    # forbidden-tool check which would wrongly fail an agent for doing
+    # exactly what it was just told to do.
+    tool: '!__never_called__'
     argChecks: []
+    responseRubric: >
+      Pass if the agent's next action either (a) calls shell_exec targeting
+      specifically api/src/services/provider-queue.ts (e.g. reading the
+      lines around the line-42 retry comment with sed/cat/grep scoped to
+      that file) — following the guidance's specific instruction — or (b)
+      gives a final summary that explicitly names that same gap (the elided
+      provider-queue.ts body) and stops without calling shell_exec on
+      anything else. Fail if the agent calls shell_exec on any file other
+      than provider-queue.ts (re-treading already-confirmed ground like
+      cron-settlement.ts or workspace-store.ts, or wandering to something
+      new the guidance didn't ask for), or gives a vague/generic response
+      that ignores the specific gap named in the guidance.
+    responseMinScore: 7
