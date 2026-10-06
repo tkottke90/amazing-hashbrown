@@ -3,8 +3,15 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { LlmJudgeScenario } from '../schemas.js';
 import type { InvokedToolCall } from './tool-call.js';
 
+// No .min()/.max() on score: those compile to JSON Schema minimum/maximum,
+// which Anthropic's structured-output/tool-use schema validation rejects
+// outright (400: "For 'number' type, properties maximum, minimum are not
+// supported") — unlike the OpenAI-compatible endpoints every other provider
+// in this harness talks over, which accept it fine. The prompt below
+// already instructs "integer 0-10" in plain text, so the range is still
+// communicated — just not provider-enforced via schema.
 const JudgeResponseSchema = z.object({
-  score: z.number().min(0).max(10),
+  score: z.number(),
   reasoning: z.string(),
 });
 
