@@ -24,9 +24,15 @@ scenarios:
       directly on the seeded history (see runner.ts/tool-sequence.ts) — it
       never runs the real middleware — so without this seeded turn the
       scenario would only measure the model's own unprompted tendency to
-      stop, not whether it responds to our nudge. The agent's next tool
-      call, now that it has actually seen the nudge, should not simply
-      repeat the exact same stagnant command.
+      stop, not whether it responds to our nudge.
+      Scored by responseRubric (see tool/responseRubric below), not a
+      blanket "no further shell_exec" check: two real eval runs showed a
+      model can legitimately satisfy the nudge's own wording ("try a
+      clearly different approach") with a genuinely different tool call
+      (e.g. `ls -la` to sanity-check assumptions) — a blanket check would
+      wrongly fail that. What actually distinguishes good from bad here is
+      whether the next action is materially different from the repeated
+      search, not whether a tool gets called at all.
     type: tool-sequence
     turns:
       - user: >
@@ -45,8 +51,26 @@ scenarios:
           same result. Before trying again: state what you've actually
           confirmed so far, and either try a clearly different approach or
           conclude the investigation.
-    tool: '!shell_exec'
+    # tool is set to an impossible name so the mechanical tool-check always
+    # trivially passes — the responseRubric judge below is the real gate,
+    # since this scenario needs to tell "cosmetic re-run of the same
+    # command" apart from "genuinely different approach", which a blanket
+    # forbidden-tool check can't do (see issue #266 and the Ornith/
+    # gpt-oss:20b repro in PR #269).
+    tool: '!__never_called__'
     argChecks: []
+    responseRubric: >
+      Pass if the agent's next action either (a) concludes the
+      investigation (states what's been confirmed and stops without
+      calling shell_exec again), or (b) tries something that differs
+      meaningfully from the repeated `grep -r Abort .` search — a
+      materially different command or approach, not the same search with
+      cosmetic extra flags (e.g. adding `-n`, `--exclude-dir`, or similar
+      tweaks that don't change what's being searched or how). Fail if the
+      agent re-runs essentially the same grep search with only cosmetic
+      modifications while claiming in its reasoning to have changed
+      approach.
+    responseMinScore: 7
 
   - id: lg-002-long-varied-streak-pauses-to-check-in
     name: Agent pauses to check in after a long unbroken tool-call streak with no repeats

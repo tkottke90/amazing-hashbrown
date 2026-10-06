@@ -502,6 +502,36 @@ describe('ToolSequenceScenarioSchema', () => {
       }),
     );
   });
+
+  it('accepts a responseRubric and responseMinScore for judging the reply text [unit]', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      type: 'tool-sequence',
+      turns: [{ user: 'x' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
+      tool: 'upload_image',
+      responseRubric: 'Does not promise a reminder.',
+      responseMinScore: 8,
+    });
+    assert.equal(result.responseRubric, 'Does not promise a reminder.');
+    assert.equal(result.responseMinScore, 8);
+  });
+
+  it('rejects a responseMinScore above the 0-10 judge scale [unit]', () => {
+    assert.throws(() =>
+      ToolSequenceScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        type: 'tool-sequence',
+        turns: [{ user: 'x' }, { tool: 'generate_image', result: { imageBase64: 'abc' } }],
+        tool: 'upload_image',
+        responseRubric: 'r',
+        responseMinScore: 11,
+      }),
+    );
+  });
 });
 
 describe('DeterministicScenarioSchema turns/steps (issue #235)', () => {
