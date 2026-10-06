@@ -450,6 +450,17 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             approveLabel: evt.approveLabel,
             approveType: evt.approveType,
             rejectLabel: evt.rejectLabel,
+            // command/reason (shell_approval) and stepsUsed/recursionLimit
+            // (recursion_limit_warning) were dropped here even though the
+            // SSE event already carries them — meaning they only ever
+            // rendered after a reload, via the REST/revive path, never on
+            // first live paint. summary (loop_stagnation_warning) is new;
+            // fixed alongside rather than introducing the same gap again.
+            command: evt.command,
+            reason: evt.reason,
+            stepsUsed: evt.stepsUsed,
+            recursionLimit: evt.recursionLimit,
+            summary: evt.summary,
             status: 'pending',
             seq: evt.seq,
           },

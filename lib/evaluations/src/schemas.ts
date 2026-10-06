@@ -233,6 +233,14 @@ export const ToolSequenceScenarioSchema = BaseScenario.extend({
   argChecks: z.array(FieldCheckSchema).optional(),
   minScore: z.number().min(0).max(1).default(1),
   gatedSkill: GatedSkillField,
+  // Optional judge of the reply text from the final turn — same capability
+  // as ToolCallScenarioSchema's identical fields, now also able to see the
+  // tool call(s) actually made that turn (see executors/llm-judge.ts and
+  // runner.ts's tool-sequence branch), not just surrounding prose. Lets a
+  // scenario distinguish "genuinely different approach" from "cosmetic
+  // rerun of the same stagnant call" — see issue #266 / PR #269.
+  responseRubric: z.string().min(1).optional(),
+  responseMinScore: z.number().min(0).max(10).optional(),
 }).strict();
 
 const ChoiceOption = z
@@ -507,6 +515,8 @@ const ToolCallDetails = z.object({
 
 const ToolSequenceDetailsBase = z.object({
   type: z.literal('tool-sequence'),
+  // Present only when the scenario sets responseRubric.
+  responseJudge: ResponseJudgeDetails.optional(),
   expectedTool: z.string(),
   toolCalled: z.string().nullable(),
   // See ToolCallDetails's identical field.

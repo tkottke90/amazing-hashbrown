@@ -1015,13 +1015,47 @@ export async function executeScenario(
           args: c.args,
         })),
       });
+      if (!s.responseRubric) {
+        return {
+          ...baseResult,
+          passed,
+          score: effectiveScore,
+          actualOutput: content,
+          latencyMs,
+          details,
+          conversation: messagesToConversation([...messages, finalResponseMessage]),
+        };
+      }
+      // Judge the reply text (and the tool call(s) made this turn, if any)
+      // from this same tools-bound turn — see
+      // ToolSequenceScenarioSchema.responseRubric.
+      const judged = await runLlmJudge(
+        { input: scenarioInputText, rubric: s.responseRubric },
+        content,
+        config.modelId,
+        config.judgeModel,
+        config.judgeModelId,
+        toolCalls,
+      );
+      const responseMinScore = s.responseMinScore ?? 7;
       return {
         ...baseResult,
-        passed,
-        score: effectiveScore,
+        passed: passed && judged.score >= responseMinScore,
+        // The weaker of the two checks, so a good tool choice can't mask a
+        // failing reply in score-based summaries.
+        score: Math.min(effectiveScore, judged.score / 10),
         actualOutput: content,
         latencyMs,
-        details,
+        details: {
+          ...details,
+          responseJudge: {
+            score: judged.score,
+            minScore: responseMinScore,
+            reasoning: judged.reasoning,
+            judgeModel: judged.judgeModel,
+            biasRisk: judged.biasRisk,
+          },
+        },
         conversation: messagesToConversation([...messages, finalResponseMessage]),
       };
     }

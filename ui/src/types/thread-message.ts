@@ -85,6 +85,10 @@ export type ThreadMessage =
       reason?: string;
       stepsUsed?: number;
       recursionLimit?: number;
+      // Present when promptKind === 'multiple_choice' and the prompt came
+      // from the loop guard's reflection step rather than the plain
+      // recursion-limit check-in.
+      summary?: string;
       // Set on a prompt raised by an automated task run. A workspace run's
       // prompt is also copied into the workspace chat; the copy carries the
       // run's thread, so the card can link to the full run.

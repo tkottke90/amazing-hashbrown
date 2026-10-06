@@ -81,7 +81,12 @@ describe('agents/recursion-guard (integration)', () => {
       model: new LoopingChatModel({}),
       tools: [noOpTool],
       checkpointer,
-      middleware: [createRecursionGuardMiddleware(RECURSION_LIMIT, WARN_THRESHOLD)],
+      middleware: [
+        createRecursionGuardMiddleware({
+          recursionLimit: RECURSION_LIMIT,
+          warnThreshold: WARN_THRESHOLD,
+        }),
+      ],
     });
   });
 

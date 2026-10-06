@@ -204,6 +204,10 @@ export interface HitlPromptFields {
   reason?: string;
   stepsUsed?: number;
   recursionLimit?: number;
+  // Present when promptKind === 'multiple_choice' and the prompt was
+  // triggered by the loop guard's reflection step (loop_stagnation_warning
+  // interrupt) rather than the plain recursion-limit check-in.
+  summary?: string;
   // Set only when this prompt was raised by an automated task run
   // (task-execution.ts) — lets the /hitl route tell a task-originated prompt
   // apart from a plain chat one and re-enqueue the task instead of resuming

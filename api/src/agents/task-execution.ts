@@ -22,6 +22,7 @@ import {
 } from './stream-handler.js';
 import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
+import type { StagnationLimitError } from './recursion-guard.middleware.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
@@ -587,6 +588,20 @@ export async function executeTask(
             { taskId: task.id, reason: recovered?.reason ?? 'recovery_guard_failed' },
           );
         }
+      } else if ((err as Error).name === 'StagnationLimitError') {
+        // Thrown by the loop guard (recursion-guard.middleware.ts) in "throw"
+        // escalation mode — sub-agent runs have no interrupt()-and-park path,
+        // so this is how the run reports a stuck investigation back to its
+        // parent instead of hanging. finishFailedRun already does everything
+        // needed: records the summary, completes the queue entry as failed,
+        // and (task.origin === 'agent') notifies the parent via
+        // deliverSubAgentCompletion — no new reporting code required.
+        logger.info('task-execution: run stopped by the loop guard (stagnation limit)', {
+          taskId: task.id,
+          reason: (err as StagnationLimitError).reason,
+        });
+        traceError = (err as StagnationLimitError).summary;
+        await finishFailedRun((err as StagnationLimitError).summary);
       } else {
         logger.error('task-execution: run failed', { taskId: task.id, err: serializeError(err) });
         finalOutcome = 'failed';

@@ -459,6 +459,81 @@ describe('agents/stream-handler', () => {
       rmSync(dir, { recursive: true });
     });
 
+    it('emits hitl_prompt with multiple_choice kind and a summary for loop_stagnation_warning interrupt', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t7b', 'Hello');
+      const { sink, events } = fakeSink();
+      const agent = stubAgent({
+        kind: 'loop_stagnation_warning',
+        question: "I don't think this is making progress. What would you like me to do?",
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        summary: 'Repeated the same shell_exec check 5 times with no new information.',
+      });
+      const result = await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't7b',
+        'msg7b',
+        Date.now(),
+        '',
+        '',
+        false,
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const emitted = events();
+      const prompt = emitted.find((e) => e.type === 'hitl_prompt');
+      expect(prompt, 'hitl_prompt event should be emitted').to.not.equal(undefined);
+      expect(prompt?.kind).to.equal('multiple_choice');
+      expect(prompt?.summary).to.equal(
+        'Repeated the same shell_exec check 5 times with no new information.',
+      );
+      expect(prompt?.allowFreeText).to.equal(true);
+      expect(prompt?.choices).to.be.an('array').with.length(2);
+      expect(result.interrupted).to.equal(true);
+      rmSync(dir, { recursive: true });
+    });
+
+    it('persists the loop_stagnation_warning prompt to thread_messages with multiple_choice promptKind and summary', async () => {
+      const { store, dir } = makeStore();
+      store.upsertThreadOnFirstMessage('t8b', 'Hello');
+      const { sink } = fakeSink();
+      const agent = stubAgent({
+        kind: 'loop_stagnation_warning',
+        question: "I don't think this is making progress. What would you like me to do?",
+        choices: ['Continue working', 'Stop and summarize what you have done so far'],
+        allowFreeText: true,
+        summary: 'Reached a long unbroken tool-call streak with no check-in.',
+      });
+      await finalizeTurn(
+        sink,
+        store,
+        agent,
+        't8b',
+        'msg8b',
+        Date.now(),
+        '',
+        '',
+        false,
+        new Date().toISOString(),
+        null,
+        null,
+      );
+      const messages = store.getThreadMessages('t8b');
+      const hitlRow = messages.find((m) => m.kind === 'hitl_prompt');
+      expect(hitlRow, 'hitl_prompt row should be written to thread_messages').to.not.equal(
+        undefined,
+      );
+      expect((hitlRow?.payload as Record<string, unknown>)?.promptKind).to.equal('multiple_choice');
+      expect((hitlRow?.payload as Record<string, unknown>)?.summary).to.equal(
+        'Reached a long unbroken tool-call streak with no check-in.',
+      );
+      rmSync(dir, { recursive: true });
+    });
+
     it('threads taskId into the persisted hitl_prompt payload when provided', async () => {
       const { store, dir } = makeStore();
       store.upsertThreadOnFirstMessage('t9', 'Hello');

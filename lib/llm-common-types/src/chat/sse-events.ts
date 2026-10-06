@@ -100,6 +100,9 @@ const HitlPromptSchema = z.object({
   // the recursion guard (recursion_limit_warning interrupt).
   stepsUsed: z.number().optional(),
   recursionLimit: z.number().optional(),
+  // Present when kind === 'multiple_choice' and the prompt was triggered by
+  // the loop guard's reflection step (loop_stagnation_warning interrupt).
+  summary: z.string().optional(),
 });
 
 const IframeContentSchema = z.object({

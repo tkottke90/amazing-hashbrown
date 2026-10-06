@@ -654,6 +654,133 @@ describe('executeScenario — tool-call responseRubric', () => {
   });
 });
 
+describe('executeScenario — tool-sequence responseRubric', () => {
+  // A judge that records the prompt it was given and returns a fixed score.
+  // Local copy mirroring the tool-call responseRubric block's own helper —
+  // each describe block defines its own, same convention as makeScenario.
+  function makeRecordingJudge(score: number): { judge: BaseChatModel; prompts: string[] } {
+    const prompts: string[] = [];
+    const judge = {
+      withStructuredOutput: () => ({
+        withRetry: () => ({
+          invoke: async (prompt: string) => {
+            prompts.push(prompt);
+            return { score, reasoning: 'judged' };
+          },
+        }),
+      }),
+    } as unknown as BaseChatModel;
+    return { judge, prompts };
+  }
+
+  function makeScenario(overrides: Partial<ToolSequenceScenario> = {}): ToolSequenceScenario {
+    return {
+      id: 'ts-rubric-1',
+      name: 'Loop guard nudge compliance',
+      purpose: 'p',
+      type: 'tool-sequence',
+      turns: [{ user: 'Find every place the literal string "Abort" appears in this repo.' }],
+      tool: '!shell_exec',
+      minScore: 1,
+      responseRubric: 'Does not repeat the same stagnant search.',
+      ...overrides,
+    };
+  }
+
+  async function run(scenario: ToolSequenceScenario, model: BaseChatModel, judge: BaseChatModel) {
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: judge,
+      tools: [fakeTool('shell_exec'), fakeTool('ls')],
+    };
+    return executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+  }
+
+  it('passes when the forbidden tool is skipped and the reply is judged honest [unit]', async () => {
+    const { judge } = makeRecordingJudge(9);
+    const result = await run(makeScenario(), makeReplyingModel('No matches found.'), judge);
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.deepEqual(result.details.responseJudge, {
+        score: 9,
+        minScore: 7,
+        reasoning: 'judged',
+        judgeModel: 'test-model',
+        biasRisk: true,
+      });
+    }
+  });
+
+  it('fails a false promise: the tool is skipped but the reply is judged as not actually different [unit]', async () => {
+    const { judge } = makeRecordingJudge(2);
+    const result = await run(makeScenario(), makeReplyingModel('Still thinking it over.'), judge);
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0.2);
+  });
+
+  it('still fails when the forbidden tool is called, however well the reply is judged [unit]', async () => {
+    const { judge } = makeRecordingJudge(10);
+    const result = await run(
+      makeScenario(),
+      makeReplyingModel('Trying again.', ['shell_exec']),
+      judge,
+    );
+
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0);
+  });
+
+  it('gives the judge the scenario input, the reply text, the rubric, and the tool call(s) made this turn [unit]', async () => {
+    const { judge, prompts } = makeRecordingJudge(9);
+    await run(
+      makeScenario(),
+      makeReplyingModel('Listing the repo contents instead.', ['ls']),
+      judge,
+    );
+
+    assert.equal(prompts.length, 1);
+    assert.match(
+      prompts[0]!,
+      /User input: Find every place the literal string "Abort" appears in this repo\./,
+    );
+    assert.match(prompts[0]!, /Actual output: Listing the repo contents instead\./);
+    assert.match(prompts[0]!, /Tool call\(s\) made this turn:\n1\. ls\(\{\}\)/);
+    assert.match(prompts[0]!, /Rubric: Does not repeat the same stagnant search\./);
+  });
+
+  it('honors a custom responseMinScore [unit]', async () => {
+    const { judge } = makeRecordingJudge(8);
+    const result = await run(
+      makeScenario({ responseMinScore: 9 }),
+      makeReplyingModel('No matches found.'),
+      judge,
+    );
+
+    assert.equal(result.passed, false);
+  });
+
+  it('never calls the judge when no responseRubric is set [unit]', async () => {
+    const result = await run(
+      makeScenario({ responseRubric: undefined }),
+      makeReplyingModel('No matches found.'),
+      neverInvokedModel(),
+    );
+
+    assert.equal(result.passed, true);
+    assert.equal(
+      result.details.type === 'tool-sequence' && result.details.responseJudge,
+      undefined,
+    );
+  });
+});
+
 describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
   const ALWAYS_ON = fakeTool('ask_user');
   const GATED = fakeTool('create_workspace');

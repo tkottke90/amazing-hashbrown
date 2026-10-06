@@ -1232,6 +1232,44 @@ describe('agents/task-execution', () => {
         .filter((m) => m.kind === 'sub_agent_marker');
       expect(markers).to.have.length(0);
     });
+
+    it("delivers a failed-outcome notification with the loop guard's summary when the agent throws StagnationLimitError", async () => {
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-e', dispatchGroupId: 'group-e' });
+      const stagnationError = Object.assign(new Error('Stagnation limit reached'), {
+        name: 'StagnationLimitError',
+        summary: 'Repeated the same shell_exec check 5 times with no new information.',
+        reason: 'stagnation',
+      });
+      const agent = fakeThrowingAgent([], stagnationError);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      // Same provider-independent scope as the adjacent tests in this
+      // describe block (see its header comment): the marker payload itself
+      // carries outcome/remainingCount, not summary — summary flows into
+      // buildNotificationMessage()'s headless-turn text, which this test
+      // environment's missing provider config prevents from completing.
+      const markers = completionMarkers('parent-e');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
+    });
+  });
+
+  describe('StagnationLimitError on a non-sub-agent task (defensive case)', () => {
+    it("still fails the task cleanly if a StagnationLimitError somehow reaches a plain origin='user' task", async () => {
+      const entry = makeGlobalEntry('Ordinary task');
+      const stagnationError = Object.assign(new Error('Stagnation limit reached'), {
+        name: 'StagnationLimitError',
+        summary: 'Reached a long unbroken tool-call streak with no check-in.',
+        reason: 'streak',
+      });
+      const agent = fakeThrowingAgent([], stagnationError);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+    });
   });
 
   describe('GraphInterrupt escaping as a thrown exception (regression)', () => {
