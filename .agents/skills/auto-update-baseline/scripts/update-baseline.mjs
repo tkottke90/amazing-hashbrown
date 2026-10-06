@@ -89,7 +89,10 @@ if (!doc.hasIn(['baselines'])) {
   doc.set('baselines', {});
 }
 if (!doc.hasIn(['baselines', suiteId])) {
-  doc.setIn(['baselines', suiteId], {});
+  // doc.createNode() converts the plain object into a real YAMLMap node;
+  // setIn(path, {}) alone stores a bare object the yaml library can't
+  // later setIn()-traverse into, throwing "Expected YAML collection".
+  doc.setIn(['baselines', suiteId], doc.createNode({}));
 }
 
 // Read the previous value (if any) before overwriting, purely for the
