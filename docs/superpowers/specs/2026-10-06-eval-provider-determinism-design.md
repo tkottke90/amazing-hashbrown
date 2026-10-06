@@ -105,7 +105,9 @@ case 'openai':
     timeout: config.timeoutMs,
     temperature: config.temperature,
     topP: config.topP,
-    seed: config.seed,
+    // `seed` is a per-call option on ChatOpenAI, not a constructor field;
+    // modelKwargs is spread into every request body.
+    modelKwargs: config.seed === undefined ? undefined : { seed: config.seed },
     configuration: {
       baseURL: config.baseUrl,
       fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
@@ -128,14 +130,22 @@ LangChain chat model treats as "use the provider's own default" — this is
 a strictly additive change with no effect on any existing caller until
 something actually sets these fields.
 
-**Verification caveat:** the exact constructor field names/shapes for
-`seed` and `topP` across `@langchain/ollama`, `@langchain/openai`, and
-`@langchain/anthropic` must be confirmed against the actually-installed
-package versions at implementation time (this container has no
-`node_modules` installed to check against right now). Follow the same
-discipline `bin/eval.ts`'s existing `encodingFormat: 'float'` comment
-documents — confirm empirically with a real request/response before
-shipping, and say so in the commit, rather than assuming from memory.
+**Verified field names** (against `@langchain/ollama` 1.3.0,
+`@langchain/openai` 1.5.5, `@langchain/anthropic` 1.5.1, by reading the
+published type declarations and constructing real instances):
+
+- `ChatOllama` takes `temperature`, `topP` and `seed` as top-level
+  constructor fields and exposes them as instance properties.
+- `ChatOpenAI` takes `temperature` and `topP` top-level, but `seed` is
+  only a per-call option (`ChatOpenAICallOptions`), not a constructor
+  field. It is carried via `modelKwargs`, which the completions client
+  spreads into the request body after its own params. This corrects the
+  first draft of this section, which assumed a top-level `seed`.
+- `ChatAnthropic` takes `temperature` and `topP`; it has no `seed` concept.
+
+This confirms request-construction only. Whether a given server (Lemonade,
+DigitalOcean) actually honours `seed`, and whether a given Claude model
+accepts an explicit `temperature`, can only be confirmed by a real run.
 
 ### 3. Eval-only determinism override
 
@@ -237,8 +247,8 @@ plainly so it isn't mistaken for a bug later.
 - **`provider-factory.test.ts`** (existing file, no sinon — asserts on
   real constructed instances' public fields, per its existing convention):
   - `createProviderFromConfig` forwards `temperature`/`topP`/`seed` onto
-    the constructed `ChatOllama`/`ChatOpenAI` instances when present on
-    config.
+    the constructed `ChatOllama` instance, and `temperature`/`topP` plus
+    `modelKwargs.seed` onto `ChatOpenAI`, when present on config.
   - `createProviderFromConfig` forwards `temperature`/`topP` but never
     `seed` onto a constructed `ChatAnthropic` instance.
   - `applyEvalDeterminism`: returns `temperature: 0` and the passed `seed`

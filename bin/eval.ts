@@ -16,7 +16,11 @@ import {
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
 } from '../lib/evaluations/src/index.js';
-import { createProvider } from '../api/src/services/provider-factory.js';
+import {
+  applyEvalDeterminism,
+  createProviderFromConfig,
+  resolveProviderConfig,
+} from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
@@ -142,6 +146,7 @@ const { values } = parseArgs({
     suite: { type: 'string' },
     model: { type: 'string' },
     'judge-model': { type: 'string' },
+    seed: { type: 'string' },
     ci: { type: 'boolean', default: false },
     'no-html': { type: 'boolean', default: false },
     'llm-review': { type: 'boolean', default: false },
@@ -156,14 +161,41 @@ if (!values.model) {
   process.exit(2);
 }
 
-const modelId = values.model;
-const judgeModelId = values['judge-model'] ?? values.model;
+// No same-model fallback: a forgotten flag would otherwise make the judge
+// silently grade the model under test. Passing the same value for both is
+// still allowed as a deliberate choice — it is flagged via `biasRisk` in the
+// results rather than blocked.
+if (!values['judge-model']) {
+  console.error(
+    'Error: --judge-model <name> is required — there is no same-model fallback. ' +
+      'Pass an explicit --judge-model (it may equal --model if you intend a ' +
+      'deliberate self-judging run).',
+  );
+  process.exit(2);
+}
 
-let model: ReturnType<typeof createProvider>;
-let judgeModel: ReturnType<typeof createProvider>;
+const DEFAULT_EVAL_SEED = 42;
+if (
+  values.seed !== undefined &&
+  !(typeof values.seed === 'string' && /^-?\d+$/.test(values.seed))
+) {
+  console.error(`Error: --seed must be an integer, got "${String(values.seed)}"`);
+  process.exit(2);
+}
+const seed = values.seed === undefined ? DEFAULT_EVAL_SEED : Number(values.seed);
+
+const modelId = values.model;
+const judgeModelId = values['judge-model'];
+
+let model: ReturnType<typeof createProviderFromConfig>;
+let judgeModel: ReturnType<typeof createProviderFromConfig>;
 try {
-  model = createProvider(modelId);
-  judgeModel = createProvider(judgeModelId);
+  // Temperature is pinned to 0 and a fixed seed applied to both the model under
+  // test and the judge, regardless of what config.yaml sets for everyday chat.
+  model = createProviderFromConfig(applyEvalDeterminism(resolveProviderConfig(modelId), seed));
+  judgeModel = createProviderFromConfig(
+    applyEvalDeterminism(resolveProviderConfig(judgeModelId), seed),
+  );
 } catch (err) {
   console.error(`Error creating model: ${String(err)}`);
   process.exit(2);

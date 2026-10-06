@@ -55,7 +55,13 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       // timeoutMs is not wired for Ollama — ChatOllama's client has no
       // equivalent constructor option. Known gap, deliberately deferred;
       // see the design doc referenced on ProviderSchema.timeoutMs.
-      return new ChatOllama({ model: resolvedModel, baseUrl: config.baseUrl });
+      return new ChatOllama({
+        model: resolvedModel,
+        baseUrl: config.baseUrl,
+        temperature: config.temperature,
+        topP: config.topP,
+        seed: config.seed,
+      });
     case 'openai':
       if (!config.apiKey) {
         logger.warn(
@@ -66,6 +72,12 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         model: resolvedModel,
         apiKey: config.apiKey,
         timeout: config.timeoutMs,
+        temperature: config.temperature,
+        topP: config.topP,
+        // `seed` is a per-call option on ChatOpenAI, not a constructor field;
+        // modelKwargs is spread into every request body, so it carries the
+        // seed for servers (OpenAI, Lemonade, DigitalOcean) that honour it.
+        modelKwargs: config.seed === undefined ? undefined : { seed: config.seed },
         configuration: {
           baseURL: config.baseUrl,
           fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
@@ -80,6 +92,8 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       return new ChatAnthropic({
         model: resolvedModel,
         apiKey: config.apiKey,
+        temperature: config.temperature,
+        topP: config.topP,
         // ChatAnthropic has no top-level `timeout` constructor field (unlike
         // ChatOpenAI) — it forwards `clientOptions` straight to the
         // underlying @anthropic-ai/sdk client, which is where `timeout`
@@ -87,6 +101,22 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         clientOptions: { timeout: config.timeoutMs },
       });
   }
+}
+
+/**
+ * Returns a copy of `config` with temperature pinned to 0 and a fixed seed
+ * applied — used only by the eval CLI, never by production provider
+ * resolution, so a run is reproducible regardless of what config.yaml sets
+ * for everyday chat. Anthropic has no seed parameter (a permanent API
+ * limitation, not a gap), so its seed stays undefined and a Claude judge is
+ * pinned by temperature alone.
+ */
+export function applyEvalDeterminism(config: ProviderConfig, seed: number): ProviderConfig {
+  return {
+    ...config,
+    temperature: 0,
+    seed: config.type === 'anthropic' ? undefined : seed,
+  };
 }
 
 async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {

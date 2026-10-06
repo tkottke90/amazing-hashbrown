@@ -33,29 +33,31 @@ authoritative reference — and the worked examples already under `suites/`.
 
 ```bash
 # Run every suite under suites/
-npm run eval -- --model local
+npm run eval -- --model local --judge-model claude
 
 # Run one suite
-npm run eval -- --suite wiki-navigation --model local
+npm run eval -- --suite wiki-navigation --model local --judge-model claude
 ```
 
-`--model` is the only required flag — it must match a provider `name` from `config/config.yaml`,
-not a raw model identifier (the provider entry's own `defaultModel` field supplies that — see
-"Model vs. provider name" below).
+`--model` and `--judge-model` are the only required flags — each must match a provider `name` from
+`config/config.yaml`, not a raw model identifier (the provider entry's own `defaultModel` field
+supplies that — see "Model vs. provider name" below). There is no same-model fallback for the
+judge: omitting `--judge-model` is a usage error.
 
 ## CLI Reference
 
 All flags are passed after `--` to `npm run eval` (or directly to `tsx bin/eval.ts` if invoking
 without npm). None are positional.
 
-| Flag            | Type    | Required | Default           | Description                                                                                                                                                                                                                                                                                                                                                  |
-| --------------- | ------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--model`       | string  | **Yes**  | —                 | Provider `name` from `config/config.yaml` to run scenarios against (e.g. `local`). This is the model under test.                                                                                                                                                                                                                                             |
-| `--suite`       | string  | No       | run every suite   | Suite id to run — the `suite.id` field inside a `suites/*.yaml` file, e.g. `wiki-navigation` (not the filename). Omit to discover and run every suite under `suites/`, alphabetically.                                                                                                                                                                       |
-| `--judge-model` | string  | No       | same as `--model` | Provider `name` used to score `llm-judge`-type scenarios. Set this to a stronger/independent model to reduce judge bias — see `biasRisk` in results, which flags when judge and model-under-test are the same.                                                                                                                                               |
-| `--ci`          | boolean | No       | `false`           | Skips `human`-type scenarios entirely (recorded as skipped, no interactive prompt) instead of running the interactive terminal review UI after the automated scenarios finish. Use this for non-interactive/CI runs.                                                                                                                                         |
-| `--no-html`     | boolean | No       | `false`           | Skip generating the HTML report — only the YAML result file is written. Useful for fast iteration when you don't need the rendered report.                                                                                                                                                                                                                   |
-| `--llm-review`  | boolean | No       | `false`           | After the run, spawns `claude -p` to produce a narrative review of the YAML/HTML results (which scenarios failed, whether each failure looks like a real product/model issue vs. an overly strict scenario). Requires the `claude` CLI on `PATH`; if it's missing or exits non-zero, this only prints a warning — it never affects the eval's own exit code. |
+| Flag            | Type    | Required | Default         | Description                                                                                                                                                                                                                                                                                                                                                  |
+| --------------- | ------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--model`       | string  | **Yes**  | —               | Provider `name` from `config/config.yaml` to run scenarios against (e.g. `local`). This is the model under test.                                                                                                                                                                                                                                             |
+| `--suite`       | string  | No       | run every suite | Suite id to run — the `suite.id` field inside a `suites/*.yaml` file, e.g. `wiki-navigation` (not the filename). Omit to discover and run every suite under `suites/`, alphabetically.                                                                                                                                                                       |
+| `--judge-model` | string  | **Yes**  | —               | Provider `name` used to score `llm-judge`-type scenarios. Use a stronger/independent model to reduce judge bias. There is no same-model fallback; passing the same value as `--model` is allowed as a deliberate choice and is flagged via `biasRisk` in results.                                                                                            |
+| `--seed`        | integer | No       | `42`            | Fixed sampling seed applied to both the model under test and the judge, alongside `temperature: 0`, so reruns are reproducible. Re-run with a different seed to tell a seed-sensitive scenario from a stable one. See "Determinism" below.                                                                                                                   |
+| `--ci`          | boolean | No       | `false`         | Skips `human`-type scenarios entirely (recorded as skipped, no interactive prompt) instead of running the interactive terminal review UI after the automated scenarios finish. Use this for non-interactive/CI runs.                                                                                                                                         |
+| `--no-html`     | boolean | No       | `false`         | Skip generating the HTML report — only the YAML result file is written. Useful for fast iteration when you don't need the rendered report.                                                                                                                                                                                                                   |
+| `--llm-review`  | boolean | No       | `false`         | After the run, spawns `claude -p` to produce a narrative review of the YAML/HTML results (which scenarios failed, whether each failure looks like a real product/model issue vs. an overly strict scenario). Requires the `claude` CLI on `PATH`; if it's missing or exits non-zero, this only prints a warning — it never affects the eval's own exit code. |
 
 ### Model vs. provider name
 
@@ -66,14 +68,27 @@ or `gpt-4.1-mini` — the actual model invoked is whichever one that provider en
 multiple models, add multiple `providers[]` entries (distinct `name`, same or different
 `baseUrl`/`type`, different `defaultModel`) and select between them with `--model <name>`.
 
+### Determinism
+
+Every eval run pins `temperature: 0` and applies `--seed` to both the model under test and the
+judge, overriding whatever `config.yaml` sets for that provider's everyday chat use
+(`applyEvalDeterminism` in `api/src/services/provider-factory.ts`). Production chat is unaffected.
+
+- `ollama` providers receive `temperature` and `seed` natively.
+- `openai`-type providers (OpenAI, Lemonade, DigitalOcean) receive `temperature`, and `seed` in the
+  request body. Whether the server _honours_ the seed is up to the server.
+- `anthropic` providers are pinned by `temperature: 0` only. Anthropic's API has no seed
+  parameter, so a Claude judge cannot be fully seeded — this is a permanent API limitation, not a
+  bug to fix.
+
 ### Exit codes
 
-| Code | Meaning                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------- |
-| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).           |
-| `1`  | At least one suite failed its passing threshold, but the run itself completed without error. |
-| `2`  | Usage error — `--model` missing, the named provider/suite doesn't exist, or no suites found. |
-| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw). |
+| Code | Meaning                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).                                                       |
+| `1`  | At least one suite failed its passing threshold, but the run itself completed without error.                                             |
+| `2`  | Usage error — `--model` or `--judge-model` missing, `--seed` not an integer, the named provider/suite doesn't exist, or no suites found. |
+| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw).                                             |
 
 When `--suite` is omitted, a runtime error in one suite does **not** abort the batch — every
 other suite still runs, and the run only exits non-zero at the end if any suite failed or
@@ -176,7 +191,7 @@ Set `DEBUG_LLM_HTTP=1` to log the **raw HTTP response body** for every chat comp
 an `openai`-type provider, before the `openai` SDK/LangChain parses it:
 
 ```bash
-DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local
+DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local --judge-model claude
 ```
 
 This is diagnostic instrumentation (`api/src/services/provider-factory.ts`'s `loggingFetch`),
@@ -193,7 +208,7 @@ uses ANSI cursor movement to rewrite lines in place on a TTY, which visually int
 and can truncate the debug log lines printed to the same stream:
 
 ```bash
-DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local > eval-debug.log 2>&1
+DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local --judge-model claude > eval-debug.log 2>&1
 ```
 
 Once redirected, `stdout.isTTY` is false and the progress board falls back to plain sequential

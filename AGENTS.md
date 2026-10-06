@@ -339,11 +339,14 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama
 npm run eval -- --model ollama --judge-model ollama
 
 # CI mode (human evals skipped, exit code 1 on failure)
-npm run eval -- --suite wiki-search --model ollama --ci
+npm run eval -- --suite wiki-search --model ollama --judge-model ollama --ci
 
 # Run a suite, then have Claude Code review the YAML/HTML output and
 # summarize which scenarios failed and why (requires the `claude` CLI)
-npm run eval -- --suite wiki-search --model ollama --llm-review
+npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-review
+
+# --judge-model is required (no same-model fallback). Every run also pins
+# temperature 0 and a fixed seed (--seed, default 42) for both model and judge.
 
 # Author a new scenario interactively
 npm run eval:new -- --suite wiki-search
