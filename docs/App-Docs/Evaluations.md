@@ -153,6 +153,26 @@ the text that came just before it, and the last chunk groups, with long repeats 
 `×N` row. The full chunk log is written to `eval-logs/stream-trace-<timestamp>/run-<n>.json`. Only
 `tool-call` and `tool-sequence` scenarios are traced.
 
+**Limit, found on the first real run:** against `gpt-oss:20b` on Ollama the trace came back with
+zero chunks on every run. Ollama counts the repeat on the runner's raw token stream, _before_ its
+output parser decides what to send to the client, and the `gpt-oss` (harmony) parser holds a
+tool-call's name and arguments back until the call is complete, so nothing reaches the client
+when the repetition happens inside one. A client-side stream cannot show it. It is still useful for
+telling an abort that happens before any output (this case) from one that happens after the model
+has already produced text. To see the raw tokens, run Ollama with trace logging and read the
+parser's input (the log level and the log lines come from reading Ollama's source at `v0.40.0`/`main`;
+check yours with `ollama --version`):
+
+```bash
+# stop the Ollama app first, then:
+OLLAMA_DEBUG=2 ollama serve 2>&1 | tee /tmp/ollama-trace.log
+# in another terminal, run one abort
+npm run eval:trace -- --suite wiki-navigation-heldout \
+  --scenario wnavh-003-read-page-indirect-phrasing --model local --runs 1
+# the last raw tokens the model produced before the abort
+grep 'builtin parser input' /tmp/ollama-trace.log | tail -150 | cut -c1-220
+```
+
 It is a diagnostic, not a scored run, and it changes one thing: the call is streamed rather than
 awaited. If `eval` aborts on a scenario but `eval:trace` does not, streaming changed the behaviour —
 report that rather than reading the trace. Exit codes: `0` no run errored mid-stream, `1` at least

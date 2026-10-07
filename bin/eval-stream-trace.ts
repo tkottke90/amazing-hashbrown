@@ -236,6 +236,15 @@ for (let n = 1; n <= runs; n++) {
       anyStreamError = true;
       console.log(`\n✗ ${label} errored mid-stream: ${call.error}`);
       console.log(formatStreamTrace(call.chunks, { tailLines }));
+      if (call.chunks.length === 0) {
+        console.log(
+          '\nNothing was streamed before the abort, so the repeating text is not visible from ' +
+            'the client: Ollama counts repeats on the raw token stream, upstream of the parser that ' +
+            'decides what to send (it holds back tool-call bodies until the call completes). To ' +
+            'see the raw tokens, restart Ollama with OLLAMA_DEBUG=2 and read the ' +
+            '"builtin parser input" lines at the end of its log — see docs/App-Docs/Evaluations.md.',
+        );
+      }
     } else if (values.verbose) {
       console.log(`\n${label} completed:`);
       console.log(formatStreamTrace(call.chunks, { tailLines }));
