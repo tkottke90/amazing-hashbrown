@@ -116,6 +116,44 @@ describe('writeResultYaml + readResultYaml', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('reads back a field check whose expected and actual were both undefined', async () => {
+    // A tool-call check with no `value`, against a call where the model never
+    // supplied the arg, writes undefined for both. The YAML writer drops them, so
+    // they are absent on read-back — which used to make the file unreadable.
+    const dir = mkdtempSync(join(tmpdir(), 'eval-serial-undefined-'));
+    try {
+      const run = makeRun({ passed: false, passedScenarios: 0 });
+      const result = makeResult(run.id, {
+        passed: false,
+        score: 0,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: 'wiki_search',
+          fieldResults: [
+            {
+              path: 'query',
+              match: 'exists',
+              expected: undefined,
+              actual: undefined,
+              passed: false,
+            },
+          ],
+          score: 0,
+        },
+      });
+      const filePath = await writeResultYaml(run, [result], dir);
+      const { results } = await readResultYaml(filePath);
+      assert.equal(results[0]?.details.type, 'tool-call');
+      if (results[0]?.details.type === 'tool-call') {
+        assert.equal(results[0].details.fieldResults[0]?.path, 'query');
+        assert.equal(results[0].details.fieldResults[0]?.passed, false);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('writeResultHtml', () => {

@@ -40,6 +40,41 @@ export function parseResultPath(output: string): string | undefined {
   return matches.at(-1)?.[1];
 }
 
+const MAX_REASON_LENGTH = 200;
+
+function clip(text: string): string {
+  return text.length > MAX_REASON_LENGTH ? `${text.slice(0, MAX_REASON_LENGTH - 1)}…` : text;
+}
+
+function formatIssue(issue: unknown): string {
+  const { path, message } = (issue ?? {}) as { path?: unknown; message?: unknown };
+  const where = Array.isArray(path) ? path.join('.') : '';
+  const what = typeof message === 'string' ? message : 'invalid';
+  return where ? `${where}: ${what}` : what;
+}
+
+/**
+ * One line describing a failure, for the probe report. A schema validation
+ * error (anything carrying an `issues` array, e.g. ZodError) is summarised as
+ * its first issues' `path: message` — its own `.message` is a multi-line JSON
+ * dump that is unreadable in a report. Anything else is its first non-empty
+ * line.
+ */
+export function describeError(err: unknown): string {
+  const issues =
+    typeof err === 'object' && err !== null ? (err as { issues?: unknown }).issues : undefined;
+  if (Array.isArray(issues) && issues.length > 0) {
+    const more = issues.length > 2 ? ` (+${issues.length - 2} more)` : '';
+    return clip(`${issues.slice(0, 2).map(formatIssue).join('; ')}${more}`);
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  const firstLine = message
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+  return clip(firstLine ?? 'unknown error');
+}
+
 // Mirrors the `scorable` filter in computeRunSummary (runner.ts): skipped and
 // still-pending human results are not part of a run's pass/fail denominator.
 function isScored(result: ScenarioResult): boolean {

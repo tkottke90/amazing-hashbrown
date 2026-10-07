@@ -451,8 +451,13 @@ const HumanDetails = z.object({
 const FieldCheckResultSchema = z.object({
   path: z.string(),
   match: z.string(),
-  expected: z.unknown(),
-  actual: z.unknown(),
+  // Optional because both are legitimately undefined (a check with no `value`,
+  // or an arg the model never supplied) and the YAML writer drops undefined
+  // values, so on read-back the keys are missing. Under zod 4 a missing
+  // `z.unknown()` key is rejected, which made result files unreadable by the
+  // harness that wrote them.
+  expected: z.unknown().optional(),
+  actual: z.unknown().optional(),
   passed: z.boolean(),
 });
 

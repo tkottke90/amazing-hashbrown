@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
   analyzeDeterminism,
+  describeError,
   formatProbeReport,
   parseResultPath,
   probeExitCode,
@@ -90,8 +91,10 @@ for (const model of models) {
     if (aborted) break;
     const collected: ProbeRun[] = [];
     let errored: string | undefined;
+    let started = 0;
 
     for (let n = 1; n <= runs; n += 1) {
+      started += 1;
       completed += 1;
       const label = `[${completed}/${totalRuns}] ${model} / ${suite} run ${n}/${runs}`;
       console.log(`${label} ...`);
@@ -143,10 +146,14 @@ for (const model of models) {
           `  exit ${String(proc.status)}, passed ${loaded.run.passedScenarios}/${loaded.run.scoredScenarios ?? loaded.run.totalScenarios}`,
         );
       } catch (err) {
-        errored = `could not read ${resultPath}: ${err instanceof Error ? err.message : String(err)}`;
+        errored = `could not read ${resultPath}: ${describeError(err)}`;
         break;
       }
     }
+
+    // An errored pair skips its remaining runs; count them so the [n/total]
+    // progress prefix of the next pair stays accurate.
+    completed += runs - started;
 
     if (aborted) break;
     entries.push(

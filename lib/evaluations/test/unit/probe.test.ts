@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
 import {
   analyzeDeterminism,
+  describeError,
   formatProbeReport,
   parseResultPath,
   probeExitCode,
@@ -79,6 +80,57 @@ describe('parseResultPath', () => {
     const esc = String.fromCharCode(27);
     const out = `${esc}[2K${esc}[1AResult:    /a/run.yaml${esc}[0m\n`;
     assert.equal(parseResultPath(out), '/a/run.yaml');
+  });
+});
+
+describe('describeError', () => {
+  it('summarises a schema error by the path and message of its issues, not its JSON dump [unit]', () => {
+    const err = Object.assign(new Error('[\n  {\n    "code": "invalid_type"\n  }\n]'), {
+      issues: [
+        {
+          path: ['details', 'fieldResults', 0, 'expected'],
+          message: 'Invalid input: expected nonoptional, received undefined',
+        },
+      ],
+    });
+    assert.equal(
+      describeError(err),
+      'details.fieldResults.0.expected: Invalid input: expected nonoptional, received undefined',
+    );
+  });
+
+  it('shows the first two issues and counts the rest [unit]', () => {
+    const err = {
+      issues: [
+        { path: ['a'], message: 'one' },
+        { path: ['b'], message: 'two' },
+        { path: ['c'], message: 'three' },
+        { path: ['d'], message: 'four' },
+      ],
+    };
+    assert.equal(describeError(err), 'a: one; b: two (+2 more)');
+  });
+
+  it('omits the path prefix when an issue has no path [unit]', () => {
+    assert.equal(describeError({ issues: [{ path: [], message: 'bad file' }] }), 'bad file');
+  });
+
+  it('uses only the first non-empty line of an ordinary error [unit]', () => {
+    assert.equal(
+      describeError(new Error('\n  ENOENT: no such file\n    at somewhere')),
+      'ENOENT: no such file',
+    );
+  });
+
+  it('handles a thrown string and an empty message [unit]', () => {
+    assert.equal(describeError('plain string'), 'plain string');
+    assert.equal(describeError(new Error('')), 'unknown error');
+  });
+
+  it('truncates a very long message to a single bounded line [unit]', () => {
+    const out = describeError(new Error('x'.repeat(500)));
+    assert.equal(out.length, 200);
+    assert.ok(out.endsWith('…'));
   });
 });
 

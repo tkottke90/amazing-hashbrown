@@ -57,7 +57,13 @@ export { compareRuns } from './comparator.js';
 export type { ComparisonResult, ScenarioComparison } from './comparator.js';
 
 // Determinism probe
-export { analyzeDeterminism, formatProbeReport, parseResultPath, probeExitCode } from './probe.js';
+export {
+  analyzeDeterminism,
+  describeError,
+  formatProbeReport,
+  parseResultPath,
+  probeExitCode,
+} from './probe.js';
 export type {
   DeterminismAnalysis,
   Outcome,
