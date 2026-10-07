@@ -153,5 +153,5 @@ processing (parsing, arithmetic, YAML mutation) and is not covered by the
   this spec).
 - Deciding whether 5 rounds is still the right default now that sampling
   is pinned — issue #272 asks for that decision to be documented in the
-  skill *if* round count changes, but that's a call made with real
+  skill _if_ round count changes, but that's a call made with real
   post-determinism-fix data in hand, not before it exists.
