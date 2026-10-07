@@ -105,7 +105,12 @@ and a `probe.json` are written to `eval-logs/probe-<timestamp>/`.
 | `0`       | Every scenario had the same outcome in every run.                                      |
 | `1`       | At least one scenario varied between identical runs.                                   |
 | `2`       | Usage error, or `eval` itself exited 2 (e.g. unknown provider name); no verdict given. |
-| `3`       | A pair errored (no result produced) and nothing else varied — incomplete, not a pass.  |
+| `3`       | A pair produced no result, or a scenario errored, and nothing varied — not a pass.     |
+
+A scenario that _threw_ (a model or judge call failed) is shown as `E` and labelled `HAD ERRORS`,
+with its error message, not as a failure. The runner records a thrown error as an ordinary failed
+result, so without this a judge that errors on every run would look like a scenario that
+consistently fails and the pair would read as `IDENTICAL`.
 
 Reading a `VARIED` result: a scenario that does not use the judge and still varied means the model
 under test changed output on identical input — if one provider varies and another is stable, that

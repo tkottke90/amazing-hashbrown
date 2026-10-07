@@ -35,6 +35,7 @@ function makeResult(
     expected: 'x',
     passed,
   },
+  actualOutput = '',
 ): ScenarioResult {
   return {
     id: `${scenarioId}-result`,
@@ -43,11 +44,22 @@ function makeResult(
     suiteId: 'test-suite',
     passed,
     score: passed ? 1 : 0,
-    actualOutput: '',
+    actualOutput,
     latencyMs: 1,
     estimatedCostUsd: 0,
     details,
   };
+}
+
+// What runner.ts's executeScenario returns when a scenario throws: a failed
+// result with a placeholder `deterministic` detail and a marked actualOutput.
+function makeErroredResult(scenarioId: string, message: string): ScenarioResult {
+  return makeResult(
+    scenarioId,
+    false,
+    { type: 'deterministic', match: 'exact', expected: '', passed: false },
+    `[scenario error] ${message}`,
+  );
 }
 
 function probeRuns(...perRun: ScenarioResult[][]): ProbeRun[] {
@@ -313,13 +325,25 @@ describe('probeExitCode', () => {
     suiteId: 's',
     model: 'm',
     status: 'analyzed',
-    analysis: { runCount: 2, passedPerRun: [1, 1], identical: true, scenarios: [] },
+    analysis: { runCount: 2, passedPerRun: [1, 1], identical: true, errored: false, scenarios: [] },
   };
   const varied: ProbeEntry = {
     suiteId: 's2',
     model: 'm',
     status: 'analyzed',
-    analysis: { runCount: 2, passedPerRun: [1, 0], identical: false, scenarios: [] },
+    analysis: {
+      runCount: 2,
+      passedPerRun: [1, 0],
+      identical: false,
+      errored: false,
+      scenarios: [],
+    },
+  };
+  const scenarioErrors: ProbeEntry = {
+    suiteId: 's4',
+    model: 'm',
+    status: 'analyzed',
+    analysis: { runCount: 2, passedPerRun: [0, 0], identical: true, errored: true, scenarios: [] },
   };
   const errored: ProbeEntry = { suiteId: 's3', model: 'm', status: 'errored', reason: 'boom' };
 
@@ -333,6 +357,109 @@ describe('probeExitCode', () => {
 
   it('is 3 when a pair errored and nothing varied, so an incomplete probe never reads as a pass [unit]', () => {
     assert.equal(probeExitCode([identical, errored]), 3);
+  });
+
+  it('is 3 when scenarios errored identically in every run, so a broken judge never reads as a pass [unit]', () => {
+    assert.equal(probeExitCode([identical, scenarioErrors]), 3);
+  });
+
+  it('is still 1 when something varied alongside scenario errors [unit]', () => {
+    assert.equal(probeExitCode([scenarioErrors, varied]), 1);
+  });
+});
+
+describe('errored scenarios', () => {
+  const judgeError =
+    'Judge model "anthropic" does not support structured output or failed to respond after retries: Error: 400 `temperature` is deprecated for this model.';
+
+  it('records a scenario that threw as an error outcome, not a failure [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', judgeError)], [makeErroredResult('s', judgeError)]),
+    );
+    assert.deepEqual(analysis.scenarios[0]!.outcomes, ['error', 'error']);
+    assert.equal(analysis.errored, true);
+  });
+
+  it('does not count an errored scenario as passed [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns(
+        [makeResult('ok', true), makeErroredResult('s', judgeError)],
+        [makeResult('ok', true), makeErroredResult('s', judgeError)],
+      ),
+    );
+    assert.deepEqual(analysis.passedPerRun, [1, 1]);
+  });
+
+  it('keeps an identical error in every run "identical" but flags the analysis as errored [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', judgeError)], [makeErroredResult('s', judgeError)]),
+    );
+    assert.equal(analysis.identical, true);
+    assert.equal(analysis.errored, true);
+  });
+
+  it('treats a scenario that errored in one run and passed in another as varied [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', 'timeout')], [makeResult('s', true)]),
+    );
+    assert.deepEqual(analysis.scenarios[0]!.outcomes, ['error', 'pass']);
+    assert.equal(analysis.scenarios[0]!.varied, true);
+  });
+
+  it('takes the scenario type from a run where it actually ran, not the error placeholder [unit]', () => {
+    const toolCall = {
+      type: 'tool-call' as const,
+      expectedTool: 't',
+      toolCalled: 't',
+      fieldResults: [],
+      score: 1,
+      responseJudge: { score: 8, minScore: 6, reasoning: 'ok', judgeModel: 'j', biasRisk: false },
+    };
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', 'boom')], [makeResult('s', true, toolCall)]),
+    );
+    assert.equal(analysis.scenarios[0]!.type, 'tool-call');
+    assert.equal(analysis.scenarios[0]!.judgeDependent, true);
+  });
+
+  it('labels the type unknown when a scenario errored in every run [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', 'boom')], [makeErroredResult('s', 'boom')]),
+    );
+    assert.equal(analysis.scenarios[0]!.type, 'unknown');
+  });
+
+  it('keeps only the first line of a multi-line error message [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('s', '\n  first line\n  second line')], [makeResult('s', true)]),
+    );
+    assert.equal(analysis.scenarios[0]!.errorMessage, 'first line');
+  });
+
+  it('does not flag a scenario that merely failed as errored [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeResult('s', false)], [makeResult('s', false)]),
+    );
+    assert.equal(analysis.errored, false);
+    assert.equal(analysis.scenarios[0]!.errorMessage, undefined);
+  });
+
+  it('shows errored scenarios in the report even when every run agreed [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns(
+        [makeErroredResult('tc-003', judgeError)],
+        [makeErroredResult('tc-003', judgeError)],
+      ),
+    );
+    const report = formatProbeReport([
+      { suiteId: 'task-creation', model: 'local', status: 'analyzed', analysis },
+    ]);
+    assert.match(report, /HAD ERRORS\s+local \/ task-creation/);
+    assert.match(report, /tc-003\s+E E/);
+    assert.match(report, /error: Judge model "anthropic".*temperature/);
+    assert.match(report, /errored rather than failed/);
+    assert.match(report, /Overall: INCOMPLETE/);
+    assert.doesNotMatch(report, /Overall: IDENTICAL/);
   });
 });
 

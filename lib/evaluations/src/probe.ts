@@ -1,6 +1,9 @@
 import type { EvalRun, ScenarioResult } from './schemas.js';
 
-export type Outcome = 'pass' | 'fail' | 'missing';
+// 'error' means the scenario threw (a model or judge call failed), which is a
+// harness/provider failure rather than model behaviour — runner.ts records it
+// as an ordinary failed result, so it has to be recognised separately here.
+export type Outcome = 'pass' | 'fail' | 'error' | 'missing';
 
 export interface ProbeRun {
   run: EvalRun;
@@ -9,6 +12,8 @@ export interface ProbeRun {
 
 export interface ScenarioDeterminism {
   scenarioId: string;
+  // 'unknown' when the scenario errored in every run: the runner replaces an
+  // errored scenario's details with a placeholder, so its real type is lost.
   type: string;
   // True when the judge model took part in scoring this scenario, so a change
   // in outcome can come from the (unseedable, if Claude) judge as well as from
@@ -16,12 +21,19 @@ export interface ScenarioDeterminism {
   judgeDependent: boolean;
   outcomes: Outcome[];
   varied: boolean;
+  // The first error's message, when any run's outcome was 'error'.
+  errorMessage?: string;
 }
 
 export interface DeterminismAnalysis {
   runCount: number;
   passedPerRun: number[];
+  // True when no scenario's outcome differed between runs. A scenario that
+  // errors identically in every run is still "identical" — see `errored`.
   identical: boolean;
+  // True when any scenario errored in any run; such a result is untrustworthy
+  // even if the outcomes agree.
+  errored: boolean;
   scenarios: ScenarioDeterminism[];
 }
 
@@ -103,21 +115,37 @@ function isJudgeDependent(result: ScenarioResult): boolean {
   return false;
 }
 
+// The prefix runner.ts (executeScenario's catch) puts on `actualOutput` when a
+// scenario throws instead of producing a result.
+const SCENARIO_ERROR_PREFIX = '[scenario error]';
+
+function scenarioError(result: ScenarioResult): string | undefined {
+  if (!result.actualOutput.startsWith(SCENARIO_ERROR_PREFIX)) return undefined;
+  return describeError(new Error(result.actualOutput.slice(SCENARIO_ERROR_PREFIX.length)));
+}
+
 /**
  * Compares identically-configured runs of one suite scenario by scenario. A
- * scenario "varied" if its pass/fail outcome was not the same in every run;
- * one that is absent from some runs counts as varied.
+ * scenario "varied" if its outcome was not the same in every run; one that is
+ * absent from some runs counts as varied. A scenario that threw is an
+ * 'error' outcome, not a 'fail', and flags the whole analysis as `errored`.
  */
 export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
   const order: string[] = [];
+  // Taken from a run where the scenario actually ran: an errored scenario's
+  // `details` is the runner's placeholder, which would mislabel its type.
   const meta = new Map<string, { type: string; judgeDependent: boolean }>();
+  const errorMessages = new Map<string, string>();
   const perRun = runs.map(({ results }) => {
-    const byScenario = new Map<string, boolean>();
+    const byScenario = new Map<string, Outcome>();
     for (const result of results) {
       if (!isScored(result)) continue;
-      byScenario.set(result.scenarioId, result.passed);
-      if (!meta.has(result.scenarioId)) {
-        order.push(result.scenarioId);
+      const error = scenarioError(result);
+      byScenario.set(result.scenarioId, error ? 'error' : result.passed ? 'pass' : 'fail');
+      if (!order.includes(result.scenarioId)) order.push(result.scenarioId);
+      if (error) {
+        if (!errorMessages.has(result.scenarioId)) errorMessages.set(result.scenarioId, error);
+      } else if (!meta.has(result.scenarioId)) {
         meta.set(result.scenarioId, {
           type: result.details.type,
           judgeDependent: isJudgeDependent(result),
@@ -128,37 +156,44 @@ export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
   });
 
   const scenarios = order.map((scenarioId): ScenarioDeterminism => {
-    const outcomes = perRun.map((byScenario): Outcome => {
-      const passed = byScenario.get(scenarioId);
-      if (passed === undefined) return 'missing';
-      return passed ? 'pass' : 'fail';
-    });
-    const { type, judgeDependent } = meta.get(scenarioId)!;
+    const outcomes = perRun.map((byScenario): Outcome => byScenario.get(scenarioId) ?? 'missing');
+    const { type, judgeDependent } = meta.get(scenarioId) ?? {
+      type: 'unknown',
+      judgeDependent: false,
+    };
+    const errorMessage = errorMessages.get(scenarioId);
     return {
       scenarioId,
       type,
       judgeDependent,
       outcomes,
       varied: new Set(outcomes).size > 1,
+      ...(errorMessage === undefined ? {} : { errorMessage }),
     };
   });
 
   return {
     runCount: runs.length,
-    passedPerRun: perRun.map((byScenario) => [...byScenario.values()].filter(Boolean).length),
+    passedPerRun: perRun.map(
+      (byScenario) => [...byScenario.values()].filter((o) => o === 'pass').length,
+    ),
     identical: scenarios.every((s) => !s.varied),
+    errored: scenarios.some((s) => s.errorMessage !== undefined),
     scenarios,
   };
 }
 
-/** 1 if anything varied, else 3 if anything errored, else 0. */
+/**
+ * 1 if anything varied; else 3 if any pair or scenario errored (the result
+ * can't be trusted); else 0.
+ */
 export function probeExitCode(entries: ProbeEntry[]): 0 | 1 | 3 {
   if (entries.some((e) => e.status === 'analyzed' && !e.analysis.identical)) return 1;
-  if (entries.some((e) => e.status === 'errored')) return 3;
+  if (entries.some((e) => e.status === 'errored' || e.analysis.errored)) return 3;
   return 0;
 }
 
-const OUTCOME_GLYPH: Record<Outcome, string> = { pass: 'P', fail: 'F', missing: '-' };
+const OUTCOME_GLYPH: Record<Outcome, string> = { pass: 'P', fail: 'F', error: 'E', missing: '-' };
 
 export function formatProbeReport(
   entries: ProbeEntry[],
@@ -167,6 +202,7 @@ export function formatProbeReport(
   const lines: string[] = [`Determinism probe — ${entries.length} suite/model pair(s)`, ''];
   let targetOnly = 0;
   let judgeDependent = 0;
+  let erroredScenarios = 0;
 
   for (const entry of entries) {
     const label = `${entry.model} / ${entry.suiteId}`;
@@ -175,17 +211,27 @@ export function formatProbeReport(
       continue;
     }
     const { analysis } = entry;
-    const verdict = analysis.identical ? 'IDENTICAL' : 'VARIED   ';
+    const verdict = !analysis.identical
+      ? 'VARIED    '
+      : analysis.errored
+        ? 'HAD ERRORS'
+        : 'IDENTICAL ';
     lines.push(
       `  ${verdict} ${label} — ${analysis.runCount} runs, passed per run: ${analysis.passedPerRun.join(' ')}`,
     );
-    for (const s of analysis.scenarios.filter((x) => x.varied)) {
+    for (const s of analysis.scenarios.filter((x) => x.varied || x.errorMessage !== undefined)) {
       const glyphs = s.outcomes.map((o) => OUTCOME_GLYPH[o]).join(' ');
       lines.push(
         `      ${s.scenarioId.padEnd(28)} ${glyphs}  [${s.type}${s.judgeDependent ? ', judge-dependent' : ''}]`,
       );
-      if (s.judgeDependent) judgeDependent += 1;
-      else targetOnly += 1;
+      if (s.errorMessage !== undefined) {
+        lines.push(`          error: ${s.errorMessage}`);
+        erroredScenarios += 1;
+      }
+      if (s.varied) {
+        if (s.judgeDependent) judgeDependent += 1;
+        else targetOnly += 1;
+      }
     }
   }
 
@@ -199,9 +245,16 @@ export function formatProbeReport(
   } else if (exit === 0) {
     lines.push('Overall: IDENTICAL — every scenario had the same outcome in every run.');
   } else if (exit === 3) {
-    lines.push('Overall: INCOMPLETE — some pairs errored, and none of the rest varied.');
+    lines.push('Overall: INCOMPLETE — some pairs or scenarios errored, and nothing varied.');
   } else {
     lines.push('Overall: VARIED — identical runs disagreed on at least one scenario.');
+  }
+  if (erroredScenarios > 0) {
+    lines.push(
+      `  ${erroredScenarios} scenario(s) errored rather than failed (E): a model or judge call threw. ` +
+        'That is a harness or provider problem, not model behaviour, and a scenario that errors ' +
+        'every run looks identical — fix these before trusting any verdict.',
+    );
   }
   if (targetOnly > 0) {
     lines.push(
