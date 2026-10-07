@@ -467,6 +467,67 @@ run.
 
 ---
 
+## Observed: one abort, traced token by token (2026-10-07)
+
+Everything above is from reading source. This section is the one measurement we have. It is a
+single request, not a sample, and it is the first time the content of an abort has been seen.
+
+**Setup:** Ollama `0.40.0` (the macOS app's bundled `llama-server`), Apple M1 Max, `gpt-oss:20b`,
+`OLLAMA_DEBUG=2` (shown in the server config as `DEBUG-4`, i.e. trace). Scenario
+`wnavh-003-read-page-indirect-phrasing` run with `npm run eval:trace` (one run), pinned
+`temperature=0`, seed 42. The same scenario aborted 3 of 3 times earlier, with zero chunks reaching
+the client each time (see `docs/App-Docs/Evaluations.md`, `eval:trace`).
+
+**What the log shows:**
+
+| Fact                          | Value                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Prompt                        | 11,192 tokens (50,592 characters), the harness's full tool set (about 25 tools) bound                                                      |
+| Context                       | `n_ctx_slot = 131072`, `truncated = 0` at the end of the run, so **not** a truncation problem                                              |
+| Sampler (as logged)           | `temp = 0.000`, `top_k = 40`, `top_p = 0.900`, `repeat_penalty = 1.000`, no DRY, no frequency or presence penalty                          |
+| Tokens generated before abort | 524                                                                                                                                        |
+| Parser output                 | `builtin parser empty output` for **all 524**, and no `harmony event ...` line at all, so the parser never completed even a channel header |
+| Time                          | about 35 s end to end, the abort comes from `llama_server.go:1807` and the API returns HTTP 500                                            |
+
+**The raw token sequence** (one `content` per line in the trace, joined here):
+
+```text
+<|channel|> comment ? comment ary ? ? ?? ? ? ? ?? ? ?? ? ? ? ? ? ?? ? ?? ...   (about 50 tokens of ? and ??)
+... ... … … … … ... ? … … …                                                    (tokens 50 to ~160)
+comment ? … … … …                                                              (a second "comment ?" at token 162)
+… … … … We … … … just … … … …                                                  (a few real words, then "…" again)
+… × 101 consecutive (tokens 424 to 524)                                        → abort
+```
+
+Read plainly: the model begins an assistant message with `<|channel|>`, which is how `gpt-oss`
+starts a tool call (`<|channel|>commentary to=functions.<name> ...`). It then fails to produce the
+word `commentary` (it produces `comment`, `?`, `comment`, `ary`, `?`), never reaches a recipient or
+arguments, and falls into emitting `?` and then `…` until the 102nd identical `…` trips the repeat
+check. Because the harmony parser only emits once a header is complete, none of this was visible to
+the client.
+
+**What this does and does not establish:**
+
+- It confirms the abort is a degenerate generation at the start of a tool call. The sampler is
+  greedy with the repeat penalty off; this trace does not show whether either setting contributes.
+- It ties the abort to the same family as the other `local` failures: the garbled
+  `wiki_search?` tool name and the arguments returned as plain text are also a tool-call header
+  going wrong, with `?` as a recurring bad token.
+- It rules out context truncation and the default `num_ctx` for this request (sections 6a and 6b).
+- It does **not** say why the model degenerates. One request cannot separate a prompt effect (an
+  11k-token prompt with 25 tools), a quantisation or Metal numerics effect in this build, and
+  greedy decoding at a point where the top choices are close.
+- Because the request is deterministic at `temperature=0`, **retrying the identical request
+  reproduces it** (3 of 3 earlier). A harness retry would only help if it changed something
+  (sampling, seed at a non-zero temperature), which would then no longer be the pinned run.
+
+Cheap experiments that would separate the explanations, none of them run:
+
+1. The same scenario with `OLLAMA_FLASH_ATTENTION=1` (a numerics difference on Metal would show here).
+2. The same scenario with a non-zero `--temperature`, to see whether the abort is specific to
+   greedy decoding.
+3. The same scenario on the old prompt (`f265cd6`), which did not abort on this scenario in its 3 earlier runs.
+
 ## Open questions / could not confirm
 
 - **Which Ollama version and engine our M1 is running**, its unified memory size, and the
