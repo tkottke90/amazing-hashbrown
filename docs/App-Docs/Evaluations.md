@@ -130,6 +130,34 @@ under test changed output on identical input — if one provider varies and anot
 server is probably ignoring `seed`. Judge-dependent scenarios can vary from either side, and a
 Claude judge is not pinned, so some variance there is expected.
 
+#### Seeing what a failed generation was producing: `eval:trace`
+
+Ollama can abort a generation with `prediction aborted, token repeat limit reached`. The eval
+awaits the whole reply, so on an abort everything the model had produced is thrown away, and
+Ollama's own `server.log` does not record it either — the repeating text was never visible.
+`eval:trace` runs **one** scenario through the same code path as `npm run eval` (same tools, system
+prompt, seeded turns and sampling pins) but streams the model call, so the partial output survives
+the abort:
+
+```bash
+npm run eval:trace -- --suite wiki-navigation-heldout \
+  --scenario wnavh-003-read-page-indirect-phrasing --model local
+```
+
+`--suite`, `--scenario` and `--model` are required. `--judge-model` is only needed when the scenario
+has a judged rubric. `--runs N` repeats the scenario, `--tail N` sets how many chunk groups are
+printed, `--seed`/`--temperature` work as in `eval`, and `--verbose` also prints the stream of runs
+that did not error. For a run that errored mid-stream it prints the error, the longest run of
+identical consecutive chunks (shown JSON-escaped, so a whitespace-only repeat is visible as such),
+the text that came just before it, and the last chunk groups, with long repeats collapsed to one
+`×N` row. The full chunk log is written to `eval-logs/stream-trace-<timestamp>/run-<n>.json`. Only
+`tool-call` and `tool-sequence` scenarios are traced.
+
+It is a diagnostic, not a scored run, and it changes one thing: the call is streamed rather than
+awaited. If `eval` aborts on a scenario but `eval:trace` does not, streaming changed the behaviour —
+report that rather than reading the trace. Exit codes: `0` no run errored mid-stream, `1` at least
+one did, `2` usage error, `3` setup error.
+
 ### Exit codes
 
 | Code | Meaning                                                                                                                                  |

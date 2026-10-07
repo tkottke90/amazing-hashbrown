@@ -38,6 +38,7 @@
     "eval:calibrate": "tsx bin/eval-calibrate.ts",
     "eval:compare": "tsx bin/eval-compare.ts",
     "eval:probe": "tsx bin/eval-probe.ts",
+    "eval:trace": "tsx bin/eval-stream-trace.ts",
     "eval:cleanup": "rm -rf ./eval-results/* ./eval-logs/*",
     "thread-report": "tsx bin/thread-report.ts",
     "lint": "eslint .",

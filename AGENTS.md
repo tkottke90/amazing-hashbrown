@@ -348,6 +348,10 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-re
 # Check a provider is reproducible: run suites N times, diff per-scenario outcomes
 npm run eval:probe -- --suite wiki-navigation --model ollama --judge-model claude --runs 3
 
+# Stream ONE scenario to see what the model was emitting when Ollama aborts with
+# "token repeat limit reached" (the normal eval discards that partial output)
+npm run eval:trace -- --suite wiki-navigation-heldout --scenario wnavh-003-read-page-indirect-phrasing --model ollama
+
 # Try the model under test at a non-zero temperature (the judge stays pinned);
 # config.yaml's temperature/top_p do not change an eval run on their own
 npm run eval -- --suite wiki-navigation --model ollama --judge-model claude --temperature 1
