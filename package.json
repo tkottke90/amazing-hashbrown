@@ -9,7 +9,8 @@
     "api",
     "ui",
     "e2e",
-    "docs-site"
+    "docs-site",
+    ".agents/skills/auto-update-baseline"
   ],
   "engines": {
     "node": ">=20"

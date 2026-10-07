@@ -128,12 +128,15 @@ breaking (bad args, runtime error), not an eval failure to tolerate — read
 the `console_log` path it prints, fix the underlying problem, and restart
 the round count rather than averaging in a broken run.
 
-## Step 5 — Read each round's result and average
+## Step 5 — Read each round's result and collect round scores
 
 For each round, read the YAML file at the `result_yaml=` path the script
 printed. Pull two fields from its `run:` block:
 
-- `run.passedScenarios` — the raw count of scenarios that passed.
+- `run.passedScenarios` — the raw count of scenarios that passed. Append
+  it, in round order, to a running list — this list becomes
+  `--round-scores` in Step 6. Do **not** average these yourself; the
+  script computes the mean, `min`, `max`, and `stdev` from the full list.
 - `run.scoredScenarios`, **falling back to `run.totalScenarios`** if
   `scoredScenarios` is absent — this matches `getScoredScenarios()` in
   `lib/evaluations/src/runner.ts`, and exists because older result files
@@ -143,8 +146,9 @@ printed. Pull two fields from its `run:` block:
 
 After all N rounds:
 
-- `score` = the **average** of `passedScenarios` across the N rounds (may
-  be fractional, e.g. `10.6` — don't round).
+- `round-scores` = the ordered list of each round's `passedScenarios`
+  (e.g. `15,16,15,17,15`) — pass it to the script verbatim via
+  `--round-scores`, comma-separated, in the order the rounds ran.
 - `total` = the **last** round's `scoredScenarios` (with the
   `totalScenarios` fallback above). It should be constant across rounds
   for the same suite/model, but take the last one defensively rather than
@@ -170,9 +174,8 @@ node .agents/skills/auto-update-baseline/scripts/update-baseline.mjs \
   --provider <provider-name> \
   --model <human-readable-model-name> \
   --judge-model <judge-provider-name> \
-  --score <averaged-score> \
+  --round-scores <comma-separated passedScenarios, round order, e.g. 15,16,15,17,15> \
   --total <total> \
-  --rounds <N> \
   --branch "$(git rev-parse --abbrev-ref HEAD)" \
   --commit "$(git rev-parse HEAD)"
 ```
@@ -186,8 +189,11 @@ line before the overwrite, not from `git log` after.
 ## Step 7 — Report back, don't commit
 
 Tell the user plainly what changed: the suite, the slug, the old score
-(or "no prior baseline" if `old_score=none`), the new score, and `N`
-rounds. Point them at `git diff eval-baselines.yaml` to review the change
+(or "no prior baseline" if `old_score=none`), the new score, `min`, `max`,
+`stdev`, and `N` rounds — read `min`/`max`/`stdev` out of the entry the
+script just wrote (its stdout only reports `old_score=`/`new_score=`/
+`file=`), e.g. by opening `eval-baselines.yaml` and looking at the entry.
+Point them at `git diff eval-baselines.yaml` to review the change
 themselves.
 
 **This skill never commits `eval-baselines.yaml` on its own.** Baseline

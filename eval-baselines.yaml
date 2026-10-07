@@ -29,6 +29,16 @@
 #               wiki-navigation design doc's flakiness notes), so a
 #               baseline from a single run would misreport "is this a
 #               real regression" more often than it should.
+#   min:        the LOWEST single round's `run.passedScenarios`
+#               across the `rounds` frozen rounds — same raw-count
+#               units as `score`.
+#   max:        the HIGHEST single round's `run.passedScenarios`
+#               across the `rounds` frozen rounds — same raw-count
+#               units as `score`.
+#   stdev:      the POPULATION standard deviation (divided by
+#               `rounds`, not `rounds - 1`) of `run.passedScenarios`
+#               across the frozen rounds — `0` means every round
+#               landed on the same count.
 #   total:      `run.scoredScenarios` (the denominator passRate was
 #               computed against) from the last of the N rounds. Pinned
 #               here so a baseline doesn't silently go stale if the
