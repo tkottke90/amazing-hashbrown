@@ -1,0 +1,257 @@
+# HELD-OUT companion to wiki-navigation.yaml. Read this before touching it.
+#
+# What it is: the same navigation situations wiki-navigation tests, reworded,
+# with different topics, page names and domains. Its job is to say whether a
+# system-prompt change taught the model a RULE or just taught it the TEST. The
+# wiki-navigation prompt section now contains worked examples that reuse the
+# exact questions of wnav-003, wnav-010 and wnav-010c, so a pass there proves
+# little about wording the prompt has never seen. A pass here is the evidence.
+#
+# It only works while it stays unseen. So:
+#   - Never copy a question, page path or domain name from this file into
+#     api/src/agents/system-prompt.ts, its comments, or its tests.
+#   - Never point the auto-eval-loop at this suite or let it read these
+#     results. If the loop sees a failure here it will "fix" it with another
+#     scenario-shaped example, and the suite stops being held out.
+#   - Use it to judge a change AFTER tuning against wiki-navigation, then leave
+#     it alone. If a change is tuned against these results, retire the
+#     scenarios it was tuned on and write fresh ones.
+#
+# Run it with:
+#   npm run eval:probe -- --suite wiki-navigation-heldout \
+#     --model local,Lemonade --judge-model anthropic --runs 3
+
+suite:
+  id: wiki-navigation-heldout
+  name: Wiki Navigation (held out)
+  purpose: >
+    Held-out check that the wiki-navigation prompt rules generalise: reading
+    the page an orient index names, checking the wiki before answering a
+    how-to, and the neighbouring behaviours (skip-locate, update, create).
+    Same situations as wiki-navigation, different wording, topics, pages and
+    domains, and the orient indexes here carry distractor entries so the right
+    page is never the only one. Must stay out of the prompt and out of the
+    auto-eval-loop, or it measures nothing.
+  passingThreshold: 0.85
+
+scenarios:
+  # --- Read the page orient names (held out from wnav-003) ------------------
+
+  - id: wnavh-001-read-page-among-distractors
+    name: Agent reads the one matching page from an orient index with several entries
+    purpose: >
+      Held-out sibling of wnav-003. That scenario's index lists a single page,
+      so reading it is the only possible move. Here the index has three, and
+      only one describes the question, which checks the agent picks the
+      matching page and reads it instead of searching again on terms the index
+      just supplied. If this fails while wnav-003 passes, the step-3 example
+      was memorised rather than learned.
+    type: tool-sequence
+    turns:
+      - user: 'Which tea do I usually drink in the evening?'
+      - tool: wiki_locate
+        args: { context: 'evening tea preference' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 16). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule\n- entities/evening-tea.md — user's preferred evening tea and how they brew it\n- entities/gym-routine.md — user's weekly gym schedule",
+          }
+    tool: wiki_read_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/evening-tea.md
+
+  - id: wnavh-002-read-page-non-user-domain
+    name: Agent reads the matching page when the resolved domain is not "user"
+    purpose: >
+      wnav-003 only ever resolves to the "user" domain, so a model could learn
+      "orient index → read_page" for that one domain and nothing more. This
+      uses a technical domain and a differently-shaped page path
+      (concepts/...), and asserts the wikiId carried through is the one locate
+      resolved, not a default.
+    type: tool-sequence
+    turns:
+      - user: 'Remind me what the backup schedule for the NAS is.'
+      - tool: wiki_locate
+        args: { context: 'NAS backup schedule' }
+        result:
+          {
+            text: 'Best match: "homelab" (domain: homelab, score 17). wiki_orient({ wikiId: "homelab" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'homelab' }
+        result:
+          {
+            text: "# Wiki Orientation: homelab\n## Index\n- concepts/nas-backup-schedule.md — nightly and weekly backup jobs for the NAS\n- concepts/router-firmware.md — router firmware versions and upgrade notes\n- entities/proxmox-host.md — Proxmox host hardware and VM layout",
+          }
+    tool: wiki_read_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: homelab
+      - path: path
+        match: equals
+        value: concepts/nas-backup-schedule.md
+
+  - id: wnavh-003-read-page-indirect-phrasing
+    name: Agent reads the matching page when the question only paraphrases the index description
+    purpose: >
+      The question ("what did I note about...") and the index description
+      ("feeding schedule and storage for...") share almost no words, so
+      matching them needs understanding, not string overlap. Guards against the
+      step-3 example working only when the question echoes the index text.
+    type: tool-sequence
+    turns:
+      - user: 'What did I note about looking after my sourdough starter?'
+      - tool: wiki_locate
+        args: { context: 'sourdough starter notes' }
+        result:
+          {
+            text: 'Best match: "kitchen" (domain: kitchen, score 15). wiki_orient({ wikiId: "kitchen" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'kitchen' }
+        result:
+          {
+            text: "# Wiki Orientation: kitchen\n## Index\n- recipes/sourdough-starter-care.md — feeding schedule and storage for the sourdough starter\n- recipes/weeknight-pasta.md — go-to weeknight pasta recipe",
+          }
+    tool: wiki_read_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: kitchen
+      - path: path
+        match: equals
+        value: recipes/sourdough-starter-care.md
+
+  # --- Check the wiki before answering a how-to (held out from wnav-010) ----
+
+  - id: wnavh-004-procedural-need-statement-locates
+    name: Agent checks the wiki for a stored how-to (first-person need statement)
+    purpose: >
+      Held-out sibling of wnav-010. Different topic, so a pass cannot come from
+      having seen the Verdaccio wording in the prompt. If the model answers
+      from general knowledge of TLS or searches directly, the "check the wiki
+      first for a how-to" rule only holds for the examples it was shown. Only
+      the tool is asserted: wiki_locate's context argument is optional by its
+      own schema (see wnav-010c).
+    type: tool-call
+    input: 'I need to rotate the TLS certificate on my homelab reverse proxy.'
+    tool: wiki_locate
+
+  - id: wnavh-005-procedural-how-do-i-locates
+    name: Agent checks the wiki for a stored how-to (interrogative phrasing)
+    purpose: >
+      Held-out sibling of wnav-010b: the "how do I" form on a new topic. The
+      Verdaccio version of this form already passes on every provider, so this
+      checks that is not just the Verdaccio example at work.
+    type: tool-call
+    input: "How do I restore last night's Postgres backup onto the staging box?"
+    tool: wiki_locate
+
+  - id: wnavh-006-procedural-past-tense-locates
+    name: Agent checks the wiki for a stored how-to (past-tense recall phrasing)
+    purpose: >
+      Held-out sibling of wnav-010c, the form `local` still fails even with its
+      own dedicated prompt bullet. Recalling a previously established process
+      most strongly implies it was documented, so skipping the wiki is the
+      costliest mistake here. A new topic shows whether that failure is about
+      the wording shape or about the single Verdaccio question.
+    type: tool-call
+    input: 'What was the procedure for renewing the domain registration?'
+    tool: wiki_locate
+
+  # --- Neighbouring behaviours (controls for the same prompt edit) ----------
+
+  - id: wnavh-007-no-overcall-personal-preference
+    name: Agent skips wiki_locate on a clearly personal single-domain question
+    purpose: >
+      Control for step 1's skip-locate rule, held out from wnav-008 (whose
+      "favorite color" question is a worked example in the prompt). Lemonade
+      fails wnav-008 by calling wiki_locate first. If it also fails here the
+      weakness is the rule, not one question; if it passes, wnav-008 is the
+      outlier. Also confirms the new orient/how-to bullets did not push the
+      model into routing everything through wiki_locate.
+    type: tool-call
+    input: "What's my favorite season?"
+    tool: wiki_search
+    argChecks:
+      - path: query
+        match: exists
+
+  - id: wnavh-008-update-existing-page-after-read
+    name: Agent updates the existing page it just read instead of creating a new one
+    purpose: >
+      Held-out sibling of wnav-011 with a different domain-neutral topic and a
+      correction phrased as a swap rather than a count change. Confirms the
+      step-3 edits about orient and reading did not disturb the
+      update-versus-create decision.
+    type: tool-sequence
+    turns:
+      - user: "What's on my weekly meal-prep list?"
+      - tool: wiki_locate
+        args: { context: 'weekly meal-prep list' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 17). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/meal-prep-list.md — user's weekly meal-prep list\n- entities/work-schedule.md — user's work-from-home schedule",
+          }
+      - tool: wiki_read_page
+        args: { wikiId: 'user', path: 'entities/meal-prep-list.md' }
+        result:
+          {
+            text: "# Meal Prep List\n\nType: entity\nTags: food\n\nSunday prep: grilled chicken, brown rice, roasted broccoli, and a batch of lentil soup.",
+          }
+      - user: "Swap the grilled chicken for baked tofu in that list — I've gone vegetarian."
+    tool: wiki_update_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/meal-prep-list.md
+
+  - id: wnavh-009-create-new-page-when-index-has-nothing-related
+    name: Agent creates a new page when the orient index shows nothing on-topic
+    purpose: >
+      Held-out sibling of wnav-012, which fails on `local` in several different
+      ways (a garbled tool name, a clean search-first call, a server abort). A
+      different fact and different distractor pages show whether that failure
+      is specific to the violin wording or general to creating a page after
+      locate and orient. The distractors are unrelated on purpose, so
+      "update an existing page" is not a defensible answer.
+    type: tool-sequence
+    turns:
+      - user: "Make a note that I've started bouldering on Thursday evenings."
+      - tool: wiki_locate
+        args: { context: 'hobbies and exercise' }
+        result:
+          {
+            text: 'Best match: "user" (domain: user, score 13). wiki_orient({ wikiId: "user" }) shows its structure if you need it.',
+          }
+      - tool: wiki_orient
+        args: { wikiId: 'user' }
+        result:
+          {
+            text: "# Wiki Orientation: user\n## Index\n- entities/work-schedule.md — user's work-from-home schedule\n- entities/evening-tea.md — user's preferred evening tea and how they brew it",
+          }
+    tool: wiki_create_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
