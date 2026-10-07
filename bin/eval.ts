@@ -329,8 +329,9 @@ interface SuiteOutcome {
   passed: boolean;
   passRate?: number;
   errored?: boolean;
-  // Counts of malformed_tool_call/prose_question results (issue #227) —
-  // see getFailureCategory. Omitted (not zeroed) on the runtime-error catch
+  // Counts of malformed_tool_call/prose_question (issue #227) and
+  // unregistered_tool_call results — see getFailureCategory. Omitted (not
+  // zeroed) on the runtime-error catch
   // path below, where no results exist to count.
   failureCategoryCounts?: Record<string, number>;
 }

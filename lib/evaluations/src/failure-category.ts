@@ -5,10 +5,17 @@ import type { ScenarioResultDetails } from './schemas.js';
 // docs/superpowers/specs/2026-10-03-malformed-tool-call-detection-design.md
 // D5). One shared helper so CLI/HTML reporting don't each need their own
 // type-switch over every details shape that can carry one of these fields.
-export type FailureCategory = 'malformed_tool_call' | 'prose_question';
+export type FailureCategory = 'malformed_tool_call' | 'prose_question' | 'unregistered_tool_call';
 
 export function getFailureCategory(details: ScenarioResultDetails): FailureCategory | null {
   if ('malformedToolCall' in details && details.malformedToolCall) return 'malformed_tool_call';
   if ('proseQuestion' in details && details.proseQuestion) return 'prose_question';
+  if (
+    'unregisteredToolCalls' in details &&
+    details.unregisteredToolCalls &&
+    details.unregisteredToolCalls.length > 0
+  ) {
+    return 'unregistered_tool_call';
+  }
   return null;
 }

@@ -189,6 +189,10 @@ h3 {
   background: var(--warn-bg);
   color: var(--warn);
 }
+.badge-unregistered {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
 
 .status-bar {
   display: flex;

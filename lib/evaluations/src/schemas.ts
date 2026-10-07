@@ -516,6 +516,11 @@ const ToolCallDetails = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+  // Names of tool calls this turn that match no registered tool — see
+  // unregistered-tool-call.ts. Present only when at least one was found, and
+  // independent of pass/fail (a correct call alongside a bogus one still
+  // records the bogus name).
+  unregisteredToolCalls: z.array(z.string()).optional(),
 });
 
 const ToolSequenceDetailsBase = z.object({
@@ -535,6 +540,8 @@ const ToolSequenceDetailsBase = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+  // See ToolCallDetails's identical field.
+  unregisteredToolCalls: z.array(z.string()).optional(),
 });
 
 // One `steps` entry's outcome (issue #235 (b) — multi-step conversations).

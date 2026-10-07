@@ -77,6 +77,57 @@ describe('getFailureCategory', () => {
     assert.equal(getFailureCategory(details), 'malformed_tool_call');
   });
 
+  it('reports unregistered_tool_call for a tool-call result that called a non-existent tool [unit]', () => {
+    const details: ScenarioResultDetails = {
+      type: 'tool-call',
+      expectedTool: 'wiki_search',
+      toolCalled: null,
+      calledTools: ['wiki_search?'],
+      fieldResults: [],
+      score: 0,
+      unregisteredToolCalls: ['wiki_search?'],
+    };
+    assert.equal(getFailureCategory(details), 'unregistered_tool_call');
+  });
+
+  it('reports unregistered_tool_call for a tool-sequence result that called a non-existent tool [unit]', () => {
+    const details: ScenarioResultDetails = {
+      type: 'tool-sequence',
+      expectedTool: 'wiki_create_page',
+      toolCalled: null,
+      calledTools: ['wiki_search?'],
+      fieldResults: [],
+      score: 0,
+      unregisteredToolCalls: ['wiki_search?'],
+    };
+    assert.equal(getFailureCategory(details), 'unregistered_tool_call');
+  });
+
+  it('returns null when unregisteredToolCalls is present but empty [unit]', () => {
+    const details: ScenarioResultDetails = {
+      type: 'tool-call',
+      expectedTool: 'wiki_search',
+      toolCalled: 'wiki_search',
+      fieldResults: [],
+      score: 1,
+      unregisteredToolCalls: [],
+    };
+    assert.equal(getFailureCategory(details), null);
+  });
+
+  it('prefers malformed_tool_call over unregistered_tool_call when both are set [unit]', () => {
+    const details: ScenarioResultDetails = {
+      type: 'tool-call',
+      expectedTool: 'wiki_search',
+      toolCalled: null,
+      fieldResults: [],
+      score: 0,
+      malformedToolCall: { parsedToolName: 'wiki_search', raw: '<tool_call>...' },
+      unregisteredToolCalls: ['wiki_search?'],
+    };
+    assert.equal(getFailureCategory(details), 'malformed_tool_call');
+  });
+
   it('returns null for a tool-call result with neither field set [unit]', () => {
     const details: ScenarioResultDetails = {
       type: 'tool-call',

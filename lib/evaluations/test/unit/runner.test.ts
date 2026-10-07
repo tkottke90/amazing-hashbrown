@@ -1139,6 +1139,143 @@ describe('executeScenario — malformed tool call / prose question detection (is
   });
 });
 
+// gpt-oss on Ollama occasionally emits `wiki_search?` where `wiki_search` was
+// meant. Ollama passes the name through unchanged, so the harness receives a
+// well-formed tool call to a tool that does not exist. These tests confirm that
+// is labelled as such on the result instead of reading as "the model picked the
+// wrong tool", and that the label never changes the pass/fail verdict.
+describe('executeScenario — unregistered tool call detection', () => {
+  const catalog = [fakeTool('wiki_locate'), fakeTool('wiki_search'), fakeTool('wiki_create_page')];
+
+  function makeToolCallScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'utc-tc-1',
+      name: 'Unregistered tool call tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: 'Search the knowledge base for coffee.',
+      tool: 'wiki_search',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  function makeToolSequenceScenario(
+    overrides: Partial<ToolSequenceScenario> = {},
+  ): ToolSequenceScenario {
+    return {
+      id: 'utc-ts-1',
+      name: 'Unregistered tool call tool-sequence scenario',
+      purpose: 'Testing',
+      type: 'tool-sequence',
+      turns: [
+        { user: 'Locate the right domain, then add a note to it.' },
+        { tool: 'wiki_locate', args: {}, result: { text: 'Matched domain: user.' } },
+        { user: 'Great, now add the note.' },
+      ],
+      tool: 'wiki_create_page',
+      minScore: 1,
+      ...overrides,
+    };
+  }
+
+  async function run(
+    scenario: ToolCallScenario | ToolSequenceScenario,
+    toolCallNames: string[],
+  ): Promise<ScenarioResult> {
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('', toolCallNames),
+      tools: catalog,
+    };
+    return executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+  }
+
+  it('tool-call: records the bad name and still fails when the model calls wiki_search? [unit]', async () => {
+    const result = await run(makeToolCallScenario(), ['wiki_search?']);
+
+    assert.equal(result.passed, false, 'a non-existent tool is not the expected tool');
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.deepEqual(result.details.unregisteredToolCalls, ['wiki_search?']);
+      assert.deepEqual(result.details.calledTools, ['wiki_search?']);
+      assert.equal(result.details.toolCalled, null);
+    }
+  });
+
+  it('tool-sequence: records the bad name and still fails when the model calls wiki_search? [unit]', async () => {
+    const result = await run(makeToolSequenceScenario(), ['wiki_search?']);
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.deepEqual(result.details.unregisteredToolCalls, ['wiki_search?']);
+      assert.equal(result.details.toolCalled, null);
+    }
+  });
+
+  it('tool-call: records nothing when the model calls a registered tool [unit]', async () => {
+    const result = await run(makeToolCallScenario(), ['wiki_search']);
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.unregisteredToolCalls, undefined);
+    }
+  });
+
+  it('tool-call: records nothing when the model calls no tool at all [unit]', async () => {
+    const result = await run(makeToolCallScenario(), []);
+
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.unregisteredToolCalls, undefined);
+    }
+  });
+
+  it('tool-call: a correct call alongside a bogus one still passes but records the bogus name [unit]', async () => {
+    const result = await run(makeToolCallScenario(), ['wiki_search', 'wiki_search?']);
+
+    assert.equal(result.passed, true, 'the category must not change the verdict');
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.deepEqual(result.details.unregisteredToolCalls, ['wiki_search?']);
+    }
+  });
+
+  it('tool-call: does not flag a real tool that excludeTools hid from this scenario [unit]', async () => {
+    // wiki_search exists in the harness catalog; it was merely not offered to
+    // the model this turn. That is a different failure from inventing a name.
+    const scenario = makeToolCallScenario({ tool: 'wiki_locate', excludeTools: ['wiki_search'] });
+
+    const result = await run(scenario, ['wiki_search']);
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.unregisteredToolCalls, undefined);
+    }
+  });
+
+  it('tool-call: a negated scenario keeps its verdict when the model calls the forbidden tool by a garbled name [unit]', async () => {
+    // Deliberate: the category is additive and never rewrites pass/fail. The
+    // model did not call the forbidden tool, so the scenario still passes; the
+    // bogus name is surfaced on the result for whoever reads it.
+    const scenario = makeToolCallScenario({ tool: '!wiki_search' });
+
+    const result = await run(scenario, ['wiki_search?']);
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.deepEqual(result.details.unregisteredToolCalls, ['wiki_search?']);
+    }
+  });
+});
+
 // Issue #154: config.filterHarnessSections lets a caller (bin/eval.ts, using
 // the real api/src/agents/system-prompt.ts implementation) gate tool-scoped
 // system-prompt content on a scenario's actual bound-tool set, without this

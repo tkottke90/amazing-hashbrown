@@ -154,6 +154,34 @@ describe('writeResultYaml + readResultYaml', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('round-trips unregisteredToolCalls so a result with a hallucinated tool name stays readable', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-yaml-unregistered-'));
+    try {
+      const run = makeRun({ passed: false, passedScenarios: 0 });
+      const result = makeResult(run.id, {
+        passed: false,
+        score: 0,
+        details: {
+          type: 'tool-sequence',
+          expectedTool: 'wiki_create_page',
+          toolCalled: null,
+          calledTools: ['wiki_search?'],
+          fieldResults: [],
+          score: 0,
+          unregisteredToolCalls: ['wiki_search?'],
+        },
+      });
+      const filePath = await writeResultYaml(run, [result], dir);
+      const { results } = await readResultYaml(filePath);
+      assert.equal(results[0]?.details.type, 'tool-sequence');
+      if (results[0]?.details.type === 'tool-sequence') {
+        assert.deepEqual(results[0].details.unregisteredToolCalls, ['wiki_search?']);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('writeResultHtml', () => {
@@ -431,6 +459,80 @@ describe('writeResultHtml', () => {
       const html = readFileSync(filePath, 'utf-8');
       assert.ok(html.includes('prose question'));
       assert.ok(html.includes('Did you mean personal or work?'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows an unregistered-tool badge and the bad name when unregisteredToolCalls is set', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-unregistered-tool-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+          minScore: 1,
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          calledTools: ['wiki_search?'],
+          fieldResults: [],
+          score: 0,
+          unregisteredToolCalls: ['wiki_search?'],
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('badge-unregistered'));
+      assert.ok(html.includes('<code>wiki_search?</code>'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('escapes a hostile tool name from the model instead of injecting it into the report', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-unregistered-escape-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-tc',
+          name: 'Tool call scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'tool-call',
+          tool: 'wiki_search',
+          minScore: 1,
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-tc',
+        passed: false,
+        details: {
+          type: 'tool-call',
+          expectedTool: 'wiki_search',
+          toolCalled: null,
+          calledTools: ['<script>alert(1)</script>'],
+          fieldResults: [],
+          score: 0,
+          unregisteredToolCalls: ['<script>alert(1)</script>'],
+        },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(!html.includes('<script>alert(1)</script>'), 'raw tag must not reach the report');
+      assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

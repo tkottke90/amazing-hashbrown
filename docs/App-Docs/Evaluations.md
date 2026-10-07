@@ -228,6 +228,35 @@ a badge on the scenario's row in the HTML report (with the parsed tool name or r
 the expandable detail panel). Run `provider-compatibility` (above) first against any new
 model/provider — it's the suite designed to surface these cleanly.
 
+### `unregistered_tool_call`
+
+A third category on `tool-call` and `tool-sequence` results: the model called a tool whose name
+matches no tool in the harness catalog. The case seen in practice is gpt-oss on Ollama emitting
+`wiki_search?` (a stray trailing `?`) where `wiki_search` was meant. Ollama passes an unknown
+function name through unchanged, and its server log shows a warning that reads
+`harmony parser: no reverse mapping found for function name`. So the harness receives a
+well-formed call to a tool that does not exist.
+Without the label that reads as "the model picked the wrong tool", which hides a model/provider
+output-format defect behind what looks like a routing failure.
+
+The names are recorded in `details.unregisteredToolCalls` in the result YAML, counted as
+`unregistered_tool_call: N` on the CLI summary line, and shown as an `unregistered tool` badge
+in the HTML report. Things worth knowing:
+
+- It is **not** `malformed_tool_call`. That one means nothing structured was emitted (the call
+  was plain text); here the call is structured but names no tool.
+- "Registered" means the full harness catalog, so a real tool hidden from one scenario by
+  `excludeTools` or skill gating is not flagged.
+- It **never changes pass/fail**. A bogus call still fails a scenario that expected a real tool,
+  and it is also recorded when a correct call and a bogus one appear in the same turn. A negated
+  (`!tool`) scenario keeps its verdict when the forbidden tool is called by a garbled name.
+- Only the final response is checked, not the intermediate `steps` assertions.
+- In the app the same call is not fatal: LangChain's tool node (`langchain` 1.5.2) answers an
+  unknown name with an error tool message and the agent loop continues, so the model can retry.
+  The message reads `Error: wiki_search? is not a valid tool, try one of [...]`. Evals do not
+  retry, so one stray name fails the scenario. Whether the model recovers on retry has not been
+  measured.
+
 ## Debugging: `DEBUG_LLM_HTTP`
 
 Set `DEBUG_LLM_HTTP=1` to log the **raw HTTP response body** for every chat completion sent to
