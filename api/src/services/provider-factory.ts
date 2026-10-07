@@ -107,16 +107,19 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
  * Returns a copy of `config` with temperature pinned to 0 and a fixed seed
  * applied — used only by the eval CLI, never by production provider
  * resolution, so a run is reproducible regardless of what config.yaml sets
- * for everyday chat. Anthropic has no seed parameter (a permanent API
- * limitation, not a gap), so its seed stays undefined and a Claude judge is
- * pinned by temperature alone.
+ * for everyday chat.
+ *
+ * Anthropic providers are deliberately left unpinned: the API has no seed
+ * parameter, and current Claude models reject an explicit `temperature` with
+ * a 400 ("`temperature` is deprecated for this model"), which fails every
+ * judge call. A Claude judge therefore runs at its own default sampling; a
+ * temperature the user set explicitly in config.yaml is left as they wrote it.
  */
 export function applyEvalDeterminism(config: ProviderConfig, seed: number): ProviderConfig {
-  return {
-    ...config,
-    temperature: 0,
-    seed: config.type === 'anthropic' ? undefined : seed,
-  };
+  if (config.type === 'anthropic') {
+    return { ...config, seed: undefined };
+  }
+  return { ...config, temperature: 0, seed };
 }
 
 async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {

@@ -223,10 +223,22 @@ describe('services/provider-factory', () => {
       expect(result.seed).to.equal(42);
     });
 
-    it('pins temperature to 0 but leaves seed undefined for anthropic, which has no seed parameter', () => {
+    // Current Claude models reject an explicit temperature outright
+    // ("400 `temperature` is deprecated for this model"), which fails every
+    // judge call, so an anthropic provider must not get one injected.
+    it('does not inject a temperature for anthropic, whose current models reject it', () => {
       const result = applyEvalDeterminism({ ...anthropicConfig, seed: 99 }, 42);
-      expect(result.temperature).to.equal(0);
+      expect(result.temperature).to.equal(undefined);
+    });
+
+    it('leaves seed undefined for anthropic, which has no seed parameter', () => {
+      const result = applyEvalDeterminism({ ...anthropicConfig, seed: 99 }, 42);
       expect(result.seed).to.equal(undefined);
+    });
+
+    it('keeps a temperature the user explicitly configured on an anthropic provider', () => {
+      const result = applyEvalDeterminism({ ...anthropicConfig, temperature: 0.3 }, 42);
+      expect(result.temperature).to.equal(0.3);
     });
 
     it('overrides temperature and seed already present on the config', () => {

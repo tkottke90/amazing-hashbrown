@@ -39,7 +39,8 @@ Full findings: `docs/Design/2026-10-06-eval-system-reliability-audit.md`,
 fields, wire them through all three `createProviderFromConfig` branches
 (generically useful, but inert unless something sets them), add a new
 `applyEvalDeterminism()` helper that forces `temperature: 0` and a fixed
-`seed` onto a resolved provider config, and have `bin/eval.ts` apply it to
+`seed` onto a resolved ollama/openai-type provider config (anthropic
+providers can take neither — see §3), and have `bin/eval.ts` apply it to
 both the target and judge model it constructs — regardless of what
 `config.yaml` has set for that provider's everyday chat use. Separately,
 make `--judge-model` a hard requirement instead of a silent fallback.
@@ -155,20 +156,30 @@ New exported helper, next to `createProviderFromConfig` in
 ```ts
 /**
  * Returns a copy of `config` with temperature pinned to 0 and a fixed
- * seed forced on, for providers that support one — used only by the eval
- * CLI, never by production provider resolution. Existing explicit
- * temperature/seed values in config are overridden, since the whole point
- * of an eval run is reproducibility regardless of what config.yaml has
- * set for everyday chat use.
+ * seed applied — used only by the eval CLI, never by production provider
+ * resolution. Existing explicit temperature/seed values are overridden,
+ * since the whole point of an eval run is reproducibility regardless of
+ * what config.yaml has set for everyday chat use.
+ *
+ * Anthropic providers are deliberately left unpinned (see below).
  */
 export function applyEvalDeterminism(config: ProviderConfig, seed: number): ProviderConfig {
-  return {
-    ...config,
-    temperature: 0,
-    seed: config.type === 'anthropic' ? undefined : seed,
-  };
+  if (config.type === 'anthropic') {
+    return { ...config, seed: undefined };
+  }
+  return { ...config, temperature: 0, seed };
 }
 ```
+
+**Anthropic is not pinned at all.** The first draft of this section pinned
+`temperature: 0` on an anthropic judge and only withheld the seed. A real run
+disproved that: current Claude models reject an explicit `temperature` with
+`400 temperature is deprecated for this model`, which failed every
+judge-scored scenario. So for an anthropic provider the helper injects no
+temperature and no seed (a `temperature` the user set explicitly in
+`config.yaml` is passed through as written). A Claude judge therefore runs at
+its own default sampling, and some variance in judge-scored scenarios is
+expected and cannot be engineered away from our side.
 
 `bin/eval.ts` changes its target/judge-model construction from:
 
@@ -238,9 +249,10 @@ plainly so it isn't mistaken for a bug later.
 - Missing `--model` or `--judge-model`: `process.exit(2)` with a specific
   message, matching the existing `--model` check's style.
 - `applyEvalDeterminism` never throws — it's a pure data transform.
-- Anthropic's lack of `seed` support is a silent, by-design omission (the
-  field is simply not forwarded), not an error — it's a permanent API
-  constraint, not a transient failure.
+- Anthropic's lack of `seed` support, and its models' rejection of an
+  explicit `temperature`, are silent, by-design omissions (nothing is
+  injected for an anthropic provider), not errors — they are permanent API
+  constraints, not transient failures.
 
 ## Testing
 
@@ -252,8 +264,9 @@ plainly so it isn't mistaken for a bug later.
   - `createProviderFromConfig` forwards `temperature`/`topP` but never
     `seed` onto a constructed `ChatAnthropic` instance.
   - `applyEvalDeterminism`: returns `temperature: 0` and the passed `seed`
-    for `ollama`/`openai` configs; returns `temperature: 0` and
-    `seed: undefined` for an `anthropic` config, regardless of input.
+    for `ollama`/`openai` configs; for an `anthropic` config injects no
+    temperature, returns `seed: undefined`, and keeps a temperature the
+    user explicitly configured.
 - **`bin/eval.ts`**: no new automated test. No `bin/*.test.ts` file exists
   anywhere in this repo today, and the existing `--model`-required check
   has never had one either — consistent with that precedent, this change

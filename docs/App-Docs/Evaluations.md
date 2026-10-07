@@ -70,16 +70,20 @@ multiple models, add multiple `providers[]` entries (distinct `name`, same or di
 
 ### Determinism
 
-Every eval run pins `temperature: 0` and applies `--seed` to both the model under test and the
-judge, overriding whatever `config.yaml` sets for that provider's everyday chat use
-(`applyEvalDeterminism` in `api/src/services/provider-factory.ts`). Production chat is unaffected.
+Every eval run pins `temperature: 0` and applies `--seed` to the model under test and the judge,
+overriding whatever `config.yaml` sets for that provider's everyday chat use — except for
+`anthropic` providers, below (`applyEvalDeterminism` in `api/src/services/provider-factory.ts`).
+Production chat is unaffected.
 
 - `ollama` providers receive `temperature` and `seed` natively.
 - `openai`-type providers (OpenAI, Lemonade, DigitalOcean) receive `temperature`, and `seed` in the
   request body. Whether the server _honours_ the seed is up to the server.
-- `anthropic` providers are pinned by `temperature: 0` only. Anthropic's API has no seed
-  parameter, so a Claude judge cannot be fully seeded — this is a permanent API limitation, not a
-  bug to fix.
+- `anthropic` providers are **not pinned**. Anthropic's API has no seed parameter, and current
+  Claude models reject an explicit `temperature` (`400 temperature is deprecated for this model`),
+  which fails every judge call. A Claude judge runs at its own default sampling, so some variance
+  in judge-scored scenarios is expected — a permanent API limitation, not a bug to fix. A
+  `temperature` you set yourself on an anthropic provider in `config.yaml` is passed through as
+  written.
 
 #### Checking determinism: `eval:probe`
 
@@ -106,7 +110,7 @@ and a `probe.json` are written to `eval-logs/probe-<timestamp>/`.
 Reading a `VARIED` result: a scenario that does not use the judge and still varied means the model
 under test changed output on identical input — if one provider varies and another is stable, that
 server is probably ignoring `seed`. Judge-dependent scenarios can vary from either side, and a
-Claude judge cannot be seeded, so some variance there is expected.
+Claude judge is not pinned, so some variance there is expected.
 
 ### Exit codes
 

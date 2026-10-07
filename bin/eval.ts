@@ -190,8 +190,9 @@ const judgeModelId = values['judge-model'];
 let model: ReturnType<typeof createProviderFromConfig>;
 let judgeModel: ReturnType<typeof createProviderFromConfig>;
 try {
-  // Temperature is pinned to 0 and a fixed seed applied to both the model under
-  // test and the judge, regardless of what config.yaml sets for everyday chat.
+  // Temperature is pinned to 0 and a fixed seed applied to the model under test
+  // and the judge, regardless of what config.yaml sets for everyday chat —
+  // except anthropic providers, which can't take either (see applyEvalDeterminism).
   model = createProviderFromConfig(applyEvalDeterminism(resolveProviderConfig(modelId), seed));
   judgeModel = createProviderFromConfig(
     applyEvalDeterminism(resolveProviderConfig(judgeModelId), seed),

@@ -214,8 +214,8 @@ export function formatProbeReport(
   if (judgeDependent > 0) {
     lines.push(
       `  ${judgeDependent} varied scenario(s) are judge-dependent: they can vary from the model ` +
-        'or the judge. Anthropic has no seed parameter, so some variance from a Claude judge ' +
-        'is expected.',
+        'or the judge. Anthropic has no seed parameter and current Claude models reject an ' +
+        'explicit temperature, so a Claude judge is unpinned and some variance is expected.',
     );
   }
   return lines.join('\n');

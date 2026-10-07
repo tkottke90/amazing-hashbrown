@@ -349,7 +349,8 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-re
 npm run eval:probe -- --suite wiki-navigation --model ollama --judge-model claude --runs 3
 
 # --judge-model is required (no same-model fallback). Every run also pins
-# temperature 0 and a fixed seed (--seed, default 42) for both model and judge.
+# temperature 0 and a fixed seed (--seed, default 42) for ollama/openai-type
+# providers; anthropic providers can't take either and run unpinned.
 
 # Author a new scenario interactively
 npm run eval:new -- --suite wiki-search
