@@ -33,29 +33,32 @@ authoritative reference — and the worked examples already under `suites/`.
 
 ```bash
 # Run every suite under suites/
-npm run eval -- --model local
+npm run eval -- --model local --judge-model claude
 
 # Run one suite
-npm run eval -- --suite wiki-navigation --model local
+npm run eval -- --suite wiki-navigation --model local --judge-model claude
 ```
 
-`--model` is the only required flag — it must match a provider `name` from `config/config.yaml`,
-not a raw model identifier (the provider entry's own `defaultModel` field supplies that — see
-"Model vs. provider name" below).
+`--model` and `--judge-model` are the only required flags — each must match a provider `name` from
+`config/config.yaml`, not a raw model identifier (the provider entry's own `defaultModel` field
+supplies that — see "Model vs. provider name" below). There is no same-model fallback for the
+judge: omitting `--judge-model` is a usage error.
 
 ## CLI Reference
 
 All flags are passed after `--` to `npm run eval` (or directly to `tsx bin/eval.ts` if invoking
 without npm). None are positional.
 
-| Flag            | Type    | Required | Default           | Description                                                                                                                                                                                                                                                                                                                                                  |
-| --------------- | ------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--model`       | string  | **Yes**  | —                 | Provider `name` from `config/config.yaml` to run scenarios against (e.g. `local`). This is the model under test.                                                                                                                                                                                                                                             |
-| `--suite`       | string  | No       | run every suite   | Suite id to run — the `suite.id` field inside a `suites/*.yaml` file, e.g. `wiki-navigation` (not the filename). Omit to discover and run every suite under `suites/`, alphabetically.                                                                                                                                                                       |
-| `--judge-model` | string  | No       | same as `--model` | Provider `name` used to score `llm-judge`-type scenarios. Set this to a stronger/independent model to reduce judge bias — see `biasRisk` in results, which flags when judge and model-under-test are the same.                                                                                                                                               |
-| `--ci`          | boolean | No       | `false`           | Skips `human`-type scenarios entirely (recorded as skipped, no interactive prompt) instead of running the interactive terminal review UI after the automated scenarios finish. Use this for non-interactive/CI runs.                                                                                                                                         |
-| `--no-html`     | boolean | No       | `false`           | Skip generating the HTML report — only the YAML result file is written. Useful for fast iteration when you don't need the rendered report.                                                                                                                                                                                                                   |
-| `--llm-review`  | boolean | No       | `false`           | After the run, spawns `claude -p` to produce a narrative review of the YAML/HTML results (which scenarios failed, whether each failure looks like a real product/model issue vs. an overly strict scenario). Requires the `claude` CLI on `PATH`; if it's missing or exits non-zero, this only prints a warning — it never affects the eval's own exit code. |
+| Flag            | Type    | Required | Default         | Description                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------- | ------- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--model`       | string  | **Yes**  | —               | Provider `name` from `config/config.yaml` to run scenarios against (e.g. `local`). This is the model under test.                                                                                                                                                                                                                                                                                   |
+| `--suite`       | string  | No       | run every suite | Suite id to run — the `suite.id` field inside a `suites/*.yaml` file, e.g. `wiki-navigation` (not the filename). Omit to discover and run every suite under `suites/`, alphabetically.                                                                                                                                                                                                             |
+| `--judge-model` | string  | **Yes**  | —               | Provider `name` used to score `llm-judge`-type scenarios. Use a stronger/independent model to reduce judge bias. There is no same-model fallback; passing the same value as `--model` is allowed as a deliberate choice and is flagged via `biasRisk` in results.                                                                                                                                  |
+| `--seed`        | integer | No       | `42`            | Fixed sampling seed applied to both the model under test and the judge, alongside `temperature: 0`, so reruns are reproducible. Re-run with a different seed to tell a seed-sensitive scenario from a stable one. See "Determinism" below.                                                                                                                                                         |
+| `--temperature` | number  | No       | `0`             | Replaces the pinned `temperature: 0` for the **model under test only** (never the judge), e.g. `1` to try a model at the sampling its vendor recommends. The seed is still applied. Results at a non-zero temperature are not fully reproducible, so compare failure counts across several runs. For an `anthropic` model under test the value is sent as given, and some Claude models reject it. |
+| `--ci`          | boolean | No       | `false`         | Skips `human`-type scenarios entirely (recorded as skipped, no interactive prompt) instead of running the interactive terminal review UI after the automated scenarios finish. Use this for non-interactive/CI runs.                                                                                                                                                                               |
+| `--no-html`     | boolean | No       | `false`         | Skip generating the HTML report — only the YAML result file is written. Useful for fast iteration when you don't need the rendered report.                                                                                                                                                                                                                                                         |
+| `--llm-review`  | boolean | No       | `false`         | After the run, spawns `claude -p` to produce a narrative review of the YAML/HTML results (which scenarios failed, whether each failure looks like a real product/model issue vs. an overly strict scenario). Requires the `claude` CLI on `PATH`; if it's missing or exits non-zero, this only prints a warning — it never affects the eval's own exit code.                                       |
 
 ### Model vs. provider name
 
@@ -66,14 +69,123 @@ or `gpt-4.1-mini` — the actual model invoked is whichever one that provider en
 multiple models, add multiple `providers[]` entries (distinct `name`, same or different
 `baseUrl`/`type`, different `defaultModel`) and select between them with `--model <name>`.
 
+### Determinism
+
+Every eval run pins `temperature: 0` and applies `--seed` to the model under test and the judge,
+overriding whatever `config.yaml` sets for that provider's everyday chat use — except for
+`anthropic` providers, below (`applyEvalDeterminism` in `api/src/services/provider-factory.ts`).
+Production chat is unaffected.
+
+`temperature` and `top_p` set on a provider in `config.yaml` therefore do **not** change an eval
+run: `temperature` is forced to 0 (or the `--temperature` value), and `top_p` is passed through but
+has no effect at temperature 0. To evaluate at a non-zero temperature, pass `--temperature <n>`. Each
+run prints a `[eval] sampling — …` line showing the temperature, `top_p` and seed the model and the
+judge actually ran with.
+
+- `ollama` providers receive `temperature` and `seed` natively.
+- `openai`-type providers (OpenAI, Lemonade, DigitalOcean) receive `temperature`, and `seed` in the
+  request body. Whether the server _honours_ the seed is up to the server.
+- `anthropic` providers are **not pinned**. Anthropic's API has no seed parameter, and current
+  Claude models reject an explicit `temperature` (`400 temperature is deprecated for this model`),
+  which fails every judge call. A Claude judge runs at its own default sampling, so some variance
+  in judge-scored scenarios is expected — a permanent API limitation, not a bug to fix. A
+  `temperature` you set yourself on an anthropic provider in `config.yaml` is passed through as
+  written.
+
+#### Checking determinism: `eval:probe`
+
+To confirm a provider really is reproducible, run the same suite(s) several times and diff the
+per-scenario outcomes:
+
+```bash
+npm run eval:probe -- --suite wiki-navigation,create-workspace-project \
+  --model ollama,lemonade --judge-model claude --runs 3
+```
+
+Runs are sequential (grouped by model, then suite) and use `--ci --no-html`. `--seed` and
+`--temperature` are passed through if given. The report lists, per suite/model pair, the pass count of each run and every
+scenario whose outcome changed (`P F P`), marking those that used the judge. Per-run console logs
+and a `probe.json` are written to `eval-logs/probe-<timestamp>/`.
+
+| Exit code | Meaning                                                                                |
+| --------- | -------------------------------------------------------------------------------------- |
+| `0`       | Every scenario had the same outcome in every run.                                      |
+| `1`       | At least one scenario varied between identical runs.                                   |
+| `2`       | Usage error, or `eval` itself exited 2 (e.g. unknown provider name); no verdict given. |
+| `3`       | A pair produced no result, or a scenario errored, and nothing varied — not a pass.     |
+
+A scenario whose results carried a [failure category](#failure-categories-malformed_tool_call--prose_question)
+gets a `categories:` line, for example `categories: unregistered_tool_call in 2/6 runs`. It is
+listed even when its outcome never varied, because the cause can differ between runs: a scenario
+can fail all six times, twice with a non-existent tool name and four times with a clean wrong-tool
+call. Categories explain failures; they never change the verdict or the exit code.
+
+A scenario that _threw_ (a model or judge call failed) is shown as `E` and labelled `HAD ERRORS`,
+with its error message, not as a failure. The runner records a thrown error as an ordinary failed
+result, so without this a judge that errors on every run would look like a scenario that
+consistently fails and the pair would read as `IDENTICAL`.
+
+Reading a `VARIED` result: a scenario that does not use the judge and still varied means the model
+under test changed output on identical input — if one provider varies and another is stable, that
+server is probably ignoring `seed`. Judge-dependent scenarios can vary from either side, and a
+Claude judge is not pinned, so some variance there is expected.
+
+#### Seeing what a failed generation was producing: `eval:trace`
+
+Ollama can abort a generation with `prediction aborted, token repeat limit reached`. The eval
+awaits the whole reply, so on an abort everything the model had produced is thrown away, and
+Ollama's own `server.log` does not record it either — the repeating text was never visible.
+`eval:trace` runs **one** scenario through the same code path as `npm run eval` (same tools, system
+prompt, seeded turns and sampling pins) but streams the model call, so the partial output survives
+the abort:
+
+```bash
+npm run eval:trace -- --suite wiki-navigation-heldout \
+  --scenario wnavh-003-read-page-indirect-phrasing --model local
+```
+
+`--suite`, `--scenario` and `--model` are required. `--judge-model` is only needed when the scenario
+has a judged rubric. `--runs N` repeats the scenario, `--tail N` sets how many chunk groups are
+printed, `--seed`/`--temperature` work as in `eval`, and `--verbose` also prints the stream of runs
+that did not error. For a run that errored mid-stream it prints the error, the longest run of
+identical consecutive chunks (shown JSON-escaped, so a whitespace-only repeat is visible as such),
+the text that came just before it, and the last chunk groups, with long repeats collapsed to one
+`×N` row. The full chunk log is written to `eval-logs/stream-trace-<timestamp>/run-<n>.json`. Only
+`tool-call` and `tool-sequence` scenarios are traced.
+
+**Limit, found on the first real run:** against `gpt-oss:20b` on Ollama the trace came back with
+zero chunks on every run. Ollama counts the repeat on the runner's raw token stream, _before_ its
+output parser decides what to send to the client, and the `gpt-oss` (harmony) parser holds a
+tool-call's name and arguments back until the call is complete, so nothing reaches the client
+when the repetition happens inside one. A client-side stream cannot show it. It is still useful for
+telling an abort that happens before any output (this case) from one that happens after the model
+has already produced text. To see the raw tokens, run Ollama with trace logging and read the
+parser's input (the log level and the log lines come from reading Ollama's source at `v0.40.0`/`main`;
+check yours with `ollama --version`):
+
+```bash
+# stop the Ollama app first, then:
+OLLAMA_DEBUG=2 ollama serve 2>&1 | tee /tmp/ollama-trace.log
+# in another terminal, run one abort
+npm run eval:trace -- --suite wiki-navigation-heldout \
+  --scenario wnavh-003-read-page-indirect-phrasing --model local --runs 1
+# the last raw tokens the model produced before the abort
+grep 'builtin parser input' /tmp/ollama-trace.log | tail -150 | cut -c1-220
+```
+
+It is a diagnostic, not a scored run, and it changes one thing: the call is streamed rather than
+awaited. If `eval` aborts on a scenario but `eval:trace` does not, streaming changed the behaviour —
+report that rather than reading the trace. Exit codes: `0` no run errored mid-stream, `1` at least
+one did, `2` usage error, `3` setup error.
+
 ### Exit codes
 
-| Code | Meaning                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------- |
-| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).           |
-| `1`  | At least one suite failed its passing threshold, but the run itself completed without error. |
-| `2`  | Usage error — `--model` missing, the named provider/suite doesn't exist, or no suites found. |
-| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw). |
+| Code | Meaning                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).                                                       |
+| `1`  | At least one suite failed its passing threshold, but the run itself completed without error.                                             |
+| `2`  | Usage error — `--model` or `--judge-model` missing, `--seed` not an integer, the named provider/suite doesn't exist, or no suites found. |
+| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw).                                             |
 
 When `--suite` is omitted, a runtime error in one suite does **not** abort the batch — every
 other suite still runs, and the run only exits non-zero at the end if any suite failed or
@@ -81,16 +193,17 @@ errored (printed in the final summary table with an `⚠ ERROR` row).
 
 ## Available Suites
 
-| Suite id                 | Scenarios | Purpose                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `wiki-navigation`        | 12        | Chat agent correctly sequences `wiki_locate`/`wiki_orient`/`wiki_search`/`wiki_read_page` and recovers sensibly from ambiguous, no-match, and unknown-id cases.                                                                                                                                                                                        |
-| `wiki-recall-quality`    | 3         | Final answers read as natural recall (not a wiki-internals status report) and don't fabricate steps beyond what's actually stored. Complements `wiki-navigation` — that suite tests tool sequencing, this one tests the resulting text quality.                                                                                                        |
-| `wiki-search`            | 4         | Chat agent can search the knowledge base and return relevant, coherent, honest answers — the wiki-to-chat feature's acceptance criteria.                                                                                                                                                                                                               |
-| `tool-calling`           | 2         | Chat agent actually invokes the correct built-in tool when a prompt calls for it, rather than just describing what it would do.                                                                                                                                                                                                                        |
-| `instruction-hierarchy`  | 3         | Adversarial user-supplied instructions (simulated hostile/malformed `AGENT.md` content) cannot override the harness's own tool-orchestration rules.                                                                                                                                                                                                    |
-| `after-agent`            | 17        | AfterAgent Middleware's individual prompts (summarize/classify/extract/merge) behave correctly, tested directly against the same prompts the pipeline uses — **does not** attach the harness system prompt (see `appliesHarnessSystemPrompt` below).                                                                                                   |
-| `thread-titles`          | 7         | `POST /api/v1/threads/:id/generate-title` produces a short, accurate title — **does not** attach the harness system prompt.                                                                                                                                                                                                                            |
-| `provider-compatibility` | 5         | Deliberately trivial transport-level scenarios — **run this first** against any new model/provider pairing. A `malformed_tool_call`/`prose_question` result here signals a provider/transport configuration problem, not something to fix by tuning a prompt. See [Failure Categories](#failure-categories-malformed_tool_call--prose_question) below. |
+| Suite id                  | Scenarios | Purpose                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `wiki-navigation`         | 12        | Chat agent correctly sequences `wiki_locate`/`wiki_orient`/`wiki_search`/`wiki_read_page` and recovers sensibly from ambiguous, no-match, and unknown-id cases.                                                                                                                                                                                                                |
+| `wiki-navigation-heldout` | 9         | **Held out — do not tune against it.** Reworded companion to `wiki-navigation` (new topics, pages and domains, orient indexes with distractor entries) that says whether a prompt change taught a rule or just taught the test. It only works while it stays out of `system-prompt.ts` and out of the auto-eval-loop; see the header of `suites/wiki-navigation-heldout.yaml`. |
+| `wiki-recall-quality`     | 3         | Final answers read as natural recall (not a wiki-internals status report) and don't fabricate steps beyond what's actually stored. Complements `wiki-navigation` — that suite tests tool sequencing, this one tests the resulting text quality.                                                                                                                                |
+| `wiki-search`             | 4         | Chat agent can search the knowledge base and return relevant, coherent, honest answers — the wiki-to-chat feature's acceptance criteria.                                                                                                                                                                                                                                       |
+| `tool-calling`            | 2         | Chat agent actually invokes the correct built-in tool when a prompt calls for it, rather than just describing what it would do.                                                                                                                                                                                                                                                |
+| `instruction-hierarchy`   | 3         | Adversarial user-supplied instructions (simulated hostile/malformed `AGENT.md` content) cannot override the harness's own tool-orchestration rules.                                                                                                                                                                                                                            |
+| `after-agent`             | 17        | AfterAgent Middleware's individual prompts (summarize/classify/extract/merge) behave correctly, tested directly against the same prompts the pipeline uses — **does not** attach the harness system prompt (see `appliesHarnessSystemPrompt` below).                                                                                                                           |
+| `thread-titles`           | 7         | `POST /api/v1/threads/:id/generate-title` produces a short, accurate title — **does not** attach the harness system prompt.                                                                                                                                                                                                                                                    |
+| `provider-compatibility`  | 5         | Deliberately trivial transport-level scenarios — **run this first** against any new model/provider pairing. A `malformed_tool_call`/`prose_question` result here signals a provider/transport configuration problem, not something to fix by tuning a prompt. See [Failure Categories](#failure-categories-malformed_tool_call--prose_question) below.                         |
 
 New suite files are auto-discovered by directory scan — dropping a new `suites/whatever.yaml`
 file requires no registration anywhere.
@@ -163,6 +276,11 @@ instead of calling `ask_user`. Both previously looked identical to "the model de
 (`toolCalled: null, calledTools: []`), which made a provider transport bug indistinguishable from
 a genuine model reasoning failure — see issue #227.
 
+`malformed_tool_call` also covers a reply that is only a JSON arguments object with no tool name,
+such as `{"query":"violin","limit":5}` returned as plain content. It is recorded with an unknown
+tool name (`parsedToolName: null`). Only `tool-call` and `tool-sequence` scenarios check for this
+shape: a bare JSON reply can be a legitimate answer to an `llm-judge` scenario.
+
 A detected case still counts as an ordinary failure toward the suite's pass rate (no exclusion) —
 it's surfaced, not scored away, since the task genuinely didn't get done. You'll see it in three
 places: the CLI's per-suite summary line, the multi-suite sweep table's parenthetical counts, and
@@ -170,13 +288,42 @@ a badge on the scenario's row in the HTML report (with the parsed tool name or r
 the expandable detail panel). Run `provider-compatibility` (above) first against any new
 model/provider — it's the suite designed to surface these cleanly.
 
+### `unregistered_tool_call`
+
+A third category on `tool-call` and `tool-sequence` results: the model called a tool whose name
+matches no tool in the harness catalog. The case seen in practice is gpt-oss on Ollama emitting
+`wiki_search?` (a stray trailing `?`) where `wiki_search` was meant. Ollama passes an unknown
+function name through unchanged, and its server log shows a warning that reads
+`harmony parser: no reverse mapping found for function name`. So the harness receives a
+well-formed call to a tool that does not exist.
+Without the label that reads as "the model picked the wrong tool", which hides a model/provider
+output-format defect behind what looks like a routing failure.
+
+The names are recorded in `details.unregisteredToolCalls` in the result YAML, counted as
+`unregistered_tool_call: N` on the CLI summary line, and shown as an `unregistered tool` badge
+in the HTML report. Things worth knowing:
+
+- It is **not** `malformed_tool_call`. That one means nothing structured was emitted (the call
+  was plain text); here the call is structured but names no tool.
+- "Registered" means the full harness catalog, so a real tool hidden from one scenario by
+  `excludeTools` or skill gating is not flagged.
+- It **never changes pass/fail**. A bogus call still fails a scenario that expected a real tool,
+  and it is also recorded when a correct call and a bogus one appear in the same turn. A negated
+  (`!tool`) scenario keeps its verdict when the forbidden tool is called by a garbled name.
+- Only the final response is checked, not the intermediate `steps` assertions.
+- In the app the same call is not fatal: LangChain's tool node (`langchain` 1.5.2) answers an
+  unknown name with an error tool message and the agent loop continues, so the model can retry.
+  The message reads `Error: wiki_search? is not a valid tool, try one of [...]`. Evals do not
+  retry, so one stray name fails the scenario. Whether the model recovers on retry has not been
+  measured.
+
 ## Debugging: `DEBUG_LLM_HTTP`
 
 Set `DEBUG_LLM_HTTP=1` to log the **raw HTTP response body** for every chat completion sent to
 an `openai`-type provider, before the `openai` SDK/LangChain parses it:
 
 ```bash
-DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local
+DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local --judge-model claude
 ```
 
 This is diagnostic instrumentation (`api/src/services/provider-factory.ts`'s `loggingFetch`),
@@ -193,7 +340,7 @@ uses ANSI cursor movement to rewrite lines in place on a TTY, which visually int
 and can truncate the debug log lines printed to the same stream:
 
 ```bash
-DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local > eval-debug.log 2>&1
+DEBUG_LLM_HTTP=1 npm run eval -- --suite wiki-navigation --model local --judge-model claude > eval-debug.log 2>&1
 ```
 
 Once redirected, `stdout.isTTY` is false and the progress board falls back to plain sequential

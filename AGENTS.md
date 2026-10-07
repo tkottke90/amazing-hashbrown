@@ -339,11 +339,26 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama
 npm run eval -- --model ollama --judge-model ollama
 
 # CI mode (human evals skipped, exit code 1 on failure)
-npm run eval -- --suite wiki-search --model ollama --ci
+npm run eval -- --suite wiki-search --model ollama --judge-model ollama --ci
 
 # Run a suite, then have Claude Code review the YAML/HTML output and
 # summarize which scenarios failed and why (requires the `claude` CLI)
-npm run eval -- --suite wiki-search --model ollama --llm-review
+npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-review
+
+# Check a provider is reproducible: run suites N times, diff per-scenario outcomes
+npm run eval:probe -- --suite wiki-navigation --model ollama --judge-model claude --runs 3
+
+# Stream ONE scenario to see what the model was emitting when Ollama aborts with
+# "token repeat limit reached" (the normal eval discards that partial output)
+npm run eval:trace -- --suite wiki-navigation-heldout --scenario wnavh-003-read-page-indirect-phrasing --model ollama
+
+# Try the model under test at a non-zero temperature (the judge stays pinned);
+# config.yaml's temperature/top_p do not change an eval run on their own
+npm run eval -- --suite wiki-navigation --model ollama --judge-model claude --temperature 1
+
+# --judge-model is required (no same-model fallback). Every run also pins
+# temperature 0 and a fixed seed (--seed, default 42) for ollama/openai-type
+# providers; anthropic providers can't take either and run unpinned.
 
 # Author a new scenario interactively
 npm run eval:new -- --suite wiki-search

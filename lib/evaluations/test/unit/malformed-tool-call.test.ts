@@ -1,6 +1,10 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'mocha';
-import { detectMalformedToolCall, detectProseQuestion } from '../../src/malformed-tool-call.js';
+import {
+  detectArgumentsOnlyToolCall,
+  detectMalformedToolCall,
+  detectProseQuestion,
+} from '../../src/malformed-tool-call.js';
 
 describe('detectMalformedToolCall', () => {
   it('matches a <tool_call>...</tool_call> block wrapping a <function=NAME> tag [unit]', () => {
@@ -122,5 +126,57 @@ describe('detectProseQuestion', () => {
 
   it('returns false for a whitespace-only string [unit]', () => {
     assert.equal(detectProseQuestion('   \n  '), false);
+  });
+});
+
+describe('detectArgumentsOnlyToolCall', () => {
+  it('matches a reply that is only a JSON arguments object, with no tool name [unit]', () => {
+    // The shape gpt-oss on Ollama returned as plain content for wnav-012.
+    const result = detectArgumentsOnlyToolCall('{"query":"violin","limit":5}');
+    assert.equal(result?.parsedToolName, null);
+    assert.equal(result?.raw, '{"query":"violin","limit":5}');
+  });
+
+  it('matches when the object is surrounded by whitespace or newlines [unit]', () => {
+    assert.notEqual(detectArgumentsOnlyToolCall('\n  {"query": "violin"}\n'), null);
+  });
+
+  it('matches a pretty-printed multi-line object [unit]', () => {
+    assert.notEqual(detectArgumentsOnlyToolCall('{\n  "query": "violin",\n  "limit": 5\n}'), null);
+  });
+
+  it('matches an object wrapped in a json code fence [unit]', () => {
+    const result = detectArgumentsOnlyToolCall('```json\n{"query": "violin"}\n```');
+    assert.equal(result?.raw, '{"query": "violin"}');
+  });
+
+  it('matches an object wrapped in a bare code fence [unit]', () => {
+    assert.notEqual(detectArgumentsOnlyToolCall('```\n{"query": "violin"}\n```'), null);
+  });
+
+  it('matches nested objects, since tool arguments often contain them [unit]', () => {
+    assert.notEqual(
+      detectArgumentsOnlyToolCall('{"title": "Violin", "corpus": {"raw": "started learning"}}'),
+      null,
+    );
+  });
+
+  it('does not match prose around the object [unit]', () => {
+    assert.equal(detectArgumentsOnlyToolCall('Let me search: {"query": "violin"}'), null);
+    assert.equal(detectArgumentsOnlyToolCall('{"query": "violin"} — searching now.'), null);
+  });
+
+  it('does not match a JSON array [unit]', () => {
+    assert.equal(detectArgumentsOnlyToolCall('[{"query": "violin"}]'), null);
+  });
+
+  it('does not match braces that are not valid JSON [unit]', () => {
+    assert.equal(detectArgumentsOnlyToolCall('{not json at all}'), null);
+  });
+
+  it('does not match ordinary prose, an empty reply or a bare scalar [unit]', () => {
+    assert.equal(detectArgumentsOnlyToolCall('I could not find anything about that.'), null);
+    assert.equal(detectArgumentsOnlyToolCall(''), null);
+    assert.equal(detectArgumentsOnlyToolCall('42'), null);
   });
 });

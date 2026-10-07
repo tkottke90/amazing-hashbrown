@@ -19,6 +19,8 @@
       <span class="badge badge-malformed">⚠ text-embedded tool call</span>
     {% elif details.proseQuestion %}
       <span class="badge badge-prose-question">⚠ prose question</span>
+    {% elif details.unregisteredToolCalls and details.unregisteredToolCalls.length %}
+      <span class="badge badge-unregistered">⚠ unregistered tool</span>
     {% endif %}
   </td>
   <td>{{ scenario.name if scenario else result.scenarioId }}</td>
@@ -147,6 +149,15 @@
           Expected tool: <code>{{ details.expectedTool }}</code> —
           Called: {% if details.toolCalled %}<code>{{ details.toolCalled }}</code>{% elif details.calledTools and details.calledTools.length %}<span class="badge badge-fail">wrong tool: {{ details.calledTools | join(', ') }}</span>{% else %}<span class="badge badge-fail">none</span>{% endif %}
         </div>
+        {% if details.unregisteredToolCalls and details.unregisteredToolCalls.length %}
+          <div style="margin-top:0.5rem">
+            <span class="badge badge-unregistered">⚠ unregistered tool</span>
+            The model called {% for name in details.unregisteredToolCalls %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}, which is not a registered tool.
+            The provider passes the name through as the model emitted it, so this is a model/provider output-format
+            defect (e.g. a stray trailing character), not a routing decision — in the app the call would come back as
+            "is not a valid tool" and the model would have to retry.
+          </div>
+        {% endif %}
         {% if not details.toolCalled %}
           {% if details.malformedToolCall %}
             <div style="margin-top:0.5rem">

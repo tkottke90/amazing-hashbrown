@@ -14,7 +14,12 @@ import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
 import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
 import { runToolSequence } from './executors/tool-sequence.js';
-import { detectMalformedToolCall, detectProseQuestion } from './malformed-tool-call.js';
+import {
+  detectArgumentsOnlyToolCall,
+  detectMalformedToolCall,
+  detectProseQuestion,
+} from './malformed-tool-call.js';
+import { detectUnregisteredToolCalls } from './unregistered-tool-call.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
   EvalRun,
@@ -809,7 +814,8 @@ export async function executeScenario(
       // malformed-tool-call-detection design doc D7.
       const malformedToolCall =
         toolCalls.length === 0
-          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          ? (detectMalformedToolCall(content, (config.tools ?? []).map(toolName)) ??
+            detectArgumentsOnlyToolCall(content))
           : null;
       const proseQuestion =
         toolCalls.length === 0 &&
@@ -817,6 +823,12 @@ export async function executeScenario(
         detectProseQuestion(content)
           ? { raw: content }
           : null;
+      // Same full-catalog basis as the malformed detector above: a real tool
+      // hidden by excludeTools/gatedSkill is not "unregistered".
+      const unregisteredToolCalls = detectUnregisteredToolCalls(
+        toolCalls.map((call) => call.name),
+        (config.tools ?? []).map(toolName),
+      );
       const toolDetails = {
         ...runToolCall(s, toolCalls),
         invalidToolCalls,
@@ -824,6 +836,7 @@ export async function executeScenario(
         reasoningContent,
         ...(malformedToolCall ? { malformedToolCall } : {}),
         ...(proseQuestion ? { proseQuestion } : {}),
+        ...(unregisteredToolCalls.length > 0 ? { unregisteredToolCalls } : {}),
       };
       // For a negated tool ('!name'), toolCalled is null exactly when the
       // forbidden tool was correctly NOT called — see runToolCall. But if
@@ -978,7 +991,8 @@ export async function executeScenario(
       // full harness catalog, not toolsForCall/scenarioTools.
       const malformedToolCall =
         toolCalls.length === 0
-          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          ? (detectMalformedToolCall(content, (config.tools ?? []).map(toolName)) ??
+            detectArgumentsOnlyToolCall(content))
           : null;
       const proseQuestion =
         toolCalls.length === 0 &&
@@ -986,6 +1000,11 @@ export async function executeScenario(
         detectProseQuestion(content)
           ? { raw: content }
           : null;
+      // See the tool-call branch's identical comment.
+      const unregisteredToolCalls = detectUnregisteredToolCalls(
+        toolCalls.map((call) => call.name),
+        (config.tools ?? []).map(toolName),
+      );
       const detailsBase = {
         ...runToolSequence(s, toolCalls),
         invalidToolCalls,
@@ -993,6 +1012,7 @@ export async function executeScenario(
         reasoningContent,
         ...(malformedToolCall ? { malformedToolCall } : {}),
         ...(proseQuestion ? { proseQuestion } : {}),
+        ...(unregisteredToolCalls.length > 0 ? { unregisteredToolCalls } : {}),
       };
       // See the tool-call branch's identical comment — a text-embedded
       // forbidden call must not read as a pass, and the score must reflect

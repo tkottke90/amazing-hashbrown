@@ -308,17 +308,22 @@ describe('agents/system-prompt', () => {
         'a technical/setup topic even phrased possessively ("my X") — call\n     wiki_locate.',
       );
       expect(result).to.include(
-        '"What was the process for generating a new NPM token for Verdaccio?" and "I need to generate\n     a new NPM token for my Verdaccio instance" → wiki_locate either way (a technical/setup topic\n     could belong to a dedicated technical domain',
+        '"I need to generate a new NPM token for my Verdaccio instance" → wiki_locate (a technical/setup\n     topic could belong to a dedicated technical domain',
       );
     });
 
     it('covers possessive phrasing of the same technical topic, not just the bare noun phrase', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        '"I need to generate\n     a new NPM token for my Verdaccio instance" → wiki_locate either way',
+        '"I need to generate a new NPM token for my Verdaccio instance" → wiki_locate',
       );
+      expect(result).to.include("the\n     possessive phrasing doesn't change that)");
+    });
+
+    it('covers the same topic recalled in past tense, not just the fresh-need phrasing', () => {
+      const result = buildSystemPrompt();
       expect(result).to.include(
-        "the possessive\n     phrasing in the second one doesn't change that)",
+        '"What was the process for generating a new NPM token for Verdaccio?" → wiki_locate (same\n     reasoning, phrased as a recall of something already documented',
       );
     });
 
@@ -329,6 +334,16 @@ describe('agents/system-prompt', () => {
       );
       expect(result).to.include(
         'Omit wikiId only when you deliberately want to search\n     across every domain at once',
+      );
+    });
+
+    it('treats a matching wiki_orient index entry as already knowing which page, not a reason to search again', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'wiki_orient\'s own index already lists a page whose description matches the question — e.g. an\n     index reading "entities/morning-routine.md — user\'s morning routine preferences" against "What\n     do I prefer for my morning routine?" → wiki_read_page that path directly.',
+      );
+      expect(result).to.include(
+        'A matching index\n     entry is already knowing which page; wiki_search on the same terms the index entry just gave\n     you is a redundant round-trip, not a safer check.',
       );
     });
 

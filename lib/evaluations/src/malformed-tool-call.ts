@@ -108,6 +108,32 @@ export function detectMalformedToolCall(
   return null;
 }
 
+const CODE_FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
+
+// A reply that is nothing but a JSON object — a tool call's arguments emitted
+// as plain text with no tool name at all (e.g. gpt-oss on Ollama returning
+// `{"query":"violin","limit":5}` as content, nothing in tool_calls). The shapes
+// detectMalformedToolCall knows all name the tool; this one cannot, so
+// parsedToolName is null. Kept separate from detectMalformedToolCall because it
+// is only safe where a tool call was expected: a bare JSON reply can be a
+// legitimate answer to an llm-judge scenario, so the runner applies this in the
+// tool-call/tool-sequence branches only. Prose around the object, an array, or
+// a bare scalar is not matched.
+export function detectArgumentsOnlyToolCall(content: string): MalformedToolCallMatch | null {
+  const trimmed = content.trim();
+  const body = (CODE_FENCE.exec(trimmed)?.[1] ?? trimmed).trim();
+  if (!body.startsWith('{') || !body.endsWith('}')) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return { parsedToolName: null, raw: body };
+    }
+  } catch {
+    // Not valid JSON — plain prose that happens to start and end with braces.
+  }
+  return null;
+}
+
 export function detectProseQuestion(content: string): boolean {
   const trimmed = content.replace(/[\s*_`]+$/, '').trimEnd();
   return trimmed.length > 0 && trimmed.endsWith('?');

@@ -6,6 +6,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import type { Ollama } from 'ollama';
 import {
+  applyEvalDeterminism,
+  describeSampling,
   createProvider,
   createProviderFromConfig,
   hasOllamaVisionCapability,
@@ -150,6 +152,180 @@ describe('services/provider-factory', () => {
       it('does not throw for ollama when timeoutMs is set (known gap — not wired for this provider type)', () => {
         expect(() => createProviderFromConfig({ ...ollamaConfig, timeoutMs: 5000 })).to.not.throw();
       });
+    });
+
+    // Targets @langchain/ollama 1.3.0, @langchain/openai 1.5.5 and
+    // @langchain/anthropic 1.5.1 (checked against their published type
+    // declarations): ChatOllama takes seed/topP/temperature as top-level
+    // fields; ChatOpenAI takes temperature/topP top-level but seed only as a
+    // per-call option, so it is carried via modelKwargs (spread into the
+    // request body); ChatAnthropic has no seed concept at all.
+    describe('sampling parameters', () => {
+      it('passes temperature, topP and seed through to ChatOllama', () => {
+        const agent = createProviderFromConfig({
+          ...ollamaConfig,
+          temperature: 0,
+          topP: 0.9,
+          seed: 7,
+        }) as ChatOllama;
+        expect(agent.temperature).to.equal(0);
+        expect(agent.topP).to.equal(0.9);
+        expect(agent.seed).to.equal(7);
+      });
+
+      it('passes temperature and topP through to ChatOpenAI and carries seed in modelKwargs', () => {
+        const agent = createProviderFromConfig({
+          ...openaiConfig,
+          temperature: 0,
+          topP: 0.9,
+          seed: 7,
+        }) as ChatOpenAI;
+        expect(agent.temperature).to.equal(0);
+        expect(agent.topP).to.equal(0.9);
+        expect(agent.modelKwargs?.seed).to.equal(7);
+      });
+
+      it('passes temperature and topP through to ChatAnthropic', () => {
+        const agent = createProviderFromConfig({
+          ...anthropicConfig,
+          temperature: 0,
+          topP: 0.9,
+        }) as ChatAnthropic;
+        expect(agent.temperature).to.equal(0);
+        expect(agent.topP).to.equal(0.9);
+      });
+
+      it('ignores seed for anthropic rather than throwing or forwarding it', () => {
+        const agent = createProviderFromConfig({ ...anthropicConfig, seed: 7 }) as ChatAnthropic;
+        expect(agent).to.not.have.property('seed');
+      });
+
+      it('leaves sampling parameters unset when config does not specify them', () => {
+        const ollama = createProviderFromConfig(ollamaConfig) as ChatOllama;
+        const openai = createProviderFromConfig(openaiConfig) as ChatOpenAI;
+        expect(ollama.temperature).to.equal(undefined);
+        expect(ollama.seed).to.equal(undefined);
+        expect(openai.temperature).to.equal(undefined);
+        expect(openai.modelKwargs?.seed).to.equal(undefined);
+      });
+    });
+  });
+
+  describe('applyEvalDeterminism()', () => {
+    it('pins temperature to 0 and applies the seed for ollama', () => {
+      const result = applyEvalDeterminism(ollamaConfig, 42);
+      expect(result.temperature).to.equal(0);
+      expect(result.seed).to.equal(42);
+    });
+
+    it('pins temperature to 0 and applies the seed for openai-compatible providers', () => {
+      const result = applyEvalDeterminism(openaiConfig, 42);
+      expect(result.temperature).to.equal(0);
+      expect(result.seed).to.equal(42);
+    });
+
+    // Current Claude models reject an explicit temperature outright
+    // ("400 `temperature` is deprecated for this model"), which fails every
+    // judge call, so an anthropic provider must not get one injected.
+    it('does not inject a temperature for anthropic, whose current models reject it', () => {
+      const result = applyEvalDeterminism({ ...anthropicConfig, seed: 99 }, 42);
+      expect(result.temperature).to.equal(undefined);
+    });
+
+    it('leaves seed undefined for anthropic, which has no seed parameter', () => {
+      const result = applyEvalDeterminism({ ...anthropicConfig, seed: 99 }, 42);
+      expect(result.seed).to.equal(undefined);
+    });
+
+    it('keeps a temperature the user explicitly configured on an anthropic provider', () => {
+      const result = applyEvalDeterminism({ ...anthropicConfig, temperature: 0.3 }, 42);
+      expect(result.temperature).to.equal(0.3);
+    });
+
+    describe('temperature override', () => {
+      it('uses the override instead of 0 for ollama, and still applies the seed', () => {
+        const result = applyEvalDeterminism(ollamaConfig, 42, { temperature: 1 });
+        expect(result.temperature).to.equal(1);
+        expect(result.seed).to.equal(42);
+      });
+
+      it('uses the override instead of 0 for openai-compatible providers', () => {
+        const result = applyEvalDeterminism(openaiConfig, 42, { temperature: 0.6 });
+        expect(result.temperature).to.equal(0.6);
+        expect(result.seed).to.equal(42);
+      });
+
+      it('treats an override of 0 as a real value, not as unset', () => {
+        const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1 }, 42, {
+          temperature: 0,
+        });
+        expect(result.temperature).to.equal(0);
+      });
+
+      it('overrides a temperature already configured on the provider', () => {
+        const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1.2 }, 42, {
+          temperature: 0.5,
+        });
+        expect(result.temperature).to.equal(0.5);
+      });
+
+      it('passes an explicitly requested temperature through for anthropic, still without a seed', () => {
+        const result = applyEvalDeterminism(anthropicConfig, 42, { temperature: 0.7 });
+        expect(result.temperature).to.equal(0.7);
+        expect(result.seed).to.equal(undefined);
+      });
+
+      it('still injects no temperature for anthropic when no override is given', () => {
+        const result = applyEvalDeterminism(anthropicConfig, 42, {});
+        expect(result.temperature).to.equal(undefined);
+      });
+    });
+
+    it('overrides temperature and seed already present on the config', () => {
+      const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1.2, seed: 5 }, 42);
+      expect(result.temperature).to.equal(0);
+      expect(result.seed).to.equal(42);
+    });
+
+    it('preserves every other provider field', () => {
+      const result = applyEvalDeterminism({ ...openaiConfig, timeoutMs: 5000 }, 42);
+      expect(result).to.include({
+        name: openaiConfig.name,
+        type: 'openai',
+        defaultModel: openaiConfig.defaultModel,
+        timeoutMs: 5000,
+      });
+    });
+
+    it('does not mutate the config it was given', () => {
+      const input: ProviderConfig = { ...ollamaConfig, temperature: 1 };
+      applyEvalDeterminism(input, 42);
+      expect(input.temperature).to.equal(1);
+      expect(input.seed).to.equal(undefined);
+    });
+  });
+
+  describe('describeSampling()', () => {
+    it('reports a pinned temperature and seed', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 0, seed: 42 })).to.equal(
+        'temperature=0, seed=42',
+      );
+    });
+
+    it('reports a non-zero temperature as given', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 1, seed: 42 })).to.equal(
+        'temperature=1, seed=42',
+      );
+    });
+
+    it('says provider default and no seed when nothing is set, as for an unpinned anthropic provider', () => {
+      expect(describeSampling(anthropicConfig)).to.equal('temperature=provider default, seed=none');
+    });
+
+    it('includes topP only when it is set', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 1, topP: 0.9, seed: 7 })).to.equal(
+        'temperature=1, top_p=0.9, seed=7',
+      );
     });
   });
 

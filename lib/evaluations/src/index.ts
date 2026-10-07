@@ -44,7 +44,7 @@ export { loadSuites, loadSuite } from './loader.js';
 export type { SuiteLoaderConfig } from './loader.js';
 
 // Runner
-export { runEval, getScoredScenarios } from './runner.js';
+export { runEval, executeScenario, getScoredScenarios } from './runner.js';
 export type {
   RunConfig,
   RunResult,
@@ -55,6 +55,38 @@ export type {
 // Comparator
 export { compareRuns } from './comparator.js';
 export type { ComparisonResult, ScenarioComparison } from './comparator.js';
+
+// Determinism probe
+export {
+  analyzeDeterminism,
+  describeError,
+  formatProbeReport,
+  parseResultPath,
+  probeExitCode,
+} from './probe.js';
+export type {
+  DeterminismAnalysis,
+  Outcome,
+  ProbeEntry,
+  ProbeRun,
+  ScenarioDeterminism,
+} from './probe.js';
+
+// Stream trace (bin/eval-stream-trace.ts)
+export {
+  formatStreamTrace,
+  longestRepeatRun,
+  summarizeStreamTrace,
+  toTraceChunks,
+} from './stream-trace.js';
+export type {
+  FormatOptions,
+  RepeatRun,
+  StreamedChunkLike,
+  StreamTraceSummary,
+  TraceChannel,
+  TraceChunk,
+} from './stream-trace.js';
 
 // Failure category reporting
 export { getFailureCategory } from './failure-category.js';

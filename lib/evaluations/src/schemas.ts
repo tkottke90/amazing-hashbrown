@@ -451,8 +451,13 @@ const HumanDetails = z.object({
 const FieldCheckResultSchema = z.object({
   path: z.string(),
   match: z.string(),
-  expected: z.unknown(),
-  actual: z.unknown(),
+  // Optional because both are legitimately undefined (a check with no `value`,
+  // or an arg the model never supplied) and the YAML writer drops undefined
+  // values, so on read-back the keys are missing. Under zod 4 a missing
+  // `z.unknown()` key is rejected, which made result files unreadable by the
+  // harness that wrote them.
+  expected: z.unknown().optional(),
+  actual: z.unknown().optional(),
   passed: z.boolean(),
 });
 
@@ -511,6 +516,11 @@ const ToolCallDetails = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+  // Names of tool calls this turn that match no registered tool — see
+  // unregistered-tool-call.ts. Present only when at least one was found, and
+  // independent of pass/fail (a correct call alongside a bogus one still
+  // records the bogus name).
+  unregisteredToolCalls: z.array(z.string()).optional(),
 });
 
 const ToolSequenceDetailsBase = z.object({
@@ -530,6 +540,8 @@ const ToolSequenceDetailsBase = z.object({
   reasoningContent: z.string().optional(),
   malformedToolCall: MalformedToolCallInfoSchema.optional(),
   proseQuestion: ProseQuestionInfoSchema.optional(),
+  // See ToolCallDetails's identical field.
+  unregisteredToolCalls: z.array(z.string()).optional(),
 });
 
 // One `steps` entry's outcome (issue #235 (b) — multi-step conversations).

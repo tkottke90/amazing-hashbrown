@@ -35,6 +35,14 @@ export const ProviderSchema = z.object({
   // Stops. See docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md §6.
   // Optional for the same reason maxConcurrency is above.
   timeoutMs: z.number().int().optional(),
+  // Sampling controls. Optional and inert unless set: production chat leaves
+  // them to the provider's own defaults, and only the eval CLI forces them
+  // (see applyEvalDeterminism in provider-factory.ts).
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  // Only forwarded for ollama/openai-type providers — Anthropic's API has no
+  // seed parameter and ChatAnthropic exposes no such option.
+  seed: z.number().int().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
