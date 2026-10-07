@@ -340,7 +340,7 @@ describe('agents/system-prompt', () => {
     it('treats a matching wiki_orient index entry as already knowing which page, not a reason to search again', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "wiki_orient's own index already lists a page whose description matches the question — e.g. an\n     index reading \"entities/morning-routine.md — user's morning routine preferences\" against \"What\n     do I prefer for my morning routine?\" → wiki_read_page that path directly.",
+        'wiki_orient\'s own index already lists a page whose description matches the question — e.g. an\n     index reading "entities/morning-routine.md — user\'s morning routine preferences" against "What\n     do I prefer for my morning routine?" → wiki_read_page that path directly.',
       );
       expect(result).to.include(
         'A matching index\n     entry is already knowing which page; wiki_search on the same terms the index entry just gave\n     you is a redundant round-trip, not a safer check.',
