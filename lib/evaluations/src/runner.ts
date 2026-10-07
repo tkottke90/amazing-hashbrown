@@ -14,7 +14,11 @@ import { runLlmJudge } from './executors/llm-judge.js';
 import { runStructured } from './executors/structured.js';
 import { runToolCall, type InvokedToolCall } from './executors/tool-call.js';
 import { runToolSequence } from './executors/tool-sequence.js';
-import { detectMalformedToolCall, detectProseQuestion } from './malformed-tool-call.js';
+import {
+  detectArgumentsOnlyToolCall,
+  detectMalformedToolCall,
+  detectProseQuestion,
+} from './malformed-tool-call.js';
 import { detectUnregisteredToolCalls } from './unregistered-tool-call.js';
 import { runHumanSkipped, runHumanPending, runHumanInteractive } from './executors/human.js';
 import type {
@@ -810,7 +814,8 @@ export async function executeScenario(
       // malformed-tool-call-detection design doc D7.
       const malformedToolCall =
         toolCalls.length === 0
-          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          ? (detectMalformedToolCall(content, (config.tools ?? []).map(toolName)) ??
+            detectArgumentsOnlyToolCall(content))
           : null;
       const proseQuestion =
         toolCalls.length === 0 &&
@@ -986,7 +991,8 @@ export async function executeScenario(
       // full harness catalog, not toolsForCall/scenarioTools.
       const malformedToolCall =
         toolCalls.length === 0
-          ? detectMalformedToolCall(content, (config.tools ?? []).map(toolName))
+          ? (detectMalformedToolCall(content, (config.tools ?? []).map(toolName)) ??
+            detectArgumentsOnlyToolCall(content))
           : null;
       const proseQuestion =
         toolCalls.length === 0 &&

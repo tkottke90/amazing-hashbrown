@@ -1137,6 +1137,143 @@ describe('executeScenario — malformed tool call / prose question detection (is
       assert.equal(result.details.malformedToolCall?.parsedToolName, 'schedule_wakeup');
     }
   });
+
+  // A reply that is only an arguments object — see detectArgumentsOnlyToolCall.
+  const BARE_ARGS = '{"query":"violin","limit":5}';
+
+  it('tool-call: annotates an arguments-only JSON reply as a malformed call with no tool name [unit]', async () => {
+    const scenario = makeToolCallScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(BARE_ARGS),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, null);
+      assert.equal(result.details.malformedToolCall?.raw, BARE_ARGS);
+    }
+  });
+
+  it('tool-sequence: annotates an arguments-only JSON reply as a malformed call with no tool name [unit]', async () => {
+    const scenario = makeToolSequenceScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(BARE_ARGS),
+      tools: [fakeTool('wiki_search'), fakeTool('wiki_locate')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.equal(result.details.type, 'tool-sequence');
+    if (result.details.type === 'tool-sequence') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, null);
+    }
+  });
+
+  it('tool-call: a named text-embedded call still reports its tool name, not null [unit]', async () => {
+    // The arguments-only fallback must not shadow the more specific shapes.
+    const scenario = makeToolCallScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel('{"name": "wiki_search", "arguments": {"query": "coffee"}}'),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, 'wiki_search');
+    }
+  });
+
+  it('tool-call: an arguments-only reply alongside a real tool call is not flagged [unit]', async () => {
+    // Detection only runs when the model made no structured call at all.
+    const scenario = makeToolCallScenario();
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(BARE_ARGS, ['wiki_search']),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall, undefined);
+    }
+  });
+
+  it('tool-call: a negated scenario keeps its verdict for an arguments-only reply [unit]', async () => {
+    // With no tool name the harness cannot tell it was the forbidden tool, so
+    // the verdict is unchanged; the annotation still surfaces the attempt.
+    const scenario = makeToolCallScenario({ tool: '!wiki_search' });
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model: makeReplyingModel(BARE_ARGS),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, true);
+    assert.equal(result.details.type, 'tool-call');
+    if (result.details.type === 'tool-call') {
+      assert.equal(result.details.malformedToolCall?.parsedToolName, null);
+    }
+  });
+
+  it('llm-judge: a bare JSON reply is not flagged, because it can be a legitimate answer [unit]', async () => {
+    const scenario: LlmJudgeScenario = {
+      id: 'mtc-judge-json',
+      name: 'Bare JSON answer llm-judge scenario',
+      purpose: 'Testing',
+      type: 'llm-judge',
+      input: 'Reply with a JSON object holding a "city" key.',
+      rubric: 'Is the reply a JSON object with a city?',
+      minScore: 7,
+    };
+    const { model } = makeCapturingModel('{"city": "Lisbon"}');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      judgeModel: makeFakeJudgeModel(9, 'Valid JSON with a city.'),
+      tools: [fakeTool('wiki_search')],
+    };
+
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.details.type, 'llm-judge');
+    if (result.details.type === 'llm-judge') {
+      assert.equal(result.details.malformedToolCall, undefined);
+      assert.equal(result.details.score, 9);
+    }
+  });
 });
 
 // gpt-oss on Ollama occasionally emits `wiki_search?` where `wiki_search` was

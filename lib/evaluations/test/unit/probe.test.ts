@@ -550,3 +550,127 @@ describe('formatProbeReport', () => {
     assert.match(report, /Overall: INCOMPLETE/);
   });
 });
+
+describe('failure categories in the probe', () => {
+  const unregistered = (scenarioId: string): ScenarioResult =>
+    makeResult(scenarioId, false, {
+      type: 'tool-sequence',
+      expectedTool: 'wiki_read_page',
+      toolCalled: null,
+      calledTools: ['wiki_search?'],
+      fieldResults: [],
+      score: 0,
+      unregisteredToolCalls: ['wiki_search?'],
+    });
+  const cleanWrongTool = (scenarioId: string): ScenarioResult =>
+    makeResult(scenarioId, false, {
+      type: 'tool-sequence',
+      expectedTool: 'wiki_read_page',
+      toolCalled: null,
+      calledTools: ['wiki_search'],
+      fieldResults: [],
+      score: 0,
+    });
+  const malformed = (scenarioId: string): ScenarioResult =>
+    makeResult(scenarioId, false, {
+      type: 'tool-sequence',
+      expectedTool: 'wiki_create_page',
+      toolCalled: null,
+      calledTools: [],
+      fieldResults: [],
+      score: 0,
+      malformedToolCall: { parsedToolName: null, raw: '{"query":"violin"}' },
+    });
+
+  it('counts, per scenario, the runs that carried each category [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns(
+        [unregistered('s'), malformed('t')],
+        [cleanWrongTool('s'), malformed('t')],
+        [unregistered('s'), malformed('t')],
+      ),
+    );
+    assert.deepEqual(analysis.scenarios.find((s) => s.scenarioId === 's')?.categories, {
+      unregistered_tool_call: 2,
+    });
+    assert.deepEqual(analysis.scenarios.find((s) => s.scenarioId === 't')?.categories, {
+      malformed_tool_call: 3,
+    });
+  });
+
+  it('omits categories for a scenario that never had one [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeResult('plain', true)], [makeResult('plain', true)]),
+    );
+    assert.equal(analysis.scenarios[0]?.categories, undefined);
+  });
+
+  it('does not count a category for an errored scenario, whose details are a placeholder [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([makeErroredResult('e', 'boom')], [makeErroredResult('e', 'boom')]),
+    );
+    assert.equal(analysis.scenarios[0]?.categories, undefined);
+  });
+
+  it('does not change whether the runs count as identical [unit]', () => {
+    // Same F every run, different cause each time: outcomes agree, so identical.
+    const analysis = analyzeDeterminism(
+      probeRuns([unregistered('s')], [cleanWrongTool('s')], [unregistered('s')]),
+    );
+    assert.equal(analysis.identical, true);
+    assert.equal(probeExitCode([{ suiteId: 's', model: 'm', status: 'analyzed', analysis }]), 0);
+  });
+
+  it('reports the categories of a scenario whose outcome never varied [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns([unregistered('s')], [cleanWrongTool('s')], [unregistered('s')]),
+    );
+    const report = formatProbeReport([
+      { suiteId: 'w', model: 'local', status: 'analyzed', analysis },
+    ]);
+    assert.match(report, /IDENTICAL\s+local \/ w/);
+    assert.match(report, /s\s+F F F/);
+    assert.match(report, /categories: unregistered_tool_call in 2\/3 runs/);
+    assert.match(report, /1 scenario\(s\) hit a failure category/);
+    assert.match(report, /Overall: IDENTICAL/);
+  });
+
+  it('lists several categories on one line, and a varied scenario keeps its outcomes [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns(
+        [unregistered('w')],
+        [malformed('w')],
+        [
+          makeResult('w', true, {
+            type: 'deterministic',
+            match: 'contains',
+            expected: 'x',
+            passed: true,
+          }),
+        ],
+      ),
+    );
+    const report = formatProbeReport([
+      { suiteId: 'w', model: 'local', status: 'analyzed', analysis },
+    ]);
+    assert.match(report, /w\s+F F P/);
+    assert.match(
+      report,
+      /categories: unregistered_tool_call in 1\/3 runs, malformed_tool_call in 1\/3 runs/,
+    );
+  });
+
+  it('prints no category line or hint when nothing hit a category [unit]', () => {
+    const analysis = analyzeDeterminism(
+      probeRuns(
+        [makeResult('a', true), makeResult('b', true)],
+        [makeResult('a', true), makeResult('b', false)],
+      ),
+    );
+    const report = formatProbeReport([
+      { suiteId: 'w', model: 'local', status: 'analyzed', analysis },
+    ]);
+    assert.doesNotMatch(report, /categories:/);
+    assert.doesNotMatch(report, /failure category/);
+  });
+});

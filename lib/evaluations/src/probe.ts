@@ -1,3 +1,4 @@
+import { getFailureCategory, type FailureCategory } from './failure-category.js';
 import type { EvalRun, ScenarioResult } from './schemas.js';
 
 // 'error' means the scenario threw (a model or judge call failed), which is a
@@ -23,6 +24,12 @@ export interface ScenarioDeterminism {
   varied: boolean;
   // The first error's message, when any run's outcome was 'error'.
   errorMessage?: string;
+  // How many runs this scenario's result carried each failure category (see
+  // failure-category.ts). Present only when at least one did. Independent of
+  // `outcomes`: a scenario can fail identically in every run while the cause
+  // differs between them (e.g. a clean wrong-tool call in one run, a
+  // non-existent tool name in the next), which `outcomes` alone cannot show.
+  categories?: Partial<Record<FailureCategory, number>>;
 }
 
 export interface DeterminismAnalysis {
@@ -136,6 +143,7 @@ export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
   // `details` is the runner's placeholder, which would mislabel its type.
   const meta = new Map<string, { type: string; judgeDependent: boolean }>();
   const errorMessages = new Map<string, string>();
+  const categoryCounts = new Map<string, Partial<Record<FailureCategory, number>>>();
   const perRun = runs.map(({ results }) => {
     const byScenario = new Map<string, Outcome>();
     for (const result of results) {
@@ -143,6 +151,12 @@ export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
       const error = scenarioError(result);
       byScenario.set(result.scenarioId, error ? 'error' : result.passed ? 'pass' : 'fail');
       if (!order.includes(result.scenarioId)) order.push(result.scenarioId);
+      const category = error ? null : getFailureCategory(result.details);
+      if (category) {
+        const counts = categoryCounts.get(result.scenarioId) ?? {};
+        counts[category] = (counts[category] ?? 0) + 1;
+        categoryCounts.set(result.scenarioId, counts);
+      }
       if (error) {
         if (!errorMessages.has(result.scenarioId)) errorMessages.set(result.scenarioId, error);
       } else if (!meta.has(result.scenarioId)) {
@@ -162,6 +176,7 @@ export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
       judgeDependent: false,
     };
     const errorMessage = errorMessages.get(scenarioId);
+    const categories = categoryCounts.get(scenarioId);
     return {
       scenarioId,
       type,
@@ -169,6 +184,7 @@ export function analyzeDeterminism(runs: ProbeRun[]): DeterminismAnalysis {
       outcomes,
       varied: new Set(outcomes).size > 1,
       ...(errorMessage === undefined ? {} : { errorMessage }),
+      ...(categories === undefined ? {} : { categories }),
     };
   });
 
@@ -203,6 +219,7 @@ export function formatProbeReport(
   let targetOnly = 0;
   let judgeDependent = 0;
   let erroredScenarios = 0;
+  let categorisedScenarios = 0;
 
   for (const entry of entries) {
     const label = `${entry.model} / ${entry.suiteId}`;
@@ -219,7 +236,10 @@ export function formatProbeReport(
     lines.push(
       `  ${verdict} ${label} — ${analysis.runCount} runs, passed per run: ${analysis.passedPerRun.join(' ')}`,
     );
-    for (const s of analysis.scenarios.filter((x) => x.varied || x.errorMessage !== undefined)) {
+    const listed = analysis.scenarios.filter(
+      (x) => x.varied || x.errorMessage !== undefined || x.categories !== undefined,
+    );
+    for (const s of listed) {
       const glyphs = s.outcomes.map((o) => OUTCOME_GLYPH[o]).join(' ');
       lines.push(
         `      ${s.scenarioId.padEnd(28)} ${glyphs}  [${s.type}${s.judgeDependent ? ', judge-dependent' : ''}]`,
@@ -227,6 +247,13 @@ export function formatProbeReport(
       if (s.errorMessage !== undefined) {
         lines.push(`          error: ${s.errorMessage}`);
         erroredScenarios += 1;
+      }
+      if (s.categories !== undefined) {
+        const seen = Object.entries(s.categories)
+          .map(([category, n]) => `${category} in ${n}/${analysis.runCount} runs`)
+          .join(', ');
+        lines.push(`          categories: ${seen}`);
+        categorisedScenarios += 1;
       }
       if (s.varied) {
         if (s.judgeDependent) judgeDependent += 1;
@@ -254,6 +281,14 @@ export function formatProbeReport(
       `  ${erroredScenarios} scenario(s) errored rather than failed (E): a model or judge call threw. ` +
         'That is a harness or provider problem, not model behaviour, and a scenario that errors ' +
         'every run looks identical — fix these before trusting any verdict.',
+    );
+  }
+  if (categorisedScenarios > 0) {
+    lines.push(
+      `  ${categorisedScenarios} scenario(s) hit a failure category: the model or its server produced ` +
+        'a broken or non-existent tool call, or asked in prose, rather than making a routing ' +
+        'choice. Categories never change the verdict above, and a scenario is listed here even ' +
+        'when its outcome never varied, because the cause can differ between runs.',
     );
   }
   if (targetOnly > 0) {

@@ -114,6 +114,12 @@ and a `probe.json` are written to `eval-logs/probe-<timestamp>/`.
 | `2`       | Usage error, or `eval` itself exited 2 (e.g. unknown provider name); no verdict given. |
 | `3`       | A pair produced no result, or a scenario errored, and nothing varied — not a pass.     |
 
+A scenario whose results carried a [failure category](#failure-categories-malformed_tool_call--prose_question)
+gets a `categories:` line, for example `categories: unregistered_tool_call in 2/6 runs`. It is
+listed even when its outcome never varied, because the cause can differ between runs: a scenario
+can fail all six times, twice with a non-existent tool name and four times with a clean wrong-tool
+call. Categories explain failures; they never change the verdict or the exit code.
+
 A scenario that _threw_ (a model or judge call failed) is shown as `E` and labelled `HAD ERRORS`,
 with its error message, not as a failure. The runner records a thrown error as an ordinary failed
 result, so without this a judge that errors on every run would look like a scenario that
@@ -220,6 +226,11 @@ tool call as plain text instead of populating the structured `tool_calls` field 
 instead of calling `ask_user`. Both previously looked identical to "the model declined to act"
 (`toolCalled: null, calledTools: []`), which made a provider transport bug indistinguishable from
 a genuine model reasoning failure — see issue #227.
+
+`malformed_tool_call` also covers a reply that is only a JSON arguments object with no tool name,
+such as `{"query":"violin","limit":5}` returned as plain content. It is recorded with an unknown
+tool name (`parsedToolName: null`). Only `tool-call` and `tool-sequence` scenarios check for this
+shape: a bare JSON reply can be a legitimate answer to an `llm-judge` scenario.
 
 A detected case still counts as an ordinary failure toward the suite's pass rate (no exclusion) —
 it's surfaced, not scored away, since the task genuinely didn't get done. You'll see it in three
