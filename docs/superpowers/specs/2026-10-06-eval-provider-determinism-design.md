@@ -207,6 +207,16 @@ useful on its own: re-running a suite with a _different_ fixed seed is how
 you tell "this scenario is seed-sensitive" apart from "this scenario is
 actually stable."
 
+**`--temperature <n>` (added after the first real runs).** Pinning temperature 0
+can itself be the wrong setting: OpenAI recommends `temperature=1.0` for gpt-oss,
+and a provider's `temperature` in `config.yaml` has no effect on an eval run
+because the override replaces it. `--temperature` replaces the pinned 0 for the
+**model under test only** — never the judge, whose scoring must stay stable and
+which may be an anthropic provider that rejects the parameter. The seed is
+still applied. Each run prints a `[eval] sampling — …` line with the
+temperature, `top_p` and seed actually used (`describeSampling`), since results
+previously did not say.
+
 ### 4. Required `--judge-model`
 
 `bin/eval.ts` replaces the silent fallback with a hard failure, placed

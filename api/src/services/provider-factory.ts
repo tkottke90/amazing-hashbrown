@@ -114,12 +114,37 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
  * a 400 ("`temperature` is deprecated for this model"), which fails every
  * judge call. A Claude judge therefore runs at its own default sampling; a
  * temperature the user set explicitly in config.yaml is left as they wrote it.
+ *
+ * `options.temperature` replaces the pinned 0 — the eval CLI's `--temperature`,
+ * for trying a model at the sampling its vendor recommends. It is an explicit
+ * request, so it is passed through even for anthropic (whose models may reject
+ * it); without it, anthropic still gets none. The seed is applied either way.
  */
-export function applyEvalDeterminism(config: ProviderConfig, seed: number): ProviderConfig {
+export function applyEvalDeterminism(
+  config: ProviderConfig,
+  seed: number,
+  options: { temperature?: number } = {},
+): ProviderConfig {
   if (config.type === 'anthropic') {
-    return { ...config, seed: undefined };
+    return {
+      ...config,
+      seed: undefined,
+      ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+    };
   }
-  return { ...config, temperature: 0, seed };
+  return { ...config, temperature: options.temperature ?? 0, seed };
+}
+
+/**
+ * One-line summary of the sampling a provider config will run with, for
+ * printing at the start of an eval run so a result is never ambiguous about
+ * whether it was pinned.
+ */
+export function describeSampling(config: ProviderConfig): string {
+  const parts = [`temperature=${config.temperature ?? 'provider default'}`];
+  if (config.topP !== undefined) parts.push(`top_p=${config.topP}`);
+  parts.push(`seed=${config.seed ?? 'none'}`);
+  return parts.join(', ');
 }
 
 async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {

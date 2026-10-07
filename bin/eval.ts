@@ -19,6 +19,7 @@ import {
 import {
   applyEvalDeterminism,
   createProviderFromConfig,
+  describeSampling,
   resolveProviderConfig,
 } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
@@ -147,6 +148,7 @@ const { values } = parseArgs({
     model: { type: 'string' },
     'judge-model': { type: 'string' },
     seed: { type: 'string' },
+    temperature: { type: 'string' },
     ci: { type: 'boolean', default: false },
     'no-html': { type: 'boolean', default: false },
     'llm-review': { type: 'boolean', default: false },
@@ -184,6 +186,21 @@ if (
 }
 const seed = values.seed === undefined ? DEFAULT_EVAL_SEED : Number(values.seed);
 
+// Replaces the pinned temperature 0 for the model under test only (never the
+// judge, so a judge's scoring stays stable and a Claude judge never receives a
+// temperature it would reject).
+if (
+  values.temperature !== undefined &&
+  !(typeof values.temperature === 'string' && /^\d+(\.\d+)?$/.test(values.temperature))
+) {
+  console.error(
+    `Error: --temperature must be a non-negative number, got "${String(values.temperature)}"`,
+  );
+  process.exit(2);
+}
+const temperatureOverride =
+  values.temperature === undefined ? undefined : Number(values.temperature);
+
 const modelId = values.model;
 const judgeModelId = values['judge-model'];
 
@@ -193,9 +210,15 @@ try {
   // Temperature is pinned to 0 and a fixed seed applied to the model under test
   // and the judge, regardless of what config.yaml sets for everyday chat —
   // except anthropic providers, which can't take either (see applyEvalDeterminism).
-  model = createProviderFromConfig(applyEvalDeterminism(resolveProviderConfig(modelId), seed));
-  judgeModel = createProviderFromConfig(
-    applyEvalDeterminism(resolveProviderConfig(judgeModelId), seed),
+  const modelConfig = applyEvalDeterminism(resolveProviderConfig(modelId), seed, {
+    temperature: temperatureOverride,
+  });
+  const judgeConfig = applyEvalDeterminism(resolveProviderConfig(judgeModelId), seed);
+  model = createProviderFromConfig(modelConfig);
+  judgeModel = createProviderFromConfig(judgeConfig);
+  console.log(
+    `[eval] sampling — model "${modelId}": ${describeSampling(modelConfig)}; ` +
+      `judge "${judgeModelId}": ${describeSampling(judgeConfig)}`,
   );
 } catch (err) {
   console.error(`Error creating model: ${String(err)}`);

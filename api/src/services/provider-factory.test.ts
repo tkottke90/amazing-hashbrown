@@ -7,6 +7,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import type { Ollama } from 'ollama';
 import {
   applyEvalDeterminism,
+  describeSampling,
   createProvider,
   createProviderFromConfig,
   hasOllamaVisionCapability,
@@ -241,6 +242,45 @@ describe('services/provider-factory', () => {
       expect(result.temperature).to.equal(0.3);
     });
 
+    describe('temperature override', () => {
+      it('uses the override instead of 0 for ollama, and still applies the seed', () => {
+        const result = applyEvalDeterminism(ollamaConfig, 42, { temperature: 1 });
+        expect(result.temperature).to.equal(1);
+        expect(result.seed).to.equal(42);
+      });
+
+      it('uses the override instead of 0 for openai-compatible providers', () => {
+        const result = applyEvalDeterminism(openaiConfig, 42, { temperature: 0.6 });
+        expect(result.temperature).to.equal(0.6);
+        expect(result.seed).to.equal(42);
+      });
+
+      it('treats an override of 0 as a real value, not as unset', () => {
+        const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1 }, 42, {
+          temperature: 0,
+        });
+        expect(result.temperature).to.equal(0);
+      });
+
+      it('overrides a temperature already configured on the provider', () => {
+        const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1.2 }, 42, {
+          temperature: 0.5,
+        });
+        expect(result.temperature).to.equal(0.5);
+      });
+
+      it('passes an explicitly requested temperature through for anthropic, still without a seed', () => {
+        const result = applyEvalDeterminism(anthropicConfig, 42, { temperature: 0.7 });
+        expect(result.temperature).to.equal(0.7);
+        expect(result.seed).to.equal(undefined);
+      });
+
+      it('still injects no temperature for anthropic when no override is given', () => {
+        const result = applyEvalDeterminism(anthropicConfig, 42, {});
+        expect(result.temperature).to.equal(undefined);
+      });
+    });
+
     it('overrides temperature and seed already present on the config', () => {
       const result = applyEvalDeterminism({ ...ollamaConfig, temperature: 1.2, seed: 5 }, 42);
       expect(result.temperature).to.equal(0);
@@ -262,6 +302,30 @@ describe('services/provider-factory', () => {
       applyEvalDeterminism(input, 42);
       expect(input.temperature).to.equal(1);
       expect(input.seed).to.equal(undefined);
+    });
+  });
+
+  describe('describeSampling()', () => {
+    it('reports a pinned temperature and seed', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 0, seed: 42 })).to.equal(
+        'temperature=0, seed=42',
+      );
+    });
+
+    it('reports a non-zero temperature as given', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 1, seed: 42 })).to.equal(
+        'temperature=1, seed=42',
+      );
+    });
+
+    it('says provider default and no seed when nothing is set, as for an unpinned anthropic provider', () => {
+      expect(describeSampling(anthropicConfig)).to.equal('temperature=provider default, seed=none');
+    });
+
+    it('includes topP only when it is set', () => {
+      expect(describeSampling({ ...ollamaConfig, temperature: 1, topP: 0.9, seed: 7 })).to.equal(
+        'temperature=1, top_p=0.9, seed=7',
+      );
     });
   });
 

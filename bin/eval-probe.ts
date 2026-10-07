@@ -30,6 +30,7 @@ const { values } = parseArgs({
     'judge-model': { type: 'string' },
     runs: { type: 'string' },
     seed: { type: 'string' },
+    temperature: { type: 'string' },
   },
   strict: false,
 });
@@ -50,7 +51,7 @@ if (suites.length === 0 || models.length === 0 || !judgeModel) {
   console.error(
     'Error: --suite <a,b,...>, --model <p1,p2,...> and --judge-model <name> are all required\n' +
       'Usage: npm run eval:probe -- --suite wiki-navigation,create-workspace-project \\\n' +
-      '         --model ollama,lemonade --judge-model claude [--runs 3] [--seed 42]',
+      '         --model ollama,lemonade --judge-model claude [--runs 3] [--seed 42] [--temperature 1]',
   );
   process.exit(2);
 }
@@ -71,6 +72,23 @@ if (
 ) {
   console.error(`Error: --seed must be an integer, got "${String(values.seed)}"`);
   process.exit(2);
+}
+
+if (
+  values.temperature !== undefined &&
+  !(typeof values.temperature === 'string' && /^\d+(\.\d+)?$/.test(values.temperature))
+) {
+  console.error(
+    `Error: --temperature must be a non-negative number, got "${String(values.temperature)}"`,
+  );
+  process.exit(2);
+}
+if (values.temperature !== undefined) {
+  console.log(
+    `[probe] --temperature ${values.temperature} applies to the model under test only; ` +
+      'the judge stays pinned. Runs will not be fully reproducible at a non-zero temperature, ' +
+      'so compare failure counts across several runs rather than single outcomes.',
+  );
 }
 
 const projectRoot = resolve(fileURLToPath(import.meta.url), '../..');
@@ -113,6 +131,7 @@ for (const model of models) {
         '--no-html',
       ];
       if (values.seed !== undefined) args.push('--seed', String(values.seed));
+      if (values.temperature !== undefined) args.push('--temperature', String(values.temperature));
 
       const proc = spawnSync('npm', args, {
         cwd: projectRoot,
@@ -169,7 +188,16 @@ const jsonPath = join(logDir, 'probe.json');
 writeFileSync(
   jsonPath,
   JSON.stringify(
-    { startedAt: stamp, suites, models, judgeModel, runs, seed: values.seed, entries },
+    {
+      startedAt: stamp,
+      suites,
+      models,
+      judgeModel,
+      runs,
+      seed: values.seed,
+      temperature: values.temperature,
+      entries,
+    },
     null,
     2,
   ),

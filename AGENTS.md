@@ -348,6 +348,10 @@ npm run eval -- --suite wiki-search --model ollama --judge-model ollama --llm-re
 # Check a provider is reproducible: run suites N times, diff per-scenario outcomes
 npm run eval:probe -- --suite wiki-navigation --model ollama --judge-model claude --runs 3
 
+# Try the model under test at a non-zero temperature (the judge stays pinned);
+# config.yaml's temperature/top_p do not change an eval run on their own
+npm run eval -- --suite wiki-navigation --model ollama --judge-model claude --temperature 1
+
 # --judge-model is required (no same-model fallback). Every run also pins
 # temperature 0 and a fixed seed (--seed, default 42) for ollama/openai-type
 # providers; anthropic providers can't take either and run unpinned.
