@@ -724,6 +724,37 @@
 // passed cleanly (15/15) on a third attempt minutes later — confirms the
 // twenty-fourth entry's read that this is provider-side rate/concurrency
 // limiting on the Digital Ocean endpoint, not a prompt or model issue.
+//
+// Twenty-sixth entry, auto-eval round 1 of suites/wiki-navigation.yaml
+// (2026-10-07, all four providers, judge anthropic) — local (gpt-oss:20b)
+// was the only provider under the 0.85 threshold (11/15). Two real,
+// targeted gaps:
+// 1. wnav-003: wiki_orient's index already named the exact page
+//    ("entities/morning-routine.md — user's morning routine preferences")
+//    for "What do I prefer for my morning routine?", but local called
+//    wiki_search instead of wiki_read_page — the "already know exactly
+//    which page" branch in step 3 had no worked example showing how an
+//    orient index entry itself constitutes "already knowing." Added one
+//    to step 3's Examples list.
+// 2. wnav-010/wnav-010c: local failed both, despite their exact input
+//    wording already present verbatim as a worked example in step 1 — but
+//    that example joined both phrasings into one bullet ("...and...
+//    wiki_locate either way"), unlike every other example in this section,
+//    which is one bullet per input. wnav-010b (a third, paraphrased
+//    Verdaccio phrasing not in the combined bullet) passed, suggesting the
+//    combined form pattern-matched less reliably than this section's usual
+//    one-example-per-bullet shape. Split into two separate bullets,
+//    matching the surrounding convention; no wording content changed.
+// wnav-012 errored with "prediction aborted, token repeat limit reached"
+// — a pre-existing Ollama/llama-server server-side abort, researched in
+// docs/research/ollama-token-repeat-limit-abort.md (2026-10-07): this
+// run's own prompt_eval_count (~11000 tokens, stable across scenarios)
+// rules out that doc's context-truncation hypothesis for this run, but the
+// error itself is confirmed to originate server-side in Ollama, not in any
+// prompt text here — not chased with wording. Lemonade and Ornith both
+// reproduced wnav-004 in the same shape memory already documents
+// ([[wiki-navigation-eval-ceilings]], 2026-09-28) as a confirmed execution
+// ceiling — still ignored. Digital Ocean passed 15/15.
 const WIKI_NAVIGATION_SECTION = `You have access to a multi-domain knowledge base (a wiki) through four tools:
 
 - wiki_locate: find which domain applies to a topic, or list all domains when you don't have one in mind yet.
@@ -768,10 +799,12 @@ wiki_locate first to produce a wikiId the directive never asked for.
      your own reflective growth — genuinely ambiguous).
    - "Which part of the knowledge base should I check for my personal preferences?" → wiki_locate
      (asking for routing outright, despite mentioning "personal preferences").
-   - "What was the process for generating a new NPM token for Verdaccio?" and "I need to generate
-     a new NPM token for my Verdaccio instance" → wiki_locate either way (a technical/setup topic
-     could belong to a dedicated technical domain just as easily as personal notes; the possessive
-     phrasing in the second one doesn't change that).
+   - "I need to generate a new NPM token for my Verdaccio instance" → wiki_locate (a technical/setup
+     topic could belong to a dedicated technical domain just as easily as personal notes; the
+     possessive phrasing doesn't change that).
+   - "What was the process for generating a new NPM token for Verdaccio?" → wiki_locate (same
+     reasoning, phrased as a recall of something already documented rather than a fresh need —
+     that doesn't make the domain any more exclusive to personal notes).
 
 2. Resolve wiki_locate's result (skip if step 1 already gave you a known domain).
    - No match → stop trying to route further; say plainly that nothing in the wiki covers this
@@ -807,6 +840,11 @@ wiki_locate first to produce a wikiId the directive never asked for.
    - "What programming languages do I use most at work?" (wikiId from a single outright match) →
      wiki_search({ wikiId, query }) — same reasoning; how the wikiId was resolved doesn't matter.
    - "What do we already know here?" → wiki_orient({ wikiId }), even on a single outright match.
+   - wiki_orient's own index already lists a page whose description matches the question — e.g. an
+     index reading "entities/morning-routine.md — user's morning routine preferences" against "What
+     do I prefer for my morning routine?" → wiki_read_page that path directly. A matching index
+     entry is already knowing which page; wiki_search on the same terms the index entry just gave
+     you is a redundant round-trip, not a safer check.
 
 4. Priority overrides — these outrank every default above.
    - A tool's own result is more current than this guidance. An error or explicit instruction from
