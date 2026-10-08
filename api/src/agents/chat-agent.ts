@@ -37,6 +37,7 @@ import { getToolKeyTool } from './tools/get-tool-key.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { boundaryAwareTrim } from './summary-boundary.js';
+import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middleware.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
@@ -407,6 +408,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      contentBlockSanitizerMiddleware,
       createRecursionGuardMiddleware({
         recursionLimit: env.agent?.recursionLimit ?? 100,
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
@@ -535,6 +537,7 @@ async function buildWorkspaceChatAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      contentBlockSanitizerMiddleware,
       createRecursionGuardMiddleware({
         recursionLimit: env.agent?.recursionLimit ?? 100,
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
@@ -688,6 +691,7 @@ export async function buildTaskAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      contentBlockSanitizerMiddleware,
       createRecursionGuardMiddleware({
         recursionLimit: env.agent?.recursionLimit ?? 100,
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
@@ -812,6 +816,7 @@ export async function buildSubAgentAgent(
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      contentBlockSanitizerMiddleware,
       createRecursionGuardMiddleware({
         recursionLimit: env.agent?.subAgentRecursionLimit ?? 25,
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,

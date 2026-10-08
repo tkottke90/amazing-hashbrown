@@ -20,7 +20,7 @@
     "test": "mocha"
   },
   "dependencies": {
-    "@langchain/core": "1.2.2",
+    "@langchain/core": "1.2.17",
     "@langchain/mcp-adapters": "1.1.3",
     "@tkottke90/inference-adapter": "*",
     "zod": "^4.0.0"

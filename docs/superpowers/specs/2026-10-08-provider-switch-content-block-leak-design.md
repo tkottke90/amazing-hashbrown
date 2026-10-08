@@ -10,7 +10,7 @@ LangGraph checkpointer (`getCheckpointer()` in `chat-agent.ts`), keyed only
 by `thread_id` — never by provider. Each turn resolves its own provider
 independently (`createProvider(provider, model)` in
 `services/provider-factory.ts`), but the message history LangGraph loads
-from the checkpoint is whatever a *previous* turn wrote there, regardless of
+from the checkpoint is whatever a _previous_ turn wrote there, regardless of
 which provider wrote it.
 
 `@langchain/anthropic`'s streaming assembles a tool-call content block from
@@ -122,15 +122,15 @@ createMiddleware({
     // logs even after the fix ships, as a signal the upstream bug
     // resurfaced.
   },
-})
+});
 ```
 
 This runs regardless of which provider is being called on a given turn, so
-it's a permanent guardrail against this entire *class* of bug (a raw,
+it's a permanent guardrail against this entire _class_ of bug (a raw,
 provider-specific streaming artifact leaking into shared checkpoint state),
 not just this one instance of it.
 
-**Registration**: added as the *first* entry in all five builders'
+**Registration**: added as the _first_ entry in all five builders'
 middleware arrays (`chat-agent.ts` × 4, `wiki-ingestion-agent.ts` × 1) — runs
 before `createContextWindowMiddleware` and everything else, so nothing
 downstream ever sees the bad block.
@@ -155,11 +155,55 @@ downstream ever sees the bad block.
   [tkottke90/amazing-hashbrown#281](https://github.com/tkottke90/amazing-hashbrown/issues/281)
   with which phase resolved it.
 
+## Outcome
+
+Both phases ran. Phase 1's repro test (`api/src/services/anthropic-tool-call-streaming.test.ts`)
+failed before the bump as expected, and **still failed after it** — traced
+directly to source: `@langchain/anthropic`'s `input_json_delta` branch
+(`utils/message_outputs.js`) sets `type: data.delta.type` literally instead
+of normalizing it the way its sibling `text_delta`/`thinking_delta`
+branches do, and `@langchain/core`'s generic same-index merge
+(`getMergeableTypeBase` in `messages/base.js`) strips the `_delta` suffix
+to compare block-type bases — `"input_json_delta"` strips to
+`"input_json"`, which never matches the original block's `"tool_use"`
+type, so the delta is never merged back in and survives as its own
+stray array entry. Confirmed byte-identical in both the originally-pinned
+versions and the latest available (`@langchain/anthropic` 1.5.12,
+`@langchain/core` 1.2.17) — not fixed upstream as of this writing. The
+dependency bump was kept anyway (full test suite green, no regressions),
+and the repro test was converted into a permanent **canary** (inverted to
+assert the bug's current presence, so it passes today and only goes red
+if upstream actually fixes it) rather than a `must-pass-when-fixed`
+regression test — the design didn't account for this repo's
+all-tests-must-pass pre-commit gate, and a permanently-red test can't
+satisfy that.
+
+Phase 2 shipped as `api/src/agents/content-block-sanitizer.middleware.ts`,
+registered first in all five middleware arrays. One refinement from the
+original spec: instead of an allowlist of "known-safe" block types (which
+risks false-positives against legitimate Anthropic block types this
+codebase doesn't otherwise construct — `thinking`, `redacted_thinking`,
+`tool_result`, `server_tool_use`, etc.), it strips by **suffix**
+(`type.endsWith('_delta')`) — every Anthropic streaming delta-event type
+follows this naming convention and none of them are ever a legitimate
+settled block, so this can't have that false-positive failure mode and
+needs no exhaustive type enumeration pinned from the library's internals.
+
+The planned "one orchestration test per distinct middleware-array shape"
+was dropped: there's no existing precedent in this codebase for testing a
+fully-constructed agent's middleware wiring (every existing
+`*.middleware.test.ts` tests the middleware factory in isolation, the same
+pattern this fix's own middleware test follows), building one would need
+the full `buildChatAgent`/`buildWikiIngestionAgent` dependency graph (DB,
+checkpointer, tools manager, skills manager), and the registration itself
+is a trivial, already grep-verified array insertion — disproportionate
+cost for the value added here.
+
 ## Out of scope
 
 - Fixing this inside `@langchain/anthropic` itself (upstream's problem, not
   ours to patch).
-- Retroactively cleaning up any thread whose checkpoint *already* has a
+- Retroactively cleaning up any thread whose checkpoint _already_ has a
   corrupted message in it from before this fix ships — those threads stay
   broken until the user starts a fresh thread or the checkpoint is manually
   edited. Not handled here; flag as a possible follow-up if it turns out to
