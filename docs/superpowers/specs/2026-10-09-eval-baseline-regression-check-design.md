@@ -8,7 +8,7 @@
 regression," but nothing in the codebase actually reads it to answer that
 question:
 
-- `lib/evaluations/src/comparator.ts`'s `compareRuns` compares two *run*
+- `lib/evaluations/src/comparator.ts`'s `compareRuns` compares two _run_
   objects passed in by id — never a baseline file.
 - `bin/eval.ts` never loads `eval-baselines.yaml`.
 - The file is referenced in exactly three non-generated files in the whole
@@ -106,8 +106,8 @@ suite: a suite with no baseline entry for this provider is skipped
 silently and the sweep continues, matching the issue's "every
 suite/provider pairing that has a recorded baseline" framing — the
 absence of a baseline for some suite in a 27-suite sweep isn't itself an
-error condition, just nothing to report for that suite. A *stale* or
-*ambiguous* baseline in batch mode is still a hard stop for that suite
+error condition, just nothing to report for that suite. A _stale_ or
+_ambiguous_ baseline in batch mode is still a hard stop for that suite
 (logged in the summary as an error row), since that's a real data problem
 independent of whether a baseline happens to exist for every suite.
 
@@ -142,12 +142,22 @@ export function findBaselineEntry(
   file: Record<string, Record<string, BaselineEntry>>,
   suiteId: string,
   opts: { provider: string; slug?: string },
-): { slug: string; entry: BaselineEntry } | { error: 'not_found' | 'ambiguous'; candidates: string[] };
+):
+  | { slug: string; entry: BaselineEntry }
+  | { error: 'not_found' | 'ambiguous'; candidates: string[] };
 
 export function compareToBaseline(
   current: { score: number; total: number },
   entry: BaselineEntry,
-): { stale: true } | { stale: false; verdict: BaselineVerdict; delta: number; thresholdLow: number; thresholdHigh: number };
+):
+  | { stale: true }
+  | {
+      stale: false;
+      verdict: BaselineVerdict;
+      delta: number;
+      thresholdLow: number;
+      thresholdHigh: number;
+    };
 ```
 
 - `thresholdLow = entry.score - entry.stdev`, `thresholdHigh = entry.score + entry.stdev`.
@@ -208,7 +218,7 @@ remains a YAML-file-only addition, deliberately.
 
 Because `runEval()` writes the YAML internally before returning, and the
 baseline comparison needs that same run's `passedScenarios`/`scoredScenarios`
-*after* the run completes, `bin/eval.ts` computes the comparison from
+_after_ the run completes, `bin/eval.ts` computes the comparison from
 `result.run` post-hoc and re-invokes `writeResultYaml(mutatedRun, result.results, resultPath)`
 — the filename is deterministic from `run.suiteId` + `run.startedAt`, so
 this overwrites the same file in place with the `baseline` field added,
@@ -221,10 +231,10 @@ Extends the table in `docs/App-Docs/Evaluations.md`. Existing codes
 (`0`/`1`/`2`/`3`) are unchanged in meaning; two new codes apply only when
 `--check-baseline` is passed:
 
-| Code | Meaning |
-| ---- | ------- |
-| `4` | `--check-baseline` was passed but no baseline entry could be used — not found, ambiguous (multiple slugs match the provider), or stale (scenario-count mismatch). Never conflated with a pass. |
-| `5` | `--check-baseline` was passed and the verdict is `REGRESSION`. Independent of the suite's own pass/fail against its `passingThreshold` — a suite can still exit `5` even if it otherwise passed its own scenarios, because "worse than history" and "failed its own threshold" are different questions. |
+| Code | Meaning                                                                                                                                                                                                                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `4`  | `--check-baseline` was passed but no baseline entry could be used — not found, ambiguous (multiple slugs match the provider), or stale (scenario-count mismatch). Never conflated with a pass.                                                                                                          |
+| `5`  | `--check-baseline` was passed and the verdict is `REGRESSION`. Independent of the suite's own pass/fail against its `passingThreshold` — a suite can still exit `5` even if it otherwise passed its own scenarios, because "worse than history" and "failed its own threshold" are different questions. |
 
 `WITHIN_BASELINE` and `IMPROVEMENT` verdicts don't change the exit code —
 the run's own normal `0`/`1` (threshold pass/fail) stands.
