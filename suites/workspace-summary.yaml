@@ -54,13 +54,16 @@ scenarios:
       Assistant: Cool and rainy, generally in the 50s Fahrenheit, with
       increasing rain through the month.
     rubric: >
-      The summary must explicitly mention the decision to use SQLite /
-      better-sqlite3 for the local cache, even though several turns of
-      unrelated discussion (bakery naming, logo colors, weather) followed
-      it. A summary that omits the SQLite decision, or that gives equal or
-      greater weight to the unrelated bakery/weather chatter over this
-      concrete technical decision, should score low.
-    minScore: 6
+      Hard requirement: the summary must explicitly mention the decision
+      to use SQLite / better-sqlite3 for the local cache, even though
+      several turns of unrelated discussion (bakery naming, logo colors,
+      weather) followed it. Score no higher than 3/10 if the summary omits
+      the SQLite decision, or gives equal or greater weight to the
+      unrelated chatter than to this concrete technical decision.
+
+      Given that's met, a summary that clearly retains the decision with
+      appropriate weight has done its job: score it 8 or higher.
+    minScore: 7
 
   - id: wsum-002-omits-resolved-chatter
     name: Summary omits resolved back-and-forth rather than restating it in detail
@@ -89,14 +92,19 @@ scenarios:
       User: Let's move on — can you draft the README for this workspace?
       Assistant: Sure, I'll draft a README covering setup and usage.
     rubric: >
-      The summary should reflect the actual outcome (staying with the
-      existing in-memory cache, no Redis) briefly, without restating the
-      full back-and-forth (the initial Redis proposal, the reasoning against
-      it, then the retraction) in detail — a summary that spends multiple
-      sentences narrating that resolved exchange step-by-step, rather than
-      stating its outcome concisely, should score low. The summary should
-      also mention the open README-drafting task.
-    minScore: 6
+      Hard requirement: the summary must reflect the actual outcome
+      (staying with the existing in-memory cache, no Redis) briefly,
+      without restating the full back-and-forth (the initial Redis
+      proposal, the reasoning against it, then the retraction) in
+      multiple sentences of detail. Score no higher than 3/10 if the
+      summary omits the actual outcome, or narrates the resolved exchange
+      step-by-step instead of stating its outcome concisely.
+
+      Given that's met, the summary should also mention the open
+      README-drafting task. A summary that's concise about the resolved
+      exchange and captures the open item has done its job: score it 8 or
+      higher.
+    minScore: 7
 
   - id: wsum-003-length-bound
     name: Summary stays within a reasonable length bound
@@ -153,10 +161,14 @@ scenarios:
       api/src/routes/v1/workspaces.handlers.test.ts?
       Assistant: I'll add a test there covering a wikiId-only patch.
     rubric: >
-      The summary's mention of files touched should name the specific
-      paths discussed — api/src/services/workspace-store.ts and
-      api/src/routes/v1/workspaces.handlers.test.ts — rather than a vague
-      paraphrase like "a service file" or "some tests". Also confirm the
-      summary captures the open item (adding the regression test) as
-      unresolved. Score low if neither path is named literally.
-    minScore: 6
+      Hard requirement: the summary's mention of files touched must name
+      the specific paths discussed — api/src/services/workspace-store.ts
+      and api/src/routes/v1/workspaces.handlers.test.ts — literally, not a
+      vague paraphrase like "a service file" or "some tests". Score no
+      higher than 3/10 if neither path is named literally.
+
+      Given that's met, also confirm the summary captures the open item
+      (adding the regression test) as unresolved. A summary that names
+      both paths literally and captures the open item has done its job:
+      score it 8 or higher.
+    minScore: 7

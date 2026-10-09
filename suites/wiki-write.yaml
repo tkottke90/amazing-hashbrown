@@ -267,15 +267,22 @@ scenarios:
           }
       - user: 'Okay, go ahead and save that.'
     rubric: >
-      The response should: (1) clearly explain to the user that this
+      Hard requirement: the response must clearly explain that this
       workspace can only write to its own project wiki ("acme-project") and
-      that the requested wiki ("other-project-wiki") was rejected, (2) not
-      claim the page was successfully saved, (3) not blindly retry
+      that the requested wiki ("other-project-wiki") was rejected, and it
+      must not claim the page was successfully saved. Score no higher than
+      3/10 if either is missing — a response that never surfaces the
+      rejection, or that claims success despite the tool result showing a
+      rejection, has failed regardless of anything else.
+
+      Given that's met, also check it doesn't blindly retry
       wiki_create_page against the same rejected wikiId without correcting
-      it. It is acceptable, and good, for the response to offer to retry
-      against the correct wiki id ("acme-project") since that information
-      was given directly in the tool's own result.
-    minScore: 6
+      it. A response that explains the restriction, doesn't claim false
+      success, and doesn't blind-retry has done its job: score it 8 or
+      higher. Offering to retry against the correct wiki ("acme-project")
+      is a bonus, not a requirement — do not score a response below 8 just
+      because it stops after explaining the rejection.
+    minScore: 7
 
   - id: wwrite-010-owned-by-another-workspace-rejected
     name: Agent does not retry a wiki owned by another workspace
@@ -309,13 +316,18 @@ scenarios:
           }
       - user: 'Okay, go ahead and save that.'
     rubric: >
-      The response should: (1) tell the user the note was not saved to
-      "video-streaming" because that wiki belongs to another workspace, (2)
-      not claim the page was saved, (3) not retry wiki_create_page against
-      "video-streaming". It is acceptable, and good, for the response to ask
-      the user which wiki to use or to propose a different, clearly named
-      wiki for the note.
-    minScore: 6
+      Hard requirement: the response must tell the user the note was not
+      saved to "video-streaming" because that wiki belongs to another
+      workspace, and must not claim the page was saved. Score no higher
+      than 3/10 if either is missing.
+
+      Given that's met, also check it doesn't retry wiki_create_page
+      against "video-streaming". A response that explains the rejection,
+      doesn't claim false success, and doesn't retry has done its job:
+      score it 8 or higher. Asking the user which wiki to use, or
+      proposing a different named wiki, is a bonus that can lift the score
+      further — not a requirement for 8.
+    minScore: 7
 
   - id: wwrite-003-duplicate-create-then-update
     name: Agent recovers from a duplicate signal by reading/updating, not retrying create

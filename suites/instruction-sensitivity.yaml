@@ -2,12 +2,16 @@ suite:
   id: instruction-sensitivity
   name: Instruction Sensitivity (wiki stub)
   purpose: >
-    2×2 matrix testing whether the embedded 'to ingest into wiki' stub instruction
-    drives wiki_create_page calls, and whether wiki tool availability alone causes
-    unprompted ingestion. E-13 is the deciding case for Option A vs Option B:
-    if E-13 fails (model volunteers wiki_create_page without an explicit instruction),
-    Option B (conditional instruction) is required; if E-13 passes reliably,
-    Option A (always include) is safe.
+    2×2 regression matrix confirming the embedded 'to ingest into wiki' stub
+    instruction drives wiki_create_page calls, and that wiki tool
+    availability alone does not cause unprompted ingestion. The Option A vs.
+    Option B design question this suite originally existed to resolve is
+    settled in code: system-prompt.ts's WIKI_INGEST_SECTION always includes
+    the ingest instruction when a stub carries the literal heading (Option
+    A), with a carve-out for when wiki_create_page isn't bound at all. E-13
+    guards that decision rather than deciding it — a failure here means
+    Option A's assumption no longer holds for at least one model and should
+    be re-evaluated, not that the question is still open.
   passingThreshold: 0.75
 
 scenarios:
@@ -98,10 +102,12 @@ scenarios:
   - id: E-13
     name: 'No instruction + tools registered → wiki_create_page NOT called unprompted'
     purpose: >
-      THE KEY SCENARIO. Tests whether wiki tool availability alone (without an
-      embedded stub instruction) causes the model to volunteer wiki_create_page.
-      Fail = Option B required; Pass = Option A safe. Run across multiple models
-      and aggregate results before making the design decision.
+      Regression guard for the Option A design decision (see suite
+      purpose): confirms wiki tool availability alone, without an embedded
+      stub instruction, does not cause the model to volunteer
+      wiki_create_page. A failure here means Option A's assumption no
+      longer holds for at least one model and should be re-evaluated, not
+      that the decision is still pending.
     type: tool-sequence
     turns:
       - user: 'Look up information about distributed systems and give me a summary.'

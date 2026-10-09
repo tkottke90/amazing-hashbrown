@@ -68,9 +68,18 @@ scenarios:
     purpose: >
       A generic title ("Chat conversation", "Help request") defeats the
       purpose of the feature — the sidebar needs to let you distinguish
-      threads at a glance. Checks semantic similarity against a
-      hand-written reference title for a fixed sample conversation.
-    type: semantic
+      threads at a glance.
+    # Converted from `type: semantic` (ws-002's pattern): wiki-search.yaml's
+    # ws-002 proved embedding-similarity scoring unusable against this
+    # repo's configured embedding backend (real answers scored 0.03-0.11,
+    # an unrelated answer scored 0.54 — see ws-002's own comment for the
+    # full measured experiment). tt-003 was the only other surviving
+    # `type: semantic` scenario and shares the same backend, so this
+    # conversion applies that finding by inference rather than a fresh
+    # measured run against tt-003 specifically. Re-run ws-002's diagnostic
+    # method against this scenario's own input/expected pair for hard
+    # numbers before treating this as independently confirmed.
+    type: llm-judge
     input: >
       Summarize the following conversation as a short, specific title (no
       more than 6 words). Do not use quotation marks or end with
@@ -83,8 +92,17 @@ scenarios:
       copy only the built artifacts into a slim runtime image based on
       node:alpine. This keeps your final image small since dev dependencies
       and build tools never ship.
-    expectedSimilarTo: 'Multi-stage Docker build for Node.js'
-    minSimilarity: 0.6
+    rubric: >
+      Hard requirement: the title must specifically reference Docker,
+      multi-stage builds, or Node.js — not a vague generic phrase ("Chat
+      conversation", "Docker question"). Score no higher than 3/10 if the
+      title is generic or fails to mention any of those elements.
+
+      Given that's met, it must also not invent details absent from the
+      conversation (no specific cloud provider, CI tool, or version number
+      was mentioned). A title that's specific and doesn't fabricate has
+      done its job: score it 8 or higher.
+    minScore: 7
 
   - id: tt-004-not-generic-or-fabricated
     name: Title is specific, not generic or fabricated
@@ -108,14 +126,18 @@ scenarios:
       node:alpine. This keeps your final image small since dev dependencies
       and build tools never ship.
     rubric: >
-      The title should: (1) specifically mention Docker, multi-stage
-      builds, or Node.js — not a vague generic phrase like "Chat
-      conversation" or "Docker question", (2) not invent details absent
-      from the conversation (no specific cloud provider, CI tool, or
-      version number was mentioned — inventing one is a fabrication), (3)
-      read as a short title, not a sentence. Score higher for specificity
-      grounded in what was actually discussed.
-    minScore: 6
+      Hard requirement: the title must specifically mention Docker,
+      multi-stage builds, or Node.js — not a vague generic phrase like
+      "Chat conversation" or "Docker question" — and must not invent
+      details absent from the conversation (no specific cloud provider, CI
+      tool, or version number was mentioned; inventing one is a
+      fabrication). Score no higher than 3/10 if the title is generic or
+      fabricates a detail.
+
+      Given that's met, it should also read as a short title, not a
+      sentence. A title that's specific, grounded, and title-length has
+      done its job: score it 8 or higher.
+    minScore: 7
 
   # The four scenarios above all summarize the same fixed Docker/Node.js
   # conversation — a 100% pass rate there only proves the model can title
@@ -149,14 +171,17 @@ scenarios:
       Rock right on the beach, and it's about a 90 minute drive. Less
       crowded than Seaside if you want something quieter.
     rubric: >
-      The title should: (1) specifically reference Cannon Beach, the
-      coast, or a beach-town weekend trip — not a vague generic phrase
-      like "Travel Chat" or "Weekend Plans", (2) not invent details absent
-      from the conversation (no specific hotel, date, or price was
-      mentioned — inventing one is a fabrication), (3) read as a short
-      title, not a sentence. Score higher for specificity grounded in what
-      was actually discussed.
-    minScore: 6
+      Hard requirement: the title must specifically reference Cannon
+      Beach, the coast, or a beach-town weekend trip — not a vague generic
+      phrase like "Travel Chat" or "Weekend Plans" — and must not invent
+      details absent from the conversation (no specific hotel, date, or
+      price was mentioned). Score no higher than 3/10 if the title is
+      generic or fabricates a detail.
+
+      Given that's met, it should also read as a short title, not a
+      sentence. A title that's specific, grounded, and title-length has
+      done its job: score it 8 or higher.
+    minScore: 7
 
   - id: tt-006-topic-pivot
     name: Title reflects a conversation that pivots between two topics
@@ -182,16 +207,22 @@ scenarios:
       pancakes and brunch food generally — the acidity cuts through the
       richness of syrup and butter.
     rubric: >
-      The conversation covers two related topics: a buttermilk substitute
-      for pancakes, then a wine pairing for that same brunch. The title
-      should reflect the conversation reasonably — referencing brunch,
-      pancakes, and/or wine pairing — rather than fixating only on the
-      buttermilk substitute and ignoring the pivot, or falling back to
-      something generic like "Cooking Chat". Do not penalize a title that
-      leads with either topic, as long as it doesn't read as unrelated to
-      what was actually discussed. Not inventing details absent from the
-      conversation (no specific brand or dish name was mentioned).
-    minScore: 6
+      Hard requirement: the conversation covers two related topics — a
+      buttermilk substitute for pancakes, then a wine pairing for that
+      same brunch. The title must reflect the conversation reasonably
+      (referencing brunch, pancakes, and/or wine pairing) rather than
+      fixating only on the buttermilk substitute and ignoring the pivot,
+      or falling back to something generic like "Cooking Chat". Score no
+      higher than 3/10 if the title is generic or ignores the pivot
+      entirely.
+
+      Given that's met, do not penalize a title that leads with either
+      topic, as long as it doesn't read as unrelated to what was
+      discussed, and it must not invent details absent from the
+      conversation (no specific brand or dish name was mentioned). A title
+      that reflects the pivot and doesn't fabricate has done its job:
+      score it 8 or higher.
+    minScore: 7
 
   - id: tt-007-minimal-content
     name: Title stays grounded for a near-content-free exchange
@@ -212,12 +243,15 @@ scenarios:
       User: What's 15% of 80?
       Assistant: 12.
     rubric: >
-      The title should: (1) reference the actual calculation (a
-      percentage of a number) rather than being so vague it could apply to
-      any conversation, (2) not invent a scenario or context that wasn't
-      stated (no "restaurant bill", "tip calculation", or specific
-      currency — none of that was mentioned; a bare percentage
-      calculation is all that's grounded in the conversation), (3) read as
-      a short title, not a sentence. Score higher for staying grounded in
-      the two lines actually exchanged rather than embellishing them.
-    minScore: 6
+      Hard requirement: the title must reference the actual calculation (a
+      percentage of a number) and must not invent a scenario or context
+      that wasn't stated (no "restaurant bill," "tip calculation," or
+      specific currency — none of that was mentioned). Score no higher
+      than 3/10 if the title is so vague it could apply to any
+      conversation, or if it invents an unstated scenario.
+
+      Given that's met, it should also read as a short title, not a
+      sentence. A title that stays grounded in the two lines actually
+      exchanged and doesn't embellish has done its job: score it 8 or
+      higher.
+    minScore: 7

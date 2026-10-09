@@ -116,3 +116,457 @@ scenarios:
     argChecks:
       - path: question
         match: exists
+
+  - id: pc-006-structured-output
+    name: Model produces valid structured output via withStructuredOutput()
+    purpose: >
+      Structured output is a transport capability distinct from
+      tool-calling (after-agent.yaml, task-plan-generation.yaml, and
+      production loop-reflection.ts all depend on withStructuredOutput()
+      working), and llama.cpp-family servers in particular can support one
+      reliably while failing the other. Deliberately trivial schema/input,
+      matching pc-001..005's style — this checks the provider can emit
+      schema-conformant structured output at all, not whether the model
+      reasons well.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        topic: { type: string }
+        isQuestion: { type: boolean }
+      required: [topic, isQuestion]
+    input: >
+      Classify the following message. Respond using the structured fields:
+      topic (a one or two word label for what the message is about) and
+      isQuestion (true if the message ends with a question mark, false
+      otherwise).
+
+
+      Message: "What time does the coffee shop open?"
+    fieldChecks:
+      - path: isQuestion
+        match: equals
+        value: true
+
+  - id: pc-007-long-input-context-probe
+    name: Model retrieves a planted token from near the end of a long input
+    purpose: >
+      No scenario in this suite exceeds a one-line input. Local models are
+      frequently run with small context windows, and rlm.yaml/web-fetch.yaml
+      seed multi-KB documents routine in production — this is the trivial
+      transport-level check for whether a provider silently truncates or
+      drops the tail of a long input before the model ever sees it. Plants
+      one unmistakable token near the end of ~8k+ tokens of filler and asks
+      for it back; a dropped tail means the token is simply gone, caught by
+      exact match. Not a reasoning or quality check — a provider that gets
+      this wrong should be investigated at the transport/context-window
+      level, same as a malformed_tool_call on pc-001.
+    # Filler is generated, not hand-written: varied sentences (not one
+    # repeated phrase, each tagged with a unique "(ref word-N)" marker) to
+    # resist tokenizer compression, sized to comfortably exceed 8k tokens
+    # (~38k characters) even allowing for some BPE compression on the
+    # repeated sentence shapes.
+    type: deterministic
+    input: >
+      The quarterly maintenance window for the northern water treatment facility was rescheduled to
+      accommodate a delayed shipment of replacement filtration membranes. (ref orchard-0) Early
+      explorers of the river delta kept detailed logs of tidal patterns, noting how seasonal
+      rainfall shifted the channel's navigable width by several meters each year. (ref ledger-1) A
+      well-tuned bicycle derailleur depends on correct cable tension, clean jockey wheels, and a
+      hanger that hasn't been bent in a minor collision. (ref quarry-2) The committee reviewed three
+      proposals for the community garden's irrigation redesign before settling on a drip-line layout
+      that reduced water usage by nearly a third. (ref harbor-3) Migratory songbirds often rely on
+      magnetic field sensing in addition to visual landmarks, a combination that helps them correct
+      course after storms blow them off route. (ref foundry-4) The bakery's sourdough starter had
+      been maintained continuously for eleven years, passed between three different owners who each
+      kept a written feeding log. (ref meridian-5) Municipal archives from the early twentieth
+      century show that the tram line originally terminated two blocks short of where the current
+      station now stands. (ref thicket-6) A violin's tone depends heavily on the thickness gradient
+      carved into its top plate, something luthiers test by tapping and listening before final
+      assembly. (ref cistern-7) The hiking club's trail maintenance crew replaced four washed-out
+      footbridges after an unusually wet spring raised the creek well above its normal banks. (ref
+      granary-8) Beekeepers in the valley noticed that colonies placed near the orchard rows
+      produced noticeably darker honey than those kept near the open meadow. (ref causeway-9) The
+      observatory's old brass telescope mount required manual tracking corrections every few
+      minutes, a tedious task later automated with a simple stepper motor retrofit. (ref pergola-10)
+      A city planner's survey of the historic district found that nearly half the original
+      cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref limestone-11) The
+      vineyard's harvest timing is decided almost entirely by sugar content readings taken daily
+      from sample clusters picked at the same hour each morning. (ref aqueduct-12) Restoration
+      carpenters working on the old mill matched the replacement floor joists to the original
+      growth-ring spacing to keep the structure's flex characteristics consistent. (ref millpond-13)
+      The regional chess club's annual tournament moved to a larger venue after registration numbers
+      tripled following a local grandmaster's exhibition match. (ref switchback-14) A lighthouse
+      keeper's logbook from the 1880s recorded not just weather but the names of every passing ship
+      that signaled for identification. (ref tollgate-15) The ceramics studio's kiln schedule
+      depends on glaze chemistry: some glazes need a slow cool-down over many hours to avoid crazing
+      the surface. (ref windbreak-16) Urban beekeeping ordinances in the district require hives to
+      be set back at least three meters from any shared property line. (ref cobbler-17) The marathon
+      route was adjusted this year to avoid a bridge undergoing structural inspection, adding
+      roughly four hundred meters to the total distance. (ref atrium-18) A glassblower's furnace
+      must stay within a narrow temperature band; even brief fluctuations can introduce stress
+      fractures invisible until the piece cools fully. (ref orchard-19) The quarterly maintenance
+      window for the northern water treatment facility was rescheduled to accommodate a delayed
+      shipment of replacement filtration membranes. (ref ledger-20) Early explorers of the river
+      delta kept detailed logs of tidal patterns, noting how seasonal rainfall shifted the channel's
+      navigable width by several meters each year. (ref quarry-21) A well-tuned bicycle derailleur
+      depends on correct cable tension, clean jockey wheels, and a hanger that hasn't been bent in a
+      minor collision. (ref harbor-22) The committee reviewed three proposals for the community
+      garden's irrigation redesign before settling on a drip-line layout that reduced water usage by
+      nearly a third. (ref foundry-23) Migratory songbirds often rely on magnetic field sensing in
+      addition to visual landmarks, a combination that helps them correct course after storms blow
+      them off route. (ref meridian-24) The bakery's sourdough starter had been maintained
+      continuously for eleven years, passed between three different owners who each kept a written
+      feeding log. (ref thicket-25) Municipal archives from the early twentieth century show that
+      the tram line originally terminated two blocks short of where the current station now stands.
+      (ref cistern-26) A violin's tone depends heavily on the thickness gradient carved into its top
+      plate, something luthiers test by tapping and listening before final assembly. (ref
+      granary-27) The hiking club's trail maintenance crew replaced four washed-out footbridges
+      after an unusually wet spring raised the creek well above its normal banks. (ref causeway-28)
+      Beekeepers in the valley noticed that colonies placed near the orchard rows produced
+      noticeably darker honey than those kept near the open meadow. (ref pergola-29) The
+      observatory's old brass telescope mount required manual tracking corrections every few
+      minutes, a tedious task later automated with a simple stepper motor retrofit. (ref
+      limestone-30) A city planner's survey of the historic district found that nearly half the
+      original cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref
+      aqueduct-31) The vineyard's harvest timing is decided almost entirely by sugar content
+      readings taken daily from sample clusters picked at the same hour each morning. (ref
+      millpond-32) Restoration carpenters working on the old mill matched the replacement floor
+      joists to the original growth-ring spacing to keep the structure's flex characteristics
+      consistent. (ref switchback-33) The regional chess club's annual tournament moved to a larger
+      venue after registration numbers tripled following a local grandmaster's exhibition match.
+      (ref tollgate-34) A lighthouse keeper's logbook from the 1880s recorded not just weather but
+      the names of every passing ship that signaled for identification. (ref windbreak-35) The
+      ceramics studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down
+      over many hours to avoid crazing the surface. (ref cobbler-36) Urban beekeeping ordinances in
+      the district require hives to be set back at least three meters from any shared property line.
+      (ref atrium-37) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      orchard-38) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      ledger-39) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      quarry-40) Early explorers of the river delta kept detailed logs of tidal patterns, noting how
+      seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      harbor-41) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref foundry-42) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref meridian-43)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref thicket-44)
+      The bakery's sourdough starter had been maintained continuously for eleven years, passed
+      between three different owners who each kept a written feeding log. (ref cistern-45) Municipal
+      archives from the early twentieth century show that the tram line originally terminated two
+      blocks short of where the current station now stands. (ref granary-46) A violin's tone depends
+      heavily on the thickness gradient carved into its top plate, something luthiers test by
+      tapping and listening before final assembly. (ref causeway-47) The hiking club's trail
+      maintenance crew replaced four washed-out footbridges after an unusually wet spring raised the
+      creek well above its normal banks. (ref pergola-48) Beekeepers in the valley noticed that
+      colonies placed near the orchard rows produced noticeably darker honey than those kept near
+      the open meadow. (ref limestone-49) The observatory's old brass telescope mount required
+      manual tracking corrections every few minutes, a tedious task later automated with a simple
+      stepper motor retrofit. (ref aqueduct-50) A city planner's survey of the historic district
+      found that nearly half the original cobblestone paving had been repaved with asphalt sometime
+      in the 1960s. (ref millpond-51) The vineyard's harvest timing is decided almost entirely by
+      sugar content readings taken daily from sample clusters picked at the same hour each morning.
+      (ref switchback-52) Restoration carpenters working on the old mill matched the replacement
+      floor joists to the original growth-ring spacing to keep the structure's flex characteristics
+      consistent. (ref tollgate-53) The regional chess club's annual tournament moved to a larger
+      venue after registration numbers tripled following a local grandmaster's exhibition match.
+      (ref windbreak-54) A lighthouse keeper's logbook from the 1880s recorded not just weather but
+      the names of every passing ship that signaled for identification. (ref cobbler-55) The
+      ceramics studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down
+      over many hours to avoid crazing the surface. (ref atrium-56) Urban beekeeping ordinances in
+      the district require hives to be set back at least three meters from any shared property line.
+      (ref orchard-57) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      ledger-58) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      quarry-59) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      harbor-60) Early explorers of the river delta kept detailed logs of tidal patterns, noting how
+      seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      foundry-61) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref meridian-62) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref thicket-63)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref cistern-64)
+      The bakery's sourdough starter had been maintained continuously for eleven years, passed
+      between three different owners who each kept a written feeding log. (ref granary-65) Municipal
+      archives from the early twentieth century show that the tram line originally terminated two
+      blocks short of where the current station now stands. (ref causeway-66) A violin's tone
+      depends heavily on the thickness gradient carved into its top plate, something luthiers test
+      by tapping and listening before final assembly. (ref pergola-67) The hiking club's trail
+      maintenance crew replaced four washed-out footbridges after an unusually wet spring raised the
+      creek well above its normal banks. (ref limestone-68) Beekeepers in the valley noticed that
+      colonies placed near the orchard rows produced noticeably darker honey than those kept near
+      the open meadow. (ref aqueduct-69) The observatory's old brass telescope mount required manual
+      tracking corrections every few minutes, a tedious task later automated with a simple stepper
+      motor retrofit. (ref millpond-70) A city planner's survey of the historic district found that
+      nearly half the original cobblestone paving had been repaved with asphalt sometime in the
+      1960s. (ref switchback-71) The vineyard's harvest timing is decided almost entirely by sugar
+      content readings taken daily from sample clusters picked at the same hour each morning. (ref
+      tollgate-72) Restoration carpenters working on the old mill matched the replacement floor
+      joists to the original growth-ring spacing to keep the structure's flex characteristics
+      consistent. (ref windbreak-73) The regional chess club's annual tournament moved to a larger
+      venue after registration numbers tripled following a local grandmaster's exhibition match.
+      (ref cobbler-74) A lighthouse keeper's logbook from the 1880s recorded not just weather but
+      the names of every passing ship that signaled for identification. (ref atrium-75) The ceramics
+      studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down over many
+      hours to avoid crazing the surface. (ref orchard-76) Urban beekeeping ordinances in the
+      district require hives to be set back at least three meters from any shared property line.
+      (ref ledger-77) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      quarry-78) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      harbor-79) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      foundry-80) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      meridian-81) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref thicket-82) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref cistern-83)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref granary-84)
+      The bakery's sourdough starter had been maintained continuously for eleven years, passed
+      between three different owners who each kept a written feeding log. (ref causeway-85)
+      Municipal archives from the early twentieth century show that the tram line originally
+      terminated two blocks short of where the current station now stands. (ref pergola-86) A
+      violin's tone depends heavily on the thickness gradient carved into its top plate, something
+      luthiers test by tapping and listening before final assembly. (ref limestone-87) The hiking
+      club's trail maintenance crew replaced four washed-out footbridges after an unusually wet
+      spring raised the creek well above its normal banks. (ref aqueduct-88) Beekeepers in the
+      valley noticed that colonies placed near the orchard rows produced noticeably darker honey
+      than those kept near the open meadow. (ref millpond-89) The observatory's old brass telescope
+      mount required manual tracking corrections every few minutes, a tedious task later automated
+      with a simple stepper motor retrofit. (ref switchback-90) A city planner's survey of the
+      historic district found that nearly half the original cobblestone paving had been repaved with
+      asphalt sometime in the 1960s. (ref tollgate-91) The vineyard's harvest timing is decided
+      almost entirely by sugar content readings taken daily from sample clusters picked at the same
+      hour each morning. (ref windbreak-92) Restoration carpenters working on the old mill matched
+      the replacement floor joists to the original growth-ring spacing to keep the structure's flex
+      characteristics consistent. (ref cobbler-93) The regional chess club's annual tournament moved
+      to a larger venue after registration numbers tripled following a local grandmaster's
+      exhibition match. (ref atrium-94) A lighthouse keeper's logbook from the 1880s recorded not
+      just weather but the names of every passing ship that signaled for identification. (ref
+      orchard-95) The ceramics studio's kiln schedule depends on glaze chemistry: some glazes need a
+      slow cool-down over many hours to avoid crazing the surface. (ref ledger-96) Urban beekeeping
+      ordinances in the district require hives to be set back at least three meters from any shared
+      property line. (ref quarry-97) The marathon route was adjusted this year to avoid a bridge
+      undergoing structural inspection, adding roughly four hundred meters to the total distance.
+      (ref harbor-98) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      foundry-99) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      meridian-100) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      thicket-101) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref cistern-102) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref granary-103)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref
+      causeway-104) The bakery's sourdough starter had been maintained continuously for eleven
+      years, passed between three different owners who each kept a written feeding log. (ref
+      pergola-105) Municipal archives from the early twentieth century show that the tram line
+      originally terminated two blocks short of where the current station now stands. (ref
+      limestone-106) A violin's tone depends heavily on the thickness gradient carved into its top
+      plate, something luthiers test by tapping and listening before final assembly. (ref
+      aqueduct-107) The hiking club's trail maintenance crew replaced four washed-out footbridges
+      after an unusually wet spring raised the creek well above its normal banks. (ref millpond-108)
+      Beekeepers in the valley noticed that colonies placed near the orchard rows produced
+      noticeably darker honey than those kept near the open meadow. (ref switchback-109) The
+      observatory's old brass telescope mount required manual tracking corrections every few
+      minutes, a tedious task later automated with a simple stepper motor retrofit. (ref
+      tollgate-110) A city planner's survey of the historic district found that nearly half the
+      original cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref
+      windbreak-111) The vineyard's harvest timing is decided almost entirely by sugar content
+      readings taken daily from sample clusters picked at the same hour each morning. (ref
+      cobbler-112) Restoration carpenters working on the old mill matched the replacement floor
+      joists to the original growth-ring spacing to keep the structure's flex characteristics
+      consistent. (ref atrium-113) The regional chess club's annual tournament moved to a larger
+      venue after registration numbers tripled following a local grandmaster's exhibition match.
+      (ref orchard-114) A lighthouse keeper's logbook from the 1880s recorded not just weather but
+      the names of every passing ship that signaled for identification. (ref ledger-115) The
+      ceramics studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down
+      over many hours to avoid crazing the surface. (ref quarry-116) Urban beekeeping ordinances in
+      the district require hives to be set back at least three meters from any shared property line.
+      (ref harbor-117) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      foundry-118) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      meridian-119) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      thicket-120) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      cistern-121) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref granary-122) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref causeway-123)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref pergola-124)
+      The bakery's sourdough starter had been maintained continuously for eleven years, passed
+      between three different owners who each kept a written feeding log. (ref limestone-125)
+      Municipal archives from the early twentieth century show that the tram line originally
+      terminated two blocks short of where the current station now stands. (ref aqueduct-126) A
+      violin's tone depends heavily on the thickness gradient carved into its top plate, something
+      luthiers test by tapping and listening before final assembly. (ref millpond-127) The hiking
+      club's trail maintenance crew replaced four washed-out footbridges after an unusually wet
+      spring raised the creek well above its normal banks. (ref switchback-128) Beekeepers in the
+      valley noticed that colonies placed near the orchard rows produced noticeably darker honey
+      than those kept near the open meadow. (ref tollgate-129) The observatory's old brass telescope
+      mount required manual tracking corrections every few minutes, a tedious task later automated
+      with a simple stepper motor retrofit. (ref windbreak-130) A city planner's survey of the
+      historic district found that nearly half the original cobblestone paving had been repaved with
+      asphalt sometime in the 1960s. (ref cobbler-131) The vineyard's harvest timing is decided
+      almost entirely by sugar content readings taken daily from sample clusters picked at the same
+      hour each morning. (ref atrium-132) Restoration carpenters working on the old mill matched the
+      replacement floor joists to the original growth-ring spacing to keep the structure's flex
+      characteristics consistent. (ref orchard-133) The regional chess club's annual tournament
+      moved to a larger venue after registration numbers tripled following a local grandmaster's
+      exhibition match. (ref ledger-134) A lighthouse keeper's logbook from the 1880s recorded not
+      just weather but the names of every passing ship that signaled for identification. (ref
+      quarry-135) The ceramics studio's kiln schedule depends on glaze chemistry: some glazes need a
+      slow cool-down over many hours to avoid crazing the surface. (ref harbor-136) Urban beekeeping
+      ordinances in the district require hives to be set back at least three meters from any shared
+      property line. (ref foundry-137) The marathon route was adjusted this year to avoid a bridge
+      undergoing structural inspection, adding roughly four hundred meters to the total distance.
+      (ref meridian-138) A glassblower's furnace must stay within a narrow temperature band; even
+      brief fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      thicket-139) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      cistern-140) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      granary-141) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref causeway-142) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref pergola-143)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref
+      limestone-144) The bakery's sourdough starter had been maintained continuously for eleven
+      years, passed between three different owners who each kept a written feeding log. (ref
+      aqueduct-145) Municipal archives from the early twentieth century show that the tram line
+      originally terminated two blocks short of where the current station now stands. (ref
+      millpond-146) A violin's tone depends heavily on the thickness gradient carved into its top
+      plate, something luthiers test by tapping and listening before final assembly. (ref
+      switchback-147) The hiking club's trail maintenance crew replaced four washed-out footbridges
+      after an unusually wet spring raised the creek well above its normal banks. (ref tollgate-148)
+      Beekeepers in the valley noticed that colonies placed near the orchard rows produced
+      noticeably darker honey than those kept near the open meadow. (ref windbreak-149) The
+      observatory's old brass telescope mount required manual tracking corrections every few
+      minutes, a tedious task later automated with a simple stepper motor retrofit. (ref
+      cobbler-150) A city planner's survey of the historic district found that nearly half the
+      original cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref
+      atrium-151) The vineyard's harvest timing is decided almost entirely by sugar content readings
+      taken daily from sample clusters picked at the same hour each morning. (ref orchard-152)
+      Restoration carpenters working on the old mill matched the replacement floor joists to the
+      original growth-ring spacing to keep the structure's flex characteristics consistent. (ref
+      ledger-153) The regional chess club's annual tournament moved to a larger venue after
+      registration numbers tripled following a local grandmaster's exhibition match. (ref
+      quarry-154) A lighthouse keeper's logbook from the 1880s recorded not just weather but the
+      names of every passing ship that signaled for identification. (ref harbor-155) The ceramics
+      studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down over many
+      hours to avoid crazing the surface. (ref foundry-156) Urban beekeeping ordinances in the
+      district require hives to be set back at least three meters from any shared property line.
+      (ref meridian-157) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      thicket-158) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      cistern-159) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      granary-160) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      causeway-161) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref pergola-162) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref limestone-163)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref
+      aqueduct-164) The bakery's sourdough starter had been maintained continuously for eleven
+      years, passed between three different owners who each kept a written feeding log. (ref
+      millpond-165) Municipal archives from the early twentieth century show that the tram line
+      originally terminated two blocks short of where the current station now stands. (ref
+      switchback-166) A violin's tone depends heavily on the thickness gradient carved into its top
+      plate, something luthiers test by tapping and listening before final assembly. (ref
+      tollgate-167) The hiking club's trail maintenance crew replaced four washed-out footbridges
+      after an unusually wet spring raised the creek well above its normal banks. (ref
+      windbreak-168) Beekeepers in the valley noticed that colonies placed near the orchard rows
+      produced noticeably darker honey than those kept near the open meadow. (ref cobbler-169) The
+      observatory's old brass telescope mount required manual tracking corrections every few
+      minutes, a tedious task later automated with a simple stepper motor retrofit. (ref atrium-170)
+      A city planner's survey of the historic district found that nearly half the original
+      cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref orchard-171) The
+      vineyard's harvest timing is decided almost entirely by sugar content readings taken daily
+      from sample clusters picked at the same hour each morning. (ref ledger-172) Restoration
+      carpenters working on the old mill matched the replacement floor joists to the original
+      growth-ring spacing to keep the structure's flex characteristics consistent. (ref quarry-173)
+      The regional chess club's annual tournament moved to a larger venue after registration numbers
+      tripled following a local grandmaster's exhibition match. (ref harbor-174) A lighthouse
+      keeper's logbook from the 1880s recorded not just weather but the names of every passing ship
+      that signaled for identification. (ref foundry-175) The ceramics studio's kiln schedule
+      depends on glaze chemistry: some glazes need a slow cool-down over many hours to avoid crazing
+      the surface. (ref meridian-176) Urban beekeeping ordinances in the district require hives to
+      be set back at least three meters from any shared property line. (ref thicket-177) The
+      marathon route was adjusted this year to avoid a bridge undergoing structural inspection,
+      adding roughly four hundred meters to the total distance. (ref cistern-178) A glassblower's
+      furnace must stay within a narrow temperature band; even brief fluctuations can introduce
+      stress fractures invisible until the piece cools fully. (ref granary-179) The quarterly
+      maintenance window for the northern water treatment facility was rescheduled to accommodate a
+      delayed shipment of replacement filtration membranes. (ref causeway-180) Early explorers of
+      the river delta kept detailed logs of tidal patterns, noting how seasonal rainfall shifted the
+      channel's navigable width by several meters each year. (ref pergola-181) A well-tuned bicycle
+      derailleur depends on correct cable tension, clean jockey wheels, and a hanger that hasn't
+      been bent in a minor collision. (ref limestone-182) The committee reviewed three proposals for
+      the community garden's irrigation redesign before settling on a drip-line layout that reduced
+      water usage by nearly a third. (ref aqueduct-183) Migratory songbirds often rely on magnetic
+      field sensing in addition to visual landmarks, a combination that helps them correct course
+      after storms blow them off route. (ref millpond-184) The bakery's sourdough starter had been
+      maintained continuously for eleven years, passed between three different owners who each kept
+      a written feeding log. (ref switchback-185) Municipal archives from the early twentieth
+      century show that the tram line originally terminated two blocks short of where the current
+      station now stands. (ref tollgate-186) A violin's tone depends heavily on the thickness
+      gradient carved into its top plate, something luthiers test by tapping and listening before
+      final assembly. (ref windbreak-187) The hiking club's trail maintenance crew replaced four
+      washed-out footbridges after an unusually wet spring raised the creek well above its normal
+      banks. (ref cobbler-188) Beekeepers in the valley noticed that colonies placed near the
+      orchard rows produced noticeably darker honey than those kept near the open meadow. (ref
+      atrium-189) The observatory's old brass telescope mount required manual tracking corrections
+      every few minutes, a tedious task later automated with a simple stepper motor retrofit. (ref
+      orchard-190) A city planner's survey of the historic district found that nearly half the
+      original cobblestone paving had been repaved with asphalt sometime in the 1960s. (ref
+      ledger-191) The vineyard's harvest timing is decided almost entirely by sugar content readings
+      taken daily from sample clusters picked at the same hour each morning. (ref quarry-192)
+      Restoration carpenters working on the old mill matched the replacement floor joists to the
+      original growth-ring spacing to keep the structure's flex characteristics consistent. (ref
+      harbor-193) The regional chess club's annual tournament moved to a larger venue after
+      registration numbers tripled following a local grandmaster's exhibition match. (ref
+      foundry-194) A lighthouse keeper's logbook from the 1880s recorded not just weather but the
+      names of every passing ship that signaled for identification. (ref meridian-195) The ceramics
+      studio's kiln schedule depends on glaze chemistry: some glazes need a slow cool-down over many
+      hours to avoid crazing the surface. (ref thicket-196) Urban beekeeping ordinances in the
+      district require hives to be set back at least three meters from any shared property line.
+      (ref cistern-197) The marathon route was adjusted this year to avoid a bridge undergoing
+      structural inspection, adding roughly four hundred meters to the total distance. (ref
+      granary-198) A glassblower's furnace must stay within a narrow temperature band; even brief
+      fluctuations can introduce stress fractures invisible until the piece cools fully. (ref
+      causeway-199) The quarterly maintenance window for the northern water treatment facility was
+      rescheduled to accommodate a delayed shipment of replacement filtration membranes. (ref
+      pergola-200) Early explorers of the river delta kept detailed logs of tidal patterns, noting
+      how seasonal rainfall shifted the channel's navigable width by several meters each year. (ref
+      limestone-201) A well-tuned bicycle derailleur depends on correct cable tension, clean jockey
+      wheels, and a hanger that hasn't been bent in a minor collision. (ref aqueduct-202) The
+      committee reviewed three proposals for the community garden's irrigation redesign before
+      settling on a drip-line layout that reduced water usage by nearly a third. (ref millpond-203)
+      Migratory songbirds often rely on magnetic field sensing in addition to visual landmarks, a
+      combination that helps them correct course after storms blow them off route. (ref
+      switchback-204) The bakery's sourdough starter had been maintained continuously for eleven
+      years, passed between three different owners who each kept a written feeding log. (ref
+      tollgate-205) Municipal archives from the early twentieth century show that the tram line
+      originally terminated two blocks short of where the current station now stands. (ref
+      windbreak-206)
+
+      The verification code for this message is XK7-9QZ2-PROBE. Please repeat it back in your response.
+    match: contains
+    expected: 'XK7-9QZ2-PROBE'
