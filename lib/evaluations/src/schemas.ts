@@ -382,6 +382,27 @@ export const EvalRunSchema = z.object({
   // written before this field existed). .optional() so pre-existing on-disk
   // YAML results without the field still parse.
   systemPrompt: z.string().nullable().optional(),
+  // Regression check against eval-baselines.yaml, attached by bin/eval.ts
+  // after a --check-baseline run (runEval()/runner.ts never set this —
+  // bin/eval.ts mutates the run and re-writes the result YAML post-hoc, see
+  // writeResultYaml). Omitted entirely (not null) when --check-baseline
+  // wasn't passed, or when a batch sweep skipped this suite for lack of a
+  // matching baseline entry — see baseline.ts's findBaselineEntry.
+  baseline: z
+    .object({
+      slug: z.string(),
+      provider: z.string(),
+      judgeModel: z.string(),
+      baselineScore: z.number(),
+      baselineStdev: z.number(),
+      baselineMin: z.number(),
+      baselineMax: z.number(),
+      baselineTotal: z.number().int(),
+      currentScore: z.number(),
+      delta: z.number(),
+      verdict: z.enum(['WITHIN_BASELINE', 'REGRESSION', 'IMPROVEMENT']),
+    })
+    .optional(),
 });
 
 // The full turn-by-turn transcript actually sent to and received from the

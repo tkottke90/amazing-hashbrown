@@ -12,9 +12,15 @@ import {
   loadSuite,
   getFailureCategory,
   getScoredScenarios,
+  loadBaselineFile,
+  evaluateBaselineCheck,
+  writeResultYaml,
   type Suite,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type BaselineFile,
+  type BaselineVerdict,
+  type EvalRun,
 } from '../lib/evaluations/src/index.js';
 import {
   applyEvalDeterminism,
@@ -42,6 +48,8 @@ const { values } = parseArgs({
     ci: { type: 'boolean', default: false },
     'no-html': { type: 'boolean', default: false },
     'llm-review': { type: 'boolean', default: false },
+    'check-baseline': { type: 'boolean', default: false },
+    'baseline-slug': { type: 'string' },
   },
   strict: false,
 });
@@ -169,6 +177,19 @@ const projectRoot = resolve(import.meta.url.replace('file://', ''), '../..');
 const suitesPath = resolve(projectRoot, 'suites');
 const resultPath = resolve(projectRoot, 'eval-results');
 
+// Loaded once up front (not per-suite in the batch loop below) so a
+// malformed/missing eval-baselines.yaml fails fast before any suite runs,
+// and so a 27-suite sweep doesn't re-read the same small file 27 times.
+let baselineFile: BaselineFile | undefined;
+if (values['check-baseline']) {
+  try {
+    baselineFile = loadBaselineFile(resolve(projectRoot, 'eval-baselines.yaml'));
+  } catch (err) {
+    console.error(`Error loading eval-baselines.yaml: ${String(err)}`);
+    process.exit(4);
+  }
+}
+
 // Spawns `claude -p` to review a completed run's output. Never affects the
 // eval's own exit code — a missing claude binary or a non-zero exit from it
 // just warns and continues, matching the graceful-degradation pattern used
@@ -224,6 +245,53 @@ interface SuiteOutcome {
   // zeroed) on the runtime-error catch
   // path below, where no results exist to count.
   failureCategoryCounts?: Record<string, number>;
+  // --check-baseline outcome, set by checkBaseline() below. baselineError
+  // covers both "no usable baseline" (not found/ambiguous/stale) and is
+  // mutually exclusive with baselineVerdict — an error outcome never also
+  // produces a verdict.
+  baselineVerdict?: BaselineVerdict;
+  baselineError?: string;
+}
+
+// Compares one suite run's score against eval-baselines.yaml, prints the
+// verdict (or error) block, and — on a successful comparison — attaches the
+// result to the run and re-writes the result YAML so it's a durable part of
+// that run's record, not just a console line. `lenientNotFound` is true only
+// for the no-`--suite` batch sweep, where a suite simply having no baseline
+// entry for this provider isn't an error, just nothing to report; in
+// single-`--suite` mode the same situation is a hard error (the user asked
+// to check this one suite specifically).
+async function checkBaseline(
+  run: EvalRun,
+  resultsForYaml: Parameters<typeof writeResultYaml>[1],
+  file: BaselineFile,
+  opts: { lenientNotFound: boolean },
+): Promise<{ verdict?: BaselineVerdict; error?: string }> {
+  // All of the actual decision-making (entry resolution, threshold math,
+  // every message/record this prints or persists) lives in
+  // evaluateBaselineCheck — a pure function, fully covered by
+  // baseline.test.ts. This function is deliberately just I/O glue:
+  // print what it said to print, write what it said to write, exit-code
+  // decisions are the caller's (runOneSuite/below).
+  const current = { score: run.passedScenarios, total: run.scoredScenarios ?? run.totalScenarios };
+  const result = evaluateBaselineCheck(file, run.suiteId, current, {
+    provider: modelId,
+    slug: values['baseline-slug'] as string | undefined,
+  });
+
+  if (result.type === 'not_found' && opts.lenientNotFound) {
+    return {};
+  }
+  if (result.type !== 'ok') {
+    console.error(`[baseline] error: ${result.message}`);
+    return { error: result.message };
+  }
+
+  for (const line of result.consoleLines) console.log(line);
+  run.baseline = result.record;
+  await writeResultYaml(run, resultsForYaml, resultPath);
+
+  return { verdict: result.record.verdict };
 }
 
 // Shared by runOneSuite's per-suite print and the full-sweep summary table,
@@ -237,7 +305,11 @@ function formatFailureCategoryCounts(counts: Record<string, number> | undefined)
 // and reports the outcome rather than exiting the process itself, so the
 // "run everything" branch below can keep going after one suite errors
 // instead of aborting the whole batch.
-async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Promise<SuiteOutcome> {
+async function runOneSuite(
+  suiteId: string,
+  preloadedSuite?: Suite | null,
+  lenientBaselineNotFound = false,
+): Promise<SuiteOutcome> {
   try {
     // The suite's system prompt (simulated AGENT.md / task / workspace context,
     // appliesHarnessSystemPrompt opt-out, ambient-context splice) is assembled in
@@ -291,11 +363,27 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
     );
     const categoryLine = formatFailureCategoryCounts(failureCategoryCounts);
     if (categoryLine) console.log(`  ⚠ ${categoryLine}`);
+    // Wall-clock span of the whole run (startedAt -> endedAt) — distinct from
+    // totalLatencyMs below, which sums only the per-scenario model-call
+    // latencies and so excludes suite loading, store writes, and HTML/YAML
+    // report generation. endedAt is only unset if runEval threw before
+    // finishing, which this catch block below would already be handling.
+    if (run.endedAt) {
+      const durationMs = new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime();
+      console.log(`  Duration:  ${durationMs}ms`);
+    }
     console.log(`  Latency:   ${run.totalLatencyMs}ms`);
     console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
     console.log(`\n  Result:    ${result.yamlPath}`);
     if (result.htmlPath) console.log(`  Report:    ${result.htmlPath}`);
     console.log();
+
+    let baselineOutcome: { verdict?: BaselineVerdict; error?: string } = {};
+    if (baselineFile) {
+      baselineOutcome = await checkBaseline(run, result.results, baselineFile, {
+        lenientNotFound: lenientBaselineNotFound,
+      });
+    }
 
     if (values['llm-review']) {
       await runLlmReview({
@@ -306,7 +394,14 @@ async function runOneSuite(suiteId: string, preloadedSuite?: Suite | null): Prom
       });
     }
 
-    return { suiteId, passed: run.passed, passRate: run.passRate, failureCategoryCounts };
+    return {
+      suiteId,
+      passed: run.passed,
+      passRate: run.passRate,
+      failureCategoryCounts,
+      baselineVerdict: baselineOutcome.verdict,
+      baselineError: baselineOutcome.error,
+    };
   } catch (err) {
     console.error(`\nRuntime error running suite "${suiteId}": ${String(err)}`);
     return { suiteId, passed: false, errored: true };
@@ -318,7 +413,9 @@ if (typeof values.suite === 'string' && values.suite.length > 0) {
   // (3 for a runtime error, 0/1 for pass/fail) rather than folding it into
   // the batch summary below. runOneSuite() catches its own errors, so there's
   // nothing left that can throw here.
-  const outcome = await runOneSuite(values.suite);
+  const outcome = await runOneSuite(values.suite, undefined, false);
+  if (outcome.baselineError) process.exit(4);
+  if (outcome.baselineVerdict === 'REGRESSION') process.exit(5);
   process.exit(outcome.errored ? 3 : outcome.passed ? 0 : 1);
 }
 
@@ -336,7 +433,10 @@ console.log(`No --suite given — running all ${suiteIds.length} suite(s): ${sui
 
 const outcomes: SuiteOutcome[] = [];
 for (const suiteId of suiteIds) {
-  outcomes.push(await runOneSuite(suiteId, suites.get(suiteId)));
+  // Batch mode: a suite with no baseline entry for this provider is skipped
+  // silently (lenientBaselineNotFound: true) rather than treated as an
+  // error — see checkBaseline's doc comment.
+  outcomes.push(await runOneSuite(suiteId, suites.get(suiteId), true));
 }
 
 console.log('─'.repeat(50));
@@ -347,9 +447,16 @@ for (const o of outcomes) {
   const rate = o.passRate !== undefined ? `  ${(o.passRate * 100).toFixed(1)}%` : '';
   const categoryLine = formatFailureCategoryCounts(o.failureCategoryCounts);
   const counts = categoryLine ? `  (${categoryLine})` : '';
-  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}${counts}`);
+  const baselineNote = o.baselineError
+    ? `  [baseline: ${o.baselineError}]`
+    : o.baselineVerdict
+      ? `  [baseline: ${o.baselineVerdict}]`
+      : '';
+  console.log(`  ${icon} ${o.suiteId.padEnd(24)} ${label}${rate}${counts}${baselineNote}`);
 }
 const passedCount = outcomes.filter((o) => o.passed).length;
 console.log(`\n${passedCount}/${outcomes.length} suite(s) passed\n`);
 
-process.exit(outcomes.every((o) => o.passed) ? 0 : 1);
+const hasBaselineError = outcomes.some((o) => o.baselineError);
+const hasRegression = outcomes.some((o) => o.baselineVerdict === 'REGRESSION');
+process.exit(hasBaselineError ? 4 : hasRegression ? 5 : outcomes.every((o) => o.passed) ? 0 : 1);

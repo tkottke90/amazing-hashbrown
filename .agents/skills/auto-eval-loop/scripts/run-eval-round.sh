@@ -17,8 +17,12 @@
 #   debug_log=<path, only present if --debug was passed>
 #
 # Exit code mirrors bin/eval.ts's own contract (0 pass, 1 fail, 2 bad args,
-# 3 runtime error) — the caller should treat 2/3 as "the run itself broke,"
-# not as an eval failure to diagnose and fix.
+# 3 runtime error, 4 no usable baseline for --check-baseline, 5 baseline
+# regression) — the caller should treat 2/3 as "the run itself broke," not
+# as an eval failure to diagnose, and 4/5 as informational (the baseline
+# verdict lives in the result YAML's run.baseline field, read from there —
+# see SKILL.md's Field notes) rather than something this script's own
+# exit-code line needs special-cased handling for.
 set -euo pipefail
 
 SUITE="${1:?suite is required}"
@@ -37,7 +41,7 @@ COMBINED_LOG="$LOG_DIR/round-${ROUND_ID}-${MODEL}.log"
 # --ci skips `human`-type scenarios (they're excluded from scoring) instead
 # of launching the interactive scoring TUI, which would crash on the
 # non-TTY stdin this script runs under.
-CMD=(npm run eval -- --suite "$SUITE" --model "$MODEL" --judge-model "$JUDGE" --ci)
+CMD=(npm run eval -- --suite "$SUITE" --model "$MODEL" --judge-model "$JUDGE" --ci --check-baseline)
 
 if [ "$DEBUG_FLAG" = "--debug" ]; then
   set +e

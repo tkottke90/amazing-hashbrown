@@ -60,6 +60,9 @@ without npm). None are positional.
 | `--no-html`     | boolean | No       | `false`         | Skip generating the HTML report — only the YAML result file is written. Useful for fast iteration when you don't need the rendered report.                                                                                                                                                                                                                                                         |
 | `--llm-review`  | boolean | No       | `false`         | After the run, spawns `claude -p` to produce a narrative review of the YAML/HTML results (which scenarios failed, whether each failure looks like a real product/model issue vs. an overly strict scenario). Requires the `claude` CLI on `PATH`; if it's missing or exits non-zero, this only prints a warning — it never affects the eval's own exit code.                                       |
 
+| `--check-baseline` | boolean | No | `false` | Compares this run's `passedScenarios`/`scoredScenarios` against the matching entry in `eval-baselines.yaml` and prints a verdict (`WITHIN_BASELINE`/`REGRESSION`/`IMPROVEMENT`). See [Baseline regression checks](#baseline-regression-checks) below. |
+| `--baseline-slug` | string | No | auto-matched by provider | Disambiguates which `eval-baselines.yaml` entry to compare against when more than one exists for this suite/provider pairing. Only meaningful with `--check-baseline`. |
+
 ### Model vs. provider name
 
 `--model`/`--judge-model` take a **provider name** (the `name` field of an entry in
@@ -180,16 +183,70 @@ one did, `2` usage error, `3` setup error.
 
 ### Exit codes
 
-| Code | Meaning                                                                                                                                  |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).                                                       |
-| `1`  | At least one suite failed its passing threshold, but the run itself completed without error.                                             |
-| `2`  | Usage error — `--model` or `--judge-model` missing, `--seed` not an integer, the named provider/suite doesn't exist, or no suites found. |
-| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw).                                             |
+| Code | Meaning                                                                                                                                                                                               |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | All run suites passed (pass rate ≥ the suite's `passingThreshold`, default `1.0`).                                                                                                                    |
+| `1`  | At least one suite failed its passing threshold, but the run itself completed without error.                                                                                                          |
+| `2`  | Usage error — `--model` or `--judge-model` missing, `--seed` not an integer, the named provider/suite doesn't exist, or no suites found.                                                              |
+| `3`  | Runtime error while running a single explicitly-named suite (`--suite` was given and threw).                                                                                                          |
+| `4`  | `--check-baseline` was passed but no baseline entry could be used — not found, ambiguous (multiple slugs match the provider), or stale (scenario-count mismatch against the suite's current scoring). |
+| `5`  | `--check-baseline` was passed and the verdict is `REGRESSION`, independent of the suite's own pass/fail against its `passingThreshold`.                                                               |
 
 When `--suite` is omitted, a runtime error in one suite does **not** abort the batch — every
 other suite still runs, and the run only exits non-zero at the end if any suite failed or
 errored (printed in the final summary table with an `⚠ ERROR` row).
+
+`--check-baseline`'s exit codes `4`/`5` follow the same single-suite-is-strict /
+batch-mode-is-lenient split described in [Baseline regression checks](#baseline-regression-checks)
+below — a missing baseline is a hard error only when `--suite` names one suite explicitly; in a
+full sweep it's silently skipped for that suite.
+
+## Baseline regression checks
+
+`eval-baselines.yaml` (repo root, git-tracked) records, per suite and per provider/model slug, the
+mean/min/max/stdev of `passedScenarios` across N frozen rounds — written by the
+`/auto-update-baseline` skill, never hand-written. `--check-baseline` is what actually reads that
+file to answer "is this run a real regression":
+
+```sh
+npm run eval -- --suite after-agent --model ollama --judge-model anthropic --check-baseline
+npm run eval -- --suite after-agent --model ollama --judge-model anthropic --check-baseline --baseline-slug ollama-gptoss20b
+```
+
+**Resolving which entry to compare against:** an explicit `--baseline-slug` always wins. Otherwise
+it auto-matches the one `eval-baselines.yaml` entry under this suite whose `provider` field equals
+`--model` (they're the same string — both are a `config.yaml` provider `name`). Zero matches is
+"no baseline on file"; more than one is ambiguous and asks for `--baseline-slug` to disambiguate.
+
+**The verdict** compares this run's `passedScenarios` (never `passRate` — always the same raw-count
+field the baseline itself was averaged from) against the baseline's `score ± stdev`: below that
+band is `REGRESSION`, above it is `IMPROVEMENT`, otherwise `WITHIN_BASELINE`. For a `stdev: 0` entry
+(every frozen round landed on the same count) both ends of the band collapse to the mean itself, so
+any deviation at all flags — deliberate, since `stdev: 0` means that suite was fully deterministic
+across every round it was baselined against. If the matched entry's `total` doesn't match this
+run's `scoredScenarios`, the baseline predates a scenario-count change in the suite and the
+comparison is refused outright (exit `4`) rather than attempted on an apples-to-oranges basis.
+
+A successful comparison prints:
+
+```
+[baseline] after-agent / ollama-gptoss20b
+  Current:   18  (this run)
+  Baseline:  13.2 ± 0.4  (mean ± stdev, n=5, min 13 / max 14)
+  Verdict:   IMPROVEMENT
+```
+
+and is also written into the result YAML's `run.baseline` field — not just the console — so
+`auto-eval-loop` and `auto-eval-pr-comment` can report it alongside the raw score instead of a
+bare, reference-free number.
+
+**This isn't wired into CI.** `npm run eval` is never invoked from any `.github/workflows/*.yml`
+file today, and `--check-baseline` doesn't change that — cloud CI runners have no network path to
+the local Ollama/Lemonade providers these suites target, so a baseline check can't run unattended
+in CI the way lint/style/unit tests do. This is a known, accepted limitation, not an oversight:
+`--check-baseline` is designed to be run locally — by a person, or by the `auto-eval-loop` skill,
+which passes this flag on every round (see
+`.agents/skills/auto-eval-loop/scripts/run-eval-round.sh`) — rather than gating a PR merge.
 
 ## Available Suites
 

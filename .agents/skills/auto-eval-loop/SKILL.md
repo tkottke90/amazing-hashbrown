@@ -101,6 +101,12 @@ runs:
         result: fail
         details: eval-results/wiki-navigation-2026-07-26T14-00-10-000Z.yaml
         debug: eval-logs/run-logs/round-1-ornith.log # only present if debug logging was used
+        baseline: # only present when a baseline exists for this suite/provider
+          slug: ornith-base-model
+          baselineScore: 10.4
+          baselineStdev: 0.5
+          verdict: REGRESSION
+          delta: -1.4
       - name: glm
         judge: local
         score: 11
@@ -188,6 +194,19 @@ Field notes:
 - `result`: `pass` or `fail`, taken directly from the result YAML's
   `run.passed` (which already accounts for the suite's own
   `passingThreshold` — don't recompute this from `score`/`total` yourself).
+- `baseline`: present on a model entry only when the result YAML's
+  `run.baseline` field is set (i.e. a baseline existed for that
+  suite/provider pairing — `run-eval-round.sh` now passes `--check-baseline`
+  on every round unconditionally, but a suite with no recorded baseline
+  simply produces no `run.baseline` to copy here). Mirrors that field
+  directly: `slug`, `baselineScore`, `baselineStdev`, `verdict`, `delta` —
+  the remaining sub-fields (`provider`/`judgeModel`/`baselineMin`/
+  `baselineMax`/`baselineTotal`/`currentScore`) are redundant with this
+  model entry's own `name`/`judge`/`score`/`total` one level up, so leave
+  them out here. Omitted entirely (not `null`) for a pairing with no
+  baseline on file. A `REGRESSION` verdict here does **not** change
+  `result` or this loop's stop/continue decision — it's narration only,
+  read when summarizing the round, same as `score`/`total` are today.
 - `debug`: only present on a model entry if that model's round used
   `DEBUG_LLM_HTTP=1` (see `references/interpreting-results.md` §6 for when
   that's actually warranted). Omit the key entirely otherwise, don't set it
