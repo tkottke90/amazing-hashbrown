@@ -391,6 +391,15 @@ async function runOneSuite(
     );
     const categoryLine = formatFailureCategoryCounts(failureCategoryCounts);
     if (categoryLine) console.log(`  ⚠ ${categoryLine}`);
+    // Wall-clock span of the whole run (startedAt -> endedAt) — distinct from
+    // totalLatencyMs below, which sums only the per-scenario model-call
+    // latencies and so excludes suite loading, store writes, and HTML/YAML
+    // report generation. endedAt is only unset if runEval threw before
+    // finishing, which this catch block below would already be handling.
+    if (run.endedAt) {
+      const durationMs = new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime();
+      console.log(`  Duration:  ${durationMs}ms`);
+    }
     console.log(`  Latency:   ${run.totalLatencyMs}ms`);
     console.log(`  Cost:      $${run.estimatedCostUsd.toFixed(6)}`);
     console.log(`\n  Result:    ${result.yamlPath}`);
