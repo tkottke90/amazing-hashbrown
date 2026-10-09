@@ -19,6 +19,7 @@ import { getToolKeyTool } from './tools/get-tool-key.tool.js';
 import { createContextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
+import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middleware.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
 import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
@@ -60,6 +61,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [
+      contentBlockSanitizerMiddleware,
       createRecursionGuardMiddleware({
         recursionLimit: env.agent?.recursionLimit ?? 100,
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
