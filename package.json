@@ -10,7 +10,8 @@
     "ui",
     "e2e",
     "docs-site",
-    ".agents/skills/auto-update-baseline"
+    ".agents/skills/auto-update-baseline",
+    ".agents/skills/auto-eval-loop"
   ],
   "engines": {
     "node": ">=20"

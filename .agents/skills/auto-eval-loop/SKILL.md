@@ -51,6 +51,13 @@ mkdir -p eval-logs
 FILENAME="eval-logs/auto-eval-$(date +%Y%m%d%H%M%S).yaml"
 ```
 
+This file only persists for the lifetime of the local checkout — a session
+resuming the *same* branch on the *same* still-alive local clone or cloud
+container can pick it up from disk; a fresh clone or a new cloud container
+cannot. This is a known, accepted limitation (not a bug) — don't try to
+work around it locally (e.g. `git add -f` on `eval-logs/`); see
+"Committing" below.
+
 **2. Determine the suite.** If the request already names one (e.g. "run the
 loop on wiki-search"), use it. Otherwise ask, defaulting the suggestion to
 `wiki-navigation` — list the other options from `suites/*.yaml` if the user
@@ -112,13 +119,36 @@ runs:
 log:
   - id: 1
     debugHttp: false
+    repeatChecks:
+      - scenarioId: wnav-004
+        model: ornith
+        outcomes: [fail, fail, pass]
+        verdict: real
+        probeLog: eval-logs/probe-2026-07-26T14-02-00-000Z/probe.json
+      - scenarioId: wnav-009
+        model: ornith
+        outcomes: [fail, pass, fail]
+        verdict: real
+        probeLog: eval-logs/probe-2026-07-26T14-02-00-000Z/probe.json
+      - scenarioId: wnav-010b
+        model: ornith
+        outcomes: [fail, fail, fail]
+        verdict: real
+        probeLog: eval-logs/probe-2026-07-26T14-02-00-000Z/probe.json
+      - scenarioId: wnav-010c
+        model: ornith
+        outcomes: [fail, fail, pass]
+        verdict: real
+        probeLog: eval-logs/probe-2026-07-26T14-02-00-000Z/probe.json
     summary: |
       Ran wiki-navigation against ornith (9/12, fail) and glm (11/12,
       pass). ornith failed wnav-004, wnav-009, wnav-010b, wnav-010c — all
       four came back with calledTools showing a real tool was invoked, not
       an empty response, so this isn't a serving-side issue. wnav-009 in
       particular shows the model treating a two-candidate wiki_locate
-      result as if it had only one candidate.
+      result as if it had only one candidate. repeat-check: all four
+      scenarios failed at least 2/3 identical-condition reruns — treating
+      all four as real, not sampling noise.
     modifications:
       - api/src/agents/system-prompt.ts: |
           Added a concrete, countable test to WIKI_NAVIGATION_SECTION: did
@@ -164,11 +194,33 @@ Field notes:
   to null or empty string.
 - `log[].debugHttp`: whether _any_ model this round used debug logging — a
   quick per-round summary, detail lives in the per-model `debug` field.
+- `log[].repeatChecks`: one entry per scenario repeat-checked this round
+  (see "The loop" steps 5/5a below), each `{ scenarioId, model, outcomes,
+  verdict, probeLog }` — `outcomes` is the 3 pass/fail/error/missing
+  results from `run-repeat-check.sh`, `verdict` is `real`, `noise`, or
+  `inconclusive`, and `probeLog` is the `probe_json=` path it printed.
+  Omit the key entirely for a round where nothing failed (no probing
+  needed) — reserve `[]` for "probed but the list came back empty" (this
+  shouldn't normally happen). A `noise` entry looks like:
+  ```yaml
+  - scenarioId: wnav-012
+    model: ornith
+    outcomes: [fail, pass, pass]
+    verdict: noise
+    probeLog: eval-logs/probe-2026-07-26T14-05-00-000Z/probe.json
+  ```
+  and gets no diagnosis, no edit, and no commit for that scenario this
+  round — just a note in `summary` that it was dismissed as noise.
 - `log[].summary`: wrap prose to a human-readable width (aim for ~70-80
   columns) using YAML's `|` block literal, the way the example above does —
   don't emit one giant unwrapped line. Be concrete: name scenario IDs,
   compare to the previous round's numbers, and say what you concluded about
-  _why_ something failed, not just that it did.
+  _why_ something failed, not just that it did. If any scenario was
+  repeat-checked this round, name each verdict in prose too (e.g.
+  "repeat-check: wnav-009 2/3 failed — treating as real; wnav-012 1/3
+  failed — treating as noise") even though the same information lives in
+  `repeatChecks` — that structured list is for tooling, this sentence is
+  for a human reading the log without cross-referencing.
 - `log[].modifications`: one entry per file touched, keyed by a short
   relative path, value is a short prose description of the change and its
   motivation. If a round made no code changes (e.g. it was purely a rerun
@@ -208,15 +260,60 @@ matters most.
 **4. Append this round's entry to `runs:` and `log:`** in the auto-eval YAML
 (see schema above), and increment `nextRunId`.
 
-**5. Check whether every model's `result` is `pass`.** If so, you're done —
-tell the user, make sure the log file reflects it, and stop. Don't make
-further code changes once everything passes just because you can.
+**5. Repeat-check every scenario that failed this round, for every
+model — regardless of whether that model's own `result` already clears
+the suite's passing threshold.** A model's round clearing the suite's
+threshold overall does **not** mean a failed scenario inside it can be
+trusted without confirmation — dismissing a miss as "a known ceiling"
+from memory, without a fresh probe, is exactly the kind of unconfirmed
+failure claim this safeguard exists to prevent. Models with zero failed
+scenarios this round need no probe. For each model with at least one
+failed scenario, run:
 
-**6. Otherwise, diagnose each failure** using
+```bash
+.agents/skills/auto-eval-loop/scripts/run-repeat-check.sh <suite> <model> <judge> <round-id> <scenario-id-1>,<scenario-id-2>,...
+```
+
+It prints one `scenario_id=... outcomes=... fail_count=... verdict=...`
+line per requested scenario (or `scenario_id=... verdict=inconclusive` if
+the whole probe entry errored), plus `probe_status=`, `probe_reason=`
+(only on an errored entry), `exit_code=`, `console_log=`, and
+`probe_json=`. **Never read `probe.json` yourself** — this script and the
+`classify-repeat-check.mjs` it calls own that parsing so the verdict is
+computed deterministically, not guessed at from JSON. This reruns the
+whole suite 3 times for that model — `eval:probe` has no scenario-level
+filter — so expect roughly 3x that suite's own runtime per affected model,
+on top of the round's own run. This applies even to an otherwise-passing
+round with one persistently flaky scenario: it pays the 3x cost every
+round until that scenario stops failing even once in a probe. Record each
+scenario's result in this round's `log[].repeatChecks`.
+
+**5a. Classify each probed scenario.** Any `error` or `missing` outcome
+makes it `inconclusive` (treated as `real` below — never let a broken
+safeguard silently suppress a real bug, but record it distinctly so a
+reviewer can see the safeguard didn't cleanly run). Otherwise `fail_count
+>= 2` is `real`; `fail_count <= 1` is `noise`. A `noise` verdict gets no
+diagnosis, no edit, and no commit for that scenario this round — just note
+in the summary that it was dismissed as noise and why.
+
+**5b. Determine what's left to do.** A scenario needs diagnosis if its
+verdict is `real` or `inconclusive`. If nothing does — no scenario failed
+this round, or every failure classified as `noise` — you're done: tell
+the user, make sure the log reflects it (explicitly note any model whose
+raw `result` was already `pass` with only noise-verdict misses, so the
+log doesn't read as if nothing was checked), and stop. Don't make further
+code changes once nothing is left to fix just because you can.
+
+**6. Otherwise, diagnose each scenario with a `real` or `inconclusive`
+verdict** (from 5a — `noise` scenarios are excluded here, regardless of
+which model's overall round they belong to) using
 `references/interpreting-results.md`'s framework: real prompt/model gap,
 too-strict scenario assertion, or capability ceiling. Different failures in
 the same round can land in different buckets — handle each on its own
-merits rather than picking one theory for the whole round.
+merits rather than picking one theory for the whole round. A confirmed
+`real` scenario gets diagnosed and fixed here even if its model's overall
+round already cleared the suite's threshold — having just paid to confirm
+it's real, leaving it unfixed would defeat the point of confirming it.
 
 **7. Apply the plateau check** (see "Stopping" below) before writing new
 code. If every remaining failure is ceiling-flagged, stop the whole loop
@@ -236,10 +333,10 @@ loop back to step 1 for the next round — subject to the cap.
 ## Stopping
 
 **Iteration cap.** Default 5 rounds; ask the user if they want a different
-number. When the cap is hit without every model passing, stop, write a
-final log entry summarizing the state honestly (which scenarios are still
-failing and your best read on why), and tell the user directly rather than
-silently giving up mid-loop.
+number. When the cap is hit with any scenario still classified `real` or
+`inconclusive` (step 5b), stop, write a final log entry summarizing the
+state honestly (which scenarios are still failing and your best read on
+why), and tell the user directly rather than silently giving up mid-loop.
 
 **Plateau detection.** Before starting a new round's fix, check: did the
 _same_ scenario fail, in the _same_ shape (same wrong tool via
@@ -257,12 +354,16 @@ entry, stop making further changes aimed at that specific scenario, and:
 ## Committing
 
 Default (confirmed with the user at setup): commit once per round, covering
-the code changes made that round plus the updated auto-eval log file
-itself. Stage only what that round actually touched — don't blanket
-`git add -A`. Write the commit message from that round's summary, e.g.:
+only the code/suite changes made that round. Stage only what that round
+actually touched — don't blanket `git add -A`, and don't add the auto-eval
+log file itself: `eval-logs/` is gitignored on purpose (a session-scoped
+working file, not a repo artifact), so `git add` on it is always a no-op.
+The durable, reviewable record for a PR is the comment the
+`auto-eval-pr-comment` skill posts afterward, not this file. Write the
+commit message from that round's summary, e.g.:
 
 ```
-git add api/src/agents/system-prompt.ts api/src/agents/system-prompt.test.ts eval-logs/auto-eval-<timestamp>.yaml
+git add api/src/agents/system-prompt.ts api/src/agents/system-prompt.test.ts
 git commit -m "auto-eval round 3: narrow wnav-010 example to cover possessive phrasing"
 ```
 

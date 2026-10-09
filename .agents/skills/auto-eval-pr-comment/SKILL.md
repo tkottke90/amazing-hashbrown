@@ -13,18 +13,20 @@ description: >
   finishes, or whenever someone says "post the eval results to the PR,"
   "comment the eval findings on the pull request," "share the auto-eval
   results on the PR," "update the PR with what the eval loop found," or
-  asks to publish/report eval-loop results anywhere on GitHub. The
-  eval-logs/ directory is gitignored, so this comment is the only durable,
-  reviewable record of the loop — post it whenever a loop that touched a
-  PR branch completes.
+  asks to publish/report eval-loop results anywhere on GitHub.
+  `eval-logs/` is a gitignored, session-scoped working file by design —
+  this comment is what makes the loop's findings durable and reviewable
+  for anyone looking at the PR. Post it whenever a loop that touched a PR
+  branch completes.
 ---
 
 # Auto-eval PR comment
 
 Sibling to the `auto-eval-loop` skill, run **after** a loop completes. The
-loop's audit trail lives in `eval-logs/auto-eval-<timestamp>.yaml`, and
-`eval-logs/` is **gitignored** (`.gitignore:157`) — so nothing the loop
-learned ever reaches the PR unless it's written up as a comment. This skill
+loop's audit trail lives in `eval-logs/auto-eval-<timestamp>.yaml`, a
+local, session-scoped working file by design — `eval-logs/` is
+**gitignored** (`.gitignore:163`), not committed, so nothing the loop
+learned reaches the PR unless it's written up as a comment. This skill
 turns the audit trail into that comment. The driver is the `gh` CLI; all
 paths below are relative to the repo root.
 
