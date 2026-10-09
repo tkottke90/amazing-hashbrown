@@ -47,9 +47,9 @@ history). The fix, applied here to every sibling:
 2. Restructure the rubric into two paragraphs:
    - Paragraph 1: the hard requirement, ending **"Score no higher than 3/10
      if [requirement] is missing/violated."**
-   - Paragraph 2: the remaining criteria, ending with an **anchor**: *"A
+   - Paragraph 2: the remaining criteria, ending with an **anchor**: _"A
      response that meets the hard requirement and [secondary checks] has
-     done its job: score it 8 or higher."* Any further bonus criteria
+     done its job: score it 8 or higher."_ Any further bonus criteria
      (offering extra help, etc.) are called out as explicitly optional —
      not a reason to withhold the anchor score.
 3. Raise `minScore` from `6` to `7` — the schema's own default
@@ -61,7 +61,7 @@ and `minScore`.
 ### `wiki-write.yaml`
 
 **`wwrite-005-wrong-project-wiki-rejected`** — hard gate: did the response
-tell the user the write to `other-project-wiki` was rejected and why, *and*
+tell the user the write to `other-project-wiki` was rejected and why, _and_
 not claim the page was saved?
 
 ```yaml
@@ -86,7 +86,7 @@ minScore: 7
 
 **`wwrite-010-owned-by-another-workspace-rejected`** — hard gate: did the
 response tell the user the write to `video-streaming` was rejected because
-it belongs to another workspace, *and* not claim it was saved?
+it belongs to another workspace, _and_ not claim it was saved?
 
 ```yaml
 rubric: >
@@ -305,68 +305,68 @@ Appended after `pc-005`, same file, same `passingThreshold: 1.0`.
 ### `pc-006-structured-output`
 
 ```yaml
-  - id: pc-006-structured-output
-    name: Model produces valid structured output via withStructuredOutput()
-    purpose: >
-      Structured output is a transport capability distinct from
-      tool-calling (after-agent.yaml, task-plan-generation.yaml, and
-      production loop-reflection.ts all depend on withStructuredOutput()
-      working), and llama.cpp-family servers in particular can support one
-      reliably while failing the other. Deliberately trivial schema/input,
-      matching pc-001..005's style — this checks the provider can emit
-      schema-conformant structured output at all, not whether the model
-      reasons well.
-    type: structured
-    outputSchema:
-      type: object
-      properties:
-        topic: { type: string }
-        isQuestion: { type: boolean }
-      required: [topic, isQuestion]
-    input: >
-      Classify the following message. Respond using the structured fields:
-      topic (a one or two word label for what the message is about) and
-      isQuestion (true if the message ends with a question mark, false
-      otherwise).
+- id: pc-006-structured-output
+  name: Model produces valid structured output via withStructuredOutput()
+  purpose: >
+    Structured output is a transport capability distinct from
+    tool-calling (after-agent.yaml, task-plan-generation.yaml, and
+    production loop-reflection.ts all depend on withStructuredOutput()
+    working), and llama.cpp-family servers in particular can support one
+    reliably while failing the other. Deliberately trivial schema/input,
+    matching pc-001..005's style — this checks the provider can emit
+    schema-conformant structured output at all, not whether the model
+    reasons well.
+  type: structured
+  outputSchema:
+    type: object
+    properties:
+      topic: { type: string }
+      isQuestion: { type: boolean }
+    required: [topic, isQuestion]
+  input: >
+    Classify the following message. Respond using the structured fields:
+    topic (a one or two word label for what the message is about) and
+    isQuestion (true if the message ends with a question mark, false
+    otherwise).
 
 
-      Message: "What time does the coffee shop open?"
-    fieldChecks:
-      - path: isQuestion
-        match: equals
-        value: true
+    Message: "What time does the coffee shop open?"
+  fieldChecks:
+    - path: isQuestion
+      match: equals
+      value: true
 ```
 
 ### `pc-007-long-input-context-probe`
 
 ```yaml
-  - id: pc-007-long-input-context-probe
-    name: Model retrieves a planted token from near the end of a long input
-    purpose: >
-      No scenario in this suite exceeds a one-line input, despite local
-      models frequently running with small context windows and
-      rlm.yaml/web-fetch.yaml routinely seeding multi-KB documents in
-      production. This is the trivial transport-level check for whether a
-      provider silently truncates or drops the tail of a long input before
-      the model ever sees it — not a reasoning or quality check. Plants one
-      unmistakable token near the end of ~8k+ tokens of filler and asks for
-      it back, checked with a plain exact-match regex; a dropped tail means
-      the token is simply absent. A failure here should be investigated at
-      the transport/context-window level, the same way a
-      malformed_tool_call on pc-001 would be.
-    type: deterministic
-    # Filler is generated, not hand-written: varied sentence content
-    # (not a single repeated phrase) to resist tokenizer compression,
-    # sized generously past 8k tokens even allowing for some BPE
-    # compression on repeated phrasing. Implementation detail, not part
-    # of this design doc's own content.
-    input: |
-      <generated filler text, ~35-40k characters / ~8-10k tokens>
-      ...
-      The verification code for this message is XK7-9QZ2-PROBE. Please
-      repeat it back in your response.
-    match: contains
-    expected: 'XK7-9QZ2-PROBE'
+- id: pc-007-long-input-context-probe
+  name: Model retrieves a planted token from near the end of a long input
+  purpose: >
+    No scenario in this suite exceeds a one-line input, despite local
+    models frequently running with small context windows and
+    rlm.yaml/web-fetch.yaml routinely seeding multi-KB documents in
+    production. This is the trivial transport-level check for whether a
+    provider silently truncates or drops the tail of a long input before
+    the model ever sees it — not a reasoning or quality check. Plants one
+    unmistakable token near the end of ~8k+ tokens of filler and asks for
+    it back, checked with a plain exact-match regex; a dropped tail means
+    the token is simply absent. A failure here should be investigated at
+    the transport/context-window level, the same way a
+    malformed_tool_call on pc-001 would be.
+  type: deterministic
+  # Filler is generated, not hand-written: varied sentence content
+  # (not a single repeated phrase) to resist tokenizer compression,
+  # sized generously past 8k tokens even allowing for some BPE
+  # compression on repeated phrasing. Implementation detail, not part
+  # of this design doc's own content.
+  input: |
+    <generated filler text, ~35-40k characters / ~8-10k tokens>
+    ...
+    The verification code for this message is XK7-9QZ2-PROBE. Please
+    repeat it back in your response.
+  match: contains
+  expected: 'XK7-9QZ2-PROBE'
 ```
 
 **Handoff required:** both scenarios need to actually run against at least
@@ -395,36 +395,36 @@ inference**, documented as such in the suite file rather than presented as
 independently confirmed:
 
 ```yaml
-  - id: tt-003-topical-accuracy
-    name: Title reflects the conversation's actual topic
-    purpose: >
-      A generic title ("Chat conversation", "Help request") defeats the
-      purpose of the feature — the sidebar needs to let you distinguish
-      threads at a glance.
-    # Converted from `type: semantic` (ws-002's pattern): wiki-search.yaml's
-    # ws-002 proved embedding-similarity scoring unusable against this
-    # repo's configured embedding backend (real answers scored 0.03-0.11,
-    # an unrelated answer scored 0.54 — see ws-002's own comment for the
-    # full measured experiment). tt-003 was the only other surviving
-    # `type: semantic` scenario and shares the same backend, so this
-    # conversion applies that finding by inference rather than a fresh
-    # measured run against tt-003 specifically. Re-run ws-002's diagnostic
-    # method against this scenario's own input/expected pair for hard
-    # numbers before treating this as independently confirmed.
-    type: llm-judge
-    input: >
-      <unchanged — same Docker/Node.js conversation prompt>
-    rubric: >
-      Hard requirement: the title must specifically reference Docker,
-      multi-stage builds, or Node.js — not a vague generic phrase ("Chat
-      conversation", "Docker question"). Score no higher than 3/10 if the
-      title is generic or fails to mention any of those elements.
+- id: tt-003-topical-accuracy
+  name: Title reflects the conversation's actual topic
+  purpose: >
+    A generic title ("Chat conversation", "Help request") defeats the
+    purpose of the feature — the sidebar needs to let you distinguish
+    threads at a glance.
+  # Converted from `type: semantic` (ws-002's pattern): wiki-search.yaml's
+  # ws-002 proved embedding-similarity scoring unusable against this
+  # repo's configured embedding backend (real answers scored 0.03-0.11,
+  # an unrelated answer scored 0.54 — see ws-002's own comment for the
+  # full measured experiment). tt-003 was the only other surviving
+  # `type: semantic` scenario and shares the same backend, so this
+  # conversion applies that finding by inference rather than a fresh
+  # measured run against tt-003 specifically. Re-run ws-002's diagnostic
+  # method against this scenario's own input/expected pair for hard
+  # numbers before treating this as independently confirmed.
+  type: llm-judge
+  input: >
+    <unchanged — same Docker/Node.js conversation prompt>
+  rubric: >
+    Hard requirement: the title must specifically reference Docker,
+    multi-stage builds, or Node.js — not a vague generic phrase ("Chat
+    conversation", "Docker question"). Score no higher than 3/10 if the
+    title is generic or fails to mention any of those elements.
 
-      Given that's met, it must also not invent details absent from the
-      conversation (no specific cloud provider, CI tool, or version number
-      was mentioned). A title that's specific and doesn't fabricate has
-      done its job: score it 8 or higher.
-    minScore: 7
+    Given that's met, it must also not invent details absent from the
+    conversation (no specific cloud provider, CI tool, or version number
+    was mentioned). A title that's specific and doesn't fabricate has
+    done its job: score it 8 or higher.
+  minScore: 7
 ```
 
 `expectedSimilarTo`/`minSimilarity` are removed (not valid fields for
@@ -447,11 +447,11 @@ record before fully trusting this call.
 One comment added directly above `tools-001-upload-image`:
 
 ```yaml
-  # generate_image is an eval-only fixture (bin/eval-fixtures.ts:10-18), not
-  # a real production tool — see bin/eval.ts:54-61. tools-001/002 exist to
-  # test the generate→upload handoff contract any such tool must follow,
-  # not image generation itself.
-  - id: tools-001-upload-image
+# generate_image is an eval-only fixture (bin/eval-fixtures.ts:10-18), not
+# a real production tool — see bin/eval.ts:54-61. tools-001/002 exist to
+# test the generate→upload handoff contract any such tool must follow,
+# not image generation itself.
+- id: tools-001-upload-image
 ```
 
 No scenario content changes.
@@ -507,6 +507,7 @@ This is suite-content-only (YAML + comments); nothing under `lib/` or
 repo's own testing blacklist (YAML content isn't application code).
 
 Verification is:
+
 - `npx prettier --check .` / repo lint — YAML formatting.
 - A visual diff review confirming each rewritten rubric still reads as a
   single coherent paragraph pair (no broken YAML block-scalar formatting).
