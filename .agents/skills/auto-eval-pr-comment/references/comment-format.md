@@ -77,8 +77,9 @@ comment should be inventable without the log open next to you.
    omit the section to make the run look cleaner than it was.
 
 8. **Audit-trail pointer** — name the `eval-logs/auto-eval-<timestamp>.yaml`
-   file and note it's untracked (`eval-logs/` is gitignored), so the
-   comment is the durable record.
+   file and note it's a local, session-scoped working file by design
+   (`eval-logs/` is gitignored on purpose, not an oversight), so this
+   comment is the durable, reviewable record instead.
 
 9. **Cross-reference** — if the session produced comments for other
    suites on the same PR, link them in prose ("See the `wiki-navigation`
