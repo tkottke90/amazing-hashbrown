@@ -23,7 +23,7 @@
 //   Always last:
 //     probe_json=<path, echoed exactly as given>
 import { parseArgs } from 'node:util';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 // Pure outcome-array -> verdict. Any error/missing outcome always wins
@@ -150,6 +150,11 @@ function main() {
   console.log(lines.join('\n'));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// realpathSync, not a raw pathToFileURL(process.argv[1]) comparison: this
+// script is normally invoked through .claude/skills/.../classify-repeat-check.mjs,
+// a symlink into .agents/skills — Node resolves import.meta.url to the
+// symlink's target, so comparing against the unresolved argv[1] path never
+// matches and main() silently never runs (exit 0, no output, no error).
+if (import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main();
 }
