@@ -915,6 +915,50 @@ describe('EvalRunSchema', () => {
     const result = EvalRunSchema.parse({ ...minimalRun, scoredScenarios: 1 });
     assert.equal(result.scoredScenarios, 1);
   });
+
+  it('parses without a baseline field (--check-baseline not used) [unit]', () => {
+    const result = EvalRunSchema.parse(minimalRun);
+    assert.equal(result.baseline, undefined);
+  });
+
+  it('accepts a fully-populated baseline field [unit]', () => {
+    const baseline = {
+      slug: 'ollama-gptoss20b',
+      provider: 'local',
+      judgeModel: 'anthropic',
+      baselineScore: 13.2,
+      baselineStdev: 0.4,
+      baselineMin: 13,
+      baselineMax: 14,
+      baselineTotal: 18,
+      currentScore: 18,
+      delta: 4.8,
+      verdict: 'IMPROVEMENT' as const,
+    };
+    const result = EvalRunSchema.parse({ ...minimalRun, baseline });
+    assert.deepEqual(result.baseline, baseline);
+  });
+
+  it('rejects a baseline.verdict value outside the three known verdicts [unit]', () => {
+    assert.throws(() =>
+      EvalRunSchema.parse({
+        ...minimalRun,
+        baseline: {
+          slug: 'ollama-gptoss20b',
+          provider: 'local',
+          judgeModel: 'anthropic',
+          baselineScore: 13.2,
+          baselineStdev: 0.4,
+          baselineMin: 13,
+          baselineMax: 14,
+          baselineTotal: 18,
+          currentScore: 18,
+          delta: 4.8,
+          verdict: 'NOT_A_REAL_VERDICT',
+        },
+      }),
+    );
+  });
 });
 
 describe('JsonOf helper', () => {

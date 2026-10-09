@@ -61,6 +61,21 @@ comment should be inventable without the log open next to you.
      State scores as `passed/total`, and name the threshold when
      explaining why a high fraction still failed.
 
+   When the audit log's final round for a model/suite pairing carries a
+   `baseline` field (see `auto-eval-loop/SKILL.md`'s Field notes), append
+   it to that score, in whichever shape (table or narrative) this comment
+   uses:
+
+   | Model    | Initial | Converged | Baseline |
+   | -------- | ------- | --------- | -------- |
+   | `ollama` | 13/18   | 18/18     | 13.2 ± 0.4 → **IMPROVEMENT** (+4.8) |
+
+   or in narrative form: "`ollama` converged at 18/18 — baseline is
+   13.2 ± 0.4 (`ollama-gptoss20b`), so this is an **IMPROVEMENT** (+4.8)."
+   For a pairing with no `baseline` field anywhere in the log, omit the
+   column/clause entirely — never fabricate it or show it as "N/A" (which
+   would read as "checked, found nothing" rather than "not checked").
+
 6. **Findings** — the heart of it. One bullet per failure worth
    narrating, from `log[].summary` / `log[].modifications`:
    - **Bold lead** stating the scenario id(s) and the point ("**wfetch-003
@@ -99,3 +114,5 @@ comment should be inventable without the log open next to you.
   that distinction is the loop's whole value.
 - Length: both real examples are ~30–40 lines of Markdown. A one-round
   all-pass run can be much shorter; don't pad.
+- Baseline verdict words (`REGRESSION`/`IMPROVEMENT`/`WITHIN_BASELINE`):
+  bold, matching how scenario ids and SHAs are already backticked.

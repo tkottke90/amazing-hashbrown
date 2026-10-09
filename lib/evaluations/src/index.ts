@@ -92,6 +92,21 @@ export type {
 export { getFailureCategory } from './failure-category.js';
 export type { FailureCategory } from './failure-category.js';
 
+// Baseline regression checks
+export {
+  loadBaselineFile,
+  findBaselineEntry,
+  compareToBaseline,
+  BaselineEntrySchema,
+} from './baseline.js';
+export type {
+  BaselineVerdict,
+  BaselineEntry,
+  BaselineFile,
+  FindBaselineEntryResult,
+  CompareToBaselineResult,
+} from './baseline.js';
+
 // Serializer
 export {
   writeResultYaml,
