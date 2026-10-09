@@ -12,6 +12,7 @@ import {
   Unplug,
   ChevronDown,
   ChevronRight,
+  ZapOff,
 } from 'lucide-preact';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
 
@@ -78,6 +79,14 @@ const CATEGORY_INFO: Record<ChatErrorCategory, { icon: typeof AlertTriangle; mes
   cancelled: {
     icon: CircleStop,
     message: 'Stopped before finishing.',
+  },
+  // The agent framework cancelled the run itself (not a user Stop) and
+  // didn't say why — see error-classification.ts's classifyFrameworkAbort.
+  // Distinct from 'unknown': this is a recognized shape, just one that
+  // carries no further detail to show.
+  interrupted: {
+    icon: ZapOff,
+    message: 'The run was interrupted unexpectedly. This is usually transient — try again.',
   },
 };
 

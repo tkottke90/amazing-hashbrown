@@ -6,7 +6,7 @@ const suite: TestSuite = {
   id: 26,
   name: 'Chat Error Classification',
   description:
-    'Verifies a failed chat turn renders category-specific copy (billing, context length, ...) instead of the generic "Something went wrong" message, when the server classifies the failure — issue #146',
+    'Verifies a failed chat turn renders category-specific copy (billing, context length, interrupted, ...) instead of the generic "Something went wrong" message, when the server classifies the failure — issue #146',
   purpose:
     'A user needs to tell a persistent failure (bad billing, conversation too long) apart from a transient one, so they know whether retrying is worth it',
   tags: ['@smoke', '@user-workflow'],
@@ -126,6 +126,41 @@ test.describe(
       await expect(
         assistantMsg.getByText('Something went wrong. Please try again.'),
       ).not.toBeVisible();
+    });
+
+    test("an interrupted-classified failure (LangGraph's own framework abort) shows its own message, not the generic one", async ({
+      page,
+    }, testInfo) => {
+      // Covers the 'interrupted' category added for the "Abort" bug — see
+      // error-classification.ts's classifyFrameworkAbort. The real failure
+      // (LangGraph's PregelRunner throwing a bare, contextless Error("Abort")
+      // when its internal AbortSignal fires outside of a real user Stop) only
+      // reproduces live, against a real provider — this mocks the same
+      // stream_error/errorCategory shape the server emits once it classifies
+      // that failure, to deterministically cover the UI side in CI.
+      await mockChatTurnError(page, 'interrupted', 'Abort');
+      await page.goto('/');
+
+      await page.locator('[data-slot="textarea"]').fill('Hello');
+      await pauseBeforeAction(page, testInfo);
+      await page.locator('button[aria-label="Send message"]').click();
+
+      const assistantMsg = page.locator('[data-testid="assistant-message"]').last();
+      await expect(
+        assistantMsg.getByText(
+          'The run was interrupted unexpectedly. This is usually transient — try again.',
+        ),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        assistantMsg.getByText('Something went wrong. Please try again.'),
+      ).not.toBeVisible();
+
+      // The raw "Abort" text LangGraph actually threw is still reachable
+      // behind the toggle, the same as every other category — see the
+      // "Show details" test below.
+      await pauseBeforeAction(page, testInfo);
+      await assistantMsg.getByText('Show details').click();
+      await expect(assistantMsg.getByText('Abort', { exact: true })).toBeVisible();
     });
 
     test('the raw provider message is available behind a "Show details" toggle', async ({

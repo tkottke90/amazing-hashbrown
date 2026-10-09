@@ -41,6 +41,33 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// LangGraph's own PregelRunner cancels a turn's run whenever the
+// AbortSignal threaded through streamEvents() fires — not just on a real
+// user Stop (that's caught and classified 'cancelled' by each turn handler
+// *before* classifyChatError ever runs — see task-execution.ts/headless-
+// turn.ts's own `wasAborted`/`controller.signal.aborted` checks), but also
+// when something else aborts that signal (or a signal derived from it —
+// @langchain/core's ensureConfig() combines an explicit `signal` with a
+// `timeout`-derived one via AbortSignal.any()) without our own
+// AbortController ever observing it. Confirmed by direct reproduction
+// against @langchain/langgraph (pregel/runner.js, pregel/timeout.js):
+// depending on exactly where in the race the abort is observed, the error
+// that reaches us carries one of three different shapes, none of which
+// carry a provider status/type/code: a bare `Error` whose message is
+// literally "Abort" (PregelRunner's own fallback when nothing else got
+// there first), the platform's generic `AbortError` ("This operation was
+// aborted"), or `TimeoutError` ("The operation was aborted due to
+// timeout"). All three are the same underlying "the run's signal fired and
+// the real reason got discarded" failure — provider-agnostic, checked
+// before any provider-specific matcher the same as classifyNetworkError.
+function classifyFrameworkAbort(err: unknown): ChatErrorCategory | null {
+  const e = err as LooseApiError;
+  if (!e) return null;
+  if (e.name === 'AbortError' || e.name === 'TimeoutError') return 'interrupted';
+  if (e.name === 'Error' && e.message === 'Abort') return 'interrupted';
+  return null;
+}
+
 // Connection-level failures happen regardless of which provider threw them
 // (a local Ollama server that isn't running, a network drop mid-request to
 // Anthropic/OpenAI) — checked before any provider-specific matcher.
@@ -124,6 +151,8 @@ export function classifyChatError(
 ): ClassifiedChatError {
   const source = unwrapSourceError(err);
   const message = messageOf(source);
+  const frameworkAbortCategory = classifyFrameworkAbort(source);
+  if (frameworkAbortCategory) return { category: frameworkAbortCategory, message };
   const networkCategory = classifyNetworkError(source);
   if (networkCategory) return { category: networkCategory, message };
 

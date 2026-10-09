@@ -1,5 +1,7 @@
+import { AsyncLocalStorageProviderSingleton } from '@langchain/core/singletons';
 import type { TraceSource } from '@tkottke90/llm-common-types/traces';
 import { env } from '../config/env.js';
+import { logger } from '../config/logger.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { ObservabilityCallbackHandler } from './observability-handler.js';
@@ -24,6 +26,38 @@ export function resolveTurnModel(
     throw new Error(`Provider "${config.name}" has no defaultModel and none was passed`);
   }
   return { provider: config.name, model: resolvedModel };
+}
+
+// Diagnostic for the 'interrupted' error category (error-classification.ts)
+// — never expected to log anything in normal operation. @langchain/core's
+// ensureConfig() resolves a Runnable's ambient AsyncLocalStorage-propagated
+// RunnableConfig *synchronously*, at the moment streamEvents()/invoke() is
+// called, and merges in anything that config carries — notably `timeout`,
+// which becomes an AbortSignal.timeout() combined into the call's own
+// AbortSignal via AbortSignal.any(). That derived signal is a *different
+// object* from the one our own AbortController exposes, so it can abort a
+// turn without `controller.signal.aborted` ever reading true — confirmed by
+// reproducing this exact mechanism against the installed @langchain/
+// langgraph, which is what prompted adding this check. Nothing in this
+// codebase calls runWithConfig() itself, so getRunnableConfig() should
+// always read undefined; if it doesn't, whatever it's carrying is a
+// plausible explanation for an unexplained 'interrupted' turn. Call
+// immediately before every agent.streamEvents() call site — ensureConfig()
+// reads the ambient config at call time, not lazily when the stream is
+// first iterated, so checking any later (even at the top of pipeEvents)
+// would already be too late to see it.
+export function warnIfAmbientRunnableConfig(context: Record<string, unknown>): void {
+  const ambient = AsyncLocalStorageProviderSingleton.getRunnableConfig();
+  if (!ambient) return;
+  logger.warn(
+    "turn-observability: ambient RunnableConfig present before streamEvents() — this can silently replace the turn's AbortSignal with a short-lived derived one",
+    {
+      ...context,
+      ambientKeys: Object.keys(ambient),
+      ambientTimeout: (ambient as { timeout?: number }).timeout,
+      ambientHasSignal: 'signal' in ambient,
+    },
+  );
 }
 
 export interface TurnObservability {

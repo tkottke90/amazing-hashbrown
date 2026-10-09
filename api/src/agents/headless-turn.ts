@@ -18,6 +18,7 @@ import { endThreadTurn } from './pending-thread-turns.js';
 import {
   resolveTurnModel,
   startTurnObservability,
+  warnIfAmbientRunnableConfig,
   type TurnObservability,
 } from './turn-observability.js';
 
@@ -132,8 +133,19 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
       );
       return;
     }
-    logger.error('headless-turn: turn failed', { threadId, err: serializeError(err) });
     const classified = classifyChatError(err, providerTypeOf(provider));
+    // category/elapsedMs are here specifically so an 'interrupted'
+    // classification (LangGraph's own framework-level abort — see
+    // error-classification.ts's classifyFrameworkAbort) is correlatable
+    // after the fact: how soon after the turn started it fired is the one
+    // signal available to narrow down what aborted the run's signal, since
+    // the thrown error itself carries no further detail.
+    logger.error('headless-turn: turn failed', {
+      threadId,
+      category: classified.category,
+      elapsedMs: Date.now() - Date.parse(turnSentAt),
+      err: serializeError(err),
+    });
     traceError = classified.message;
     failAssistant(
       threadStore,
@@ -177,6 +189,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
         resolvedProvider,
         'sync',
         async () => {
+          warnIfAmbientRunnableConfig({ threadId, source: params.source });
           const rawStream = agent.streamEvents(
             { messages: [{ role: 'human', content: message }] },
             turnObs!.attach({

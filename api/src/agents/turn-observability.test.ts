@@ -3,10 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
+import { AsyncLocalStorageProviderSingleton } from '@langchain/core/singletons';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { configManager } from '../config/env.js';
+import { logger } from '../config/logger.js';
 import { bootObservability, getObservabilityStore } from '../services/observability.js';
-import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
+import {
+  resolveTurnModel,
+  startTurnObservability,
+  warnIfAmbientRunnableConfig,
+} from './turn-observability.js';
 
 const DEFAULT_PROVIDER = 'turn-obs-default';
 const OTHER_PROVIDER = 'turn-obs-other';
@@ -162,6 +168,50 @@ describe('agents/turn-observability', () => {
       await obs.end(null);
 
       expect(getObservabilityStore().getTrace(obs.traceId)!.error).to.equal('boom');
+    });
+  });
+
+  // This is a diagnostic for the 'interrupted' error category
+  // (error-classification.ts) — its only job is deciding *whether* to warn,
+  // so that decision (not log wording, which the Testing Anti-Patterns
+  // section in the root AGENTS.md says not to assert on) is what these
+  // cases cover: no sinon in this repo's toolchain (see
+  // services/workspace-files.test.ts), so logger.warn is hand-rolled-stubbed
+  // the same way.
+  describe('warnIfAmbientRunnableConfig', () => {
+    let calls: unknown[][];
+    let originalWarn: typeof logger.warn;
+
+    beforeEach(() => {
+      calls = [];
+      originalWarn = logger.warn;
+      logger.warn = ((...args: unknown[]) => {
+        calls.push(args);
+      }) as typeof logger.warn;
+    });
+
+    afterEach(() => {
+      logger.warn = originalWarn;
+    });
+
+    it('stays silent when there is no ambient RunnableConfig (the expected case in this codebase) [unit]', () => {
+      warnIfAmbientRunnableConfig({ threadId: 'thread-1' });
+      expect(calls).to.have.lengthOf(0);
+    });
+
+    it('warns, carrying the caller context and the ambient config shape, when one is present [unit]', () => {
+      AsyncLocalStorageProviderSingleton.runWithConfig({ timeout: 5, configurable: {} }, () => {
+        warnIfAmbientRunnableConfig({ threadId: 'thread-1', taskId: 'task-1' });
+      });
+
+      expect(calls).to.have.lengthOf(1);
+      const [, context] = calls[0] as [string, Record<string, unknown>];
+      expect(context).to.deep.include({
+        threadId: 'thread-1',
+        taskId: 'task-1',
+        ambientTimeout: 5,
+        ambientHasSignal: false,
+      });
     });
   });
 });
