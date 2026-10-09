@@ -135,3 +135,86 @@ export function compareToBaseline(
 
   return { stale: false, verdict, delta, thresholdLow, thresholdHigh };
 }
+
+// The shape bin/eval.ts attaches to EvalRun.baseline after a successful
+// --check-baseline comparison (see schemas.ts's EvalRunSchema — kept in
+// sync by hand since baseline.ts doesn't depend on schemas.ts).
+export interface BaselineRunRecord {
+  slug: string;
+  provider: string;
+  judgeModel: string;
+  baselineScore: number;
+  baselineStdev: number;
+  baselineMin: number;
+  baselineMax: number;
+  baselineTotal: number;
+  currentScore: number;
+  delta: number;
+  verdict: BaselineVerdict;
+}
+
+export type BaselineCheckResult =
+  | { type: 'not_found'; message: string }
+  | { type: 'ambiguous'; message: string; candidates: string[] }
+  | { type: 'stale'; message: string }
+  | { type: 'ok'; slug: string; record: BaselineRunRecord; consoleLines: string[] };
+
+/**
+ * The full, deterministic --check-baseline decision: resolve the entry,
+ * compare the score, and produce either an error message or the exact
+ * record/console lines bin/eval.ts attaches to the run and prints. Pulled
+ * out of bin/eval.ts itself so every outcome — not just the low-level
+ * entry-matching and threshold math — is unit-testable without spawning the
+ * CLI or a real model. bin/eval.ts's job after calling this is purely I/O:
+ * print `consoleLines`, write `record` to the result YAML, pick an exit code.
+ */
+export function evaluateBaselineCheck(
+  file: BaselineFile,
+  suiteId: string,
+  current: { score: number; total: number },
+  opts: { provider: string; slug?: string },
+): BaselineCheckResult {
+  const found = findBaselineEntry(file, suiteId, opts);
+
+  if ('error' in found) {
+    if (found.error === 'ambiguous') {
+      const message = `ambiguous baseline for suite "${suiteId}", provider "${opts.provider}" — candidates: ${found.candidates
+        .map((slug) => `${slug} (model: ${file[suiteId]![slug]!.model})`)
+        .join(', ')} — pass --baseline-slug to disambiguate`;
+      return { type: 'ambiguous', message, candidates: found.candidates };
+    }
+    const message = `no baseline on file for suite "${suiteId}", provider "${opts.provider}"`;
+    return { type: 'not_found', message };
+  }
+
+  const { slug, entry } = found;
+  const comparison = compareToBaseline(current, entry);
+
+  if (comparison.stale) {
+    const message = `baseline for "${suiteId}"/"${slug}" was recorded against ${entry.total} scenarios, this run scored ${current.total} — re-run /auto-update-baseline`;
+    return { type: 'stale', message };
+  }
+
+  const record: BaselineRunRecord = {
+    slug,
+    provider: entry.provider,
+    judgeModel: entry.judgeModel,
+    baselineScore: entry.score,
+    baselineStdev: entry.stdev,
+    baselineMin: entry.min,
+    baselineMax: entry.max,
+    baselineTotal: entry.total,
+    currentScore: current.score,
+    delta: comparison.delta,
+    verdict: comparison.verdict,
+  };
+
+  const consoleLines = [
+    `[baseline] ${suiteId} / ${slug}`,
+    `  Current:   ${current.score}  (this run)`,
+    `  Baseline:  ${entry.score} ± ${entry.stdev}  (mean ± stdev, n=${entry.rounds}, min ${entry.min} / max ${entry.max})`,
+    `  Verdict:   ${comparison.verdict}`,
+  ];
+
+  return { type: 'ok', slug, record, consoleLines };
+}

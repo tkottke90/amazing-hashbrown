@@ -13,8 +13,7 @@ import {
   getFailureCategory,
   getScoredScenarios,
   loadBaselineFile,
-  findBaselineEntry,
-  compareToBaseline,
+  evaluateBaselineCheck,
   writeResultYaml,
   type Suite,
   type SkillExpansionMiddlewareLike,
@@ -268,58 +267,31 @@ async function checkBaseline(
   file: BaselineFile,
   opts: { lenientNotFound: boolean },
 ): Promise<{ verdict?: BaselineVerdict; error?: string }> {
-  const found = findBaselineEntry(file, run.suiteId, {
+  // All of the actual decision-making (entry resolution, threshold math,
+  // every message/record this prints or persists) lives in
+  // evaluateBaselineCheck — a pure function, fully covered by
+  // baseline.test.ts. This function is deliberately just I/O glue:
+  // print what it said to print, write what it said to write, exit-code
+  // decisions are the caller's (runOneSuite/below).
+  const current = { score: run.passedScenarios, total: run.scoredScenarios ?? run.totalScenarios };
+  const result = evaluateBaselineCheck(file, run.suiteId, current, {
     provider: modelId,
     slug: values['baseline-slug'] as string | undefined,
   });
 
-  if ('error' in found) {
-    if (found.error === 'not_found' && opts.lenientNotFound) {
-      return {};
-    }
-    const message =
-      found.error === 'ambiguous'
-        ? `ambiguous baseline for suite "${run.suiteId}", provider "${modelId}" — candidates: ${found.candidates
-            .map((slug) => `${slug} (model: ${file[run.suiteId]![slug]!.model})`)
-            .join(', ')} — pass --baseline-slug to disambiguate`
-        : `no baseline on file for suite "${run.suiteId}", provider "${modelId}"`;
-    console.error(`[baseline] error: ${message}`);
-    return { error: message };
+  if (result.type === 'not_found' && opts.lenientNotFound) {
+    return {};
+  }
+  if (result.type !== 'ok') {
+    console.error(`[baseline] error: ${result.message}`);
+    return { error: result.message };
   }
 
-  const { slug, entry } = found;
-  const current = { score: run.passedScenarios, total: run.scoredScenarios ?? run.totalScenarios };
-  const comparison = compareToBaseline(current, entry);
-
-  if (comparison.stale) {
-    const message = `baseline for "${run.suiteId}"/"${slug}" was recorded against ${entry.total} scenarios, this run scored ${current.total} — re-run /auto-update-baseline`;
-    console.error(`[baseline] error: ${message}`);
-    return { error: message };
-  }
-
-  console.log(`[baseline] ${run.suiteId} / ${slug}`);
-  console.log(`  Current:   ${current.score}  (this run)`);
-  console.log(
-    `  Baseline:  ${entry.score} ± ${entry.stdev}  (mean ± stdev, n=${entry.rounds}, min ${entry.min} / max ${entry.max})`,
-  );
-  console.log(`  Verdict:   ${comparison.verdict}`);
-
-  run.baseline = {
-    slug,
-    provider: entry.provider,
-    judgeModel: entry.judgeModel,
-    baselineScore: entry.score,
-    baselineStdev: entry.stdev,
-    baselineMin: entry.min,
-    baselineMax: entry.max,
-    baselineTotal: entry.total,
-    currentScore: current.score,
-    delta: comparison.delta,
-    verdict: comparison.verdict,
-  };
+  for (const line of result.consoleLines) console.log(line);
+  run.baseline = result.record;
   await writeResultYaml(run, resultsForYaml, resultPath);
 
-  return { verdict: comparison.verdict };
+  return { verdict: result.record.verdict };
 }
 
 // Shared by runOneSuite's per-suite print and the full-sweep summary table,

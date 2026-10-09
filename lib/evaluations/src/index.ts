@@ -97,14 +97,17 @@ export {
   loadBaselineFile,
   findBaselineEntry,
   compareToBaseline,
+  evaluateBaselineCheck,
   BaselineEntrySchema,
 } from './baseline.js';
 export type {
   BaselineVerdict,
   BaselineEntry,
   BaselineFile,
+  BaselineRunRecord,
   FindBaselineEntryResult,
   CompareToBaselineResult,
+  BaselineCheckResult,
 } from './baseline.js';
 
 // Serializer
