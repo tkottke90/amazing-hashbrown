@@ -15,11 +15,17 @@ Two independent fixes to the `auto-eval-loop` skill (`.agents/skills/auto-eval-l
 
 ### Deviation from the issue as filed
 
-The issue's literal acceptance criterion — "running `auto-eval-loop` end to end... produces a commit whose `git show --stat` output lists the `eval-logs/auto-eval-<timestamp>.yaml` path" — is **not** what this design implements. During brainstorming, weighing the clutter of permanently accumulating timestamped session logs in `main` (trunk flow merges every branch's commits straight in, nothing prunes them) against the actual value of committing (mainly: letting a *different* session resume the same audit trail), the decision was to keep `eval-logs/` fully gitignored and lean on the PR comment as the durable record instead. See "Commit-step fix" below for the replacement criterion.
+The issue's literal acceptance criterion — "running `auto-eval-loop` end to end... produces a commit whose `git show --stat` output lists the `eval-logs/auto-eval-<timestamp>.yaml` path" — is **not** what this design implements. During brainstorming, weighing the clutter of permanently accumulating timestamped session logs in `main` (trunk flow merges every branch's commits straight in, nothing prunes them) against the actual value of committing (mainly: letting a _different_ session resume the same audit trail), the decision was to keep `eval-logs/` fully gitignored and lean on the PR comment as the durable record instead. See "Commit-step fix" below for the replacement criterion.
 
 ### Future consideration (not in scope)
 
 The real fix for "this repo has no durable, queryable home for eval run history" is an external storage solution for eval audit trails — the eval equivalent of how SonarQube stores analysis results outside the repo it analyzes — not committing YAML files into `main` and not accepting that the record only survives within one session/checkout. This design accepts the session-locality limitation as a pragmatic stopgap and documents it honestly; building real external storage is future work, tracked separately (not as part of this issue).
+
+### Addendum, 2026-10-09: repeat-check must fire regardless of overall round result
+
+The implementation of this design initially gated the repeat-check behind "does every model's round clear the suite's passing threshold overall" — a model whose round already `pass`ed (even with one failed scenario) skipped the probe entirely. A live run against `wiki-navigation`/Ornith (14/15, clears the 0.85 threshold) exposed this immediately: the one miss, `wnav-004`, got dismissed as "an already-confirmed ceiling" from the agent's own memory, without the repeat-check ever running. Since the repo's own suites commonly use a threshold that tolerates one flaky miss, this meant the safeguard could never fire for exactly the scenarios it was built for.
+
+**Corrected behavior (confirmed with the user):** the repeat-check runs for every scenario that failed this round, for every model, regardless of whether that model's own round already clears the suite's threshold. A scenario confirmed `real` inside an otherwise-passing round still gets diagnosed and fixed — probing it and then refusing to act on a confirmed-real result would defeat the point of confirming it. This also means an overall-passing round with one persistently flaky scenario pays the 3x rerun cost every round until that scenario stops failing even once in a probe, not only on rounds where the suite outright fails. `auto-eval-loop/SKILL.md`'s steps 5/5a/5b were reordered accordingly (the repeat-check and its classification now happen before any "are we done" decision, not after one that could short-circuit around it).
 
 ---
 
@@ -142,7 +148,7 @@ Field notes:
   git commit -m "auto-eval round 3: narrow wnav-010 example to cover possessive phrasing"
   ```
 - Add an explanatory line: the audit YAML lives under `eval-logs/`, gitignored on purpose — it's a session-scoped working file, not a repo artifact. The durable, reviewable record for a PR is the comment `auto-eval-pr-comment` posts afterward.
-- Add a caveat to step 1 ("find or create the log file"): this file only persists for the lifetime of the local checkout. A session resuming the *same* branch on the *same* still-alive local clone or cloud container can pick it up from disk; a fresh clone or a new cloud container cannot. This is a known, accepted limitation (see "Future consideration" above), not a bug to work around locally (e.g. don't reach for `git add -f`).
+- Add a caveat to step 1 ("find or create the log file"): this file only persists for the lifetime of the local checkout. A session resuming the _same_ branch on the _same_ still-alive local clone or cloud container can pick it up from disk; a fresh clone or a new cloud container cannot. This is a known, accepted limitation (see "Future consideration" above), not a bug to work around locally (e.g. don't reach for `git add -f`).
 
 ### `auto-eval-pr-comment/SKILL.md`
 

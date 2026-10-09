@@ -195,7 +195,7 @@ Field notes:
 - `log[].debugHttp`: whether _any_ model this round used debug logging — a
   quick per-round summary, detail lives in the per-model `debug` field.
 - `log[].repeatChecks`: one entry per scenario repeat-checked this round
-  (see "The loop" steps 5a/5b below), each `{ scenarioId, model, outcomes,
+  (see "The loop" steps 5/5a below), each `{ scenarioId, model, outcomes,
   verdict, probeLog }` — `outcomes` is the 3 pass/fail/error/missing
   results from `run-repeat-check.sh`, `verdict` is `real`, `noise`, or
   `inconclusive`, and `probeLog` is the `probe_json=` path it printed.
@@ -260,17 +260,15 @@ matters most.
 **4. Append this round's entry to `runs:` and `log:`** in the auto-eval YAML
 (see schema above), and increment `nextRunId`.
 
-**5. Check whether every model's round counts as passing.** A model's round
-counts as passing if its raw `result` is `pass`, **or** every one of its
-failed scenarios classified as `noise` in the repeat-check below (5a-5b).
-If every model's round passes by this rule, you're done — tell the user,
-make sure the log file reflects it, and stop. Don't make further code
-changes once everything passes just because you can.
-
-**5a. Repeat-check each model's failures before diagnosing them.** For each
-model with at least one failed scenario this round (skip models that
-passed outright — no probe needed), rerun the repeat-check for exactly
-those failed scenario IDs:
+**5. Repeat-check every scenario that failed this round, for every
+model — regardless of whether that model's own `result` already clears
+the suite's passing threshold.** A model's round clearing the suite's
+threshold overall does **not** mean a failed scenario inside it can be
+trusted without confirmation — dismissing a miss as "a known ceiling"
+from memory, without a fresh probe, is exactly the kind of unconfirmed
+failure claim this safeguard exists to prevent. Models with zero failed
+scenarios this round need no probe. For each model with at least one
+failed scenario, run:
 
 ```bash
 .agents/skills/auto-eval-loop/scripts/run-repeat-check.sh <suite> <model> <judge> <round-id> <scenario-id-1>,<scenario-id-2>,...
@@ -285,23 +283,37 @@ the whole probe entry errored), plus `probe_status=`, `probe_reason=`
 computed deterministically, not guessed at from JSON. This reruns the
 whole suite 3 times for that model — `eval:probe` has no scenario-level
 filter — so expect roughly 3x that suite's own runtime per affected model,
-on top of the round's own run. Record each scenario's result in this
-round's `log[].repeatChecks`.
+on top of the round's own run. This applies even to an otherwise-passing
+round with one persistently flaky scenario: it pays the 3x cost every
+round until that scenario stops failing even once in a probe. Record each
+scenario's result in this round's `log[].repeatChecks`.
 
-**5b. Classify each probed scenario.** Any `error` or `missing` outcome
-makes it `inconclusive` (treated as `real` for step 6 — never let a broken
+**5a. Classify each probed scenario.** Any `error` or `missing` outcome
+makes it `inconclusive` (treated as `real` below — never let a broken
 safeguard silently suppress a real bug, but record it distinctly so a
 reviewer can see the safeguard didn't cleanly run). Otherwise `fail_count
 >= 2` is `real`; `fail_count <= 1` is `noise`. A `noise` verdict gets no
 diagnosis, no edit, and no commit for that scenario this round — just note
 in the summary that it was dismissed as noise and why.
 
-**6. Otherwise, diagnose each `real` or `inconclusive` scenario** (from 5b
-— `noise` scenarios are excluded here) using
+**5b. Determine what's left to do.** A scenario needs diagnosis if its
+verdict is `real` or `inconclusive`. If nothing does — no scenario failed
+this round, or every failure classified as `noise` — you're done: tell
+the user, make sure the log reflects it (explicitly note any model whose
+raw `result` was already `pass` with only noise-verdict misses, so the
+log doesn't read as if nothing was checked), and stop. Don't make further
+code changes once nothing is left to fix just because you can.
+
+**6. Otherwise, diagnose each scenario with a `real` or `inconclusive`
+verdict** (from 5a — `noise` scenarios are excluded here, regardless of
+which model's overall round they belong to) using
 `references/interpreting-results.md`'s framework: real prompt/model gap,
 too-strict scenario assertion, or capability ceiling. Different failures in
 the same round can land in different buckets — handle each on its own
-merits rather than picking one theory for the whole round.
+merits rather than picking one theory for the whole round. A confirmed
+`real` scenario gets diagnosed and fixed here even if its model's overall
+round already cleared the suite's threshold — having just paid to confirm
+it's real, leaving it unfixed would defeat the point of confirming it.
 
 **7. Apply the plateau check** (see "Stopping" below) before writing new
 code. If every remaining failure is ceiling-flagged, stop the whole loop
@@ -321,10 +333,10 @@ loop back to step 1 for the next round — subject to the cap.
 ## Stopping
 
 **Iteration cap.** Default 5 rounds; ask the user if they want a different
-number. When the cap is hit without every model passing, stop, write a
-final log entry summarizing the state honestly (which scenarios are still
-failing and your best read on why), and tell the user directly rather than
-silently giving up mid-loop.
+number. When the cap is hit with any scenario still classified `real` or
+`inconclusive` (step 5b), stop, write a final log entry summarizing the
+state honestly (which scenarios are still failing and your best read on
+why), and tell the user directly rather than silently giving up mid-loop.
 
 **Plateau detection.** Before starting a new round's fix, check: did the
 _same_ scenario fail, in the _same_ shape (same wrong tool via
