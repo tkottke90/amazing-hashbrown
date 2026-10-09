@@ -53,15 +53,20 @@ scenarios:
       Generate a concrete, ordered list of steps to complete this task.
       Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
     rubric: >
-      The response should be a JSON array of objects, each with a non-empty
-      "step" string and "done": false. The steps together should form a
-      reasonable, concrete, ordered first-draft plan for setting up a CI
-      workflow (e.g. creating a workflow file, configuring lint/typecheck/test
-      steps, wiring it to run on pull requests) — not vague filler steps, not
-      a restated title, and not inventing scope beyond what the title and
-      description support (e.g. don't invent deployment or release steps that
-      weren't asked for).
-    minScore: 6
+      Hard requirement: the response must be a JSON array of objects, each
+      with a non-empty "step" string and "done": false, and the steps must
+      be concrete and specific to setting up CI (e.g. creating a workflow
+      file, configuring lint/typecheck/test steps, wiring pull-request
+      triggers) — not vague filler ("Plan the work") and not a restated
+      title. Score no higher than 3/10 if the response isn't a valid array
+      of that shape, or if the steps are vague filler rather than concrete
+      actions.
+
+      Given that's met, also check the plan doesn't invent scope beyond
+      what the title/description support (e.g. no invented deployment or
+      release steps). A concrete, correctly-shaped, appropriately-scoped
+      plan has done its job: score it 8 or higher.
+    minScore: 7
 
   - id: tpg-003-respects-workspace-context
     name: Plan reflects the workspace's goal, not just the task title
@@ -81,15 +86,20 @@ scenarios:
       Generate a concrete, ordered list of steps to complete this task.
       Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
     rubric: >
-      The response should be a JSON array of {"step", "done": false} objects.
-      Given how thin the task's own title/description are on their own, a
-      good plan must draw on the workspace's stated goal (migrating legacy
-      cron-based batch jobs onto an event-driven task queue and retiring the
-      old cron runner) — e.g. inventorying existing cron jobs, migrating them
-      incrementally, decommissioning the old runner. Score low if the plan
-      is so generic it could apply to any unrelated "kick off" task and
-      ignores the workspace goal entirely.
-    minScore: 6
+      Hard requirement: the response must be a JSON array of {"step",
+      "done": false} objects, and the plan must draw on the workspace's
+      stated goal (migrating legacy cron-based batch jobs onto an
+      event-driven task queue and retiring the old cron runner) rather than
+      reading as a generic "kick off" plan that could apply to any
+      unrelated task. Score no higher than 3/10 if the response isn't
+      valid JSON of that shape, or if the plan ignores the workspace goal
+      entirely.
+
+      Given that's met, a plan that concretely engages the stated goal
+      (e.g. inventorying existing cron jobs, migrating incrementally,
+      decommissioning the old runner) has done its job: score it 8 or
+      higher.
+    minScore: 7
 
   - id: tpg-004-respects-wiki-context
     name: Plan incorporates a specific fact from the wiki context block
@@ -113,11 +123,16 @@ scenarios:
       Generate a concrete, ordered list of steps to complete this task.
       Respond with ONLY a JSON array of objects shaped {"step": string, "done": boolean} — no prose, no markdown code fences, no explanation. Every "done" must be false. If you cannot produce a reasonable plan, respond with an empty array: []
     rubric: >
-      The response should be a JSON array of {"step", "done": false} objects.
-      A good plan reflects the wiki context's specific detail — implementing
-      the `PaymentProvider` interface (charge/refund/getStatus), registering
-      the new provider in `providers/registry.ts`, and updating the provider
-      config schema — rather than a generic "integrate a payment API" plan
-      that ignores this codebase's actual existing pattern. Score low if the
-      plan reads as if the wiki context block wasn't there at all.
-    minScore: 6
+      Hard requirement: the response must be a JSON array of {"step",
+      "done": false} objects, and the plan must reflect the wiki context's
+      specific detail — implementing the PaymentProvider interface
+      (charge/refund/getStatus), registering the provider in
+      providers/registry.ts, and updating the provider config schema —
+      rather than a generic "integrate a payment API" plan that ignores
+      it. Score no higher than 3/10 if the response isn't valid JSON of
+      that shape, or if the plan reads as if the wiki context block wasn't
+      there at all.
+
+      Given that's met, a plan that concretely incorporates the wiki
+      context's specifics has done its job: score it 8 or higher.
+    minScore: 7

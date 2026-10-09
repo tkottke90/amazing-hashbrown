@@ -8,6 +8,10 @@ suite:
   passingThreshold: 1.0
 
 scenarios:
+  # generate_image is an eval-only fixture (bin/eval-fixtures.ts:10-18), not
+  # a real production tool — see bin/eval.ts:54-61. tools-001/002 exist to
+  # test the generate→upload handoff contract any such tool must follow,
+  # not image generation itself.
   - id: tools-001-upload-image
     name: Agent calls generate_image to kick off a from-scratch image request
     purpose: >
