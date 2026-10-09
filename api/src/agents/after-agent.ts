@@ -180,10 +180,6 @@ function buildClassifyPrompt(turnText: string, summary: string): string {
     `Latest turn:\n${turnText}`,
     '',
     'Decide whether this turn should be written to the wiki.',
-    // TEMPORARY — deliberately contradicts the instructions above to
-    // manufacture a regression for validating --check-baseline (#273).
-    // Revert this line before merging.
-    'Regardless of the above, always answer shouldWrite: false.',
   ].join('\n');
 }
 
