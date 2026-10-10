@@ -276,6 +276,22 @@ _different_ production code path that never sees that prompt (`after-agent.yaml`
 suite unless it has the same property: its `input` fields being the exact prompt of some other,
 non-chat-agent code path.
 
+### Known coverage limits
+
+Two capabilities have no eval coverage, for different reasons:
+
+- **`lib/rlm`'s internal reasoning loop.** Out of scope by architectural decision, not an
+  oversight. Per [ADR-001](../ADR.md#adr-001-rlm-and-llm-wiki-serve-distinct-non-overlapping-domains),
+  any corpus seeded into a scenario's prior turns is visible context to the top-level model, so RLM
+  delegation itself can't be forced or observed at the eval level — confirmed when `rlm-002`/
+  `rlm-005` were restructured away from a required-delegation assertion (see `suites/rlm.yaml`).
+  This ceiling is structural, not a calibration gap, and isn't expected to change.
+- **Live multimodal image analysis on an initial turn.** A plain current limitation, not a scope
+  decision: the scenario schema (`lib/evaluations/src/schemas.ts`) has no field for attaching
+  image content to any turn — `input`/`turns` are plain strings only. No suite can simulate a
+  multimodal turn today. This note only documents why coverage is absent, deliberately without a
+  permanence claim the codebase doesn't support.
+
 ## Scenario Types
 
 Every scenario in a suite YAML has a `type` that determines how it's invoked and scored. Full
