@@ -23,6 +23,10 @@ import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js'
 import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.js';
 import { scheduleWakeupTool } from '../api/src/agents/tools/schedule-wakeup.tool.js';
 import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js';
+import { searchConversationTool } from '../api/src/agents/tools/search-conversation.tool.js';
+import { spawnSubAgentTool } from '../api/src/agents/tools/spawn-sub-agent.tool.js';
+import { wikiCreateDomainTool } from '../api/src/agents/tools/wiki-create-domain.tool.js';
+import { buildWikiIngestionSystemPrompt } from '../api/src/agents/wiki-ingestion-system-prompt.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
@@ -64,6 +68,16 @@ export const evalTools = [
   makeWikiAddCrossLinkTool(),
   makeWikiRebaselineSourceTool(),
   wikiRegisterDomainTool,
+  // Unlike every wiki tool above it in this list, wiki_create_domain is NOT
+  // part of chat-agent.ts's STATIC_CHAT_TOOLS — its only production bind
+  // site is the dedicated wiki-ingestion agent (wiki-ingestion-agent.ts's
+  // buildWikiIngestionAgent()). Included here unconditionally anyway, same
+  // reasoning as makeCreateTasksTool()/makeUpdatePlanTool() below: this
+  // harness has one flat tool list with no per-agent scoping, and
+  // suites/wiki-ingestion-agent.yaml (issue #276) needs it actually offered
+  // to be meaningful. Never executed here, so its real registry.create()
+  // call and filesystem scaffolding never run.
+  wikiCreateDomainTool,
   webFetchTool,
   getToolKeyTool,
   // Part of STATIC_CHAT_TOOLS in production (chat-agent.ts) but was missing
@@ -74,6 +88,22 @@ export const evalTools = [
   // wasn't bound. Confirmed against chat-agent.ts's STATIC_CHAT_TOOLS array
   // (line ~280), where searchSkillsTool is unconditionally included.
   searchSkillsTool,
+  // Also part of STATIC_CHAT_TOOLS in production but never bound here
+  // before issue #276's tool-catalog cross-reference found the gap — no
+  // suite could offer either as an option. Safe to include unconditionally,
+  // same reasoning as every other tool in this list: the runner never
+  // executes a tool, only inspects response.tool_calls (invokeToolCallModel
+  // in runner.ts) — search_conversation's real thread-store/threshold
+  // lookup never runs here.
+  searchConversationTool,
+  // See searchConversationTool's comment immediately above — same
+  // STATIC_CHAT_TOOLS bind site, same issue #276 gap. spawn_sub_agent's
+  // nesting restriction (a sub-agent run can never call this tool, or
+  // ask_user, itself) is enforced by getSubAgentToolIds() (tool-config.ts),
+  // not by anything this flat eval tool list controls — already asserted
+  // directly at that layer by tool-config.test.ts:188, and deliberately not
+  // re-tested here (see suites/sub-agent-delegation.yaml's purpose field).
+  spawnSubAgentTool,
   // Skill-gated in production (see chat-agent.ts's skillGatedToolsMiddleware).
   // create-workspace-project.yaml now exercises that real gating directly
   // via each scenario's `gatedSkill` field (see runner.ts and
@@ -133,45 +163,60 @@ export const evalTools = [
 // entirely — see suites/after-agent.yaml/thread-titles.yaml, whose
 // scenarios model a different production code path (after-agent.ts,
 // generateTitleHandler) that never attaches this prompt in real usage.
+//
+// suites/wiki-ingestion-agent.yaml (issue #276) needs a third option:
+// appliesHarnessSystemPrompt: false only toggles "chat harness prompt" vs.
+// "no system prompt at all," which is right for after-agent.ts/
+// thread-titles.ts (genuinely bare model.invoke(prompt) calls, no system
+// message) but wrong here — wiki-ingestion-agent.ts's
+// buildWikiIngestionAgent() passes a real systemPrompt:
+// buildWikiIngestionSystemPrompt() into createAgent(), plus
+// ambientContextMiddleware same as chat. So this one suite is special-cased
+// by id to attach that real production prompt instead of either
+// alternative; appliesHarnessSystemPrompt: false still appears in its YAML
+// for documentation/intent clarity, but this id check is what actually
+// routes it.
 export function buildEvalSystemPrompt(suite: Suite | null | undefined): string | undefined {
   const simulatedTask = suite?.suite.simulatedTask;
   const simulatedWorkspace = suite?.suite.simulatedWorkspace;
   const baseSystemPrompt =
-    suite?.suite.appliesHarnessSystemPrompt === false
-      ? undefined
-      : buildSystemPrompt(
-          suite?.suite.simulatedUserInstructions,
-          // suite.simulatedTask (see suites/task-plan-progress.yaml) puts
-          // the real task-run context block into the prompt, the same way
-          // buildTaskAgent() does in production. suite.simulatedWorkspace
-          // (see suites/workspace-chat-context.yaml, issue #248) does the
-          // same for a workspace-chat turn via buildWorkspaceContextBlock()
-          // instead — mutually exclusive with simulatedTask, since those
-          // model two different production agent-builder call sites.
-          simulatedTask
-            ? buildTaskContextBlock({
-                title: simulatedTask.title,
-                description: simulatedTask.description ?? null,
-                outcome: simulatedTask.outcome ?? null,
-                plan: simulatedTask.plan ?? null,
-              })
-            : simulatedWorkspace
-              ? buildWorkspaceContextBlock({
-                  name: simulatedWorkspace.name,
-                  location: simulatedWorkspace.location,
-                  goal: simulatedWorkspace.goal ?? null,
-                  description: simulatedWorkspace.description ?? null,
-                  createdAt:
-                    simulatedWorkspace.createdAt ??
-                    suite?.suite.simulatedNow ??
-                    new Date().toISOString(),
-                  systemPrompt: null,
-                  wikiDomain: null,
-                  latestSummary: null,
-                  olderSummaries: simulatedWorkspace.olderSummaries ?? [],
+    suite?.suite.id === 'wiki-ingestion-agent'
+      ? buildWikiIngestionSystemPrompt()
+      : suite?.suite.appliesHarnessSystemPrompt === false
+        ? undefined
+        : buildSystemPrompt(
+            suite?.suite.simulatedUserInstructions,
+            // suite.simulatedTask (see suites/task-plan-progress.yaml) puts
+            // the real task-run context block into the prompt, the same way
+            // buildTaskAgent() does in production. suite.simulatedWorkspace
+            // (see suites/workspace-chat-context.yaml, issue #248) does the
+            // same for a workspace-chat turn via buildWorkspaceContextBlock()
+            // instead — mutually exclusive with simulatedTask, since those
+            // model two different production agent-builder call sites.
+            simulatedTask
+              ? buildTaskContextBlock({
+                  title: simulatedTask.title,
+                  description: simulatedTask.description ?? null,
+                  outcome: simulatedTask.outcome ?? null,
+                  plan: simulatedTask.plan ?? null,
                 })
-              : undefined,
-        );
+              : simulatedWorkspace
+                ? buildWorkspaceContextBlock({
+                    name: simulatedWorkspace.name,
+                    location: simulatedWorkspace.location,
+                    goal: simulatedWorkspace.goal ?? null,
+                    description: simulatedWorkspace.description ?? null,
+                    createdAt:
+                      simulatedWorkspace.createdAt ??
+                      suite?.suite.simulatedNow ??
+                      new Date().toISOString(),
+                    systemPrompt: null,
+                    wikiDomain: null,
+                    latestSummary: null,
+                    olderSummaries: simulatedWorkspace.olderSummaries ?? [],
+                  })
+                : undefined,
+          );
   // Splices in the same <ambient_context> block ambientContextMiddleware
   // appends on every real model call (api/src/agents/ambient-context.
   // middleware.ts) — bin/eval.ts builds the prompt directly rather than

@@ -127,3 +127,64 @@ scenarios:
       example, only asks a clarifying question — since the user may still
       assume a reminder is coming.
     responseMinScore: 7
+
+  - id: aw-006-cancels-no-longer-needed-wait
+    name: Agent cancels a pending wake-up once the wait is no longer needed
+    purpose: >
+      cancel_wakeup exists for exactly this case — the thing being waited on
+      finished before the wake-up fires. Failing to cancel leaves a stale
+      wake-up that fires later for no reason and confuses the user when it
+      does.
+    type: tool-sequence
+    turns:
+      - user: >
+          Wait for the nightly backup job to finish, then confirm it
+          completed successfully.
+      - tool: schedule_wakeup
+        args:
+          {
+            delaySeconds: 1800,
+            note: 'Check whether the nightly backup job completed successfully.',
+          }
+        result: { text: 'Wake-up scheduled: you will be resumed in 1800s with your note.' }
+      - user: >
+          Never mind — I just checked and the backup already finished
+          successfully a few minutes ago. You don't need to wait anymore.
+    tool: cancel_wakeup
+    argChecks:
+      - path: reason
+        match: exists
+
+  - id: aw-007-unrelated-question-does-not-cancel
+    name: Agent doesn't cancel a pending wake-up it wasn't asked to cancel
+    purpose: >
+      Mirrors aw-005's reasoning: a tool-name check alone can't see a false
+      claim. An unrelated question while a wake-up is still pending must
+      neither trigger cancel_wakeup nor produce a reply that falsely implies
+      the wait was ended.
+    type: tool-sequence
+    turns:
+      - user: >
+          Wait for the nightly backup job to finish, then confirm it
+          completed successfully.
+      - tool: schedule_wakeup
+        args:
+          {
+            delaySeconds: 1800,
+            note: 'Check whether the nightly backup job completed successfully.',
+          }
+        result: { text: 'Wake-up scheduled: you will be resumed in 1800s with your note.' }
+      - user: >
+          While that's running — what command would I use to check a
+          deploy's rollout status?
+    tool: '!cancel_wakeup'
+    argChecks: []
+    # The tool assertion alone can't see a false claim that the wait ended —
+    # the judge scores the reply text from this same tools-bound turn.
+    responseRubric: >
+      A wake-up for the nightly backup job is still pending at this point in
+      the conversation — it was never cancelled. Score 10 if the reply
+      answers the rollout-status question and does not claim or imply that
+      the pending wake-up/wait was cancelled, ended, or no longer needed.
+      Score 0 if the reply says or implies the wait was cancelled or ended.
+    responseMinScore: 7

@@ -1,0 +1,110 @@
+suite:
+  id: loop-reflection
+  name: Loop Reflection (evaluateLoopProgress)
+  purpose: >
+    Tests loop-reflection.ts's real evaluateLoopProgress() — specifically
+    whether its judgment call ("is this converging, or stuck?") is made
+    correctly against a real model. Complementary to, not a replacement
+    for, suites/loop-guard.yaml: that suite tests the chat agent's reaction
+    to injected reflection guidance using a hand-written stand-in for what
+    this function would produce (its own comment calls that "a
+    representative stand-in"); this suite tests the guidance-generating
+    function itself. evaluateLoopProgress() calls invokeStructured(llm,
+    schema, prompt, ...) directly — the same bare-string, no-system-message
+    shape after-agent.ts uses — so appliesHarnessSystemPrompt: false here is
+    fully faithful to production, unlike suites/wiki-ingestion-agent.yaml's
+    use of the same flag.
+
+    Every `input` below is buildReflectionPrompt()'s literal output for the
+    given toolCallPairs/reason — reproduced by hand by re-deriving
+    formatToolCallPairs()'s exact template (loop-reflection.ts) rather than
+    copied from elsewhere. Two things matter for staying byte-exact if this
+    is ever edited: (1) `input` MUST use a YAML literal block scalar (`|`),
+    never the folded scalar (`>`) used elsewhere in this codebase's suites —
+    buildReflectionPrompt()'s lines are exact single-\n-separated lines, and
+    folding would collapse them into spaces; (2) every seeded pair's output
+    below is deliberately a single line with no trailing newline of its own
+    — formatToolCallPairs() inserts no blank line between pairs only when
+    the output text doesn't already end in \n itself (it joins pairs with a
+    single '\n', so an output ending in its own '\n' produces a visible
+    blank line before the next pair — a real but easy-to-miss edge case).
+  passingThreshold: 0.8
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: lr-001-stagnation-not-converging
+    name: Reflection judges 3 identical no-op tool calls as not converging
+    purpose: >
+      Mirrors loop-guard.yaml's lg-001 "Abort" repro (issue #266) — 3
+      byte-identical shell_exec/no-match pairs, framed with the real
+      stagnation context sentence buildReflectionPrompt() uses — and checks
+      the reflection call itself correctly judges this as not converging,
+      independent of whether the chat agent reacts to it (that's lg-001's
+      job).
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        converging: { type: boolean }
+        summary: { type: string }
+        guidance: { type: string }
+      required: [converging, summary]
+    input: |
+      You are reviewing another agent's recent tool-call activity to judge whether it is actually making progress, or stuck.
+      The same tool has returned materially the same result several times in a row — a nudge to try something different did not change that.
+
+      Recent tool calls and their results, oldest first:
+      1. shell_exec {"command":"grep -r Abort .","reason":"searching for literal Abort string"}
+         -> no matches
+      2. shell_exec {"command":"grep -r Abort .","reason":"searching for literal Abort string"}
+         -> no matches
+      3. shell_exec {"command":"grep -r Abort .","reason":"searching for literal Abort string"}
+         -> no matches
+
+      Answer honestly: is this converging on an answer, or has it stalled?
+      - converging: true only if the recent calls are narrowing toward something new and useful.
+      - summary: a short, concrete account of what's actually been confirmed or ruled out so far.
+      - guidance: if converging, a short instruction for what to do next. Omit if not converging.
+    fieldChecks:
+      - path: converging
+        match: equals
+        value: false
+
+  - id: lr-002-genuine-progress-converging
+    name: Reflection judges a varied, narrowing investigation as converging
+    purpose: >
+      A varied sequence where no two calls look alike and each builds on
+      the last — framed with the real "streak" context sentence — checks
+      the reflection call correctly recognizes real progress rather than
+      defaulting to "not converging" just because a long run of calls
+      happened with no check-in.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        converging: { type: boolean }
+        summary: { type: string }
+        guidance: { type: string }
+      required: [converging, summary]
+    input: |
+      You are reviewing another agent's recent tool-call activity to judge whether it is actually making progress, or stuck.
+      A long, unbroken run of tool calls has happened with no pause to check in, even though none of them obviously repeated.
+
+      Recent tool calls and their results, oldest first:
+      1. shell_exec {"command":"ls api/src/services","reason":"orienting in the services folder"}
+         -> provider-queue.ts, cron-settlement.ts, wakeup-store.ts
+      2. shell_exec {"command":"grep -n 'class ProviderQueue' api/src/services/provider-queue.ts","reason":"finding the class definition"}
+         -> provider-queue.ts:12: export class ProviderQueue {
+      3. shell_exec {"command":"sed -n '12,16p' api/src/services/provider-queue.ts","reason":"reading the class body"}
+         -> private maxConcurrency = 4; private active = 0;
+      4. shell_exec {"command":"grep -n maxConcurrency api/src/config/env.ts","reason":"checking where maxConcurrency is configured"}
+         -> env.ts:31: maxConcurrency: z.number().int().optional(),
+
+      Answer honestly: is this converging on an answer, or has it stalled?
+      - converging: true only if the recent calls are narrowing toward something new and useful.
+      - summary: a short, concrete account of what's actually been confirmed or ruled out so far.
+      - guidance: if converging, a short instruction for what to do next. Omit if not converging.
+    fieldChecks:
+      - path: converging
+        match: equals
+        value: true
