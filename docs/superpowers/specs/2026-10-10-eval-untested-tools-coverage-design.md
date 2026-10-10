@@ -62,20 +62,20 @@ buildable here:
    stand-in"). It also turns out to already be covered correctly, at
    the right layer: `tool-config.test.ts:188` —
    `getSubAgentToolIds() never includes ask_user/spawn_sub_agent even
-   when forced on`. Nothing needs to be built for this item.
+when forced on`. Nothing needs to be built for this item.
 
 ## Scope
 
-| # | Item | Change |
-|---|------|--------|
-| 1 | `cancel_wakeup` | Extend `suites/agent-wait.yaml` |
-| 2 | `search_conversation` | New suite `suites/conversation-search.yaml` |
-| 3 | `spawn_sub_agent` delegation decision | New suite `suites/sub-agent-delegation.yaml` |
-| 4 | `spawn_sub_agent` nesting restriction | No new code — already covered by `tool-config.test.ts:188`; cited in (3)'s suite `purpose` |
-| 5 | `wiki_create_domain` + wiki-ingestion agent's system prompt | New suite `suites/wiki-ingestion-agent.yaml` |
-| 6 | `loop-reflection.ts`'s `evaluateLoopProgress` | New suite `suites/loop-reflection.yaml` |
-| 7 | Tool registration gap | Code change: `bin/eval-setup.ts` |
-| 8 | RLM internal loop / multimodal scope note | Doc addition: `docs/App-Docs/Evaluations.md` |
+| #   | Item                                                        | Change                                                                                     |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1   | `cancel_wakeup`                                             | Extend `suites/agent-wait.yaml`                                                            |
+| 2   | `search_conversation`                                       | New suite `suites/conversation-search.yaml`                                                |
+| 3   | `spawn_sub_agent` delegation decision                       | New suite `suites/sub-agent-delegation.yaml`                                               |
+| 4   | `spawn_sub_agent` nesting restriction                       | No new code — already covered by `tool-config.test.ts:188`; cited in (3)'s suite `purpose` |
+| 5   | `wiki_create_domain` + wiki-ingestion agent's system prompt | New suite `suites/wiki-ingestion-agent.yaml`                                               |
+| 6   | `loop-reflection.ts`'s `evaluateLoopProgress`               | New suite `suites/loop-reflection.yaml`                                                    |
+| 7   | Tool registration gap                                       | Code change: `bin/eval-setup.ts`                                                           |
+| 8   | RLM internal loop / multimodal scope note                   | Doc addition: `docs/App-Docs/Evaluations.md`                                               |
 
 All of it ships as one PR.
 
