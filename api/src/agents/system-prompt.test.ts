@@ -31,6 +31,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</memory>');
       expect(result).to.include('<notation>');
       expect(result).to.include('</notation>');
+      expect(result).to.include('<search_conversation>');
+      expect(result).to.include('</search_conversation>');
       expect(result).to.include('<wiki_navigation>');
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
@@ -51,19 +53,22 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</search_skills>');
       expect(result).to.include('<create_tasks>');
       expect(result).to.include('</create_tasks>');
+      expect(result).to.include('<spawn_sub_agent>');
+      expect(result).to.include('</spawn_sub_agent>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(14);
-      expect(closes).to.equal(14);
+      expect(opens).to.equal(16);
+      expect(closes).to.equal(16);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const notationTagIndex = result.indexOf('<notation>');
+      const searchConversationTagIndex = result.indexOf('<search_conversation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
       const attachmentTagIndex = result.indexOf('<attachment>');
@@ -74,10 +79,12 @@ describe('agents/system-prompt', () => {
       const imageTagIndex = result.indexOf('<image>');
       const searchSkillsTagIndex = result.indexOf('<search_skills>');
       const createTasksTagIndex = result.indexOf('<create_tasks>');
+      const spawnSubAgentTagIndex = result.indexOf('<spawn_sub_agent>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(notationTagIndex).to.be.greaterThan(-1);
+      expect(searchConversationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(attachmentTagIndex).to.be.greaterThan(-1);
@@ -88,10 +95,12 @@ describe('agents/system-prompt', () => {
       expect(imageTagIndex).to.be.greaterThan(-1);
       expect(searchSkillsTagIndex).to.be.greaterThan(-1);
       expect(createTasksTagIndex).to.be.greaterThan(-1);
+      expect(spawnSubAgentTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
-      expect(notationTagIndex).to.be.lessThan(wikiTagIndex);
+      expect(notationTagIndex).to.be.lessThan(searchConversationTagIndex);
+      expect(searchConversationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(attachmentTagIndex);
       expect(attachmentTagIndex).to.be.lessThan(wikiIngestTagIndex);
@@ -101,7 +110,8 @@ describe('agents/system-prompt', () => {
       expect(waitingTagIndex).to.be.lessThan(imageTagIndex);
       expect(imageTagIndex).to.be.lessThan(searchSkillsTagIndex);
       expect(searchSkillsTagIndex).to.be.lessThan(createTasksTagIndex);
-      expect(createTasksTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(createTasksTagIndex).to.be.lessThan(spawnSubAgentTagIndex);
+      expect(spawnSubAgentTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes notation guidance explaining / for skills and # for required tools', () => {
@@ -121,6 +131,92 @@ describe('agents/system-prompt', () => {
           '"What is my favorite programming language?" would on its own — wiki_locate first, per wiki_navigation\'s\n' +
           'own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the\n' +
           'message.',
+      );
+    });
+
+    it("distinguishes cross-session memory from access to this conversation's own earlier turns", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'The turns above are the real, complete record of this conversation.',
+      );
+      expect(result).to.include(
+        '"No built-in memory of this\nspecific user" (see identity) is about training data and separate past sessions — it does not mean\n' +
+          "you lack access to this conversation's own earlier turns.",
+      );
+    });
+
+    it('keys the two-branch decision to how far back the detail sits, not a self-assessed recall claim', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'Having access to a detail is a different question from how to answer about it — that depends on how\n' +
+          "far back the detail sits, not on whether you're confident you'd recall it correctly or on whether\n",
+      );
+      expect(result).to.include(
+        "successful recall doesn't by\nitself satisfy either branch below:",
+      );
+    });
+
+    it('distinguishes search_conversation from a wiki lookup, so "not wiki content" is never a reason to skip it', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'the detail sounds like something a wiki lookup would cover. search_conversation has nothing to do\n' +
+          'with the wiki — it searches this conversation\'s own history, not any external source — so "this\n' +
+          'isn\'t wiki content" is never a reason to skip the check below.',
+      );
+    });
+
+    it('anchors the long-thread search_conversation branch with the csrch-001 Meridian example, naming the wrong move outright', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For example, a thread that opened nine exchanges ago with "the client database\n' +
+          '  we\'re migrating is called Meridian" and is now being asked "what was that database called again?"\n' +
+          '  calls search_conversation first; it does not answer "Meridian" straight from having spotted it in\n' +
+          '  the visible history.',
+      );
+    });
+
+    it('rules out treating the opening message of a long conversation as exempt from the several-exchanges-back branch', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This includes a detail stated in the very first message of a long conversation: being the opening\n' +
+          '  message doesn\'t exempt it from "several exchanges back," it\'s the single most common way a detail\n' +
+          '  ends up there.',
+      );
+    });
+
+    it('tells the agent to answer directly from a plainly visible nearby turn instead of searching', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "The detail is stated in the user's immediately preceding turn, or the one just before it — answer\n" +
+          '  from it directly instead.',
+      );
+    });
+
+    it('tells the agent to delegate directly with spawn_sub_agent instead of gathering context first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'rather than block the conversation — "go ahead and have someone else work on it," "run that in\n' +
+          'the background," "you don\'t need to wait for this" — call spawn_sub_agent directly. Don\'t call\n' +
+          'ask_user or shell_exec first to gather context you think the sub-agent will need:',
+      );
+    });
+
+    it("anchors spawn_sub_agent's worked example to a self-contained goal, naming the wrong moves outright", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'the right move is to call spawn_sub_agent right away\n' +
+          'with a self-contained goal ("Scan this repository\'s git history over the last two years and\n' +
+          'summarize every breaking change to its public API."). Calling shell_exec to inspect the repo\n' +
+          'first, or ask_user to clarify what counts as "the public API," both delay the one thing the user\n' +
+          'actually asked for',
+      );
+    });
+
+    it('tells the agent to guess a plausible role rather than asking first, since an unknown role returns the real list', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "If you're unsure which role fits, pick the closest match and call spawn_sub_agent anyway — an\n" +
+          'unrecognized role returns the actual configured list in its result',
       );
     });
 
@@ -739,6 +835,8 @@ describe('agents/system-prompt', () => {
       'search_skills',
       'create_tasks',
       'ask_user',
+      'search_conversation',
+      'spawn_sub_agent',
     ]);
 
     it('keeps every section when every tool id is available', () => {
@@ -746,6 +844,7 @@ describe('agents/system-prompt', () => {
       for (const tag of [
         'identity',
         'memory',
+        'search_conversation',
         'wiki_navigation',
         'web_fetch',
         'attachment',
@@ -756,6 +855,7 @@ describe('agents/system-prompt', () => {
         'image',
         'search_skills',
         'create_tasks',
+        'spawn_sub_agent',
         'ask_user_routing',
       ]) {
         expect(result).to.include(`<${tag}>`);
@@ -844,6 +944,13 @@ describe('agents/system-prompt', () => {
       expect(result).to.match(/not reminders for the user/);
     });
 
+    it('tells the agent to decline a reminder request without reaching for create_tasks, and to cancel rather than just acknowledge a finished-early wait [unit]', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), new Set(['schedule_wakeup']));
+      expect(result).to.match(/no reminder or notification capability yet/);
+      expect(result).to.match(/don't reach for\s*\ncreate_tasks as a workaround/);
+      expect(result).to.match(/call cancel_wakeup right away with a reason/);
+    });
+
     it('removes image when upload_image is unavailable', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
@@ -884,6 +991,30 @@ describe('agents/system-prompt', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.not.include('<ask_user_routing>');
+    });
+
+    it('removes search_conversation when search_conversation is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<search_conversation>');
+    });
+
+    it('keeps search_conversation when search_conversation is available', () => {
+      const available = new Set(['search_conversation']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<search_conversation>');
+    });
+
+    it('removes spawn_sub_agent when spawn_sub_agent is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<spawn_sub_agent>');
+    });
+
+    it('keeps spawn_sub_agent when spawn_sub_agent is available', () => {
+      const available = new Set(['spawn_sub_agent']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<spawn_sub_agent>');
     });
 
     it('leaves no triple-newline runs or dangling whitespace after removing sections', () => {

@@ -1,0 +1,94 @@
+suite:
+  id: conversation-search
+  name: Conversation Search
+  purpose: >
+    Verifies the chat agent reaches for search_conversation to recall
+    content that has scrolled out of the active context window once a
+    thread is long enough for that to matter, and does not reach for it
+    when the answer is still plainly visible nearby — the tool's own "not
+    needed yet" branch below its default 20-message threshold
+    (search-conversation.tool.ts) means using it early would be the wrong
+    call, not just an unnecessary one. search_conversation is unconditionally
+    available in STATIC_CHAT_TOOLS (chat-agent.ts) but had no eval coverage
+    at all before issue #276.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: csrch-001-long-thread-recalls-early-fact
+    name: Agent searches conversation history to recall an early fact in a long thread
+    purpose: >
+      The scenario schema's tool-sequence turns only support a {tool, args,
+      result} pair or a {user} live turn — there is no way to seed a
+      synthetic AI prose reply. A long thread therefore has to be built from
+      repeated user + filler-tool exchanges rather than looking like an
+      ordinary chat transcript; that's a schema limitation, not an authoring
+      mistake. The first exchange plants a concrete, nameable fact; the final
+      live turn asks about it again well past the point it would still be in
+      easy view, exercising the "scrolled out of context" case the tool
+      exists for.
+    type: tool-sequence
+    turns:
+      - user: >
+          By the way, the client database we're migrating this quarter is
+          called Meridian. Can you check what tables exist in the current
+          schema dump?
+      - tool: shell_exec
+        args: { command: 'ls db/schema', reason: 'listing the schema dump files' }
+        result: { text: "users.sql\norders.sql\ninvoices.sql\n" }
+      - user: >
+          Thanks. Can you check if there's a migrations folder too?
+      - tool: shell_exec
+        args: { command: 'ls db/migrations', reason: 'checking for a migrations folder' }
+        result: { text: "0001_init.sql\n0002_add_invoices.sql\n" }
+      - user: >
+          Good. What's the latest version of the ORM we're using?
+      - tool: shell_exec
+        args: { command: 'grep -i orm package.json', reason: 'checking the ORM dependency version' }
+        result: { text: '"prisma": "^5.19.0"' }
+      - user: >
+          And what Node version does the project target?
+      - tool: shell_exec
+        args: { command: 'cat .nvmrc', reason: 'checking the targeted Node version' }
+        result: { text: "20\n" }
+      - user: >
+          One more thing — is there a CI workflow for running migrations?
+      - tool: shell_exec
+        args: { command: 'ls .github/workflows', reason: 'checking for a migrations CI workflow' }
+        result: { text: "test.yml\nlint.yml\n" }
+      - user: >
+          Okay, no dedicated workflow then. What test framework does this
+          repo use?
+      - tool: shell_exec
+        args: { command: 'grep -i mocha package.json', reason: 'checking the test framework' }
+        result: { text: '"mocha": "^10.0.0"' }
+      - user: >
+          Last check — does the repo have a .editorconfig?
+      - tool: shell_exec
+        args: { command: 'ls -a | grep editorconfig', reason: 'checking for an editorconfig file' }
+        result: { text: ".editorconfig\n" }
+      - user: >
+          Great, thanks. Going back to the very first thing we talked about
+          today — what was the name of that client database again?
+    tool: search_conversation
+    argChecks:
+      - path: query
+        match: exists
+
+  - id: csrch-002-short-thread-no-search-needed
+    name: Agent answers from visible context in a short thread instead of searching
+    purpose: >
+      Below the tool's own length threshold, the answer is still in the
+      active context window — reaching for search_conversation here would be
+      using it when it's explicitly not needed yet, not merely redundant.
+    type: tool-sequence
+    turns:
+      - user: >
+          I'm debugging a flaky test called test_retry_backoff — can you run
+          it a few times and see if it's actually flaky?
+      - tool: shell_exec
+        args: { command: 'npm test -- -g test_retry_backoff', reason: 'running the flaky test' }
+        result: { text: "1 passing (12ms)\n" }
+      - user: >
+          What was the name of that flaky test again?
+    tool: '!search_conversation'
+    argChecks: []

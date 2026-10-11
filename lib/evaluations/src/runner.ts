@@ -934,6 +934,24 @@ export async function executeScenario(
       // that text instead (see ToolSequenceScenarioSchema).
       const scenarioInputText =
         s.turns?.find((t): t is { user: string } => 'user' in t)?.user ?? s.steps?.[0]?.user ?? '';
+      // auto-eval round 2 of agent-wait (2026-10-11): the responseRubric
+      // judge below was being handed this same *first*-turn text as
+      // "input" even when the turn actually being judged is a later one —
+      // aw-007 seeds an unrelated first user turn ("Wait for the nightly
+      // backup job...") then judges the reply to a *second*, different
+      // user turn ("what command would I use to check a deploy's rollout
+      // status?"). The judge (anthropic) was handed the first turn as
+      // "input" and, confused about which question it was grading, mixed
+      // up the two — same bug independently present in
+      // suites/loop-guard.yaml's lg-001/lg-002 (first turn seeds the task,
+      // last turn is the actual nudge being judged). This resolves to the
+      // *last* user turn/step instead, which is the one whose reply is
+      // actually being judged; scenarioInputText above is untouched since
+      // #tool-name detection has no evidence of the same problem.
+      const lastUserTurnText =
+        [...(s.turns ?? [])].reverse().find((t): t is { user: string } => 'user' in t)?.user ??
+        s.steps?.[s.steps.length - 1]?.user ??
+        scenarioInputText;
       const finalSystemPrompt = withRequiredToolBlocks(
         effectiveSystemPrompt,
         scenarioInputText,
@@ -1048,9 +1066,10 @@ export async function executeScenario(
       }
       // Judge the reply text (and the tool call(s) made this turn, if any)
       // from this same tools-bound turn — see
-      // ToolSequenceScenarioSchema.responseRubric.
+      // ToolSequenceScenarioSchema.responseRubric. Uses lastUserTurnText,
+      // not scenarioInputText — see that variable's comment above.
       const judged = await runLlmJudge(
-        { input: scenarioInputText, rubric: s.responseRubric },
+        { input: lastUserTurnText, rubric: s.responseRubric },
         content,
         config.modelId,
         config.judgeModel,

@@ -276,6 +276,49 @@ _different_ production code path that never sees that prompt (`after-agent.yaml`
 suite unless it has the same property: its `input` fields being the exact prompt of some other,
 non-chat-agent code path.
 
+### Known coverage limits
+
+Two capabilities have no eval coverage, for different reasons:
+
+- **`lib/rlm`'s internal reasoning loop.** Out of scope by architectural decision, not an
+  oversight. Per [ADR-001](../ADR.md#adr-001-rlm-and-llm-wiki-serve-distinct-non-overlapping-domains),
+  any corpus seeded into a scenario's prior turns is visible context to the top-level model, so RLM
+  delegation itself can't be forced or observed at the eval level — confirmed when `rlm-002`/
+  `rlm-005` were restructured away from a required-delegation assertion (see `suites/rlm.yaml`).
+  This ceiling is structural, not a calibration gap, and isn't expected to change.
+- **Live multimodal image analysis on an initial turn.** A plain current limitation, not a scope
+  decision: the scenario schema (`lib/evaluations/src/schemas.ts`) has no field for attaching
+  image content to any turn — `input`/`turns` are plain strings only. No suite can simulate a
+  multimodal turn today. This note only documents why coverage is absent, deliberately without a
+  permanence claim the codebase doesn't support.
+
+### Known non-determinism: `conversation-search`'s csrch-001
+
+`csrch-001-long-thread-recalls-early-fact` (`suites/conversation-search.yaml`) has shown genuine
+run-to-run variance against identical seeds on two separate providers — this is the provider's
+serving stack, not a prompt gap, and isn't expected to go away with more wording changes:
+
+- **Ornith** varied 1-1-2 across 3 identical-seed `eval:probe` runs before any fix landed; a later
+  regression check after the fix below showed a stable 3/3 fail on csrch-001 instead — the same
+  underlying struggle, just not varying on that particular probe. Non-determinism doesn't have to
+  reproduce identically every time it's measured.
+- **local** fails csrch-001 3/3 reproducibly, independent of any fix here — three separate rounds
+  of wording changes targeting this exact scenario showed zero engagement with
+  `SEARCH_CONVERSATION_SECTION`'s content at all (see that section's comment trail). Treated as a
+  capability ceiling for this model on this scenario, not something to keep chasing with wording.
+- **Lemonade**, after the `SEARCH_CONVERSATION_SECTION` revision addressing its wiki/
+  search_conversation conflation (see that section's comment trail in `system-prompt.ts`), went
+  from 0/3 (100% reproducible failure) to 2/3 — a real fix, with one residual miss in the same
+  shape Ornith and local already showed. A regression check on local/Ornith/Digital Ocean after
+  this fix confirmed csrch-002 (the negative "no search needed" scenario) stayed clean 3/3 on
+  all three — the wording change didn't make any model over-eager to call search_conversation.
+
+Seed/temperature pinning (`applyEvalDeterminism`) doesn't guarantee determinism for either
+provider's serving stack — floating-point non-associativity, batching, and server state changes
+can all vary output independently of the seed. Don't chase this specific residual variance with
+further prompt edits; a `VARIED` probe verdict on this scenario for either provider is expected,
+not a regression.
+
 ## Scenario Types
 
 Every scenario in a suite YAML has a `type` that determines how it's invoked and scored. Full

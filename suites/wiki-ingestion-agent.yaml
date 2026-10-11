@@ -1,0 +1,95 @@
+suite:
+  id: wiki-ingestion-agent
+  name: Wiki Ingestion Agent
+  purpose: >
+    Verifies the wiki-ingestion agent's own system prompt
+    (buildWikiIngestionSystemPrompt(), wiki-ingestion-system-prompt.ts)
+    actually drives its distinctive rules — orient before writing, and
+    wiki_register_domain vs. wiki_create_domain discrimination — and that
+    wiki_create_domain itself gets called for a genuinely new domain. This
+    agent runs under its own dedicated system prompt, never the chat
+    agent's harness prompt — see wiki-ingestion-agent.ts's
+    buildWikiIngestionAgent(). Neither wiki_create_domain nor this agent's
+    own prompt had any eval coverage before issue #276.
+
+    appliesHarnessSystemPrompt: false below is set for documentation/intent
+    clarity, but the real routing is a suite-id special case in
+    bin/eval-setup.ts's buildEvalSystemPrompt() — that flag alone only
+    toggles "chat harness prompt" vs. "no system prompt at all," which isn't
+    right here: this agent's production system prompt is real, just a
+    different one (see the comment on that special case for why
+    after-agent.yaml's plain false doesn't apply).
+
+    Incidental note for future maintainers: this suite's effective prompt
+    still passes through runner.ts's filterHarnessSections(), which strips
+    blocks by tag name from the *chat harness's* own section list
+    (system-prompt.ts's HARNESS_SECTIONS) regardless of which prompt string
+    they came from. This prompt's own ask_user_routing tag happens to share
+    its name with the chat harness's ask_user_routing section
+    (requiresAnyOf: ['ask_user']) — harmless today since askUserTool is
+    unconditionally in bin/eval-setup.ts's evalTools, but if that ever
+    changes this suite's prompt would silently lose that section too.
+  passingThreshold: 0.8
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: wia-001-create-domain-for-brand-new-topic
+    name: Agent creates a brand-new wiki domain from scratch
+    purpose: >
+      Baseline positive case — a topic with no existing domain, explicitly
+      asked to be set up from scratch, is exactly what wiki_create_domain
+      is for.
+    type: tool-call
+    input: >
+      I want to start tracking notes about my 3D printing hobby — filament
+      types, printer settings, failed prints and fixes. There's no wiki for
+      that yet; let's set one up called "3d-printing".
+    tool: wiki_create_domain
+    argChecks:
+      - path: wikiId
+        match: exists
+      - path: domain
+        match: exists
+
+  - id: wia-002-orients-after-locate-before-writing
+    name: Agent orients on the located domain before writing to it
+    purpose: >
+      Exercises ORIENTATION_PROTOCOL_SECTION's two-part rule end to end —
+      call wiki_locate first when the domain isn't named, then orient on it
+      before writing anything. Mirrors the pattern suites/wiki-navigation.yaml
+      tests for the chat agent, applied here to this agent's own prompt and
+      tool set.
+    type: tool-sequence
+    turns:
+      - user: >
+          I want to add a note to my wiki about something but I'm not sure
+          which domain it belongs in — can you figure out where notes about
+          my home network equipment should go, and update it?
+      - tool: wiki_locate
+        args: { context: 'home network equipment' }
+        result:
+          {
+            text: 'Best match: "homelab" (domain: homelab, score 21). wiki_orient({ wikiId: "homelab" }) shows its structure if you need it.',
+          }
+    tool: wiki_orient
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: homelab
+
+  - id: wia-003-register-not-create-for-existing-on-disk-domain
+    name: Agent registers rather than creates a domain that already exists on disk
+    purpose: >
+      The exact distinction wiki_create_domain's own description draws
+      ("Do NOT use this for a domain that already exists on disk — use
+      wiki_register_domain instead.", wiki-create-domain.tool.ts).
+    type: tool-call
+    input: >
+      I already created a folder called "recipes" with a SCHEMA.md file in
+      the wiki directory by hand, but it isn't showing up as an available
+      domain in the app. Can you get it wired up so I can use it?
+    tool: wiki_register_domain
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: recipes

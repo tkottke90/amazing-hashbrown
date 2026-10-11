@@ -755,6 +755,38 @@ describe('executeScenario — tool-sequence responseRubric', () => {
     assert.match(prompts[0]!, /Rubric: Does not repeat the same stagnant search\./);
   });
 
+  it('gives the judge the last user turn, not the first, when turns seed an unrelated earlier topic [unit]', async () => {
+    // Mirrors suites/agent-wait.yaml's aw-007 and suites/loop-guard.yaml's
+    // lg-001: an unrelated first user turn seeds history, a tool turn
+    // happens, then a second, different user turn is the one whose reply
+    // is actually being judged. Regression test for the bug where the
+    // judge was handed the *first* turn's text as "input" regardless of
+    // which turn the model was actually replying to.
+    const { judge, prompts } = makeRecordingJudge(9);
+    await run(
+      makeScenario({
+        turns: [
+          { user: 'Wait for the nightly backup job to finish.' },
+          {
+            tool: 'shell_exec',
+            args: { command: 'echo scheduled' },
+            result: { text: 'scheduled' },
+          },
+          { user: "While that's running — what command checks rollout status?" },
+        ],
+      }),
+      makeReplyingModel('kubectl rollout status deployment/<name>'),
+      judge,
+    );
+
+    assert.equal(prompts.length, 1);
+    assert.match(
+      prompts[0]!,
+      /User input: While that's running — what command checks rollout status\?/,
+    );
+    assert.doesNotMatch(prompts[0]!, /Wait for the nightly backup job to finish\./);
+  });
+
   it('honors a custom responseMinScore [unit]', async () => {
     const { judge } = makeRecordingJudge(8);
     const result = await run(
