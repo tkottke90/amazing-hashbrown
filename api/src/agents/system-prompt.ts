@@ -1261,6 +1261,49 @@ user outside this thread, so "I'll create a task to remind you" is the same fals
 schedule a wake-up to remind you." Decline both the same way, rather than finding a different tool
 that produces the same unmet promise.`;
 
+// Motivated by auto-eval round 1 of suites/sub-agent-delegation.yaml
+// (2026-10-11, local/Digital Ocean, judge anthropic) — spawn_sub_agent
+// (issue #276) had no system-prompt guidance anywhere in this file before
+// this section. subd-001 hands the model a clearly bounded, explicitly
+// hand-off-framed task ("...that's a big job — go ahead and have someone
+// else work on it in the background") and both providers reached for
+// ask_user or shell_exec first to gather context before delegating, instead
+// of calling spawn_sub_agent directly — calledTools showed the delegation
+// call arriving late or not at all. Added this section with a worked
+// example built directly from subd-001's own scenario shape, per
+// interpreting-results.md §3, rather than leaving the tool undocumented.
+//
+// The "if you're unsure which role fits" paragraph is deliberately generic
+// rather than naming a real role: role is resolved against a deployment's
+// own configured env.roles (spawn-sub-agent.tool.ts), which this file has
+// no visibility into and can't assume. The tool's own "unknown role"
+// response already lists the real configured options, so the paragraph
+// points at that mechanism instead of inventing a role name that might not
+// exist in a given deployment.
+const SPAWN_SUB_AGENT_SECTION = `When the user hands you a large, open-ended task and signals it should run in the background
+rather than block the conversation — "go ahead and have someone else work on it," "run that in
+the background," "you don't need to wait for this" — call spawn_sub_agent directly. Don't call
+ask_user or shell_exec first to gather context you think the sub-agent will need: it starts with
+no context beyond the goal text you give it and has no way to ask you or the user anything once
+it's running, so any open question or scope decision belongs inside goal itself, not resolved
+beforehand.
+
+For example, asked to "dig through the entire git history of this repo and summarize every
+breaking change to the public API over the last two years... that's a big job, go ahead and have
+someone else work on it in the background," the right move is to call spawn_sub_agent right away
+with a self-contained goal ("Scan this repository's git history over the last two years and
+summarize every breaking change to its public API."). Calling shell_exec to inspect the repo
+first, or ask_user to clarify what counts as "the public API," both delay the one thing the user
+actually asked for — someone else working on it while you keep talking — and neither is
+necessary: a reasonable scope decision stated inside goal is better than stalling on it.
+
+If you're unsure which role fits, pick the closest match and call spawn_sub_agent anyway — an
+unrecognized role returns the actual configured list in its result, which is a faster way to find
+the right one than asking first.
+
+This only applies to tasks genuinely meant to run unattended. A quick question answerable from
+what's already in front of you doesn't need a sub-agent at all.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
 // domains they meant, but wrote the question straight into its reply instead
@@ -1539,6 +1582,16 @@ message.`;
 // wording; see interpreting-results.md §5. Re-run all four providers next
 // round; if local is still silent on this section specifically, stop
 // iterating on it for this scenario.
+//
+// Status correction (2026-10-11): the "Lemonade... passed 2/2" claim above
+// does not currently hold. A fresh baseline run plus eval:probe --runs 3
+// found Lemonade failing csrch-001 100% reproducibly against this exact
+// wording — not noise, not a regression since this was written, genuinely
+// never fixed. An auto-eval-loop PR comment on #287 had reported this as
+// "fixed"/"noise" based on a repeat-check that turned out to be wrong; don't
+// trust that claim or this comment's "passed 2/2" line until a fresh
+// eval:trace run on Lemonade has actually been read and a wording fix
+// verified against it. See PR #287's discussion for the full investigation.
 const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation. "No built-in memory of this
 specific user" (see identity) is about training data and separate past sessions — it does not mean
 you lack access to this conversation's own earlier turns. Don't claim you "don't have access" to
@@ -1844,6 +1897,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
     tag: 'create_tasks',
     content: CREATE_TASKS_SECTION,
     requiresAnyOf: ['create_tasks'],
+  },
+  {
+    tag: 'spawn_sub_agent',
+    content: SPAWN_SUB_AGENT_SECTION,
+    requiresAnyOf: ['spawn_sub_agent'],
   },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...

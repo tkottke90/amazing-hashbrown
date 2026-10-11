@@ -53,15 +53,17 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</search_skills>');
       expect(result).to.include('<create_tasks>');
       expect(result).to.include('</create_tasks>');
+      expect(result).to.include('<spawn_sub_agent>');
+      expect(result).to.include('</spawn_sub_agent>');
       expect(result).to.include('<ask_user_routing>');
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(15);
-      expect(closes).to.equal(15);
+      expect(opens).to.equal(16);
+      expect(closes).to.equal(16);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
@@ -77,6 +79,7 @@ describe('agents/system-prompt', () => {
       const imageTagIndex = result.indexOf('<image>');
       const searchSkillsTagIndex = result.indexOf('<search_skills>');
       const createTasksTagIndex = result.indexOf('<create_tasks>');
+      const spawnSubAgentTagIndex = result.indexOf('<spawn_sub_agent>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
@@ -92,6 +95,7 @@ describe('agents/system-prompt', () => {
       expect(imageTagIndex).to.be.greaterThan(-1);
       expect(searchSkillsTagIndex).to.be.greaterThan(-1);
       expect(createTasksTagIndex).to.be.greaterThan(-1);
+      expect(spawnSubAgentTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
@@ -106,7 +110,8 @@ describe('agents/system-prompt', () => {
       expect(waitingTagIndex).to.be.lessThan(imageTagIndex);
       expect(imageTagIndex).to.be.lessThan(searchSkillsTagIndex);
       expect(searchSkillsTagIndex).to.be.lessThan(createTasksTagIndex);
-      expect(createTasksTagIndex).to.be.lessThan(askUserTagIndex);
+      expect(createTasksTagIndex).to.be.lessThan(spawnSubAgentTagIndex);
+      expect(spawnSubAgentTagIndex).to.be.lessThan(askUserTagIndex);
     });
 
     it('includes notation guidance explaining / for skills and # for required tools', () => {
@@ -173,6 +178,34 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         "The detail is stated in the user's immediately preceding turn, or the one just before it — answer\n" +
           '  from it directly instead.',
+      );
+    });
+
+    it('tells the agent to delegate directly with spawn_sub_agent instead of gathering context first', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'rather than block the conversation — "go ahead and have someone else work on it," "run that in\n' +
+          'the background," "you don\'t need to wait for this" — call spawn_sub_agent directly. Don\'t call\n' +
+          'ask_user or shell_exec first to gather context you think the sub-agent will need:',
+      );
+    });
+
+    it("anchors spawn_sub_agent's worked example to a self-contained goal, naming the wrong moves outright", () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'the right move is to call spawn_sub_agent right away\n' +
+          'with a self-contained goal ("Scan this repository\'s git history over the last two years and\n' +
+          'summarize every breaking change to its public API."). Calling shell_exec to inspect the repo\n' +
+          'first, or ask_user to clarify what counts as "the public API," both delay the one thing the user\n' +
+          'actually asked for',
+      );
+    });
+
+    it('tells the agent to guess a plausible role rather than asking first, since an unknown role returns the real list', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "If you're unsure which role fits, pick the closest match and call spawn_sub_agent anyway — an\n" +
+          'unrecognized role returns the actual configured list in its result',
       );
     });
 
@@ -792,6 +825,7 @@ describe('agents/system-prompt', () => {
       'create_tasks',
       'ask_user',
       'search_conversation',
+      'spawn_sub_agent',
     ]);
 
     it('keeps every section when every tool id is available', () => {
@@ -810,6 +844,7 @@ describe('agents/system-prompt', () => {
         'image',
         'search_skills',
         'create_tasks',
+        'spawn_sub_agent',
         'ask_user_routing',
       ]) {
         expect(result).to.include(`<${tag}>`);
@@ -957,6 +992,18 @@ describe('agents/system-prompt', () => {
       const available = new Set(['search_conversation']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.include('<search_conversation>');
+    });
+
+    it('removes spawn_sub_agent when spawn_sub_agent is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<spawn_sub_agent>');
+    });
+
+    it('keeps spawn_sub_agent when spawn_sub_agent is available', () => {
+      const available = new Set(['spawn_sub_agent']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<spawn_sub_agent>');
     });
 
     it('leaves no triple-newline runs or dangling whitespace after removing sections', () => {
