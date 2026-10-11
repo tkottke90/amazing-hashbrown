@@ -149,8 +149,19 @@ describe('agents/system-prompt', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
         'Having access to a detail is a different question from how to answer about it — that depends on how\n' +
-          "far back the detail sits, not on whether you're confident you'd recall it correctly, since a\n" +
-          "successful recall doesn't by itself satisfy either branch below:",
+          "far back the detail sits, not on whether you're confident you'd recall it correctly or on whether\n",
+      );
+      expect(result).to.include(
+        "successful recall doesn't by\nitself satisfy either branch below:",
+      );
+    });
+
+    it('distinguishes search_conversation from a wiki lookup, so "not wiki content" is never a reason to skip it', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'the detail sounds like something a wiki lookup would cover. search_conversation has nothing to do\n' +
+          'with the wiki — it searches this conversation\'s own history, not any external source — so "this\n' +
+          'isn\'t wiki content" is never a reason to skip the check below.',
       );
     });
 

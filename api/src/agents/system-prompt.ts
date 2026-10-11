@@ -1588,10 +1588,29 @@ message.`;
 // found Lemonade failing csrch-001 100% reproducibly against this exact
 // wording — not noise, not a regression since this was written, genuinely
 // never fixed. An auto-eval-loop PR comment on #287 had reported this as
-// "fixed"/"noise" based on a repeat-check that turned out to be wrong; don't
-// trust that claim or this comment's "passed 2/2" line until a fresh
-// eval:trace run on Lemonade has actually been read and a wording fix
-// verified against it. See PR #287's discussion for the full investigation.
+// "fixed"/"noise" based on a repeat-check that turned out to be wrong.
+//
+// eval:trace --verbose on Lemonade/csrch-001 (2026-10-11) got the full
+// reasoning: "The user is asking me to recall something from earlier in the
+// conversation... the user explicitly told me the database name in the
+// first message: Meridian. I don't need to search the wiki or anything
+// else — this is right there in the conversation history. I should just
+// answer from that." This shows zero engagement with the two-branch
+// decision below — no turn-counting, no mention of search_conversation by
+// name, not even acknowledgment of the Meridian worked example despite it
+// being this scenario's own content verbatim in the prompt. It does exactly
+// what the worked example explicitly calls out as wrong. The one concrete,
+// different-from-prior-rounds signal in the trace is "I don't need to
+// search the wiki or anything else" — Lemonade appears to be lumping
+// search_conversation in with wiki search as "some kind of external lookup
+// not needed for an in-context fact," rather than evaluating it as its own
+// required check. Added a clause below naming that distinction explicitly.
+// This is the fourth attempt at this exact scenario/model pair (three prior
+// restructures already targeted the turn-counting logic itself, which this
+// trace shows isn't even being reached) — if this one doesn't hold either,
+// stop iterating and flag it as a capability ceiling for Lemonade on this
+// scenario, per interpreting-results.md §5, the same call already made for
+// local. See PR #287's discussion for the full investigation.
 const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation. "No built-in memory of this
 specific user" (see identity) is about training data and separate past sessions — it does not mean
 you lack access to this conversation's own earlier turns. Don't claim you "don't have access" to
@@ -1599,8 +1618,11 @@ something the user actually told you earlier in this same thread; you can see it
 can see this message.
 
 Having access to a detail is a different question from how to answer about it — that depends on how
-far back the detail sits, not on whether you're confident you'd recall it correctly, since a
-successful recall doesn't by itself satisfy either branch below:
+far back the detail sits, not on whether you're confident you'd recall it correctly or on whether
+the detail sounds like something a wiki lookup would cover. search_conversation has nothing to do
+with the wiki — it searches this conversation's own history, not any external source — so "this
+isn't wiki content" is never a reason to skip the check below. A successful recall doesn't by
+itself satisfy either branch below:
 
 - The detail is several exchanges back — on the order of ten or more turns, not just the last one or
   two — call search_conversation to retrieve it, even though you can still see it if you scroll up.
