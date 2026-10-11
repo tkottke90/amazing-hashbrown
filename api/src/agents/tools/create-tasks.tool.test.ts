@@ -425,7 +425,27 @@ describe('agents/tools/create-tasks', () => {
     it('rejects asCohort from a task that is itself a cohort member, and creates nothing', async () => {
       const store = getWorkspaceStore();
       const holder = scheduledCronTask(store);
-      const [child] = store.createTasks([{ title: 'child', cohortOf: holder.id }]);
+      // The child must itself be a cron task to get past the earlier
+      // triggerType check and actually exercise the cohortOf rejection.
+      const [child] = store.createTasks([
+        {
+          title: 'child',
+          triggerType: 'cron_repeat',
+          triggerConfig: {
+            expression: '0 0 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            maxIterations: null,
+            stopAfter: null,
+            maxConsecutiveFailures: 3,
+            enabledAt: '2026-01-01T00:00:00.000Z',
+            lastFiredAt: null,
+            consecutiveFailures: 0,
+            pausedReason: null,
+          },
+          cohortOf: holder.id,
+        },
+      ]);
       const result = await makeCreateTasksTool(undefined, undefined, undefined, child!.id).invoke(
         { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }] },
         invokeConfig(workspaceId),
