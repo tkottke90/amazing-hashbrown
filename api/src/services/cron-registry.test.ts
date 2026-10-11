@@ -320,5 +320,45 @@ describe('services/cron-registry', () => {
       expect(store.getTask(dependent.id)!.status).to.equal('scheduled');
       expect(registry.armedFor(dependent.id)?.toISOString()).to.equal('2026-09-27T00:00:00.000Z');
     });
+
+    it('arms a cohort holder once its last spawned child settles — no new call site needed, resyncAll() after every run already covers it [orchestration]', async () => {
+      const holder = repeatTask();
+      registry.fire(holder.id, new Date('2026-09-26T00:00:00.000Z'), 'schedule');
+      const holderEntry = store.dequeueNext()!;
+
+      store.openCohort(holder.id, 2);
+      await withCronResync(
+        async () => {
+          store.completeQueueEntry(holderEntry.id, 'done');
+        },
+        () => registry,
+      )(holderEntry);
+
+      expect(store.getTask(holder.id)!.status).to.equal('blocked');
+      expect(registry.armedFor(holder.id), 'not armed while the cohort is still open').to.equal(
+        null,
+      );
+
+      const [child1, child2] = store.createTasks([
+        { title: 'child 1', cohortOf: holder.id },
+        { title: 'child 2', cohortOf: holder.id },
+      ]);
+      const childEntry1 = store.listQueue().find((q) => q.taskId === child1!.id)!;
+      const childEntry2 = store.listQueue().find((q) => q.taskId === child2!.id)!;
+
+      await withCronResync(
+        async () => store.completeQueueEntry(childEntry1.id, 'done'),
+        () => registry,
+      )({ ...childEntry1, task: store.getTask(child1!.id)! });
+      expect(registry.armedFor(holder.id), 'still not armed — one child left').to.equal(null);
+
+      await withCronResync(
+        async () => store.completeQueueEntry(childEntry2.id, 'done'),
+        () => registry,
+      )({ ...childEntry2, task: store.getTask(child2!.id)! });
+
+      expect(store.getTask(holder.id)!.status).to.equal('scheduled');
+      expect(registry.armedFor(holder.id)).to.not.equal(null);
+    });
   });
 });

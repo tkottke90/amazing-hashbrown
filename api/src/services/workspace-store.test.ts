@@ -1045,6 +1045,18 @@ describe('services/workspace-store', () => {
         expect(store.isTaskReady(b.id)).to.equal(false); // whileBlocked never rescues failed
       });
 
+      it("whileBlocked=true: a target blocked/'awaiting_children' does NOT satisfy the edge — that's a cohort holder mid-run, not a human pause [unit]", () => {
+        const a = store.createTask({ title: 'a' });
+        const b = store.createTask({ title: 'b' });
+        store.addTaskDependency(b.id, a.id, { requireSuccess: true, whileBlocked: true });
+
+        store.patchTask(a.id, { status: 'blocked', blockedReason: 'awaiting_children' });
+        expect(store.isTaskReady(b.id)).to.equal(false);
+
+        store.patchTask(a.id, { status: 'blocked', blockedReason: null });
+        expect(store.isTaskReady(b.id)).to.equal(true); // a plain human pause still satisfies it
+      });
+
       it('requires every edge to be satisfied (AND across multiple dependencies)', () => {
         const a = store.createTask({ title: 'a' });
         const b = store.createTask({ title: 'b' });
@@ -1473,6 +1485,133 @@ describe('services/workspace-store', () => {
         1,
       );
     });
+
+    describe('cron cohort gating', () => {
+      function fireAndRunHolder() {
+        const holder = scheduledRepeatTask();
+        const entry = store.fireCronTask(holder.id, '2026-09-26T00:00:00.000Z', 'schedule')!;
+        store.dequeueNext(); // holder -> running
+        return { holder, entry };
+      }
+
+      it('openCohort/getOpenCohort round-trip, pendingOutcome null until the holder freezes it [unit]', () => {
+        const { holder } = fireAndRunHolder();
+        store.openCohort(holder.id, 2);
+
+        const cohort = store.getOpenCohort(holder.id);
+        expect(cohort).to.not.equal(null);
+        expect(cohort!.totalCount).to.equal(2);
+        expect(cohort!.settledCount).to.equal(0);
+        expect(cohort!.pendingOutcome).to.equal(null);
+      });
+
+      it("holds the holder at blocked/'awaiting_children' when its own run ends with an open cohort, instead of settling it onto its schedule [orchestration]", () => {
+        const { holder, entry } = fireAndRunHolder();
+        store.openCohort(holder.id, 2);
+        const configBefore = store.getTask(holder.id)!.triggerConfig; // post-fire (lastFiredAt set), pre-settle
+
+        store.completeQueueEntry(entry.id, 'done');
+
+        const after = store.getTask(holder.id)!;
+        expect(after.status).to.equal('blocked');
+        expect(after.blockedReason).to.equal('awaiting_children');
+        expect(after.triggerConfig).to.deep.equal(configBefore); // untouched — no settleCronRun yet
+        expect(store.getOpenCohort(holder.id)!.pendingOutcome).to.deep.equal({
+          outcome: 'done',
+          source: 'schedule',
+        });
+      });
+
+      it('leaves the holder blocked after only one of two children settles [orchestration]', () => {
+        const { holder, entry } = fireAndRunHolder();
+        store.openCohort(holder.id, 2);
+        store.completeQueueEntry(entry.id, 'done');
+
+        const [child1] = store.createTasks([
+          { title: 'child 1', cohortOf: holder.id },
+          { title: 'child 2', cohortOf: holder.id },
+        ]);
+        const childEntry1 = store.listQueue().find((q) => q.taskId === child1!.id)!;
+        store.completeQueueEntry(childEntry1.id, 'done');
+
+        expect(store.getTask(holder.id)!.status).to.equal('blocked');
+        const cohort = store.getOpenCohort(holder.id)!;
+        expect(cohort.settledCount).to.equal(1);
+        expect(cohort.totalCount).to.equal(2);
+      });
+
+      it('releases the holder back onto its schedule once the last child settles, any outcome counting (outcome-blind release) [orchestration]', () => {
+        const { holder, entry } = fireAndRunHolder();
+        store.openCohort(holder.id, 2);
+        store.completeQueueEntry(entry.id, 'done');
+
+        const [child1, child2] = store.createTasks([
+          { title: 'child 1', cohortOf: holder.id },
+          { title: 'child 2', cohortOf: holder.id },
+        ]);
+        const childEntry1 = store.listQueue().find((q) => q.taskId === child1!.id)!;
+        store.completeQueueEntry(childEntry1.id, 'done');
+        const childEntry2 = store.listQueue().find((q) => q.taskId === child2!.id)!;
+        store.completeQueueEntry(childEntry2.id, 'failed'); // one done, one failed
+
+        const after = store.getTask(holder.id)!;
+        expect(after.status, 'resolves regardless of a failed child').to.equal('scheduled');
+        expect(store.getOpenCohort(holder.id), 'cohort row is gone').to.equal(null);
+        expect(store.countScheduledRuns(holder.id)).to.equal(1); // the holder's own run, live-read
+      });
+
+      it("skips a fire while the holder is blocked/'awaiting_children' — the existing idle gate covers this with no new code [unit]", () => {
+        const { holder, entry } = fireAndRunHolder();
+        store.openCohort(holder.id, 2);
+        store.completeQueueEntry(entry.id, 'done');
+        expect(store.getTask(holder.id)!.status).to.equal('blocked');
+
+        expect(store.fireCronTask(holder.id, '2026-09-27T00:00:00.000Z', 'schedule')).to.equal(
+          null,
+        );
+        expect(store.listTaskRuns(holder.id)).to.have.length(1);
+      });
+    });
+  });
+
+  describe('task cohorts (migration 37 — task_cohorts table, tasks.cohort_of column)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-cohort-migration-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Rolls the DB back to "migration 36 applied, 37 not yet" so a test can
+    // seed pre-migration rows and then watch migration 37 run against them
+    // on the next store construction (== the next process start).
+    function rollBackMigration37(): void {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_tasks_cohort_of;
+        ALTER TABLE tasks DROP COLUMN cohort_of;
+        DROP TABLE IF EXISTS task_cohorts;
+        DELETE FROM schema_migrations WHERE version = 37;
+      `);
+    }
+
+    it('applies cleanly to a pre-37 database — a fresh task reads cohortOf as null [unit]', () => {
+      const task = store.createTask({ title: 't' });
+      expect(task.cohortOf).to.equal(null);
+
+      rollBackMigration37();
+      const migrated = new WorkspaceStore(db);
+
+      const reloaded = migrated.createTask({ title: 'after migration' });
+      expect(reloaded.cohortOf).to.equal(null);
+      expect(migrated.getOpenCohort(reloaded.id)).to.equal(null);
+    });
   });
 
   describe('Kanban board v2 queue primitives (dequeueTask / reorderQueue / batch readers)', () => {
@@ -1621,6 +1760,22 @@ describe('services/workspace-store', () => {
       expect(edge.satisfied).to.equal(false);
 
       store.patchTask(target.id, { status: 'done' });
+      expect(
+        store.listDependencyEdgesForTasks([waiting.id]).get(waiting.id)![0].satisfied,
+      ).to.equal(true);
+    });
+
+    it("listDependencyEdgesForTasks also withholds satisfied for a whileBlocked edge whose target is blocked/'awaiting_children' [unit]", () => {
+      const target = store.createTask({ title: 'Orchestrator' });
+      const waiting = store.createTask({ title: 'Route' });
+      store.addTaskDependency(waiting.id, target.id, { whileBlocked: true });
+
+      store.patchTask(target.id, { status: 'blocked', blockedReason: 'awaiting_children' });
+      expect(
+        store.listDependencyEdgesForTasks([waiting.id]).get(waiting.id)![0].satisfied,
+      ).to.equal(false);
+
+      store.patchTask(target.id, { status: 'blocked', blockedReason: null });
       expect(
         store.listDependencyEdgesForTasks([waiting.id]).get(waiting.id)![0].satisfied,
       ).to.equal(true);

@@ -74,6 +74,14 @@ const CreateTasksSchema = z.object({
     .describe(
       'A GitHub issue/PR URL (or other registered tracker URL) to link every task in this batch to.',
     ),
+  asCohort: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true to hold this cron-triggered task's own reschedule until every task in this " +
+        'batch finishes (any outcome) — only valid when this call is made from a cron_once or ' +
+        "cron_repeat task's own run, and only once per run.",
+    ),
   tasks: z
     .array(
       z.object({
@@ -102,15 +110,23 @@ const CreateTasksSchema = z.object({
 
 // Factory-injected store/registries (defaulting to the production
 // singletons), matching create-project.tool.ts's testability pattern.
-// Only bound in workspace-chat/task-agent builds (see buildWorkspaceScopedTools()
-// in chat-agent.ts) — never in plain chat or sub-agent runs.
+// callingTaskId identifies the task whose own run is making this call (set
+// only for a task-agent run — see buildTaskAgent in chat-agent.ts) — needed
+// for the asCohort validation below, since nothing in the LangChain tool
+// runtime carries a task id today. Only bound in workspace-chat/task-agent
+// builds (see buildWorkspaceScopedTools() in chat-agent.ts) — never in
+// plain chat or sub-agent runs.
 export function makeCreateTasksTool(
   store?: WorkspaceStore,
   trackerRegistry?: TrackerRegistry,
   cronRegistry?: CronRegistry,
+  callingTaskId?: string,
 ) {
   return tool(
-    async ({ trackerUrl, tasks }: z.infer<typeof CreateTasksSchema>, runtime: ToolRuntime) => {
+    async (
+      { trackerUrl, asCohort, tasks }: z.infer<typeof CreateTasksSchema>,
+      runtime: ToolRuntime,
+    ) => {
       const workspaceId = runtime.configurable?.workspaceId as string | undefined;
       if (!workspaceId) {
         return 'Cannot create tasks: no active workspace.';
@@ -125,6 +141,28 @@ export function makeCreateTasksTool(
       for (let i = 0; i < tasks.length; i++) {
         if (!tasks[i]!.title || !tasks[i]!.title.trim()) {
           return `Task ${i + 1} has no title; no tasks were created.`;
+        }
+      }
+
+      const s = store ?? getWorkspaceStore();
+
+      // asCohort holds this task's own reschedule until the whole batch
+      // settles (see docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md)
+      // — only ever valid for a cron task's own run, and only once per run,
+      // so a child never ends up holding its own cohort (no nesting).
+      if (asCohort) {
+        const callingTask = callingTaskId ? s.getTask(callingTaskId) : null;
+        if (!callingTask) {
+          return 'asCohort requires this call to come from a running cron task; no active task context.';
+        }
+        if (callingTask.triggerType !== 'cron_once' && callingTask.triggerType !== 'cron_repeat') {
+          return "asCohort can only be used from a cron_once or cron_repeat task's own run.";
+        }
+        if (callingTask.cohortOf) {
+          return "This task was itself created as part of another task's cohort; it cannot hold its own.";
+        }
+        if (s.getOpenCohort(callingTaskId!)) {
+          return 'This task already holds an open cohort; wait for it to resolve before dispatching another.';
         }
       }
 
@@ -148,7 +186,6 @@ export function makeCreateTasksTool(
         resolvedTriggers.push(resolved.config);
       }
 
-      const s = store ?? getWorkspaceStore();
       if (!s.getWorkspace(workspaceId)) {
         return 'Workspace no longer exists; no tasks were created.';
       }
@@ -181,6 +218,7 @@ export function makeCreateTasksTool(
         triggerConfig: resolvedTriggers[i] ?? undefined,
         trackerType: trackerType ?? null,
         trackerId: trackerId ?? null,
+        cohortOf: asCohort ? callingTaskId : undefined,
       }));
 
       let created;
@@ -189,6 +227,10 @@ export function makeCreateTasksTool(
       } catch (err) {
         logger.error('create_tasks: batch insert failed', { err: serializeError(err) });
         return `Failed to create tasks: ${(err as Error).message}`;
+      }
+
+      if (asCohort && callingTaskId) {
+        s.openCohort(callingTaskId, tasks.length);
       }
 
       getTaskScheduler().wake();
@@ -223,7 +265,10 @@ export function makeCreateTasksTool(
         'down an approved GitHub issue), not while still brainstorming. Optionally link the whole ' +
         'batch to a tracker URL (e.g. a GitHub issue/PR) via trackerUrl instead of re-describing it ' +
         "in each task's description. Tasks run in the order given, one at a time. Set a task's " +
-        'trigger to give it a recurring or future-dated schedule instead of running it immediately.',
+        'trigger to give it a recurring or future-dated schedule instead of running it immediately. ' +
+        'If you are a cron_once/cron_repeat task creating one-off follow-up work from your own run ' +
+        '(e.g. one task per item in a list you just reviewed), set asCohort: true so your own ' +
+        'schedule holds until this whole batch finishes instead of firing again too soon.',
       schema: CreateTasksSchema,
     },
   );

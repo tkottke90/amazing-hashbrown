@@ -64,7 +64,8 @@ export interface CronPreview {
 }
 
 export type CronPreviewRequest =
-  { expression: string; timezone: string } | { fireAt: string; timezone: string };
+  | { expression: string; timezone: string }
+  | { fireAt: string; timezone: string };
 
 // The Kanban board projection the API computes for every task — the server
 // owns which lane a task is in and where it may be dropped (see the API's
@@ -101,7 +102,8 @@ export type BoardReason =
   | { kind: 'dependency_failed'; dependency: TaskRef | null }
   | { kind: 'schedule_paused'; failures: number }
   | { kind: 'waiting_on_dependency'; dependencies: TaskRef[] }
-  | { kind: 'assigned_to_user' };
+  | { kind: 'assigned_to_user' }
+  | { kind: 'awaiting_children'; settled: number; total: number };
 
 export interface Board {
   lane: Lane;
@@ -135,7 +137,7 @@ export interface Task {
   plan: PlanStep[] | null;
   // Set when status is 'blocked' because a required dependency failed —
   // distinct from a plain user-initiated pause, which leaves this null.
-  blockedReason: 'dependency_failed' | null;
+  blockedReason: 'dependency_failed' | 'awaiting_children' | null;
   createdAt: string;
   updatedAt: string;
   // Present on cron tasks only.

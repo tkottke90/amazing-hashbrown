@@ -379,4 +379,100 @@ describe('agents/tools/create-tasks', () => {
       expect(store.listQueue().some((q) => q.taskId === second.id)).to.equal(false);
     });
   });
+
+  describe('asCohort', () => {
+    function scheduledCronTask(store: ReturnType<typeof getWorkspaceStore>) {
+      const task = store.createTask({
+        workspaceId,
+        title: 'orchestrator',
+        triggerType: 'cron_repeat',
+        triggerConfig: {
+          expression: '0 0 * * *',
+          timezone: 'UTC',
+          enabled: true,
+          maxIterations: null,
+          stopAfter: null,
+          maxConsecutiveFailures: 3,
+          enabledAt: '2026-01-01T00:00:00.000Z',
+          lastFiredAt: null,
+          consecutiveFailures: 0,
+          pausedReason: null,
+        },
+      });
+      return store.patchTask(task.id, { status: 'scheduled' })!;
+    }
+
+    it('rejects asCohort with no calling task context, and creates nothing', async () => {
+      const result = await makeCreateTasksTool().invoke(
+        { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }] },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('no active task context');
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
+    });
+
+    it('rejects asCohort from a non-cron calling task, and creates nothing', async () => {
+      const store = getWorkspaceStore();
+      const caller = store.createTask({ workspaceId, title: 'plain task' });
+      const result = await makeCreateTasksTool(undefined, undefined, undefined, caller.id).invoke(
+        { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }] },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('cron_once or cron_repeat');
+      expect(store.listTasks({}).length).to.equal(1); // only the caller itself
+    });
+
+    it('rejects asCohort from a task that is itself a cohort member, and creates nothing', async () => {
+      const store = getWorkspaceStore();
+      const holder = scheduledCronTask(store);
+      const [child] = store.createTasks([{ title: 'child', cohortOf: holder.id }]);
+      const result = await makeCreateTasksTool(undefined, undefined, undefined, child!.id).invoke(
+        { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }] },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('cannot hold its own');
+      expect(store.listTasks({}).length).to.equal(2); // holder + child only
+    });
+
+    it('rejects a second asCohort call in the same run, and creates nothing new', async () => {
+      const store = getWorkspaceStore();
+      const holder = scheduledCronTask(store);
+      store.openCohort(holder.id, 2);
+      const result = await makeCreateTasksTool(undefined, undefined, undefined, holder.id).invoke(
+        { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }] },
+        invokeConfig(workspaceId),
+      );
+      expect(String(result)).to.include('already holds an open cohort');
+      expect(store.listTasks({}).length).to.equal(1); // only the holder itself
+    });
+
+    it('tags every created child with cohortOf and opens a cohort sized to the batch', async () => {
+      const store = getWorkspaceStore();
+      const holder = scheduledCronTask(store);
+      const result = await makeCreateTasksTool(undefined, undefined, undefined, holder.id).invoke(
+        { asCohort: true, tasks: [{ title: 'a' }, { title: 'b' }, { title: 'c' }] },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string }[] };
+      expect(parsed.created).to.have.length(3);
+      for (const { id } of parsed.created) {
+        expect(store.getTask(id)!.cohortOf).to.equal(holder.id);
+      }
+      const cohort = store.getOpenCohort(holder.id);
+      expect(cohort?.totalCount).to.equal(3);
+      expect(cohort?.settledCount).to.equal(0);
+    });
+
+    it('does not open a cohort or tag children when asCohort is omitted', async () => {
+      const store = getWorkspaceStore();
+      const holder = scheduledCronTask(store);
+      const result = await makeCreateTasksTool(undefined, undefined, undefined, holder.id).invoke(
+        { tasks: [{ title: 'a' }] },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string }[] };
+      expect(store.getTask(parsed.created[0]!.id)!.cohortOf).to.equal(null);
+      expect(store.getOpenCohort(holder.id)).to.equal(null);
+    });
+  });
 });

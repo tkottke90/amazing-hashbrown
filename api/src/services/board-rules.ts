@@ -7,6 +7,7 @@
 
 import type { TaskSchedule } from './cron-config.js';
 import type {
+  CohortSummary,
   DependencyEdgeSummary,
   FailedRunStreak,
   Task,
@@ -51,7 +52,8 @@ export type BoardReason =
   | { kind: 'dependency_failed'; dependency: TaskRef | null }
   | { kind: 'schedule_paused'; failures: number }
   | { kind: 'waiting_on_dependency'; dependencies: TaskRef[] }
-  | { kind: 'assigned_to_user' };
+  | { kind: 'assigned_to_user' }
+  | { kind: 'awaiting_children'; settled: number; total: number };
 
 export interface Board {
   lane: Lane;
@@ -76,6 +78,7 @@ export interface BoardContext {
   schedule: TaskSchedule | null;
   pendingPrompt: PendingPrompt | null;
   failedStreak: FailedRunStreak | null;
+  cohort: CohortSummary | null; // set while this task holds an open cohort
 }
 
 // One concrete operation of a move, executed in order by the move handler.
@@ -117,6 +120,7 @@ type Source =
   | 'waiting_on_user'
   | 'blocked_paused'
   | 'blocked_dependency_failed'
+  | 'blocked_awaiting_children'
   | 'failed'
   | 'schedule_paused'
   | 'done';
@@ -154,9 +158,9 @@ function sourceOf(task: Task, ctx: BoardContext): Source {
     case 'failed':
       return 'failed';
     case 'blocked':
-      return task.blockedReason === 'dependency_failed'
-        ? 'blocked_dependency_failed'
-        : 'blocked_paused';
+      if (task.blockedReason === 'dependency_failed') return 'blocked_dependency_failed';
+      if (task.blockedReason === 'awaiting_children') return 'blocked_awaiting_children';
+      return 'blocked_paused';
     case 'ready':
       return 'ready';
     case 'running':
@@ -181,6 +185,7 @@ const LANE_OF: Record<Source, Lane> = {
   blocked_dependency_failed: 'attention',
   blocked_paused: 'attention',
   schedule_paused: 'attention',
+  blocked_awaiting_children: 'scheduled',
   ready: 'queue',
   running: 'queue',
   scheduled: 'scheduled',
@@ -217,6 +222,12 @@ function reasonFor(task: Task, ctx: BoardContext, source: Source): BoardReason |
     }
     case 'schedule_paused':
       return { kind: 'schedule_paused', failures: scheduleFailures(task) };
+    case 'blocked_awaiting_children':
+      return {
+        kind: 'awaiting_children',
+        settled: ctx.cohort?.settled ?? 0,
+        total: ctx.cohort?.total ?? 0,
+      };
     case 'pending_user':
       return { kind: 'assigned_to_user' };
     case 'pending_waiting_dependency':
@@ -348,6 +359,12 @@ function planFrom(task: Task, ctx: BoardContext, source: Source, to: Lane): Move
       if (to === 'done') return plan(MARK_DONE);
       return reject(
         'A dependency of this task failed. Take it over or remove the dependency from the task details.',
+      );
+
+    case 'blocked_awaiting_children':
+      if (to === 'backlog') return plan([{ kind: 'disable_trigger' }]);
+      return reject(
+        'This task is waiting on sub-tasks it created; it will reschedule automatically once they finish.',
       );
 
     case 'failed':

@@ -344,8 +344,13 @@ function buildGatedTools() {
 // includes it as a candidate in the first place). Built fresh per agent
 // construction, not a module-scope constant, for the same reason
 // buildGatedTools() is.
-export function buildWorkspaceScopedTools() {
-  return [makeCreateTasksTool()];
+// callingTaskId, when set, is the id of the task whose own run is building
+// this tool set — passed straight through to create_tasks so its
+// asCohort validation knows which task is calling (see
+// create-tasks.tool.ts). Omitted for plain workspace chat, which has no
+// task in scope and can never be a cohort holder.
+export function buildWorkspaceScopedTools(callingTaskId?: string) {
+  return [makeCreateTasksTool(undefined, undefined, undefined, callingTaskId)];
 }
 
 // The four write-capable wiki tools. Each resolves which wikis it may write
@@ -675,7 +680,7 @@ export async function buildTaskAgent(
       makeShellExecTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
-      ...buildWorkspaceScopedTools(),
+      ...buildWorkspaceScopedTools(task.id),
       ...buildGatedTools(),
       ...buildWikiWriteTools(),
       makeCompleteTaskTool(task.id, {
