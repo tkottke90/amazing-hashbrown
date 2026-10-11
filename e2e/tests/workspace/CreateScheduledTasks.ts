@@ -37,7 +37,13 @@ async function waitForManualSend(
 }
 
 // A fire time close enough that this suite doesn't sit idle for minutes, but
-// far enough out that there's time to click Send first.
+// far enough out that there's time to click Send first. 90s margin — a real
+// local model can take well over a minute just to generate the create_tasks
+// call (observed 70-74s against Ollama/Lemonade models investigated for
+// issue reproduction), and resolveCronConfig rejects a fireAt that's already
+// elapsed by the time the tool actually runs. A shorter margin (previously
+// 20s) gets eaten by generation latency alone, before the human-click delay
+// below even applies.
 function soonIso(secondsFromNow: number): string {
   return new Date(Date.now() + secondsFromNow * 1000).toISOString();
 }
@@ -100,13 +106,13 @@ export const CreateScheduledTasks: TestSuite = {
     // --- Scenario 1: an immediate-fire cron_once task succeeds end to end ---
     {
       slow: true,
-      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~20s out',
+      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~90s out',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        const fireAt = soonIso(90);
         await waitForManualSend(
           page,
           chatInput,
@@ -146,14 +152,14 @@ export const CreateScheduledTasks: TestSuite = {
     {
       slow: true,
       action:
-        'Ask the agent (manual send) to create a one-shot task scheduled ~20s out whose plan ' +
+        'Ask the agent (manual send) to create a one-shot task scheduled ~90s out whose plan ' +
         'requires a shell-command approval',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        const fireAt = soonIso(90);
         await waitForManualSend(
           page,
           chatInput,
