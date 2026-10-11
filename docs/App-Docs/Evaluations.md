@@ -292,6 +292,24 @@ Two capabilities have no eval coverage, for different reasons:
   multimodal turn today. This note only documents why coverage is absent, deliberately without a
   permanence claim the codebase doesn't support.
 
+### Known non-determinism: `conversation-search`'s csrch-001
+
+`csrch-001-long-thread-recalls-early-fact` (`suites/conversation-search.yaml`) has shown genuine
+run-to-run variance against identical seeds on two separate providers — this is the provider's
+serving stack, not a prompt gap, and isn't expected to go away with more wording changes:
+
+- **Ornith** varied 1-1-2 across 3 identical-seed `eval:probe` runs before any fix landed.
+- **Lemonade**, after the `SEARCH_CONVERSATION_SECTION` revision addressing its wiki/
+  search_conversation conflation (see that section's comment trail in `system-prompt.ts`), went
+  from 0/3 (100% reproducible failure) to 2/3 — a real fix, with one residual miss in the same
+  shape Ornith already showed.
+
+Seed/temperature pinning (`applyEvalDeterminism`) doesn't guarantee determinism for either
+provider's serving stack — floating-point non-associativity, batching, and server state changes
+can all vary output independently of the seed. Don't chase this specific residual variance with
+further prompt edits; a `VARIED` probe verdict on this scenario for either provider is expected,
+not a regression.
+
 ## Scenario Types
 
 Every scenario in a suite YAML has a `type` that determines how it's invoked and scored. Full

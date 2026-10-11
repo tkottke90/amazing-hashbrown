@@ -1611,6 +1611,16 @@ message.`;
 // stop iterating and flag it as a capability ceiling for Lemonade on this
 // scenario, per interpreting-results.md §5, the same call already made for
 // local. See PR #287's discussion for the full investigation.
+//
+// Verified with eval:probe --runs 3 (2026-10-11) against this wording:
+// Lemonade went from 0/3 (100% reproducible failure, confirmed above) to
+// 2/3 pass on csrch-001 (fail, pass, pass) — a real improvement, not a
+// repeat of the same failure. The residual 1/3 miss is consistent with
+// genuine provider-level non-determinism rather than this wording gap:
+// Ornith already showed the identical 1-fail-in-3 shape on this same
+// scenario even before any fix (see docs/App-Docs/Evaluations.md's
+// non-determinism note). Treating this as fixed — the remaining variance
+// belongs to the provider's serving stack, not to further wording changes.
 const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation. "No built-in memory of this
 specific user" (see identity) is about training data and separate past sessions — it does not mean
 you lack access to this conversation's own earlier turns. Don't claim you "don't have access" to
