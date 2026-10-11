@@ -64,8 +64,7 @@ export interface CronPreview {
 }
 
 export type CronPreviewRequest =
-  | { expression: string; timezone: string }
-  | { fireAt: string; timezone: string };
+  { expression: string; timezone: string } | { fireAt: string; timezone: string };
 
 // The Kanban board projection the API computes for every task — the server
 // owns which lane a task is in and where it may be dropped (see the API's
