@@ -1214,6 +1214,22 @@ having succeeded.`;
 // external work to schedule_wakeup, insists the turn actually ends after
 // scheduling, asks for a note that makes the future check self-contained
 // (aw-004), and keeps user reminders out of it (aw-005).
+//
+// auto-eval round 1 of agent-wait (2026-10-11), after suites/agent-wait.yaml
+// grew aw-006/aw-007: aw-005 still failed on all four configured providers
+// (local, Lemonade, Ornith, Digital Ocean) despite the existing "not
+// reminders for the user" sentence — local/Lemonade/Ornith called
+// schedule_wakeup outright for a reminder request, and Digital Ocean's own
+// reasoning read that exact sentence, correctly avoided schedule_wakeup,
+// then routed around it via create_tasks's cron_once trigger instead —
+// still a false promise, just through a tool the old wording never named.
+// The abstract rule wasn't anchoring (lesson: contrastive examples hold up
+// better than a restated rule), so this adds a worked decline-and-suggest
+// example and explicitly closes the create_tasks loophole. Also added a
+// worked example for cancel_wakeup: local failed aw-006 by replying "got
+// it, thanks" to a finished-early update without calling cancel_wakeup at
+// all — the existing one-clause mention wasn't concrete enough. Watch
+// aw-005/aw-006 next round across all four providers.
 const WAITING_SECTION = `When you have to wait for something outside this conversation — a deploy rolling out, CI or a
 test suite running, a server starting, a long command finishing in the background — call
 schedule_wakeup with how long to wait and a note, then end your turn right away with a one-line
@@ -1227,8 +1243,66 @@ Write the note for your future self, who will not remember the details: what to 
 how (the command, URL or file), and what counts as success. When you are woken, do that check
 first, then report or schedule another wake-up only if the work is genuinely still in progress.
 
-If what you are waiting for finishes early, call cancel_wakeup. Wake-ups are for your own work —
-they are not reminders for the user.`;
+If what you are waiting for finishes early — the user tells you the thing you scheduled a wake-up
+for is already done, or no longer needs checking — call cancel_wakeup right away with a reason;
+don't just acknowledge in text and leave it pending. For example, if you scheduled a wake-up to
+check a nightly backup and the user then says "never mind, I already checked and it finished
+successfully," call cancel_wakeup — replying "Got it, thanks" with no tool call leaves a stale
+wake-up that fires later for nothing.
+
+Wake-ups are for your own work — they are not reminders for the user, and nothing else available
+to you can notify them later either. If the user asks to be reminded, alerted, or notified at a
+future time ("remind me in 10 minutes to call Sam," "let me know tomorrow at 3pm"), say plainly
+that you have no reminder or notification capability yet, and suggest they set one on their own
+phone or calendar if being actually notified matters. Don't call schedule_wakeup for this — it
+only resumes this conversation, which the user is likely not watching. And don't reach for
+create_tasks as a workaround either: a queued task runs autonomously with no channel back to the
+user outside this thread, so "I'll create a task to remind you" is the same false promise as "I'll
+schedule a wake-up to remind you." Decline both the same way, rather than finding a different tool
+that produces the same unmet promise.`;
+
+// Motivated by auto-eval round 1 of suites/sub-agent-delegation.yaml
+// (2026-10-11, local/Digital Ocean, judge anthropic) — spawn_sub_agent
+// (issue #276) had no system-prompt guidance anywhere in this file before
+// this section. subd-001 hands the model a clearly bounded, explicitly
+// hand-off-framed task ("...that's a big job — go ahead and have someone
+// else work on it in the background") and both providers reached for
+// ask_user or shell_exec first to gather context before delegating, instead
+// of calling spawn_sub_agent directly — calledTools showed the delegation
+// call arriving late or not at all. Added this section with a worked
+// example built directly from subd-001's own scenario shape, per
+// interpreting-results.md §3, rather than leaving the tool undocumented.
+//
+// The "if you're unsure which role fits" paragraph is deliberately generic
+// rather than naming a real role: role is resolved against a deployment's
+// own configured env.roles (spawn-sub-agent.tool.ts), which this file has
+// no visibility into and can't assume. The tool's own "unknown role"
+// response already lists the real configured options, so the paragraph
+// points at that mechanism instead of inventing a role name that might not
+// exist in a given deployment.
+const SPAWN_SUB_AGENT_SECTION = `When the user hands you a large, open-ended task and signals it should run in the background
+rather than block the conversation — "go ahead and have someone else work on it," "run that in
+the background," "you don't need to wait for this" — call spawn_sub_agent directly. Don't call
+ask_user or shell_exec first to gather context you think the sub-agent will need: it starts with
+no context beyond the goal text you give it and has no way to ask you or the user anything once
+it's running, so any open question or scope decision belongs inside goal itself, not resolved
+beforehand.
+
+For example, asked to "dig through the entire git history of this repo and summarize every
+breaking change to the public API over the last two years... that's a big job, go ahead and have
+someone else work on it in the background," the right move is to call spawn_sub_agent right away
+with a self-contained goal ("Scan this repository's git history over the last two years and
+summarize every breaking change to its public API."). Calling shell_exec to inspect the repo
+first, or ask_user to clarify what counts as "the public API," both delay the one thing the user
+actually asked for — someone else working on it while you keep talking — and neither is
+necessary: a reasonable scope decision stated inside goal is better than stalling on it.
+
+If you're unsure which role fits, pick the closest match and call spawn_sub_agent anyway — an
+unrecognized role returns the actual configured list in its result, which is a faster way to find
+the right one than asking first.
+
+This only applies to tasks genuinely meant to run unattended. A quick question answerable from
+what's already in front of you doesn't need a sub-agent at all.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
@@ -1424,6 +1498,153 @@ all, not treating the unmatched name as a shortcut to whichever tool sounds rela
 "What is my favorite programming language?" would on its own — wiki_locate first, per wiki_navigation's
 own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the
 message.`;
+
+// Motivated by auto-eval round 1 of suites/conversation-search.yaml
+// (2026-10-11, local/Lemonade/Ornith/Digital Ocean, judge anthropic) —
+// search_conversation (issue #276) had no system-prompt guidance anywhere in
+// this file before this section; nothing told the model when to prefer it
+// over its own view of the conversation.
+//
+// csrch-001 seeds a nine-exchange thread that opens with a fact ("the client
+// database... is called Meridian") and later asks for it back. local,
+// Ornith, and Digital Ocean all answered correctly from the visible
+// conversation (reasoningContent explicitly traced the fact back to the
+// first turn) but never called search_conversation — calledTools: [] on all
+// three. The right factual answer doesn't satisfy this scenario's point:
+// at that length the model is meant to reach for the tool rather than scan
+// back itself. Added the second paragraph below with a worked example built
+// directly from csrch-001's own Meridian shape, per
+// interpreting-results.md §3.
+//
+// Lemonade failed both scenarios in a different, more basic way: on
+// csrch-001 it claimed outright "I don't have access to the previous
+// conversation context" for a fact stated nine exchanges earlier in the
+// *same* thread (calledTools: [] — it never even tried search_conversation),
+// and on csrch-002's two-turn thread it called search_conversation for a
+// fact stated one turn back while reasoning "I don't have the test name
+// stored in my memory or context from this conversation." Both traces read
+// IDENTITY_SECTION's "no built-in memory... no prior conversation" as
+// covering this conversation's own earlier turns, not just training data
+// and separate past sessions. Added the first paragraph below to draw that
+// line explicitly, and the third paragraph to give the short-thread case its
+// own worked contrast (csrch-002's one-turn-back shape) rather than relying
+// on the tool's own "not needed yet" result to teach the lesson after the
+// fact.
+//
+// Round 2, first revision (same session): local still failed csrch-001 —
+// reasoningContent read "According to memory rule: we can recall from
+// conversation. So answer simply," i.e. it took the first paragraph's "if
+// you can see it, answer from it" as the complete, self-sufficient
+// instruction and never reached the second paragraph's override at all. The
+// second paragraph's own justification ("no longer reliable") was also
+// self-defeating against a model that had just demonstrably recalled the
+// fact correctly — its own success undercut the stated reason to call the
+// tool anyway. Revised to stop paragraph 1 short of telling the model to
+// answer directly, and keyed the long-thread rule to a turn-count anchor
+// instead of a self-assessed reliability claim.
+//
+// Round 2, second revision (same session, before either was committed):
+// local and Lemonade both still failed csrch-001 in the identical shape —
+// correct recall, calledTools: [], "no tool needed." Ornith's
+// reasoningContent exposed the actual mechanism directly: it explicitly
+// weighed "Per the search_conversation guidance, this is... the first
+// turn... However, this is a fact the user stated directly in this
+// conversation, sitting right there in the visible history" and concluded
+// "No tool needed" — it read as far as paragraph 3, correctly ruled out the
+// short-thread branch, and then fell back to paragraph 1's access framing
+// instead of paragraph 2's trigger. Three competing prose paragraphs
+// (access framing, long-thread rule, short-thread rule) left the model to
+// stitch its own if/else out of them, and it kept landing on the wrong
+// branch. Restructured as a single explicit two-branch decision, each
+// branch keyed to how far back the detail sits, with the Meridian example
+// now stating outright what NOT to do ("it does not answer... straight
+// from having spotted it") rather than only showing the correct move —
+// Digital Ocean passed both scenarios against the first-revision wording
+// already, so this restructure targets the three weaker models without
+// having broken the one model that already had it right.
+//
+// Round 2, third revision (same session, before any of the three were
+// committed): Lemonade and Digital Ocean now both passed 2/2 against the
+// restructured wording, but local and Ornith still failed csrch-001.
+// local's reasoningContent was as terse and disengaged as the first two
+// rounds ("No wiki needed. Just answer.") with no sign it ever reached this
+// section at all. Ornith's was a narrower, new misreading of the
+// restructured first branch specifically: "This is stated in the user's
+// immediately preceding context (the first message)... It's not several
+// exchanges back in a way requiring search — it's the opening message of
+// this conversation." It read "the opening message" as a special case
+// exempt from "several exchanges back," rather than the single most common
+// way a detail ends up several exchanges back. Added one clause to the
+// first branch closing off exactly that reading. local's failure shows no
+// engagement with this section's content in three consecutive attempts
+// (differently worded each time) — flagging it as a likely capability
+// ceiling for this scenario rather than continuing to chase it with
+// wording; see interpreting-results.md §5. Re-run all four providers next
+// round; if local is still silent on this section specifically, stop
+// iterating on it for this scenario.
+//
+// Status correction (2026-10-11): the "Lemonade... passed 2/2" claim above
+// does not currently hold. A fresh baseline run plus eval:probe --runs 3
+// found Lemonade failing csrch-001 100% reproducibly against this exact
+// wording — not noise, not a regression since this was written, genuinely
+// never fixed. An auto-eval-loop PR comment on #287 had reported this as
+// "fixed"/"noise" based on a repeat-check that turned out to be wrong.
+//
+// eval:trace --verbose on Lemonade/csrch-001 (2026-10-11) got the full
+// reasoning: "The user is asking me to recall something from earlier in the
+// conversation... the user explicitly told me the database name in the
+// first message: Meridian. I don't need to search the wiki or anything
+// else — this is right there in the conversation history. I should just
+// answer from that." This shows zero engagement with the two-branch
+// decision below — no turn-counting, no mention of search_conversation by
+// name, not even acknowledgment of the Meridian worked example despite it
+// being this scenario's own content verbatim in the prompt. It does exactly
+// what the worked example explicitly calls out as wrong. The one concrete,
+// different-from-prior-rounds signal in the trace is "I don't need to
+// search the wiki or anything else" — Lemonade appears to be lumping
+// search_conversation in with wiki search as "some kind of external lookup
+// not needed for an in-context fact," rather than evaluating it as its own
+// required check. Added a clause below naming that distinction explicitly.
+// This is the fourth attempt at this exact scenario/model pair (three prior
+// restructures already targeted the turn-counting logic itself, which this
+// trace shows isn't even being reached) — if this one doesn't hold either,
+// stop iterating and flag it as a capability ceiling for Lemonade on this
+// scenario, per interpreting-results.md §5, the same call already made for
+// local. See PR #287's discussion for the full investigation.
+//
+// Verified with eval:probe --runs 3 (2026-10-11) against this wording:
+// Lemonade went from 0/3 (100% reproducible failure, confirmed above) to
+// 2/3 pass on csrch-001 (fail, pass, pass) — a real improvement, not a
+// repeat of the same failure. The residual 1/3 miss is consistent with
+// genuine provider-level non-determinism rather than this wording gap:
+// Ornith already showed the identical 1-fail-in-3 shape on this same
+// scenario even before any fix (see docs/App-Docs/Evaluations.md's
+// non-determinism note). Treating this as fixed — the remaining variance
+// belongs to the provider's serving stack, not to further wording changes.
+const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation. "No built-in memory of this
+specific user" (see identity) is about training data and separate past sessions — it does not mean
+you lack access to this conversation's own earlier turns. Don't claim you "don't have access" to
+something the user actually told you earlier in this same thread; you can see it, the same way you
+can see this message.
+
+Having access to a detail is a different question from how to answer about it — that depends on how
+far back the detail sits, not on whether you're confident you'd recall it correctly or on whether
+the detail sounds like something a wiki lookup would cover. search_conversation has nothing to do
+with the wiki — it searches this conversation's own history, not any external source — so "this
+isn't wiki content" is never a reason to skip the check below. A successful recall doesn't by
+itself satisfy either branch below:
+
+- The detail is several exchanges back — on the order of ten or more turns, not just the last one or
+  two — call search_conversation to retrieve it, even though you can still see it if you scroll up.
+  This includes a detail stated in the very first message of a long conversation: being the opening
+  message doesn't exempt it from "several exchanges back," it's the single most common way a detail
+  ends up there. For example, a thread that opened nine exchanges ago with "the client database
+  we're migrating is called Meridian" and is now being asked "what was that database called again?"
+  calls search_conversation first; it does not answer "Meridian" straight from having spotted it in
+  the visible history.
+- The detail is stated in the user's immediately preceding turn, or the one just before it — answer
+  from it directly instead. A two-turn exchange where the user names a test and asks for it back one
+  turn later doesn't call for a search; it calls for reading the turn right above.`;
 
 // Motivated by auto-eval round 1 of suites/tool-calling.yaml (2026-09-22,
 // local/Lemonade/Ornith/Digital Ocean, judge local). No section anywhere in
@@ -1709,6 +1930,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'notation', content: NOTATION_SECTION },
+  {
+    tag: 'search_conversation',
+    content: SEARCH_CONVERSATION_SECTION,
+    requiresAnyOf: ['search_conversation'],
+  },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   { tag: 'attachment', content: ATTACHMENT_SECTION, requiresAnyOf: ['get_tool_key'] },
@@ -1730,6 +1956,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
     tag: 'create_tasks',
     content: CREATE_TASKS_SECTION,
     requiresAnyOf: ['create_tasks'],
+  },
+  {
+    tag: 'spawn_sub_agent',
+    content: SPAWN_SUB_AGENT_SECTION,
+    requiresAnyOf: ['spawn_sub_agent'],
   },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
   // future: uncertainty, formatting, ...

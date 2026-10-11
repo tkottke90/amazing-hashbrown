@@ -1,0 +1,54 @@
+suite:
+  id: sub-agent-delegation
+  name: Sub-Agent Delegation
+  purpose: >
+    Verifies the chat agent reaches for spawn_sub_agent to delegate a
+    clearly bounded, self-contained subtask that's explicitly framed as
+    something to hand off and not wait on, and does not reach for it for an
+    ordinary in-context question. spawn_sub_agent is unconditionally
+    available in STATIC_CHAT_TOOLS (chat-agent.ts) but had no eval coverage
+    at all before issue #276.
+
+    Deliberately does NOT cover spawn_sub_agent's nesting restriction (a
+    sub-agent run cannot itself call spawn_sub_agent or ask_user). That
+    restriction is a hard, unconditional exclusion in getSubAgentToolIds()
+    (tool-config.ts), not model behavior — this eval harness has one flat
+    tool list shared by every suite with no mechanism to bind a different,
+    restricted tool set per suite, so there is no faithful way to eval-test
+    it as an LLM-behavior question. It's already asserted directly at the
+    right layer: tool-config.test.ts:188 ("getSubAgentToolIds() never
+    includes ask_user/spawn_sub_agent even when forced on"). See
+    docs/superpowers/specs/2026-10-10-eval-untested-tools-coverage-design.md.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: subd-001-bounded-research-task-delegated
+    name: Agent delegates a large, explicitly hand-off-framed task to a sub-agent
+    purpose: >
+      Baseline positive case — a big, open-ended, self-contained task the
+      user explicitly asks to have run in the background rather than
+      waited on is exactly what spawn_sub_agent exists for.
+    type: tool-call
+    input: >
+      Can you dig through the entire git history of this repo and summarize
+      every breaking change to the public API over the last two years?
+      That's a big job — go ahead and have someone else work on it in the
+      background while I keep talking to you about other things.
+    tool: spawn_sub_agent
+    argChecks:
+      - path: role
+        match: exists
+      - path: goal
+        match: exists
+
+  - id: subd-002-simple-question-not-delegated
+    name: Agent answers a simple question directly instead of delegating
+    purpose: >
+      A trivial, answerable-in-context question doesn't warrant spinning up
+      a sub-agent run — delegating it would be needless overhead and a
+      needlessly slower reply for the user.
+    type: tool-call
+    input: >
+      What's 15% of 240?
+    tool: '!spawn_sub_agent'
+    argChecks: []
