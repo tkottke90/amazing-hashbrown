@@ -22,13 +22,39 @@ domain to check for quality issues and fix any it finds before finishing.
 Use dryRun on both wiki_create_page and wiki_update_page when you want to preview the change
 before committing it.`;
 
-const DOMAIN_MANAGEMENT_SECTION = `Before calling wiki_register_domain, collect from the user:
-- Domain ID (will become the wikiId, e.g. "health-fitness", "projects", "self")
-- A one-line description of what belongs in this domain
-- Optional routing notes — guidance for how to decide what goes here vs. another domain
+// First tightening, added after a real eval run (suites/wiki-ingestion-agent.yaml's
+// wia-001 and wia-003) across local, Lemonade, Ornith, and Digital Ocean showed this
+// section misapplied in two ways:
+// 1. The collect-info-first rule was written to mention only wiki_register_domain, but
+//    nothing distinguished it from wiki_create_domain — three of four providers applied
+//    it to wiki_create_domain too, asking for optional routing notes the user never
+//    needed to supply even when they'd already given a usable wikiId and description
+//    inline ("let's set one up called '3d-printing'" + a description of what it covers).
+// 2. The rule told models to collect a "one-line description" before calling
+//    wiki_register_domain, but that tool's own schema (wiki-register-domain.tool.ts) has
+//    no description/domain parameter at all — it only takes wikiId and optional
+//    routingNotes, because the description already lives in the SCHEMA.md the user says
+//    is already on disk. Two providers (Ornith, Digital Ocean) also reached for
+//    shell_exec/wiki_lint to "verify" the directory before registering, pulled by the
+//    tool description's "Use ONLY to fix registry_sync findings from wiki_lint" wording
+//    — rewritten below to say directly that the user's own description of an
+//    already-on-disk directory is sufficient grounds to call it, no verification needed.
+const DOMAIN_MANAGEMENT_SECTION = `Two different tools handle domains — their rules don't transfer between each other:
 
-If the user provides all three upfront (e.g. via the New Domain form), proceed directly. If only
-the name is given, ask for the description and routing notes before registering.`;
+wiki_create_domain scaffolds a brand-new domain (directory + SCHEMA.md) from scratch. Before
+calling it, you need a wikiId and a one-line description of what belongs there. If the user's own
+message already contains both — e.g. "let's set one up called '3d-printing'" plus a description of
+what it should track — that IS the wikiId and description; call wiki_create_domain now, don't ask
+for more. Routing notes are optional — infer sensible ones from the description instead of asking
+for them. Only use ask_user here if the request is too vague to infer any description at all.
+
+wiki_register_domain is for the opposite situation: the user says a directory and SCHEMA.md already
+exist on disk (created by hand, or flagged by wiki_lint's registry_sync check) but the domain isn't
+showing up as available. It takes only a wikiId and optional routing notes — never a description,
+because the description already lives in the SCHEMA.md that's already there. Don't ask for a
+description and don't verify the directory first (with shell_exec, wiki_lint, or otherwise); the
+user telling you the directory and SCHEMA.md already exist is itself sufficient grounds to call
+wiki_register_domain directly.`;
 
 const ASK_USER_SECTION = `When you need the user to make a choice or answer a question before you
 can continue — which domain to use, confirmation before a destructive operation, a clarification
