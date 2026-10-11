@@ -31,6 +31,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</memory>');
       expect(result).to.include('<notation>');
       expect(result).to.include('</notation>');
+      expect(result).to.include('<search_conversation>');
+      expect(result).to.include('</search_conversation>');
       expect(result).to.include('<wiki_navigation>');
       expect(result).to.include('</wiki_navigation>');
       expect(result).to.include('<web_fetch>');
@@ -55,15 +57,16 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(14);
-      expect(closes).to.equal(14);
+      expect(opens).to.equal(15);
+      expect(closes).to.equal(15);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, ask_user routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const notationTagIndex = result.indexOf('<notation>');
+      const searchConversationTagIndex = result.indexOf('<search_conversation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
       const attachmentTagIndex = result.indexOf('<attachment>');
@@ -78,6 +81,7 @@ describe('agents/system-prompt', () => {
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(notationTagIndex).to.be.greaterThan(-1);
+      expect(searchConversationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(attachmentTagIndex).to.be.greaterThan(-1);
@@ -91,7 +95,8 @@ describe('agents/system-prompt', () => {
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
-      expect(notationTagIndex).to.be.lessThan(wikiTagIndex);
+      expect(notationTagIndex).to.be.lessThan(searchConversationTagIndex);
+      expect(searchConversationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(attachmentTagIndex);
       expect(attachmentTagIndex).to.be.lessThan(wikiIngestTagIndex);
@@ -121,6 +126,35 @@ describe('agents/system-prompt', () => {
           '"What is my favorite programming language?" would on its own — wiki_locate first, per wiki_navigation\'s\n' +
           'own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the\n' +
           'message.',
+      );
+    });
+
+    it('distinguishes cross-session memory from access to this conversation\'s own earlier turns', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'The turns above are the real, complete record of this conversation',
+      );
+      expect(result).to.include(
+        '"No\nbuilt-in memory of this specific user" (see identity) is about training data and separate past\n' +
+          "sessions, not about this conversation's own earlier turns",
+      );
+    });
+
+    it('anchors the long-thread search_conversation rule with the csrch-001 Meridian example', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For example, a thread that opened nine exchanges ago with "the client database we\'re migrating is\n' +
+          'called Meridian" and is now being asked "what was that database called again?" calls for\n' +
+          'search_conversation — even though the fact still happens to be visible if you look back far enough.',
+      );
+    });
+
+    it('tells the agent to answer directly from a plainly visible nearby turn instead of searching', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'The reverse holds in a short conversation: when the detail you need is still plainly visible nearby —\n' +
+          "stated in the user's previous turn, or the one just before it — answer from it directly instead of\n" +
+          'calling search_conversation.',
       );
     });
 
@@ -739,6 +773,7 @@ describe('agents/system-prompt', () => {
       'search_skills',
       'create_tasks',
       'ask_user',
+      'search_conversation',
     ]);
 
     it('keeps every section when every tool id is available', () => {
@@ -746,6 +781,7 @@ describe('agents/system-prompt', () => {
       for (const tag of [
         'identity',
         'memory',
+        'search_conversation',
         'wiki_navigation',
         'web_fetch',
         'attachment',
@@ -891,6 +927,18 @@ describe('agents/system-prompt', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);
       expect(result).to.not.include('<ask_user_routing>');
+    });
+
+    it('removes search_conversation when search_conversation is unavailable', () => {
+      const available = new Set(['web_fetch']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.not.include('<search_conversation>');
+    });
+
+    it('keeps search_conversation when search_conversation is available', () => {
+      const available = new Set(['search_conversation']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<search_conversation>');
     });
 
     it('leaves no triple-newline runs or dangling whitespace after removing sections', () => {

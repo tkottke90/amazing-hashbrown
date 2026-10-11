@@ -1456,6 +1456,57 @@ all, not treating the unmatched name as a shortcut to whichever tool sounds rela
 own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the
 message.`;
 
+// Motivated by auto-eval round 1 of suites/conversation-search.yaml
+// (2026-10-11, local/Lemonade/Ornith/Digital Ocean, judge anthropic) —
+// search_conversation (issue #276) had no system-prompt guidance anywhere in
+// this file before this section; nothing told the model when to prefer it
+// over its own view of the conversation.
+//
+// csrch-001 seeds a nine-exchange thread that opens with a fact ("the client
+// database... is called Meridian") and later asks for it back. local,
+// Ornith, and Digital Ocean all answered correctly from the visible
+// conversation (reasoningContent explicitly traced the fact back to the
+// first turn) but never called search_conversation — calledTools: [] on all
+// three. The right factual answer doesn't satisfy this scenario's point:
+// at that length the model is meant to reach for the tool rather than scan
+// back itself. Added the second paragraph below with a worked example built
+// directly from csrch-001's own Meridian shape, per
+// interpreting-results.md §3.
+//
+// Lemonade failed both scenarios in a different, more basic way: on
+// csrch-001 it claimed outright "I don't have access to the previous
+// conversation context" for a fact stated nine exchanges earlier in the
+// *same* thread (calledTools: [] — it never even tried search_conversation),
+// and on csrch-002's two-turn thread it called search_conversation for a
+// fact stated one turn back while reasoning "I don't have the test name
+// stored in my memory or context from this conversation." Both traces read
+// IDENTITY_SECTION's "no built-in memory... no prior conversation" as
+// covering this conversation's own earlier turns, not just training data
+// and separate past sessions. Added the first paragraph below to draw that
+// line explicitly, and the third paragraph to give the short-thread case its
+// own worked contrast (csrch-002's one-turn-back shape) rather than relying
+// on the tool's own "not needed yet" result to teach the lesson after the
+// fact. Re-run all four providers against both scenarios next round.
+const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation — a fact stated several exchanges
+ago is not something you lack access to, it is sitting in the messages you can already see. "No
+built-in memory of this specific user" (see identity) is about training data and separate past
+sessions, not about this conversation's own earlier turns; don't read it as license to say you "don't
+have access" to something the user actually told you earlier in this same thread. If you can see the
+fact above, answer from it — claiming otherwise is simply wrong, not careful.
+
+Once a conversation has run long enough that scanning back through every turn yourself is no longer
+reliable, call search_conversation to retrieve an early detail instead of scrolling for it yourself.
+For example, a thread that opened nine exchanges ago with "the client database we're migrating is
+called Meridian" and is now being asked "what was that database called again?" calls for
+search_conversation — even though the fact still happens to be visible if you look back far enough. At
+that length, searching is the dependable way to recall it, not a fallback for when your own scan
+fails.
+
+The reverse holds in a short conversation: when the detail you need is still plainly visible nearby —
+stated in the user's previous turn, or the one just before it — answer from it directly instead of
+calling search_conversation. A two-turn exchange where the user names a test by name and then asks
+for it back one turn later doesn't call for a search; it calls for reading the turn right above.`;
+
 // Motivated by auto-eval round 1 of suites/tool-calling.yaml (2026-09-22,
 // local/Lemonade/Ornith/Digital Ocean, judge local). No section anywhere in
 // this file mentioned upload_image or any image-producing tool before this
@@ -1713,6 +1764,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'notation', content: NOTATION_SECTION },
+  {
+    tag: 'search_conversation',
+    content: SEARCH_CONVERSATION_SECTION,
+    requiresAnyOf: ['search_conversation'],
+  },
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   { tag: 'attachment', content: ATTACHMENT_SECTION, requiresAnyOf: ['get_tool_key'] },
