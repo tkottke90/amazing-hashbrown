@@ -129,7 +129,7 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('distinguishes cross-session memory from access to this conversation\'s own earlier turns', () => {
+    it("distinguishes cross-session memory from access to this conversation's own earlier turns", () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
         'The turns above are the real, complete record of this conversation.',
@@ -145,7 +145,7 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'Having access to a detail is a different question from how to answer about it — that depends on how\n' +
           "far back the detail sits, not on whether you're confident you'd recall it correctly, since a\n" +
-          'successful recall doesn\'t by itself satisfy either branch below:',
+          "successful recall doesn't by itself satisfy either branch below:",
       );
     });
 
