@@ -542,7 +542,11 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // task triggers feature — see
 // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md).
 // 36=WorkspaceStore (tasks.trigger_source, for webhook task creation, #252).
-// 37=WorkspaceStore (task_cohorts table, tasks.cohort_of column, for the
+// 37=evaluations' own store (see lib/evaluations/src/store.ts — version
+// numbers are shared across every BaseStore subclass against this one
+// schema_migrations table, so this number is claimed even though it's not
+// WorkspaceStore's own).
+// 38=WorkspaceStore (task_cohorts table, tasks.cohort_of column, for the
 // cron-cohort-gating feature — see
 // docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md).
 const MIGRATIONS: DbMigration[] = [
@@ -744,7 +748,7 @@ const MIGRATIONS: DbMigration[] = [
     sql: `ALTER TABLE tasks ADD COLUMN trigger_source TEXT NOT NULL DEFAULT 'user';`,
   },
   {
-    version: 37,
+    version: 38,
     // task_cohorts holds one row per OPEN cohort, keyed by the holder's own
     // task id (a holder can only hold one cohort at a time, so no separate
     // group id is needed). Deleted the instant it resolves

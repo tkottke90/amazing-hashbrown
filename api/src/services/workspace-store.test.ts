@@ -1574,7 +1574,7 @@ describe('services/workspace-store', () => {
     });
   });
 
-  describe('task cohorts (migration 37 — task_cohorts table, tasks.cohort_of column)', () => {
+  describe('task cohorts (migration 38 — task_cohorts table, tasks.cohort_of column)', () => {
     let db: ReturnType<typeof openDatabase>;
     let store: WorkspaceStore;
     let dir: string;
@@ -1589,23 +1589,23 @@ describe('services/workspace-store', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    // Rolls the DB back to "migration 36 applied, 37 not yet" so a test can
-    // seed pre-migration rows and then watch migration 37 run against them
+    // Rolls the DB back to "migration 37 applied, 38 not yet" so a test can
+    // seed pre-migration rows and then watch migration 38 run against them
     // on the next store construction (== the next process start).
-    function rollBackMigration37(): void {
+    function rollBackMigration38(): void {
       db.exec(`
         DROP INDEX IF EXISTS idx_tasks_cohort_of;
         ALTER TABLE tasks DROP COLUMN cohort_of;
         DROP TABLE IF EXISTS task_cohorts;
-        DELETE FROM schema_migrations WHERE version = 37;
+        DELETE FROM schema_migrations WHERE version = 38;
       `);
     }
 
-    it('applies cleanly to a pre-37 database — a fresh task reads cohortOf as null [unit]', () => {
+    it('applies cleanly to a pre-38 database — a fresh task reads cohortOf as null [unit]', () => {
       const task = store.createTask({ title: 't' });
       expect(task.cohortOf).to.equal(null);
 
-      rollBackMigration37();
+      rollBackMigration38();
       const migrated = new WorkspaceStore(db);
 
       const reloaded = migrated.createTask({ title: 'after migration' });
