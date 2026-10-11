@@ -298,11 +298,20 @@ Two capabilities have no eval coverage, for different reasons:
 run-to-run variance against identical seeds on two separate providers — this is the provider's
 serving stack, not a prompt gap, and isn't expected to go away with more wording changes:
 
-- **Ornith** varied 1-1-2 across 3 identical-seed `eval:probe` runs before any fix landed.
+- **Ornith** varied 1-1-2 across 3 identical-seed `eval:probe` runs before any fix landed; a later
+  regression check after the fix below showed a stable 3/3 fail on csrch-001 instead — the same
+  underlying struggle, just not varying on that particular probe. Non-determinism doesn't have to
+  reproduce identically every time it's measured.
+- **local** fails csrch-001 3/3 reproducibly, independent of any fix here — three separate rounds
+  of wording changes targeting this exact scenario showed zero engagement with
+  `SEARCH_CONVERSATION_SECTION`'s content at all (see that section's comment trail). Treated as a
+  capability ceiling for this model on this scenario, not something to keep chasing with wording.
 - **Lemonade**, after the `SEARCH_CONVERSATION_SECTION` revision addressing its wiki/
   search_conversation conflation (see that section's comment trail in `system-prompt.ts`), went
   from 0/3 (100% reproducible failure) to 2/3 — a real fix, with one residual miss in the same
-  shape Ornith already showed.
+  shape Ornith and local already showed. A regression check on local/Ornith/Digital Ocean after
+  this fix confirmed csrch-002 (the negative "no search needed" scenario) stayed clean 3/3 on
+  all three — the wording change didn't make any model over-eager to call search_conversation.
 
 Seed/temperature pinning (`applyEvalDeterminism`) doesn't guarantee determinism for either
 provider's serving stack — floating-point non-associativity, batching, and server state changes
