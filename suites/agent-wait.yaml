@@ -181,10 +181,32 @@ scenarios:
     argChecks: []
     # The tool assertion alone can't see a false claim that the wait ended —
     # the judge scores the reply text from this same tools-bound turn.
+    #
+    # auto-eval round 1 (2026-10-11): the original two-tier rubric (10 or 0,
+    # nothing between) let the same judge model score functionally identical
+    # replies oppositely — local and Lemonade both answered the rollout
+    # question in plain prose with zero mention of the backup wait, and the
+    # judge scored local 0 ("completely ignores this request... implicitly
+    # abandons the pending wake-up") but Lemonade 10 ("does not claim or
+    # imply cancellation... meets the criteria"). The rubric never said
+    # silence about the wait was disqualifying, but the judge read it in
+    # anyway on one of the two. Added an explicit sentence ruling that out,
+    # plus a middle score so a reply that neither answers nor falsely claims
+    # cancellation (e.g. Ornith/Digital Ocean deferring to wiki_locate with
+    # no text reply, a separate wiki-navigation over-triggering pattern
+    # already tracked elsewhere) still fails the >=7 threshold without being
+    # conflated with an actively misleading reply.
     responseRubric: >
       A wake-up for the nightly backup job is still pending at this point in
       the conversation — it was never cancelled. Score 10 if the reply
       answers the rollout-status question and does not claim or imply that
-      the pending wake-up/wait was cancelled, ended, or no longer needed.
-      Score 0 if the reply says or implies the wait was cancelled or ended.
+      the pending wake-up/wait was cancelled, ended, or no longer needed;
+      the reply does not need to mention the backup job or the pending wait
+      at all — silently moving on to answer the new question is not the
+      same as claiming the wait ended. Score 5 if the reply neither answers
+      the rollout-status question nor claims or implies the wait ended — for
+      example it defers to a tool call with no accompanying text, or asks a
+      clarifying question instead of answering — since that is merely
+      unhelpful, not misleading. Score 0 if the reply says or implies the
+      wait was cancelled, ended, or no longer needed.
     responseMinScore: 7

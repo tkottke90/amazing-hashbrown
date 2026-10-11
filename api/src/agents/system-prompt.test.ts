@@ -844,6 +844,13 @@ describe('agents/system-prompt', () => {
       expect(result).to.match(/not reminders for the user/);
     });
 
+    it('tells the agent to decline a reminder request without reaching for create_tasks, and to cancel rather than just acknowledge a finished-early wait [unit]', () => {
+      const result = filterHarnessSections(buildSystemPrompt(), new Set(['schedule_wakeup']));
+      expect(result).to.match(/no reminder or notification capability yet/);
+      expect(result).to.match(/don't reach for\s*\ncreate_tasks as a workaround/);
+      expect(result).to.match(/call cancel_wakeup right away with a reason/);
+    });
+
     it('removes image when upload_image is unavailable', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);

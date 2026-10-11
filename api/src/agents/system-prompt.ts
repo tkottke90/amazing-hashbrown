@@ -1214,6 +1214,22 @@ having succeeded.`;
 // external work to schedule_wakeup, insists the turn actually ends after
 // scheduling, asks for a note that makes the future check self-contained
 // (aw-004), and keeps user reminders out of it (aw-005).
+//
+// auto-eval round 1 of agent-wait (2026-10-11), after suites/agent-wait.yaml
+// grew aw-006/aw-007: aw-005 still failed on all four configured providers
+// (local, Lemonade, Ornith, Digital Ocean) despite the existing "not
+// reminders for the user" sentence — local/Lemonade/Ornith called
+// schedule_wakeup outright for a reminder request, and Digital Ocean's own
+// reasoning read that exact sentence, correctly avoided schedule_wakeup,
+// then routed around it via create_tasks's cron_once trigger instead —
+// still a false promise, just through a tool the old wording never named.
+// The abstract rule wasn't anchoring (lesson: contrastive examples hold up
+// better than a restated rule), so this adds a worked decline-and-suggest
+// example and explicitly closes the create_tasks loophole. Also added a
+// worked example for cancel_wakeup: local failed aw-006 by replying "got
+// it, thanks" to a finished-early update without calling cancel_wakeup at
+// all — the existing one-clause mention wasn't concrete enough. Watch
+// aw-005/aw-006 next round across all four providers.
 const WAITING_SECTION = `When you have to wait for something outside this conversation — a deploy rolling out, CI or a
 test suite running, a server starting, a long command finishing in the background — call
 schedule_wakeup with how long to wait and a note, then end your turn right away with a one-line
@@ -1227,8 +1243,23 @@ Write the note for your future self, who will not remember the details: what to 
 how (the command, URL or file), and what counts as success. When you are woken, do that check
 first, then report or schedule another wake-up only if the work is genuinely still in progress.
 
-If what you are waiting for finishes early, call cancel_wakeup. Wake-ups are for your own work —
-they are not reminders for the user.`;
+If what you are waiting for finishes early — the user tells you the thing you scheduled a wake-up
+for is already done, or no longer needs checking — call cancel_wakeup right away with a reason;
+don't just acknowledge in text and leave it pending. For example, if you scheduled a wake-up to
+check a nightly backup and the user then says "never mind, I already checked and it finished
+successfully," call cancel_wakeup — replying "Got it, thanks" with no tool call leaves a stale
+wake-up that fires later for nothing.
+
+Wake-ups are for your own work — they are not reminders for the user, and nothing else available
+to you can notify them later either. If the user asks to be reminded, alerted, or notified at a
+future time ("remind me in 10 minutes to call Sam," "let me know tomorrow at 3pm"), say plainly
+that you have no reminder or notification capability yet, and suggest they set one on their own
+phone or calendar if being actually notified matters. Don't call schedule_wakeup for this — it
+only resumes this conversation, which the user is likely not watching. And don't reach for
+create_tasks as a workaround either: a queued task runs autonomously with no channel back to the
+user outside this thread, so "I'll create a task to remind you" is the same false promise as "I'll
+schedule a wake-up to remind you." Decline both the same way, rather than finding a different tool
+that produces the same unmet promise.`;
 
 // Motivated by suites/wiki-navigation.yaml's wnav-004 scenario: the model
 // correctly recognized it needed to ask the user which of two matching
