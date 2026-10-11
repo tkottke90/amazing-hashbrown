@@ -132,29 +132,47 @@ describe('agents/system-prompt', () => {
     it('distinguishes cross-session memory from access to this conversation\'s own earlier turns', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'The turns above are the real, complete record of this conversation',
+        'The turns above are the real, complete record of this conversation.',
       );
       expect(result).to.include(
-        '"No\nbuilt-in memory of this specific user" (see identity) is about training data and separate past\n' +
-          "sessions, not about this conversation's own earlier turns",
+        '"No built-in memory of this\nspecific user" (see identity) is about training data and separate past sessions — it does not mean\n' +
+          "you lack access to this conversation's own earlier turns.",
       );
     });
 
-    it('anchors the long-thread search_conversation rule with the csrch-001 Meridian example', () => {
+    it('keys the two-branch decision to how far back the detail sits, not a self-assessed recall claim', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'For example, a thread that opened nine exchanges ago with "the client database we\'re migrating is\n' +
-          'called Meridian" and is now being asked "what was that database called again?" calls for\n' +
-          'search_conversation — even though the fact still happens to be visible if you look back far enough.',
+        'Having access to a detail is a different question from how to answer about it — that depends on how\n' +
+          "far back the detail sits, not on whether you're confident you'd recall it correctly, since a\n" +
+          'successful recall doesn\'t by itself satisfy either branch below:',
+      );
+    });
+
+    it('anchors the long-thread search_conversation branch with the csrch-001 Meridian example, naming the wrong move outright', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For example, a thread that opened nine exchanges ago with "the client database\n' +
+          '  we\'re migrating is called Meridian" and is now being asked "what was that database called again?"\n' +
+          '  calls search_conversation first; it does not answer "Meridian" straight from having spotted it in\n' +
+          '  the visible history.',
+      );
+    });
+
+    it('rules out treating the opening message of a long conversation as exempt from the several-exchanges-back branch', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'This includes a detail stated in the very first message of a long conversation: being the opening\n' +
+          '  message doesn\'t exempt it from "several exchanges back," it\'s the single most common way a detail\n' +
+          '  ends up there.',
       );
     });
 
     it('tells the agent to answer directly from a plainly visible nearby turn instead of searching', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'The reverse holds in a short conversation: when the detail you need is still plainly visible nearby —\n' +
-          "stated in the user's previous turn, or the one just before it — answer from it directly instead of\n" +
-          'calling search_conversation.',
+        "The detail is stated in the user's immediately preceding turn, or the one just before it — answer\n" +
+          '  from it directly instead.',
       );
     });
 

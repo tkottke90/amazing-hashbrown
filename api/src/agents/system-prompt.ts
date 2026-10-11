@@ -1486,26 +1486,80 @@ message.`;
 // line explicitly, and the third paragraph to give the short-thread case its
 // own worked contrast (csrch-002's one-turn-back shape) rather than relying
 // on the tool's own "not needed yet" result to teach the lesson after the
-// fact. Re-run all four providers against both scenarios next round.
-const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation — a fact stated several exchanges
-ago is not something you lack access to, it is sitting in the messages you can already see. "No
-built-in memory of this specific user" (see identity) is about training data and separate past
-sessions, not about this conversation's own earlier turns; don't read it as license to say you "don't
-have access" to something the user actually told you earlier in this same thread. If you can see the
-fact above, answer from it — claiming otherwise is simply wrong, not careful.
+// fact.
+//
+// Round 2, first revision (same session): local still failed csrch-001 —
+// reasoningContent read "According to memory rule: we can recall from
+// conversation. So answer simply," i.e. it took the first paragraph's "if
+// you can see it, answer from it" as the complete, self-sufficient
+// instruction and never reached the second paragraph's override at all. The
+// second paragraph's own justification ("no longer reliable") was also
+// self-defeating against a model that had just demonstrably recalled the
+// fact correctly — its own success undercut the stated reason to call the
+// tool anyway. Revised to stop paragraph 1 short of telling the model to
+// answer directly, and keyed the long-thread rule to a turn-count anchor
+// instead of a self-assessed reliability claim.
+//
+// Round 2, second revision (same session, before either was committed):
+// local and Lemonade both still failed csrch-001 in the identical shape —
+// correct recall, calledTools: [], "no tool needed." Ornith's
+// reasoningContent exposed the actual mechanism directly: it explicitly
+// weighed "Per the search_conversation guidance, this is... the first
+// turn... However, this is a fact the user stated directly in this
+// conversation, sitting right there in the visible history" and concluded
+// "No tool needed" — it read as far as paragraph 3, correctly ruled out the
+// short-thread branch, and then fell back to paragraph 1's access framing
+// instead of paragraph 2's trigger. Three competing prose paragraphs
+// (access framing, long-thread rule, short-thread rule) left the model to
+// stitch its own if/else out of them, and it kept landing on the wrong
+// branch. Restructured as a single explicit two-branch decision, each
+// branch keyed to how far back the detail sits, with the Meridian example
+// now stating outright what NOT to do ("it does not answer... straight
+// from having spotted it") rather than only showing the correct move —
+// Digital Ocean passed both scenarios against the first-revision wording
+// already, so this restructure targets the three weaker models without
+// having broken the one model that already had it right.
+//
+// Round 2, third revision (same session, before any of the three were
+// committed): Lemonade and Digital Ocean now both passed 2/2 against the
+// restructured wording, but local and Ornith still failed csrch-001.
+// local's reasoningContent was as terse and disengaged as the first two
+// rounds ("No wiki needed. Just answer.") with no sign it ever reached this
+// section at all. Ornith's was a narrower, new misreading of the
+// restructured first branch specifically: "This is stated in the user's
+// immediately preceding context (the first message)... It's not several
+// exchanges back in a way requiring search — it's the opening message of
+// this conversation." It read "the opening message" as a special case
+// exempt from "several exchanges back," rather than the single most common
+// way a detail ends up several exchanges back. Added one clause to the
+// first branch closing off exactly that reading. local's failure shows no
+// engagement with this section's content in three consecutive attempts
+// (differently worded each time) — flagging it as a likely capability
+// ceiling for this scenario rather than continuing to chase it with
+// wording; see interpreting-results.md §5. Re-run all four providers next
+// round; if local is still silent on this section specifically, stop
+// iterating on it for this scenario.
+const SEARCH_CONVERSATION_SECTION = `The turns above are the real, complete record of this conversation. "No built-in memory of this
+specific user" (see identity) is about training data and separate past sessions — it does not mean
+you lack access to this conversation's own earlier turns. Don't claim you "don't have access" to
+something the user actually told you earlier in this same thread; you can see it, the same way you
+can see this message.
 
-Once a conversation has run long enough that scanning back through every turn yourself is no longer
-reliable, call search_conversation to retrieve an early detail instead of scrolling for it yourself.
-For example, a thread that opened nine exchanges ago with "the client database we're migrating is
-called Meridian" and is now being asked "what was that database called again?" calls for
-search_conversation — even though the fact still happens to be visible if you look back far enough. At
-that length, searching is the dependable way to recall it, not a fallback for when your own scan
-fails.
+Having access to a detail is a different question from how to answer about it — that depends on how
+far back the detail sits, not on whether you're confident you'd recall it correctly, since a
+successful recall doesn't by itself satisfy either branch below:
 
-The reverse holds in a short conversation: when the detail you need is still plainly visible nearby —
-stated in the user's previous turn, or the one just before it — answer from it directly instead of
-calling search_conversation. A two-turn exchange where the user names a test by name and then asks
-for it back one turn later doesn't call for a search; it calls for reading the turn right above.`;
+- The detail is several exchanges back — on the order of ten or more turns, not just the last one or
+  two — call search_conversation to retrieve it, even though you can still see it if you scroll up.
+  This includes a detail stated in the very first message of a long conversation: being the opening
+  message doesn't exempt it from "several exchanges back," it's the single most common way a detail
+  ends up there. For example, a thread that opened nine exchanges ago with "the client database
+  we're migrating is called Meridian" and is now being asked "what was that database called again?"
+  calls search_conversation first; it does not answer "Meridian" straight from having spotted it in
+  the visible history.
+- The detail is stated in the user's immediately preceding turn, or the one just before it — answer
+  from it directly instead. A two-turn exchange where the user names a test and asks for it back one
+  turn later doesn't call for a search; it calls for reading the turn right above.`;
 
 // Motivated by auto-eval round 1 of suites/tool-calling.yaml (2026-09-22,
 // local/Lemonade/Ornith/Digital Ocean, judge local). No section anywhere in
