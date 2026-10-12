@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   mkdtempSync,
   rmSync,
@@ -19,10 +19,15 @@ import {
   getFileTreeHandler,
   getFileContentHandler,
   patchFileContentHandler,
+  deleteFileEntryHandler,
   uploadFilesHandler,
   createDirectoryHandler,
   createFileHandler,
 } from './workspace-files.handlers.js';
+
+function hashOf(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
+}
 
 describe('routes/v1/workspace-files.handlers', () => {
   let store: WorkspaceStore;
@@ -126,7 +131,13 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const result = await getFileContentHandler(store, ws.id, 'README.md');
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.deep.equal({ kind: 'text', content: 'hello\n' });
+      if (result.ok) {
+        expect(result.data).to.deep.equal({
+          kind: 'text',
+          content: 'hello\n',
+          contentHash: hashOf('hello\n'),
+        });
+      }
     });
 
     it('resolves a nested multi-segment path', async () => {
@@ -136,7 +147,13 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const result = await getFileContentHandler(store, ws.id, 'scripts/run.sh');
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data).to.deep.equal({ kind: 'text', content: '#!/bin/sh\n' });
+      if (result.ok) {
+        expect(result.data).to.deep.equal({
+          kind: 'text',
+          content: '#!/bin/sh\n',
+          contentHash: hashOf('#!/bin/sh\n'),
+        });
+      }
     });
 
     it('returns 400 for a "../../etc/passwd" traversal attempt', async () => {
@@ -188,6 +205,7 @@ describe('routes/v1/workspace-files.handlers', () => {
           kind: 'binary',
           buffer: bigImage,
           contentType: 'image/png',
+          contentHash: hashOf(bigImage),
         });
       }
     });
@@ -247,10 +265,21 @@ describe('routes/v1/workspace-files.handlers', () => {
       if (!result.ok) expect(result.status).to.equal(400);
     });
 
+    it('returns 400 when baseHash is missing or not a string', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'file.txt'), 'old content');
+      const result = await patchFileContentHandler(store, ws.id, 'file.txt', {
+        content: 'new content',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
     it('returns 400 for a path-containment violation', async () => {
       const ws = makeWorkspace();
       const result = await patchFileContentHandler(store, ws.id, '../../etc/passwd', {
         content: 'x',
+        baseHash: 'irrelevant',
       });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
@@ -261,29 +290,77 @@ describe('routes/v1/workspace-files.handlers', () => {
       const bigContent = 'a'.repeat(2 * 1024 * 1024 + 1);
       const result = await patchFileContentHandler(store, ws.id, 'file.txt', {
         content: bigContent,
+        baseHash: 'irrelevant',
+        force: true,
       });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(422);
     });
 
-    it('writes the file to disk on success', async () => {
+    it('writes the file to disk when baseHash matches the current on-disk hash', async () => {
       const ws = makeWorkspace();
       writeFileSync(join(ws.location, 'file.txt'), 'old content');
 
       const result = await patchFileContentHandler(store, ws.id, 'file.txt', {
         content: 'new content',
+        baseHash: hashOf('old content'),
       });
       expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.contentHash).to.equal(hashOf('new content'));
       expect(readFileSync(join(ws.location, 'file.txt'), 'utf8')).to.equal('new content');
     });
 
-    it('creates a new file when the target does not already exist', async () => {
+    it('returns 409 with the current hash when baseHash does not match the current on-disk content', async () => {
       const ws = makeWorkspace();
-      const result = await patchFileContentHandler(store, ws.id, 'new-file.txt', {
-        content: 'hello',
+      writeFileSync(join(ws.location, 'file.txt'), 'changed elsewhere');
+
+      const result = await patchFileContentHandler(store, ws.id, 'file.txt', {
+        content: 'my local edit',
+        baseHash: hashOf('what I originally loaded'),
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(409);
+        expect((result as { currentHash?: string }).currentHash).to.equal(
+          hashOf('changed elsewhere'),
+        );
+      }
+      // Nothing was written — the on-disk content is untouched.
+      expect(readFileSync(join(ws.location, 'file.txt'), 'utf8')).to.equal('changed elsewhere');
+    });
+
+    it('force:true bypasses a hash mismatch and overwrites anyway', async () => {
+      const ws = makeWorkspace();
+      writeFileSync(join(ws.location, 'file.txt'), 'changed elsewhere');
+
+      const result = await patchFileContentHandler(store, ws.id, 'file.txt', {
+        content: 'overwritten',
+        baseHash: hashOf('stale baseline'),
+        force: true,
       });
       expect(result.ok).to.equal(true);
-      expect(readFileSync(join(ws.location, 'new-file.txt'), 'utf8')).to.equal('hello');
+      expect(readFileSync(join(ws.location, 'file.txt'), 'utf8')).to.equal('overwritten');
+    });
+
+    it('returns 404 without force when the file was deleted on disk since it was loaded', async () => {
+      const ws = makeWorkspace();
+      const result = await patchFileContentHandler(store, ws.id, 'never-existed.txt', {
+        content: 'hello',
+        baseHash: hashOf('whatever was loaded'),
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('force:true recreates a file that was deleted on disk', async () => {
+      const ws = makeWorkspace();
+      const result = await patchFileContentHandler(store, ws.id, 'recreated.txt', {
+        content: 'hello again',
+        baseHash: hashOf('whatever was loaded'),
+        force: true,
+      });
+      expect(result.ok).to.equal(true);
+      expect(readFileSync(join(ws.location, 'recreated.txt'), 'utf8')).to.equal('hello again');
     });
 
     it('invalidates the file tree cache so a follow-up tree fetch reflects the write without waiting out the TTL', async () => {
@@ -295,6 +372,8 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const patchResult = await patchFileContentHandler(store, ws.id, 'brand-new.txt', {
         content: 'hi',
+        baseHash: 'irrelevant',
+        force: true,
       });
       expect(patchResult.ok).to.equal(true);
 
@@ -311,6 +390,8 @@ describe('routes/v1/workspace-files.handlers', () => {
 
       const result = await patchFileContentHandler(store, ws.id, 'a-directory', {
         content: 'hi',
+        baseHash: 'irrelevant',
+        force: true,
       });
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(500);
@@ -320,11 +401,70 @@ describe('routes/v1/workspace-files.handlers', () => {
       const ws = makeWorkspace();
       const result = await patchFileContentHandler(store, ws.id, 'photo.png', {
         content: 'not real png bytes, just text',
+        baseHash: 'irrelevant',
+        force: true,
       });
       expect(result.ok).to.equal(true);
       expect(readFileSync(join(ws.location, 'photo.png'), 'utf8')).to.equal(
         'not real png bytes, just text',
       );
+    });
+  });
+
+  describe('deleteFileEntryHandler()', () => {
+    it('returns 404 for an unknown workspace', async () => {
+      const result = await deleteFileEntryHandler(store, 'does-not-exist', 'file.txt');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for a delete targeting the workspace root (empty path)', async () => {
+      const ws = makeWorkspace();
+      const result = await deleteFileEntryHandler(store, ws.id, '');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('returns 400 for a path-containment violation', async () => {
+      const ws = makeWorkspace();
+      const result = await deleteFileEntryHandler(store, ws.id, '../../etc/passwd');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('returns 404 for a missing path', async () => {
+      const ws = makeWorkspace();
+      const result = await deleteFileEntryHandler(store, ws.id, 'missing.txt');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('deletes a single file and invalidates the tree cache', async () => {
+      const ws = makeWorkspace({ git: false });
+      writeFileSync(join(ws.location, 'file.txt'), 'bye');
+
+      const before = await getFileTreeHandler(store, ws.id);
+      expect(before.ok).to.equal(true); // primes the cache
+
+      const result = await deleteFileEntryHandler(store, ws.id, 'file.txt');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal({ deleted: true });
+      expect(existsSync(join(ws.location, 'file.txt'))).to.equal(false);
+
+      const after = await getFileTreeHandler(store, ws.id);
+      expect(after.ok).to.equal(true);
+      if (after.ok) expect(after.data.entries.map((n) => n.name)).to.not.include('file.txt');
+    });
+
+    it('recursively deletes a directory and everything inside it', async () => {
+      const ws = makeWorkspace();
+      mkdirSync(join(ws.location, 'sub'));
+      writeFileSync(join(ws.location, 'sub', 'a.txt'), 'a');
+      writeFileSync(join(ws.location, 'sub', 'b.txt'), 'b');
+
+      const result = await deleteFileEntryHandler(store, ws.id, 'sub');
+      expect(result.ok).to.equal(true);
+      expect(existsSync(join(ws.location, 'sub'))).to.equal(false);
     });
   });
 

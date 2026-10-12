@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, rm } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrite-test-runner';
 import {
@@ -45,6 +46,11 @@ let editWorkspace: CreatedWorkspace | null = null;
 // reuses the same workspace/tabs.
 let mediaWorkspace: CreatedWorkspace | null = null;
 
+// Populated by the stale-file/conflict steps, read by the later steps in
+// that same sequence (silent refresh -> conflict banner -> Overwrite ->
+// Discard my edits -> deleted-on-disk).
+let conflictWorkspace: CreatedWorkspace | null = null;
+
 // Focuses the CodeMirror editor for the given (already-open, already-active)
 // tab, selects the whole document (CodeMirror's default keymap binds Mod-a
 // to selectAll), and types `text` in its place — a full-document replace is
@@ -76,15 +82,17 @@ export const WorkspaceFileBrowser: TestSuite = {
       expectedOutcome:
         'The tree loads; the header shows "git · <branch>"; the modified file shows an M badge and the untracked file shows an A badge',
       test: async ({ page }, testInfo) => {
-        // This suite's 12 steps do real git/filesystem setup, real network
-        // round trips, and (in the last step) a bounded refresh-retry loop
-        // on top of every step's own video-pacing pause — comfortably more
-        // real wall-clock time than the default per-test budget, even with
-        // recordVideo's own 3x test.slow() multiplier. test.setTimeout()
-        // extends the one enclosing test() this whole suite runs inside
-        // (suiteRunner registers exactly one test() per suite; see its own
-        // comment on why steps share a single test rather than one each).
-        test.setTimeout(240_000);
+        // This suite's 30 steps do real git/filesystem setup, real network
+        // round trips, a bounded refresh-retry loop, and (for the stale-
+        // file/conflict/Agent-Resolve/delete steps) several more rounds of
+        // real tab open/edit/switch/reactivate on top of every step's own
+        // video-pacing pause — comfortably more real wall-clock time than
+        // the default per-test budget, even with recordVideo's own 3x
+        // test.slow() multiplier. test.setTimeout() extends the one
+        // enclosing test() this whole suite runs inside (suiteRunner
+        // registers exactly one test() per suite; see its own comment on
+        // why steps share a single test rather than one each).
+        test.setTimeout(420_000);
 
         const ws = await createWorkspace(
           page.request,
@@ -777,6 +785,386 @@ export const WorkspaceFileBrowser: TestSuite = {
           'Collapse folder',
         );
         await expect(fileRow(page, 'sub/child-folder')).toBeVisible();
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      tag: [TAGS.Smoke],
+      action: 'Open two tabs, edit one of them directly on disk, then switch away and back to it',
+      expectedOutcome:
+        'The clean tab silently refreshes to the new on-disk content on reactivation — no banner, no manual action needed',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-conflict-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-conflict-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(ws.location, 'stale.txt', 'version 1\n');
+        await writeFileDirect(ws.location, 'other.txt', 'other content\n');
+        conflictWorkspace = ws;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+
+        await fileRow(page, 'stale.txt').click();
+        await expect(editorPane(page, 'stale.txt').locator('.cm-content')).toHaveText(
+          'version 1\n',
+        );
+
+        await fileRow(page, 'other.txt').click();
+        await expect(fileTab(page, 'other.txt')).toBeVisible();
+
+        // Edited directly on disk while the stale.txt tab sits inactive and
+        // clean — this is the reported bug: reopening it used to keep
+        // showing the stale, already-fetched content.
+        await writeFileDirect(ws.location, 'stale.txt', 'version 2, written on disk\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'stale.txt').click();
+
+        await expect(editorPane(page, 'stale.txt').locator('.cm-content')).toHaveText(
+          'version 2, written on disk\n',
+        );
+        await expect(editorPane(page, 'stale.txt').getByTestId('file-conflict-banner')).toHaveCount(
+          0,
+        );
+      },
+    },
+    {
+      action: 'Edit the same file locally, switch away, change it on disk again, then switch back',
+      expectedOutcome:
+        'A conflict banner appears instead of silently overwriting the local draft, offering Overwrite / Discard my edits / Agent Resolve',
+      test: async ({ page }, testInfo) => {
+        const ws = conflictWorkspace as CreatedWorkspace;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'stale.txt').click();
+        await replaceEditorContent(page, 'stale.txt', 'my local edit\n');
+        await expect(
+          fileTab(page, 'stale.txt').locator('[data-testid="tab-unsaved-dot"]'),
+        ).toBeVisible();
+
+        await fileTab(page, 'other.txt').click();
+        await writeFileDirect(ws.location, 'stale.txt', 'version 3, written on disk\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'stale.txt').click();
+
+        const banner = editorPane(page, 'stale.txt').getByTestId('file-conflict-banner');
+        await expect(banner).toBeVisible();
+        await expect(banner).toContainText('changed on disk');
+        await expect(banner.getByRole('button', { name: 'Overwrite' })).toBeVisible();
+        await expect(banner.getByRole('button', { name: 'Discard my edits' })).toBeVisible();
+        await expect(banner.getByRole('button', { name: 'Agent Resolve' })).toBeVisible();
+
+        // The local edit itself must survive the reactivation untouched —
+        // only the banner appears, the editor content is never overwritten
+        // automatically.
+        await expect(editorPane(page, 'stale.txt').locator('.cm-content')).toHaveText(
+          'my local edit\n',
+        );
+      },
+    },
+    {
+      action: 'Click Overwrite on the conflict banner',
+      expectedOutcome:
+        'The local draft is written to disk despite the conflict, and the banner clears',
+      test: async ({ page }, testInfo) => {
+        const ws = conflictWorkspace as CreatedWorkspace;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await editorPane(page, 'stale.txt').getByRole('button', { name: 'Overwrite' }).click();
+
+        await expect(editorPane(page, 'stale.txt').getByTestId('file-conflict-banner')).toHaveCount(
+          0,
+        );
+        await expect(
+          fileTab(page, 'stale.txt').locator('[data-testid="tab-unsaved-dot"]'),
+        ).not.toBeVisible();
+
+        const onDisk = await readFile(`${ws.location}/stale.txt`, 'utf8');
+        expect(onDisk).toBe('my local edit\n');
+      },
+    },
+    {
+      action: 'Create a fresh local/disk conflict, then click "Discard my edits"',
+      expectedOutcome:
+        'The editor reloads the on-disk content, discarding the local draft; nothing is written',
+      test: async ({ page }, testInfo) => {
+        const ws = conflictWorkspace as CreatedWorkspace;
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'stale.txt').click();
+        await replaceEditorContent(page, 'stale.txt', 'a second local edit\n');
+        await fileTab(page, 'other.txt').click();
+        await writeFileDirect(ws.location, 'stale.txt', 'version 4, written on disk\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'stale.txt').click();
+        await expect(
+          editorPane(page, 'stale.txt').getByTestId('file-conflict-banner'),
+        ).toBeVisible();
+
+        await editorPane(page, 'stale.txt')
+          .getByRole('button', { name: 'Discard my edits' })
+          .click();
+
+        await expect(editorPane(page, 'stale.txt').getByTestId('file-conflict-banner')).toHaveCount(
+          0,
+        );
+        await expect(editorPane(page, 'stale.txt').locator('.cm-content')).toHaveText(
+          'version 4, written on disk\n',
+        );
+        await expect(
+          fileTab(page, 'stale.txt').locator('[data-testid="tab-unsaved-dot"]'),
+        ).not.toBeVisible();
+
+        const onDisk = await readFile(`${ws.location}/stale.txt`, 'utf8');
+        expect(onDisk).toBe('version 4, written on disk\n');
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Open a file, delete it directly on disk, then reactivate its clean tab',
+      expectedOutcome:
+        'The tab shows a "deleted on disk" state instead of silently keeping the old content',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-deleted-on-disk-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-deleted-on-disk-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(ws.location, 'gone.txt', 'will be deleted\n');
+        await writeFileDirect(ws.location, 'other.txt', 'other content\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+        await fileRow(page, 'gone.txt').click();
+        await fileRow(page, 'other.txt').click();
+
+        await rm(`${ws.location}/gone.txt`);
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileTab(page, 'gone.txt').click();
+
+        await expect(
+          editorPane(page, 'gone.txt').getByTestId('file-deleted-on-disk'),
+        ).toBeVisible();
+        await editorPane(page, 'gone.txt').getByRole('button', { name: 'Close tab' }).click();
+        await expect(fileTab(page, 'gone.txt')).not.toBeVisible();
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: 'Create a conflict, click Agent Resolve, and let a mocked agent turn propose a merge',
+      expectedOutcome:
+        "The UI switches to the Chat tab and posts the composed conflict message; once the mocked tool call resolves, the Files tab's editor shows the merged draft as a new dirty, unsaved buffer",
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-agent-resolve-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-agent-resolve-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(ws.location, 'conflict.txt', 'original\n');
+
+        // Per e2e/AGENTS.md's SSE-mocking guidance: this entirely fakes the
+        // agent turn (no live LLM configured for a CI-safe run) by staging
+        // propose_file_merge's tool-call events as a static SSE body, and
+        // injects a threadId into the real workspace list response (a fresh
+        // workspace's threadId is null until a first real chat message
+        // exists) so FilesTab's Agent Resolve wiring has something to call
+        // useThreadInstance/sendMessage with.
+        const threadId = 'e2e-mock-thread';
+        await page.route('**/api/v1/workspaces', async (route) => {
+          if (route.request().method() !== 'GET') return route.fallback();
+          const response = await route.fetch();
+          const body = (await response.json()) as Array<Record<string, unknown>>;
+          const patched = body.map((w) => (w['id'] === ws.id ? { ...w, threadId } : w));
+          return route.fulfill({ response, json: patched });
+        });
+
+        // The chat GET (hydrate) and POST (sendMessage) are mocked together,
+        // consistently: a thread this fake doesn't exist server-side, so the
+        // real GET would legitimately report an empty history (workspace-
+        // chat.route.ts treats an unknown threadId as "pre-first-message",
+        // not a 404) — which WorkspaceChatTab's own mount-time hydrate()
+        // would then apply, wiping out whatever the mocked POST's SSE
+        // stream had just staged. Mocking the GET to echo the same staged
+        // tool call keeps the two consistent, per e2e/AGENTS.md's "mock
+        // hydration, not the live turn" guidance.
+        const mergedContent = 'merged by the agent\n';
+        const toolCallMessage = {
+          kind: 'tool_call',
+          id: 'm1',
+          toolCallId: 'tc1',
+          toolName: 'propose_file_merge',
+          inputs: { path: 'conflict.txt', mergedContent, explanation: 'combined both sides' },
+          outputs: 'Proposed a merged version',
+          status: 'done',
+        };
+        let historyMessages: unknown[] = [];
+        await page.route(`**/api/v1/workspaces/${ws.id}/chat/${threadId}`, async (route) => {
+          const method = route.request().method();
+          if (method === 'GET') {
+            return route.fulfill({
+              json: { messages: historyMessages, summaryPath: null, summarizedAt: null },
+            });
+          }
+          if (method !== 'POST') return route.fallback();
+
+          historyMessages = [toolCallMessage];
+          const events = [
+            {
+              type: 'tool_call_start',
+              messageId: toolCallMessage.id,
+              toolCallId: toolCallMessage.toolCallId,
+              toolName: toolCallMessage.toolName,
+              inputs: toolCallMessage.inputs,
+            },
+            {
+              type: 'tool_call_end',
+              toolCallId: toolCallMessage.toolCallId,
+              outputs: toolCallMessage.outputs,
+            },
+            { type: 'stream_done', durationMs: 10 },
+          ];
+          return route.fulfill({
+            status: 200,
+            contentType: 'text/event-stream',
+            body: events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''),
+          });
+        });
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+        await fileRow(page, 'conflict.txt').click();
+        await replaceEditorContent(page, 'conflict.txt', 'my draft\n');
+
+        // Force the conflict without a second tab: edit on disk, then click
+        // the already-active tab, which still re-runs the reactivation
+        // check (TabButton's onClick always calls activateTab).
+        await writeFileDirect(ws.location, 'conflict.txt', 'changed on disk\n');
+        await fileTab(page, 'conflict.txt').click();
+        const banner = editorPane(page, 'conflict.txt').getByTestId('file-conflict-banner');
+        await expect(banner).toBeVisible();
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await banner.getByRole('button', { name: 'Agent Resolve' }).click();
+
+        await expect(page.getByTestId('file-tree')).not.toBeVisible();
+        await page.getByRole('button', { name: 'Files' }).click();
+
+        await expect(editorPane(page, 'conflict.txt').locator('.cm-content')).toHaveText(
+          mergedContent,
+        );
+        await expect(
+          fileTab(page, 'conflict.txt').locator('[data-testid="tab-unsaved-dot"]'),
+        ).toBeVisible();
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      tag: [TAGS.Smoke],
+      action: "Open a file, then delete it via its row's delete icon",
+      expectedOutcome:
+        'The confirm modal names the file; confirming removes it from both the tree and disk, and its open tab closes with no further confirmation prompt',
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-delete-file-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-delete-file-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(ws.location, 'doomed.txt', 'about to be deleted\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+        await fileRow(page, 'doomed.txt').click();
+        await expect(fileTab(page, 'doomed.txt')).toBeVisible();
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'doomed.txt').hover();
+        await fileRow(page, 'doomed.txt').getByTestId('file-tree-action-delete').click();
+
+        // Scoped to this row's own delete dialog specifically, not just
+        // the row (which, for a directory, would also contain its New
+        // File/New Folder dialogs) or page-wide getByRole('dialog') (every
+        // row's dialogs are present in the DOM regardless of open state —
+        // hidden via opacity, not the native [not(open)] UA display:none —
+        // so either broader query matches several).
+        const dialog = fileRow(page, 'doomed.txt')
+          .getByRole('dialog')
+          .filter({ hasText: 'Delete file' });
+        await expect(dialog).toContainText('Delete file "doomed.txt"?');
+        await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+
+        await expect(fileRow(page, 'doomed.txt')).toHaveCount(0);
+        await expect(fileTab(page, 'doomed.txt')).toHaveCount(0);
+        expect(existsSync(`${ws.location}/doomed.txt`)).toBe(false);
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
+    {
+      action: "Open a nested file, then delete its parent folder via the folder row's delete icon",
+      expectedOutcome:
+        "The confirm modal calls out the delete as recursive; confirming removes the folder, its contents, and closes the nested file's open tab too",
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-delete-folder-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-delete-folder-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(ws.location, 'sub/nested.txt', 'inside the doomed folder\n');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+        await fileRow(page, 'sub').getByTestId('file-tree-chevron').click();
+        await fileRow(page, 'sub/nested.txt').click();
+        await expect(fileTab(page, 'sub/nested.txt')).toBeVisible();
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await fileRow(page, 'sub').hover();
+        await fileRow(page, 'sub').getByTestId('file-tree-action-delete').click();
+
+        const dialog = fileRow(page, 'sub')
+          .getByRole('dialog')
+          .filter({ hasText: 'Delete folder' });
+        await expect(dialog).toContainText('Delete folder "sub"?');
+        await expect(dialog).toContainText('everything inside it');
+        await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+
+        await expect(fileRow(page, 'sub')).toHaveCount(0);
+        await expect(fileTab(page, 'sub/nested.txt')).toHaveCount(0);
+        expect(existsSync(`${ws.location}/sub`)).toBe(false);
 
         await page.request.delete(`/api/v1/workspaces/${ws.id}`);
       },

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, open, readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -28,7 +29,8 @@ export interface FileTreeResult {
 }
 
 export type ReadGuardResult =
-  { ok: true; content: string } | { ok: false; reason: 'too-large' | 'binary' };
+  | { ok: true; content: string; contentHash: string }
+  | { ok: false; reason: 'too-large' | 'binary' };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -347,13 +349,27 @@ export async function readFileGuarded(absPath: string): Promise<ReadGuardResult>
     return { ok: false, reason: 'binary' };
   }
 
-  return { ok: true, content };
+  return { ok: true, content, contentHash: hashContent(buffer) };
 }
 
 // Buffer.byteLength (not .length) so multi-byte characters are measured by
 // their actual UTF-8 byte size, not their UTF-16 code-unit count.
 export function isContentTooLarge(content: string): boolean {
   return Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES;
+}
+
+// Shared by every place that needs a file's staleness signal: readFileGuarded
+// (text reads), the binary-category branch of getFileContentHandler, and
+// patchFileContentHandler (both the pre-write on-disk comparison and hashing
+// the just-written content for the response) — one hash algorithm/encoding
+// choice, not four copies of it.
+export function hashContent(data: Buffer | string): string {
+  // Buffer's underlying ArrayBufferLike can type-check as a
+  // SharedArrayBuffer, which createHash#update's BinaryLike overload
+  // rejects — same re-wrap-in-Uint8Array fix already used elsewhere in this
+  // file (readFileGuarded's TextDecoder call, the writeFile calls below).
+  const input = typeof data === 'string' ? data : new Uint8Array(data);
+  return createHash('sha256').update(input).digest('hex');
 }
 
 // ---------------------------------------------------------------------------

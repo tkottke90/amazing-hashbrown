@@ -13,17 +13,30 @@ import {
   activeTabPath,
   loadFileTree,
   setTabView,
+  activateTab,
   saveTab,
+  overwriteTab,
+  discardConflict,
   discardTab,
   closeTab,
+  applyAgentResolveProposals,
   type OpenTab,
 } from '@/hooks/use-workspace-files';
+import { useThreadInstance } from '@/hooks/use-thread';
 import { mediaMuted, toggleMediaMuted } from '@/hooks/use-media-mute';
 
 // Its own subcomponent so a keystroke in one tab's editor (which flips only
 // that tab's `dirty` signal) re-renders just this button, not the whole tab
 // bar.
-function TabButton({ tab, isActive }: { tab: OpenTab; isActive: boolean }) {
+function TabButton({
+  workspaceId,
+  tab,
+  isActive,
+}: {
+  workspaceId: string;
+  tab: OpenTab;
+  isActive: boolean;
+}) {
   const fileName = tab.path.split('/').pop() ?? tab.path;
 
   return (
@@ -38,7 +51,7 @@ function TabButton({ tab, isActive }: { tab: OpenTab; isActive: boolean }) {
           : 'border-transparent text-muted-foreground hover:text-foreground',
       )}
       onClick={() => {
-        activeTabPath.value = tab.path;
+        void activateTab(workspaceId, tab.path);
       }}
     >
       <span class="max-w-40 truncate" title={tab.path}>
@@ -63,7 +76,60 @@ function TabButton({ tab, isActive }: { tab: OpenTab; isActive: boolean }) {
   );
 }
 
-function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }) {
+function ConflictBanner({
+  workspaceId,
+  tab,
+  onAgentResolve,
+}: {
+  workspaceId: string;
+  tab: OpenTab;
+  onAgentResolve: (path: string) => void;
+}) {
+  if (!tab.conflict) return null;
+  const deleted = tab.conflict.currentHash === '';
+
+  return (
+    <div
+      data-testid="file-conflict-banner"
+      class="flex items-center justify-between gap-2 border-b border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs"
+    >
+      <span>
+        {deleted
+          ? 'This file was deleted on disk since you opened it.'
+          : 'This file changed on disk since you opened it — saving will overwrite those changes.'}
+      </span>
+      <div class="flex items-center gap-1.5">
+        {!deleted && (
+          <Button
+            size="xs"
+            variant="destructive"
+            onClick={() => overwriteTab(workspaceId, tab.path)}
+          >
+            Overwrite
+          </Button>
+        )}
+        <Button size="xs" variant="outline" onClick={() => discardConflict(tab.path)}>
+          Discard my edits
+        </Button>
+        {!deleted && (
+          <Button size="xs" variant="outline" onClick={() => onAgentResolve(tab.path)}>
+            Agent Resolve
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditorPanel({
+  workspaceId,
+  tab,
+  onAgentResolve,
+}: {
+  workspaceId: string;
+  tab: OpenTab;
+  onAgentResolve: (path: string) => void;
+}) {
   if (tab.unsupported) {
     return (
       <div
@@ -71,6 +137,20 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
         class="flex h-full items-center justify-center text-sm text-muted-foreground"
       >
         Can&apos;t display this file.
+      </div>
+    );
+  }
+
+  if (tab.deletedOnDisk) {
+    return (
+      <div
+        data-testid="file-deleted-on-disk"
+        class="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
+      >
+        <span>This file was deleted on disk.</span>
+        <Button size="xs" variant="outline" onClick={() => closeTab(tab.path)}>
+          Close tab
+        </Button>
       </div>
     );
   }
@@ -159,6 +239,7 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
               </span>
             )}
           </div>
+          <ConflictBanner workspaceId={workspaceId} tab={tab} onAgentResolve={onAgentResolve} />
           <div class="flex-1 min-h-0">
             <CodeEditor
               path={tab.path}
@@ -175,7 +256,13 @@ function EditorPanel({ workspaceId, tab }: { workspaceId: string; tab: OpenTab }
 // All open tabs stay mounted simultaneously (hidden via CSS, not
 // destroyed/recreated on switch) so cursor/scroll/undo history survive a
 // tab switch — shared by the desktop split pane and the mobile single pane.
-function EditorPanes({ workspaceId }: { workspaceId: string }) {
+function EditorPanes({
+  workspaceId,
+  onAgentResolve,
+}: {
+  workspaceId: string;
+  onAgentResolve: (path: string) => void;
+}) {
   return (
     <>
       {openTabs.value.map((tab) => (
@@ -185,7 +272,7 @@ function EditorPanes({ workspaceId }: { workspaceId: string }) {
           data-path={tab.path}
           class={cn('h-full', activeTabPath.value !== tab.path && 'hidden')}
         >
-          <EditorPanel workspaceId={workspaceId} tab={tab} />
+          <EditorPanel workspaceId={workspaceId} tab={tab} onAgentResolve={onAgentResolve} />
         </div>
       ))}
     </>
@@ -200,10 +287,12 @@ function MobileFilesTab({
   workspaceId,
   git,
   uploadRequest,
+  onAgentResolve,
 }: {
   workspaceId: string;
   git: boolean;
   uploadRequest?: Signal<number>;
+  onAgentResolve: (path: string) => void;
 }) {
   const activeTab = openTabs.value.find((tab) => tab.path === activeTabPath.value) ?? null;
 
@@ -228,7 +317,7 @@ function MobileFilesTab({
           </span>
         </div>
         <div class="min-h-0 flex-1">
-          <EditorPanes workspaceId={workspaceId} />
+          <EditorPanes workspaceId={workspaceId} onAgentResolve={onAgentResolve} />
         </div>
       </div>
     );
@@ -248,6 +337,8 @@ export function FilesTab({
   workspaceId,
   git,
   uploadRequest,
+  threadId,
+  onGoToChat,
 }: {
   workspaceId: string;
   git: boolean;
@@ -255,17 +346,50 @@ export function FilesTab({
   // through to FileTree's mobile upload trigger. Unused on desktop, which
   // keeps its own always-visible upload icon in FileTree's header.
   uploadRequest?: Signal<number>;
+  // Both needed for Agent Resolve: posting the composed conflict message
+  // into the workspace's chat thread, and switching the user there to
+  // watch it happen (see docs/superpowers/specs/2026-10-12-workspace-file-
+  // explorer-sync-and-delete-design.md §2).
+  threadId?: string | null;
+  onGoToChat: () => void;
 }) {
   useEffect(() => {
     void loadFileTree(workspaceId);
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (!threadId) return;
+    const thread = useThreadInstance(threadId, {
+      endpointBase: `/api/v1/workspaces/${workspaceId}/chat`,
+      readUrl: `/api/v1/workspaces/${workspaceId}/chat/${threadId}`,
+    });
+    return applyAgentResolveProposals(thread);
+  }, [workspaceId, threadId]);
+
+  function handleAgentResolve(path: string): void {
+    const tab = openTabs.value.find((t) => t.path === path);
+    if (!tab || !tab.view || !tab.conflict || !threadId) return;
+    const draft = tab.view.state.doc.toString();
+    const composed = `/resolve-file-conflict ${path}\n\nDraft:\n${draft}\n\nOn-disk:\n${tab.conflict.onDiskContent}`;
+    const thread = useThreadInstance(threadId, {
+      endpointBase: `/api/v1/workspaces/${workspaceId}/chat`,
+      readUrl: `/api/v1/workspaces/${workspaceId}/chat/${threadId}`,
+    });
+    onGoToChat();
+    void thread.sendMessage(composed);
+  }
 
   const desktop = useIsDesktopViewport();
 
   if (!desktop) {
     return (
       <div class="p-4 size-full">
-        <MobileFilesTab workspaceId={workspaceId} git={git} uploadRequest={uploadRequest} />
+        <MobileFilesTab
+          workspaceId={workspaceId}
+          git={git}
+          uploadRequest={uploadRequest}
+          onAgentResolve={handleAgentResolve}
+        />
       </div>
     );
   }
@@ -283,7 +407,12 @@ export function FilesTab({
           {openTabs.value.length > 0 && (
             <div class="flex items-center gap-1 overflow-x-auto border-b border-border px-1">
               {openTabs.value.map((tab) => (
-                <TabButton key={tab.path} tab={tab} isActive={activeTabPath.value === tab.path} />
+                <TabButton
+                  key={tab.path}
+                  workspaceId={workspaceId}
+                  tab={tab}
+                  isActive={activeTabPath.value === tab.path}
+                />
               ))}
             </div>
           )}
@@ -294,7 +423,7 @@ export function FilesTab({
                 Select a file to view its contents.
               </div>
             ) : (
-              <EditorPanes workspaceId={workspaceId} />
+              <EditorPanes workspaceId={workspaceId} onAgentResolve={handleAgentResolve} />
             )}
           </div>
         </div>

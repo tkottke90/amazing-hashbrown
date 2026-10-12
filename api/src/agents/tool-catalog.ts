@@ -233,4 +233,13 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: false,
     skillCommand: 'create-project',
   },
+  {
+    toolId: 'propose_file_merge',
+    name: 'Propose File Merge',
+    description:
+      'Propose a merged file version during conflict resolution. Unlocked by the "resolve-file-conflict" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'resolve-file-conflict',
+  },
 ];

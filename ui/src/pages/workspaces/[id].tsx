@@ -458,7 +458,15 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             />
           )}
           {tab.value === 'files' && id && (
-            <FilesTab workspaceId={id} git={ws.git} uploadRequest={filesUploadRequest} />
+            <FilesTab
+              workspaceId={id}
+              git={ws.git}
+              uploadRequest={filesUploadRequest}
+              threadId={ws.threadId}
+              onGoToChat={() => {
+                setHash('chat');
+              }}
+            />
           )}
           {tab.value === 'chat' && (
             <WorkspaceChatTab

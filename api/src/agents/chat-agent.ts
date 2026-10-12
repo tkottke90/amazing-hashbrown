@@ -58,6 +58,7 @@ import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
+import { proposeFileMergeTool } from './tools/propose-file-merge.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
 import { skillsManager } from '../services/skills-manager.js';
 import { resolveWorkspaceSkills, type SkillReader } from '../services/workspace-skills.js';
@@ -348,6 +349,16 @@ export function buildWorkspaceScopedTools() {
   return [makeCreateTasksTool()];
 }
 
+// propose_file_merge is bound only here, not in buildGatedTools() (shared by
+// buildChatAgent/buildTaskAgent) — file tabs are a workspace-chat-only UI
+// concept, so scoping the binding itself (not just the skill gate) is what
+// keeps this tool genuinely unreachable outside workspace chat, rather than
+// merely hidden-but-present. See docs/superpowers/specs/2026-10-12-
+// workspace-file-explorer-sync-and-delete-design.md §2.
+export function buildFileConflictTools() {
+  return [proposeFileMergeTool];
+}
+
 // The four write-capable wiki tools. Each resolves which wikis it may write
 // to on every call, from the run's thread/workspace — never captured here,
 // since agents are cached per workspace while the scope can change under
@@ -531,6 +542,7 @@ async function buildWorkspaceChatAgent(
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
       ...buildGatedTools(),
+      ...buildFileConflictTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,
     ],

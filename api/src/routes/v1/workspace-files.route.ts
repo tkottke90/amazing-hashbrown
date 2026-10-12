@@ -6,6 +6,7 @@ import {
   getFileTreeHandler,
   getFileContentHandler,
   patchFileContentHandler,
+  deleteFileEntryHandler,
   uploadFilesHandler,
   createDirectoryHandler,
   createFileHandler,
@@ -48,6 +49,11 @@ workspaceFilesRouter.get('/*/content', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  // ETag carries the content hash uniformly across both branches below —
+  // the text branch is a plain-text body (not JSON) and the binary branch
+  // is fetched natively by <img>/<audio>/<video>, so a header is the one
+  // place both can expose it without restructuring either response.
+  res.setHeader('ETag', `"${result.data.contentHash}"`);
   if (result.data.kind === 'text') {
     res.type('text/plain').send(result.data.content);
   } else {
@@ -63,6 +69,31 @@ workspaceFilesRouter.patch('/*/content', async (req: Request, res: Response) => 
     req.params['id'] as string,
     relativePath,
     req.body as Record<string, unknown>,
+  );
+  if (!result.ok) {
+    // patchFileContentHandler's 409 case returns a currentHash alongside the
+    // error — same optional-field pass-through idiom the upload route below
+    // uses for `conflicts`.
+    const currentHash = (result as { currentHash?: string }).currentHash;
+    res
+      .status(result.status)
+      .json({ error: result.error, ...(currentHash !== undefined ? { currentHash } : {}) });
+    return;
+  }
+  res.json(result.data);
+});
+
+// Bare `/*` (not `/*/content`) — deletes a file or directory anywhere under
+// the workspace. Never collides with the literal POST routes below
+// (different HTTP method), and resolveFilePathUnderWorkspace's existing
+// empty-path rejection is what keeps this from ever targeting the workspace
+// root itself.
+workspaceFilesRouter.delete('/*', async (req: Request, res: Response) => {
+  const relativePath = req.params[0] as string;
+  const result = await deleteFileEntryHandler(
+    getWorkspaceStore(),
+    req.params['id'] as string,
+    relativePath,
   );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });

@@ -11,6 +11,7 @@ import {
   Upload,
   FilePlus,
   FolderPlus,
+  Trash2,
 } from 'lucide-preact';
 import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import type { JSX } from 'preact';
@@ -28,7 +29,9 @@ import {
   uploadFiles,
   createDirectory,
   createFile,
+  deleteEntry,
 } from '@/hooks/use-workspace-files';
+import { buildFileDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
 
 const STATUS_LABEL: Record<'M' | 'A', string> = { M: 'M', A: 'A' };
 
@@ -152,6 +155,82 @@ function CreateEntryModal({
       trigger={trigger}
     >
       <CreateEntryForm workspaceId={workspaceId} dir={dir} kind={kind} />
+    </Modal>
+  );
+}
+
+// The delete confirm modal for a single file/directory row. Deleting is
+// itself the deliberate, final action (no further confirmation on top of
+// this modal), so unlike closeTab's confirm() gate, there's nothing more to
+// ask once "Delete" is clicked here.
+function DeleteEntryForm({
+  workspaceId,
+  path,
+  isDir,
+}: {
+  workspaceId: string;
+  path: string;
+  isDir: boolean;
+}) {
+  const error = useSignal<string | null>(null);
+  const { close } = useDialog();
+
+  async function handleConfirm() {
+    const result = await deleteEntry(workspaceId, path);
+    if (!result.ok) {
+      error.value = result.error;
+      return;
+    }
+    error.value = null;
+    close();
+  }
+
+  return (
+    <div class="mt-4 flex flex-col gap-3">
+      <p class="text-sm">{buildFileDeleteConfirmMessage(path, isDir)}</p>
+      {error.value && (
+        <span data-testid="delete-entry-error" class="text-xs text-destructive">
+          {error.value}
+        </span>
+      )}
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => close()}
+          class="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleConfirm()}
+          class="rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({
+  workspaceId,
+  path,
+  isDir,
+  trigger,
+}: {
+  workspaceId: string;
+  path: string;
+  isDir: boolean;
+  trigger: JSX.Element;
+}) {
+  return (
+    <Modal
+      title={isDir ? 'Delete Folder' : 'Delete File'}
+      className="mx-auto my-16 max-w-sm p-4"
+      trigger={trigger}
+    >
+      <DeleteEntryForm workspaceId={workspaceId} path={path} isDir={isDir} />
     </Modal>
   );
 }
@@ -304,6 +383,29 @@ function FileTreeRow({
               onUploadClick={onUploadClick}
             />
           )}
+          {/* Every row (file or directory) gets a delete action — there is
+              no separate "root row" to exclude here, since tree.entries
+              (what FileTree renders) are already the workspace root's
+              children; the root's own actions live only in the tree
+              header, untouched by this. */}
+          <span class="flex shrink-0 opacity-0 focus-within:opacity-100 group-hover:opacity-100">
+            <DeleteConfirmModal
+              workspaceId={workspaceId}
+              path={node.path}
+              isDir={isDir}
+              trigger={
+                <button
+                  type="button"
+                  data-testid="file-tree-action-delete"
+                  aria-label={`Delete ${node.name}`}
+                  title={`Delete ${node.name}`}
+                  class="rounded p-0.5 hover:bg-background"
+                >
+                  <Trash2 class="size-3.5 text-muted-foreground" />
+                </button>
+              }
+            />
+          </span>
         </span>
       </div>
 

@@ -1,4 +1,7 @@
-import { buildDeleteConfirmMessage } from '@/pages/workspaces/delete-confirm-message';
+import {
+  buildDeleteConfirmMessage,
+  buildFileDeleteConfirmMessage,
+} from '@/pages/workspaces/delete-confirm-message';
 
 enum TestTypes {
   UNIT = '[unit]',
@@ -51,5 +54,25 @@ describe('buildDeleteConfirmMessage', () => {
 
   it(`never shows a git warning for an unmanaged workspace, since its files are untouched ${TestTypes.UNIT}`, () => {
     expect(buildDeleteConfirmMessage(unmanaged, { dirty: true, ahead: 5 })).not.toContain('⚠');
+  });
+});
+
+describe('buildFileDeleteConfirmMessage', () => {
+  it(`names the file and warns it cannot be undone ${TestTypes.UNIT}`, () => {
+    const message = buildFileDeleteConfirmMessage('notes/readme.md', false);
+    expect(message).toContain('Delete file "readme.md"?');
+    expect(message).toContain('cannot be undone');
+    expect(message).not.toContain('everything inside it');
+  });
+
+  it(`names the folder and calls out that the delete is recursive ${TestTypes.UNIT}`, () => {
+    const message = buildFileDeleteConfirmMessage('src/utils', true);
+    expect(message).toContain('Delete folder "utils"?');
+    expect(message).toContain('everything inside it');
+    expect(message).toContain('cannot be undone');
+  });
+
+  it(`uses the bare name for a top-level (non-nested) path ${TestTypes.UNIT}`, () => {
+    expect(buildFileDeleteConfirmMessage('README.md', false)).toContain('Delete file "README.md"?');
   });
 });

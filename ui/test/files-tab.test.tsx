@@ -11,8 +11,14 @@ jest.mock('@/services/workspace-files-api', () => {
   };
 });
 
+const mockUseThreadInstance = jest.fn();
+jest.mock('@/hooks/use-thread', () => ({
+  useThreadInstance: (...args: unknown[]) => mockUseThreadInstance(...args),
+}));
+
 import { FilesTab } from '@/pages/workspaces/files-tab';
 import { ThemeProvider } from '@/hooks/use-theme';
+import type { ThreadInstance } from '@/hooks/use-thread';
 import {
   openTabs,
   activeTabPath,
@@ -20,6 +26,32 @@ import {
   type OpenTab,
 } from '@/hooks/use-workspace-files';
 import { mediaMuted } from '@/hooks/use-media-mute';
+
+function stubThreadInstance(overrides: Partial<ThreadInstance> = {}): ThreadInstance {
+  return {
+    messages: signal([]),
+    displayMessages: signal([]),
+    isStreaming: signal(false),
+    pendingHitlId: signal(null),
+    activeThreadModel: signal(null),
+    modelHydrated: signal(true),
+    isSummarizing: signal(false),
+    summaryPath: signal(null),
+    isWaitingForProvider: signal(false),
+    waitingProviderName: signal(null),
+    threadType: signal(null),
+    taskRun: signal(null),
+    backgroundTurnActive: signal(false),
+    markBackgroundTurn: jest.fn(),
+    setThreadModel: jest.fn(),
+    hydrate: jest.fn().mockResolvedValue(undefined),
+    sendMessage: jest.fn().mockResolvedValue(undefined),
+    submitHitlAnswer: jest.fn().mockResolvedValue(undefined),
+    retryTurn: jest.fn().mockResolvedValue(undefined),
+    stopGeneration: jest.fn(),
+    ...overrides,
+  };
+}
 
 // jest.setup.ts stubs matchMedia to never match by default, which would put
 // these desktop-split-pane assertions on the mobile single-pane branch
@@ -53,15 +85,22 @@ function makeTab(path: string, opts: Partial<OpenTab> = {}): OpenTab {
     category: 'text',
     view: null,
     savedContent: 'content',
+    baseHash: 'base-hash',
     dirty: signal(false),
     ...opts,
   };
 }
 
-function renderFilesTab(overrides: { uploadRequest?: Signal<number> } = {}) {
+function renderFilesTab(overrides: { uploadRequest?: Signal<number>; threadId?: string } = {}) {
   return render(
     <ThemeProvider>
-      <FilesTab workspaceId="ws-1" git={false} uploadRequest={overrides.uploadRequest} />
+      <FilesTab
+        workspaceId="ws-1"
+        git={false}
+        uploadRequest={overrides.uploadRequest}
+        threadId={overrides.threadId}
+        onGoToChat={jest.fn()}
+      />
     </ThemeProvider>,
   );
 }
@@ -196,6 +235,83 @@ describe('FilesTab', () => {
 
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByText('Discard')).toBeInTheDocument();
+    });
+  });
+
+  describe('EditorPanel conflict banner and deleted-on-disk state', () => {
+    it('shows "This file was deleted on disk" with a Close tab button for a deletedOnDisk tab', () => {
+      const tab = makeTab('a.ts', { deletedOnDisk: true });
+      openTabs.value = [tab];
+      activeTabPath.value = 'a.ts';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-deleted-on-disk')).toBeInTheDocument();
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+
+      screen.getByText('Close tab').click();
+      expect(openTabs.value).toHaveLength(0);
+    });
+
+    it('renders Overwrite/Discard/Agent Resolve for a normal (not-deleted) conflict', () => {
+      const tab = makeTab('a.ts', {
+        conflict: { currentHash: 'disk-hash', onDiskContent: 'on-disk' },
+      });
+      openTabs.value = [tab];
+      activeTabPath.value = 'a.ts';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-conflict-banner')).toBeInTheDocument();
+      expect(screen.getByText('Overwrite')).toBeInTheDocument();
+      expect(screen.getByText('Discard my edits')).toBeInTheDocument();
+      expect(screen.getByText('Agent Resolve')).toBeInTheDocument();
+    });
+
+    it('hides Overwrite and Agent Resolve for the deleted-on-disk conflict sentinel', () => {
+      const tab = makeTab('a.ts', { conflict: { currentHash: '', onDiskContent: '' } });
+      openTabs.value = [tab];
+      activeTabPath.value = 'a.ts';
+
+      renderFilesTab();
+
+      expect(screen.getByTestId('file-conflict-banner')).toBeInTheDocument();
+      expect(screen.queryByText('Overwrite')).not.toBeInTheDocument();
+      expect(screen.queryByText('Agent Resolve')).not.toBeInTheDocument();
+      expect(screen.getByText('Discard my edits')).toBeInTheDocument();
+    });
+
+    it('clicking Agent Resolve switches to chat and sends a composed path/draft/on-disk message', () => {
+      const thread = stubThreadInstance();
+      mockUseThreadInstance.mockReturnValue(thread);
+      // No fake view here — CodeEditor mounts a real CodeMirror instance on
+      // render and overwrites tab.view via setTabView, seeded from
+      // savedContent (see code-editor.tsx's mount-effect-keyed-only-on-
+      // [path] comment), so savedContent is what actually reaches the
+      // editor's document and is what handleAgentResolve reads back out.
+      const tab = makeTab('a.ts', {
+        savedContent: 'my draft',
+        conflict: { currentHash: 'disk-hash', onDiskContent: 'on-disk content' },
+      });
+      openTabs.value = [tab];
+      activeTabPath.value = 'a.ts';
+      const onGoToChat = jest.fn();
+
+      render(
+        <ThemeProvider>
+          <FilesTab workspaceId="ws-1" git={false} threadId="thread-1" onGoToChat={onGoToChat} />
+        </ThemeProvider>,
+      );
+
+      screen.getByText('Agent Resolve').click();
+
+      expect(onGoToChat).toHaveBeenCalled();
+      expect(thread.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('/resolve-file-conflict a.ts'),
+      );
+      const sentMessage = (thread.sendMessage as jest.Mock).mock.calls[0][0] as string;
+      expect(sentMessage).toContain('my draft');
+      expect(sentMessage).toContain('on-disk content');
     });
   });
 

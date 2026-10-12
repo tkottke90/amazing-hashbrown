@@ -7,6 +7,7 @@ import {
   statSync,
   symlinkSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -355,7 +356,36 @@ describe('services/workspace-files', () => {
       const p = join(dir, 'hello.txt');
       writeFileSync(p, 'hello world\n');
       const result = await readFileGuarded(p);
-      expect(result).to.deep.equal({ ok: true, content: 'hello world\n' });
+      expect(result).to.deep.equal({
+        ok: true,
+        content: 'hello world\n',
+        contentHash: createHash('sha256').update('hello world\n').digest('hex'),
+      });
+    });
+
+    it('returns the same hash for the same content read twice', async () => {
+      const p = join(dir, 'stable.txt');
+      writeFileSync(p, 'same content\n');
+      const first = await readFileGuarded(p);
+      const second = await readFileGuarded(p);
+      expect(first.ok).to.equal(true);
+      expect(second.ok).to.equal(true);
+      if (first.ok && second.ok) {
+        expect(first.contentHash).to.equal(second.contentHash);
+      }
+    });
+
+    it('returns a different hash when the content changes', async () => {
+      const p = join(dir, 'changing.txt');
+      writeFileSync(p, 'version one\n');
+      const before = await readFileGuarded(p);
+      writeFileSync(p, 'version two\n');
+      const after = await readFileGuarded(p);
+      expect(before.ok).to.equal(true);
+      expect(after.ok).to.equal(true);
+      if (before.ok && after.ok) {
+        expect(before.contentHash).to.not.equal(after.contentHash);
+      }
     });
 
     it('rejects a file over the 2MB size cap', async () => {

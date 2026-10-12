@@ -1,0 +1,76 @@
+suite:
+  id: file-conflict-resolution
+  name: Agent Resolve File Conflict Skill
+  purpose: >
+    Verifies the chat agent follows the /resolve-file-conflict skill: given a
+    conflicting draft and on-disk version of a file, it merges them and calls
+    propose_file_merge with the full merged content and a path matching the
+    one given — never a partial diff, never a clarifying question first.
+    This is the agent-facing half of the "Agent Resolve" design (see the
+    2026-10-12 workspace-file-explorer-sync-and-delete design doc, §2); the
+    mechanism that gets the proposal from the chat SSE stream into the
+    editor is covered by UI/API tests, not this eval — this suite only
+    checks the model actually produces a real merge when asked.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: fcr-001-merges-and-proposes
+    name: Agent merges draft and on-disk content and proposes it
+    purpose: >
+      Given a /resolve-file-conflict invocation naming a path, a draft, and
+      an on-disk version that changed a different part of the file, confirms
+      the agent's first tool call is propose_file_merge with that exact path
+      and with mergedContent containing both the draft's and the on-disk
+      version's distinct changes — proving a real merge, not a one-sided
+      pick of either side.
+    type: tool-call
+    gatedSkill: resolve-file-conflict
+    input: |
+      /resolve-file-conflict notes/readme.md
+
+      Draft:
+      # Project Notes
+
+      - Added a new section on deployment steps.
+      - TODO: fill in rollback plan.
+
+      On-disk:
+      # Project Notes
+
+      - Updated the license year to 2026.
+      - TODO: fill in rollback plan.
+    tool: propose_file_merge
+    argChecks:
+      - path: path
+        match: equals
+        value: notes/readme.md
+      - path: mergedContent
+        match: contains
+        value: deployment steps
+      - path: mergedContent
+        match: contains
+        value: license year to 2026
+
+  - id: fcr-002-no-clarifying-question-first
+    name: Agent produces a merge directly rather than asking the user first
+    purpose: >
+      The skill explicitly says not to ask a clarifying question before
+      merging — the review step belongs to the user in the editor, not to
+      the agent in chat. Confirms the agent's first tool call is
+      propose_file_merge, not ask_user, even though the conflict is
+      resolvable in more than one reasonable way.
+    type: tool-call
+    gatedSkill: resolve-file-conflict
+    input: |
+      /resolve-file-conflict config/settings.json
+
+      Draft:
+      {"timeout": 30, "retries": 3}
+
+      On-disk:
+      {"timeout": 60, "retries": 3}
+    tool: propose_file_merge
+    argChecks:
+      - path: path
+        match: equals
+        value: config/settings.json

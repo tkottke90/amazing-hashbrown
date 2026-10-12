@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { WorkspaceStore } from '../../services/workspace-store.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import { resolveFilePathUnderWorkspace } from '../../services/workspace-location.js';
@@ -14,6 +14,7 @@ import {
   resolveTargetDir,
   createDirectoryEntry,
   createFileEntry,
+  hashContent,
   type FileTreeResult,
 } from '../../services/workspace-files.js';
 import type { ExecFileFn } from '../../services/workspace-provision.js';
@@ -49,6 +50,19 @@ interface ConflictFailure extends HandlerFailure {
 
 function conflict(error: string, conflicts: string[]): ConflictFailure {
   return { ok: false, status: 409, error, conflicts };
+}
+
+// Distinct from conflict() above, which is reserved for upload/create
+// name-collisions and always carries a conflicts: string[] list — a
+// hash-mismatch save conflict has no such list, just the current on-disk
+// hash the client can act on (e.g. show the user what changed).
+interface HashConflictFailure extends HandlerFailure {
+  status: 409;
+  currentHash: string;
+}
+
+function hashConflict(error: string, currentHash: string): HashConflictFailure {
+  return { ok: false, status: 409, error, currentHash };
 }
 
 function isEnoent(err: unknown): boolean {
@@ -102,7 +116,8 @@ export async function getFileTreeHandler(
 }
 
 export type FileContentResult =
-  { kind: 'text'; content: string } | { kind: 'binary'; buffer: Buffer; contentType: string };
+  | { kind: 'text'; content: string; contentHash: string }
+  | { kind: 'binary'; buffer: Buffer; contentType: string; contentHash: string };
 
 export async function getFileContentHandler(
   store: WorkspaceStore,
@@ -145,7 +160,12 @@ export async function getFileContentHandler(
       if (isEnoent(err)) return notFound(`File "${relativePath}" not found`);
       return badRequest(`Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return ok({ kind: 'binary', buffer, contentType: getContentType(fileName) });
+    return ok({
+      kind: 'binary',
+      buffer,
+      contentType: getContentType(fileName),
+      contentHash: hashContent(buffer),
+    });
   }
 
   let guarded;
@@ -164,7 +184,7 @@ export async function getFileContentHandler(
     );
   }
 
-  return ok({ kind: 'text', content: guarded.content });
+  return ok({ kind: 'text', content: guarded.content, contentHash: guarded.contentHash });
 }
 
 export async function patchFileContentHandler(
@@ -172,7 +192,7 @@ export async function patchFileContentHandler(
   workspaceId: string,
   relativePath: string,
   body: Record<string, unknown>,
-): Promise<HandlerResult<{ ok: true }>> {
+): Promise<HandlerResult<{ ok: true; contentHash: string }>> {
   const workspace = store.getWorkspace(workspaceId);
   if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
 
@@ -181,11 +201,44 @@ export async function patchFileContentHandler(
   }
   const content = body.content;
 
+  if (typeof body.baseHash !== 'string') {
+    return badRequest('baseHash is required and must be a string');
+  }
+  const baseHash = body.baseHash;
+  const force = body.force === true;
+
   let absPath: string;
   try {
     absPath = resolveFilePathUnderWorkspace(workspace.location, relativePath);
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  // Re-read and re-hash whatever is currently on disk before writing, so a
+  // save can never silently overwrite a change that happened after the
+  // client last loaded this file — see docs/superpowers/specs/2026-10-12-
+  // workspace-file-explorer-sync-and-delete-design.md §1.
+  let currentHash: string | null;
+  try {
+    currentHash = hashContent(await readFile(absPath));
+  } catch (err) {
+    if (!isEnoent(err)) {
+      return serverError(
+        `Failed to read file: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    // File deleted on disk since the client last read it. force recreates
+    // it via the writeFile below; otherwise this is a conflict the client
+    // must explicitly resolve, not a plain write-failure.
+    if (!force) return notFound(`File "${relativePath}" not found`);
+    currentHash = null;
+  }
+
+  if (!force && currentHash !== null && currentHash !== baseHash) {
+    return hashConflict(
+      `File "${relativePath}" was modified on disk since it was loaded`,
+      currentHash,
+    );
   }
 
   if (isContentTooLarge(content)) {
@@ -199,7 +252,7 @@ export async function patchFileContentHandler(
   }
 
   invalidateFileTreeCache(workspaceId);
-  return ok({ ok: true });
+  return ok({ ok: true, contentHash: hashContent(content) });
 }
 
 export interface UploadedFile {
@@ -298,6 +351,48 @@ export async function createDirectoryHandler(
 
   invalidateFileTreeCache(workspaceId);
   return ok({ path: entryPath(dir, name) });
+}
+
+// Mirrors skills.handlers.ts's deleteSkillFileHandler: validate the path
+// shape, confirm it actually exists (rm's force:true never throws on a
+// missing path, so a real existence check is the only way to surface 404
+// instead of a silent 200), then remove it. Works uniformly for a single
+// file or a directory tree — recursive:true is a no-op for a plain file.
+export async function deleteFileEntryHandler(
+  store: WorkspaceStore,
+  workspaceId: string,
+  relativePath: string,
+): Promise<HandlerResult<{ deleted: true }>> {
+  const workspace = store.getWorkspace(workspaceId);
+  if (!workspace) return notFound(`Workspace ${workspaceId} not found`);
+
+  let absPath: string;
+  try {
+    // resolveFilePathUnderWorkspace already throws on an empty relativePath
+    // ("Invalid file path \"\"") — this is what rejects a delete targeting
+    // the workspace root itself, with no separate check needed.
+    absPath = resolveFilePathUnderWorkspace(workspace.location, relativePath);
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    await stat(absPath);
+  } catch (err) {
+    if (isEnoent(err)) return notFound(`"${relativePath}" not found`);
+    return serverError(`Failed to check path: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    await rm(absPath, { recursive: true, force: true });
+  } catch (err) {
+    return serverError(
+      `Failed to delete "${relativePath}": ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  invalidateFileTreeCache(workspaceId);
+  return ok({ deleted: true });
 }
 
 export async function createFileHandler(
