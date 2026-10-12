@@ -245,6 +245,26 @@ error: {{ invalid.error }}</pre>
           <pre>{{ details.reviewerNotes }}</pre>
         {% endif %}
       {% endif %}
+
+      {% if result.transport or result.retryAttempts or result.scenarioStartedAt %}
+        <details class="transport-details" style="margin-top:0.5rem">
+          <summary>Debug: Retry &amp; Transport</summary>
+          <div class="detail-panel">
+            {% if result.scenarioStartedAt %}
+              <div><strong>Scenario started at:</strong> {{ result.scenarioStartedAt }}</div>
+            {% endif %}
+            {% if result.retryAttempts %}
+              <div><strong>Attempts:</strong> {{ result.retryAttempts }}</div>
+            {% endif %}
+            {% if result.transport %}
+              <div style="margin-top:0.5rem"><strong>Request:</strong></div>
+              <pre>{{ result.transport.request | dump(2) }}</pre>
+              <div style="margin-top:0.5rem"><strong>Response:</strong></div>
+              <pre>{{ result.transport.response | dump(2) }}</pre>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
     </div>
   </td>
 </tr>

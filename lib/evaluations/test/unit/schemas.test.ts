@@ -11,6 +11,7 @@ import {
   ToolSequenceScenarioSchema,
   SuiteSchema,
   EvalRunSchema,
+  ScenarioResultSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
   validateScenarioTurns,
@@ -957,6 +958,69 @@ describe('EvalRunSchema', () => {
           verdict: 'NOT_A_REAL_VERDICT',
         },
       }),
+    );
+  });
+});
+
+describe('ScenarioResultSchema (issue #289)', () => {
+  const minimalResult = {
+    id: 'result-1',
+    runId: 'run-1',
+    scenarioId: 'sc-1',
+    suiteId: 'suite-1',
+    passed: true,
+    score: 1,
+    actualOutput: 'ok',
+    latencyMs: 100,
+    estimatedCostUsd: 0,
+    details: { type: 'deterministic', match: 'contains', expected: 'ok', passed: true },
+  };
+
+  it('parses without scenarioStartedAt/retryAttempts/transport (pre-existing YAML/DB results) [unit]', () => {
+    const result = ScenarioResultSchema.parse(minimalResult);
+    assert.equal(result.scenarioStartedAt, undefined);
+    assert.equal(result.retryAttempts, undefined);
+    assert.equal(result.transport, undefined);
+  });
+
+  it('accepts a valid scenarioStartedAt [unit]', () => {
+    const result = ScenarioResultSchema.parse({
+      ...minimalResult,
+      scenarioStartedAt: '2026-10-12T00:00:00.000Z',
+    });
+    assert.equal(result.scenarioStartedAt, '2026-10-12T00:00:00.000Z');
+  });
+
+  it('rejects an invalid scenarioStartedAt [unit]', () => {
+    assert.throws(() =>
+      ScenarioResultSchema.parse({ ...minimalResult, scenarioStartedAt: 'not a date' }),
+    );
+  });
+
+  it('accepts a retryAttempts value [unit]', () => {
+    const result = ScenarioResultSchema.parse({ ...minimalResult, retryAttempts: 2 });
+    assert.equal(result.retryAttempts, 2);
+  });
+
+  it('rejects a retryAttempts below 1 [unit]', () => {
+    assert.throws(() => ScenarioResultSchema.parse({ ...minimalResult, retryAttempts: 0 }));
+  });
+
+  it('rejects a non-integer retryAttempts [unit]', () => {
+    assert.throws(() => ScenarioResultSchema.parse({ ...minimalResult, retryAttempts: 1.5 }));
+  });
+
+  it('accepts a transport value with request and response [unit]', () => {
+    const result = ScenarioResultSchema.parse({
+      ...minimalResult,
+      transport: { request: 'hello', response: { content: 'ok' } },
+    });
+    assert.deepEqual(result.transport, { request: 'hello', response: { content: 'ok' } });
+  });
+
+  it('rejects a transport object missing the response key [unit]', () => {
+    assert.throws(() =>
+      ScenarioResultSchema.parse({ ...minimalResult, transport: { request: 'hello' } }),
     );
   });
 });

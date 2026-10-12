@@ -850,6 +850,66 @@ describe('writeResultHtml', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('renders a Debug: Retry & Transport disclosure when transport/retryAttempts/scenarioStartedAt are set (issue #289)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-transport-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'Retried scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+      ]);
+      const result = makeResult(run.id, {
+        scenarioId: 'sc-1',
+        scenarioStartedAt: '2026-10-12T00:00:00.000Z',
+        retryAttempts: 2,
+        transport: { request: 'hello there', response: { content: 'ok' } },
+      });
+      const filePath = await writeResultHtml(run, [result], suite, dir);
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(html.includes('Debug: Retry &amp; Transport'));
+      assert.ok(html.includes('2026-10-12T00:00:00.000Z'));
+      assert.ok(html.includes('<strong>Attempts:</strong> 2'));
+      assert.ok(html.includes('hello there'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the Debug: Retry & Transport disclosure when none of those fields are set', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'eval-html-no-transport-'));
+    try {
+      const run = makeRun();
+      const suite = makeSuite([
+        {
+          id: 'sc-1',
+          name: 'Plain scenario',
+          purpose: 'p',
+          input: 'i',
+          type: 'deterministic',
+          match: 'contains',
+          expected: 'e',
+        },
+      ]);
+      const filePath = await writeResultHtml(
+        run,
+        [makeResult(run.id, { scenarioId: 'sc-1' })],
+        suite,
+        dir,
+      );
+      const html = readFileSync(filePath, 'utf-8');
+      assert.ok(!html.includes('Debug: Retry'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('writeReviewManifest + readReviewManifest', () => {

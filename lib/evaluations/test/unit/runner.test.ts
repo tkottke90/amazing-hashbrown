@@ -10,6 +10,7 @@ import {
   executeScenario,
   computeRunSummary,
   getScoredScenarios,
+  invokeWithResilience,
   type RunConfig,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
@@ -1967,5 +1968,167 @@ describe('migration equivalence (issue #235) — turns produces the same message
     );
     assert.ok(migrated[1] instanceof AIMessage);
     assert.ok(migrated[2] instanceof ToolMessage);
+  });
+});
+
+describe('invokeWithResilience (issue #289)', () => {
+  it('resolves with attempts: 1 on first-try success [unit]', async () => {
+    const { result, attempts } = await invokeWithResilience(async () => 'ok');
+    assert.equal(result, 'ok');
+    assert.equal(attempts, 1);
+  });
+
+  it('passes a distinct AbortSignal to each attempt [unit]', async () => {
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    await invokeWithResilience(async (signal) => {
+      signals.push(signal);
+      calls += 1;
+      if (calls === 1) throw new Error('fail once');
+      return 'ok';
+    });
+    assert.equal(signals.length, 2);
+    assert.notEqual(signals[0], signals[1]);
+    assert.ok(signals[0] instanceof AbortSignal);
+  });
+
+  it('retries after a rejection and reports attempts: 2 on eventual success [unit]', async () => {
+    let calls = 0;
+    const { result, attempts } = await invokeWithResilience(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('transient');
+      return 'ok';
+    });
+    assert.equal(result, 'ok');
+    assert.equal(attempts, 2);
+  });
+
+  it("rethrows the final attempt's error unchanged after exhausting maxAttempts [unit]", async () => {
+    const boom = new Error('still broken');
+    await assert.rejects(
+      () =>
+        invokeWithResilience(async () => {
+          throw boom;
+        }, 2),
+      (err: unknown) => err === boom,
+    );
+  });
+
+  it('aborts and retries an attempt that exceeds timeoutMs [unit]', async () => {
+    let calls = 0;
+    const invoke = (signal: AbortSignal) => {
+      calls += 1;
+      const thisCall = calls;
+      return new Promise<string>((resolve, reject) => {
+        if (thisCall === 1) {
+          // First attempt hangs until aborted — never resolves on its own.
+          signal.addEventListener('abort', () => reject(new Error('aborted')));
+        } else {
+          resolve('ok on retry');
+        }
+      });
+    };
+    const { result, attempts } = await invokeWithResilience(invoke, 2, 20);
+    assert.equal(result, 'ok on retry');
+    assert.equal(attempts, 2);
+    assert.equal(calls, 2);
+  });
+
+  it('propagates the abort error when every attempt times out [unit]', async () => {
+    const invoke = (signal: AbortSignal) =>
+      new Promise<never>((_, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    await assert.rejects(() => invokeWithResilience(invoke, 2, 20), /aborted/);
+  });
+});
+
+describe('executeScenario — resilience and transport capture (issue #289)', () => {
+  function makeScenario(overrides: Partial<DeterministicScenario> = {}): DeterministicScenario {
+    return {
+      id: 'sc-resilience',
+      name: 'Resilience scenario',
+      purpose: 'p',
+      input: 'hello',
+      type: 'deterministic',
+      match: 'contains',
+      expected: 'ok',
+      ...overrides,
+    };
+  }
+
+  function makeFlakyModel(
+    content: string,
+    failTimes: number,
+  ): { model: BaseChatModel; calls: () => number } {
+    let calls = 0;
+    const model = {
+      invoke: async () => {
+        calls += 1;
+        if (calls <= failTimes) throw new Error('transient failure');
+        return { content };
+      },
+    } as unknown as BaseChatModel;
+    return { model, calls: () => calls };
+  }
+
+  it('records retryAttempts: 1 and a populated transport on a normal first-try success [unit]', async () => {
+    const { model } = makeFlakyModel('ok', 0);
+    const config: RunConfig = { ...makeRunConfig(), model };
+    const scenario = makeScenario();
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+    assert.equal(result.retryAttempts, 1);
+    assert.ok(result.transport);
+    assert.equal(result.transport?.request, 'hello');
+    assert.ok(result.scenarioStartedAt);
+    assert.doesNotThrow(() => new Date(result.scenarioStartedAt!).toISOString());
+  });
+
+  it('recovers via retry and records retryAttempts: 2 after one transient failure [unit]', async () => {
+    const { model, calls } = makeFlakyModel('ok', 1);
+    const config: RunConfig = { ...makeRunConfig(), model };
+    const scenario = makeScenario();
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+    assert.equal(result.passed, true);
+    assert.equal(result.retryAttempts, 2);
+    assert.equal(calls(), 2);
+  });
+
+  it('still scores 0 via the existing catch block once retries are exhausted [unit]', async () => {
+    const { model } = makeFlakyModel('ok', 99); // always fails
+    const config: RunConfig = { ...makeRunConfig(), model };
+    const scenario = makeScenario();
+    const result = await executeScenario(scenario, makeSuite([scenario]), 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.score, 0);
+    assert.ok(result.actualOutput.startsWith('[scenario error]'));
+    assert.equal(result.retryAttempts, undefined);
+    assert.equal(result.transport, undefined);
+  });
+
+  it('does not set scenarioStartedAt/retryAttempts/transport for a skipped scenario [unit]', async () => {
+    const scenario = makeScenario({ skip: true });
+    const result = await executeScenario(
+      scenario,
+      makeSuite([scenario]),
+      'run-1',
+      makeRunConfig(),
+      {
+        count: 0,
+        total: 0,
+      },
+    );
+    assert.equal(result.scenarioStartedAt, undefined);
+    assert.equal(result.retryAttempts, undefined);
+    assert.equal(result.transport, undefined);
   });
 });
