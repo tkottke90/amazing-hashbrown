@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 import { LlmWiki, createWikiRegistry } from '../src/index.js';
 
 async function tmpWikiPath(): Promise<string> {
@@ -9,13 +10,33 @@ async function tmpWikiPath(): Promise<string> {
   return path.join(dir, 'wiki');
 }
 
-async function newWiki(): Promise<LlmWiki> {
+async function newWiki(opts: { embeddingProvider?: EmbeddingAdapter } = {}): Promise<LlmWiki> {
   return LlmWiki.create({
     path: await tmpWikiPath(),
     name: 'homelab',
     domain: 'infrastructure and services',
     tags: ['host', 'service', 'dns'],
+    embeddingProvider: opts.embeddingProvider,
   });
+}
+
+/** Deterministic fake embedding adapter for duplicate-detection tests:
+ *  callers assign known vectors to known texts via `vectorFor`, so cosine
+ *  similarity between any two embedded texts is fully controllable. Tracks
+ *  every text it was asked to embed, so tests can assert a candidate's body
+ *  was never embedded (proving stage 2 wasn't reached). */
+function makeFakeEmbeddingAdapter(vectorFor: (text: string) => number[]): EmbeddingAdapter & {
+  embedded: string[];
+} {
+  const embedded: string[] = [];
+  return {
+    model: 'fake-test-model',
+    embedded,
+    async embed(texts: string[]): Promise<number[][]> {
+      embedded.push(...texts);
+      return texts.map(vectorFor);
+    },
+  };
 }
 
 describe('LlmWiki.create', () => {
@@ -151,6 +172,143 @@ describe('LlmWiki ingest flow', () => {
       keywords: ['dns'],
     });
     expect(prep.existingPages).to.include('entities/dns-server.md');
+  });
+});
+
+describe('LlmWiki duplicate detection (findSimilarPages)', () => {
+  // "Jellyfin Media Server" (existing) vs. "Jellyfin Media Setup" (proposed):
+  // 2 of 3 significant title words overlap (jellyfin, media), meeting the
+  // >=60% shortlist threshold (ceil(3 * 0.6) = 2) without being an exact
+  // title match — this is the "shortlisted but needs content confirmation"
+  // shape every case below reuses.
+  async function wikiWithMediaServerPage(opts: { embeddingProvider?: EmbeddingAdapter } = {}) {
+    const wiki = await newWiki(opts);
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Jellyfin Media Server',
+      tags: ['service'],
+      sources: [],
+      body: 'Runs on the Unraid NAS and streams video to clients.',
+    });
+    return wiki;
+  }
+
+  it('no provider: rejects a proposed title with no real title overlap (Jellyfin/Authentik repro) [unit]', async () => {
+    const wiki = await newWiki();
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Authentik',
+      tags: ['service'],
+      sources: [],
+      body: 'Authentik provides SSO for homelab services. Jellyfin and other apps authenticate through Authentik.',
+    });
+    const prep = await wiki.ingestPrep({
+      content: 'Jellyfin is the homelab media server.',
+      title: 'Jellyfin',
+    });
+    expect(prep.existingPages).to.deep.equal([]);
+  });
+
+  it('no provider: shortlists but does not confirm a title-similar page with low body overlap (bridge page) [unit]', async () => {
+    const wiki = await wikiWithMediaServerPage();
+    const prep = await wiki.ingestPrep({
+      content:
+        'Installation steps for configuring hardware transcoding with dedicated GPU passthrough ' +
+        'drivers and firmware updates.',
+      title: 'Jellyfin Media Setup',
+    });
+    expect(prep.existingPages).to.deep.equal([]);
+  });
+
+  it('no provider: confirms a title-similar page whose body substantially overlaps [unit]', async () => {
+    const wiki = await wikiWithMediaServerPage();
+    const prep = await wiki.ingestPrep({
+      content: 'Runs on the Unraid NAS and streams video to clients. Same setup, same network.',
+      title: 'Jellyfin Media Setup',
+    });
+    expect(prep.existingPages).to.include('entities/jellyfin-media-server.md');
+  });
+
+  it('provider configured: excludes an unrelated title before ever calling embed (Jellyfin/Authentik repro) [unit]', async () => {
+    const fakeAdapter = makeFakeEmbeddingAdapter(() => [1]);
+    const wiki = await newWiki({ embeddingProvider: fakeAdapter });
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Authentik',
+      tags: ['service'],
+      sources: [],
+      body: 'Authentik provides SSO for homelab services. Jellyfin and other apps authenticate through Authentik.',
+    });
+    // commitPage() itself eagerly embeds the new page for the semantic-search
+    // index (see "commitPage writes _embeddings.json when a provider is set",
+    // above) — that one call is unrelated to duplicate detection, so only
+    // calls made *during* ingestPrep below count as evidence stage 2 ran.
+    const embedCallsBeforeIngest = fakeAdapter.embedded.length;
+    const prep = await wiki.ingestPrep({
+      content: 'Jellyfin is the homelab media server.',
+      title: 'Jellyfin',
+    });
+    expect(prep.existingPages).to.deep.equal([]);
+    expect(
+      fakeAdapter.embedded.length,
+      'stage 2 must never run when stage 1 shortlists nothing',
+    ).to.equal(embedCallsBeforeIngest);
+  });
+
+  it('provider configured: shortlists but does not confirm a title-similar page with dissimilar body embeddings (bridge page) [unit]', async () => {
+    const vectorFor = (text: string): number[] =>
+      text.includes('ALPHA_MARKER') ? [1, 0] : text.includes('BETA_MARKER') ? [0, 1] : [0, 0];
+    const fakeAdapter = makeFakeEmbeddingAdapter(vectorFor);
+    const wiki = await newWiki({ embeddingProvider: fakeAdapter });
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Jellyfin Media Server',
+      tags: ['service'],
+      sources: [],
+      body: 'ALPHA_MARKER_CONTENT describing the media server.',
+    });
+    const prep = await wiki.ingestPrep({
+      content: 'BETA_MARKER_CONTENT describing something unrelated.',
+      title: 'Jellyfin Media Setup',
+    });
+    expect(prep.existingPages).to.deep.equal([]);
+    expect(
+      fakeAdapter.embedded.length,
+      'stage 2 should have run (unlike the repro case)',
+    ).to.be.greaterThan(0);
+  });
+
+  it('provider configured: confirms a title-similar page with near-identical body embeddings [unit]', async () => {
+    const vectorFor = (text: string): number[] => (text.includes('ALPHA_MARKER') ? [1, 0] : [0, 1]);
+    const fakeAdapter = makeFakeEmbeddingAdapter(vectorFor);
+    const wiki = await newWiki({ embeddingProvider: fakeAdapter });
+    await wiki.commitPage({
+      type: 'entity',
+      title: 'Jellyfin Media Server',
+      tags: ['service'],
+      sources: [],
+      body: 'ALPHA_MARKER_CONTENT describing the media server.',
+    });
+    const prep = await wiki.ingestPrep({
+      content: 'ALPHA_MARKER_CONTENT describing the exact same media server.',
+      title: 'Jellyfin Media Setup',
+    });
+    expect(prep.existingPages).to.include('entities/jellyfin-media-server.md');
+  });
+
+  it('provider configured: falls back to lexical overlap without throwing when embed() rejects [unit]', async () => {
+    const failingAdapter: EmbeddingAdapter = {
+      model: 'failing-test-model',
+      async embed(): Promise<number[][]> {
+        throw new Error('simulated embedding provider outage');
+      },
+    };
+    const wiki = await wikiWithMediaServerPage({ embeddingProvider: failingAdapter });
+    const prep = await wiki.ingestPrep({
+      content: 'Runs on the Unraid NAS and streams video to clients. Same setup, same network.',
+      title: 'Jellyfin Media Setup',
+    });
+    expect(prep.existingPages).to.include('entities/jellyfin-media-server.md');
   });
 });
 
