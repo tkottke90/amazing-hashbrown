@@ -71,7 +71,31 @@ export const CohortGating: TestSuite = {
       createdLocations,
     );
   },
-  afterAll: async ({ request }) => {
+  afterAll: async ({ request }, testInfo) => {
+    // Capture the workspace's final task list as a report attachment before
+    // tearing anything down — this is the one artifact that shows the
+    // actual outcome of the run (did the orchestrator settle, did both
+    // children reach done, what the board state ended up looking like)
+    // without needing to reopen the UI. Best-effort: a failure here must
+    // never skip the real cleanup below.
+    if (workspace?.id) {
+      try {
+        const res = await request.get(`/api/v1/tasks?workspace_id=${workspace.id}`);
+        const body = res.ok()
+          ? JSON.stringify(await res.json(), null, 2)
+          : `Failed to fetch tasks: HTTP ${res.status()}\n${await res.text()}`;
+        await testInfo.attach('tasks-snapshot.json', {
+          body,
+          contentType: 'application/json',
+        });
+      } catch (err) {
+        await testInfo.attach('tasks-snapshot.json', {
+          body: `Failed to capture tasks snapshot: ${(err as Error).message}`,
+          contentType: 'text/plain',
+        });
+      }
+    }
+
     if (workspace?.id) {
       await deleteWorkspace(request, workspace.id);
     }
