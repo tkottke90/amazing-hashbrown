@@ -25,3 +25,14 @@ function localWorkWarning({ dirty, ahead }: Pick<GitStatus, 'dirty' | 'ahead'>):
   if (parts.length === 0) return null;
   return `⚠ This repository has ${parts.join(' and ')} that will be lost.`;
 }
+
+// Builds the body text for the file/directory delete confirm modal
+// (file-tree.tsx's DeleteConfirmModal) — a sibling to
+// buildDeleteConfirmMessage above, for deleting a single entry inside a
+// workspace rather than the workspace itself.
+export function buildFileDeleteConfirmMessage(path: string, isDir: boolean): string {
+  const name = path.split('/').pop() ?? path;
+  return isDir
+    ? `Delete folder "${name}"? This permanently deletes it and everything inside it. This cannot be undone.`
+    : `Delete file "${name}"? This cannot be undone.`;
+}

@@ -13,6 +13,7 @@ import {
   STATIC_CHAT_TOOLS,
   WAKEUP_TOOLS,
   buildWorkspaceScopedTools,
+  buildFileConflictTools,
   buildWorkspaceContextBlock,
   type WorkspaceChatContext,
 } from './chat-agent.js';
@@ -90,6 +91,24 @@ describe('agents/chat-agent', () => {
       expect(shared).to.not.include('schedule_wakeup');
       expect(shared).to.not.include('cancel_wakeup');
       expect(WAKEUP_TOOLS.map((t) => t.name)).to.deep.equal(['schedule_wakeup', 'cancel_wakeup']);
+    });
+  });
+
+  describe('file-conflict tool visibility (propose_file_merge)', () => {
+    it('buildFileConflictTools() includes propose_file_merge', () => {
+      expect(buildFileConflictTools().some((t) => t.name === 'propose_file_merge')).to.equal(true);
+    });
+
+    it('STATIC_CHAT_TOOLS (bound in plain chat and task runs) never includes propose_file_merge', () => {
+      // File tabs are a workspace-chat-only UI concept — propose_file_merge
+      // is bound only via buildFileConflictTools() inside
+      // buildWorkspaceChatAgent, never in STATIC_CHAT_TOOLS (which plain
+      // chat and buildTaskAgent both bind from).
+      expect(STATIC_CHAT_TOOLS.map((t) => t.name)).to.not.include('propose_file_merge');
+    });
+
+    it('buildWorkspaceScopedTools() (also bound in buildTaskAgent) never includes propose_file_merge', () => {
+      expect(buildWorkspaceScopedTools().map((t) => t.name)).to.not.include('propose_file_merge');
     });
   });
 

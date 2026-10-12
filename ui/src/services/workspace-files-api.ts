@@ -29,11 +29,26 @@ export class FileFetchError extends Error {
   }
 }
 
+export async function fetchFileTree(workspaceId: string): Promise<FileTreeResponse> {
+  return request<FileTreeResponse>(`/api/v1/workspaces/${workspaceId}/files`);
+}
+
+function unquoteETag(value: string | null): string {
+  return value ? value.replace(/^"|"$/g, '') : '';
+}
+
+export interface FileContentWithHash {
+  content: string;
+  contentHash: string;
+}
+
 // The file-content endpoint responds with text/plain, not JSON — this can't
 // reuse the request<T> helper above (or workspaces-api.ts's), which always
-// calls .json().
-async function requestText(url: string, init?: RequestInit): Promise<string> {
-  const res = await fetch(url, init);
+// calls .json(). The hash rides in the ETag header rather than the body: it
+// has to work uniformly for this plain-text response, with no restructuring
+// needed to carry a second field.
+export async function fetchFileContent(contentUrl: string): Promise<FileContentWithHash> {
+  const res = await fetch(contentUrl, { cache: 'no-store' });
   if (!res.ok) {
     const body = (await res.text().catch(() => '')) as string;
     let message: string | undefined;
@@ -44,23 +59,45 @@ async function requestText(url: string, init?: RequestInit): Promise<string> {
     }
     throw new FileFetchError(message ?? `Request failed: ${res.status}`, res.status);
   }
-  return res.text();
+  const contentHash = unquoteETag(res.headers.get('ETag'));
+  return { content: await res.text(), contentHash };
 }
 
-export async function fetchFileTree(workspaceId: string): Promise<FileTreeResponse> {
-  return request<FileTreeResponse>(`/api/v1/workspaces/${workspaceId}/files`);
+// Thrown specifically on a 409 (the current on-disk content no longer
+// matches the baseHash the client loaded) — distinct from FileFetchError so
+// callers can show the conflict banner instead of a generic save-failure
+// message.
+export class SaveConflictError extends Error {
+  constructor(
+    message: string,
+    public readonly currentHash: string,
+  ) {
+    super(message);
+    this.name = 'SaveConflictError';
+  }
 }
 
-export async function fetchFileContent(contentUrl: string): Promise<string> {
-  return requestText(contentUrl);
-}
-
-export async function saveFile(contentUrl: string, content: string): Promise<void> {
-  await request<{ ok: true }>(contentUrl, {
+export async function saveFile(
+  contentUrl: string,
+  content: string,
+  baseHash: string,
+  force = false,
+): Promise<{ contentHash: string }> {
+  const res = await fetch(contentUrl, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, baseHash, force }),
   });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; currentHash?: string };
+    throw new SaveConflictError(body.error ?? 'Save conflict', body.currentHash ?? '');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new FileFetchError(body.error ?? `Request failed: ${res.status}`, res.status);
+  }
+  const body = (await res.json()) as { ok: true; contentHash: string };
+  return { contentHash: body.contentHash };
 }
 
 export type UploadResult =
@@ -130,4 +167,27 @@ export async function createFile(
   name: string,
 ): Promise<CreateEntryResult> {
   return createEntry(workspaceId, 'file', dir, name);
+}
+
+export type DeleteEntryResult = { ok: true } | { ok: false; error: string };
+
+export async function deleteFileEntry(
+  workspaceId: string,
+  path: string,
+): Promise<DeleteEntryResult> {
+  // Each path segment is encoded independently (mirrors
+  // workspace-files.ts's attachContentUrls on the backend) so the server's
+  // wildcard route still sees literal "/" separators between segments.
+  const encodedPath = path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const res = await fetch(`/api/v1/workspaces/${workspaceId}/files/${encodedPath}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: body.error ?? `Delete failed: ${res.status}` };
+  }
+  return { ok: true };
 }

@@ -26,6 +26,7 @@ import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js'
 import { searchConversationTool } from '../api/src/agents/tools/search-conversation.tool.js';
 import { spawnSubAgentTool } from '../api/src/agents/tools/spawn-sub-agent.tool.js';
 import { wikiCreateDomainTool } from '../api/src/agents/tools/wiki-create-domain.tool.js';
+import { proposeFileMergeTool } from '../api/src/agents/tools/propose-file-merge.tool.js';
 import { buildWikiIngestionSystemPrompt } from '../api/src/agents/wiki-ingestion-system-prompt.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
@@ -114,6 +115,16 @@ export const evalTools = [
   // as an option regardless of whether it opts into gating.
   makeCreateWorkspaceTool(),
   makeCreateProjectTool(),
+  // Same skill-gated reasoning as the two tools immediately above — see
+  // GATED_SKILL_REGISTRATIONS (gated-skill-registrations.ts). Missing here
+  // through auto-eval round 1 of suites/file-conflict-resolution.yaml
+  // (2026-10-12): all three OpenAI-compatible providers (Lemonade, Ornith,
+  // Digital Ocean) correctly refused to call a tool absent from their own
+  // `tools` schema and said so in prose ("I don't have access to a
+  // `propose_file_merge` tool"); only local's looser Ollama tool-calling
+  // path happened to emit the call anyway, which is what made the gap
+  // visible instead of uniformly silent.
+  proposeFileMergeTool,
   // Workspace-scoped in production (buildWorkspaceScopedTools() in
   // chat-agent.ts) — bound in buildWorkspaceChatAgent/buildTaskAgent, never
   // buildChatAgent, unlike every other tool in this list which mirrors

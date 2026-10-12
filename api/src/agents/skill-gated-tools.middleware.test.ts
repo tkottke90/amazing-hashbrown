@@ -1,6 +1,7 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
+import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 
 function fakeTool(name: string) {
   return { name } as unknown as { name: string };
@@ -67,5 +68,49 @@ describe('agents/skill-gated-tools.middleware', () => {
     await middleware.wrapModelCall!(fakeRequest('some-unrelated-skill'), handler);
 
     expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search']);
+  });
+
+  // Exercises the real, production registration array (rather than this
+  // file's own minimal fixture above) so a future edit to
+  // gated-skill-registrations.ts that drops or misnames the
+  // resolve-file-conflict entry fails here, not only in manual testing.
+  describe('propose_file_merge (resolve-file-conflict registration)', () => {
+    const tools = [...ALWAYS_ON, ...GATED, fakeTool('propose_file_merge')];
+
+    function requestWith(activeGatedSkill: string | null) {
+      return {
+        tools,
+        state: { activeGatedSkill },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    it('is hidden when resolve-file-conflict is not the active gated skill', async () => {
+      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      let seenTools: { name: string }[] = [];
+      const handler = async (req: { tools: { name: string }[] }) => {
+        seenTools = req.tools;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return {} as any;
+      };
+
+      await middleware.wrapModelCall!(requestWith(null), handler);
+
+      expect(seenTools.map((t) => t.name)).to.not.include('propose_file_merge');
+    });
+
+    it('is exposed once resolve-file-conflict is the active gated skill', async () => {
+      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      let seenTools: { name: string }[] = [];
+      const handler = async (req: { tools: { name: string }[] }) => {
+        seenTools = req.tools;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return {} as any;
+      };
+
+      await middleware.wrapModelCall!(requestWith('resolve-file-conflict'), handler);
+
+      expect(seenTools.map((t) => t.name)).to.include('propose_file_merge');
+    });
   });
 });

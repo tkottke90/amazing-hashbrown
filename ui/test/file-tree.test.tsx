@@ -10,13 +10,15 @@ jest.mock('@/hooks/use-workspace-files', () => ({
   uploadFiles: jest.fn(),
   createFile: jest.fn(),
   createDirectory: jest.fn(),
+  deleteEntry: jest.fn(),
 }));
 
-import { uploadFiles, createFile, createDirectory } from '@/hooks/use-workspace-files';
+import { uploadFiles, createFile, createDirectory, deleteEntry } from '@/hooks/use-workspace-files';
 
 const uploadFilesMock = uploadFiles as jest.MockedFunction<typeof uploadFiles>;
 const createFileMock = createFile as jest.MockedFunction<typeof createFile>;
 const createDirectoryMock = createDirectory as jest.MockedFunction<typeof createDirectory>;
+const deleteEntryMock = deleteEntry as jest.MockedFunction<typeof deleteEntry>;
 
 function renderTree() {
   return render(
@@ -252,6 +254,68 @@ describe('FileTree', () => {
       fireEvent.submit(input.closest('form')!);
 
       await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith('ws-1', 'src', 'child'));
+    });
+  });
+
+  describe('delete action', () => {
+    it('renders the delete icon on a file row, unlike upload/new-file/new-folder', () => {
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      expect(
+        within(rowFor('README.md')).getByTestId('file-tree-action-delete'),
+      ).toBeInTheDocument();
+    });
+
+    it('renders the delete icon on a directory row too', () => {
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      expect(within(rowFor('src')).getByTestId('file-tree-action-delete')).toBeInTheDocument();
+    });
+
+    it('confirming the delete modal calls deleteEntry with the workspace id and path', async () => {
+      deleteEntryMock.mockResolvedValue({ ok: true });
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      const row = rowFor('README.md');
+      fireEvent.click(within(row).getByText('Delete'));
+
+      await waitFor(() => expect(deleteEntryMock).toHaveBeenCalledWith('ws-1', 'README.md'));
+    });
+
+    it('clicking Cancel does not call deleteEntry', () => {
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      const row = rowFor('README.md');
+      fireEvent.click(within(row).getByText('Cancel'));
+
+      expect(deleteEntryMock).not.toHaveBeenCalled();
+    });
+
+    it('shows an inline error when the delete fails, without touching the tree', async () => {
+      deleteEntryMock.mockResolvedValue({ ok: false, error: 'not found' });
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      const row = rowFor('README.md');
+      fireEvent.click(within(row).getByText('Delete'));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('delete-entry-error')).toHaveTextContent('not found'),
+      );
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    it('the delete confirm copy for a directory calls out that it is recursive', () => {
+      fileTree.value = treeWithFolder;
+      renderTree();
+
+      const row = rowFor('src');
+      expect(row).toHaveTextContent(/Delete folder "src"\?/);
+      expect(screen.getByText(/everything inside it/)).toBeInTheDocument();
     });
   });
 });

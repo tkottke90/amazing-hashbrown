@@ -193,4 +193,36 @@ Steps:
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
   },
+  // Tightening, added after a real eval run (suites/file-conflict-
+  // resolution.yaml round 3, 2026-10-12) found Lemonade and Ornith both
+  // failing fcr-001 the same way: the draft and on-disk versions each
+  // changed the same bullet-line position with a different, unrelated
+  // fact (draft: a new "deployment steps" note; on-disk: a "license year"
+  // note), and both models read step 2's "same region" language literally
+  // as a same-line conflict, then dropped one side per the prefer-draft
+  // rule — one model dropped the on-disk line, the other dropped the
+  // draft's. The scenario's own purpose states the intent plainly: prove
+  // a real merge, not a one-sided pick of either side. Round 1 of the
+  // same suite also surfaced a harness bug (propose_file_merge was never
+  // added to bin/eval-setup.ts's evalTools, so no provider had the tool
+  // bound at all) — fixed separately in that file, unrelated to this
+  // wording gap. Added an explicit worked-example pair distinguishing a
+  // true same-field conflict (same JSON key, incompatible values) from
+  // two edits that only collide on line position but state compatible,
+  // different facts — the fix all four providers passed round 3 under.
+  {
+    name: 'resolve-file-conflict',
+    description:
+      'Propose a merged version of a file whose local edits conflict with a newer on-disk version.',
+    body: `The user has unsaved edits to a file that changed on disk since they opened it. You are given the file's path, their current in-editor draft, and the latest on-disk content. Merge them into one coherent version and call propose_file_merge with the full merged content — never partial content, never a diff.
+
+Steps:
+1. Read the path, draft content, and on-disk content from the message below.
+2. Reconcile the two versions: keep the user's intent from their draft wherever it doesn't conflict with what changed on disk, and keep the on-disk changes wherever the draft didn't touch that part of the file. If the same region was changed in both, prefer the user's draft for it, since they are the one asking for help resolving this — but say so plainly in your explanation.
+   "Same region" means the same fact or field was given two different, incompatible values — not just the same line position. A JSON key set to \`30\` in the draft and \`60\` on disk is a real conflict (same key, incompatible values): keep the draft's \`30\`. Two bullets that happen to occupy the same line position but state different, compatible facts — e.g. draft adds "Added a new section on deployment steps" where on-disk instead has "Updated the license year to 2026" — are not a conflict just because they landed on the same line; nothing about either statement contradicts the other, so keep both as separate lines rather than dropping one.
+3. Call propose_file_merge with: path (exactly as given), mergedContent (the complete file, not a snippet or diff), and explanation (one sentence on what you kept, dropped, or combined).
+4. Do not call any other tool. Do not ask the user a clarifying question first — produce your best merge and let them review and edit it before saving; that review is the whole point of this flow.
+
+This skill has exactly one valid response: a single propose_file_merge tool call carrying the full merged content. Writing the merge out as a chat message — prose, a markdown table, a bullet list, anything — does not satisfy this skill, no matter how correct that text is, because the user's editor only updates from the tool call's arguments; text left in chat is invisible to it. propose_file_merge is already bound and callable the moment this skill is active — if it looks unavailable or absent from your tools for this turn, that reading is wrong; call it anyway, with the real merged content as the mergedContent argument.`,
+  },
 ];
