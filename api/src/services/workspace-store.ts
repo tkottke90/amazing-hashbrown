@@ -2097,8 +2097,20 @@ export class WorkspaceStore extends BaseStore {
       iterationCount: this.countScheduledRuns(taskId),
       now: new Date(now),
     });
+    // Clears blocked_reason unconditionally — this is the terminal apply for
+    // a cron run's own settlement (including a cohort holder's deferred
+    // settlement, run from settleCohortMember() above once every child
+    // resolves), and settled.status is never 'blocked' here, so nothing
+    // after this should still read 'awaiting_children'. Confirmed live
+    // (2026-10-12, real @llm @local run): without this, a holder settling to
+    // 'done' (cron_once, nothing left to schedule) kept a stale
+    // blocked_reason: 'awaiting_children' from when it was parked — board
+    // rules never read blockedReason off a non-'blocked' status, so it had
+    // no visible effect, but it's wrong data sitting in the row.
     this.db
-      .prepare(`UPDATE tasks SET status = ?, trigger_config = ?, updated_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE tasks SET status = ?, trigger_config = ?, blocked_reason = NULL, updated_at = ? WHERE id = ?`,
+      )
       .run(settled.status, JSON.stringify(settled.config), now, taskId);
     this.releaseEligibleDependents(taskId);
   }

@@ -1556,8 +1556,50 @@ describe('services/workspace-store', () => {
 
         const after = store.getTask(holder.id)!;
         expect(after.status, 'resolves regardless of a failed child').to.equal('scheduled');
+        expect(
+          after.blockedReason,
+          "clears the 'awaiting_children' parked while the cohort was open, not just the status",
+        ).to.equal(null);
         expect(store.getOpenCohort(holder.id), 'cohort row is gone').to.equal(null);
         expect(store.countScheduledRuns(holder.id)).to.equal(1); // the holder's own run, live-read
+      });
+
+      it("settles a one-shot (cron_once) holder to 'done' with no stale blockedReason once its cohort releases — a one-shot has nothing left to schedule, so 'done' here is correct, not a cohort-gating bug [orchestration]", () => {
+        // Matches a real @llm @local run (2026-10-12) that surfaced the
+        // stale blockedReason: cron_once settles to its outcome directly
+        // (settleCronRun's documented rule — a one-shot has no next
+        // occurrence to compute), and applyCronSettlement's UPDATE used to
+        // leave blocked_reason untouched from when the holder was parked.
+        const holder = store.createTask({
+          title: 'one-shot orchestrator',
+          triggerType: 'cron_once',
+          triggerConfig: {
+            fireAt: '2026-09-26T00:00:00.000Z',
+            timezone: 'UTC',
+            enabled: true,
+            enabledAt: '2026-01-01T00:00:00.000Z',
+            lastFiredAt: null,
+          },
+        });
+        store.patchTask(holder.id, { status: 'scheduled' });
+        const entry = store.fireCronTask(holder.id, '2026-09-26T00:00:00.000Z', 'schedule')!;
+        store.dequeueNext(); // holder -> running
+        store.openCohort(holder.id, 1);
+        store.completeQueueEntry(entry.id, 'done');
+        expect(store.getTask(holder.id)!.status, 'parked while its cohort is open').to.equal(
+          'blocked',
+        );
+
+        const [child] = store.createTasks([{ title: 'only child', cohortOf: holder.id }]);
+        const childEntry = store.listQueue().find((q) => q.taskId === child!.id)!;
+        store.completeQueueEntry(childEntry.id, 'done');
+
+        const after = store.getTask(holder.id)!;
+        expect(
+          after.status,
+          "a one-shot has nothing left to schedule — 'done' is correct",
+        ).to.equal('done');
+        expect(after.blockedReason, 'not left over from the parked state').to.equal(null);
       });
 
       it("skips a fire while the holder is blocked/'awaiting_children' — the existing idle gate covers this with no new code [unit]", () => {
