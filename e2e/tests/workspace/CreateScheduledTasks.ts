@@ -42,6 +42,15 @@ function soonIso(secondsFromNow: number): string {
   return new Date(Date.now() + secondsFromNow * 1000).toISOString();
 }
 
+// The clock for fireAt starts the moment the prompt is built — before
+// waitForManualSend() even waits for a human to click Send, and well before
+// create_tasks actually runs. A real run against Lemonade/GLM-4.7-Flash-GGUF
+// recorded a single LLM call taking 22.2s, which blew past a 20s-out fireAt
+// before create_tasks executed, so the tool rejected it with "fireAt must be
+// in the future" and the model gave up. 90s leaves enough headroom for the
+// LLM round trip plus manual click delay.
+const SCENARIO_FIRE_BUFFER_SECONDS = 90;
+
 export const CreateScheduledTasks: TestSuite = {
   id: 101,
   name: 'Create Scheduled Tasks',
@@ -100,13 +109,13 @@ export const CreateScheduledTasks: TestSuite = {
     // --- Scenario 1: an immediate-fire cron_once task succeeds end to end ---
     {
       slow: true,
-      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~20s out',
+      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~90s out',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        const fireAt = soonIso(SCENARIO_FIRE_BUFFER_SECONDS);
         await waitForManualSend(
           page,
           chatInput,
@@ -146,14 +155,14 @@ export const CreateScheduledTasks: TestSuite = {
     {
       slow: true,
       action:
-        'Ask the agent (manual send) to create a one-shot task scheduled ~20s out whose plan ' +
+        'Ask the agent (manual send) to create a one-shot task scheduled ~90s out whose plan ' +
         'requires a shell-command approval',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        const fireAt = soonIso(SCENARIO_FIRE_BUFFER_SECONDS);
         await waitForManualSend(
           page,
           chatInput,
