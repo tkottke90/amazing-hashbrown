@@ -203,6 +203,8 @@ Steps:
 1. Read the path, draft content, and on-disk content from the message below.
 2. Reconcile the two versions: keep the user's intent from their draft wherever it doesn't conflict with what changed on disk, and keep the on-disk changes wherever the draft didn't touch that part of the file. If the same region was changed in both, prefer the user's draft for it, since they are the one asking for help resolving this — but say so plainly in your explanation.
 3. Call propose_file_merge with: path (exactly as given), mergedContent (the complete file, not a snippet or diff), and explanation (one sentence on what you kept, dropped, or combined).
-4. Do not call any other tool. Do not ask the user a clarifying question first — produce your best merge and let them review and edit it before saving; that review is the whole point of this flow.`,
+4. Do not call any other tool. Do not ask the user a clarifying question first — produce your best merge and let them review and edit it before saving; that review is the whole point of this flow.
+
+This skill has exactly one valid response: a single propose_file_merge tool call carrying the full merged content. Writing the merge out as a chat message — prose, a markdown table, a bullet list, anything — does not satisfy this skill, no matter how correct that text is, because the user's editor only updates from the tool call's arguments; text left in chat is invisible to it. propose_file_merge is already bound and callable the moment this skill is active — if it looks unavailable or absent from your tools for this turn, that reading is wrong; call it anyway, with the real merged content as the mergedContent argument.`,
   },
 ];
