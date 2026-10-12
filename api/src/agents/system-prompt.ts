@@ -1878,19 +1878,52 @@ elsewhere in a request whose timing is already clear.
 // shape the tool actually requires. Added the paragraph below with a
 // worked example matching the scenario's own shape, rather than leaving
 // that split implicit.
+//
+// Round 2 (2026-10-12, Lemonade/GLM-4.7-Flash-GGUF, same suite, after a
+// separate task-execution fix removed an unrelated abort that had been
+// blocking this scenario from reaching this point at all) — the model now
+// correctly made two calls (orchestrator alone, no asCohort), and even
+// described the fan-out plan correctly in its own chat reply to the user.
+// But the actual create_tasks call it made carried neither description nor
+// plan: {"tasks":[{"title":"Cohort orchestrator","trigger":{...}}]}, full
+// stop. A task run's kickoff (task-context.ts's buildRunKickoff()) is built
+// only from that task's own stored fields, never from the conversation that
+// created it — so when the orchestrator fired, its run had no plan to act
+// on at all and spent its whole turn probing the filesystem and the wiki
+// for one that was never actually written down anywhere. "a plan step
+// describing the fan-out," as prose, evidently wasn't concrete enough to
+// make the model actually populate the field — added an explicit
+// requirement and a worked description value in the real argument shape
+// below, rather than only describing it in English.
 If you are a cron_once/cron_repeat task's own run creating one-off follow-up work and want your
 next scheduled run held until that work finishes, set asCohort: true on the tasks you create — but
 only from inside that run itself; it does not work the other way around. Setting this pattern up
 from an ordinary chat turn is two separate create_tasks calls, not one: first create just the
-orchestrator task, with its trigger set and no asCohort, giving it a plan or description that states
-what to fan out into; later, when that task's own run actually fires, it reads its own plan and
-calls create_tasks again — this time with asCohort: true and the child tasks — from inside that run.
-For example, "set up a task that, when it runs tomorrow, checks three servers and creates one
-follow-up task per server, holding its own next run until all three finish" is fulfilled by one
-create_tasks call now, with a single task carrying tomorrow's trigger and a plan step describing the
-fan-out into three cohort-gated children — not by calling create_tasks once with all four tasks and
-asCohort: true together. That single-call version isn't made from a running cron task, so it will be
-rejected; the fix is to split it into the two calls above, not to report the pattern as unsupported.`;
+orchestrator task, with its trigger set and no asCohort; later, when that task's own run actually
+fires, it reads its own plan and calls create_tasks again — this time with asCohort: true and the
+child tasks — from inside that run.
+
+That future run starts with no memory of this conversation at all — not the user's request, not
+your own reply, nothing except what this same create_tasks call writes into the orchestrator task's
+own description and/or plan. Describing the fan-out in your reply to the user is not enough and
+does not substitute for this: if the task's stored description/plan doesn't spell it out, the run
+that fires later has nothing to act on. Always set description (or plan, or both) on the
+orchestrator task itself, naming the exact asCohort call it should make — the children's titles and
+what each one should accomplish — concretely enough that the run needs no other context. For
+example, an orchestrator meant to fan out into "Cohort child A" and "Cohort child B" (each just
+logging a message and running immediately) is created as create_tasks({ tasks: [{ title: "Cohort
+orchestrator", trigger: { type: "cron_once", fireAt: <resolved time> }, description: "When this run
+fires, call create_tasks with asCohort: true and exactly two children in one batch: 'Cohort child
+A' and 'Cohort child B', each with no trigger and a plan step to log a short message." }] }) — never
+a bare { title, trigger } with the plan left sitting only in your own reply.
+
+The same requirement holds for the more general case: "set up a task that, when it runs tomorrow,
+checks three servers and creates one follow-up task per server, holding its own next run until all
+three finish" is fulfilled by one create_tasks call now, with a single task carrying tomorrow's
+trigger and a description/plan naming the three servers and the asCohort fan-out explicitly — not by
+calling create_tasks once with all four tasks and asCohort: true together. That single-call version
+isn't made from a running cron task, so it will be rejected; the fix is the two-call split above with
+a real, self-contained plan on the first call, not reporting the pattern as unsupported.`;
 
 interface HarnessSection {
   tag: string;
