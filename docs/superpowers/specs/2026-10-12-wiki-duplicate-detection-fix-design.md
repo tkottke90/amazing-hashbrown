@@ -28,7 +28,7 @@ against an existing page's actual body:
 
 - **Hybrid path** (embeddings configured, ≥10 pages in the wiki — the common
   case, since embeddings default to enabled): runs `semanticSearch(title, {
-  mode: 'hybrid' })`, the same general-purpose search used by `wiki_search`.
+mode: 'hybrid' })`, the same general-purpose search used by `wiki_search`.
   Its keyword half runs BM25 with the proposed title as the query against the
   **full body text** of every existing page. In the repro, the Authentik page
   apparently mentions "Jellyfin" once in passing (as one of the services
@@ -144,7 +144,7 @@ private async confirmByContent(
   — that refresh-stale-pages logic gets extracted into a small shared private
   helper so it isn't duplicated between the two call sites). For each
   shortlisted candidate, computes `cosineSimilarity(proposedVec,
-  candidateVec)` against the candidate's cached **body** vector (not title).
+candidateVec)` against the candidate's cached **body** vector (not title).
   Keeps candidates scoring `≥ MIN_BODY_COSINE_SIMILARITY`.
 - **Stage 2b — `confirmByLexicalOverlap()`:** no embedding call. For each
   shortlisted candidate, computes
@@ -196,7 +196,7 @@ installation's actual embedding model and wiki content — see "Open items."
 - Embedding call throws (provider unreachable, timeout, etc.) → caught,
   logged via `this.logger.warn` (same `describeEmbeddingError` helper already
   used elsewhere in this file), falls back to `confirmByLexicalOverlap()` for
-  that call. This keeps *some* real content confirmation active rather than
+  that call. This keeps _some_ real content confirmation active rather than
   either silently skipping confirmation (fail-open, reintroducing noise) or
   treating the shortlist as confirmed without evidence (fail-closed, today's
   bug).
@@ -247,12 +247,12 @@ New cases in `lib/llm-wiki/test/llm-wiki.test.ts`:
 7. Embedding provider's `embed()` rejects → falls back to lexical overlap
    without throwing, and confirms/rejects per the lexical result.
 8. Existing title-based case (`'detects an existing similar page via keywords
-   match'`) still passes under the new orchestration.
+match'`) still passes under the new orchestration.
 
 Existing regression coverage to re-run, not modify:
 
 - `api/src/agents/tools/wiki-create-page.tool.test.ts`'s `'does not emit a
-  wiki_updated event on a duplicate page'` — creates the same title + body
+wiki_updated event on a duplicate page'` — creates the same title + body
   twice with no embedding provider configured; should still pass unchanged,
   since identical content trivially clears either stage-2 threshold.
 - `api/src/services/wiki-write.test.ts`'s create-duplicate case, same

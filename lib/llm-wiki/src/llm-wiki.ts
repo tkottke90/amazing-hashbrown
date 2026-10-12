@@ -66,15 +66,12 @@ const noopLogger: Logger = {
 
 const RECENT_LOG_COUNT = 30;
 const MIN_OUTBOUND_LINKS = 2;
-// RRF score floor for treating a page as a duplicate during wiki_create_page.
-// At k=60 the max RRF score is ≈0.033 (rank-1 in both semantic and keyword);
-// 0.020 requires meaningful similarity in at least one ranking axis.
-const MIN_DUPLICATE_SCORE = 0.02;
-// Minimum content pages before semantic duplicate detection is meaningful.
-// With fewer pages, every query scores near the RRF maximum (a rank-1-of-2
-// document scores the same as a genuine duplicate), making the threshold
-// useless. Below this count, title-only comparison is used instead.
-const MIN_PAGES_FOR_SEMANTIC = 10;
+// Duplicate-detection (wiki_create_page) thresholds for confirming a
+// title-shortlisted candidate by comparing actual body content, not titles.
+// Starting guesses, not yet calibrated against real embedding-model output —
+// expect a follow-up tuning pass (see the design doc).
+const MIN_BODY_COSINE_SIMILARITY = 0.8;
+const MIN_BODY_WORD_OVERLAP = 0.5;
 
 export interface CreateOptions {
   path: string;
@@ -212,36 +209,120 @@ export class LlmWiki {
     return matches;
   }
 
-  /** Duplicate-check for a proposed new page. When an embeddingProvider is
-   *  available, uses hybrid semantic+keyword search with a score threshold so
-   *  that only genuinely similar pages are flagged. Without embeddings, falls
-   *  back to title-only comparison to avoid the false-positives that full-body
-   *  keyword scanning produces. */
-  private async findSimilarPages(proposedTitle: string, keywords: string[]): Promise<string[]> {
+  /** Duplicate-check for a proposed new page: a cheap title-only shortlist
+   *  (`searchByTitle`), then a content-level confirmation that compares the
+   *  proposed page's actual body against each shortlisted candidate's actual
+   *  body — title overlap alone is not enough to flag a duplicate, since a
+   *  legitimate new page can share title words with (or even wikilink to) an
+   *  existing page without restating its content.
+   *
+   *  An *exact* title match (case-insensitive) skips content confirmation
+   *  entirely: `pagePathFor()` derives a page's path from its type + title,
+   *  so an exact title match within the same section is already the same
+   *  file — content comparison doesn't apply, and a thin or stub proposed
+   *  body (little text to compare yet) must not slip through as "not a
+   *  duplicate" just because it doesn't share enough vocabulary yet. */
+  private async findSimilarPages(
+    proposedTitle: string,
+    keywords: string[],
+    proposedBody: string,
+  ): Promise<string[]> {
+    const shortlist = await this.searchByTitle(proposedTitle);
+    if (shortlist.length === 0) return [];
+
+    const normalizedProposed = proposedTitle.trim().toLowerCase();
+    const exact: string[] = [];
+    const partial: string[] = [];
+    for (const rel of shortlist) {
+      const raw = await readFileOr(this.abs(rel), '');
+      const { data } = fm.parse(raw);
+      const existingTitle = String(data.title ?? pageStem(rel)).toLowerCase();
+      (existingTitle === normalizedProposed ? exact : partial).push(rel);
+    }
+    if (partial.length === 0) return exact;
+    return [...exact, ...(await this.confirmByContent(proposedBody, partial))];
+  }
+
+  /** Confirms (or rejects) title-shortlisted candidates by comparing actual
+   *  body content: embedding cosine similarity when a provider is available,
+   *  falling back to lexical word overlap on failure or when none is
+   *  configured. */
+  private async confirmByContent(proposedBody: string, candidates: string[]): Promise<string[]> {
     if (this.embeddingProvider) {
-      // Use title only — including tags inflates the query with generic terms
-      // (e.g. "character", "workflow") that cause false-positive matches against
-      // topically unrelated pages that share only vocabulary, not subject matter.
-      const query = proposedTitle.trim();
-      if (!query) return [];
       try {
-        const allPaths = await this.listContentPaths();
-        // Skip semantic search for small wikis: with fewer than MIN_PAGES_FOR_SEMANTIC
-        // pages, every result ranks near the top of a tiny list and scores above the
-        // threshold regardless of actual relevance. Fall through to title search.
-        if (allPaths.length >= MIN_PAGES_FOR_SEMANTIC) {
-          const results = await this.semanticSearch(query, { limit: 5, mode: 'hybrid' });
-          return results.filter((r) => r.score >= MIN_DUPLICATE_SCORE).map((r) => r.path);
-        }
+        return await this.confirmByEmbedding(this.embeddingProvider, proposedBody, candidates);
       } catch (err) {
         const reason = describeEmbeddingError(err);
         this.logger.warn(
-          `findSimilarPages: semantic search failed (${reason}), falling back to title search`,
+          `confirmByContent: embedding confirmation failed (${reason}), falling back to lexical overlap`,
           { err },
         );
       }
     }
-    return this.searchByTitle(proposedTitle);
+    return this.confirmByLexicalOverlap(proposedBody, candidates);
+  }
+
+  /** Content confirmation via embedding cosine similarity between the
+   *  proposed body and each candidate's actual (cached) body vector. */
+  private async confirmByEmbedding(
+    provider: EmbeddingAdapter,
+    proposedBody: string,
+    candidates: string[],
+  ): Promise<string[]> {
+    const [proposedVec] = await provider.embed([proposedBody]);
+    const matches: string[] = [];
+    for (const rel of candidates) {
+      const vec = await this.getCachedBodyVector(provider, rel);
+      if (cosineSimilarity(proposedVec ?? [], vec) >= MIN_BODY_COSINE_SIMILARITY) {
+        matches.push(rel);
+      }
+    }
+    return matches;
+  }
+
+  /** Content confirmation via lexical overlap, for when no embedding
+   *  provider is configured (or the embedding call failed). Asymmetric by
+   *  design: measures what fraction of the *proposed* page's own vocabulary
+   *  already exists in the candidate, not a symmetric Jaccard/Dice score —
+   *  so a short page that merely mentions a long existing page in passing
+   *  scores low, while a genuine near-duplicate scores high regardless of
+   *  which of the two documents is longer. */
+  private async confirmByLexicalOverlap(
+    proposedBody: string,
+    candidates: string[],
+  ): Promise<string[]> {
+    const proposedWords = significantWords(proposedBody);
+    if (proposedWords.size === 0) return [];
+    const matches: string[] = [];
+    for (const rel of candidates) {
+      const raw = await readFileOr(this.abs(rel), '');
+      const candidateWords = significantWords(extractBody(raw));
+      const overlap = [...proposedWords].filter((w) => candidateWords.has(w)).length;
+      if (overlap / proposedWords.size >= MIN_BODY_WORD_OVERLAP) matches.push(rel);
+    }
+    return matches;
+  }
+
+  /** Fetches a candidate page's body embedding vector, reusing the same
+   *  per-wiki `EmbeddingIndex` cache `semanticSearch` maintains, re-embedding
+   *  only if the page's content has changed since it was last cached. Scoped
+   *  to a single path — duplicate-check candidates are always a handful (0-3
+   *  shortlisted pages), so this doesn't need `semanticSearch`'s bulk,
+   *  whole-corpus refresh shape. */
+  private async getCachedBodyVector(
+    provider: EmbeddingAdapter,
+    relPath: string,
+  ): Promise<number[]> {
+    const index = await this.loadEmbeddingIndex(provider);
+    const raw = await readFileOr(this.abs(relPath), '');
+    const sha = sha256Body(raw);
+    if (index.needsUpdate(relPath, sha)) {
+      const [vec] = await provider.embed([extractBody(raw)]);
+      index.set(relPath, sha, vec ?? []);
+      await index.save(this.basePath);
+      return vec ?? [];
+    }
+    return index.getAll().find((e) => e.relPath === relPath)?.vec ?? [];
   }
 
   /** Non-embedding duplicate check: compare `proposedTitle` word-by-word
@@ -543,7 +624,7 @@ export class LlmWiki {
       drift,
       existingRaw,
       storedSha256,
-      existingPages: await this.findSimilarPages(proposedTitle, keywords),
+      existingPages: await this.findSimilarPages(proposedTitle, keywords, input.content),
       suggestedRawPath: suggestRawPath({ url, filename: input.filename, today }),
     };
   }
@@ -953,6 +1034,17 @@ async function writeIfAbsent(target: string, content: string): Promise<void> {
 
 async function readFileOr(target: string, fallback: string): Promise<string> {
   return (await readFileOrNull(target)) ?? fallback;
+}
+
+/** Lowercased, de-duplicated set of a text's significant words (length > 2),
+ *  used by lexical duplicate-detection comparisons. */
+function significantWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2),
+  );
 }
 
 async function readFileOrNull(target: string): Promise<string | null> {

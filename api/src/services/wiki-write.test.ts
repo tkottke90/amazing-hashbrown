@@ -76,13 +76,19 @@ describe('services/wiki-write', () => {
         store,
       );
 
-      // "Proxy Service Details" shares 2 of 3 significant words with "Proxy Service Notes"
-      // (proxy, service), meeting the ≥60% threshold (ceil(1.8) = 2) — a clear duplicate.
+      // "Proxy Service Details" shares 2 of 3 significant title words with "Proxy
+      // Service Notes" (proxy, service), meeting the title-shortlist's ≥60%
+      // threshold (ceil(1.8) = 2) without being an exact title match — so this
+      // also needs body-content confirmation (no embeddingProvider is configured
+      // for this registry, so that's the lexical-overlap path): the second body
+      // shares "the, proxy, service, and, traffic, routing" with the first body's
+      // significant words (6 of its own 10 — well over the ≥50% coverage floor),
+      // a clear duplicate either way.
       const second = await createWikiPage(
         {
           wikiId: 'test-wiki',
           title: 'Proxy Service Details',
-          content: 'More about the proxy service configuration.',
+          content: 'More details about the proxy service configuration and traffic routing setup.',
           section: 'entity',
           tags: ['proxy'],
         },
