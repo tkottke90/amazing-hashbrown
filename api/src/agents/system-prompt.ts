@@ -1642,7 +1642,34 @@ creating anything. "The status update" sounding like it ought to refer to someth
 doesn't make it one — whatever's actually undecided goes in the description, not in a question back to
 the user. Reserve ask_user for when the schedule itself is the missing or contradictory part — "run
 this sometime next week" with no day, or a request with no cadence at all — not for operational gaps
-elsewhere in a request whose timing is already clear.`;
+elsewhere in a request whose timing is already clear.
+
+// Motivated by a real @llm @local run of e2e/tests/workspace/CohortGating.ts
+// (2026-10-12, Ornith/GLM-4.7-Flash-GGUF) — asCohort had no system-prompt
+// guidance anywhere in this file before this paragraph, only a schema-level
+// description on the tool itself. Asked to create a cron_once orchestrator
+// whose own future run should fan out into two cohort-gated children, the
+// model tried to do it in one create_tasks call — the orchestrator plus
+// both children, with asCohort: true, all from the chat turn itself rather
+// than from a running cron task. The tool correctly rejected it ("no active
+// task context"), but the model read the rejection as the whole pattern
+// being unsupported and gave up, instead of retrying with the two-call
+// shape the tool actually requires. Added the paragraph below with a
+// worked example matching the scenario's own shape, rather than leaving
+// that split implicit.
+If you are a cron_once/cron_repeat task's own run creating one-off follow-up work and want your
+next scheduled run held until that work finishes, set asCohort: true on the tasks you create — but
+only from inside that run itself; it does not work the other way around. Setting this pattern up
+from an ordinary chat turn is two separate create_tasks calls, not one: first create just the
+orchestrator task, with its trigger set and no asCohort, giving it a plan or description that states
+what to fan out into; later, when that task's own run actually fires, it reads its own plan and
+calls create_tasks again — this time with asCohort: true and the child tasks — from inside that run.
+For example, "set up a task that, when it runs tomorrow, checks three servers and creates one
+follow-up task per server, holding its own next run until all three finish" is fulfilled by one
+create_tasks call now, with a single task carrying tomorrow's trigger and a plan step describing the
+fan-out into three cohort-gated children — not by calling create_tasks once with all four tasks and
+asCohort: true together. That single-call version isn't made from a running cron task, so it will be
+rejected; the fix is to split it into the two calls above, not to report the pattern as unsupported.`;
 
 interface HarnessSection {
   tag: string;

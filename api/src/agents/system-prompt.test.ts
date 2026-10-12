@@ -572,6 +572,19 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('explains asCohort as a two-call pattern rather than one call with the children included', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "If you are a cron_once/cron_repeat task's own run creating one-off follow-up work and want your\n" +
+          'next scheduled run held until that work finishes, set asCohort: true on the tasks you create — but\n' +
+          'only from inside that run itself; it does not work the other way around.',
+      );
+      expect(result).to.include(
+        "That single-call version isn't made from a running cron task, so it will be\n" +
+          'rejected; the fix is to split it into the two calls above, not to report the pattern as unsupported.',
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

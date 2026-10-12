@@ -153,7 +153,13 @@ export function makeCreateTasksTool(
       if (asCohort) {
         const callingTask = callingTaskId ? s.getTask(callingTaskId) : null;
         if (!callingTask) {
-          return 'asCohort requires this call to come from a running cron task; no active task context.';
+          return (
+            'asCohort requires this call to come from a running cron task; no active task ' +
+            'context. This is a two-call pattern: call create_tasks now with just the ' +
+            'orchestrator task (no asCohort, no children yet), giving it a plan describing the ' +
+            "fan-out — then, once that task's own run fires, call create_tasks again from " +
+            'within that run, this time with asCohort: true and the child tasks.'
+          );
         }
         if (callingTask.triggerType !== 'cron_once' && callingTask.triggerType !== 'cron_repeat') {
           return "asCohort can only be used from a cron_once or cron_repeat task's own run.";
