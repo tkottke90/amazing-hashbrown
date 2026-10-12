@@ -170,21 +170,25 @@ test.describe(
       // buttons like the desktop tab row — they're hash-navigable so the
       // browser's back/forward buttons and deep links work across tabs.
       await page.getByRole('link', { name: /files/i }).click();
-      await expect(page.getByText('README.md')).toBeVisible();
+      // Scoped to a button — a bare getByText('README.md') also matches the
+      // always-mounted-but-closed delete-confirmation dialog's "Delete file
+      // ...README.md..." text for this row.
+      const fileButton = page.getByRole('button', { name: 'README.md', exact: true });
+      await expect(fileButton).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
       // Scoped to the editor pane — a bare getByText('Save') also matches
       // "Save changes" on the (mobile-only, always-mounted-but-closed)
       // Actions sheet's Edit form, since text queries match substrings.
       const editorPane = page.getByTestId('file-editor-pane');
-      await page.getByText('README.md').click();
+      await fileButton.click();
       await expect(page.getByTestId('files-mobile-back')).toBeVisible();
       await expect(editorPane.getByRole('button', { name: 'Save' })).toBeVisible();
 
       await page.getByTestId('files-mobile-back').click();
       await expect(page.getByTestId('file-tree')).toBeVisible();
 
-      await page.getByText('README.md').click();
+      await fileButton.click();
       await expect(editorPane.getByRole('button', { name: 'Save' })).toBeVisible();
     });
 
