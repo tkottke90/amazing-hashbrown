@@ -42,6 +42,7 @@ function task(overrides: Partial<Task> = {}): Task {
     dispatchGroupId: null,
     role: null,
     blockedReason: null,
+    cohortOf: null,
     createdAt: '2026-09-28T00:00:00.000Z',
     updatedAt: '2026-09-28T00:00:00.000Z',
     ...overrides,
@@ -103,6 +104,7 @@ function ctx(overrides: Partial<BoardContext> = {}): BoardContext {
     schedule: null,
     pendingPrompt: null,
     failedStreak: null,
+    cohort: null,
     ...overrides,
   };
 }
@@ -154,6 +156,10 @@ const SOURCES = {
   blockedDependencyFailed: () => ({
     t: task({ status: 'blocked', blockedReason: 'dependency_failed' }),
     c: ctx({ dependencies: [edge('failed', false)] }),
+  }),
+  blockedAwaitingChildren: () => ({
+    t: task({ status: 'blocked', blockedReason: 'awaiting_children' }),
+    c: ctx({ cohort: { settled: 1, total: 3 } }),
   }),
   failed: () => ({
     t: task({ status: 'failed' }),
@@ -215,6 +221,7 @@ describe('services/board-rules', () => {
       ['blockedDependencyFailed', 'attention', 'dependency_failed'],
       ['blockedPaused', 'attention', 'paused'],
       ['schedulePaused', 'attention', 'schedule_paused'],
+      ['blockedAwaitingChildren', 'scheduled', 'awaiting_children'],
       ['readyQueued', 'queue', undefined],
       ['running', 'queue', undefined],
       ['scheduledRepeat', 'scheduled', undefined],
@@ -320,6 +327,15 @@ describe('services/board-rules', () => {
     it(`reports the schedule's consecutive failures on a paused schedule ${TestTypes.UNIT}`, () => {
       const { t, c } = SOURCES.schedulePaused();
       expect(boardFor(t, c).reason).to.deep.equal({ kind: 'schedule_paused', failures: 3 });
+    });
+
+    it(`reports how many of its spawned children have settled on an awaiting_children card ${TestTypes.UNIT}`, () => {
+      const { t, c } = SOURCES.blockedAwaitingChildren();
+      expect(boardFor(t, c).reason).to.deep.equal({
+        kind: 'awaiting_children',
+        settled: 1,
+        total: 3,
+      });
     });
   });
 
@@ -466,6 +482,21 @@ describe('services/board-rules', () => {
       for (const to of ['queue', 'scheduled'] as const) {
         it(`rejects ${to} — the broken dependency must be dealt with first ${TestTypes.UNIT}`, () =>
           expectRejected('blockedDependencyFailed', to, /dependency of this task failed/));
+      }
+    });
+
+    describe('from Scheduled (awaiting children)', () => {
+      it(`disables the trigger on Backlog ${TestTypes.UNIT}`, () =>
+        expectAllowed('blockedAwaitingChildren', 'backlog', [{ kind: 'disable_trigger' }]));
+      it(`rejects Needs attention — this is routine waiting, not something broken ${TestTypes.UNIT}`, () =>
+        expectRejected('blockedAwaitingChildren', 'attention', /on their own/));
+      for (const to of ['queue', 'scheduled', 'done'] as const) {
+        it(`rejects ${to} — it reschedules automatically once its children finish ${TestTypes.UNIT}`, () =>
+          expectRejected(
+            'blockedAwaitingChildren',
+            to,
+            /waiting on sub-tasks it created; it will reschedule automatically/,
+          ));
       }
     });
 

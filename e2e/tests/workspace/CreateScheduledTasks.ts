@@ -36,12 +36,6 @@ async function waitForManualSend(
   await expect(stopButton).toBeVisible({ timeout: MANUAL_SEND_TIMEOUT_MS });
 }
 
-// A fire time close enough that this suite doesn't sit idle for minutes, but
-// far enough out that there's time to click Send first.
-function soonIso(secondsFromNow: number): string {
-  return new Date(Date.now() + secondsFromNow * 1000).toISOString();
-}
-
 export const CreateScheduledTasks: TestSuite = {
   id: 101,
   name: 'Create Scheduled Tasks',
@@ -100,18 +94,21 @@ export const CreateScheduledTasks: TestSuite = {
     // --- Scenario 1: an immediate-fire cron_once task succeeds end to end ---
     {
       slow: true,
-      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~20s out',
+      action: 'Ask the agent (manual send) to create a one-shot task scheduled ~90s out',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        // Relative, not a precomputed absolute timestamp — the agent resolves
+        // "90 seconds from now" against its own ambient_context at the moment
+        // it actually generates the tool call, so a slow local model's
+        // generation time never eats into the margin before fireAt is picked.
         await waitForManualSend(
           page,
           chatInput,
           'Create a task titled "Scenario 1: one-shot" that just logs a short message — nothing ' +
-            `else. Schedule it to run once at exactly ${fireAt} (UTC). Don't run it now.`,
+            "else. Schedule it to run once, 90 seconds from now (UTC). Don't run it now.",
           'Scenario 1 prompt',
         );
         await expect(page.getByText('create_tasks')).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
@@ -146,20 +143,20 @@ export const CreateScheduledTasks: TestSuite = {
     {
       slow: true,
       action:
-        'Ask the agent (manual send) to create a one-shot task scheduled ~20s out whose plan ' +
+        'Ask the agent (manual send) to create a one-shot task scheduled ~90s out whose plan ' +
         'requires a shell-command approval',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CreateScheduledTasks, testInfo);
-        const fireAt = soonIso(20);
+        // Relative — see Scenario 1's comment above on why.
         await waitForManualSend(
           page,
           chatInput,
           'Create a task titled "Scenario 2: needs approval" whose plan is to run a shell ' +
-            'command (e.g. `echo hello`) via shell_exec. Schedule it to run once at exactly ' +
-            `${fireAt} (UTC).`,
+            'command (e.g. `echo hello`) via shell_exec. Schedule it to run once, 90 seconds ' +
+            'from now (UTC).',
           'Scenario 2 prompt',
         );
         await expect(page.getByText('create_tasks')).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });

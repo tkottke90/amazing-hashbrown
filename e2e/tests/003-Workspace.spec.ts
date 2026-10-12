@@ -17,6 +17,7 @@ import {
 import { CreateTask } from './workspace/CreateTasks.js';
 import { CreateScheduledTasks } from './workspace/CreateScheduledTasks.js';
 import { CronAbortWatch } from './workspace/CronAbortWatch.js';
+import { CohortGating } from './workspace/CohortGating.js';
 import {
   createWorkspace,
   editorPane,
@@ -794,3 +795,4 @@ suiteRunner(WorkspaceFileBrowser);
 suiteRunner(CreateTask);
 suiteRunner(CreateScheduledTasks);
 suiteRunner(CronAbortWatch);
+suiteRunner(CohortGating);

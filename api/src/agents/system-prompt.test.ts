@@ -668,6 +668,39 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('explains asCohort as a two-call pattern rather than one call with the children included', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "If you are a cron_once/cron_repeat task's own run creating one-off follow-up work and want your\n" +
+          'next scheduled run held until that work finishes, set asCohort: true on the tasks you create — but\n' +
+          'only from inside that run itself; it does not work the other way around.',
+      );
+      expect(result).to.include(
+        "isn't made from a running cron task, so it will be rejected; the fix is the two-call split above with\n" +
+          'a real, self-contained plan on the first call, not reporting the pattern as unsupported.',
+      );
+    });
+
+    it('requires the orchestrator task itself to carry the fan-out plan, not just the chat reply, since its own run has no memory of this conversation', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "That future run starts with no memory of this conversation at all — not the user's request, not\n" +
+          "your own reply, nothing except what this same create_tasks call writes into the orchestrator task's\n" +
+          'own description and/or plan.',
+      );
+      expect(result).to.include(
+        'Describing the fan-out in your reply to the user is not enough and\n' +
+          "does not substitute for this: if the task's stored description/plan doesn't spell it out, the run\n" +
+          'that fires later has nothing to act on.',
+      );
+      expect(result).to.include(
+        'create_tasks({ tasks: [{ title: "Cohort\norchestrator", trigger: { type: "cron_once", fireAt: <resolved time> }, description: "When this run',
+      );
+      expect(result).to.include(
+        'never\na bare { title, trigger } with the plan left sitting only in your own reply.',
+      );
+    });
+
     it('returns the harness prompt verbatim for an empty string', () => {
       expect(buildSystemPrompt('')).to.equal(buildSystemPrompt());
     });

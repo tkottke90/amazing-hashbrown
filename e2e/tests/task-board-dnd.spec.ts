@@ -161,6 +161,67 @@ test.describe(
         'failed',
       );
     });
+
+    // A cohort holder's blocked/awaiting_children state (cron cohort gating,
+    // docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md) is
+    // produced internally by the settlement machinery, not through any
+    // user-facing endpoint — mocking the hydration response is the
+    // established way to reach an otherwise-unreachable render state (see
+    // e2e/AGENTS.md's "Mock hydration, not the live turn").
+    test('shows a cohort holder in Scheduled with its "N of M" badge, not Needs attention', async ({
+      page,
+      request,
+    }) => {
+      const ws = await createWorkspace(request, 'board-cohort-smoke');
+      await page.route('**/api/v1/tasks?*', (route) =>
+        route.fulfill({
+          json: [
+            {
+              id: 'holder-1',
+              workspaceId: ws.id,
+              title: 'Wiki lint orchestrator',
+              description: null,
+              outcome: null,
+              status: 'blocked',
+              assignedTo: 'agent',
+              dueAt: null,
+              expiresAt: null,
+              triggerType: 'cron_repeat',
+              triggerConfig: {
+                expression: '0 0 * * *',
+                timezone: 'UTC',
+                enabled: true,
+                maxIterations: null,
+                stopAfter: null,
+                maxConsecutiveFailures: 3,
+                enabledAt: '2026-01-01T00:00:00.000Z',
+                lastFiredAt: '2026-10-11T00:00:00.000Z',
+                consecutiveFailures: 0,
+                pausedReason: null,
+              },
+              trackerType: null,
+              trackerId: null,
+              plan: null,
+              blockedReason: 'awaiting_children',
+              createdAt: '2026-10-11T00:00:00.000Z',
+              updatedAt: '2026-10-11T00:00:00.000Z',
+              board: {
+                lane: 'scheduled',
+                moves: [{ to: 'backlog', needs: 'none' }],
+                reason: { kind: 'awaiting_children', settled: 1, total: 3 },
+              },
+            },
+          ],
+        }),
+      );
+
+      await openTasksTab(page, ws.id);
+
+      const holderCard = card(lane(page, 'scheduled'), 'Wiki lint orchestrator');
+      await expect(holderCard).toHaveAttribute('data-status', 'blocked');
+      await expect(holderCard.getByTestId('task-card-reason')).toHaveText('1 of 3 done');
+      await expect(card(lane(page, 'attention'), 'Wiki lint orchestrator')).not.toBeVisible();
+    });
   },
 );
 

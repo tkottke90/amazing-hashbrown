@@ -18,7 +18,7 @@ import { endThreadTurn } from './pending-thread-turns.js';
 import {
   resolveTurnModel,
   startTurnObservability,
-  warnIfAmbientRunnableConfig,
+  clearAmbientRunnableConfig,
   type TurnObservability,
 } from './turn-observability.js';
 
@@ -189,16 +189,17 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
         resolvedProvider,
         'sync',
         async () => {
-          warnIfAmbientRunnableConfig({ threadId, source: params.source });
-          const rawStream = agent.streamEvents(
-            { messages: [{ role: 'human', content: message }] },
-            turnObs!.attach({
-              ...config,
-              version: 'v2',
-              recursionLimit,
-              context: { provider, model: params.model, afterAgentEnabled: undefined },
-              signal: controller.signal,
-            }),
+          const rawStream = clearAmbientRunnableConfig({ threadId, source: params.source }, () =>
+            agent.streamEvents(
+              { messages: [{ role: 'human', content: message }] },
+              turnObs!.attach({
+                ...config,
+                version: 'v2',
+                recursionLimit,
+                context: { provider, model: params.model, afterAgentEnabled: undefined },
+                signal: controller.signal,
+              }),
+            ),
           );
           return pipeEvents(sink, msgId, rawStream, threadStore, threadId, turnSentAt);
         },

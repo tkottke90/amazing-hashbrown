@@ -84,6 +84,18 @@ describe('BoardCard', () => {
     expect(screen.getByTestId('task-card-reason')).toHaveTextContent('Dependency failed: Deploy');
   });
 
+  it('shows how many spawned children have settled on an awaiting_children card [unit]', () => {
+    render(
+      <BoardCard
+        task={boardTask(
+          { status: 'blocked', blockedReason: 'awaiting_children' },
+          { reason: { kind: 'awaiting_children', settled: 1, total: 3 } },
+        )}
+      />,
+    );
+    expect(screen.getByTestId('task-card-reason')).toHaveTextContent('1 of 3 done');
+  });
+
   it('says a repeating schedule stopped after repeated failures [unit]', () => {
     render(
       <BoardCard task={boardTask({}, { reason: { kind: 'schedule_paused', failures: 3 } })} />,

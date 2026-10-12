@@ -110,6 +110,12 @@ function ReasonLine({ reason }: { reason: BoardReason }) {
         </p>
       );
     }
+    case 'awaiting_children':
+      return (
+        <p data-testid="task-card-reason" class={cn(base, 'text-muted-foreground')}>
+          {reason.settled} of {reason.total} done
+        </p>
+      );
     case 'assigned_to_user':
       return null; // shown as the "You" assignee chip instead
   }

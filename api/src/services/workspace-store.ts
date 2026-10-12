@@ -153,12 +153,40 @@ export interface Task {
   dispatchGroupId: string | null;
   role: string | null;
   // Set when status is 'blocked' because a required dependency (see
-  // TaskDependency below) failed or was cancelled — distinct from a plain
+  // TaskDependency below) failed or was cancelled, or because this task is
+  // holding an open cohort (see TaskCohort below) — distinct from a plain
   // user-initiated pause, which carries no reason here (see task_queue's own
   // pause_reason instead). Cleared to null on any transition out of 'blocked'.
-  blockedReason: 'dependency_failed' | null;
+  blockedReason: 'dependency_failed' | 'awaiting_children' | null;
+  // Set on a task created as part of another task's cohort (via
+  // create_tasks(asCohort: true)) — the holder's own task id. A cohort
+  // member can never itself be a holder (see TaskCohort below) — this is
+  // the invariant that keeps cohorts one level deep.
+  cohortOf: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// One OPEN cohort, keyed by the holder's own task id — a holder can only
+// hold one at a time (see settleTaskAfterRun()/openCohort() below), so no
+// separate group id is needed. Deleted the instant it resolves
+// (settleCohortMember()). pendingOutcome is null until the holder's own run
+// closes — the row is opened earlier, by create_tasks, while total_count is
+// already known but the holder's own outcome isn't yet. See
+// docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md.
+export interface TaskCohort {
+  holderTaskId: string;
+  totalCount: number;
+  settledCount: number;
+  pendingOutcome: { outcome: 'done' | 'failed' | 'cancelled'; source: TriggerSource } | null;
+  createdAt: string;
+}
+
+// Just enough about an open cohort for the Kanban board's "N of M" badge —
+// see listOpenCohorts()/buildBoardContexts().
+export interface CohortSummary {
+  settled: number;
+  total: number;
 }
 
 // An edge in the task dependency graph: `taskId` cannot become 'ready' until
@@ -211,6 +239,7 @@ export interface NewTaskInput {
   parentThreadId?: string | null;
   dispatchGroupId?: string | null;
   role?: string | null;
+  cohortOf?: string | null;
 }
 
 export interface PatchTaskInput {
@@ -229,7 +258,7 @@ export interface PatchTaskInput {
   plan?: PlanStep[] | null;
   threadId?: string | null;
   resumeAnswer?: string | null;
-  blockedReason?: 'dependency_failed' | null;
+  blockedReason?: 'dependency_failed' | 'awaiting_children' | null;
 }
 
 // What started one run (task_queue row) of a task — drives run labels and,
@@ -332,9 +361,18 @@ interface RawTaskRow {
   parent_thread_id: string | null;
   dispatch_group_id: string | null;
   role: string | null;
-  blocked_reason: 'dependency_failed' | null;
+  blocked_reason: 'dependency_failed' | 'awaiting_children' | null;
+  cohort_of: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface RawTaskCohortRow {
+  holder_task_id: string;
+  total_count: number;
+  settled_count: number;
+  pending_outcome: string | null;
+  created_at: string;
 }
 
 interface RawTaskDependencyRow {
@@ -427,6 +465,7 @@ function mapTask(row: RawTaskRow): Task {
     dispatchGroupId: row.dispatch_group_id,
     role: row.role,
     blockedReason: row.blocked_reason,
+    cohortOf: row.cohort_of,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -439,6 +478,18 @@ function mapTaskDependency(row: RawTaskDependencyRow): TaskDependency {
     dependsOnTaskId: row.depends_on_task_id,
     requireSuccess: row.require_success === 1,
     whileBlocked: row.while_blocked === 1,
+    createdAt: row.created_at,
+  };
+}
+
+function mapTaskCohort(row: RawTaskCohortRow): TaskCohort {
+  return {
+    holderTaskId: row.holder_task_id,
+    totalCount: row.total_count,
+    settledCount: row.settled_count,
+    pendingOutcome: row.pending_outcome
+      ? (JSON.parse(row.pending_outcome) as TaskCohort['pendingOutcome'])
+      : null,
     createdAt: row.created_at,
   };
 }
@@ -490,6 +541,14 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // scheduled_for — one thread + persisted summary per run, for the cron
 // task triggers feature — see
 // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md).
+// 36=WorkspaceStore (tasks.trigger_source, for webhook task creation, #252).
+// 37=evaluations' own store (see lib/evaluations/src/store.ts — version
+// numbers are shared across every BaseStore subclass against this one
+// schema_migrations table, so this number is claimed even though it's not
+// WorkspaceStore's own).
+// 38=WorkspaceStore (task_cohorts table, tasks.cohort_of column, for the
+// cron-cohort-gating feature — see
+// docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -687,6 +746,34 @@ const MIGRATIONS: DbMigration[] = [
     // *run*. 'schedule'/'catch_up' etc. don't apply to creation, so this is
     // deliberately a narrower type than TriggerSource.
     sql: `ALTER TABLE tasks ADD COLUMN trigger_source TEXT NOT NULL DEFAULT 'user';`,
+  },
+  {
+    version: 38,
+    // task_cohorts holds one row per OPEN cohort, keyed by the holder's own
+    // task id (a holder can only hold one cohort at a time, so no separate
+    // group id is needed). Deleted the instant it resolves
+    // (settleCohortMember()), so "does task X hold an open cohort" is a
+    // single indexed lookup, never a status flag that can go stale.
+    // pending_outcome is nullable because of a real ordering constraint:
+    // the row is inserted by create_tasks while the holder is still
+    // mid-run (total_count is already known), but the holder's own outcome
+    // isn't known until its run closes, some tool calls later.
+    // REFERENCES tasks(id) is safe here since this is a fresh CREATE TABLE,
+    // not an ALTER (see the version-23 comment above). tasks.cohort_of is a
+    // plain, unconstrained column (no REFERENCES, same hazard), set on a
+    // child at creation time and never changed after. See
+    // docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md.
+    sql: `
+      CREATE TABLE IF NOT EXISTS task_cohorts (
+        holder_task_id  TEXT PRIMARY KEY REFERENCES tasks(id),
+        total_count     INTEGER NOT NULL,
+        settled_count   INTEGER NOT NULL DEFAULT 0,
+        pending_outcome TEXT,
+        created_at      TEXT NOT NULL
+      );
+      ALTER TABLE tasks ADD COLUMN cohort_of TEXT;
+      CREATE INDEX IF NOT EXISTS idx_tasks_cohort_of ON tasks(cohort_of);
+    `,
   },
 ];
 
@@ -1208,8 +1295,8 @@ export class WorkspaceStore extends BaseStore {
     this.db
       .prepare(
         `INSERT INTO tasks
-           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, trigger_source, parent_thread_id, dispatch_group_id, role, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, trigger_source, parent_thread_id, dispatch_group_id, role, cohort_of, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -1230,6 +1317,7 @@ export class WorkspaceStore extends BaseStore {
         input.parentThreadId ?? null,
         input.dispatchGroupId ?? null,
         input.role ?? null,
+        input.cohortOf ?? null,
         now,
         now,
       );
@@ -1398,7 +1486,7 @@ export class WorkspaceStore extends BaseStore {
     const rows = this.db
       .prepare(
         `SELECT task_dependencies.*, tasks.status AS target_status, tasks.title AS target_title,
-                tasks.tracker_id AS target_tracker_id
+                tasks.tracker_id AS target_tracker_id, tasks.blocked_reason AS target_blocked_reason
          FROM task_dependencies
          JOIN tasks ON tasks.id = task_dependencies.depends_on_task_id
          WHERE task_dependencies.task_id IN (${placeholders})`,
@@ -1407,6 +1495,7 @@ export class WorkspaceStore extends BaseStore {
       target_status: TaskStatus;
       target_title: string;
       target_tracker_id: string | null;
+      target_blocked_reason: 'dependency_failed' | 'awaiting_children' | null;
     })[];
     for (const row of rows) {
       const dep = mapTaskDependency(row);
@@ -1419,36 +1508,60 @@ export class WorkspaceStore extends BaseStore {
           trackerId: row.target_tracker_id,
           status: row.target_status,
         },
-        satisfied: this.isEdgeSatisfied(dep, row.target_status),
+        satisfied: this.isEdgeSatisfied(dep, row.target_status, row.target_blocked_reason),
       });
       result.set(dep.taskId, edges);
     }
     return result;
   }
 
-  private loadDependencyEdges(
-    taskId: string,
-  ): Array<{ dep: TaskDependency; targetStatus: TaskStatus }> {
+  private loadDependencyEdges(taskId: string): Array<{
+    dep: TaskDependency;
+    targetStatus: TaskStatus;
+    targetBlockedReason: 'dependency_failed' | 'awaiting_children' | null;
+  }> {
     const rows = this.db
       .prepare(
-        `SELECT task_dependencies.*, tasks.status AS target_status
+        `SELECT task_dependencies.*, tasks.status AS target_status,
+                tasks.blocked_reason AS target_blocked_reason
          FROM task_dependencies
          JOIN tasks ON tasks.id = task_dependencies.depends_on_task_id
          WHERE task_dependencies.task_id = ?`,
       )
-      .all(taskId) as (RawTaskDependencyRow & { target_status: TaskStatus })[];
-    return rows.map((row) => ({ dep: mapTaskDependency(row), targetStatus: row.target_status }));
+      .all(taskId) as (RawTaskDependencyRow & {
+      target_status: TaskStatus;
+      target_blocked_reason: 'dependency_failed' | 'awaiting_children' | null;
+    })[];
+    return rows.map((row) => ({
+      dep: mapTaskDependency(row),
+      targetStatus: row.target_status,
+      targetBlockedReason: row.target_blocked_reason,
+    }));
   }
 
-  private isEdgeSatisfied(dep: TaskDependency, targetStatus: TaskStatus): boolean {
-    if (dep.whileBlocked && targetStatus === 'blocked') return true;
+  // A cohort holder sits at status 'blocked' while it waits on its own
+  // spawned children (blockedReason: 'awaiting_children') — that's an
+  // ordinary in-progress state, not the human-paused state whileBlocked was
+  // built for, so it must not satisfy a whileBlocked edge.
+  private isEdgeSatisfied(
+    dep: TaskDependency,
+    targetStatus: TaskStatus,
+    targetBlockedReason: 'dependency_failed' | 'awaiting_children' | null,
+  ): boolean {
+    if (
+      dep.whileBlocked &&
+      targetStatus === 'blocked' &&
+      targetBlockedReason !== 'awaiting_children'
+    ) {
+      return true;
+    }
     if (dep.requireSuccess) return targetStatus === 'done';
     return targetStatus === 'done' || targetStatus === 'failed' || targetStatus === 'cancelled';
   }
 
   isTaskReady(taskId: string): boolean {
-    return this.loadDependencyEdges(taskId).every(({ dep, targetStatus }) =>
-      this.isEdgeSatisfied(dep, targetStatus),
+    return this.loadDependencyEdges(taskId).every(({ dep, targetStatus, targetBlockedReason }) =>
+      this.isEdgeSatisfied(dep, targetStatus, targetBlockedReason),
     );
   }
 
@@ -1497,6 +1610,89 @@ export class WorkspaceStore extends BaseStore {
         }
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task cohorts (cron cohort gating)
+  // ---------------------------------------------------------------------------
+  // A cron task's own create_tasks(asCohort: true) call opens one of these
+  // immediately after creating its children (totalCount known then; the
+  // holder's own outcome isn't known until its run closes later — see
+  // settleTaskAfterRun()). One open row per holder at a time — see
+  // docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md.
+
+  openCohort(holderId: string, totalCount: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO task_cohorts (holder_task_id, total_count, settled_count, pending_outcome, created_at)
+         VALUES (?, ?, 0, NULL, ?)`,
+      )
+      .run(holderId, totalCount, new Date().toISOString());
+  }
+
+  getOpenCohort(holderId: string): TaskCohort | null {
+    const row = this.db
+      .prepare(`SELECT * FROM task_cohorts WHERE holder_task_id = ?`)
+      .get(holderId) as RawTaskCohortRow | undefined;
+    return row ? mapTaskCohort(row) : null;
+  }
+
+  // Called exactly once, from settleTaskAfterRun's holder-path branch, the
+  // instant the holder's own run ends — never a second time for the same
+  // cohort (one cohort per holder).
+  freezeCohortOutcome(
+    holderId: string,
+    outcome: 'done' | 'failed' | 'cancelled',
+    source: TriggerSource,
+  ): void {
+    this.db
+      .prepare(`UPDATE task_cohorts SET pending_outcome = ? WHERE holder_task_id = ?`)
+      .run(JSON.stringify({ outcome, source }), holderId);
+  }
+
+  // Called once per completing cohort child (settleTaskAfterRun's
+  // member-path branch, keyed off task.cohortOf). Increments settledCount;
+  // once it reaches totalCount, deletes the row and returns the frozen
+  // outcome for the caller to apply via applyCronSettlement(). Resolution
+  // can never race the holder's own freeze — a cohort child can't even
+  // start running until the holder's own queue entry (same scope) closes,
+  // which is exactly when freezeCohortOutcome() runs.
+  settleCohortMember(holderId: string): {
+    resolved: boolean;
+    pendingOutcome: { outcome: 'done' | 'failed' | 'cancelled'; source: TriggerSource } | null;
+  } {
+    return this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE task_cohorts SET settled_count = settled_count + 1 WHERE holder_task_id = ?`,
+        )
+        .run(holderId);
+      const row = this.db
+        .prepare(`SELECT * FROM task_cohorts WHERE holder_task_id = ?`)
+        .get(holderId) as RawTaskCohortRow | undefined;
+      if (!row || row.settled_count < row.total_count) {
+        return { resolved: false, pendingOutcome: null };
+      }
+      this.db.prepare(`DELETE FROM task_cohorts WHERE holder_task_id = ?`).run(holderId);
+      return { resolved: true, pendingOutcome: mapTaskCohort(row).pendingOutcome };
+    })();
+  }
+
+  // Batched (one query, not per-task) open-cohort lookup for
+  // buildBoardContexts's "N of M" badge — mirrors
+  // listDependencyEdgesForTasks()'s "one query per fact type" convention.
+  // Tasks with no open cohort are absent from the map.
+  listOpenCohorts(holderIds: string[]): Map<string, CohortSummary> {
+    const result = new Map<string, CohortSummary>();
+    if (holderIds.length === 0) return result;
+    const placeholders = holderIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(`SELECT * FROM task_cohorts WHERE holder_task_id IN (${placeholders})`)
+      .all(...holderIds) as RawTaskCohortRow[];
+    for (const row of rows) {
+      result.set(row.holder_task_id, { settled: row.settled_count, total: row.total_count });
+    }
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -1878,10 +2074,54 @@ export class WorkspaceStore extends BaseStore {
     if (entry) this.settleTaskAfterRun(entry.task_id, entry.trigger_source, outcome, now);
   }
 
-  // Mirrors a finished run onto its task. An ordinary task takes the run's
-  // outcome as its status; a cron task is settled by the schedule rules
-  // (cron-settlement.ts) — typically back to 'scheduled' — and its failure
-  // counter/auto-pause are written back into its trigger_config.
+  // The cron branch of settling a finished run — computed by the schedule
+  // rules (cron-settlement.ts), typically back to 'scheduled', with the
+  // failure counter/auto-pause written back into trigger_config. Shared by
+  // settleTaskAfterRun's ordinary path and its cohort-release path (the
+  // latter calls this with a fresh `now`, not the holder's own run-end
+  // time — see docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md
+  // §3, "no drift on release").
+  private applyCronSettlement(
+    taskId: string,
+    source: TriggerSource,
+    outcome: 'done' | 'failed' | 'cancelled',
+    now: string,
+  ): void {
+    const task = this.getTask(taskId);
+    if (!task) return;
+    const settled = settleCronRun({
+      type: task.triggerType as 'cron_once' | 'cron_repeat',
+      config: task.triggerConfig as CronConfig,
+      source,
+      outcome,
+      iterationCount: this.countScheduledRuns(taskId),
+      now: new Date(now),
+    });
+    // Clears blocked_reason unconditionally — this is the terminal apply for
+    // a cron run's own settlement (including a cohort holder's deferred
+    // settlement, run from settleCohortMember() above once every child
+    // resolves), and settled.status is never 'blocked' here, so nothing
+    // after this should still read 'awaiting_children'. Confirmed live
+    // (2026-10-12, real @llm @local run): without this, a holder settling to
+    // 'done' (cron_once, nothing left to schedule) kept a stale
+    // blocked_reason: 'awaiting_children' from when it was parked — board
+    // rules never read blockedReason off a non-'blocked' status, so it had
+    // no visible effect, but it's wrong data sitting in the row.
+    this.db
+      .prepare(
+        `UPDATE tasks SET status = ?, trigger_config = ?, blocked_reason = NULL, updated_at = ? WHERE id = ?`,
+      )
+      .run(settled.status, JSON.stringify(settled.config), now, taskId);
+    this.releaseEligibleDependents(taskId);
+  }
+
+  // Mirrors a finished run onto its task — the single choke point for both
+  // a cohort holder's own run ending and a cohort child's run ending (they
+  // can never be the same task, by the no-nesting invariant). An ordinary
+  // task takes the run's outcome as its status; a cron task is settled via
+  // applyCronSettlement(); a cron task that just opened a cohort (via
+  // create_tasks(asCohort: true) earlier in this same run) instead holds at
+  // 'blocked'/'awaiting_children' until every child it spawned settles.
   private settleTaskAfterRun(
     taskId: string,
     source: TriggerSource,
@@ -1889,24 +2129,38 @@ export class WorkspaceStore extends BaseStore {
     now: string,
   ): void {
     const task = this.getTask(taskId);
-    if (task && isCronTrigger(task.triggerType) && task.triggerConfig) {
-      const settled = settleCronRun({
-        type: task.triggerType,
-        config: task.triggerConfig as CronConfig,
-        source,
-        outcome,
-        iterationCount: this.countScheduledRuns(taskId),
-        now: new Date(now),
-      });
-      this.db
-        .prepare(`UPDATE tasks SET status = ?, trigger_config = ?, updated_at = ? WHERE id = ?`)
-        .run(settled.status, JSON.stringify(settled.config), now, taskId);
+    if (!task) return;
+
+    const openCohort = this.getOpenCohort(taskId);
+    if (openCohort) {
+      // Holder path: this task's own run just ended, and create_tasks
+      // opened a cohort earlier in this same run. Deliberately no
+      // applyCronSettlement/releaseEligibleDependents yet — deferred until
+      // every child settles (member path below, for each child in turn).
+      this.freezeCohortOutcome(taskId, outcome, source);
+      this.patchTask(taskId, { status: 'blocked', blockedReason: 'awaiting_children' });
+    } else if (isCronTrigger(task.triggerType) && task.triggerConfig) {
+      this.applyCronSettlement(taskId, source, outcome, now);
     } else {
       this.db
         .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)
         .run(outcome, now, taskId);
+      this.releaseEligibleDependents(taskId);
     }
-    this.releaseEligibleDependents(taskId);
+
+    // Member path: this task may itself be a cohort child, independent of
+    // which branch above fired for it.
+    if (task.cohortOf) {
+      const result = this.settleCohortMember(task.cohortOf);
+      if (result.resolved && result.pendingOutcome) {
+        this.applyCronSettlement(
+          task.cohortOf,
+          result.pendingOutcome.source,
+          result.pendingOutcome.outcome,
+          new Date().toISOString(),
+        );
+      }
+    }
   }
 
   // Enqueues one scheduled (or catch-up) run of a cron task, atomically, if

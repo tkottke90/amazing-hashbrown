@@ -96,6 +96,7 @@ export function buildBoardContexts(
   const entryByTask = new Map(queue.map((entry) => [entry.taskId, entry]));
   const dependencies = store.listDependencyEdgesForTasks(ids);
   const streaks = store.failedRunStreaks(ids);
+  const cohorts = store.listOpenCohorts(ids);
 
   // A waiting task's question lives in its parked run's thread.
   const promptThreads = tasks
@@ -124,6 +125,7 @@ export function buildBoardContexts(
           : null,
       pendingPrompt: prompt ? toPendingPrompt(prompt) : null,
       failedStreak: streaks.get(task.id) ?? null,
+      cohort: cohorts.get(task.id) ?? null,
     });
   }
   return contexts;
