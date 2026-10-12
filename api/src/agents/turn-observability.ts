@@ -28,36 +28,54 @@ export function resolveTurnModel(
   return { provider: config.name, model: resolvedModel };
 }
 
-// Diagnostic for the 'interrupted' error category (error-classification.ts)
-// — never expected to log anything in normal operation. @langchain/core's
-// ensureConfig() resolves a Runnable's ambient AsyncLocalStorage-propagated
-// RunnableConfig *synchronously*, at the moment streamEvents()/invoke() is
-// called, and merges in anything that config carries — notably `timeout`,
-// which becomes an AbortSignal.timeout() combined into the call's own
-// AbortSignal via AbortSignal.any(). That derived signal is a *different
-// object* from the one our own AbortController exposes, so it can abort a
-// turn without `controller.signal.aborted` ever reading true — confirmed by
-// reproducing this exact mechanism against the installed @langchain/
-// langgraph, which is what prompted adding this check. Nothing in this
-// codebase calls runWithConfig() itself, so getRunnableConfig() should
-// always read undefined; if it doesn't, whatever it's carrying is a
-// plausible explanation for an unexplained 'interrupted' turn. Call
-// immediately before every agent.streamEvents() call site — ensureConfig()
-// reads the ambient config at call time, not lazily when the stream is
-// first iterated, so checking any later (even at the top of pipeEvents)
-// would already be too late to see it.
-export function warnIfAmbientRunnableConfig(context: Record<string, unknown>): void {
+// Fix (not just a diagnostic) for the 'interrupted' error category
+// (error-classification.ts). @langchain/core's ensureConfig() resolves a
+// Runnable's ambient AsyncLocalStorage-propagated RunnableConfig
+// *synchronously*, at the moment streamEvents()/invoke() is called, and
+// merges in anything that config carries — notably `timeout`, which becomes
+// an AbortSignal.timeout() combined into the call's own AbortSignal via
+// AbortSignal.any(). That derived signal is a *different object* from the
+// one our own AbortController exposes, so it can abort a turn without
+// `controller.signal.aborted` ever reading true — confirmed by reproducing
+// this exact mechanism against the installed @langchain/langgraph, which is
+// what originally prompted a warning-only version of this check (see git
+// history). Nothing in this codebase calls runWithConfig() itself, so
+// getRunnableConfig() should always read undefined — the real source traced
+// to @langchain/core's own tool-invocation path (tools/index.js wraps a
+// tool's function body in runWithConfig()), combined with ProviderQueue
+// resolving a *queued* caller's acquireSlot() promise synchronously from
+// inside whatever AsyncLocalStorage scope happens to be active at
+// releaseSlot() time: a dequeued caller's `await acquireSlot()` continuation
+// — including everything it does afterward, like this very streamEvents()
+// call — inherits the context active wherever its resolve() was invoked,
+// not the context where it was awaited. A cron task firing shortly after an
+// unrelated turn's own tool call can land its first LLM call inside that
+// still-active, unrelated ALS scope purely by queueing timing, with no
+// causal relationship to the leaked config's actual turn at all.
+//
+// Rather than chase every possible leak source (tool invocation today,
+// anything else tomorrow), this scopes every streamEvents() call inside a
+// *guaranteed-clean* AsyncLocalStorage context via the same public
+// AsyncLocalStorageProviderSingleton.getInstance() LangChain itself reads
+// from — closing the whole bug class at its one real choke point instead of
+// treating each leak source as its own bug. Call immediately before every
+// agent.streamEvents() call site — ensureConfig() reads the ambient config
+// at call time, not lazily when the stream is first iterated, so clearing
+// any later (even at the top of pipeEvents) would already be too late.
+export function clearAmbientRunnableConfig<T>(context: Record<string, unknown>, fn: () => T): T {
   const ambient = AsyncLocalStorageProviderSingleton.getRunnableConfig();
-  if (!ambient) return;
-  logger.warn(
-    "turn-observability: ambient RunnableConfig present before streamEvents() — this can silently replace the turn's AbortSignal with a short-lived derived one",
-    {
-      ...context,
-      ambientKeys: Object.keys(ambient),
-      ambientTimeout: (ambient as { timeout?: number }).timeout,
-      ambientHasSignal: 'signal' in ambient,
-    },
-  );
+  if (ambient) {
+    logger.warn(
+      "turn-observability: ambient RunnableConfig present before streamEvents() — clearing it so this turn's AbortSignal isn't silently replaced by a leaked short-lived one",
+      {
+        ...context,
+        ambientKeys: Object.keys(ambient),
+        ambientTimeout: (ambient as { timeout?: number }).timeout,
+        ambientHasSignal: 'signal' in ambient,
+      },
+    );
+  }
+  return AsyncLocalStorageProviderSingleton.getInstance().run(undefined, fn);
 }
 
 export interface TurnObservability {

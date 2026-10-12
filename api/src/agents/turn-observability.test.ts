@@ -11,7 +11,7 @@ import { bootObservability, getObservabilityStore } from '../services/observabil
 import {
   resolveTurnModel,
   startTurnObservability,
-  warnIfAmbientRunnableConfig,
+  clearAmbientRunnableConfig,
 } from './turn-observability.js';
 
 const DEFAULT_PROVIDER = 'turn-obs-default';
@@ -171,14 +171,16 @@ describe('agents/turn-observability', () => {
     });
   });
 
-  // This is a diagnostic for the 'interrupted' error category
-  // (error-classification.ts) — its only job is deciding *whether* to warn,
-  // so that decision (not log wording, which the Testing Anti-Patterns
-  // section in the root AGENTS.md says not to assert on) is what these
-  // cases cover: no sinon in this repo's toolchain (see
-  // services/workspace-files.test.ts), so logger.warn is hand-rolled-stubbed
-  // the same way.
-  describe('warnIfAmbientRunnableConfig', () => {
+  // This is the fix (not just a diagnostic) for the 'interrupted' error
+  // category (error-classification.ts): it both decides *whether* to warn —
+  // that decision, not log wording, which the Testing Anti-Patterns section
+  // in the root AGENTS.md says not to assert on, is what the warning cases
+  // below cover (no sinon in this repo's toolchain, see
+  // services/workspace-files.test.ts, so logger.warn is hand-rolled-stubbed
+  // the same way) — and actually clears the ambient context before calling
+  // fn, which the later cases cover directly against real
+  // AsyncLocalStorageProviderSingleton reads/writes, not just the warning.
+  describe('clearAmbientRunnableConfig', () => {
     let calls: unknown[][];
     let originalWarn: typeof logger.warn;
 
@@ -194,14 +196,15 @@ describe('agents/turn-observability', () => {
       logger.warn = originalWarn;
     });
 
-    it('stays silent when there is no ambient RunnableConfig (the expected case in this codebase) [unit]', () => {
-      warnIfAmbientRunnableConfig({ threadId: 'thread-1' });
+    it('runs fn and returns its result, staying silent when there is no ambient RunnableConfig (the expected case in this codebase) [unit]', () => {
+      const result = clearAmbientRunnableConfig({ threadId: 'thread-1' }, () => 'streamed');
+      expect(result).to.equal('streamed');
       expect(calls).to.have.lengthOf(0);
     });
 
     it('warns, carrying the caller context and the ambient config shape, when one is present [unit]', () => {
       AsyncLocalStorageProviderSingleton.runWithConfig({ timeout: 5, configurable: {} }, () => {
-        warnIfAmbientRunnableConfig({ threadId: 'thread-1', taskId: 'task-1' });
+        clearAmbientRunnableConfig({ threadId: 'thread-1', taskId: 'task-1' }, () => undefined);
       });
 
       expect(calls).to.have.lengthOf(1);
@@ -211,6 +214,28 @@ describe('agents/turn-observability', () => {
         taskId: 'task-1',
         ambientTimeout: 5,
         ambientHasSignal: false,
+      });
+    });
+
+    it('clears the ambient config before calling fn, so a leaked config never reaches the real streamEvents() call [unit]', () => {
+      let seenInsideFn: unknown = 'not set';
+      AsyncLocalStorageProviderSingleton.runWithConfig({ timeout: 5, configurable: {} }, () => {
+        clearAmbientRunnableConfig({ threadId: 'thread-1' }, () => {
+          seenInsideFn = AsyncLocalStorageProviderSingleton.getRunnableConfig();
+        });
+      });
+      expect(seenInsideFn).to.equal(undefined);
+    });
+
+    it("restores the caller's own ambient config once fn returns, rather than clearing it permanently [unit]", () => {
+      AsyncLocalStorageProviderSingleton.runWithConfig({ timeout: 5, configurable: {} }, () => {
+        clearAmbientRunnableConfig({ threadId: 'thread-1' }, () => undefined);
+        // Back in the outer runWithConfig scope: clearAmbientRunnableConfig
+        // only scopes fn() itself, so the caller's own ambient config (set
+        // by something outside this function entirely) is untouched.
+        expect(AsyncLocalStorageProviderSingleton.getRunnableConfig()).to.deep.include({
+          timeout: 5,
+        });
       });
     });
   });

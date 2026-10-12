@@ -39,7 +39,7 @@ import { deliverSubAgentCompletion } from './sub-agent-notification.js';
 import {
   resolveTurnModel,
   startTurnObservability,
-  warnIfAmbientRunnableConfig,
+  clearAmbientRunnableConfig,
   type TurnObservability,
 } from './turn-observability.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
@@ -374,20 +374,21 @@ export async function executeTask(
           provider,
           'async',
           async () => {
-            warnIfAmbientRunnableConfig({ taskId: task.id, threadId });
-            const rawStream = resolvedAgent.streamEvents(
-              input,
-              resolvedTurnObs.attach({
-                ...resolvedConfig,
-                version: 'v2',
-                recursionLimit: env.agent?.recursionLimit ?? 100,
-                signal: controller.signal,
-                context: {
-                  provider,
-                  model,
-                  afterAgentEnabled: undefined,
-                },
-              }),
+            const rawStream = clearAmbientRunnableConfig({ taskId: task.id, threadId }, () =>
+              resolvedAgent.streamEvents(
+                input,
+                resolvedTurnObs.attach({
+                  ...resolvedConfig,
+                  version: 'v2',
+                  recursionLimit: env.agent?.recursionLimit ?? 100,
+                  signal: controller.signal,
+                  context: {
+                    provider,
+                    model,
+                    afterAgentEnabled: undefined,
+                  },
+                }),
+              ),
             );
             return pipeEvents(
               sink,
