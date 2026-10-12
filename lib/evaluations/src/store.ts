@@ -5,6 +5,7 @@ import {
   ScenarioResultSchema,
   JsonOf,
   ScenarioResultDetailsSchema,
+  ScenarioResultTransportSchema,
   JudgeCalibrationSchema,
   type EvalRun,
   type ScenarioResult,
@@ -22,6 +23,7 @@ import {
 // Version 6: EvaluationsStore judge_calibrations
 // Version 8: EvaluationsStore eval_runs.system_prompt column
 // Version 37: EvaluationsStore eval_runs.scored_scenarios column
+// Version 39: EvaluationsStore eval_results.scenario_started_at/retry_attempts/transport columns
 const MIGRATIONS: DbMigration[] = [
   {
     version: 3,
@@ -97,6 +99,21 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE eval_runs ADD COLUMN scored_scenarios INTEGER;
     `,
   },
+  {
+    // Issue #289 — per-scenario retry/timeout diagnostics and a LangChain-
+    // level transport snapshot of the final target-model call (see
+    // runner.ts's invokeWithResilience and schemas.ts's
+    // ScenarioResultTransportSchema). Nullable, no backfill: existing rows
+    // read back as NULL (scenarioStartedAt/retryAttempts/transport all
+    // undefined on the domain type), same as pre-existing YAML results.
+    version: 39,
+    sql: `
+      ALTER TABLE eval_results ADD COLUMN scenario_started_at TEXT;
+      ALTER TABLE eval_results ADD COLUMN retry_attempts INTEGER;
+      ALTER TABLE eval_results ADD COLUMN transport TEXT
+        CHECK(transport IS NULL OR json_valid(transport));
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -137,6 +154,22 @@ const RawEvalRunSchema = z
     systemPrompt: row.system_prompt,
   }));
 
+// transport is a nullable JSON column — the shared JsonOf() helper is
+// NOT NULL-shaped (details, its only other caller, is NOT NULL) so it isn't
+// reused here; this is a one-off nullable variant just for this column.
+const NullableJsonTransport = z
+  .string()
+  .nullable()
+  .transform((str, ctx) => {
+    if (str === null) return null;
+    try {
+      return ScenarioResultTransportSchema.parse(JSON.parse(str));
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'Invalid JSON in transport column' });
+      return z.NEVER;
+    }
+  });
+
 const RawEvalResultSchema = z
   .object({
     result_id: z.string(),
@@ -150,6 +183,9 @@ const RawEvalResultSchema = z
     latency_ms: z.number(),
     estimated_cost_usd: z.number(),
     details: JsonOf(ScenarioResultDetailsSchema),
+    scenario_started_at: z.string().nullable(),
+    retry_attempts: z.number().nullable(),
+    transport: NullableJsonTransport,
   })
   .transform((row) => ({
     id: row.result_id,
@@ -162,6 +198,9 @@ const RawEvalResultSchema = z
     latencyMs: row.latency_ms,
     estimatedCostUsd: row.estimated_cost_usd,
     details: row.details,
+    scenarioStartedAt: row.scenario_started_at ?? undefined,
+    retryAttempts: row.retry_attempts ?? undefined,
+    transport: row.transport ?? undefined,
   }));
 
 const RawJudgeCalibrationSchema = z
@@ -253,8 +292,9 @@ export class EvaluationsStore extends BaseStore {
     const insertResult = this.db.prepare(
       `INSERT INTO eval_results
          (result_id, run_id, scenario_id, suite_id, type, passed, score,
-          actual_output, latency_ms, estimated_cost_usd, details)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          actual_output, latency_ms, estimated_cost_usd, details,
+          scenario_started_at, retry_attempts, transport)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const doSave = this.db.transaction(() => {
@@ -287,6 +327,9 @@ export class EvaluationsStore extends BaseStore {
           r.latencyMs,
           r.estimatedCostUsd,
           JSON.stringify(r.details),
+          r.scenarioStartedAt ?? null,
+          r.retryAttempts ?? null,
+          r.transport ? JSON.stringify(r.transport) : null,
         );
       }
     });

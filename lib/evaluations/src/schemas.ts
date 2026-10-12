@@ -607,6 +607,19 @@ export const ScenarioResultDetailsSchema = z.discriminatedUnion('type', [
   SkippedDetails,
 ]);
 
+// Captures the exact input sent to, and raw object returned by, the
+// LangChain invoke boundary for a scenario's final target-model call — see
+// runner.ts's invokeModel/invokeStructuredModel/invokeToolCallModel and
+// docs/superpowers/specs/2026-10-12-eval-harness-retry-tests-storage-design.md.
+// Deliberately z.unknown() on both sides: `request` can be a plain string or
+// a BaseMessage[] array, `response` can be a raw AIMessage-shaped object or
+// (for the structured-output path) the parsed object itself — whatever
+// LangChain actually returns at that call site, uninterpreted.
+export const ScenarioResultTransportSchema = z.object({
+  request: z.unknown(),
+  response: z.unknown(),
+});
+
 export const ScenarioResultSchema = z.object({
   id: z.string(),
   runId: z.string(),
@@ -617,6 +630,17 @@ export const ScenarioResultSchema = z.object({
   actualOutput: z.string(),
   latencyMs: z.number(),
   estimatedCostUsd: z.number(),
+  // Issue #289 — set in runner.ts's executeScenario immediately before a
+  // scenario's model call(s); omitted for the `skip` branch and the
+  // CI-skipped human branch, neither of which invoke a model. .optional() so
+  // pre-existing on-disk YAML/SQLite results without it still parse.
+  scenarioStartedAt: z.string().datetime().optional(),
+  // Number of invocation attempts invokeWithResilience actually took for
+  // this scenario's final model call (1 = succeeded on the first try). Same
+  // optionality reasoning as scenarioStartedAt.
+  retryAttempts: z.number().int().min(1).optional(),
+  // LangChain-level transport snapshot — see ScenarioResultTransportSchema.
+  transport: ScenarioResultTransportSchema.optional(),
   details: ScenarioResultDetailsSchema,
   // Full turn-by-turn transcript — see ConversationEntrySchema above. Only
   // populated for scenarios that used `turns`/`steps`; omitted for plain-
@@ -713,5 +737,6 @@ export type HumanScenario = z.infer<typeof HumanScenarioSchema>;
 export type Scoring = z.infer<typeof ScoringSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
 export type ScenarioResult = z.infer<typeof ScenarioResultSchema>;
+export type ScenarioResultTransport = z.infer<typeof ScenarioResultTransportSchema>;
 export type ScenarioResultDetails = z.infer<typeof ScenarioResultDetailsSchema>;
 export type JudgeCalibration = z.infer<typeof JudgeCalibrationSchema>;

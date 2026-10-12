@@ -144,6 +144,44 @@ describe('EvaluationsStore', () => {
     });
   });
 
+  describe('eval_results — scenarioStartedAt/retryAttempts/transport (issue #289)', () => {
+    it('round-trips as undefined when not set (pre-migration row)', () => {
+      const run = makeRun();
+      store.saveRun(run, [makeResult(run.id)]);
+
+      const [found] = store.findResultsByRunId(run.id);
+      assert.equal(found?.scenarioStartedAt, undefined);
+      assert.equal(found?.retryAttempts, undefined);
+      assert.equal(found?.transport, undefined);
+    });
+
+    it('round-trips a given scenarioStartedAt exactly', () => {
+      const run = makeRun();
+      const startedAt = new Date().toISOString();
+      store.saveRun(run, [makeResult(run.id, { scenarioStartedAt: startedAt })]);
+
+      const [found] = store.findResultsByRunId(run.id);
+      assert.equal(found?.scenarioStartedAt, startedAt);
+    });
+
+    it('round-trips a given retryAttempts exactly', () => {
+      const run = makeRun();
+      store.saveRun(run, [makeResult(run.id, { retryAttempts: 2 })]);
+
+      const [found] = store.findResultsByRunId(run.id);
+      assert.equal(found?.retryAttempts, 2);
+    });
+
+    it('round-trips a given transport object exactly', () => {
+      const run = makeRun();
+      const transport = { request: 'hello', response: { content: 'ok', tool_calls: [] } };
+      store.saveRun(run, [makeResult(run.id, { transport })]);
+
+      const [found] = store.findResultsByRunId(run.id);
+      assert.deepEqual(found?.transport, transport);
+    });
+  });
+
   describe('findRuns', () => {
     it('filters by suiteId', () => {
       const run1 = makeRun({ suiteId: 'suite-alpha' });

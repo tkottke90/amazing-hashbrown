@@ -76,7 +76,7 @@ async function invokeWithResilience<T>(
   invoke: (signal: AbortSignal) => Promise<T>,
   maxAttempts = TARGET_MODEL_MAX_ATTEMPTS,
   timeoutMs = TARGET_MODEL_TIMEOUT_MS,
-): Promise<ResilientInvokeResult<T>>
+): Promise<ResilientInvokeResult<T>>;
 ```
 
 - Each attempt gets its own `AbortController`; its `signal` is passed into the

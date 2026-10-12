@@ -233,25 +233,93 @@ function extractContent(raw: unknown): string {
   return String(raw);
 }
 
+// Hand-rolled retry/timeout wrapper for the three target-model invoke
+// helpers below — deliberately NOT LangChain's .withRetry() (used by the
+// judge model in executors/llm-judge.ts), because .withRetry() doesn't
+// surface how many attempts it took, and issue #289's success criterion
+// requires reporting a non-zero retryAttempts per scenario. See
+// docs/superpowers/specs/2026-10-12-eval-harness-retry-tests-storage-design.md
+// for the full rationale, including why the timeout is a generous 10
+// minutes per attempt (these are blocking, non-streaming invoke() calls, so
+// it's unavoidably "time to finish," not "time to first token") and why
+// retry count/timeout are conservative hardcoded constants rather than new
+// CLI-configurable knobs (matching how the judge's own retry is hardcoded
+// today).
+const TARGET_MODEL_MAX_ATTEMPTS = 2; // 1 initial + 1 retry
+const TARGET_MODEL_TIMEOUT_MS = 600_000; // 10 minutes per attempt
+
+export interface ResilientInvokeResult<T> {
+  result: T;
+  attempts: number;
+}
+
+export async function invokeWithResilience<T>(
+  invoke: (signal: AbortSignal) => Promise<T>,
+  maxAttempts = TARGET_MODEL_MAX_ATTEMPTS,
+  timeoutMs = TARGET_MODEL_TIMEOUT_MS,
+): Promise<ResilientInvokeResult<T>> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const result = await invoke(controller.signal);
+      return { result, attempts: attempt };
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  // Unreachable (the loop above always returns or throws) — keeps TS's
+  // control-flow analysis happy without a non-null assertion.
+  throw lastError;
+}
+
 async function invokeModel(
   model: BaseChatModel,
   input: string | BaseMessage[],
-): Promise<{ content: string; latencyMs: number }> {
+): Promise<{
+  content: string;
+  latencyMs: number;
+  attempts: number;
+  request: unknown;
+  response: unknown;
+}> {
   const start = Date.now();
-  const response = await model.invoke(input);
+  const { result: response, attempts } = await invokeWithResilience((signal) =>
+    model.invoke(input, { signal }),
+  );
   const latencyMs = Date.now() - start;
-  return { content: extractContent(response), latencyMs };
+  return { content: extractContent(response), latencyMs, attempts, request: input, response };
 }
 
 async function invokeStructuredModel(
   model: BaseChatModel,
   input: string | BaseMessage[],
   outputSchema: Record<string, unknown>,
-): Promise<{ parsed: unknown; content: string; latencyMs: number }> {
+): Promise<{
+  parsed: unknown;
+  content: string;
+  latencyMs: number;
+  attempts: number;
+  request: unknown;
+  response: unknown;
+}> {
   const start = Date.now();
-  const parsed = await model.withStructuredOutput(outputSchema).invoke(input);
+  const { result: parsed, attempts } = await invokeWithResilience((signal) =>
+    model.withStructuredOutput(outputSchema).invoke(input, { signal }),
+  );
   const latencyMs = Date.now() - start;
-  return { parsed, content: JSON.stringify(parsed), latencyMs };
+  return {
+    parsed,
+    content: JSON.stringify(parsed),
+    latencyMs,
+    attempts,
+    request: input,
+    response: parsed,
+  };
 }
 
 // Walks an ordered `turns` list (issue #235), building the exact message
@@ -512,16 +580,27 @@ async function invokeToolCallModel(
   reasoningContent?: string;
   content: string;
   latencyMs: number;
+  attempts: number;
+  request: unknown;
+  response: unknown;
 }> {
   if (!model.bindTools) {
     throw new Error(
       'the configured model does not support bindTools — required for tool-call scenarios',
     );
   }
+  // Bound once, outside the retry closure: `model.bindTools` narrowing above
+  // doesn't persist into a callback (TS can't prove the captured `model`
+  // wasn't mutated by the time the closure runs), and re-binding on every
+  // retry attempt would be pointless work anyway — binding is deterministic
+  // and cheap, only .invoke() needs to actually re-run per attempt.
+  const boundModel = model.bindTools(tools);
   const start = Date.now();
-  const response = await model.bindTools(tools).invoke(input);
+  const { result: response, attempts } = await invokeWithResilience((signal) =>
+    boundModel.invoke(input, { signal }),
+  );
   const latencyMs = Date.now() - start;
-  return { ...extractToolCallData(response), latencyMs };
+  return { ...extractToolCallData(response), latencyMs, attempts, request: input, response };
 }
 
 // Same name-extraction idiom already used inline for excludeTools filtering
@@ -583,6 +662,12 @@ export async function executeScenario(
   }
 
   try {
+    // Issue #289 — timestamps the scenario's model call(s), not the whole
+    // function (negligible difference in practice, but this is what the
+    // field is meant to mean); set once here so every branch below can
+    // attach it without recomputing per-branch.
+    const scenarioStartedAt = new Date().toISOString();
+
     if (scenario.type === 'deterministic') {
       const s = scenario as DeterministicScenario;
       let messages: BaseMessage[] | undefined;
@@ -614,7 +699,10 @@ export async function executeScenario(
       const input = messages
         ? withSystemPrompt(messages, config.systemPrompt)
         : withSystemPrompt(s.input!, config.systemPrompt);
-      const { content, latencyMs } = await invokeModel(config.model, input);
+      const { content, latencyMs, attempts, request, response } = await invokeModel(
+        config.model,
+        input,
+      );
       const details = runDeterministic(s, content);
       const passed = details.passed && stepResults.every((r) => r.passed);
       return {
@@ -623,6 +711,9 @@ export async function executeScenario(
         score: passed ? 1 : 0,
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details: stepResults.length > 0 ? { ...details, steps: stepResults } : details,
         ...(messages
           ? { conversation: messagesToConversation([...messages, new AIMessage(content)]) }
@@ -635,7 +726,7 @@ export async function executeScenario(
       if (!config.embeddings) {
         throw new Error('embeddings are required for semantic scenarios');
       }
-      const { content, latencyMs } = await invokeModel(
+      const { content, latencyMs, attempts, request, response } = await invokeModel(
         config.model,
         withSystemPrompt(s.input, config.systemPrompt),
       );
@@ -647,6 +738,9 @@ export async function executeScenario(
         score: details.similarity,
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details,
       };
     }
@@ -696,7 +790,10 @@ export async function executeScenario(
       const input = messages
         ? withSystemPrompt(messages, config.systemPrompt)
         : withSystemPrompt(s.input!, config.systemPrompt);
-      const { content, latencyMs } = await invokeModel(config.model, input);
+      const { content, latencyMs, attempts, request, response } = await invokeModel(
+        config.model,
+        input,
+      );
       const details = await runLlmJudge(
         s,
         content,
@@ -725,6 +822,9 @@ export async function executeScenario(
         score: details.score / 10,
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details: judgeDetails,
         ...(messages
           ? { conversation: messagesToConversation([...messages, new AIMessage(content)]) }
@@ -734,11 +834,12 @@ export async function executeScenario(
 
     if (scenario.type === 'structured') {
       const s = scenario as StructuredScenario;
-      const { parsed, content, latencyMs } = await invokeStructuredModel(
-        config.model,
-        withSystemPrompt(s.input, config.systemPrompt),
-        s.outputSchema,
-      );
+      const { parsed, content, latencyMs, attempts, request, response } =
+        await invokeStructuredModel(
+          config.model,
+          withSystemPrompt(s.input, config.systemPrompt),
+          s.outputSchema,
+        );
       const details = runStructured(s, parsed);
       const passed = details.score >= s.minScore;
       return {
@@ -747,6 +848,9 @@ export async function executeScenario(
         score: details.score,
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details,
       };
     }
@@ -803,6 +907,9 @@ export async function executeScenario(
         reasoningContent,
         content,
         latencyMs,
+        attempts,
+        request,
+        response,
       } = await invokeToolCallModel(
         config.model,
         withSystemPrompt(modelInput, finalSystemPrompt),
@@ -860,6 +967,9 @@ export async function executeScenario(
           score: effectiveScore,
           actualOutput: content,
           latencyMs,
+          scenarioStartedAt,
+          retryAttempts: attempts,
+          transport: { request, response },
           details: toolDetails,
         };
       }
@@ -881,6 +991,9 @@ export async function executeScenario(
         score: Math.min(effectiveScore, judged.score / 10),
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details: {
           ...toolDetails,
           responseJudge: {
@@ -1000,6 +1113,9 @@ export async function executeScenario(
         reasoningContent,
         content,
         latencyMs,
+        attempts,
+        request,
+        response,
       } = await invokeToolCallModel(
         config.model,
         withSystemPrompt(messages, finalSystemPrompt),
@@ -1060,6 +1176,9 @@ export async function executeScenario(
           score: effectiveScore,
           actualOutput: content,
           latencyMs,
+          scenarioStartedAt,
+          retryAttempts: attempts,
+          transport: { request, response },
           details,
           conversation: messagesToConversation([...messages, finalResponseMessage]),
         };
@@ -1085,6 +1204,9 @@ export async function executeScenario(
         score: Math.min(effectiveScore, judged.score / 10),
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details: {
           ...details,
           responseJudge: {
@@ -1114,7 +1236,7 @@ export async function executeScenario(
 
       // In non-ci mode, run the model to get the actual output but defer scoring
       // (interactive TUI runs after all automated scenarios complete)
-      const { content, latencyMs } = await invokeModel(
+      const { content, latencyMs, attempts, request, response } = await invokeModel(
         config.model,
         withSystemPrompt(s.input, config.systemPrompt),
       );
@@ -1124,6 +1246,9 @@ export async function executeScenario(
         score: null,
         actualOutput: content,
         latencyMs,
+        scenarioStartedAt,
+        retryAttempts: attempts,
+        transport: { request, response },
         details: runHumanPending(),
         _humanScenario: s,
       } as ScenarioResult & { _humanScenario: HumanScenario };
