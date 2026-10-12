@@ -35,12 +35,6 @@ async function waitForManualSend(
   await expect(stopButton).toBeVisible({ timeout: MANUAL_SEND_TIMEOUT_MS });
 }
 
-// A fire time close enough that this suite doesn't sit idle for minutes, but
-// far enough out that there's time to click Send first.
-function soonIso(secondsFromNow: number): string {
-  return new Date(Date.now() + secondsFromNow * 1000).toISOString();
-}
-
 export const CohortGating: TestSuite = {
   id: 103,
   name: 'Cron Cohort Gating',
@@ -127,31 +121,37 @@ export const CohortGating: TestSuite = {
     {
       slow: true,
       action:
-        'Ask the agent (manual send) to create a one-shot orchestrator task that, on firing, ' +
-        'fans out into two cohort-gated children',
+        'Ask the agent (manual send) to create a recurring orchestrator task that, on each ' +
+        'firing, fans out into two cohort-gated children',
       expectedOutcome: 'create_tasks is called and the Send button reappears',
       test: async ({ page }, testInfo) => {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CohortGating, testInfo);
-        // fireAt is computed now, before the human clicks Send and before the
-        // LLM call that follows — both of which this suite can't bound. A real
-        // run against Lemonade/GLM-4.7-Flash-GGUF (2026-10-12) recorded a 22.2s
-        // LLM call alone on this same turn; with soonIso(20) the fireAt had
-        // already passed by the time create_tasks actually ran, so the tool
-        // correctly rejected it ("fireAt must be in the future") and the model
-        // gave up and asked for a new time instead of retrying. 90s leaves
-        // headroom for that round trip plus a human's click delay.
-        const fireAt = soonIso(90);
+        // cron_repeat ("every minute"), not cron_once — deliberately, not
+        // just for convenience. The whole point of cohort gating is
+        // preventing duplicate dispatch when a repeating schedule's cadence
+        // is shorter than its children's runtime; a one-shot task only ever
+        // fires once and was never at risk of that, so it doesn't actually
+        // exercise the behavior this suite exists to verify (confirmed via
+        // a real run, 2026-10-12: a cron_once orchestrator correctly
+        // settled to 'done' once its cohort released — settleCronRun()'s
+        // documented "a one-shot has nothing left to schedule" rule, not a
+        // bug — but that made step 6 below, which expects a return to
+        // 'scheduled' with a real next-fire time, structurally unprovable).
+        // A relative cadence also has no absolute timestamp to race against
+        // LLM/human latency, unlike the fireAt precomputation
+        // CreateScheduledTasks.ts and an earlier version of this file had
+        // to work around with a wide soonIso() buffer.
         await waitForManualSend(
           page,
           chatInput,
-          'Create a task titled "Cohort orchestrator" scheduled to run once at exactly ' +
-            `${fireAt} (UTC). Don't run it now. Its plan: when this task runs, call ` +
-            'create_tasks with asCohort: true and exactly two simple tasks in the same batch — ' +
-            '"Cohort child A" and "Cohort child B" — each of which should just log a short ' +
-            'message and run immediately (no trigger). Do not create the children now; only the ' +
-            'orchestrator itself, with that plan, should be created in this turn.',
+          'Create a task titled "Cohort orchestrator" scheduled to run every minute ' +
+            '(cron_repeat). Its plan: when this task runs, call create_tasks with ' +
+            'asCohort: true and exactly two simple tasks in the same batch — "Cohort child A" ' +
+            'and "Cohort child B" — each of which should just log a short message and run ' +
+            'immediately (no trigger). Do not create the children now; only the orchestrator ' +
+            'itself, with that plan, should be created in this turn.',
           'orchestrator prompt',
         );
         await expect(page.getByText('create_tasks')).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
