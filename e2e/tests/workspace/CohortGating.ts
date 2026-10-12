@@ -110,7 +110,15 @@ export const CohortGating: TestSuite = {
         const chatInput = page.locator('[data-slot="textarea"]');
         const sendButton = page.locator('button[aria-label="Send message"]');
         await pauseForVideo(page, CohortGating, testInfo);
-        const fireAt = soonIso(20);
+        // fireAt is computed now, before the human clicks Send and before the
+        // LLM call that follows — both of which this suite can't bound. A real
+        // run against Lemonade/GLM-4.7-Flash-GGUF (2026-10-12) recorded a 22.2s
+        // LLM call alone on this same turn; with soonIso(20) the fireAt had
+        // already passed by the time create_tasks actually ran, so the tool
+        // correctly rejected it ("fireAt must be in the future") and the model
+        // gave up and asked for a new time instead of retrying. 90s leaves
+        // headroom for that round trip plus a human's click delay.
+        const fireAt = soonIso(90);
         await waitForManualSend(
           page,
           chatInput,
