@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { getWorkspaceStore, type TaskRun } from '../../services/workspace-store.js';
 
 const GetTaskOutcomeSchema = z.object({
-  taskId: z.string().describe('The id of the task, from list_tasks.'),
+  taskId: z
+    .string()
+    .describe(
+      'The exact id of the task. If you already have it — the user gave it directly, or you ' +
+        'already saw it from list_tasks or elsewhere in this conversation — call this ' +
+        'immediately with that id; do not call list_tasks first just to re-confirm an id you ' +
+        'already have.',
+    ),
 });
 
 const MAX_PAST_RUNS_SHOWN = 10;
@@ -87,7 +94,9 @@ export const getTaskOutcomeTool = tool(
     name: 'get_task_outcome',
     description:
       'Get the status and latest-run outcome of a task in this workspace, including why it ' +
-      'failed if it did. Use list_tasks first to find the taskId.',
+      'failed if it did. Call this directly whenever you already know the exact taskId — ' +
+      'e.g. the user named it, or gave an id in their message. Only call list_tasks first ' +
+      'when you do not yet know which task they mean.',
     schema: GetTaskOutcomeSchema,
   },
 );
