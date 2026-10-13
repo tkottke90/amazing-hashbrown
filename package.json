@@ -1,6 +1,6 @@
 {
   "name": "amazing-hashbrown",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "private": true,
   "type": "module",
   "description": "Local LLM agent harness: a persona knowledge base and autonomous assistant.",
