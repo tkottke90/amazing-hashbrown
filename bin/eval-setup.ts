@@ -21,6 +21,9 @@ import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.j
 import { makeCompleteTaskTool } from '../api/src/agents/tools/complete-task.tool.js';
 import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js';
 import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.js';
+import { listTasksTool } from '../api/src/agents/tools/list-tasks.tool.js';
+import { getTaskOutcomeTool } from '../api/src/agents/tools/get-task-outcome.tool.js';
+import { readWorkspaceTaskRunTool } from '../api/src/agents/tools/read-workspace-task-run.tool.js';
 import { scheduleWakeupTool } from '../api/src/agents/tools/schedule-wakeup.tool.js';
 import { cancelWakeupTool } from '../api/src/agents/tools/cancel-wakeup.tool.js';
 import { searchConversationTool } from '../api/src/agents/tools/search-conversation.tool.js';
@@ -150,6 +153,16 @@ export const evalTools = [
   // Bound in real task runs only when a previous finished run exists; the
   // eval harness never executes tools, so its store lookups never run here.
   makeReadTaskRunTool('eval-task', 'eval-run'),
+  // Workspace-chat-only in production (buildTaskVisibilityTools() in
+  // chat-agent.ts). Included here unconditionally, same reasoning as
+  // makeCreateTasksTool() above: suites/task-visibility.yaml needs all
+  // three actually offered to be meaningful. The eval harness never
+  // executes a tool (invokeToolCallModel in runner.ts only inspects
+  // response.tool_calls), so none of their real workspace-store lookups
+  // ever run here.
+  listTasksTool,
+  getTaskOutcomeTool,
+  readWorkspaceTaskRunTool,
   // Bound in production chat and workspace chat (WAKEUP_TOOLS in
   // chat-agent.ts); suites/agent-wait.yaml needs them offered. Never
   // executed here, so no wake-up store or registry is needed.

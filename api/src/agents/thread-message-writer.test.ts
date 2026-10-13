@@ -17,6 +17,7 @@ import {
   resolveHitlPrompt,
   recordWikiUpdate,
   recordResourceCard,
+  recordTaskRunMarker,
   mirrorPendingTaskPrompts,
   linkedPromptCopy,
 } from './thread-message-writer.js';
@@ -489,6 +490,51 @@ describe('agents/thread-message-writer', () => {
         wikiName: 'user',
         path: 'entities/foo.md',
       });
+    });
+  });
+
+  describe('recordTaskRunMarker', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('carries the summary through to the payload when one is given', () => {
+      recordTaskRunMarker(
+        store,
+        't1',
+        'm1',
+        'task-1',
+        'Nightly backup',
+        'end',
+        'failed',
+        { runThreadId: 'run-1', runNumber: 1, triggerSource: 'schedule' },
+        'Run failed: rate limit exceeded.',
+      );
+      const msg = store.getMessage('t1', 'm1')!;
+      expect(msg.payload).to.deep.equal({
+        taskId: 'task-1',
+        taskTitle: 'Nightly backup',
+        phase: 'end',
+        outcome: 'failed',
+        summary: 'Run failed: rate limit exceeded.',
+        runThreadId: 'run-1',
+        runNumber: 1,
+        triggerSource: 'schedule',
+      });
+    });
+
+    it('omits the summary field entirely (not just falsy) when none is given', () => {
+      recordTaskRunMarker(store, 't1', 'm2', 'task-1', 'Nightly backup', 'start');
+      const msg = store.getMessage('t1', 'm2')!;
+      expect(msg.payload).to.not.have.property('summary');
     });
   });
 

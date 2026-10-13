@@ -926,7 +926,16 @@ describe('agents/task-execution', () => {
     it('writes a classified failure summary when the stream throws [orchestration]', async () => {
       const entry = makeGlobalEntry();
       await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])) });
-      expect(store.getQueueEntry(entry.id)!.summary).to.match(/^Run failed: /);
+      const queueSummary = store.getQueueEntry(entry.id)!.summary;
+      expect(queueSummary).to.match(/^Run failed: /);
+
+      // The same summary carries through to the end marker, so workspace
+      // chat (and a future run's kickoff) can see why the run failed
+      // without a separate lookup.
+      const end = threadStore
+        .getThreadMessages(runThreadOf(entry))
+        .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end');
+      expect((end!.payload as Record<string, unknown>).summary).to.equal(queueSummary);
     });
 
     it('unchecks every plan step for a new run but keeps the steps and the goal [orchestration]', async () => {
@@ -1063,6 +1072,13 @@ describe('agents/task-execution', () => {
       expect(queue.status).to.equal('paused');
       expect(queue.pauseReason).to.equal('user');
       expect(queue.pausedAt).to.not.equal(null);
+
+      // A user-initiated pause sets no summary — the end marker must omit
+      // the field entirely rather than carry a null/empty one.
+      const end = threadStore
+        .getThreadMessages(runThreadOf(entry))
+        .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end');
+      expect(end!.payload).to.not.have.property('summary');
     });
 
     it('retires the queue row without touching status/assignedTo on a "take-over" intent', async () => {

@@ -368,12 +368,20 @@ export function recordTaskRunMarker(
   phase: 'start' | 'end',
   outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
   run?: TaskRunMarkerRun,
+  summary?: string | null,
 ): number | null {
   return safe(threadId, 'recordTaskRunMarker', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'task_run_marker',
-      payload: { taskId, taskTitle, phase, ...(outcome ? { outcome } : {}), ...(run ?? {}) },
+      payload: {
+        taskId,
+        taskTitle,
+        phase,
+        ...(outcome ? { outcome } : {}),
+        ...(summary ? { summary } : {}),
+        ...(run ?? {}),
+      },
     }).seq;
   });
 }
