@@ -137,9 +137,7 @@ test.describe(
       await expect(page.getByText('Wiki ingestion')).toBeVisible();
     });
 
-    test("a row's generate report button opens HTML in a new tab", async ({
-      page,
-    }, testInfo) => {
+    test("a row's generate report button opens HTML in a new tab", async ({ page }, testInfo) => {
       await mockThreadsListApi(page);
       await mockReportEndpoint(page);
       await page.goto('/threads');
