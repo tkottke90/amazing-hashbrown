@@ -934,7 +934,10 @@ describe('agents/task-execution', () => {
       // without a separate lookup.
       const end = threadStore
         .getThreadMessages(runThreadOf(entry))
-        .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end');
+        .find(
+          (m) =>
+            m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end',
+        );
       expect((end!.payload as Record<string, unknown>).summary).to.equal(queueSummary);
     });
 
@@ -1077,7 +1080,10 @@ describe('agents/task-execution', () => {
       // the field entirely rather than carry a null/empty one.
       const end = threadStore
         .getThreadMessages(runThreadOf(entry))
-        .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end');
+        .find(
+          (m) =>
+            m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'end',
+        );
       expect(end!.payload).to.not.have.property('summary');
     });
 

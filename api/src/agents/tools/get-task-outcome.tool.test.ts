@@ -37,10 +37,7 @@ describe('agents/tools/get-task-outcome', () => {
 
   it('refuses an unknown task id, same message as a task from another workspace [unit]', async () => {
     const store = getWorkspaceStore();
-    const unknown = await getTaskOutcomeTool.invoke(
-      { taskId: 'nope' },
-      invokeConfig(workspaceId),
-    );
+    const unknown = await getTaskOutcomeTool.invoke({ taskId: 'nope' }, invokeConfig(workspaceId));
 
     const otherWorkspaceId = store.createWorkspace({ name: 'Other', location: '/tmp/other' }).id;
     const foreignTaskId = store.createTask({

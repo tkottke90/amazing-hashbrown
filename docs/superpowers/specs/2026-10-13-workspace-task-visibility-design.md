@@ -62,13 +62,13 @@ schema: { taskId: string }   // exact id only, resolved via list_tasks first —
 
 Validates `store.getTask(taskId)?.workspaceId === callingWorkspaceId`; anything else (no such task, or it belongs to another workspace) returns `No task with id "<id>" in this workspace.` On success, returns title, current status, `blockedReason` if blocked, the latest run's `summary`/`triggerSource`/timestamps, the `failedRunStreak` (attempts + lastSummary) if currently failing, and a compact list of past runs (`runId`, `runNumber`, `status`, `finishedAt`) from `listTaskRuns(taskId)` for drill-down. This is a general "what happened with X" tool, not failure-only:
 
-| Task state | Response |
-| --- | --- |
-| No runs yet (`listTaskRuns` empty) | `"<title>" has not run yet (status: pending).` — no fabricated summary |
-| Currently `running` | Reports the in-progress run's `startedAt`/`triggerSource` plainly; never claims a summary that doesn't exist yet |
-| `done` | Latest run's summary, success-flavored |
-| `failed` | Latest run's summary + `failedRunStreak` |
-| `blocked` | `blockedReason` verbatim, plus latest run's summary if one exists |
+| Task state                         | Response                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| No runs yet (`listTaskRuns` empty) | `"<title>" has not run yet (status: pending).` — no fabricated summary                                           |
+| Currently `running`                | Reports the in-progress run's `startedAt`/`triggerSource` plainly; never claims a summary that doesn't exist yet |
+| `done`                             | Latest run's summary, success-flavored                                                                           |
+| `failed`                           | Latest run's summary + `failedRunStreak`                                                                         |
+| `blocked`                          | `blockedReason` verbatim, plus latest run's summary if one exists                                                |
 
 **`read_workspace_task_run`** — new file `api/src/agents/tools/read-workspace-task-run.tool.ts`.
 
@@ -88,14 +88,14 @@ This tool's LangChain-visible name is deliberately **distinct** from `read_task_
 
 ### 5. Error handling summary
 
-| Case | Behavior |
-| --- | --- |
-| Unknown `taskId`, or one belonging to another workspace | Identical message: `No task with id "<id>" in this workspace.` |
-| `get_task_outcome` on a task with no runs | `"<title>" has not run yet (status: pending).` |
-| `get_task_outcome` / transcript tool on a `running` task | Report in-progress state plainly; no fabricated summary |
-| `read_workspace_task_run` on an unfinished run | Same "has not finished yet" message as `read_task_run` today |
-| `read_workspace_task_run` on a pre-transcript run (`threadId` null) | Same summary-only fallback message as `read_task_run` today |
-| `list_tasks` with zero matches | `No tasks match (status: failed, title contains "backup").` |
+| Case                                                                | Behavior                                                       |
+| ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Unknown `taskId`, or one belonging to another workspace             | Identical message: `No task with id "<id>" in this workspace.` |
+| `get_task_outcome` on a task with no runs                           | `"<title>" has not run yet (status: pending).`                 |
+| `get_task_outcome` / transcript tool on a `running` task            | Report in-progress state plainly; no fabricated summary        |
+| `read_workspace_task_run` on an unfinished run                      | Same "has not finished yet" message as `read_task_run` today   |
+| `read_workspace_task_run` on a pre-transcript run (`threadId` null) | Same summary-only fallback message as `read_task_run` today    |
+| `list_tasks` with zero matches                                      | `No tasks match (status: failed, title contains "backup").`    |
 
 ---
 
