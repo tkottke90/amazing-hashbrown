@@ -118,10 +118,15 @@ describe('TaskRunView — read-only record of an automated run', () => {
     );
   });
 
-  it('links back to the Inbox for a run of an Inbox task [unit]', async () => {
+  it("uses the browser's back navigation, labeled for the run's origin [unit]", async () => {
+    const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
     await renderRunView();
+    expect(screen.getByTestId('task-run-back')).toHaveTextContent('Inbox');
+
     screen.getByTestId('task-run-back').click();
-    expect(mockRoute).toHaveBeenCalledWith('/inbox');
+
+    expect(backSpy).toHaveBeenCalled();
+    backSpy.mockRestore();
   });
 
   it('offers a Generate thread report button that opens the report URL [unit]', async () => {
