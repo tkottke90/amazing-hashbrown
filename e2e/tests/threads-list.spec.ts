@@ -5,7 +5,8 @@ import { pauseBeforeAction } from '../lib/video.js';
 const suite: TestSuite = {
   id: 50,
   name: 'Threads List',
-  description: 'Verifies the /threads page lists threads of every type and lets a user filter them and open their report',
+  description:
+    'Verifies the /threads page lists threads of every type and lets a user filter them and open their report',
   purpose:
     'Finding a given thread (especially a task-run thread, which has no other list) depends on this page working correctly',
   tags: ['@user-workflow'],

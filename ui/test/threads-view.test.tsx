@@ -8,6 +8,15 @@ jest.mock('preact-iso', () => ({
 
 import { ThreadsView } from '@/pages/threads';
 import { allThreads, type ThreadSummary } from '@/hooks/use-thread';
+import { ThemeProvider } from '@/hooks/use-theme';
+
+function renderThreadsView() {
+  return render(
+    <ThemeProvider>
+      <ThreadsView />
+    </ThemeProvider>,
+  );
+}
 
 function makeThread(id: string, title: string, type: ThreadSummary['type']): ThreadSummary {
   return {
@@ -56,7 +65,7 @@ afterEach(() => {
 
 describe('ThreadsView', () => {
   it('renders a row for every thread type returned by the API [unit]', async () => {
-    render(<ThreadsView />);
+    renderThreadsView();
 
     await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
     expect(screen.getByText('A chat conversation')).toBeInTheDocument();
@@ -66,7 +75,7 @@ describe('ThreadsView', () => {
   });
 
   it('narrows the list when a filter tab is clicked [unit]', async () => {
-    render(<ThreadsView />);
+    renderThreadsView();
     await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
 
     fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
@@ -76,7 +85,7 @@ describe('ThreadsView', () => {
   });
 
   it('filters rows by title substring when searching [unit]', async () => {
-    render(<ThreadsView />);
+    renderThreadsView();
     await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
 
     fireEvent.input(screen.getByPlaceholderText('Search'), { target: { value: 'audit' } });
@@ -86,7 +95,7 @@ describe('ThreadsView', () => {
   });
 
   it('shows an empty state when no threads match the filter [unit]', async () => {
-    render(<ThreadsView />);
+    renderThreadsView();
     await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
 
     fireEvent.input(screen.getByPlaceholderText('Search'), { target: { value: 'no such thread' } });
@@ -97,7 +106,7 @@ describe('ThreadsView', () => {
 
   it("each row's report button opens that thread's report URL [unit]", async () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
-    render(<ThreadsView />);
+    renderThreadsView();
     await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
 
     const row = screen
