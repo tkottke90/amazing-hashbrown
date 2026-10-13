@@ -163,6 +163,20 @@ describe('routes/v1/threads.handlers', () => {
       expect(t2?.afterAgentState.status).to.equal('done');
       expect((t2?.afterAgentState as { outcome?: string }).outcome).to.equal('no-op');
     });
+
+    it('returns only threads of the requested type when a filter is passed [unit]', () => {
+      store.upsertThreadOnFirstMessage('wiki-1', 'Wiki thread', 'wiki');
+      const list = listThreadsHandler(store, { type: 'wiki' });
+      expect(list.map((t) => t.id)).to.deep.equal(['wiki-1']);
+    });
+
+    it('returns every thread type when no filter is passed [unit]', () => {
+      store.upsertThreadOnFirstMessage('task-1', 'Task thread', 'task');
+      const list = listThreadsHandler(store);
+      const types = new Set(list.map((t) => t.type));
+      expect(types.size).to.be.greaterThan(1);
+      expect(types.has('task')).to.equal(true);
+    });
   });
 
   describe('getThreadHandler', () => {

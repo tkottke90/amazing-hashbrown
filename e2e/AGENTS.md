@@ -335,6 +335,7 @@ implementation details that change without notice.
 | `wiki-orientation-badge`        | `ui/src/pages/wiki/orientation-badge.tsx`                 | The chat header's orientation badge; text content is the oriented wiki's domain id            |
 | `webhook-url`                   | `ui/src/pages/settings/notifications-panel.tsx`           | The Notifications settings section's static webhook endpoint URL (read-only input)            |
 | `webhook-copy-button`           | `ui/src/pages/settings/notifications-panel.tsx`           | Button that copies the static webhook URL to the clipboard                                    |
+| `thread-row`                    | `ui/src/pages/threads/index.tsx`                          | A row on the Threads list page (all thread types); pair with `data-thread-id`                 |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

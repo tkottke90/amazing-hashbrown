@@ -282,7 +282,11 @@ test.describe(
 
         await pauseBeforeAction(page, testInfo);
         await page.getByTestId('task-run-back').click();
-        await expect(page).toHaveURL(new RegExp(`/workspaces/${wsId}$`));
+        // The back button now uses window.history.back(), which restores
+        // the exact prior URL including its hash (the workspace page's
+        // "Chat" tab is selected via #chat) rather than routing to a bare
+        // workspace path.
+        await expect(page).toHaveURL(new RegExp(`/workspaces/${wsId}(#.*)?$`));
       } finally {
         await request.delete(`/api/v1/workspaces/${wsId}`);
       }

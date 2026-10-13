@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { Check, Download, Hash, RotateCcw } from 'lucide-preact';
+import { Check, Hash, RotateCcw } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
+import { ThreadReportButton } from '@/components/thread-report-button';
 import {
   wikiDisplayMessages,
   wikiIsStreaming,
@@ -99,14 +100,7 @@ export function IngestionChat({ chatInputRef }: Props) {
         <div class="flex shrink-0 items-center gap-1">
           <NewDomainModal />
           <UploadWikiDialog />
-          <button
-            type="button"
-            onClick={() => window.open(`/api/v1/threads/${wikiThreadId.value}/report`, '_blank')}
-            title="Generate thread report"
-            class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
-          >
-            <Download class="size-3.5" />
-          </button>
+          <ThreadReportButton threadId={wikiThreadId.value} />
           <button
             type="button"
             onClick={handleCopyThreadId}

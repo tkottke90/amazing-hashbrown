@@ -9,6 +9,7 @@ import { activeGuard } from '@/hooks/use-settings-guard';
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { ChatRoot } from '@/pages/chat';
 import { SettingsView } from '@/pages/settings';
+import { ThreadsView } from '@/pages/threads';
 import { WikiView } from '@/pages/wiki';
 import { WorkspacesView } from '@/pages/workspaces';
 import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
@@ -54,6 +55,7 @@ export function App() {
           <ChatRoot path="/chat/:id" />
           <WikiView path="/wiki" />
           <SettingsView path="/settings" />
+          <ThreadsView path="/threads" />
           <WorkspacesView path="/workspaces" />
           <WorkspaceDetailView path="/workspaces/:id" />
           <CloseProjectView path="/workspaces/:id/close" />

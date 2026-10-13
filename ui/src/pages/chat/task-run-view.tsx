@@ -1,11 +1,11 @@
 import { useEffect } from 'preact/hooks';
-import { useLocation } from 'preact-iso';
 import { ArrowLeft, Lock } from 'lucide-preact';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { CardBadge } from '@/components/card-badge';
 import { Button } from '@/components/ui/button';
+import { ThreadReportButton } from '@/components/thread-report-button';
 import { useThreadInstance } from '@/hooks/use-thread';
 import { useTitle } from '@/hooks/use-title';
 import { runName, triggerSourceLabel } from '@/lib/task-runs';
@@ -31,7 +31,6 @@ const STATUS_BADGE: Record<string, 'blue' | 'green' | 'amber' | 'violet'> = {
 // the chat /hitl route, which re-queues the task. See
 // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §4.
 export function TaskRunView({ threadId }: { threadId: string }) {
-  const { route } = useLocation();
   const { setPageTitle } = useTitle();
   const thread = useThreadInstance(threadId);
   const run = thread.taskRun.value;
@@ -58,34 +57,39 @@ export function TaskRunView({ threadId }: { threadId: string }) {
 
   return (
     <div class="flex h-full flex-col" data-testid="task-run-view">
-      <header class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <Button
-          variant="ghost"
-          size="xs"
-          data-testid="task-run-back"
-          onClick={() => route(run?.workspaceId ? `/workspaces/${run.workspaceId}` : '/inbox')}
-        >
-          <ArrowLeft class="size-3.5" />
-          {run?.workspaceId ? 'Workspace' : 'Inbox'}
-        </Button>
-        <h1 class="text-sm font-medium" data-testid="task-run-title">
-          {run ? (
+      <header class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            data-testid="task-run-back"
+            onClick={() => window.history.back()}
+          >
+            <ArrowLeft class="size-3.5" />
+            {run?.workspaceId ? 'Workspace' : 'Inbox'}
+          </Button>
+          <h1 class="text-sm font-medium" data-testid="task-run-title">
+            {run ? (
+              <>
+                {runName(run.runNumber, run.triggerSource)} of{' '}
+                <span class="text-foreground">{run.taskTitle}</span>
+              </>
+            ) : (
+              'Automated run'
+            )}
+          </h1>
+          {run && (
             <>
-              {runName(run.runNumber, run.triggerSource)} of{' '}
-              <span class="text-foreground">{run.taskTitle}</span>
+              <CardBadge variant={STATUS_BADGE[run.status] ?? 'blue'}>
+                <span data-testid="task-run-status">{run.status}</span>
+              </CardBadge>
+              <CardBadge variant="violet">{triggerSourceLabel(run.triggerSource)}</CardBadge>
             </>
-          ) : (
-            'Automated run'
           )}
-        </h1>
-        {run && (
-          <>
-            <CardBadge variant={STATUS_BADGE[run.status] ?? 'blue'}>
-              <span data-testid="task-run-status">{run.status}</span>
-            </CardBadge>
-            <CardBadge variant="violet">{triggerSourceLabel(run.triggerSource)}</CardBadge>
-          </>
-        )}
+        </div>
+        <div class="flex items-center gap-2">
+          <ThreadReportButton threadId={threadId} />
+        </div>
       </header>
 
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
