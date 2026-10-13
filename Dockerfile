@@ -68,10 +68,12 @@ RUN groupadd --gid 1001 appuser \
     && useradd --uid 1001 --gid 1001 --create-home appuser \
     && chown appuser:appuser /app
 
-COPY --from=deps --chown=appuser:appuser /app/node_modules ./node_modules
+# Whole tree, not just node_modules: npm nests some deps (e.g. langchain)
+# under a workspace's own node_modules/ instead of hoisting to the root when
+# versions conflict with root-level overrides, and the deps stage never
+# contains anything else to accidentally pull in.
+COPY --from=deps --chown=appuser:appuser /app ./
 
-COPY --chown=appuser:appuser package.json ./package.json
-COPY --chown=appuser:appuser api/package.json ./api/package.json
 COPY --chown=appuser:appuser api/dist ./api/dist
 COPY --chown=appuser:appuser ui/dist ./api/public
 
