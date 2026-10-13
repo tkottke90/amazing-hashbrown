@@ -6,6 +6,7 @@ import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { CardBadge } from '@/components/card-badge';
 import { Button } from '@/components/ui/button';
+import { ThreadReportButton } from '@/components/thread-report-button';
 import { useThreadInstance } from '@/hooks/use-thread';
 import { useTitle } from '@/hooks/use-title';
 import { runName, triggerSourceLabel } from '@/lib/task-runs';
@@ -86,6 +87,7 @@ export function TaskRunView({ threadId }: { threadId: string }) {
             <CardBadge variant="violet">{triggerSourceLabel(run.triggerSource)}</CardBadge>
           </>
         )}
+        <ThreadReportButton threadId={threadId} />
       </header>
 
       <ChatMessageScrollWrapper className="min-h-0 flex-1">

@@ -6,7 +6,7 @@ const suite: TestSuite = {
   id: 15,
   name: 'Thread Report',
   description:
-    'Verifies the Generate Thread Report button opens an HTML report in a new browser tab, for the thread sidebar, the wiki chat header, and the workspace chat action bar',
+    'Verifies the Generate Thread Report button opens an HTML report in a new browser tab, for the thread sidebar, the wiki chat header, the workspace chat action bar, and a task run header',
   purpose:
     'Ensure the report button wires up correctly to the API endpoint and that the response is displayed in a new tab without requiring a live database',
   tags: ['@user-workflow'],
@@ -30,12 +30,19 @@ const suite: TestSuite = {
       expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open a task run and click the Generate thread report button in its header',
+      expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
+      test: () => {},
+    },
   ],
 };
 
 const REPORT_HTML = `<!DOCTYPE html><html><body><h1>Thread Report</h1></body></html>`;
 
 const WIKI_THREAD_ID = 'wiki-thread-test';
+const RUN_THREAD_ID = 'task-run-thread-test';
 
 interface MockThread {
   id: string;
@@ -207,6 +214,59 @@ test.describe(
       await expect(reportPage.locator('h1')).toHaveText('Thread Report');
 
       await request.delete(`/api/v1/workspaces/${ws.id}`);
+    });
+
+    test('task run header: generate report button opens HTML in a new tab', async ({
+      page,
+    }, testInfo) => {
+      const taskRunThread = {
+        id: RUN_THREAD_ID,
+        title: 'Weekly audit — run #3',
+        type: 'task',
+        taskRun: {
+          taskId: 'task-1',
+          taskTitle: 'Weekly audit',
+          workspaceId: null,
+          runId: 'run-3',
+          runNumber: 3,
+          status: 'paused',
+          triggerSource: 'schedule',
+        },
+        messages: [],
+      };
+
+      // The task thread must stay OUT of the plain thread list (mirroring
+      // real backend behavior — 'task' threads never appear there) so
+      // ChatRoot resolves it via GET /:id and picks the read-only run view
+      // instead of treating it as an ordinary chat thread.
+      await page.route('**/api/v1/threads**', async (route: Route) => {
+        const url = new URL(route.request().url());
+        const match = url.pathname.match(/^\/api\/v1\/threads(?:\/([^/]+))?$/);
+        if (!match) {
+          await route.fallback();
+          return;
+        }
+        const id = match[1];
+        if (!id && route.request().method() === 'GET') {
+          await route.fulfill({ json: [] });
+          return;
+        }
+        if (id === RUN_THREAD_ID && route.request().method() === 'GET') {
+          await route.fulfill({ json: taskRunThread });
+          return;
+        }
+        await route.fallback();
+      });
+      await mockReportEndpoint(page, RUN_THREAD_ID);
+      await page.goto(`/chat/${RUN_THREAD_ID}`);
+      await pauseBeforeAction(page, testInfo);
+
+      const newPagePromise = page.context().waitForEvent('page');
+      await page.getByRole('button', { name: 'Generate thread report' }).click();
+      const reportPage = await newPagePromise;
+
+      await reportPage.waitForLoadState();
+      await expect(reportPage.locator('h1')).toHaveText('Thread Report');
     });
   },
 );

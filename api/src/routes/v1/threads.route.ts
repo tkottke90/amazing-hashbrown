@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getThreadStore } from '../../services/thread-store.js';
+import { getThreadStore, type ThreadType } from '../../services/thread-store.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getToolSettingsStore } from '../../services/tool-settings-store.js';
 import { getCheckpointer } from '../../agents/chat-agent.js';
@@ -28,8 +28,27 @@ import {
 
 export const threadsRouter = Router();
 
-threadsRouter.get('/', (_req: Request, res: Response) => {
-  res.json(listThreadsHandler(getThreadStore()));
+const THREAD_TYPES: readonly ThreadType[] = ['chat', 'wiki', 'workspace-chat', 'task'];
+
+function isThreadType(value: string): value is ThreadType {
+  return (THREAD_TYPES as readonly string[]).includes(value);
+}
+
+// No `type` param keeps the long-standing default (the main chat sidebar's
+// list) unchanged; `?type=all` is the only way to get every thread type —
+// a query param instead of a sibling path (e.g. `/all`) avoids needing to
+// register it ahead of `/:id` to stop Express matching it as `id: 'all'`.
+threadsRouter.get('/', (req: Request, res: Response) => {
+  const { type } = req.query as { type?: string };
+  if (type === undefined) {
+    res.json(listThreadsHandler(getThreadStore(), { type: 'chat' }));
+  } else if (type === 'all') {
+    res.json(listThreadsHandler(getThreadStore()));
+  } else if (isThreadType(type)) {
+    res.json(listThreadsHandler(getThreadStore(), { type }));
+  } else {
+    res.status(400).json({ error: `Unknown thread type "${type}"` });
+  }
 });
 
 // A run thread's header info: which run of which task it records.

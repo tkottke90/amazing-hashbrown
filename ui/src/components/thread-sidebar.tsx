@@ -10,10 +10,10 @@ import {
   Loader2,
   BookOpen,
   Cog,
-  FileDown,
   Inbox,
   Folder,
   Circle,
+  MessagesSquare,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { AfterAgentIndicator } from '@/components/after-agent-indicator';
+import { ThreadReportButton } from '@/components/thread-report-button';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -198,12 +199,7 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
               <Copy className="size-4" />
               Copy thread ID
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => window.open(`/api/v1/threads/${thread.id}/report`, '_blank')}
-            >
-              <FileDown className="size-4" />
-              Generate thread report
-            </DropdownMenuItem>
+            <ThreadReportButton threadId={thread.id} variant="menu-item" />
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => {
@@ -369,6 +365,20 @@ export function ThreadSidebar() {
       >
         <Folder className="size-4 shrink-0" />
         Workspaces
+      </a>
+      <a
+        href="/threads"
+        aria-label="Threads"
+        onClick={guardAnchorClick}
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url.startsWith('/threads')
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <MessagesSquare className="size-4 shrink-0" />
+        Threads
       </a>
       <a
         href="/wiki"

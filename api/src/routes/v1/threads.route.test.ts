@@ -97,3 +97,59 @@ describe('routes/v1/threads — wake-up card actions', () => {
     expect(getWakeupStore().get(wakeup.id)?.status).to.equal('pending');
   });
 });
+
+describe('routes/v1/threads — GET /', () => {
+  let dir: string;
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'threads-route-list-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootThreadStore(db);
+    getThreadStore().upsertThreadOnFirstMessage('chat-1', 'A chat', 'chat');
+    getThreadStore().upsertThreadOnFirstMessage('wiki-1', 'A wiki thread', 'wiki');
+    getThreadStore().upsertThreadOnFirstMessage('ws-1', 'A workspace chat', 'workspace-chat');
+    getThreadStore().upsertThreadOnFirstMessage('task-1', 'A task run', 'task');
+    ({ baseUrl, close } = await startTestServer(threadsRouter, '/api/v1/threads'));
+  });
+
+  afterEach(async () => {
+    await close();
+    getThreadStore().close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const get = (path: string) => fetch(`${baseUrl}${path}`);
+
+  it('defaults to type=chat when no query param is given [orchestration]', async () => {
+    const res = await get('/');
+
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { id: string }[];
+    expect(body.map((t) => t.id)).to.deep.equal(['chat-1']);
+  });
+
+  it('returns threads of the given type when ?type=wiki is passed [orchestration]', async () => {
+    const res = await get('/?type=wiki');
+
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { id: string }[];
+    expect(body.map((t) => t.id)).to.deep.equal(['wiki-1']);
+  });
+
+  it('returns every thread type when ?type=all is passed [orchestration]', async () => {
+    const res = await get('/?type=all');
+
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { id: string }[];
+    expect(body.map((t) => t.id).sort()).to.deep.equal(['chat-1', 'task-1', 'wiki-1', 'ws-1']);
+  });
+
+  it('returns 400 for an unrecognized type value [orchestration]', async () => {
+    const res = await get('/?type=bogus');
+
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({ error: 'Unknown thread type "bogus"' });
+  });
+});

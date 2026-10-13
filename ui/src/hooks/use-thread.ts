@@ -120,6 +120,20 @@ export async function refreshThreadList(): Promise<void> {
   }
 }
 
+// Every thread regardless of type, for the /threads list page — kept
+// separate from `threads` above, which must stay chat-only for the sidebar.
+export const allThreads = signal<ThreadSummary[]>([]);
+
+export async function fetchAllThreads(): Promise<void> {
+  try {
+    const res = await fetch('/api/v1/threads?type=all');
+    if (!res.ok) return;
+    allThreads.value = (await res.json()) as ThreadSummary[];
+  } catch {
+    // best-effort — same failure handling as refreshThreadList()
+  }
+}
+
 // The active thread's AfterAgent status, derived from the same list data the
 // sidebar already holds — no separate per-thread fetch needed for the
 // composer-area indicator. Global-chat-only: AfterAgent doesn't run for

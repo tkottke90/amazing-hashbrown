@@ -17,6 +17,19 @@ export function slugify(input: string, maxLength = 60): string {
     .replace(/-+$/g, '');
 }
 
+// Day-granular relative time for a list row (e.g. the Workspaces and
+// Threads list pages) — "today"/"yesterday"/"Nd ago", falling back to a
+// locale date string past a week. Not the same format as the sidebar's own
+// minute-granular helper, which is a different context (live thread rows).
+export function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 // Truncates from the start instead of the end, so a long path keeps its
 // most identifying part (the innermost directory) visible rather than its
 // shared, less useful root.

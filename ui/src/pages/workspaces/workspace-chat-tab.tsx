@@ -1,10 +1,10 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { Download } from 'lucide-preact';
 import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
+import { ThreadReportButton } from '@/components/thread-report-button';
 import { Button } from '@/components/ui/button';
 import { favoriteModels, fetchProviders, providers } from '@/hooks/use-providers';
 import { useThreadInstance } from '@/hooks/use-thread';
@@ -147,16 +147,7 @@ export function WorkspaceChatTab({
           <div class="mb-2 flex items-center justify-between">
             {isBusy ? <span class="text-xs text-muted-foreground">Summarising…</span> : <span />}
             <div class="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(`/api/v1/threads/${workspace.threadId}/report`, '_blank')
-                }
-                title="Generate thread report"
-                class="flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
-              >
-                <Download class="size-3.5" />
-              </button>
+              <ThreadReportButton threadId={workspace.threadId ?? ''} />
               <Button
                 size="sm"
                 variant="secondary"

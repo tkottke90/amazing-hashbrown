@@ -123,6 +123,16 @@ describe('TaskRunView — read-only record of an automated run', () => {
     screen.getByTestId('task-run-back').click();
     expect(mockRoute).toHaveBeenCalledWith('/inbox');
   });
+
+  it('offers a Generate thread report button that opens the report URL [unit]', async () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    await renderRunView();
+
+    fireEvent.click(screen.getByTitle('Generate thread report'));
+
+    expect(openSpy).toHaveBeenCalledWith(`/api/v1/threads/${RUN_THREAD}/report`, '_blank');
+    openSpy.mockRestore();
+  });
 });
 
 describe('TaskRunMarkerMessage — run links', () => {

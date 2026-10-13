@@ -6,6 +6,7 @@ import type {
   ThreadMessageRecord,
   ThreadStore,
   ThreadSummary,
+  ThreadType,
 } from '../../services/thread-store.js';
 import type { ToolSettingsStore } from '../../services/tool-settings-store.js';
 import type { Wakeup, WakeupStore } from '../../services/wakeup-store.js';
@@ -121,8 +122,11 @@ function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
   };
 }
 
-export function listThreadsHandler(store: ThreadStore): ThreadSummaryResponse[] {
-  return store.listThreads({ type: 'chat' }).map(withAfterAgentInfo);
+export function listThreadsHandler(
+  store: ThreadStore,
+  filter?: { type: ThreadType },
+): ThreadSummaryResponse[] {
+  return store.listThreads(filter).map(withAfterAgentInfo);
 }
 
 export function getAfterAgentStatusHandler(

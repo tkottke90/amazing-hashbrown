@@ -28,7 +28,7 @@ import type { LocationRoot } from '@/services/workspaces-api';
 import { fetchDomains, type WikiDomain } from '@/services/wiki-api';
 import { tasks, refreshTasks } from '@/hooks/use-tasks';
 import { useTitle } from '@/hooks/use-title';
-import { cn, slugify } from '@/lib/utils';
+import { cn, formatRelativeTime, slugify } from '@/lib/utils';
 import { NewWikiNameField, newWikiNameError } from './new-wiki-name-field';
 
 type FilterTab = 'all' | 'workspaces' | 'projects' | 'closed';
@@ -45,15 +45,6 @@ const DIRECTORY_NAME_DEBOUNCE_MS = 300;
 const NONE_WIKI_VALUE = '__none__';
 // Creates a new dedicated wiki alongside the workspace (issue #202).
 const NEW_WIKI_VALUE = '__new__';
-
-function formatRelativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diffMs / 86_400_000);
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
 
 function isStale(iso: string): boolean {
   return Date.now() - new Date(iso).getTime() > 7 * 86_400_000;
