@@ -93,11 +93,9 @@ test.describe(
       page,
       request,
     }, testInfo) => {
-      const wsId = await createWorkspace(
-        request,
-        `auto-approve-no-prompt-ws-${Date.now()}`,
-        { autoApproveShell: true },
-      );
+      const wsId = await createWorkspace(request, `auto-approve-no-prompt-ws-${Date.now()}`, {
+        autoApproveShell: true,
+      });
 
       // No pending hitl_prompt message — what the thread looks like after an
       // auto-approved shell_exec call, which (unlike a requires-approval
@@ -125,11 +123,9 @@ test.describe(
       page,
       request,
     }, testInfo) => {
-      const wsId = await createWorkspace(
-        request,
-        `auto-approve-toggle-off-ws-${Date.now()}`,
-        { autoApproveShell: true },
-      );
+      const wsId = await createWorkspace(request, `auto-approve-toggle-off-ws-${Date.now()}`, {
+        autoApproveShell: true,
+      });
 
       const pendingPrompt = {
         kind: 'hitl_prompt',

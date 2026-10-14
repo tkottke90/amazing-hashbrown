@@ -129,7 +129,7 @@ describe('services/workspace-store', () => {
     });
   });
 
-  describe('autoApproveShell (migration 39)', () => {
+  describe('autoApproveShell (migration 40)', () => {
     let store: WorkspaceStore;
     let dir: string;
 

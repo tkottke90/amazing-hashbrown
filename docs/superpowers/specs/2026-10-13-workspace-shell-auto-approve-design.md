@@ -37,7 +37,7 @@ trust-all bypass.
 Add a new typed column to `Workspace` (`api/src/services/workspace-store.ts`):
 
 ```ts
-autoApproveShell: boolean
+autoApproveShell: boolean;
 ```
 
 This follows the existing convention for workspace flags (`javascript`,
@@ -56,7 +56,7 @@ workspace chat and task runs (every `makeShellExecTool(...)` call site
 already reads `workspaceContext.location` from it) — gains one more field:
 
 ```ts
-autoApproveShell: boolean
+autoApproveShell: boolean;
 ```
 
 sourced directly from the workspace record. Because both chat and task
@@ -97,7 +97,7 @@ exactly as it does today:
 
 Auto-approved commands are audited with a new, distinct `source: 'auto'`
 value (alongside the existing `'policy' | 'session-memory' | 'user' |
-'trust'`), so a later review of the audit trail can tell exactly *why* a
+'trust'`), so a later review of the audit trail can tell exactly _why_ a
 command ran: a human clicked approve, a skill script was pre-vetted, or the
 workspace trusted it. `source: 'auto'` is never conflated with `'trust'` or
 `'session-memory'`.
@@ -110,7 +110,7 @@ one new field threaded alongside a plumbing path that already exists, not a
 new one.
 
 The in-memory per-thread session allowlist ("approve and remember") is
-untouched. It continues to exist for workspaces *not* in Auto mode; the two
+untouched. It continues to exist for workspaces _not_ in Auto mode; the two
 mechanisms coexist.
 
 ### 3. Default denylist

@@ -785,10 +785,13 @@ const MIGRATIONS: DbMigration[] = [
     `,
   },
   {
-    version: 39,
+    version: 40,
     // Lets a workspace skip the interactive shell_exec approval step (see
     // lib/shell-executor's autoApprove option) — the denylist still applies
     // unconditionally. Off by default for every existing workspace.
+    // 39 is already claimed by lib/evaluations/src/store.ts — migration
+    // version numbers are one global sequence shared by every BaseStore on
+    // the same connection (see db-migrations.test.ts's own comment).
     sql: `ALTER TABLE workspaces ADD COLUMN auto_approve_shell INTEGER NOT NULL DEFAULT 0;`,
   },
 ];
