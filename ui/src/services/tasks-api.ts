@@ -137,6 +137,11 @@ export interface Task {
   // Set when status is 'blocked' because a required dependency failed —
   // distinct from a plain user-initiated pause, which leaves this null.
   blockedReason: 'dependency_failed' | 'awaiting_children' | null;
+  // The provider/model this task is pinned to, or null to run on the
+  // system default. Editable from the Task Details drawer while the task
+  // isn't running or in a terminal status.
+  provider: string | null;
+  model: string | null;
   createdAt: string;
   updatedAt: string;
   // Present on cron tasks only.
@@ -224,7 +229,14 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 
 export async function patchTask(
   id: string,
-  patch: Partial<CreateTaskInput & { status: TaskStatus; regenerateWebhookToken: boolean }>,
+  patch: Partial<
+    CreateTaskInput & {
+      status: TaskStatus;
+      regenerateWebhookToken: boolean;
+      provider: string | null;
+      model: string | null;
+    }
+  >,
 ): Promise<Task> {
   return request<Task>(`/api/v1/tasks/${id}`, {
     method: 'PATCH',

@@ -303,6 +303,132 @@ describe('routes/v1/tasks.handlers', () => {
     });
   });
 
+  describe('patchTaskHandler() — model pin guard (migration 41)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    const PROVIDER = 'tasks-handlers-model-pin-provider';
+    const MODEL = 'tasks-handlers-model-pin-model';
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-model-pin-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+      configManager.set('providers', [
+        { name: PROVIDER, type: 'ollama', baseUrl: 'http://localhost:11434', defaultModel: MODEL },
+      ]);
+    });
+
+    afterEach(() => {
+      configManager.set('providers', []);
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('400s a provider without a matching model', () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { provider: PROVIDER });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('400s a model without a matching provider', () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, { model: MODEL });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('400s a pair naming an unconfigured provider', () => {
+      const task = store.createTask({ title: 't' });
+      const result = patchTaskHandler(store, task.id, {
+        provider: 'not-a-real-provider',
+        model: 'whatever',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+      expect(store.getTask(task.id)!.provider).to.not.equal('not-a-real-provider');
+    });
+
+    it('409s changing the pin while the task is running', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.enqueueTask(task.id);
+      store.dequeueNext();
+
+      const result = patchTaskHandler(store, task.id, { provider: PROVIDER, model: MODEL });
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+
+    for (const terminalStatus of ['done', 'failed', 'cancelled'] as const) {
+      it(`409s changing the pin on a ${terminalStatus} task`, () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        store.patchTask(task.id, { status: terminalStatus });
+
+        const result = patchTaskHandler(store, task.id, { provider: PROVIDER, model: MODEL });
+
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(409);
+      });
+    }
+
+    it('allows a patch that resends the same provider/model pair on a running task (Save re-sending unchanged fields)', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { provider: PROVIDER, model: MODEL });
+      store.enqueueTask(task.id);
+      store.dequeueNext();
+
+      const result = patchTaskHandler(store, task.id, {
+        provider: PROVIDER,
+        model: MODEL,
+        status: 'running',
+        title: 'still t',
+      });
+
+      expect(result.ok).to.equal(true);
+    });
+
+    it('allows a patch that resends unchanged null provider/model on a running task', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { provider: null, model: null });
+      store.enqueueTask(task.id);
+      store.dequeueNext();
+
+      const result = patchTaskHandler(store, task.id, {
+        provider: null,
+        model: null,
+        status: 'running',
+        title: 'still t',
+      });
+
+      expect(result.ok).to.equal(true);
+    });
+
+    for (const status of ['pending', 'scheduled', 'ready', 'waiting_on_user', 'blocked'] as const) {
+      it(`accepts a new pin while the task is '${status}'`, () => {
+        const task = store.createTask({ title: 't' });
+        store.patchTask(task.id, { status });
+
+        const result = patchTaskHandler(store, task.id, { provider: PROVIDER, model: MODEL });
+
+        expect(result.ok).to.equal(true);
+        expect(store.getTask(task.id)!.provider).to.equal(PROVIDER);
+        expect(store.getTask(task.id)!.model).to.equal(MODEL);
+      });
+    }
+
+    it('accepts clearing the pin back to null', () => {
+      const task = store.createTask({ title: 't' });
+      store.patchTask(task.id, { provider: PROVIDER, model: MODEL });
+
+      const result = patchTaskHandler(store, task.id, { provider: null, model: null });
+
+      expect(result.ok).to.equal(true);
+      expect(store.getTask(task.id)!.provider).to.equal(null);
+      expect(store.getTask(task.id)!.model).to.equal(null);
+    });
+  });
+
   describe('patchTaskHandler() — resume special case', () => {
     let store: WorkspaceStore;
     let dir: string;

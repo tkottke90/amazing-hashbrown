@@ -295,10 +295,30 @@ export async function executeTask(
       // below. Last accepted call wins.
       const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
 
-      // Task runs always use the default provider, resolved to a concrete
-      // model up front so the agent that runs, the trace, and the cost-rate
-      // lookup in finalizeTurn all agree on it.
-      const { provider, model } = resolveTurnModel(env.defaultProvider);
+      // A task normally runs on the default provider, resolved to a
+      // concrete model up front so the agent that runs, the trace, and the
+      // cost-rate lookup in finalizeTurn all agree on it — unless the task
+      // itself is pinned to a provider/model (see
+      // docs/superpowers/specs/2026-10-14-task-model-switching-design.md),
+      // in which case that takes precedence. A pin naming a provider no
+      // longer configured falls back to the default rather than failing
+      // the run — same handling a legacy task with no pin gets.
+      let provider: string;
+      let model: string;
+      if (task.provider && task.model) {
+        try {
+          ({ provider, model } = resolveTurnModel(task.provider, task.model));
+        } catch (err) {
+          logger.warn(
+            `Task ${task.id}'s pinned provider/model (${task.provider}/${task.model}) is no ` +
+              `longer configured — falling back to the system default: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+          ({ provider, model } = resolveTurnModel(env.defaultProvider));
+        }
+      } else {
+        ({ provider, model } = resolveTurnModel(env.defaultProvider));
+      }
 
       const built = await buildAgent(
         runTask,

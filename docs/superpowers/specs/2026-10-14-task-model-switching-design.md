@@ -21,7 +21,7 @@ This design lets a user pin an individual task to a specific provider/model from
 - **Sub-agent/role tasks are untouched.** Tasks spawned via `spawn-sub-agent.tool.ts` already get their provider/model from a separate `RoleConfig` (`spawn-sub-agent.tool.ts:76`, consumed in `chat-agent.ts:816-821`). This design only changes the ordinary top-level task run path in `task-execution.ts`; `RoleConfig` resolution is not touched.
 - **No billing/credits system.** "Funds run dry" is the motivating scenario, not a feature to build — this design only makes the model swappable, it does not track spend or warn about balances.
 - **No backfill of historical tasks.** Existing rows get `NULL` provider/model after migration and are treated identically to a stale/invalid snapshot at run time (same fallback path, see Section 3) — no migration-time guess at what they "would have" used.
-- **No change to how a task is triggered or resumed.** Switching a task's model only changes what it runs with *next time* (including its next scheduled/cron firing, since it's the same row) — it does not itself retry, resume, or restart anything.
+- **No change to how a task is triggered or resumed.** Switching a task's model only changes what it runs with _next time_ (including its next scheduled/cron firing, since it's the same row) — it does not itself retry, resume, or restart anything.
 
 ---
 
@@ -37,7 +37,7 @@ ALTER TABLE tasks ADD COLUMN model TEXT NULL;
 ```
 
 - `Task` (`workspace-store.ts:122-175`) gains `provider: string | null` and `model: string | null`; `mapTask()` (line 453) passes both straight through.
-- `NewTaskInput` (lines 231-250): both fields are populated from `env.defaultProvider` at creation time — every *new* task gets an explicit snapshot, never null.
+- `NewTaskInput` (lines 231-250): both fields are populated from `env.defaultProvider` at creation time — every _new_ task gets an explicit snapshot, never null.
 - `PatchTaskInput` (lines 252-269) gains optional `provider?: string` and `model?: string`.
 - Existing rows are left `NULL` by the migration — no backfill.
 
@@ -73,14 +73,14 @@ If `task.provider`/`task.model` are set but no longer resolve to a real, current
 
 ### 5. Error handling summary
 
-| Case | Behavior |
-| --- | --- |
-| Patch has `provider` without `model` (or vice versa) | 400, rejected before touching the store |
-| Patch submitted while `status === 'running'` | 409, same shape as existing reassignment guard |
-| Patch submitted while `status` is `done`/`failed`/`cancelled` | 409, new guard alongside the running guard |
-| `provider`/`model` pair not in current `env.providers` list | 400, rejected before persisting |
-| Snapshotted pair no longer resolvable at run time | Falls back to `env.defaultProvider`, warning logged, run proceeds |
-| Legacy task with `NULL` provider/model | Same fallback as above, no distinction from a stale snapshot |
+| Case                                                          | Behavior                                                          |
+| ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Patch has `provider` without `model` (or vice versa)          | 400, rejected before touching the store                           |
+| Patch submitted while `status === 'running'`                  | 409, same shape as existing reassignment guard                    |
+| Patch submitted while `status` is `done`/`failed`/`cancelled` | 409, new guard alongside the running guard                        |
+| `provider`/`model` pair not in current `env.providers` list   | 400, rejected before persisting                                   |
+| Snapshotted pair no longer resolvable at run time             | Falls back to `env.defaultProvider`, warning logged, run proceeds |
+| Legacy task with `NULL` provider/model                        | Same fallback as above, no distinction from a stale snapshot      |
 
 ---
 

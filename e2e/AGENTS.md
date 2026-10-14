@@ -253,6 +253,7 @@ implementation details that change without notice.
 | `plan-step`                     | `ui/src/components/task-drawer.tsx`                       | Individual plan step rows; pair with `data-done="true\|false"`                                |
 | `plan-step-checkbox`            | `ui/src/components/task-drawer.tsx`                       | Checkbox inside a plan step row                                                               |
 | `task-status-select`            | `ui/src/components/task-drawer.tsx`                       | Status `<select>` in the task drawer edit form                                                |
+| `task-model-trigger`            | `ui/src/components/task-drawer.tsx`                       | Model picker trigger button in the task drawer edit form; disabled while running/terminal     |
 | `task-tracker-type-select`      | `ui/src/components/task-drawer.tsx`                       | Tracker adapter `<select>` in the task drawer's Tracker section                               |
 | `task-tracker-preview`          | `ui/src/components/task-drawer.tsx`                       | Linked-item preview card once a tracker link resolves                                         |
 | `queue-widget`                  | `ui/src/components/thread-sidebar.tsx`                    | Sidebar queue widget container                                                                |

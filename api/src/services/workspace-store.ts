@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
+import { env } from '../config/env.js';
 import { isCronTrigger, statusForSavedSchedule, type CronConfig } from './cron-config.js';
 import { settleCronRun } from './cron-settlement.js';
+import { resolveProviderConfig } from './provider-factory.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,6 +172,15 @@ export interface Task {
   // member can never itself be a holder (see TaskCohort below) — this is
   // the invariant that keeps cohorts one level deep.
   cohortOf: string | null;
+  // The provider/model this task is pinned to, or null to run on whatever
+  // the system default (env.defaultProvider) currently resolves to. A new
+  // task snapshots the default at creation (see createTask() below); null
+  // also covers a stale snapshot naming a provider no longer configured —
+  // both fall back to the current default the same way at run time (see
+  // task-execution.ts). Settable via PATCH, but only while the task isn't
+  // 'running' or in a terminal status (patchTaskHandler).
+  provider: string | null;
+  model: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -266,6 +277,8 @@ export interface PatchTaskInput {
   threadId?: string | null;
   resumeAnswer?: string | null;
   blockedReason?: 'dependency_failed' | 'awaiting_children' | null;
+  provider?: string | null;
+  model?: string | null;
 }
 
 // What started one run (task_queue row) of a task — drives run labels and,
@@ -371,6 +384,8 @@ interface RawTaskRow {
   role: string | null;
   blocked_reason: 'dependency_failed' | 'awaiting_children' | null;
   cohort_of: string | null;
+  provider: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -475,6 +490,8 @@ function mapTask(row: RawTaskRow): Task {
     role: row.role,
     blockedReason: row.blocked_reason,
     cohortOf: row.cohort_of,
+    provider: row.provider,
+    model: row.model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -793,6 +810,15 @@ const MIGRATIONS: DbMigration[] = [
     // version numbers are one global sequence shared by every BaseStore on
     // the same connection (see db-migrations.test.ts's own comment).
     sql: `ALTER TABLE workspaces ADD COLUMN auto_approve_shell INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    version: 41,
+    // Nullable, no backfill — NULL means "no pin, use the system default"
+    // (the same meaning a stale snapshot naming a no-longer-configured
+    // provider falls back to at run time — see task-execution.ts). A new
+    // task gets an explicit snapshot of env.defaultProvider at creation
+    // (see createTask() below); existing rows stay NULL.
+    sql: `ALTER TABLE tasks ADD COLUMN provider TEXT; ALTER TABLE tasks ADD COLUMN model TEXT;`,
   },
 ];
 
@@ -1316,11 +1342,27 @@ export class WorkspaceStore extends BaseStore {
   createTask(input: NewTaskInput): Task {
     const id = randomUUID();
     const now = new Date().toISOString();
+
+    // Every new task snapshots the system default provider/model at
+    // creation time, rather than leaving it to resolve at run time — see
+    // docs/superpowers/specs/2026-10-14-task-model-switching-design.md.
+    // Left null (same as a legacy pre-migration row) if nothing is
+    // configured yet; task creation must not fail over that.
+    let snapshotProvider: string | null = null;
+    let snapshotModel: string | null = null;
+    try {
+      const config = resolveProviderConfig(env.defaultProvider);
+      snapshotProvider = config.name;
+      snapshotModel = config.defaultModel ?? null;
+    } catch {
+      // No providers configured — leave both null.
+    }
+
     this.db
       .prepare(
         `INSERT INTO tasks
-           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, trigger_source, parent_thread_id, dispatch_group_id, role, cohort_of, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workspace_id, title, description, outcome, status, assigned_to, due_at, expires_at, trigger_type, trigger_config, tracker_type, tracker_id, plan, origin, trigger_source, parent_thread_id, dispatch_group_id, role, cohort_of, provider, model, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -1342,6 +1384,8 @@ export class WorkspaceStore extends BaseStore {
         input.dispatchGroupId ?? null,
         input.role ?? null,
         input.cohortOf ?? null,
+        snapshotProvider,
+        snapshotModel,
         now,
         now,
       );
@@ -1415,6 +1459,14 @@ export class WorkspaceStore extends BaseStore {
     if (patch.blockedReason !== undefined) {
       sets.push('blocked_reason = ?');
       values.push(patch.blockedReason);
+    }
+    if (patch.provider !== undefined) {
+      sets.push('provider = ?');
+      values.push(patch.provider);
+    }
+    if (patch.model !== undefined) {
+      sets.push('model = ?');
+      values.push(patch.model);
     }
 
     if (sets.length === 0) return this.getTask(id);
