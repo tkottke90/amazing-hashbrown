@@ -170,7 +170,11 @@ export function buildScenarioSource(
       outputs?: unknown;
     };
     if (payload.outputs !== undefined) {
-      turns.push({ tool: payload.toolName, args: asRecord(payload.inputs), result: asRecord(payload.outputs) });
+      turns.push({
+        tool: payload.toolName,
+        args: asRecord(payload.inputs),
+        result: asRecord(payload.outputs),
+      });
     } else {
       turns.push({
         tool: payload.toolName,
@@ -213,7 +217,10 @@ export interface ScenarioDraftOptions {
  * ScenarioSchema — fails loudly on a malformed draft rather than writing
  * invalid YAML into a suite file.
  */
-export function buildScenarioDraft(source: ScenarioSource, opts: ScenarioDraftOptions = {}): Scenario {
+export function buildScenarioDraft(
+  source: ScenarioSource,
+  opts: ScenarioDraftOptions = {},
+): Scenario {
   const id = opts.id ?? 'TODO-change-me';
   const noteSuffix = source.incomplete ? ` NOTE: incomplete — ${source.incompleteReason}.` : '';
   const purpose = `Regression: captured from trace ${source.traceId}.${noteSuffix}`;

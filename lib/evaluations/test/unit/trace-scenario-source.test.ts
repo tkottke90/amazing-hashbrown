@@ -114,7 +114,12 @@ describe('buildScenarioSource', () => {
     const messages = [
       userMessage(1, 'Find the deploy steps', '2026-10-14T11:59:59.000Z'),
       toolCallMessage(2, 'wiki_search', { query: 'deploy steps' }, { results: [] }),
-      toolCallMessage(3, 'wiki_search', { query: 'deploy steps v2' }, { results: ['Deploy Notes'] }),
+      toolCallMessage(
+        3,
+        'wiki_search',
+        { query: 'deploy steps v2' },
+        { results: ['Deploy Notes'] },
+      ),
     ];
 
     const result = buildScenarioSource(trace, messages);
@@ -122,7 +127,11 @@ describe('buildScenarioSource', () => {
     assert.deepEqual(result.turns, [
       { user: 'Find the deploy steps' },
       { tool: 'wiki_search', args: { query: 'deploy steps' }, result: { results: [] } },
-      { tool: 'wiki_search', args: { query: 'deploy steps v2' }, result: { results: ['Deploy Notes'] } },
+      {
+        tool: 'wiki_search',
+        args: { query: 'deploy steps v2' },
+        result: { results: ['Deploy Notes'] },
+      },
     ]);
     assert.equal(result.finalAssistantText, 'Done.');
     assert.equal(result.incomplete, false);

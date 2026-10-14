@@ -9,13 +9,19 @@ import type { SpanRecord } from '@tkottke90/llm-common-types/traces';
 import { ThreadStore } from '../../services/thread-store.js';
 import { getScenarioSourceHandler } from './traces.handlers.js';
 
-function makeStores(): { threadStore: ThreadStore; observabilityStore: ObservabilityStore; dir: string } {
+function makeStores(): {
+  threadStore: ThreadStore;
+  observabilityStore: ObservabilityStore;
+  dir: string;
+} {
   const dir = mkdtempSync(join(tmpdir(), 'traces-handlers-test-'));
   const db: SqliteDatabase = openDatabase(join(dir, 'test.db'));
   return { threadStore: new ThreadStore(db), observabilityStore: new ObservabilityStore(db), dir };
 }
 
-function makeSpan(overrides: Partial<SpanRecord> & { spanId: string; traceId: string }): SpanRecord {
+function makeSpan(
+  overrides: Partial<SpanRecord> & { spanId: string; traceId: string },
+): SpanRecord {
   return {
     parentSpanId: null,
     type: 'llm-call',
@@ -54,7 +60,11 @@ describe('getScenarioSourceHandler', () => {
     const { threadStore, observabilityStore, dir } = makeStores();
     dirs.push(dir);
 
-    const traceId = observabilityStore.startTrace({ provider: 'local', model: 'llama3.2', source: 'chat' });
+    const traceId = observabilityStore.startTrace({
+      provider: 'local',
+      model: 'llama3.2',
+      source: 'chat',
+    });
     observabilityStore.saveSpans([
       makeSpan({ spanId: 'llm-1', traceId, outputPreview: 'Hi there.' }),
     ]);

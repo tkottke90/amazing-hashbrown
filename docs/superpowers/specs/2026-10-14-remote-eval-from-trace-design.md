@@ -101,7 +101,7 @@ Algorithm:
 `buildScenarioDraft(source, opts)` builds a `tool-sequence` scenario when
 `source.turns` contains any tool entries, else `llm-judge`. The seeded
 conversation is real, captured content; fields that require human judgment
-about *correct* behavior (`tool`, `rubric`) stay as `TODO` placeholders, same
+about _correct_ behavior (`tool`, `rubric`) stay as `TODO` placeholders, same
 as today. Validates the result against `ScenarioSchema` — fails loudly on a
 malformed draft rather than writing invalid YAML into a suite file.
 
