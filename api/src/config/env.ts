@@ -450,7 +450,17 @@ export const env = {
     return resolveServerTimezone(raw);
   },
   get favoriteModels(): FavoriteModel[] {
-    return parseFavoriteModels(configManager.get('favoriteModels'));
+    // Same configManager.get()-always-stringifies-arrays issue as
+    // providers above — getSection() is the accessor that returns the raw,
+    // unstringified section. Pre-existing bug (since PR #137): this getter
+    // always returned [] against a real config.yaml.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (configManager as any).getSection('favoriteModels', z.array(z.unknown()));
+      return parseFavoriteModels(raw);
+    } catch {
+      return [];
+    }
   },
   get database(): z.infer<typeof DatabaseSchema> {
     try {
