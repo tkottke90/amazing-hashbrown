@@ -149,8 +149,15 @@ test.describe(
       await expect(planSteps.nth(0)).toHaveAttribute('data-done', 'true');
       await expect(firstCheckbox).toBeChecked();
 
-      // Close the drawer
-      await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).click();
+      // Close the drawer. .first() — the task drawer's own Model field (see
+      // docs/superpowers/specs/2026-10-14-task-model-switching-design.md)
+      // nests a closed BottomSheet dialog inside the open one; its CSS
+      // hides it via opacity/pointer-events rather than `display: none`, so
+      // it stays accessibility-tree-visible with its own (unlabeled) Close
+      // button — a second, unintended match for an unscoped query. The
+      // drawer's own header always renders before that nested content, so
+      // its real Close button is reliably first in document order.
+      await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).first().click();
       await expect(page.locator('dialog[open]')).not.toBeVisible();
 
       // Reopen by clicking the task card again
@@ -277,7 +284,8 @@ test.describe(
         'Persisted generated step',
       );
 
-      await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).click();
+      // .first() — see the comment on the same pattern earlier in this file.
+      await page.locator('dialog[open]').getByRole('button', { name: 'Close' }).first().click();
       await expect(page.locator('dialog[open]')).not.toBeVisible();
 
       await pauseBeforeAction(page, testInfo);

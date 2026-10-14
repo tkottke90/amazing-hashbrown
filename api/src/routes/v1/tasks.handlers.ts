@@ -29,6 +29,7 @@ import { getFileTree } from '../../services/workspace-files.js';
 // table) is the only place that knows whether a task_queue entry currently
 // has a live, abortable agent run. See active-task-abort.ts.
 import { getTaskAbort, setAbortIntent } from '../../agents/active-task-abort.js';
+import { resolveProviderConfig } from '../../services/provider-factory.js';
 import {
   buildFileListingBlock,
   buildPathAPrompt,
@@ -236,6 +237,54 @@ export function patchTaskHandler(
     !isCronTrigger(resultingType)
   ) {
     return badRequest("Only a task with a schedule can be 'scheduled'");
+  }
+
+  // A task's pinned provider/model can only change while it's idle — not
+  // mid-run (the agent that started already resolved its model; see
+  // task-execution.ts), and not once it's done/failed/cancelled, since
+  // there's nothing left to run with a new one. Always sent as a matched
+  // pair — both a real provider/model, or both null to unpin back to the
+  // system default — never a dangling half-pair. Diffs against what's
+  // actually *changing* (same reasoning as the assignedTo guard above):
+  // the drawer's Save button always resends the task's current, unchanged
+  // provider/model on every save, so a presence-only check would reject
+  // an ordinary save of an unrelated field on a running/terminal task.
+  if (patch.provider !== undefined || patch.model !== undefined) {
+    if (
+      patch.provider === undefined ||
+      patch.model === undefined ||
+      (patch.provider === null) !== (patch.model === null)
+    ) {
+      return badRequest('provider and model must be set together');
+    }
+  }
+  const changingModelPin =
+    patch.provider !== undefined &&
+    (patch.provider !== current.provider || patch.model !== current.model);
+  if (changingModelPin) {
+    if (current.status === 'running') {
+      return conflict('Cannot change the model while the task is running.');
+    }
+    if (
+      current.status === 'done' ||
+      current.status === 'failed' ||
+      current.status === 'cancelled'
+    ) {
+      return conflict(`Cannot change the model — task is ${current.status}.`);
+    }
+    // The provider name is validated against the currently-configured list
+    // (same lookup task-execution.ts and the providers route use) so a
+    // typo or stale client can't pin a task to garbage; the model string
+    // itself is trusted from the client (the UI's picker only ever offers
+    // real pairs) and falls back gracefully at run time if it's ever wrong
+    // — see task-execution.ts. A null pair (unpinning) needs no lookup.
+    if (patch.provider !== null) {
+      try {
+        resolveProviderConfig(patch.provider);
+      } catch {
+        return badRequest(`Unknown provider "${patch.provider}".`);
+      }
+    }
   }
 
   const { regenerateWebhookToken, ...rest } = patch;

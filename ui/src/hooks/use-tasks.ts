@@ -82,7 +82,14 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 
 export async function patchTask(
   id: string,
-  patch: Partial<CreateTaskInput & { status: TaskStatus; regenerateWebhookToken: boolean }>,
+  patch: Partial<
+    CreateTaskInput & {
+      status: TaskStatus;
+      regenerateWebhookToken: boolean;
+      provider: string | null;
+      model: string | null;
+    }
+  >,
 ): Promise<Task> {
   const updated = await apiPatchTask(id, patch);
   tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { configManager } from '../config/env.js';
 import { WorkspaceStore } from './workspace-store.js';
 
 describe('services/workspace-store', () => {
@@ -237,6 +238,64 @@ describe('services/workspace-store', () => {
 
       const reloaded = store.getTask(task.id)!;
       expect(reloaded.triggerSource).to.equal('webhook');
+    });
+  });
+
+  describe('task model pin (migration 41 — tasks.provider/model)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    const PROVIDER = 'model-pin-test-provider';
+    const MODEL = 'model-pin-test-model';
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-model-pin-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('snapshots the configured system default onto a freshly created task', () => {
+      configManager.set('providers', [
+        { name: PROVIDER, type: 'ollama', baseUrl: 'http://localhost:11434', defaultModel: MODEL },
+      ]);
+      configManager.set('defaultProvider', PROVIDER);
+
+      const task = store.createTask({ title: 't' });
+      expect(task.provider).to.equal(PROVIDER);
+      expect(task.model).to.equal(MODEL);
+
+      const reloaded = store.getTask(task.id)!;
+      expect(reloaded.provider).to.equal(PROVIDER);
+      expect(reloaded.model).to.equal(MODEL);
+    });
+
+    it('leaves provider/model null when no providers are configured yet, rather than failing creation', () => {
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+
+      const task = store.createTask({ title: 't' });
+      expect(task.provider).to.equal(null);
+      expect(task.model).to.equal(null);
+    });
+
+    it('patchTask persists a new provider/model pair and can clear it back to null', () => {
+      const task = store.createTask({ title: 't' });
+
+      const pinned = store.patchTask(task.id, { provider: PROVIDER, model: MODEL });
+      expect(pinned!.provider).to.equal(PROVIDER);
+      expect(pinned!.model).to.equal(MODEL);
+      expect(store.getTask(task.id)!.provider).to.equal(PROVIDER);
+      expect(store.getTask(task.id)!.model).to.equal(MODEL);
+
+      const cleared = store.patchTask(task.id, { provider: null, model: null });
+      expect(cleared!.provider).to.equal(null);
+      expect(cleared!.model).to.equal(null);
     });
   });
 

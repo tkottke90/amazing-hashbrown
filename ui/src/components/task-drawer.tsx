@@ -4,8 +4,15 @@ import type { JSX } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useProviderModelPicker } from '@/components/provider-model-picker';
+import { providers as providersSignal, fetchProviders } from '@/hooks/use-providers';
 import { cn } from '@/lib/utils';
 import {
   createTask,
@@ -178,6 +185,12 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
   const assignedTo = useSignal<'user' | 'agent' | null>(
     task?.assignedTo ?? draft?.assignedTo ?? null,
   );
+  // The task's pinned provider/model, or null to run on the system default
+  // — see docs/superpowers/specs/2026-10-14-task-model-switching-design.md.
+  // Staged the same way every other field in this form is: only persisted
+  // when Save is pressed, via handleSave's patch below.
+  const provider = useSignal<string | null>(task?.provider ?? null);
+  const model = useSignal<string | null>(task?.model ?? null);
   const triggerType = useSignal<TriggerType>(task?.triggerType ?? 'manual');
   const webhookToken = useSignal<string | null>(
     (task?.triggerConfig as { webhookToken?: string } | null)?.webhookToken ?? null,
@@ -257,6 +270,20 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
         // best-effort — the type select just stays empty if this fails
       });
   }, []);
+
+  useEffect(() => {
+    void fetchProviders();
+  }, []);
+
+  const { items: providerModelItems, sheet: providerModelSheet } = useProviderModelPicker({
+    providers: providersSignal.value,
+    activeProvider: provider.value ?? undefined,
+    activeModel: model.value ?? undefined,
+    onSelect: (p, m) => {
+      provider.value = p;
+      model.value = m;
+    },
+  });
 
   useEffect(() => {
     if (task?.trackerType && task?.trackerId) {
@@ -665,7 +692,12 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
           status.value === 'scheduled' && !isCronTrigger(triggerType.value)
             ? 'pending'
             : status.value;
-        saved = await patchTask(task.id, { ...patch, status: nextStatus });
+        saved = await patchTask(task.id, {
+          ...patch,
+          status: nextStatus,
+          provider: provider.value,
+          model: model.value,
+        });
       }
       onSaved?.(saved);
       close();
@@ -1092,6 +1124,34 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
             </div>
           )}
         </div>
+
+        {!isNew && (
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-muted-foreground">Model</label>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                data-testid="task-model-trigger"
+                disabled={
+                  liveStatus.value === 'running' ||
+                  liveStatus.value === 'done' ||
+                  liveStatus.value === 'failed' ||
+                  liveStatus.value === 'cancelled'
+                }
+                className={buttonVariants({
+                  variant: 'outline',
+                  size: 'default',
+                  className: 'w-full justify-start',
+                })}
+              >
+                {provider.value && model.value
+                  ? `${provider.value} / ${model.value}`
+                  : 'System default'}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">{providerModelItems}</DropdownMenuContent>
+            </DropdownMenu>
+            {providerModelSheet}
+          </div>
+        )}
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Workspace</label>

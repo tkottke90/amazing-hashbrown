@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/preact';
+import { signal } from '@preact/signals';
 
 const mockCancelTask = jest.fn();
 const mockPauseTask = jest.fn();
@@ -36,6 +37,18 @@ jest.mock('@/services/tasks-api', () => ({
   removeTaskDependency: (...args: unknown[]) => mockRemoveTaskDependency(...args),
 }));
 
+// The drawer's Model field now fetches the provider list to power its
+// picker — mock the hook directly rather than letting fetchProviders() hit
+// a real (unmocked) `fetch('/api/v1/providers')` in jsdom (same approach as
+// settings-cost-rates-panel.test.tsx).
+jest.mock('@/hooks/use-providers', () => ({
+  providers: signal([
+    { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] },
+    { name: 'ollama', type: 'ollama', models: [{ id: 'llama3.2' }] },
+  ]),
+  fetchProviders: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { TaskDrawer } from '@/components/task-drawer';
 import { tasks } from '@/hooks/use-tasks';
 import type { Task, TaskDependency, TaskRun } from '@/services/tasks-api';
@@ -56,6 +69,8 @@ const baseTask: Task = {
   trackerId: null,
   plan: null,
   blockedReason: null,
+  provider: null,
+  model: null,
   createdAt: '2026-08-29T00:00:00.000Z',
   updatedAt: '2026-08-29T00:00:00.000Z',
 };
@@ -586,5 +601,113 @@ describe('TaskDrawer — plan sync with the task agent (issue #203)', () => {
 
     await waitFor(() => expect(checkboxes()[0].checked).toBe(true));
     expect(screen.queryByTestId('plan-conflict-notice')).not.toBeInTheDocument();
+  });
+});
+
+describe('TaskDrawer — model pin (migration 41 — task model switching)', () => {
+  // jsdom has no `onpointerdown` IDL property — mirrors
+  // provider-model-picker.test.tsx's own helper.
+  function firePointerDown(element: Element) {
+    fireEvent(
+      element,
+      new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }),
+    );
+  }
+
+  // Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like
+  // the top-level trigger above — see provider-model-picker.test.tsx's own
+  // comment for why focus + click + ArrowRight covers every internal path.
+  function openSubmenu(element: HTMLElement) {
+    fireEvent.focus(element);
+    fireEvent.click(element);
+    fireEvent.keyDown(element, { key: 'ArrowRight' });
+  }
+
+  function selectModel(providerName: string, modelId: string) {
+    firePointerDown(screen.getByTestId('task-model-trigger'));
+    openSubmenu(screen.getByText(providerName));
+    fireEvent.click(screen.getByText(modelId));
+  }
+
+  beforeEach(() => {
+    mockPatchTask.mockImplementation(async (_id: string, patch: Partial<Task>) => ({
+      ...baseTask,
+      ...patch,
+    }));
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows "System default" for a task with no pin', () => {
+    renderDrawer({ ...baseTask, status: 'pending', provider: null, model: null });
+    expect(screen.getByTestId('task-model-trigger')).toHaveTextContent('System default');
+  });
+
+  it('shows the pinned provider/model for a task that has one', () => {
+    renderDrawer({ ...baseTask, status: 'pending', provider: 'openai', model: 'gpt-4o' });
+    expect(screen.getByTestId('task-model-trigger')).toHaveTextContent('openai / gpt-4o');
+  });
+
+  it.each(['running', 'done', 'failed', 'cancelled'] as const)(
+    'disables the picker while the task is %s',
+    (status) => {
+      renderDrawer({ ...baseTask, status });
+      expect(screen.getByTestId('task-model-trigger')).toBeDisabled();
+    },
+  );
+
+  it.each(['pending', 'scheduled', 'ready', 'waiting_on_user', 'blocked'] as const)(
+    'enables the picker while the task is %s',
+    (status) => {
+      renderDrawer({ ...baseTask, status });
+      expect(screen.getByTestId('task-model-trigger')).not.toBeDisabled();
+    },
+  );
+
+  it('selecting a provider/model updates the trigger label', () => {
+    renderDrawer({ ...baseTask, status: 'pending', provider: null, model: null });
+    selectModel('ollama', 'llama3.2');
+    expect(screen.getByTestId('task-model-trigger')).toHaveTextContent('ollama / llama3.2');
+  });
+
+  it('includes the selected provider/model in the Save patch', async () => {
+    renderDrawer({ ...baseTask, status: 'pending', provider: null, model: null });
+    selectModel('openai', 'gpt-4o-mini');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mockPatchTask).toHaveBeenCalledTimes(1));
+    const patch = mockPatchTask.mock.calls[0][1];
+    expect(patch.provider).toBe('openai');
+    expect(patch.model).toBe('gpt-4o-mini');
+  });
+
+  it("resends the task's existing (unchanged) pin on an ordinary save of another field", async () => {
+    renderDrawer({ ...baseTask, status: 'pending', provider: 'openai', model: 'gpt-4o' });
+    fireEvent.input(screen.getByPlaceholderText('Task title'), {
+      target: { value: 'Renamed task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(mockPatchTask).toHaveBeenCalledTimes(1));
+    const patch = mockPatchTask.mock.calls[0][1];
+    expect(patch.provider).toBe('openai');
+    expect(patch.model).toBe('gpt-4o');
+  });
+
+  it("surfaces a rejected save (e.g. the server's running/terminal guard) through the form's existing error display", async () => {
+    mockPatchTask.mockRejectedValueOnce(
+      new Error('Cannot change the model while the task is running.'),
+    );
+    renderDrawer({ ...baseTask, status: 'pending', provider: null, model: null });
+    selectModel('openai', 'gpt-4o');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Cannot change the model while the task is running.'),
+      ).toBeInTheDocument(),
+    );
   });
 });

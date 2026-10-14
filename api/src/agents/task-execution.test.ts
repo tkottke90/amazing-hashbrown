@@ -402,6 +402,124 @@ describe('agents/task-execution', () => {
     expect(task.status).to.equal('failed');
   });
 
+  describe('pinned provider/model (migration 41 — task model switching)', () => {
+    const PINNED_PROVIDER = 'task-pinned-provider';
+    const PINNED_MODEL = 'task-pinned-model';
+
+    // Same wiring as fakeBuildTaskAgent above, but also records the
+    // provider/model executeTask() actually resolved and passed in — the
+    // behavior under test here, which the shared helper discards.
+    function capturingBuildTaskAgent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: any,
+      captured: { provider?: string; model?: string },
+    ): typeof buildTaskAgent {
+      return (async (
+        task: Task,
+        provider?: string,
+        model?: string,
+        _workspaceScope?: unknown,
+        hooks?: TaskAgentHooks,
+      ) => {
+        captured.provider = provider;
+        captured.model = model;
+        const completeTask = makeCompleteTaskTool(task.id, {
+          getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
+          onAccepted: hooks?.onTaskComplete,
+        });
+        return {
+          agent: {
+            ...agent,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            streamEvents: (...args: any[]): AsyncIterable<RawEvent> => {
+              const inner: AsyncIterable<RawEvent> = agent.streamEvents(...args);
+              async function* gen() {
+                for await (const e of inner) {
+                  if (e.event === 'on_tool_start' && e.name === 'complete_task') {
+                    await completeTask.invoke(e.data.input);
+                  }
+                  yield e;
+                }
+              }
+              return gen();
+            },
+          },
+          systemPrompt: 'test',
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any;
+    }
+
+    it("uses the task's pinned provider/model instead of the system default", async () => {
+      configManager.set('providers', [
+        {
+          name: TEST_PROVIDER,
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: TEST_MODEL,
+        },
+        {
+          name: PINNED_PROVIDER,
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: PINNED_MODEL,
+        },
+      ]);
+      configManager.set('defaultProvider', TEST_PROVIDER);
+
+      const task = store.createTask({ title: 'Pinned', assignedTo: 'agent' });
+      store.patchTask(task.id, {
+        status: 'ready',
+        provider: PINNED_PROVIDER,
+        model: PINNED_MODEL,
+      });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      const captured: { provider?: string; model?: string } = {};
+      await executeTask(entry, {
+        buildTaskAgent: capturingBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS), captured),
+      });
+
+      expect(captured.provider).to.equal(PINNED_PROVIDER);
+      expect(captured.model).to.equal(PINNED_MODEL);
+    });
+
+    it('falls back to the system default when the pinned provider is no longer configured', async () => {
+      const task = store.createTask({ title: 'Stale pin', assignedTo: 'agent' });
+      store.patchTask(task.id, {
+        status: 'ready',
+        provider: 'ghost-provider-not-configured',
+        model: 'ghost-model',
+      });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      const captured: { provider?: string; model?: string } = {};
+      await executeTask(entry, {
+        buildTaskAgent: capturingBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS), captured),
+      });
+
+      expect(captured.provider).to.equal(TEST_PROVIDER);
+      expect(captured.model).to.equal(TEST_MODEL);
+    });
+
+    it('uses the system default when the task has no pin (legacy row)', async () => {
+      const task = store.createTask({ title: 'Legacy', assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready', provider: null, model: null });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      const captured: { provider?: string; model?: string } = {};
+      await executeTask(entry, {
+        buildTaskAgent: capturingBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS), captured),
+      });
+
+      expect(captured.provider).to.equal(TEST_PROVIDER);
+      expect(captured.model).to.equal(TEST_MODEL);
+    });
+  });
+
   describe('plan nudge (issue #203)', () => {
     const UNCHECKED_PLAN = [
       { step: 'Write the code', done: true },
