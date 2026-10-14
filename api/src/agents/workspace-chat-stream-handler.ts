@@ -109,6 +109,7 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
     wikiDomain,
     latestSummary,
     olderSummaries,
+    autoApproveShell: workspace.autoApproveShell,
   };
 }
 

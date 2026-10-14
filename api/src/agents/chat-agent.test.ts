@@ -416,6 +416,7 @@ describe('buildWorkspaceContextBlock()', () => {
       wikiDomain: null,
       latestSummary: null,
       olderSummaries: [],
+      autoApproveShell: false,
       ...overrides,
     };
   }

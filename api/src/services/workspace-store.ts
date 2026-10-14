@@ -25,6 +25,11 @@ export interface Workspace {
   threadId: string | null;
   summaryPath: string | null;
   lastSummarizedMessageId: string | null;
+  // Skips the interactive approval step for shell_exec calls that would
+  // otherwise require it (policy outcome 'requires-approval'). The denylist
+  // is never bypassed by this flag — see lib/shell-executor's autoApprove
+  // option. Off by default.
+  autoApproveShell: boolean;
   createdAt: string;
   updatedAt: string;
   lastChange: string;
@@ -41,6 +46,7 @@ export interface NewWorkspaceInput {
   git?: boolean;
   wikiId?: string | null;
   systemPrompt?: string | null;
+  autoApproveShell?: boolean;
 }
 
 export interface PatchWorkspaceInput {
@@ -56,6 +62,7 @@ export interface PatchWorkspaceInput {
   threadId?: string;
   summaryPath?: string;
   lastSummarizedMessageId?: string;
+  autoApproveShell?: boolean;
 }
 
 export interface CloseProgress {
@@ -322,6 +329,7 @@ interface RawWorkspaceRow {
   thread_id: string | null;
   summary_path: string | null;
   last_summarized_message_id: string | null;
+  auto_approve_shell: number;
   created_at: string;
   updated_at: string;
   last_change: string;
@@ -421,6 +429,7 @@ function mapWorkspace(row: RawWorkspaceRow): Workspace {
     threadId: row.thread_id,
     summaryPath: row.summary_path,
     lastSummarizedMessageId: row.last_summarized_message_id,
+    autoApproveShell: row.auto_approve_shell === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastChange: row.last_change,
@@ -775,6 +784,16 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_tasks_cohort_of ON tasks(cohort_of);
     `,
   },
+  {
+    version: 40,
+    // Lets a workspace skip the interactive shell_exec approval step (see
+    // lib/shell-executor's autoApprove option) — the denylist still applies
+    // unconditionally. Off by default for every existing workspace.
+    // 39 is already claimed by lib/evaluations/src/store.ts — migration
+    // version numbers are one global sequence shared by every BaseStore on
+    // the same connection (see db-migrations.test.ts's own comment).
+    sql: `ALTER TABLE workspaces ADD COLUMN auto_approve_shell INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -917,8 +936,8 @@ export class WorkspaceStore extends BaseStore {
     this.db
       .prepare(
         `INSERT INTO workspaces
-           (id, name, description, goal, location, remote_url, javascript, python, git, wiki_id, system_prompt, created_at, updated_at, last_change)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, name, description, goal, location, remote_url, javascript, python, git, wiki_id, system_prompt, auto_approve_shell, created_at, updated_at, last_change)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -932,6 +951,7 @@ export class WorkspaceStore extends BaseStore {
         input.git ? 1 : 0,
         input.wikiId ?? null,
         input.systemPrompt ?? null,
+        input.autoApproveShell ? 1 : 0,
         now,
         now,
         now,
@@ -990,6 +1010,10 @@ export class WorkspaceStore extends BaseStore {
     if (patch.lastSummarizedMessageId !== undefined) {
       sets.push('last_summarized_message_id = ?');
       values.push(patch.lastSummarizedMessageId);
+    }
+    if (patch.autoApproveShell !== undefined) {
+      sets.push('auto_approve_shell = ?');
+      values.push(patch.autoApproveShell ? 1 : 0);
     }
 
     if (sets.length === 0) return this.getWorkspace(id);

@@ -23,6 +23,7 @@ const baseWorkspace: Workspace = {
   git: false,
   wikiId: 'project-ws-1',
   systemPrompt: null,
+  autoApproveShell: false,
   createdAt: '2026-08-24T00:00:00.000Z',
   updatedAt: '2026-08-24T00:00:00.000Z',
   lastChange: '2026-08-24T00:00:00.000Z',

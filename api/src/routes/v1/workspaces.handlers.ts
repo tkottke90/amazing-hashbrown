@@ -209,9 +209,19 @@ export function patchWorkspaceHandler(
   const ws = store.patchWorkspace(id, patch);
   if (!ws) return notFound(`Workspace ${id} not found`);
 
-  // Any of these change what belongs in the workspace-chat system prompt —
-  // drop the cached agent so the next turn rebuilds it with fresh context.
-  if (patch.goal !== undefined || patch.systemPrompt !== undefined || patch.wikiId !== undefined) {
+  // Any of these change what belongs in the workspace-chat system prompt, or
+  // (autoApproveShell) are baked into the cached agent's shell_exec tool at
+  // build time — drop the cached agent so the next turn rebuilds it with
+  // fresh context. Without this, toggling Auto mid-session would update the
+  // DB row and the UI's chip but the already-built agent would keep running
+  // with its old autoApprove value until something else evicts the cache
+  // (switching model/provider, or a restart).
+  if (
+    patch.goal !== undefined ||
+    patch.systemPrompt !== undefined ||
+    patch.wikiId !== undefined ||
+    patch.autoApproveShell !== undefined
+  ) {
     invalidateWorkspaceChatAgent(id);
   }
 

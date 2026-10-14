@@ -176,6 +176,10 @@ export function WorkspaceChatTab({
             onModelSelect={thread.setThreadModel}
             threadId={workspace.threadId}
             workspaceId={workspace.id}
+            autoApproveShell={workspace.autoApproveShell}
+            onToggleAutoApproveShell={() =>
+              void patchWorkspace(workspace.id, { autoApproveShell: !workspace.autoApproveShell })
+            }
             attachments={stagedAttachments.value}
             onAttachmentsChange={(next) => {
               stagedAttachments.value = next;

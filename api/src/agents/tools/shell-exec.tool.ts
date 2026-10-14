@@ -56,6 +56,9 @@ export interface ShellExecToolOptions {
   // True for agents that also bind schedule_wakeup (chat, workspace chat) —
   // the sleep-guard refusal then tells the agent to use it.
   wakeupAvailable?: boolean;
+  // Workspace opted into skipping interactive shell approval — see
+  // ShellExecutor's autoApprove option. The denylist still applies.
+  autoApprove?: boolean;
 }
 
 // workingDirectory overrides the configured cwd — passed by workspace/task
@@ -108,6 +111,7 @@ export function makeShellExecTool(workingDirectory?: string, options: ShellExecT
         sessionAllowlist,
         onApprovalRequired,
         auditWriter: resolveAuditWriter(),
+        autoApprove: options.autoApprove,
       });
 
       const result = await executor.execute(command, reason);

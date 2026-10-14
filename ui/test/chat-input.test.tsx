@@ -936,3 +936,63 @@ describe('ChatInput — slash-command menu skill source', () => {
     expect(badges).toEqual(['repo', 'repo · overrides global']);
   });
 });
+
+describe('ChatInput — workspace shell auto-approve', () => {
+  it('does not show the add-menu toggle without a workspaceId', () => {
+    render(<ControlledChatInput threadId="t1" onToggleAutoApproveShell={jest.fn()} />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    expect(screen.queryByTestId('auto-approve-menu-item')).not.toBeInTheDocument();
+  });
+
+  it('shows the add-menu toggle for a workspace-scoped input, reflecting the off state', () => {
+    render(<ControlledChatInput workspaceId="ws-1" onToggleAutoApproveShell={jest.fn()} />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    expect(screen.getByTestId('auto-approve-menu-item')).toHaveTextContent(
+      'Auto-approve shell: Off',
+    );
+  });
+
+  it('reflects the on state and calls onToggleAutoApproveShell when clicked', () => {
+    const onToggle = jest.fn();
+    render(
+      <ControlledChatInput
+        workspaceId="ws-1"
+        autoApproveShell
+        onToggleAutoApproveShell={onToggle}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    const item = screen.getByTestId('auto-approve-menu-item');
+    expect(item).toHaveTextContent('Auto-approve shell: On');
+
+    fireEvent.click(item);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no chip when autoApproveShell is off', () => {
+    render(<ControlledChatInput workspaceId="ws-1" />);
+    expect(screen.queryByTestId('auto-approve-chip')).not.toBeInTheDocument();
+  });
+
+  it('shows no chip without a workspaceId, even when autoApproveShell is on', () => {
+    render(<ControlledChatInput autoApproveShell />);
+    expect(screen.queryByTestId('auto-approve-chip')).not.toBeInTheDocument();
+  });
+
+  it('shows an amber "Auto" chip next to the model chip when on, and toggles off when clicked', () => {
+    const onToggle = jest.fn();
+    render(
+      <ControlledChatInput
+        workspaceId="ws-1"
+        autoApproveShell
+        activeModel="gpt-4o"
+        onToggleAutoApproveShell={onToggle}
+      />,
+    );
+    const chip = screen.getByTestId('auto-approve-chip');
+    expect(chip).toHaveTextContent('Auto');
+
+    fireEvent.click(chip);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+});
