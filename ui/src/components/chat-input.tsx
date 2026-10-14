@@ -105,6 +105,14 @@ export interface ChatInputProps {
    * skill list.
    */
   workspaceId?: string;
+  /**
+   * Whether the workspace skips interactive shell_exec approval. Shows an
+   * "Auto" chip next to the model chip when true; only rendered alongside
+   * `workspaceId` (plain, non-workspace chat has no workspace to trust).
+   */
+  autoApproveShell?: boolean;
+  /** Toggles autoApproveShell — from both the add-menu item and the chip. */
+  onToggleAutoApproveShell?: () => void;
 }
 
 export interface ChatInputChipProps extends JSX.HTMLAttributes<HTMLSpanElement> {
@@ -175,6 +183,8 @@ export function ChatInput({
   attachments,
   onAttachmentsChange,
   workspaceId,
+  autoApproveShell,
+  onToggleAutoApproveShell,
 }: ChatInputProps) {
   const uploadsInFlight = useSignal<{ localId: string; filename: string }[]>([]);
   const canSend =
@@ -769,6 +779,14 @@ export function ChatInput({
                   </DropdownMenuItem>
                 </>
               )}
+              {workspaceId && onToggleAutoApproveShell && (
+                <DropdownMenuItem
+                  onSelect={() => onToggleAutoApproveShell()}
+                  data-testid="auto-approve-menu-item"
+                >
+                  {autoApproveShell ? 'Auto-approve shell: On' : 'Auto-approve shell: Off'}
+                </DropdownMenuItem>
+              )}
               {providers && providers.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
@@ -830,6 +848,17 @@ export function ChatInput({
                 </Tooltip>
               )}
             </span>
+          )}
+          {workspaceId && autoApproveShell && (
+            <button
+              type="button"
+              onClick={onToggleAutoApproveShell}
+              className="appearance-none border-none bg-transparent p-0"
+              aria-label="Auto-approve shell is on — click to turn off"
+              data-testid="auto-approve-chip"
+            >
+              <CardBadge variant="amber">Auto</CardBadge>
+            </button>
           )}
           {actions}
         </div>

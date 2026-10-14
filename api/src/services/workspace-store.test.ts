@@ -129,6 +129,44 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('autoApproveShell (migration 39)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-auto-approve-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('defaults to false on a freshly created workspace', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+      expect(ws.autoApproveShell).to.equal(false);
+    });
+
+    it('createWorkspace persists an explicit true', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w', autoApproveShell: true });
+      expect(ws.autoApproveShell).to.equal(true);
+      expect(store.getWorkspace(ws.id)!.autoApproveShell).to.equal(true);
+    });
+
+    it('patchWorkspace round-trips true and back to false', () => {
+      const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+
+      const enabled = store.patchWorkspace(ws.id, { autoApproveShell: true });
+      expect(enabled!.autoApproveShell).to.equal(true);
+      expect(store.getWorkspace(ws.id)!.autoApproveShell).to.equal(true);
+
+      const disabled = store.patchWorkspace(ws.id, { autoApproveShell: false });
+      expect(disabled!.autoApproveShell).to.equal(false);
+      expect(store.getWorkspace(ws.id)!.autoApproveShell).to.equal(false);
+    });
+  });
+
   describe('task automated-execution columns (migration 24)', () => {
     let store: WorkspaceStore;
     let dir: string;

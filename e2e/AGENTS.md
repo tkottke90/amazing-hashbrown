@@ -336,6 +336,8 @@ implementation details that change without notice.
 | `webhook-url`                   | `ui/src/pages/settings/notifications-panel.tsx`           | The Notifications settings section's static webhook endpoint URL (read-only input)            |
 | `webhook-copy-button`           | `ui/src/pages/settings/notifications-panel.tsx`           | Button that copies the static webhook URL to the clipboard                                    |
 | `thread-row`                    | `ui/src/pages/threads/index.tsx`                          | A row on the Threads list page (all thread types); pair with `data-thread-id`                 |
+| `auto-approve-menu-item`        | `ui/src/components/chat-input.tsx`                        | The add-menu toggle for a workspace's shell_exec auto-approve setting                         |
+| `auto-approve-chip`             | `ui/src/components/chat-input.tsx`                        | The amber "Auto" chip shown next to the model chip when auto-approve is on; click to turn off |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

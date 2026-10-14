@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { render, screen } from '@testing-library/preact';
+import { render, screen, fireEvent } from '@testing-library/preact';
 
 import type { ThreadInstance } from '@/hooks/use-thread';
 
@@ -20,7 +20,14 @@ jest.mock('@/hooks/use-workspaces', () => ({
 }));
 
 import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
+import { patchWorkspace } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
+
+// jsdom has no `onpointerdown` IDL property — mirrors chat-input.test.tsx's
+// own helper of the same name, needed here to open the add-content menu.
+function firePointerDown(element: Element) {
+  fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
+}
 
 function stubThreadInstance(): ThreadInstance {
   return {
@@ -47,7 +54,7 @@ function stubThreadInstance(): ThreadInstance {
   };
 }
 
-function baseWorkspace(): Workspace {
+function baseWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   return {
     id: 'ws-1',
     name: 'Infisical Setup',
@@ -66,9 +73,11 @@ function baseWorkspace(): Workspace {
     threadId: 'thread-1',
     summaryPath: null,
     lastSummarizedMessageId: null,
+    autoApproveShell: false,
     createdAt: '2026-09-28T00:00:00.000Z',
     updatedAt: '2026-09-28T00:00:00.000Z',
     lastChange: '2026-09-28T00:00:00.000Z',
+    ...overrides,
   };
 }
 
@@ -100,5 +109,23 @@ describe('WorkspaceChatTab', () => {
 
     const textarea = screen.getByPlaceholderText('Message...') as HTMLTextAreaElement;
     expect(() => textarea.focus()).not.toThrow();
+  });
+
+  it('toggles autoApproveShell via the add-menu item, flipping the current value', () => {
+    render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    fireEvent.click(screen.getByTestId('auto-approve-menu-item'));
+
+    expect(patchWorkspace).toHaveBeenCalledWith('ws-1', { autoApproveShell: true });
+  });
+
+  it('shows the Auto chip when the workspace already has it enabled, and toggling it flips back off', () => {
+    render(<WorkspaceChatTab workspace={baseWorkspace({ autoApproveShell: true })} />);
+
+    const chip = screen.getByTestId('auto-approve-chip');
+    fireEvent.click(chip);
+
+    expect(patchWorkspace).toHaveBeenCalledWith('ws-1', { autoApproveShell: false });
   });
 });

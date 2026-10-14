@@ -100,6 +100,53 @@ describe('ShellExecutor', () => {
     });
   });
 
+  describe('autoApprove: true', () => {
+    it('executes a requires-approval command with no onApprovalRequired configured', async () => {
+      const executor = new ShellExecutor(defaultConfig, { autoApprove: true });
+      const result = await executor.execute('echo auto-approved');
+      expect(result.stdout.trim()).to.equal('auto-approved');
+      expect(result.exitCode).to.equal(0);
+    });
+
+    it('never invokes onApprovalRequired even when one is configured', async () => {
+      let calls = 0;
+      const executor = new ShellExecutor(defaultConfig, {
+        autoApprove: true,
+        onApprovalRequired: async () => {
+          calls++;
+          return 'approved';
+        },
+      });
+      await executor.execute('echo auto-approved-2');
+      expect(calls).to.equal(0);
+    });
+
+    it('writes audit entries with source: auto', async () => {
+      const entries: AuditEntry[] = [];
+      const executor = new ShellExecutor(defaultConfig, {
+        autoApprove: true,
+        auditWriter: async (e) => {
+          entries.push(e);
+        },
+      });
+      await executor.execute('echo audited');
+      expect(entries[0].source).to.equal('auto');
+      expect(entries[0].trustAll).to.equal(false);
+    });
+
+    it('still denies a denylist-matched command (denylist is never bypassed)', async () => {
+      const config = ShellExecutorConfigSchema.parse({
+        workingDirectory: '/tmp',
+        denylist: ['rm *'],
+        env: { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' },
+      });
+      const executor = new ShellExecutor(config, { autoApprove: true });
+      const result = await executor.execute('rm -rf /tmp/test');
+      expect(result.exitCode).to.equal(1);
+      expect(result.stderr).to.include('denied by policy');
+    });
+  });
+
   describe('approval callback', () => {
     it('executes command when callback returns approved', async () => {
       const executor = new ShellExecutor(defaultConfig, {

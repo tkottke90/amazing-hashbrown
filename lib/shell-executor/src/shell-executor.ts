@@ -9,6 +9,10 @@ type ShellExecutorOptions = {
   sessionAllowlist?: string[];
   onApprovalRequired?: ApprovalCallback;
   auditWriter?: AuditWriter;
+  // Skips onApprovalRequired for a requires-approval command — denylist and
+  // allowlist are still evaluated unconditionally first. See trustAll for
+  // the full-bypass variant used by pre-vetted skill scripts.
+  autoApprove?: boolean;
 };
 
 const ERROR_RESULT = (message: string): ShellCommandResult => ({
@@ -54,6 +58,7 @@ export class ShellExecutor {
   private sessionAllowlist: string[];
   private onApprovalRequired?: ApprovalCallback;
   private auditWriter?: AuditWriter;
+  private autoApprove: boolean;
 
   constructor(config: ShellExecutorConfig, opts: ShellExecutorOptions = {}) {
     this.config = config;
@@ -61,6 +66,7 @@ export class ShellExecutor {
     this.sessionAllowlist = opts.sessionAllowlist ?? [];
     this.onApprovalRequired = opts.onApprovalRequired;
     this.auditWriter = opts.auditWriter;
+    this.autoApprove = opts.autoApprove ?? false;
   }
 
   async execute(command: string, reason?: string): Promise<ShellCommandResult> {
@@ -110,6 +116,23 @@ export class ShellExecutor {
         command,
         outcome: result.exitCode === 0 ? 'allowed' : 'error',
         source: 'session-memory',
+        trustAll: false,
+        exitCode: result.exitCode,
+      });
+      return result;
+    }
+
+    // The workspace opted into skipping the approval step specifically —
+    // denylist/allowlist/session-allowlist above have already had their
+    // unconditional chance to resolve the command, so this never bypasses
+    // the denylist (unlike trustAll, which skips policy entirely).
+    if (this.autoApprove) {
+      await this.audit({ command, outcome: 'allowed', source: 'auto', trustAll: false });
+      const result = await spawnCommand(command, this.config);
+      await this.audit({
+        command,
+        outcome: result.exitCode === 0 ? 'allowed' : 'error',
+        source: 'auto',
         trustAll: false,
         exitCode: result.exitCode,
       });

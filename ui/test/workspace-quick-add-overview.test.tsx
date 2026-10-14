@@ -30,6 +30,7 @@ const baseWorkspace: Workspace = {
   threadId: null,
   summaryPath: null,
   lastSummarizedMessageId: null,
+  autoApproveShell: false,
   createdAt: '2026-08-24T00:00:00.000Z',
   updatedAt: '2026-08-24T00:00:00.000Z',
   lastChange: '2026-08-24T00:00:00.000Z',

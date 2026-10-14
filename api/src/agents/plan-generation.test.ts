@@ -65,6 +65,7 @@ const sampleWorkspace: Workspace = {
   git: true,
   wikiId: 'widget-wiki',
   systemPrompt: null,
+  autoApproveShell: false,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   lastChange: '2026-01-01T00:00:00.000Z',

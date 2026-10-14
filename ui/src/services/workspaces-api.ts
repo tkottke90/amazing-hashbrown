@@ -19,6 +19,9 @@ export interface Workspace {
   threadId: string | null;
   summaryPath: string | null;
   lastSummarizedMessageId: string | null;
+  // Skips the interactive approval step for shell_exec calls that would
+  // otherwise require it. The denylist still applies. Off by default.
+  autoApproveShell: boolean;
   createdAt: string;
   updatedAt: string;
   lastChange: string;
@@ -85,6 +88,7 @@ export interface PatchWorkspaceInput {
   threadId?: string;
   summaryPath?: string;
   lastSummarizedMessageId?: string;
+  autoApproveShell?: boolean;
 }
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {

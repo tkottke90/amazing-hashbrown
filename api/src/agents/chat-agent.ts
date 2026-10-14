@@ -481,6 +481,10 @@ export interface WorkspaceChatContext {
   // can read any of these via its bound shell-exec tool if it decides the
   // older context is relevant.
   olderSummaries: { path: string; timestamp: string }[];
+  // Skips interactive shell_exec approval for this workspace (denylist still
+  // applies). Flows into tool construction only — never rendered into the
+  // system prompt text below.
+  autoApproveShell: boolean;
 }
 
 export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
@@ -541,7 +545,10 @@ async function buildWorkspaceChatAgent(
   const agent = createAgent({
     model: llm,
     tools: [
-      makeShellExecTool(workspaceContext.location, { wakeupAvailable: true }),
+      makeShellExecTool(workspaceContext.location, {
+        wakeupAvailable: true,
+        autoApprove: workspaceContext.autoApproveShell,
+      }),
       ...STATIC_CHAT_TOOLS,
       ...WAKEUP_TOOLS,
       ...buildSkillTools(skills),
@@ -689,7 +696,9 @@ export async function buildTaskAgent(
   const agent = createAgent({
     model: llm,
     tools: [
-      makeShellExecTool(workspaceScope?.workspaceContext.location),
+      makeShellExecTool(workspaceScope?.workspaceContext.location, {
+        autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
+      }),
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(task.id),
@@ -815,7 +824,9 @@ export async function buildSubAgentAgent(
     ...STATIC_CHAT_TOOLS,
     ...buildSkillTools(workspaceSkills(task.workspaceId)),
     ...buildWikiWriteTools(),
-    makeShellExecTool(workspaceScope?.workspaceContext.location),
+    makeShellExecTool(workspaceScope?.workspaceContext.location, {
+      autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
+    }),
     ...mcpTools,
   ];
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());

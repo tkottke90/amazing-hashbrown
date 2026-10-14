@@ -55,4 +55,28 @@ describe('agents/tools/shell-exec', () => {
       expect(result).to.equal('exit 0');
     });
   });
+
+  describe('autoApprove', () => {
+    // Empty allowlist and denylist: the command is requires-approval-shaped,
+    // so outside a real LangGraph graph interrupt() would throw — a clean
+    // resolve is itself the proof autoApprove bypassed it, same reasoning
+    // the sleep-guard tests above already rely on.
+    let previousTools: unknown;
+    before(() => {
+      previousTools = configManager.get('tools');
+      configManager.set('tools', {
+        shell_exec: { workingDirectory: tmpdir(), allowlist: [], denylist: [] },
+      });
+    });
+    after(() => configManager.set('tools', previousTools));
+
+    it('runs a requires-approval command without throwing when autoApprove is set [unit]', async () => {
+      const result = await makeShellExecTool(undefined, { autoApprove: true }).invoke({
+        command: 'echo hi',
+        reason: 'test',
+      });
+      expect(result).to.include('exit 0');
+      expect(result).to.include('hi');
+    });
+  });
 });

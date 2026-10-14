@@ -115,6 +115,11 @@ describe('shared-database migrations (cross-store)', () => {
       'scheduled_for',
     ]);
 
+    const workspaceColumns = (
+      db.prepare('PRAGMA table_info(workspaces)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(workspaceColumns).to.include('auto_approve_shell');
+
     db.close();
   });
 });
