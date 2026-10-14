@@ -72,7 +72,7 @@ const STUBS: StubMap = {
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
-  'cost-rates': { costs: {} },
+  'model-settings': { models: [], legacyCosts: [] },
   skills: {},
 };
 

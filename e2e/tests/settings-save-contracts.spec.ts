@@ -14,7 +14,7 @@ import type {
   ModelProvidersSettings,
   EmbeddingsSettings,
   AgentBehaviorSettings,
-  CostRatesSettings,
+  ModelSettingsSettings,
 } from '../../api/src/routes/v1/settings.handlers.js';
 
 const suite: TestSuite = {
@@ -60,16 +60,16 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Add a cost rate via the provider/model picker and Save',
+      action: 'Add a model via the provider/model picker and Save',
       expectedOutcome:
-        'PATCH body costs map includes the new provider/model key with the entered prices',
+        'PATCH body models array includes the new provider/model entry with the entered prices',
       test: () => {},
     },
     {
       tags: ['@user-workflow'],
-      action: 'Add a cost rate with the 1M scale toggle selected and Save',
+      action: 'Enter the same price at the 1k and 1M scale toggle positions and Save',
       expectedOutcome:
-        'PATCH body normalizes the entered 1M-scale price to per-1k and records the 1M scale',
+        'Both produce the identical persisted per-million price — the scale toggle is input-time only, nothing is recorded about which position was used',
       test: () => {},
     },
   ],
@@ -84,7 +84,7 @@ const STUBS: {
   'model-providers': ModelProvidersSettings;
   embeddings: EmbeddingsSettings;
   'agent-behavior': AgentBehaviorSettings;
-  'cost-rates': CostRatesSettings;
+  'model-settings': ModelSettingsSettings;
 } = {
   general: { port: 3000, logLevel: 'info' },
   storage: {
@@ -106,7 +106,7 @@ const STUBS: {
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
-  'cost-rates': { costs: {} },
+  'model-settings': { models: [], legacyCosts: [] },
 };
 
 type StubMap = typeof STUBS;
@@ -154,9 +154,9 @@ async function mockProviderModelsApi(page: Page, models: string[]): Promise<void
 }
 
 /**
- * Mocks GET /api/v1/providers — the provider+model list behind the Cost
- * rates "Add rate" modal's provider/model picker (and the chat input's own
- * model switcher). Deliberately a separate route from
+ * Mocks GET /api/v1/providers — the provider+model list behind the Model
+ * Settings "Add model" modal's provider/model picker (and the chat input's
+ * own model switcher). Deliberately a separate route from
  * `**\/api/v1/providers/models` above: that one is POST and lists live
  * models for the provider-modal's Select; this one is GET and returns the
  * already-configured provider list with their model IDs.
@@ -235,7 +235,7 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
 
     // Stubbed with zero existing providers, so only one "Add provider" dialog
     // exists on the page — no need to scope past the trigger/submit text
-    // collision the way the Cost rates test below has to. Field lookups are
+    // collision the way the Model settings test below has to. Field lookups are
     // still scoped to the dialog itself, though: the sidebar always renders
     // every real thread from the shared dev backend, and getByLabel matches
     // substrings by default — a thread renamed by a different, concurrently
@@ -331,119 +331,123 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
   // "Save sends a PATCH with the edited description" test for that
   // contract's e2e coverage.
 
-  test('Cost rates: adding a rate sends it in the costs map @user-workflow', async ({
+  test('Model settings: adding a model sends it in the models array @user-workflow', async ({
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
     await mockProvidersListApi(page, [
       { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o-mini' }] },
     ]);
-    await page.goto('/settings?section=cost-rates');
+    await page.goto('/settings?section=model-settings');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
 
-    // Stubbed with an empty costs map, so — same as Model providers above —
-    // only one "Add rate" dialog exists and the trigger/submit text collision
-    // only affects the very first click, resolved with .first().
-    await page.getByRole('button', { name: 'Add rate' }).first().click();
+    // Stubbed with an empty models list, so — same as Model providers above —
+    // only one "Add model" dialog exists and the trigger/submit text
+    // collision only affects the very first click, resolved with .first().
+    await page.getByRole('button', { name: 'Add model' }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Select provider/model…').click();
     await dialog.getByText('openai').click();
     await dialog.getByText('gpt-4o-mini').click();
-    await dialog.getByLabel('Input cost').fill('0.01');
-    await dialog.getByLabel('Output cost').fill('0.03');
-    await dialog.getByRole('button', { name: 'Add rate' }).click();
+    // The input defaults to the 1M scale, so these are the per-million
+    // prices directly — no scale toggle needed.
+    await dialog.getByLabel('Input cost').fill('10');
+    await dialog.getByLabel('Output cost').fill('30');
+    await dialog.getByRole('button', { name: 'Add model' }).click();
 
     await save(page);
 
-    const expected: CostRatesSettings = {
-      costs: {
-        'openai/gpt-4o-mini': {
-          inputPer1kTokens: 0.01,
-          inputScale: '1k',
-          outputPer1kTokens: 0.03,
-          outputScale: '1k',
+    const expected: ModelSettingsSettings = {
+      models: [
+        {
+          provider: 'openai',
+          providerType: 'openai',
+          modelId: 'gpt-4o-mini',
+          inputPricePerM: 10,
+          outputPricePerM: 30,
         },
-      },
+      ],
+      legacyCosts: [],
     };
-    expect(captured['cost-rates']).toEqual(expected);
+    expect(captured['model-settings']).toEqual(expected);
   });
 
-  test('Cost rates: entering a 1M-scale price normalizes it to per-1k on save @user-workflow', async ({
+  test('Model settings: the same price at the 1k and 1M scale positions persists identically @user-workflow', async ({
     page,
   }, testInfo) => {
     const captured = await mockSettingsApi(page);
     await mockProvidersListApi(page, [
       { name: 'glm', type: 'openai', models: [{ id: 'glm-5.3' }] },
     ]);
-    await page.goto('/settings?section=cost-rates');
+    await page.goto('/settings?section=model-settings');
     await page.waitForSelector('[data-slot="settings-nav-item"]');
     await pauseBeforeAction(page, testInfo);
 
-    await page.getByRole('button', { name: 'Add rate' }).first().click();
+    await page.getByRole('button', { name: 'Add model' }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Select provider/model…').click();
     await dialog.getByText('glm').click();
     await dialog.getByText('glm-5.3').click();
 
-    // Each ScaledCostInput renders its own "1M"/"1k" radio pair with the same
-    // accessible names, so scope each toggle to its own field via the
-    // number input it sits beside (rate-modal.tsx's grid layout puts them in
-    // the same row).
+    // Each ScaledCostInput renders its own "1M"/"1k" radio pair with the
+    // same accessible names, so scope each toggle to its own field via the
+    // number input it sits beside (model-entry-modal.tsx's grid layout puts
+    // them in the same row). Entering "1.4" at the 1k scale and "1400" at
+    // the 1M scale describe the same price — $1.4 per 1,000 tokens is $1,400
+    // per 1,000,000 — and nothing about which position was used is stored.
     await dialog
-      .locator('#rate-input')
+      .locator('#model-entry-input-price')
       .locator('xpath=..')
-      .getByRole('radio', { name: '1M' })
+      .getByRole('radio', { name: '1k' })
       .click();
     await dialog.getByLabel('Input cost').fill('1.4');
-    await dialog
-      .locator('#rate-output')
-      .locator('xpath=..')
-      .getByRole('radio', { name: '1M' })
-      .click();
-    await dialog.getByLabel('Output cost').fill('4.4');
+    await dialog.getByLabel('Output cost').fill('4400');
 
-    await dialog.getByRole('button', { name: 'Add rate' }).click();
+    await dialog.getByRole('button', { name: 'Add model' }).click();
     await save(page);
 
-    const expected: CostRatesSettings = {
-      costs: {
-        'glm/glm-5.3': {
-          inputPer1kTokens: 0.0014,
-          inputScale: '1M',
-          outputPer1kTokens: 0.0044,
-          outputScale: '1M',
+    const expected: ModelSettingsSettings = {
+      models: [
+        {
+          provider: 'glm',
+          providerType: 'openai',
+          modelId: 'glm-5.3',
+          inputPricePerM: 1400,
+          outputPricePerM: 4400,
         },
-      },
+      ],
+      legacyCosts: [],
     };
-    expect(captured['cost-rates']).toEqual(expected);
+    expect(captured['model-settings']).toEqual(expected);
   });
 
-  // The "Add rate" dropdown's provider/model picker was redesigned so a
+  // The "Add model" dropdown's provider/model picker was redesigned so a
   // narrow viewport opens a BottomSheet (a second native <dialog>) instead
   // of a nested Radix flyout — see the model-picker mobile design. Here that
-  // BottomSheet is a DOM descendant of RateModal's own already-open <dialog>
-  // (nested top-layer dialogs), a pattern with no other coverage in this
-  // suite: chat-model-picker.spec.ts only exercises the chat input's flow,
-  // which has no surrounding dialog.
-  test.describe('mobile viewport — Add rate model picker sheet', () => {
+  // BottomSheet is a DOM descendant of ModelEntryModal's own already-open
+  // <dialog> (nested top-layer dialogs), a pattern with no other coverage in
+  // this suite: chat-model-picker.spec.ts only exercises the chat input's
+  // flow, which has no surrounding dialog.
+  test.describe('mobile viewport — Add model picker sheet', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-    test('the model sheet opens nested inside the Add rate Modal and a tapped selection saves @user-workflow', async ({
+    test('the model sheet opens nested inside the Add model Modal and a tapped selection saves @user-workflow', async ({
       page,
     }, testInfo) => {
       const captured = await mockSettingsApi(page);
       await mockProvidersListApi(page, [
         { name: 'openai', type: 'openai', models: [{ id: 'gpt-4o-mini' }] },
       ]);
-      await page.goto('/settings?section=cost-rates');
+      await page.goto('/settings?section=model-settings');
       await page.waitForSelector('[data-slot="settings-nav-item"]');
       await pauseBeforeAction(page, testInfo);
 
-      await page.getByRole('button', { name: 'Add rate' }).first().tap();
-      // Resolves to RateModal's own <dialog> — always first in document
-      // order even once the BottomSheet's nested <dialog> also opens below,
-      // since a parent element always precedes its own descendants.
+      await page.getByRole('button', { name: 'Add model' }).first().tap();
+      // Resolves to ModelEntryModal's own <dialog> — always first in
+      // document order even once the BottomSheet's nested <dialog> also
+      // opens below, since a parent element always precedes its own
+      // descendants.
       const modal = page.getByRole('dialog').first();
       await modal.getByText('Select provider/model…').tap();
       await page.getByRole('menuitem', { name: 'openai', exact: true }).tap();
@@ -461,23 +465,25 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
       // actionability wait against them.
       await page.waitForTimeout(300);
 
-      await modal.getByLabel('Input cost').fill('0.01');
-      await modal.getByLabel('Output cost').fill('0.03');
-      await modal.getByRole('button', { name: 'Add rate' }).tap();
+      await modal.getByLabel('Input cost').fill('10');
+      await modal.getByLabel('Output cost').fill('30');
+      await modal.getByRole('button', { name: 'Add model' }).tap();
 
       await save(page);
 
-      const expected: CostRatesSettings = {
-        costs: {
-          'openai/gpt-4o-mini': {
-            inputPer1kTokens: 0.01,
-            inputScale: '1k',
-            outputPer1kTokens: 0.03,
-            outputScale: '1k',
+      const expected: ModelSettingsSettings = {
+        models: [
+          {
+            provider: 'openai',
+            providerType: 'openai',
+            modelId: 'gpt-4o-mini',
+            inputPricePerM: 10,
+            outputPricePerM: 30,
           },
-        },
+        ],
+        legacyCosts: [],
       };
-      expect(captured['cost-rates']).toEqual(expected);
+      expect(captured['model-settings']).toEqual(expected);
     });
   });
 });

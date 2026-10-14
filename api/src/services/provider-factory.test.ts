@@ -10,6 +10,7 @@ import {
   describeSampling,
   createProvider,
   createProviderFromConfig,
+  resolveEffectiveSampling,
   hasOllamaVisionCapability,
   resolveVisionCapability,
   resolveVisionCapabilityFromConfig,
@@ -208,6 +209,111 @@ describe('services/provider-factory', () => {
         expect(openai.temperature).to.equal(undefined);
         expect(openai.modelKwargs?.seed).to.equal(undefined);
       });
+
+      // numCtx/topK/repeatPenalty are Ollama-only — no OpenAI/Anthropic
+      // constructor or API equivalent exists for any of them.
+      it('passes numCtx, topK and repeatPenalty through to ChatOllama', () => {
+        const agent = createProviderFromConfig({
+          ...ollamaConfig,
+          numCtx: 16384,
+          topK: 40,
+          repeatPenalty: 1.1,
+        }) as ChatOllama;
+        expect(agent.numCtx).to.equal(16384);
+        expect(agent.topK).to.equal(40);
+        expect(agent.repeatPenalty).to.equal(1.1);
+      });
+
+      it('a model-level override wins over the provider-level default', () => {
+        const agent = createProviderFromConfig({
+          ...ollamaConfig,
+          temperature: 0,
+          models: [{ id: 'llama3', temperature: 1 }],
+        }) as ChatOllama;
+        expect(agent.temperature).to.equal(1);
+      });
+
+      it('falls back to the provider-level default when the model has no override', () => {
+        const agent = createProviderFromConfig({
+          ...ollamaConfig,
+          temperature: 0.4,
+          models: [{ id: 'some-other-model', temperature: 1 }],
+        }) as ChatOllama;
+        expect(agent.temperature).to.equal(0.4);
+      });
+    });
+  });
+
+  describe('resolveEffectiveSampling()', () => {
+    const config: ProviderConfig = {
+      ...ollamaConfig,
+      temperature: 0.2,
+      topP: 0.8,
+      seed: 1,
+      numCtx: 4096,
+      topK: 20,
+      repeatPenalty: 1.0,
+      models: [
+        {
+          id: 'llama3',
+          temperature: 1,
+          topP: 0.95,
+          seed: 7,
+          numCtx: 16384,
+          topK: 40,
+          repeatPenalty: 1.1,
+        },
+      ],
+    };
+
+    it('uses the model entry for every field when one exists', () => {
+      expect(resolveEffectiveSampling(config, 'llama3')).to.deep.equal({
+        temperature: 1,
+        topP: 0.95,
+        seed: 7,
+        numCtx: 16384,
+        topK: 40,
+        repeatPenalty: 1.1,
+      });
+    });
+
+    it('falls back to the provider-level default for every field when no model entry matches', () => {
+      expect(resolveEffectiveSampling(config, 'unknown-model')).to.deep.equal({
+        temperature: 0.2,
+        topP: 0.8,
+        seed: 1,
+        numCtx: 4096,
+        topK: 20,
+        repeatPenalty: 1.0,
+      });
+    });
+
+    it('resolves to undefined per field when neither the model nor the provider sets it', () => {
+      expect(resolveEffectiveSampling(ollamaConfig, 'llama3')).to.deep.equal({
+        temperature: undefined,
+        topP: undefined,
+        seed: undefined,
+        numCtx: undefined,
+        topK: undefined,
+        repeatPenalty: undefined,
+      });
+    });
+
+    it('resolves fields independently — a model overriding only one field still falls back for the rest', () => {
+      const partial: ProviderConfig = {
+        ...ollamaConfig,
+        temperature: 0.2,
+        topP: 0.8,
+        models: [{ id: 'llama3', temperature: 1 }],
+      };
+      expect(resolveEffectiveSampling(partial, 'llama3')).to.deep.equal({
+        temperature: 1,
+        topP: 0.8,
+        seed: undefined,
+        numCtx: undefined,
+        topK: undefined,
+        repeatPenalty: undefined,
+      });
     });
   });
 
@@ -302,6 +408,32 @@ describe('services/provider-factory', () => {
       applyEvalDeterminism(input, 42);
       expect(input.temperature).to.equal(1);
       expect(input.seed).to.equal(undefined);
+    });
+
+    // Without this, a models[] entry's own temperature/seed would win over
+    // the pin just below inside resolveEffectiveSampling/
+    // createProviderFromConfig, silently defeating eval determinism for
+    // exactly the model being tested — the one case this function exists to
+    // prevent.
+    it('strips temperature and seed off every models[] entry so an override cannot defeat the pin', () => {
+      const result = applyEvalDeterminism(
+        {
+          ...ollamaConfig,
+          defaultModel: 'llama3',
+          models: [{ id: 'llama3', temperature: 1, seed: 99, inputPricePerM: 3 }],
+        },
+        42,
+      );
+      expect(result.models).to.deep.equal([{ id: 'llama3', inputPricePerM: 3 }]);
+      expect((createProviderFromConfig(result) as ChatOllama).temperature).to.equal(0);
+    });
+
+    it('leaves a models[] entry with no temperature/seed untouched', () => {
+      const result = applyEvalDeterminism(
+        { ...ollamaConfig, models: [{ id: 'llama3', topP: 0.9 }] },
+        42,
+      );
+      expect(result.models).to.deep.equal([{ id: 'llama3', topP: 0.9 }]);
     });
   });
 

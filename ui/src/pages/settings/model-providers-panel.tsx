@@ -91,7 +91,13 @@ export function ModelProvidersPanel() {
   }
 
   function handleEditProvider(index: number, p: ProviderConfig) {
-    const updated = providers.map((existing, i) => (i === index ? p : existing));
+    // Merge, don't replace — ProviderModal's form only knows about
+    // connection fields (baseUrl/apiKey/defaultModel/maxConcurrency), so a
+    // plain replace would silently drop any field it doesn't carry, such as
+    // the per-model pricing/sampling config the Model Settings panel wrote.
+    const updated = providers.map((existing, i) =>
+      i === index ? { ...existing, ...p } : existing,
+    );
     setField('providers', updated);
   }
 

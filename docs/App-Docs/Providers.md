@@ -55,13 +55,82 @@ providers:
 
 All providers share the same schema. Fields marked **required** must be present for that provider type.
 
-| Field          | Type   | Description                                                                             |
-| -------------- | ------ | --------------------------------------------------------------------------------------- |
-| `name`         | string | **Required.** Unique identifier used to reference this provider.                        |
-| `type`         | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`.                     |
-| `baseUrl`      | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`.           |
-| `apiKey`       | string | API secret key. Required for `openai` and `anthropic`.                                  |
-| `defaultModel` | string | Model to use when no override is specified. Required if no per-request model is passed. |
+| Field            | Type   | Description                                                                                          |
+| ---------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `name`           | string | **Required.** Unique identifier used to reference this provider.                                     |
+| `type`           | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`.                                  |
+| `baseUrl`        | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`.                        |
+| `apiKey`         | string | API secret key. Required for `openai` and `anthropic`.                                               |
+| `defaultModel`   | string | Model to use when no override is specified. Required if no per-request model is passed.              |
+| `maxConcurrency` | number | Concurrent request slots this provider allows (`-1` = unlimited). Defaults to `1`.                   |
+| `timeoutMs`      | number | Bounds a single outbound LLM HTTP call. Not wired for `ollama`.                                      |
+| `temperature`    | number | Default sampling temperature for every model on this provider with no override of its own.           |
+| `topP`           | number | Default nucleus-sampling value, same fallback behavior as `temperature`.                             |
+| `seed`           | number | Default seed. Only forwarded for `ollama`/`openai`-type providers — Anthropic has no seed parameter. |
+| `numCtx`         | number | Default Ollama context window size, in tokens. **Ollama-only.**                                      |
+| `topK`           | number | Default Ollama top-k sampling value. **Ollama-only.**                                                |
+| `repeatPenalty`  | number | Default Ollama repeat penalty. **Ollama-only.**                                                      |
+| `models`         | array  | Per-model pricing and sampling overrides — see [`models[]`](#models) below.                          |
+
+## `models[]`
+
+Each provider can list specific models to set their own pricing and/or sampling settings,
+overriding that provider's own defaults above. This matters because a provider often serves
+several models that disagree about what good settings are — for example, OpenAI recommends
+`temperature: 1` for its `gpt-oss` models, while other models on the same Ollama server may do
+better at `temperature: 0`. A model's own value always wins; if it leaves a field unset, that
+provider's own value (if any) is used; if neither is set, the underlying client's own default
+applies — identical to today's behavior for a provider with no sampling config at all.
+
+`id` matches a requested model name by **exact string equality only** — no prefix or glob
+matching. A provider with several tagged variants of the same base model (e.g. `gpt-oss:20b` and
+`gpt-oss:120b`) needs a separate entry for each.
+
+| Field             | Type   | Description                                                                                                                       |
+| ----------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | string | **Required.** Exact model id, matched verbatim against the requested model.                                                       |
+| `inputPricePerM`  | number | USD price per 1,000,000 input tokens, used for the model picker's price display, cost estimates, and the Settings UI cost editor. |
+| `outputPricePerM` | number | USD price per 1,000,000 output tokens.                                                                                            |
+| `temperature`     | number | Overrides the provider's `temperature` for this model only.                                                                       |
+| `topP`            | number | Overrides the provider's `topP` for this model only.                                                                              |
+| `seed`            | number | Overrides the provider's `seed` for this model only. Ignored for Anthropic.                                                       |
+| `numCtx`          | number | Overrides the provider's `numCtx` for this model only. **Ollama-only.**                                                           |
+| `topK`            | number | Overrides the provider's `topK` for this model only. **Ollama-only.**                                                             |
+| `repeatPenalty`   | number | Overrides the provider's `repeatPenalty` for this model only. **Ollama-only.**                                                    |
+
+```yaml
+providers:
+  - name: local
+    type: ollama
+    baseUrl: http://localhost:11434
+    defaultModel: llama3
+    # Applies to every model on this provider unless a models[] entry below overrides it.
+    temperature: 0
+    models:
+      - id: gpt-oss:20b
+        temperature: 1 # OpenAI's own recommendation for this model
+        numCtx: 16384 # Ollama's default context size is chosen by GPU memory, not this model's needs
+      - id: llama3
+        inputPricePerM: 0
+        outputPricePerM: 0
+  - name: anthropic
+    type: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+    defaultModel: claude-sonnet-4-6
+    models:
+      - id: claude-sonnet-4-6
+        inputPricePerM: 3
+        outputPricePerM: 15
+```
+
+An invalid value on a `models[]` entry (e.g. a non-numeric `temperature`) only drops that one
+entry — logged at startup naming the provider and model — rather than failing the whole
+`providers` list; the same applies to a malformed provider entry itself, which only drops that
+provider.
+
+This also replaces the top-level `costs:` setting as the source for pricing — see
+[Cost Rates](./configuration.md#cost-rates) in the configuration reference for migrating
+existing `costs:` entries.
 
 ### `defaultProvider`
 
@@ -122,6 +191,10 @@ providers:
     type: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
     defaultModel: claude-sonnet-4-6
+    models:
+      - id: claude-sonnet-4-6
+        inputPricePerM: 3
+        outputPricePerM: 15
 
 defaultProvider: local
 

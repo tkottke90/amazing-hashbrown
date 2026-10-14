@@ -4,7 +4,9 @@ import {
   CostEntrySchema,
   ContextWindowSchema,
   LoopGuardSchema,
+  ModelConfigSchema,
   parseFavoriteModels,
+  parseProviders,
   resolveServerTimezone,
 } from './env.js';
 
@@ -112,6 +114,89 @@ describe('config/env', () => {
     it('returns an empty list when the config value is not an array [unit]', () => {
       expect(parseFavoriteModels(undefined)).to.deep.equal([]);
       expect(parseFavoriteModels({ provider: 'do', model: 'm' })).to.deep.equal([]);
+    });
+  });
+
+  describe('ModelConfigSchema', () => {
+    it('accepts id plus all pricing and sampling fields [unit]', () => {
+      const input = {
+        id: 'gpt-oss:20b',
+        inputPricePerM: 0,
+        outputPricePerM: 0,
+        temperature: 1,
+        topP: 0.9,
+        seed: 42,
+        numCtx: 16384,
+        topK: 40,
+        repeatPenalty: 1.1,
+      };
+      expect(ModelConfigSchema.parse(input)).to.deep.equal(input);
+    });
+
+    it('accepts just an id, every other field optional [unit]', () => {
+      expect(ModelConfigSchema.parse({ id: 'llama3.3:70b' })).to.deep.equal({
+        id: 'llama3.3:70b',
+      });
+    });
+
+    it('rejects a non-numeric temperature [unit]', () => {
+      expect(() => ModelConfigSchema.parse({ id: 'x', temperature: 'hot' })).to.throw();
+    });
+
+    it('rejects a non-integer seed [unit]', () => {
+      expect(() => ModelConfigSchema.parse({ id: 'x', seed: 1.5 })).to.throw();
+    });
+
+    it('rejects a non-positive numCtx [unit]', () => {
+      expect(() => ModelConfigSchema.parse({ id: 'x', numCtx: 0 })).to.throw();
+      expect(() => ModelConfigSchema.parse({ id: 'x', numCtx: -1 })).to.throw();
+    });
+  });
+
+  describe('parseProviders', () => {
+    it('preserves a well-formed providers list unchanged [unit]', () => {
+      const raw = [
+        { name: 'local', type: 'ollama', baseUrl: 'http://localhost:11434' },
+        {
+          name: 'anthropic',
+          type: 'anthropic',
+          models: [{ id: 'claude-sonnet-4-6', inputPricePerM: 3, outputPricePerM: 15 }],
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal(raw);
+    });
+
+    it('drops only the malformed model entry, keeping the provider and its other models [unit]', () => {
+      const raw = [
+        {
+          name: 'local',
+          type: 'ollama',
+          models: [
+            { id: 'gpt-oss:20b', temperature: 'hot' },
+            { id: 'llama3.3:70b', temperature: 1 },
+          ],
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([
+        {
+          name: 'local',
+          type: 'ollama',
+          models: [{ id: 'llama3.3:70b', temperature: 1 }],
+        },
+      ]);
+    });
+
+    it('drops only the malformed provider, keeping the rest of the list [unit]', () => {
+      const raw = [
+        { name: 'local', type: 'not-a-real-type' },
+        { name: 'anthropic', type: 'anthropic' },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([{ name: 'anthropic', type: 'anthropic' }]);
+    });
+
+    it('returns an empty list when the config value is not an array [unit]', () => {
+      expect(parseProviders(undefined)).to.deep.equal([]);
+      expect(parseProviders({ name: 'local' })).to.deep.equal([]);
     });
   });
 

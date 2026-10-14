@@ -1,10 +1,10 @@
 import { Layout } from '@/components/layout';
 import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
-import { CostRatesPanel } from '@/pages/settings/cost-rates-panel';
 import { EmbeddingsPanel } from '@/pages/settings/embeddings-panel';
 import { GeneralPanel } from '@/pages/settings/general-panel';
 import { McpServersPanel } from '@/pages/settings/mcp-servers-panel';
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
+import { ModelSettingsPanel } from '@/pages/settings/model-settings-panel';
 import { NotificationsPanel } from '@/pages/settings/notifications-panel';
 import { SettingsNav, VALID_SLUGS, type SettingsSlug } from '@/pages/settings/settings-nav';
 import { SkillsPanel } from '@/pages/settings/skills-panel';
@@ -35,8 +35,8 @@ function ActivePanel({ section }: { section: SettingsSlug }) {
       return <AgentBehaviorPanel />;
     case 'tools':
       return <ToolsPanel />;
-    case 'cost-rates':
-      return <CostRatesPanel />;
+    case 'model-settings':
+      return <ModelSettingsPanel />;
     case 'mcp-servers':
       return <McpServersPanel />;
     case 'skills':

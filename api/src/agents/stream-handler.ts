@@ -674,13 +674,17 @@ export async function finalizeTurn(
         ? Math.round((cwTokens / contextWindowLimit) * 10000) / 100
         : undefined;
 
-    const providerKey =
-      effectiveProvider && effectiveModel ? `${effectiveProvider}/${effectiveModel}` : null;
-    const rates = providerKey ? env.costs[providerKey] : undefined;
-    const estimatedCostUsd = rates
-      ? (inputTokens / 1000) * rates.inputPer1kTokens +
-        (outputTokens / 1000) * rates.outputPer1kTokens
-      : undefined;
+    const modelEntry =
+      effectiveProvider && effectiveModel
+        ? env.providers
+            .find((p) => p.name === effectiveProvider)
+            ?.models?.find((m) => m.id === effectiveModel)
+        : undefined;
+    const estimatedCostUsd =
+      modelEntry?.inputPricePerM !== undefined && modelEntry?.outputPricePerM !== undefined
+        ? (inputTokens / 1_000_000) * modelEntry.inputPricePerM +
+          (outputTokens / 1_000_000) * modelEntry.outputPricePerM
+        : undefined;
 
     metrics = {
       durationMs,

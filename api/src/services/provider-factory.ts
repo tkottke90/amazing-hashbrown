@@ -38,6 +38,45 @@ async function loggingFetch(input: string | URL | Request, init?: RequestInit): 
 }
 
 /**
+ * The sampling fields a provider/model pair will actually run with, after
+ * resolving a model's own override (if any) against its provider's default.
+ * `numCtx`/`topK`/`repeatPenalty` are Ollama-only — see ModelConfigSchema.
+ */
+export interface EffectiveSampling {
+  temperature?: number;
+  topP?: number;
+  seed?: number;
+  numCtx?: number;
+  topK?: number;
+  repeatPenalty?: number;
+}
+
+/**
+ * Merges a model's own sampling overrides (providers[].models[], matched by
+ * exact `id` equality) over its provider's defaults, field by field — a
+ * model's value wins, falling back to the provider's value, falling back to
+ * undefined (the underlying client's own default) when neither is set. Pure
+ * and side-effect-free so createProviderFromConfig and callers that need to
+ * know what will actually be sent (e.g. the eval CLI's --use-model-sampling)
+ * can share the exact same resolution. See
+ * docs/superpowers/specs/2026-10-14-per-model-sampling-pricing-config-design.md.
+ */
+export function resolveEffectiveSampling(
+  config: ProviderConfig,
+  modelId: string,
+): EffectiveSampling {
+  const modelEntry = config.models?.find((m) => m.id === modelId);
+  return {
+    temperature: modelEntry?.temperature ?? config.temperature,
+    topP: modelEntry?.topP ?? config.topP,
+    seed: modelEntry?.seed ?? config.seed,
+    numCtx: modelEntry?.numCtx ?? config.numCtx,
+    topK: modelEntry?.topK ?? config.topK,
+    repeatPenalty: modelEntry?.repeatPenalty ?? config.repeatPenalty,
+  };
+}
+
+/**
  * Pure factory — accepts explicit config rather than reading env.
  * Exported so unit tests can drive it without touching the live configManager.
  */
@@ -46,6 +85,8 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
   if (!resolvedModel) {
     throw new Error(`Provider "${config.name}" has no defaultModel and none was passed`);
   }
+
+  const sampling = resolveEffectiveSampling(config, resolvedModel);
 
   switch (config.type) {
     case 'ollama':
@@ -58,9 +99,12 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       return new ChatOllama({
         model: resolvedModel,
         baseUrl: config.baseUrl,
-        temperature: config.temperature,
-        topP: config.topP,
-        seed: config.seed,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
+        seed: sampling.seed,
+        numCtx: sampling.numCtx,
+        topK: sampling.topK,
+        repeatPenalty: sampling.repeatPenalty,
       });
     case 'openai':
       if (!config.apiKey) {
@@ -72,12 +116,12 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         model: resolvedModel,
         apiKey: config.apiKey,
         timeout: config.timeoutMs,
-        temperature: config.temperature,
-        topP: config.topP,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
         // `seed` is a per-call option on ChatOpenAI, not a constructor field;
         // modelKwargs is spread into every request body, so it carries the
         // seed for servers (OpenAI, Lemonade, DigitalOcean) that honour it.
-        modelKwargs: config.seed === undefined ? undefined : { seed: config.seed },
+        modelKwargs: sampling.seed === undefined ? undefined : { seed: sampling.seed },
         configuration: {
           baseURL: config.baseUrl,
           fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
@@ -92,8 +136,8 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       return new ChatAnthropic({
         model: resolvedModel,
         apiKey: config.apiKey,
-        temperature: config.temperature,
-        topP: config.topP,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
         // ChatAnthropic has no top-level `timeout` constructor field (unlike
         // ChatOpenAI) — it forwards `clientOptions` straight to the
         // underlying @anthropic-ai/sdk client, which is where `timeout`
@@ -119,20 +163,32 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
  * for trying a model at the sampling its vendor recommends. It is an explicit
  * request, so it is passed through even for anthropic (whose models may reject
  * it); without it, anthropic still gets none. The seed is applied either way.
+ *
+ * Also strips `temperature`/`seed` off of every entry in `config.models`
+ * before pinning the provider-level values below. Without this, a model with
+ * its own `models[].temperature`/`.seed` override would win over the forced
+ * pin inside resolveEffectiveSampling/createProviderFromConfig, silently
+ * defeating eval determinism for exactly that model — the per-model-sampling
+ * feature would otherwise reopen the bug this function was written to fix.
+ * Every other per-model field (pricing, topP, numCtx, topK, repeatPenalty)
+ * passes through untouched, same as before per-model config existed.
  */
 export function applyEvalDeterminism(
   config: ProviderConfig,
   seed: number,
   options: { temperature?: number } = {},
 ): ProviderConfig {
-  if (config.type === 'anthropic') {
+  const models = config.models?.map(({ temperature: _temperature, seed: _seed, ...rest }) => rest);
+  const base = { ...config, ...(models ? { models } : {}) };
+
+  if (base.type === 'anthropic') {
     return {
-      ...config,
+      ...base,
       seed: undefined,
       ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
     };
   }
-  return { ...config, temperature: options.temperature ?? 0, seed };
+  return { ...base, temperature: options.temperature ?? 0, seed };
 }
 
 /**
