@@ -189,7 +189,7 @@ Scope: multiple internal units wired together, but no real external I/O. The goa
 
 - Focus on interactions between units (was the right function called with the right arguments?) rather than on the results those units produce
 - Prefer spying over mocking where possible — a spy verifies the call without replacing behaviour
-- For an Express route, call the handler function directly with constructed `req`/`res` objects rather than spinning up a server (real or in-process) and hitting it over HTTP — that's testing the framework wiring, not this codebase's logic. Full request → middleware → handler → response pipeline coverage belongs in the E2E suite (Playwright), which exercises a real running instance; it is out of scope for a developer test
+- For an Express route, extract the logic into a plain, Express-agnostic handler function (no `Request`/`Response` types — typed arguments in, a result out) and call it directly, rather than spinning up a server (real or in-process) and hitting it over HTTP — that's testing the framework wiring, not this codebase's logic. The route itself stays thin, untested wiring that adapts the handler's result to an HTTP response. Full request → middleware → handler → response pipeline coverage belongs in the E2E suite (Playwright), which exercises a real running instance; it is out of scope for a developer test
 
 #### External Orchestration Tests
 
