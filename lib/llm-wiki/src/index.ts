@@ -17,3 +17,7 @@ export { WikiRegistry, createWikiRegistry } from './registry.js';
 export type { CreateWikiRegistryOptions, CreateWikiInput } from './registry.js';
 
 export * from './types.js';
+
+// Cross-wiki reference parsing ("<wiki-id>:<path>"), used by callers that
+// need to resolve such a reference themselves (e.g. api/'s wiki_add_cross_link tool).
+export { parseExternalRef } from './internal/wikilinks.js';
