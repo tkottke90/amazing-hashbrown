@@ -307,6 +307,39 @@ describe('agents/recursion-guard.middleware', () => {
       expect((called as { reason: string }).reason).to.equal('streak');
     });
 
+    it('passes the closure-bound taskId through to evaluateLoopProgress when configured', async () => {
+      let called: unknown;
+      const stub = async (params: unknown) => {
+        called = params;
+        return { converging: true, summary: 'making progress' };
+      };
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+        evaluateLoopProgress: stub,
+        taskId: 'task-abc',
+      });
+      await callBeforeModel(guard, makeStagnantState('shell_exec', 'same output', 5));
+      expect((called as { taskId?: string }).taskId).to.equal('task-abc');
+    });
+
+    it('leaves taskId undefined when not configured (chat/workspace-chat/sub-agent runs)', async () => {
+      let called: unknown;
+      const stub = async (params: unknown) => {
+        called = params;
+        return { converging: true, summary: 'making progress' };
+      };
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+        evaluateLoopProgress: stub,
+      });
+      await callBeforeModel(guard, makeStagnantState('shell_exec', 'same output', 5));
+      expect((called as { taskId?: string }).taskId).to.equal(undefined);
+    });
+
     it('escalates (interrupt mode) when the stub reports converging: false', async () => {
       const stub = async () => ({ converging: false, summary: 'not converging, stuck' });
       const guard = createRecursionGuardMiddleware({

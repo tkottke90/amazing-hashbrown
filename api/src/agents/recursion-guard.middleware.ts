@@ -41,6 +41,12 @@ export interface RecursionGuardOptions {
   // so every reason (including step-count exhaustion) stops the run and
   // reports back to the parent instead.
   escalationMode?: 'interrupt' | 'throw';
+  // Closure-bound task id for a task run, same pattern makeUpdatePlanTool/
+  // create_tasks' callingTaskId use — tags this run's loop-guard reflection
+  // trace with its real task id instead of reading it off
+  // runtime.configurable (chat/workspace-chat/sub-agent runs have no task
+  // to tag and omit this).
+  taskId?: string;
   // Test-only escape hatch: an injected replacement for the real
   // evaluateLoopProgress(), same pattern as after-agent.ts's `llm`/`registry`
   // test-only params — lets unit tests reach the reflection rung without a
@@ -116,6 +122,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
     warnThreshold,
     loopGuard,
     escalationMode = 'interrupt',
+    taskId,
     evaluateLoopProgress: evaluateLoopProgressImpl = evaluateLoopProgress,
   } = options;
   const stepThreshold = Math.floor(recursionLimit * warnThreshold);
@@ -238,7 +245,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
           toolCallPairs: recentToolCalls,
           reason: reflectionReason,
           threadId: runtime?.configurable?.thread_id,
-          taskId: runtime?.configurable?.taskId,
+          taskId,
           provider: runtime?.context?.provider,
           model: runtime?.context?.model,
         });

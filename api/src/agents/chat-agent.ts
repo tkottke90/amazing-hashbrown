@@ -741,6 +741,7 @@ export async function buildTaskAgent(
         warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
         loopGuard: env.agent?.loopGuard,
         escalationMode: 'interrupt',
+        taskId: task.id,
       }),
       createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
       // Harmless no-op here (an automated task run never carries a chat
