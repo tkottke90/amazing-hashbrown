@@ -210,6 +210,7 @@ export async function executeTask(
   const recordMarker = (
     phase: 'start' | 'end',
     outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+    summary?: string | null,
   ): void => {
     for (const target of markerThreads) {
       recordTaskRunMarker(
@@ -221,6 +222,7 @@ export async function executeTask(
         phase,
         outcome,
         markerRun,
+        summary,
       );
     }
   };
@@ -677,7 +679,13 @@ export async function executeTask(
           err: serializeError(err),
         });
       }
-      recordMarker('end', finalOutcome);
+      // Read the summary back from the store rather than threading a new
+      // hoisted variable through every finalOutcome assignment branch above
+      // — by this point every branch has already called
+      // store.setQueueEntrySummary() (or left it unset, e.g. the 'blocked'
+      // pause branch, which legitimately has no summary).
+      const finalSummary = store.getTaskRun(entry.id)?.summary ?? null;
+      recordMarker('end', finalOutcome, finalSummary);
       // Single choke point for the live-events broadcast (see
       // docs/superpowers/specs/2026-09-23-live-event-broadcast-design.md) —
       // finalOutcome is already assigned by every branch above (both the

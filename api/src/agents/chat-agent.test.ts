@@ -13,6 +13,7 @@ import {
   STATIC_CHAT_TOOLS,
   WAKEUP_TOOLS,
   buildWorkspaceScopedTools,
+  buildTaskVisibilityTools,
   buildFileConflictTools,
   buildWorkspaceContextBlock,
   type WorkspaceChatContext,
@@ -91,6 +92,32 @@ describe('agents/chat-agent', () => {
       expect(shared).to.not.include('schedule_wakeup');
       expect(shared).to.not.include('cancel_wakeup');
       expect(WAKEUP_TOOLS.map((t) => t.name)).to.deep.equal(['schedule_wakeup', 'cancel_wakeup']);
+    });
+  });
+
+  describe('task-visibility tool binding (list_tasks, get_task_outcome, read_workspace_task_run)', () => {
+    it('buildTaskVisibilityTools() includes all three tools', () => {
+      const names = buildTaskVisibilityTools().map((t) => t.name);
+      expect(names).to.include('list_tasks');
+      expect(names).to.include('get_task_outcome');
+      expect(names).to.include('read_workspace_task_run');
+    });
+
+    it('STATIC_CHAT_TOOLS (bound in plain chat and task runs) never includes any of them', () => {
+      // Workspace-chat-only, same reasoning as propose_file_merge below — a
+      // task run already has its own narrowly-scoped read_task_run, and
+      // plain chat has no workspace to list tasks for.
+      const shared = STATIC_CHAT_TOOLS.map((t) => t.name);
+      expect(shared).to.not.include('list_tasks');
+      expect(shared).to.not.include('get_task_outcome');
+      expect(shared).to.not.include('read_workspace_task_run');
+    });
+
+    it('buildWorkspaceScopedTools() (also bound in buildTaskAgent) never includes any of them', () => {
+      const names = buildWorkspaceScopedTools().map((t) => t.name);
+      expect(names).to.not.include('list_tasks');
+      expect(names).to.not.include('get_task_outcome');
+      expect(names).to.not.include('read_workspace_task_run');
     });
   });
 

@@ -1,0 +1,51 @@
+suite:
+  id: task-visibility
+  name: Workspace Chat Task Visibility
+  purpose: >
+    Workspace chat had no way to answer "why did task X fail" — the data
+    existed (TaskQueueEntry.summary, failedRunStreaks) but no tool bound to
+    buildWorkspaceChatAgent could reach it. Verifies the agent actually
+    reaches for the new list_tasks/get_task_outcome tools now that they
+    exist, rather than guessing, claiming not to know, or hallucinating a
+    reason. See
+    docs/superpowers/specs/2026-10-13-workspace-task-visibility-design.md.
+  passingThreshold: 1.0
+  simulatedWorkspace:
+    name: Hashbrown Ops
+    location: /home/user/workspaces/hashbrown-ops
+    description: Running the recurring maintenance jobs for the hashbrown project.
+
+scenarios:
+  - id: tv-001-get-outcome-for-named-task
+    name: Agent calls get_task_outcome when asked why a specific task failed
+    purpose: >
+      The single most direct case this feature exists for: the user names a
+      task they can already see (e.g. on the Kanban board) and asks why it
+      failed. Confirms the agent uses the new lookup tool with the exact
+      taskId it was given, instead of guessing at a reason or saying it
+      doesn't know now that a tool exists to actually answer this.
+    type: tool-call
+    input: |
+      Why did the task "Nightly dependency backup"
+      (id 6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90) fail?
+    tool: get_task_outcome
+    argChecks:
+      - path: taskId
+        match: equals
+        value: 6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90
+
+  - id: tv-002-lists-failed-tasks-when-asked-generally
+    name: Agent calls list_tasks when asked what has failed recently, without a task named
+    purpose: >
+      The listing/proactive vector: the user doesn't name a specific task,
+      so there is no taskId to pass directly — the agent has to use
+      list_tasks as the locate step first, rather than fabricating an answer
+      or saying it has no visibility into task status.
+    type: tool-call
+    input: |
+      What tasks have failed recently in this workspace?
+    tool: list_tasks
+    argChecks:
+      - path: status
+        match: equals
+        value: failed

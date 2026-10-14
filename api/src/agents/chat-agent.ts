@@ -58,6 +58,9 @@ import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
+import { listTasksTool } from './tools/list-tasks.tool.js';
+import { getTaskOutcomeTool } from './tools/get-task-outcome.tool.js';
+import { readWorkspaceTaskRunTool } from './tools/read-workspace-task-run.tool.js';
 import { proposeFileMergeTool } from './tools/propose-file-merge.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
 import { skillsManager } from '../services/skills-manager.js';
@@ -354,6 +357,20 @@ export function buildWorkspaceScopedTools(callingTaskId?: string) {
   return [makeCreateTasksTool(undefined, undefined, undefined, callingTaskId)];
 }
 
+// Lets workspace chat answer "why did task X fail" and similar — list_tasks
+// is the locate step (returns however many tasks match a plain filter, the
+// same role wiki_locate plays for the wiki write tools), get_task_outcome
+// and read_workspace_task_run then take only an exact taskId already seen
+// there. Bound only in buildWorkspaceChatAgent, never in buildTaskAgent (an
+// automated run already has its own narrowly-scoped read_task_run) or
+// buildSubAgentAgent's candidate pool (a bounded delegation unit has no
+// business browsing the task board — same reasoning buildWorkspaceScopedTools
+// above already documents for create_tasks). See
+// docs/superpowers/specs/2026-10-13-workspace-task-visibility-design.md.
+export function buildTaskVisibilityTools() {
+  return [listTasksTool, getTaskOutcomeTool, readWorkspaceTaskRunTool];
+}
+
 // propose_file_merge is bound only here, not in buildGatedTools() (shared by
 // buildChatAgent/buildTaskAgent) — file tabs are a workspace-chat-only UI
 // concept, so scoping the binding itself (not just the skill gate) is what
@@ -546,6 +563,7 @@ async function buildWorkspaceChatAgent(
       ...WAKEUP_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(),
+      ...buildTaskVisibilityTools(),
       ...buildGatedTools(),
       ...buildFileConflictTools(),
       ...buildWikiWriteTools(),
