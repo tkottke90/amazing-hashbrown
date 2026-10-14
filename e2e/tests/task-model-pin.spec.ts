@@ -150,26 +150,63 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
     expect(wsRes.status()).toBe(201);
     const ws = await wsRes.json();
 
-    // assignedTo: 'agent' + enqueue puts the task in the real queue; the
-    // no-op task executor Playwright's own API server runs under (see
-    // e2e/AGENTS.md) dequeues it and then never resolves, leaving it at
-    // 'running' for the life of this test — no real LLM involved.
-    const taskRes = await request.post('/api/v1/tasks', {
-      data: { title: 'Running model pin test task', workspaceId: ws.id, assignedTo: 'agent' },
+    // Mocks the task's state directly (hydration, not a live run) rather
+    // than actually enqueuing it: under Playwright's own API server, the
+    // no-op task executor (see e2e/AGENTS.md) dequeues a task and then never
+    // resolves, so a genuinely-enqueued 'running' task would stay running
+    // for the rest of the whole suite — no API call ever un-runs it. This
+    // test only needs the drawer to see a 'running' task, not a real
+    // scheduler run, so it fakes the one response the board/drawer reads on
+    // load instead (same pattern as hitl-shell-approval.spec.ts — see
+    // e2e/AGENTS.md's "Mocking API responses").
+    const runningTaskId = 'mock-running-task-id';
+    const runningTask = {
+      id: runningTaskId,
+      workspaceId: ws.id,
+      title: 'Running model pin test task',
+      description: null,
+      outcome: null,
+      status: 'running',
+      assignedTo: 'agent',
+      dueAt: null,
+      expiresAt: null,
+      triggerType: 'manual',
+      triggerConfig: null,
+      trackerType: null,
+      trackerId: null,
+      plan: null,
+      blockedReason: null,
+      provider: null,
+      model: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // 'running' maps to the 'queue' lane (board-rules.ts's LANE_OF), not a
+      // lane of its own — the five rendered lanes are backlog/scheduled/
+      // queue/attention/done.
+      board: { lane: 'queue', moves: [] },
+    };
+    await page.route('**/api/v1/tasks**', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname !== '/api/v1/tasks' || route.request().method() !== 'GET') {
+        return route.fallback();
+      }
+      await route.fulfill({ json: [runningTask] });
     });
-    expect(taskRes.status()).toBe(201);
-    const task = await taskRes.json();
-    const enqRes = await request.post(`/api/v1/tasks/${task.id}/enqueue`);
-    expect(enqRes.status()).toBe(201);
 
     await mockProviderModelList(page);
     await page.goto(`/workspaces/${ws.id}`);
     await page.getByRole('button', { name: /tasks/i }).click();
 
-    await expect(taskCard(page, task.id)).toHaveAttribute('data-status', 'running');
+    await expect(taskCard(page, runningTaskId)).toHaveAttribute('data-status', 'running');
 
     await pauseBeforeAction(page, testInfo);
-    await taskCard(page, task.id).click();
+    // force: true — the card is aria-disabled for drag purposes (a running
+    // task has no legal moves), which also fails Playwright's own
+    // actionability check on a plain click even though clicking it to open
+    // the drawer works fine in a real browser (drag-disabled isn't
+    // click-disabled) — same pattern settings-skills-panel.spec.ts uses for
+    // a disabled-but-clickable button.
+    await taskCard(page, runningTaskId).click({ force: true });
     const drawer = page.locator('dialog[open]');
     await expect(drawer).toBeVisible();
     await expect(drawer.getByTestId('task-model-trigger')).toBeDisabled();
