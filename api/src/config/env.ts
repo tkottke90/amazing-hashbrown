@@ -7,13 +7,30 @@ import { isValidTimeZone } from '../services/cron-schedule.js';
 
 loadDotenv();
 
-export const ModelPricingSchema = z.object({
+// Per-model config on a provider — pricing plus sampling overrides. A
+// model's own value here wins over the matching provider-level field below;
+// unset on both means the underlying client's own default. `id` matches a
+// requested model name by exact string equality only (no prefix/glob) — a
+// provider with several tagged variants of the same base model
+// (gpt-oss:20b, gpt-oss:120b) lists each explicitly. See
+// docs/superpowers/specs/2026-10-14-per-model-sampling-pricing-config-design.md.
+export const ModelConfigSchema = z.object({
   id: z.string(),
   inputPricePerM: z.number().optional(),
   outputPricePerM: z.number().optional(),
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  // Only forwarded for ollama/openai-type providers — Anthropic's API has no
+  // seed parameter and ChatAnthropic exposes no such option.
+  seed: z.number().int().optional(),
+  // Ollama-only below — no OpenAI/Anthropic constructor or API equivalent
+  // exists for any of these three (see createProviderFromConfig).
+  numCtx: z.number().int().positive().optional(),
+  topK: z.number().int().positive().optional(),
+  repeatPenalty: z.number().optional(),
 });
 
-export type ModelPricingConfig = z.infer<typeof ModelPricingSchema>;
+export type ModelConfig = z.infer<typeof ModelConfigSchema>;
 
 export const ProviderSchema = z.object({
   name: z.string(),
@@ -21,7 +38,7 @@ export const ProviderSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   defaultModel: z.string().optional(),
-  models: z.array(ModelPricingSchema).optional(),
+  models: z.array(ModelConfigSchema).optional(),
   // -1 = unlimited (bypasses the provider-queue gate entirely). Optional
   // rather than z.default(1) — a schema default would make this a required
   // key on the inferred ProviderConfig output type, breaking every existing
@@ -35,14 +52,21 @@ export const ProviderSchema = z.object({
   // Stops. See docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md §6.
   // Optional for the same reason maxConcurrency is above.
   timeoutMs: z.number().int().optional(),
-  // Sampling controls. Optional and inert unless set: production chat leaves
-  // them to the provider's own defaults, and only the eval CLI forces them
-  // (see applyEvalDeterminism in provider-factory.ts).
+  // Sampling controls — the default every model on this provider falls back
+  // to when it has no override of its own (see ModelConfigSchema above and
+  // resolveEffectiveSampling in provider-factory.ts). Optional and inert
+  // unless set: production chat leaves them to the provider's own defaults,
+  // and only the eval CLI forces them (see applyEvalDeterminism in
+  // provider-factory.ts).
   temperature: z.number().optional(),
   topP: z.number().optional(),
   // Only forwarded for ollama/openai-type providers — Anthropic's API has no
   // seed parameter and ChatAnthropic exposes no such option.
   seed: z.number().int().optional(),
+  // Ollama-only below — same carve-out as ModelConfigSchema's.
+  numCtx: z.number().int().positive().optional(),
+  topK: z.number().int().positive().optional(),
+  repeatPenalty: z.number().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
@@ -66,6 +90,48 @@ export function parseFavoriteModels(raw: unknown): FavoriteModel[] {
   return raw.flatMap((entry) => {
     const parsed = FavoriteModelSchema.safeParse(entry);
     return parsed.success ? [parsed.data] : [];
+  });
+}
+
+// Same "drop only the malformed entry" philosophy as parseFavoriteModels
+// above, but two levels deep: one bad models[] entry only drops that model
+// (not the whole provider), and one bad provider only drops that provider
+// (not the whole providers[] list). Used in place of
+// configManager.getSection('providers', z.array(ProviderSchema)), whose
+// all-or-nothing array validation would otherwise let a single hand-edit
+// typo anywhere in providers[] silently empty the entire list (see the
+// providers getter below). Uses console.warn, not the shared logger —
+// logger.ts imports from this file, so logger.warn from here would be a
+// circular import (see the timezone getter below for the same reasoning).
+export function parseProviders(raw: unknown): ProviderConfig[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null) return [];
+    const { models: rawModels, ...rest } = entry as Record<string, unknown>;
+    const base = ProviderSchema.omit({ models: true }).safeParse(rest);
+    if (!base.success) {
+      const name = (rest as { name?: unknown }).name;
+      console.warn(
+        `config: provider "${typeof name === 'string' ? name : '?'}" is invalid — dropped`,
+        base.error.issues,
+      );
+      return [];
+    }
+    const models = Array.isArray(rawModels)
+      ? rawModels.flatMap((m) => {
+          const parsed = ModelConfigSchema.safeParse(m);
+          if (!parsed.success) {
+            const id = (m as { id?: unknown })?.id;
+            console.warn(
+              `config: provider "${base.data.name}" model "${typeof id === 'string' ? id : '(no id)'}" has an invalid value — entry dropped`,
+              parsed.error.issues,
+            );
+            return [];
+          }
+          return [parsed.data];
+        })
+      : undefined;
+    return [{ ...base.data, ...(models ? { models } : {}) }];
   });
 }
 
@@ -355,12 +421,17 @@ export const env = {
     return configManager.getNumber('webhookRateLimitPerMinute', 60) as number;
   },
   get providers(): ProviderConfig[] {
+    // configManager.get() always String()-coerces its result (it's built for
+    // scalar env-var-style values) — getSection() is the only accessor that
+    // returns the raw, unstringified section, so it's used here (validated
+    // only shallowly, against z.array(z.unknown())) purely to fetch the raw
+    // array for parseProviders to validate entry-by-entry itself. Catches
+    // both "providers key missing" and "providers isn't an array at all",
+    // both of which getSection throws on.
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection(
-        'providers',
-        z.array(ProviderSchema),
-      ) as ProviderConfig[];
+      const raw = (configManager as any).getSection('providers', z.array(z.unknown()));
+      return parseProviders(raw);
     } catch {
       return [];
     }

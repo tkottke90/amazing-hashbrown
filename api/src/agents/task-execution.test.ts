@@ -581,10 +581,6 @@ describe('agents/task-execution', () => {
   describe('usage metrics and trace (issue #132)', () => {
     const USAGE = { inputTokens: 1000, outputTokens: 500 };
 
-    afterEach(() => {
-      configManager.set('costs', {});
-    });
-
     // finalizeTurn persists metrics on the turn's final assistant segment —
     // the last assistant row in the run thread.
     function finalAssistantRow(entry: QueueEntryWithTask) {
@@ -616,20 +612,21 @@ describe('agents/task-execution', () => {
     });
 
     it('prices the run message when a rate exists for the resolved provider/model [orchestration]', async () => {
-      configManager.set('costs', {
-        [`${TEST_PROVIDER}/${TEST_MODEL}`]: {
-          inputPer1kTokens: 0.01,
-          inputScale: '1k',
-          outputPer1kTokens: 0.02,
-          outputScale: '1k',
+      configManager.set('providers', [
+        {
+          name: TEST_PROVIDER,
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: TEST_MODEL,
+          models: [{ id: TEST_MODEL, inputPricePerM: 10, outputPricePerM: 20 }],
         },
-      });
+      ]);
       const entry = makeGlobalEntry();
       await executeTask(entry, {
         buildTaskAgent: fakeBuildTaskAgent(fakeMeteredAgent(COMPLETE_TASK_DONE_EVENTS, USAGE)),
       });
 
-      // 1000 in * $0.01/1k + 500 out * $0.02/1k — only reachable if the
+      // 1000 in * $10/1M + 500 out * $20/1M — only reachable if the
       // run's model is resolved rather than left undefined.
       const payload = finalAssistantRow(entry).payload as MetricsPayload;
       expect(payload.cost?.dollars).to.be.closeTo(0.02, 1e-9);

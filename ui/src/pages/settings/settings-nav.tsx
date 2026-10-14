@@ -8,7 +8,7 @@ export type SettingsSlug =
   | 'embeddings'
   | 'agent-behavior'
   | 'tools'
-  | 'cost-rates'
+  | 'model-settings'
   | 'mcp-servers'
   | 'skills'
   | 'notifications';
@@ -21,7 +21,7 @@ const NAV_ITEMS: { label: string; slug: SettingsSlug }[] = [
   { label: 'Embeddings', slug: 'embeddings' },
   { label: 'Agent behavior', slug: 'agent-behavior' },
   { label: 'Tools', slug: 'tools' },
-  { label: 'Cost rates', slug: 'cost-rates' },
+  { label: 'Model Settings', slug: 'model-settings' },
   { label: 'MCP Servers', slug: 'mcp-servers' },
   { label: 'Skills', slug: 'skills' },
   { label: 'Notifications', slug: 'notifications' },

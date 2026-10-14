@@ -26,6 +26,7 @@ import {
   applyEvalDeterminism,
   createProviderFromConfig,
   describeSampling,
+  resolveEffectiveSampling,
   resolveProviderConfig,
 } from '../api/src/services/provider-factory.js';
 import { env } from '../api/src/config/env.js';
@@ -50,6 +51,7 @@ const { values } = parseArgs({
     'llm-review': { type: 'boolean', default: false },
     'check-baseline': { type: 'boolean', default: false },
     'baseline-slug': { type: 'string' },
+    'use-model-sampling': { type: 'boolean', default: false },
   },
   strict: false,
 });
@@ -104,16 +106,59 @@ const judgeModelId = values['judge-model'];
 
 let model: ReturnType<typeof createProviderFromConfig>;
 let judgeModel: ReturnType<typeof createProviderFromConfig>;
+let sampling: { mode: 'forced' | 'model-configured' } & ReturnType<typeof resolveEffectiveSampling>;
 try {
-  // Temperature is pinned to 0 and a fixed seed applied to the model under test
-  // and the judge, regardless of what config.yaml sets for everyday chat —
-  // except anthropic providers, which can't take either (see applyEvalDeterminism).
-  const modelConfig = applyEvalDeterminism(resolveProviderConfig(modelId), seed, {
-    temperature: temperatureOverride,
-  });
+  // Judge is always forced — its scoring must stay stable regardless of
+  // --use-model-sampling, which only ever applies to the model under test.
   const judgeConfig = applyEvalDeterminism(resolveProviderConfig(judgeModelId), seed);
-  model = createProviderFromConfig(modelConfig);
   judgeModel = createProviderFromConfig(judgeConfig);
+
+  const rawModelConfig = resolveProviderConfig(modelId);
+  // modelId is this CLI's own convention for a provider name, not a model
+  // name — createProviderFromConfig is never called with an explicit model
+  // arg anywhere in this file (see `provider: modelId` below), so the
+  // resolved model is always the provider's defaultModel.
+  const resolvedModelName = rawModelConfig.defaultModel;
+
+  let modelConfig = rawModelConfig;
+  let samplingMode: 'forced' | 'model-configured' = 'forced';
+
+  if (values['use-model-sampling'] && resolvedModelName) {
+    // Temperature is pinned to 0 and a fixed seed applied to the model under
+    // test and the judge, regardless of what config.yaml sets for everyday
+    // chat — except anthropic providers, which can't take either (see
+    // applyEvalDeterminism). --use-model-sampling resolves the model's own
+    // configured temperature/seed and lets them win per-field, falling back
+    // to that forced value only for whichever field the model leaves unset
+    // — still deterministic wherever the model doesn't specify a value.
+    // --temperature, when explicitly passed, wins over everything (model's
+    // own config included) in either mode.
+    const forced = applyEvalDeterminism(rawModelConfig, seed, { temperature: temperatureOverride });
+    const modelSampling = resolveEffectiveSampling(rawModelConfig, resolvedModelName);
+    modelConfig = {
+      ...rawModelConfig,
+      temperature: temperatureOverride ?? modelSampling.temperature ?? forced.temperature,
+      seed: modelSampling.seed ?? forced.seed,
+    };
+    samplingMode = 'model-configured';
+  } else {
+    modelConfig = applyEvalDeterminism(rawModelConfig, seed, { temperature: temperatureOverride });
+  }
+
+  model = createProviderFromConfig(modelConfig);
+
+  // Report the actual resolved values (post per-model merge), not just
+  // whatever modelConfig carries at the provider level — a models[] entry's
+  // own topP/numCtx/topK/repeatPenalty still applies via
+  // createProviderFromConfig's own resolution in either mode above, and the
+  // recorded sampling should reflect what the model actually ran with.
+  sampling = {
+    ...(resolvedModelName
+      ? resolveEffectiveSampling(modelConfig, resolvedModelName)
+      : { temperature: modelConfig.temperature, topP: modelConfig.topP, seed: modelConfig.seed }),
+    mode: samplingMode,
+  };
+
   console.log(
     `[eval] sampling — model "${modelId}": ${describeSampling(modelConfig)}; ` +
       `judge "${judgeModelId}": ${describeSampling(judgeConfig)}`,
@@ -333,6 +378,7 @@ async function runOneSuite(
       ci: values.ci,
       noHtml: values['no-html'],
       store,
+      sampling,
       // Cast through the narrow *Like interfaces lib/evaluations declares
       // (it only peer-depends on @langchain/core, not langchain — the
       // package these real instances' richer types live in). Verified safe

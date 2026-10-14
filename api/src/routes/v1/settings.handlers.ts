@@ -12,13 +12,13 @@ import {
   WebFetchConfigSchema,
   ProviderSchema,
   FavoriteModelSchema,
-  CostEntrySchema,
   GithubTrackerSchema,
   WorkspacesSchema,
   type ProviderConfig,
   type FavoriteModel,
   type CostEntry,
   type RLMConfig,
+  type ModelConfig,
 } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { describeCredential, validateCredentialValue } from '../../config/credential-value.js';
@@ -182,7 +182,21 @@ export type AgentBehaviorSettings = {
   observability: z.infer<typeof ObservabilitySchema>;
 };
 
-export type CostRatesSettings = { costs: Record<string, CostEntry> };
+// One configured providers[].models[] entry, flattened with its parent
+// provider's name/type for display — `providerType` is read-only/derived
+// (never required on a PATCH body; the write handler re-derives provider
+// identity purely from `provider`). `legacyCosts` lists the top-level
+// `costs:` keys that are no longer read for pricing at all, so the Model
+// Settings panel can show the still-unmigrated-entries banner (see
+// docs/superpowers/specs/2026-10-14-per-model-sampling-pricing-config-design.md
+// §4/§6).
+export type ModelSettingsEntry = {
+  provider: string;
+  providerType: ProviderConfig['type'];
+  modelId: string;
+} & Omit<ModelConfig, 'id'>;
+
+export type ModelSettingsSettings = { models: ModelSettingsEntry[]; legacyCosts: string[] };
 
 export type TrackersSettings = { github: z.infer<typeof GithubTrackerSchema> };
 
@@ -387,12 +401,85 @@ const SLUG_MAP: Record<string, SlugDef> = {
   // instead of this batched form. See
   // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §4/§6.
 
-  'cost-rates': {
-    get: (env) => ({ costs: env.costs }),
-    patchSchema: z.object({ costs: z.record(z.string(), CostEntrySchema) }).partial(),
-    write: (v, configDir) => {
-      const data = v as { costs?: Record<string, CostEntry> };
-      if (data.costs !== undefined) mergeConfigYaml(configDir, { costs: data.costs });
+  'model-settings': {
+    get: (env) => ({
+      models: env.providers.flatMap((p) =>
+        (p.models ?? []).map((m) => ({
+          provider: p.name,
+          providerType: p.type,
+          modelId: m.id,
+          inputPricePerM: m.inputPricePerM,
+          outputPricePerM: m.outputPricePerM,
+          temperature: m.temperature,
+          topP: m.topP,
+          seed: m.seed,
+          numCtx: m.numCtx,
+          topK: m.topK,
+          repeatPenalty: m.repeatPenalty,
+        })),
+      ),
+      legacyCosts: Object.keys(env.costs),
+    }),
+    patchSchema: z.object({
+      models: z.array(
+        z.object({
+          provider: z.string(),
+          modelId: z.string(),
+          inputPricePerM: z.number().optional(),
+          outputPricePerM: z.number().optional(),
+          temperature: z.number().optional(),
+          topP: z.number().optional(),
+          seed: z.number().int().optional(),
+          numCtx: z.number().int().positive().optional(),
+          topK: z.number().int().positive().optional(),
+          repeatPenalty: z.number().optional(),
+        }),
+      ),
+    }),
+    validate: (v, env) => {
+      const data = v as { models?: Array<{ provider: string }> };
+      if (data.models === undefined) return null;
+      const known = new Set(env.providers.map((p) => p.name));
+      const errors = data.models
+        .filter((m) => !known.has(m.provider))
+        .map((m) => `Model entry references unknown provider "${m.provider}"`);
+      return errors.length > 0 ? { models: errors } : null;
+    },
+    write: (v, configDir, env) => {
+      const data = v as {
+        models?: Array<{ provider: string; modelId: string } & Omit<ModelConfig, 'id'>>;
+      };
+      if (data.models === undefined) return;
+
+      // Group submitted rows by provider. The Settings UI always resubmits
+      // every row it didn't delete, across every provider the GET response
+      // showed it (see ModelSettingsSettings) — so a provider gets its
+      // models[] replaced wholesale with exactly the rows named for it here
+      // (possibly none, if every row was deleted) whenever it EITHER
+      // currently has any models[] of its own OR appears in this submission.
+      // A provider that has never had any model config and isn't in this
+      // submission either is left alone — it was never part of what the UI
+      // could have shown or changed.
+      const byProvider = new Map<string, (typeof data.models)[number][]>();
+      for (const row of data.models) {
+        const list = byProvider.get(row.provider) ?? [];
+        list.push(row);
+        byProvider.set(row.provider, list);
+      }
+
+      const updatedProviders = env.providers.map((p) => {
+        const rows = byProvider.get(p.name);
+        const hadModels = (p.models ?? []).length > 0;
+        if (!hadModels && rows === undefined) return p;
+        return {
+          ...p,
+          models: (rows ?? []).map(({ provider: _provider, modelId, ...rest }) => ({
+            id: modelId,
+            ...rest,
+          })),
+        };
+      });
+      mergeConfigYaml(configDir, { providers: updatedProviders });
     },
   },
 

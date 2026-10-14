@@ -68,8 +68,8 @@ const suite: TestSuite = {
     },
     {
       tags: ['@smoke'],
-      action: 'Load Cost rates with empty costs',
-      expectedOutcome: 'Empty state renders with Add rate prompt',
+      action: 'Load Model settings with no models configured',
+      expectedOutcome: 'Empty state renders with Add model prompt',
       test: () => {},
     },
   ],
@@ -104,15 +104,9 @@ const STUBS: StubMap = {
     chat: { showErrorMessages: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
-  'cost-rates': {
-    costs: {
-      'gpt-4o': {
-        inputPer1kTokens: 0.005,
-        inputScale: '1k',
-        outputPer1kTokens: 0.015,
-        outputScale: '1k',
-      },
-    },
+  'model-settings': {
+    models: [{ provider: 'openai', providerType: 'openai', modelId: 'gpt-4o', inputPricePerM: 5 }],
+    legacyCosts: [],
   },
   skills: {},
 };
@@ -355,28 +349,41 @@ test.describe('Settings sections', { annotation: suiteAnnotations(suite) }, () =
     await expect(rowNames).toHaveText(['Web Fetch', 'Wiki Search']);
   });
 
-  // ---- Cost rates --------------------------------------------------------
+  // ---- Model settings -----------------------------------------------------
 
-  test('Cost rates: empty state renders @smoke', async ({ page }, testInfo) => {
-    await mockSettingsApi(page, { ...STUBS, 'cost-rates': { costs: {} } });
-    await page.goto('/settings?section=cost-rates');
+  test('Model settings: empty state renders @smoke', async ({ page }, testInfo) => {
+    await mockSettingsApi(page, { ...STUBS, 'model-settings': { models: [], legacyCosts: [] } });
+    await page.goto('/settings?section=model-settings');
     await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('No cost rates configured.')).toBeVisible();
+    await expect(page.getByText('No models configured.')).toBeVisible();
   });
 
-  test('Cost rates: populated rows render with model key and prices @smoke', async ({
+  test('Model settings: populated rows render with provider/model and prices @smoke', async ({
     page,
   }, testInfo) => {
     await mockSettingsApi(page);
-    await page.goto('/settings?section=cost-rates');
+    await page.goto('/settings?section=model-settings');
     await pauseBeforeAction(page, testInfo);
-    // Two elements match: the row's own summary text, and the same model
-    // key as static read-only text inside that row's (closed) Edit-mode
-    // dialog — hidden via the native <dialog>'s default display:none, but
-    // still present in the DOM and still matched by a text locator. The
-    // row's own paragraph renders first.
-    await expect(page.getByText('gpt-4o').first()).toBeVisible();
-    await expect(page.getByText(/In: \$0.005\/1k/)).toBeVisible();
+    // Two elements match: the row's own summary text, and the same
+    // provider/model key as static read-only text inside that row's (closed)
+    // Edit-mode dialog — hidden via the native <dialog>'s default
+    // display:none, but still present in the DOM and still matched by a
+    // text locator. The row's own paragraph renders first.
+    await expect(page.getByText('openai/gpt-4o').first()).toBeVisible();
+    await expect(page.getByText(/In: \$5\/1M/)).toBeVisible();
+  });
+
+  test('Model settings: legacy cost entries are surfaced in a migration banner @smoke', async ({
+    page,
+  }, testInfo) => {
+    await mockSettingsApi(page, {
+      ...STUBS,
+      'model-settings': { models: [], legacyCosts: ['anthropic/claude-sonnet-4-6'] },
+    });
+    await page.goto('/settings?section=model-settings');
+    await pauseBeforeAction(page, testInfo);
+    await expect(page.getByText(/no longer used for pricing/)).toBeVisible();
+    await expect(page.getByText('anthropic/claude-sonnet-4-6')).toBeVisible();
   });
 
   // ---- Placeholders ------------------------------------------------------

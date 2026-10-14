@@ -403,6 +403,26 @@ export const EvalRunSchema = z.object({
       verdict: z.enum(['WITHIN_BASELINE', 'REGRESSION', 'IMPROVEMENT']),
     })
     .optional(),
+  // The sampling settings the model under test actually ran with — set by
+  // bin/eval.ts (runEval()/runner.ts just carries it through, same as
+  // systemPrompt above), never read back by this package itself. 'forced'
+  // is today's unconditional temperature-0/fixed-seed pinning
+  // (applyEvalDeterminism); 'model-configured' is the opt-in
+  // --use-model-sampling path, where the model's own providers[].models[]
+  // sampling wins per-field, falling back to the forced value only for
+  // whichever field it leaves unset. YAML-only, like baseline above — not
+  // persisted to the SQLite store (see store.ts's eval_runs columns).
+  sampling: z
+    .object({
+      temperature: z.number().optional(),
+      topP: z.number().optional(),
+      seed: z.number().optional(),
+      numCtx: z.number().optional(),
+      topK: z.number().optional(),
+      repeatPenalty: z.number().optional(),
+      mode: z.enum(['forced', 'model-configured']),
+    })
+    .optional(),
 });
 
 // The full turn-by-turn transcript actually sent to and received from the

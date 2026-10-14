@@ -25,6 +25,12 @@ export interface ProviderConfig {
   // provider — -1 = unlimited (bypasses the gate). Undefined/unset defaults
   // to 1 server-side (see ProviderSchema in api/src/config/env.ts).
   maxConcurrency?: number;
+  // Per-model pricing/sampling config (see ProviderSchema.models in
+  // api/src/config/env.ts) — this modal never edits it (that's the Model
+  // Settings panel's job), but must carry it through unchanged on save, or
+  // editing any other field here would silently wipe it. Untyped here
+  // deliberately: this modal has no reason to know its shape.
+  models?: unknown[];
 }
 
 interface ProviderModalProps {
@@ -114,6 +120,9 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
       apiKey: apiKey.value || undefined,
       defaultModel: defaultModel.value.trim() || undefined,
       maxConcurrency: Number(maxConcurrency.value) || 1,
+      // This form has no fields for it — carry the existing value through
+      // unchanged so editing baseUrl/apiKey/etc. can't silently wipe it.
+      models: initial?.models,
     });
     close();
   }

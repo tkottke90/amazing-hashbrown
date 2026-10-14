@@ -107,6 +107,57 @@ describe('ModelProvidersPanel', () => {
     expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
   });
 
+  // Regression test: provider-modal.tsx's form has no fields for models[]
+  // (that's the Model Settings panel's job), so editing a provider used to
+  // silently drop its models[] on save — see
+  // docs/superpowers/specs/2026-10-14-per-model-sampling-pricing-config-design.md's
+  // Context section.
+  it("preserves a provider's models[] when editing an unrelated field [unit]", async () => {
+    mockFetch.mockResolvedValue({
+      ...DEFAULT_DATA,
+      providers: [
+        {
+          name: 'ollama',
+          type: 'ollama' as const,
+          defaultModel: 'llama3',
+          models: [{ id: 'llama3', temperature: 0.8 }],
+        },
+        { name: 'openai', type: 'openai' as const, apiKey: '****' },
+      ],
+    });
+    mockPatch.mockResolvedValue(DEFAULT_DATA);
+    const { container } = await renderLoaded();
+
+    // The mocked Dialog (test/__mocks__/preact-dialog.tsx) renders every
+    // ProviderModal instance's form unconditionally, so the Add form and
+    // both rows' Edit forms are all in the DOM at once, sharing the same
+    // field ids — scope to the ollama row's own <li> (which nests its Edit
+    // form inline, same as its trigger button) via its data-slot, since
+    // "ollama" as plain text also appears elsewhere (the row's own Type
+    // select, the Default-provider picker).
+    const rows = container.querySelectorAll('[data-slot="provider-row"]');
+    const row = Array.from(rows).find((r) =>
+      r.querySelector('[data-slot="provider-row-name"]')?.textContent?.includes('ollama'),
+    ) as HTMLElement;
+    // getByLabelText resolves a label's `for` via document.getElementById,
+    // which (with the Add form's identically-id'd field also in the
+    // document) can resolve to a field outside `row` entirely — a plain
+    // attribute selector scoped to `row` sidesteps that.
+    const baseUrlInput = row.querySelector('#provider-baseUrl') as HTMLInputElement;
+    fireEvent.input(baseUrlInput, { target: { value: 'http://localhost:9999' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+
+    fireEvent.click(await screen.findByText('Save changes'));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+    const [, body] = mockPatch.mock.calls[0]!;
+    const providers = (body as { providers: Array<{ name: string; models?: unknown[] }> })
+      .providers;
+    expect(providers.find((p) => p.name === 'ollama')?.models).toEqual([
+      { id: 'llama3', temperature: 0.8 },
+    ]);
+  });
+
   it('shows empty state when no providers', async () => {
     mockFetch.mockResolvedValue({ providers: [], defaultProvider: '' });
     render(<ModelProvidersPanel />);

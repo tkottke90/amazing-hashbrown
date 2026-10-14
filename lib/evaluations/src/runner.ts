@@ -122,6 +122,11 @@ export interface RunConfig {
   /** Real production skillGatedToolsMiddleware. Same requirement as
    * skillExpansionMiddleware above. */
   skillGatedToolsMiddleware?: SkillGatedToolsMiddlewareLike;
+  /** The sampling settings bin/eval.ts actually resolved for the model
+   * under test, carried straight through onto the returned EvalRun (see
+   * EvalRunSchema's sampling field) — this package never reads or
+   * interprets it itself, same treatment as systemPrompt above. */
+  sampling?: EvalRun['sampling'];
 }
 
 export interface RunResult {
@@ -1282,6 +1287,7 @@ export function computeRunSummary(
   judgeModelId: string,
   startedAt: string,
   systemPrompt?: string,
+  sampling?: EvalRun['sampling'],
 ): EvalRun {
   const scorable = results.filter(
     (r) =>
@@ -1313,6 +1319,7 @@ export function computeRunSummary(
     totalLatencyMs,
     estimatedCostUsd,
     systemPrompt: systemPrompt ?? null,
+    sampling,
   };
 }
 
@@ -1372,6 +1379,7 @@ export async function runEval(config: RunConfig): Promise<RunResult> {
     config.judgeModelId,
     startedAt,
     config.systemPrompt,
+    config.sampling,
   );
 
   // Dual-write: SQLite (if store provided) and YAML

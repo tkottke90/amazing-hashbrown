@@ -40,17 +40,17 @@ The API also loads a `.env` file from the process's working directory at startup
 
 ## Top-Level Options
 
-| Key               | Type   | Default         | Description                                                                                                                    |
-| ----------------- | ------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `port`            | number | `3000`          | Port the API server listens on.                                                                                                |
-| `logLevel`        | string | `"info"`        | Log verbosity: `debug` \| `info` \| `warn` \| `error`.                                                                         |
-| `wikiRoot`        | string | `"./wiki"`      | Path to the knowledge-base root directory, resolved relative to the config directory.                                          |
-| `mcpConfigDir`    | string | `"./mcp"`       | Directory holding `mcp.json` (MCP server definitions) and other runtime config, resolved the same way.                         |
-| `artifactRoot`    | string | `"./artifacts"` | Directory where uploaded and agent-generated artifacts (images, files) are stored, resolved the same way.                      |
-| `defaultProvider` | string | `""`            | The `name` of the provider used for requests that don't specify one. See [Providers](./Providers.md).                          |
-| `providers`       | array  | `[]`            | LLM provider definitions. See [Providers](./Providers.md) for the full schema and per-engine examples.                         |
-| `favoriteModels`  | array  | `[]`            | Pinned `{ provider, model }` pairs shown at the top of the chat Provider menu. See [Providers](./Providers.md#favoritemodels). |
-| `costs`           | object | `{}`            | Per-provider/model token pricing, keyed `"providerName/model"`. See [Cost Rates](#cost-rates).                                 |
+| Key               | Type   | Default         | Description                                                                                                                                                                                                                  |
+| ----------------- | ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`            | number | `3000`          | Port the API server listens on.                                                                                                                                                                                              |
+| `logLevel`        | string | `"info"`        | Log verbosity: `debug` \| `info` \| `warn` \| `error`.                                                                                                                                                                       |
+| `wikiRoot`        | string | `"./wiki"`      | Path to the knowledge-base root directory, resolved relative to the config directory.                                                                                                                                        |
+| `mcpConfigDir`    | string | `"./mcp"`       | Directory holding `mcp.json` (MCP server definitions) and other runtime config, resolved the same way.                                                                                                                       |
+| `artifactRoot`    | string | `"./artifacts"` | Directory where uploaded and agent-generated artifacts (images, files) are stored, resolved the same way.                                                                                                                    |
+| `defaultProvider` | string | `""`            | The `name` of the provider used for requests that don't specify one. See [Providers](./Providers.md).                                                                                                                        |
+| `providers`       | array  | `[]`            | LLM provider definitions. See [Providers](./Providers.md) for the full schema and per-engine examples.                                                                                                                       |
+| `favoriteModels`  | array  | `[]`            | Pinned `{ provider, model }` pairs shown at the top of the chat Provider menu. See [Providers](./Providers.md#favoritemodels).                                                                                               |
+| `costs`           | object | `{}`            | **Deprecated** — per-model pricing now lives on `providers[].models[]` (see [Providers](./Providers.md#models)). Retained only to drive the startup-warning/Settings-banner migration prompt; see [Cost Rates](#cost-rates). |
 
 ```yaml
 port: 3000
@@ -161,35 +161,23 @@ Overridable per-request via `GET /api/v1/threads/:id?showErrors=true`.
 
 ## Cost Rates
 
-Optional. Maps `"providerName/model"` keys (where `providerName` matches a `name` in `providers[]`)
-to per-1,000-token prices in USD, used to estimate spend in observability data. Omitting a
-provider/model pair treats it as free (`$0`) — local/Ollama models can typically be omitted
-entirely.
-
-| Key                 | Type         | Default | Description                                                                                                                                    |
-| ------------------- | ------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inputPer1kTokens`  | number       | `0`     | USD price per 1,000 input tokens — always normalized to this unit, regardless of `inputScale`.                                                 |
-| `inputScale`        | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in (so the Settings UI's toggle can restore it). Does not affect cost calculation. |
-| `outputPer1kTokens` | number       | `0`     | USD price per 1,000 output tokens — always normalized to this unit, regardless of `outputScale`.                                               |
-| `outputScale`       | `1k` \| `1M` | `1k`    | UI-only metadata recording which unit the value was entered in. Does not affect cost calculation.                                              |
-
-```yaml
-costs:
-  anthropic/claude-sonnet-4-6:
-    inputPer1kTokens: 0.003
-    outputPer1kTokens: 0.015
-  openai/gpt-4.1-mini:
-    inputPer1kTokens: 0.0004
-    outputPer1kTokens: 0.0012
-  glm/glm-5.3:
-    inputScale: 1M
-    inputPer1kTokens: 0.0014 # $1.40 / 1,000,000
-    outputScale: 1M
-    outputPer1kTokens: 0.0044 # $4.40 / 1,000,000
-```
+Per-model pricing lives on `providers[].models[]` now — see
+[Providers → `models[]`](./Providers.md#models) for the field reference and examples. It is read
+by the model picker's price display, cost estimates in observability data, and the Settings UI's
+**Model Settings** page, all from the one place and one unit (USD per 1,000,000 tokens).
 
 Rates are stored historically — changing a price does not rewrite past data. Spans already
 recorded keep the rate that was active when they ran.
+
+### Migrating from `costs:`
+
+The old top-level `costs:` map (keyed `"providerName/model"`, priced per 1,000 tokens) is no
+longer read for pricing at all — a `costs:` entry's provider/model pair prices as `$0` until
+you move it. This is intentional, not silent: on startup (and after every settings save), the
+server logs one warning per unmigrated `costs:` key, and the Settings → **Model Settings** page
+shows the same list in a banner above the model list. Move each entry's price into that
+provider's `models[]`, multiplying the old per-1,000-token price by 1,000 to get the per-million
+value (e.g. `inputPer1kTokens: 0.003` becomes `inputPricePerM: 3`), then remove it from `costs:`.
 
 ---
 
@@ -215,6 +203,10 @@ providers:
     type: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
     defaultModel: claude-sonnet-4-6
+    models:
+      - id: claude-sonnet-4-6
+        inputPricePerM: 3
+        outputPricePerM: 15
 
 defaultProvider: local
 
@@ -241,14 +233,6 @@ afterAgent:
 
 chat:
   showErrorMessages: false
-
-costs:
-  anthropic/claude-sonnet-4-6:
-    inputPer1kTokens: 0.003
-    outputPer1kTokens: 0.015
-  openai/gpt-4.1-mini:
-    inputPer1kTokens: 0.0004
-    outputPer1kTokens: 0.0012
 ```
 
 This mirrors `api/config.yaml.example` — the source of truth if this page and the schema ever

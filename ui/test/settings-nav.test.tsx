@@ -9,7 +9,7 @@ const NAV_LABELS = [
   'Embeddings',
   'Agent behavior',
   'Tools',
-  'Cost rates',
+  'Model Settings',
   'MCP Servers',
   'Skills',
   'Notifications',

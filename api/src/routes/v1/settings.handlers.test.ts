@@ -315,27 +315,44 @@ describe('routes/v1/settings.handlers', () => {
       }
     });
 
-    it('returns costs record for cost-rates [unit]', () => {
-      const envWithCosts = makeEnv({
+    it('returns configured models and legacy cost keys for model-settings [unit]', () => {
+      const env = makeEnv({
+        providers: [
+          {
+            name: 'openai',
+            type: 'openai',
+            models: [{ id: 'gpt-4', inputPricePerM: 30, outputPricePerM: 60, temperature: 0.5 }],
+          },
+        ],
         costs: {
-          'gpt-4': {
-            inputPer1kTokens: 0.03,
+          'anthropic/claude-sonnet-4-6': {
+            inputPer1kTokens: 0.003,
             inputScale: '1k',
-            outputPer1kTokens: 0.06,
+            outputPer1kTokens: 0.015,
             outputScale: '1k',
           },
         },
       });
-      const result = getSettingsSectionHandler('cost-rates', envWithCosts, makeConfig(tmpDir));
+      const result = getSettingsSectionHandler('model-settings', env, makeConfig(tmpDir));
       expect(result.ok).to.equal(true);
       if (result.ok) {
-        const data = result.data as { costs: Record<string, unknown> };
-        expect(data.costs['gpt-4']).to.deep.equal({
-          inputPer1kTokens: 0.03,
-          inputScale: '1k',
-          outputPer1kTokens: 0.06,
-          outputScale: '1k',
-        });
+        const data = result.data as { models: unknown[]; legacyCosts: string[] };
+        expect(data.models).to.deep.equal([
+          {
+            provider: 'openai',
+            providerType: 'openai',
+            modelId: 'gpt-4',
+            inputPricePerM: 30,
+            outputPricePerM: 60,
+            temperature: 0.5,
+            topP: undefined,
+            seed: undefined,
+            numCtx: undefined,
+            topK: undefined,
+            repeatPenalty: undefined,
+          },
+        ]);
+        expect(data.legacyCosts).to.deep.equal(['anthropic/claude-sonnet-4-6']);
       }
     });
   });
@@ -864,9 +881,12 @@ describe('routes/v1/settings.handlers', () => {
       expect(savedProviders[0].apiKey).to.equal('');
     });
 
-    it('writes cost-rates and returns updated costs [unit]', async () => {
+    it("writes a new model-settings entry into its provider's models[] [unit]", async () => {
+      writeYaml(tmpDir, {
+        providers: [{ name: 'openai', type: 'openai' }],
+      });
       const config = makeConfig(tmpDir);
-      const envEmpty = makeEnv({ costs: {} });
+      const env = makeEnv({ providers: [{ name: 'openai', type: 'openai' }] });
       const {
         loadAgentInstructions,
         invalidateChatAgent,
@@ -875,10 +895,10 @@ describe('routes/v1/settings.handlers', () => {
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
-        'cost-rates',
-        { costs: { 'gpt-4': { inputPer1kTokens: 0.03, outputPer1kTokens: 0.06 } } },
+        'model-settings',
+        { models: [{ provider: 'openai', modelId: 'gpt-4', inputPricePerM: 30 }] },
         config,
-        envEmpty,
+        env,
         loadAgentInstructions,
         invalidateChatAgent,
         seedProviderCosts,
@@ -887,12 +907,172 @@ describe('routes/v1/settings.handlers', () => {
 
       expect(result.ok).to.equal(true);
       const written = readYaml(tmpDir);
-      expect((written.costs as Record<string, unknown>)['gpt-4']).to.deep.equal({
-        inputPer1kTokens: 0.03,
-        inputScale: '1k',
-        outputPer1kTokens: 0.06,
-        outputScale: '1k',
+      const savedProviders = written.providers as Array<{ name: string; models?: unknown[] }>;
+      expect(savedProviders[0]?.models).to.deep.equal([{ id: 'gpt-4', inputPricePerM: 30 }]);
+    });
+
+    it('edits an existing model entry without disturbing a sibling model on the same provider [unit]', async () => {
+      writeYaml(tmpDir, {
+        providers: [
+          {
+            name: 'local',
+            type: 'ollama',
+            models: [
+              { id: 'llama3', temperature: 0.5 },
+              { id: 'qwen3', temperature: 0.2 },
+            ],
+          },
+        ],
       });
+      const config = makeConfig(tmpDir);
+      const env = makeEnv({
+        providers: [
+          {
+            name: 'local',
+            type: 'ollama',
+            models: [
+              { id: 'llama3', temperature: 0.5 },
+              { id: 'qwen3', temperature: 0.2 },
+            ],
+          },
+        ],
+      });
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'model-settings',
+        {
+          models: [
+            { provider: 'local', modelId: 'llama3', temperature: 1 },
+            { provider: 'local', modelId: 'qwen3', temperature: 0.2 },
+          ],
+        },
+        config,
+        env,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      const savedProviders = written.providers as Array<{ name: string; models?: unknown[] }>;
+      expect(savedProviders[0]?.models).to.deep.equal([
+        { id: 'llama3', temperature: 1 },
+        { id: 'qwen3', temperature: 0.2 },
+      ]);
+    });
+
+    it('deletes a model entry omitted from the submitted list, leaving other providers untouched [unit]', async () => {
+      writeYaml(tmpDir, {
+        providers: [
+          { name: 'local', type: 'ollama', models: [{ id: 'llama3', temperature: 0.5 }] },
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4', inputPricePerM: 30 }] },
+        ],
+      });
+      const config = makeConfig(tmpDir);
+      const env = makeEnv({
+        providers: [
+          { name: 'local', type: 'ollama', models: [{ id: 'llama3', temperature: 0.5 }] },
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4', inputPricePerM: 30 }] },
+        ],
+      });
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      // The UI always resubmits every row it didn't delete: here it deletes
+      // local's only model (omitted entirely) while resubmitting openai's
+      // row unchanged.
+      const result = await patchSettingsSectionHandler(
+        'model-settings',
+        { models: [{ provider: 'openai', modelId: 'gpt-4', inputPricePerM: 30 }] },
+        config,
+        env,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      const savedProviders = written.providers as Array<{ name: string; models?: unknown[] }>;
+      expect(savedProviders.find((p) => p.name === 'local')?.models).to.deep.equal([]);
+      expect(savedProviders.find((p) => p.name === 'openai')?.models).to.deep.equal([
+        { id: 'gpt-4', inputPricePerM: 30 },
+      ]);
+    });
+
+    it('leaves a provider with no model config at all untouched when it is not part of the submission [unit]', async () => {
+      writeYaml(tmpDir, {
+        providers: [
+          { name: 'local', type: 'ollama' },
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4', inputPricePerM: 30 }] },
+        ],
+      });
+      const config = makeConfig(tmpDir);
+      const env = makeEnv({
+        providers: [
+          { name: 'local', type: 'ollama' },
+          { name: 'openai', type: 'openai', models: [{ id: 'gpt-4', inputPricePerM: 30 }] },
+        ],
+      });
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'model-settings',
+        { models: [{ provider: 'openai', modelId: 'gpt-4', inputPricePerM: 30 }] },
+        config,
+        env,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      const savedProviders = written.providers as Array<{ name: string; models?: unknown[] }>;
+      expect(savedProviders.find((p) => p.name === 'local')?.models).to.equal(undefined);
+    });
+
+    it('rejects a model entry referencing an unknown provider [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const env = makeEnv({ providers: [{ name: 'openai', type: 'openai' }] });
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'model-settings',
+        { models: [{ provider: 'not-configured', modelId: 'x' }] },
+        config,
+        env,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(false);
     });
 
     it('does not call side effects when PATCH fails validation [unit]', async () => {

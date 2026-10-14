@@ -106,7 +106,7 @@ nothing else about interactive chat, headless turns, or sub-agents changes.
 
 **Forced-determinism path stays the default**, but needs one correctness fix:
 `applyEvalDeterminism` currently pins `temperature`/`seed` at the
-*provider* level only. Once model-level overrides exist, a model with its own
+_provider_ level only. Once model-level overrides exist, a model with its own
 `models[].temperature` would silently win over that pin inside
 `resolveEffectiveSampling`, quietly breaking eval reproducibility — exactly
 the bug #277 fixed, reopened by this feature if left alone. The fix:
@@ -171,12 +171,12 @@ machine-readable, persisted counterpart the issue asks for.
 
 Hard cutover: `costs` is no longer read for actual cost estimates once this
 ships. It boots without error regardless of what `costs` contains. To avoid
-*silent* data loss (even though it isn't lossless — an unmigrated entry's
+_silent_ data loss (even though it isn't lossless — an unmigrated entry's
 estimates go to `$0`):
 
 - **Startup log**: if `env.costs` is non-empty, log one warning per entry:
   `config: legacy cost entry "anthropic/claude-sonnet-4-6" in costs: — move
-  it into providers[].models[] (see docs/App-Docs/Providers.md)`.
+it into providers[].models[] (see docs/App-Docs/Providers.md)`.
 - **Settings UI banner**: the Model Settings page (née Cost Rates — see §6)
   shows the same list in a banner above the model list, so a browser user who
   never reads server logs still sees it. It isn't dismissible — it reflects
@@ -209,9 +209,12 @@ export function parseProviders(raw: unknown): ProviderConfig[] {
     const { models: rawModels, ...rest } = entry as Record<string, unknown>;
     const base = ProviderSchema.omit({ models: true }).safeParse(rest);
     if (!base.success) {
-      logger.warn(`config: provider "${(rest as { name?: string }).name ?? '?'}" is invalid — dropped`, {
-        issues: base.error.issues,
-      });
+      logger.warn(
+        `config: provider "${(rest as { name?: string }).name ?? '?'}" is invalid — dropped`,
+        {
+          issues: base.error.issues,
+        },
+      );
       return [];
     }
     const models = Array.isArray(rawModels)
@@ -247,12 +250,12 @@ Settings." Same list + Add/Edit modal pattern it has today, but:
   `providers[].models[].id` under its provider).
 - The edit modal has two sections: **Pricing** (`inputPricePerM`/
   `outputPricePerM`, replacing the old `inputPer1kTokens`/`outputPer1kTokens`
-  + scale fields) and **Sampling** (`temperature`, `topP`, `seed`, `numCtx`,
-  `topK`, `repeatPenalty`, each optional — blank means unset, not zero).
-  `numCtx`/`topK`/`repeatPenalty` are Ollama-only (§1) — the modal hides
-  those three fields when the row's provider isn't type `ollama`, so the form
-  never implies a control exists that `createProviderFromConfig` would
-  silently drop.
+  - scale fields) and **Sampling** (`temperature`, `topP`, `seed`, `numCtx`,
+    `topK`, `repeatPenalty`, each optional — blank means unset, not zero).
+    `numCtx`/`topK`/`repeatPenalty` are Ollama-only (§1) — the modal hides
+    those three fields when the row's provider isn't type `ollama`, so the form
+    never implies a control exists that `createProviderFromConfig` would
+    silently drop.
 - `inputScale`/`outputScale` are dropped entirely — they were always
   UI-only display metadata with no effect on calculation. The per-1k/per-1M
   toggle stays as an input convenience in `ScaledCostInput`, converting to
