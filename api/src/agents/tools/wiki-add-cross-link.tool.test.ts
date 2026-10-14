@@ -185,6 +185,69 @@ describe('agents/tools/wiki-add-cross-link', () => {
     expect(page.content).to.contain('[[other-wiki:entities/b]]');
   });
 
+  it('resolves a wikiId:pagePath fromPage against the wiki it names [orchestration]', async () => {
+    const other = await registry.load('other-wiki');
+    await other.commitPage({
+      type: 'entity',
+      title: 'G',
+      tags: [],
+      sources: [],
+      body: 'Page G.',
+    });
+
+    const tool = makeWikiAddCrossLinkTool(registry, store, threadStore);
+    const result = await tool.invoke({
+      wikiId: 'test-wiki',
+      fromPage: 'other-wiki:entities/g.md',
+      toPage: 'entities/a.md',
+    });
+    expect(result).to.contain('Added cross-link');
+
+    const page = await other.readPage('entities/g.md');
+    expect(page.content).to.contain('## Related Pages');
+    expect(page.content).to.contain('[[entities/a]]');
+  });
+
+  it('reports a not-found fromPage against the wiki its prefix resolved to [orchestration]', async () => {
+    const tool = makeWikiAddCrossLinkTool(registry, store, threadStore);
+    const result = await tool.invoke({
+      wikiId: 'test-wiki',
+      fromPage: 'other-wiki:entities/does-not-exist.md',
+      toPage: 'entities/a.md',
+    });
+    expect(result).to.equal(
+      'Page "entities/does-not-exist.md" not found in wiki "other-wiki". If it lives in a ' +
+        'different wiki, prefix fromPage with "<wiki-id>:" (e.g. "other-wiki:entities/foo.md").',
+    );
+  });
+
+  it('denies a locked scope based on the wiki a prefixed fromPage resolves to, not the declared wikiId [orchestration]', async () => {
+    const tool = makeWikiAddCrossLinkTool(registry, store, threadStore);
+    const result = await tool.invoke(
+      {
+        wikiId: 'test-wiki',
+        fromPage: 'other-wiki:entities/anything.md',
+        toPage: 'entities/a.md',
+      },
+      lockedConfig(),
+    );
+    expect(result).to.equal(wikiWriteForbiddenMessage('other-wiki', 'test-wiki'));
+  });
+
+  it('rejects a prefixed fromPage that resolves to an archived wiki [orchestration]', async () => {
+    const tool = makeWikiAddCrossLinkTool(registry, store, threadStore);
+    const result = await tool.invoke({
+      wikiId: 'test-wiki',
+      fromPage: 'archived-wiki:entities/d.md',
+      toPage: 'entities/e.md',
+    });
+    expect(result).to.equal(wikiArchivedMessage('archived-wiki'));
+
+    const wiki = await registry.load('archived-wiki');
+    const page = await wiki.readPage('entities/d.md');
+    expect(page.content).to.not.contain('## Related Pages');
+  });
+
   it('rejects a wiki bound to another workspace from an unbound workspace thread [orchestration]', async () => {
     // #202: an unbound workspace goes looking, but never into another
     // workspace's wiki (test-wiki is bound to the "bound" workspace).

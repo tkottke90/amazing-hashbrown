@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import type { WikiRegistry } from '@tkottke90/llm-wiki';
+import { parseExternalRef, type WikiRegistry } from '@tkottke90/llm-wiki';
 import { getWikiRegistry } from '../../services/wiki.js';
 import { resolveToolWriteScope, wikiWriteDeniedMessage } from './wiki-write-guard.js';
 import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
@@ -9,10 +9,18 @@ import { scopeDenial } from '../../services/wiki-write.js';
 import { isWikiDomainArchived, wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
 
 const WikiAddCrossLinkSchema = z.object({
-  wikiId: z.string().describe('Wiki domain ID that fromPage belongs to.'),
+  wikiId: z
+    .string()
+    .describe(
+      "Default wiki domain ID for fromPage and toPage when they don't carry their own wiki prefix.",
+    ),
   fromPage: z
     .string()
-    .describe('Path of the page to add the link from, relative to its wiki root.'),
+    .describe(
+      'Path of the page to add the link from, relative to its wiki root. ' +
+        "To reference a page in a DIFFERENT wiki than wikiId, prefix with that wiki's id " +
+        "and a colon, e.g. 'other-wiki-id:entities/foo' — use wiki_locate to find valid wiki ids.",
+    ),
   toPage: z
     .string()
     .describe(
@@ -41,24 +49,36 @@ export function makeWikiAddCrossLinkTool(
           return 'Wiki knowledge base is not available.';
         }
       }
+      const parsed = parseExternalRef(fromPage);
+      const targetWikiId = parsed?.wikiId ?? wikiId;
+      const targetFromPage = parsed?.pagePath ?? fromPage;
+
       let wiki;
       try {
-        wiki = await reg.load(wikiId);
+        wiki = await reg.load(targetWikiId);
       } catch {
-        return `Wiki "${wikiId}" is not registered. Use wiki_locate to find available domains.`;
+        return `Wiki "${targetWikiId}" is not registered. Use wiki_locate to find available domains.`;
       }
       const scope = resolveToolWriteScope(config, { workspaceStore: store, threadStore });
-      const forbidden = scope && scopeDenial(scope, wikiId);
+      const forbidden = scope && scopeDenial(scope, targetWikiId);
       if (forbidden) return wikiWriteDeniedMessage(forbidden);
-      if (isWikiDomainArchived(wikiId, store ?? getWorkspaceStore())) {
-        return wikiArchivedMessage(wikiId);
+      if (isWikiDomainArchived(targetWikiId, store ?? getWorkspaceStore())) {
+        return wikiArchivedMessage(targetWikiId);
       }
-      const result = await wiki.addCrossLink({ fromPage, toPage });
-      const warnings = result.warnings.map((w) => w.message).join(' ');
-      if (warnings.includes('already present')) {
-        return `Cross-link from ${fromPage} to ${toPage} already exists.`;
+
+      try {
+        const result = await wiki.addCrossLink({ fromPage: targetFromPage, toPage });
+        const warnings = result.warnings.map((w) => w.message).join(' ');
+        if (warnings.includes('already present')) {
+          return `Cross-link from ${fromPage} to ${toPage} already exists.`;
+        }
+        return `Added cross-link from ${fromPage} to ${toPage}.${warnings ? ` ${warnings}` : ''}`;
+      } catch {
+        return (
+          `Page "${targetFromPage}" not found in wiki "${targetWikiId}". If it lives in a ` +
+          `different wiki, prefix fromPage with "<wiki-id>:" (e.g. "other-wiki:entities/foo.md").`
+        );
       }
-      return `Added cross-link from ${fromPage} to ${toPage}.${warnings ? ` ${warnings}` : ''}`;
     },
     {
       name: 'wiki_add_cross_link',
