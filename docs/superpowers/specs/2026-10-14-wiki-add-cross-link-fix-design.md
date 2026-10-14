@@ -6,7 +6,7 @@ Fixes [#298](https://github.com/tkottke90/amazing-hashbrown/issues/298).
 
 `wiki_add_cross_link({ wikiId, fromPage, toPage })` resolves `fromPage`
 strictly inside the wiki named by `wikiId` — there is no way to pass a
-`fromPage` that lives in a different wiki than `wikiId`. `toPage` *does*
+`fromPage` that lives in a different wiki than `wikiId`. `toPage` _does_
 support a `<wiki-id>:<path>` prefix for referencing a page in another wiki
 (documented in its own schema description), but that only "works" because
 `toPage` is never read from disk at all — it's written into the link text
@@ -141,7 +141,7 @@ New cases in `wiki-add-cross-link.tool.test.ts` (Mocha/Chai, wired to a real
    `wikiId: "user"`, page exists in `health-fitness` → link is written into
    `health-fitness`'s copy of the page; success message returned.
 2. **Not-found, resolved wiki** — same shape, page doesn't exist in the
-   prefixed wiki → the new graceful message naming the *resolved* wiki;
+   prefixed wiki → the new graceful message naming the _resolved_ wiki;
    `tool.invoke(...)` resolves rather than rejects.
 3. **Unregistered resolved wiki** — `fromPage: "bogus-wiki:entities/foo.md"`
    → `Wiki "bogus-wiki" is not registered...`, proving resolution happens
