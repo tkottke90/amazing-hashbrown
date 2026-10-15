@@ -120,3 +120,19 @@ export {
   readReviewManifest,
 } from './serializer.js';
 export type { ReviewManifest, ReviewEntry } from './serializer.js';
+
+// Trace → scenario source (bin/eval-from-trace.ts, and the
+// GET /api/v1/traces/:traceId/scenario-source endpoint)
+export {
+  buildScenarioSource,
+  buildScenarioDraft,
+  formatSuiteYamlBlock,
+} from './trace-scenario-source.js';
+export type {
+  ScenarioSource,
+  ScenarioSourceMessage,
+  ScenarioTurnSeed,
+  ScenarioUserTurnSeed,
+  ScenarioToolTurnSeed,
+  ScenarioDraftOptions,
+} from './trace-scenario-source.js';

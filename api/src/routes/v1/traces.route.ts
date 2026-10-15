@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { getObservabilityStore } from '../../services/observability.js';
+import { getThreadStore } from '../../services/thread-store.js';
+import { getScenarioSourceHandler } from './traces.handlers.js';
 import type { TraceFilters } from '@tkottke90/observability';
 
 export const tracesRouter = Router();
@@ -32,6 +34,20 @@ tracesRouter.get('/:traceId/summary', (req: Request, res: Response) => {
     return;
   }
   res.json(summary);
+});
+
+// Joins this trace's spans with its linked thread's full message history
+// into scenario-authoring-ready data (see traces.handlers.ts) — used by
+// bin/eval-from-trace.ts (over HTTP, no local filesystem/DB access needed)
+// and, in future, an in-app "capture as eval scenario" feature.
+tracesRouter.get('/:traceId/scenario-source', (req: Request, res: Response) => {
+  const { traceId } = req.params as { traceId: string };
+  const result = getScenarioSourceHandler(getObservabilityStore(), getThreadStore(), traceId);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 tracesRouter.get('/:traceId', (req: Request, res: Response) => {

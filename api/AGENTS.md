@@ -200,9 +200,10 @@ See the root `AGENTS.md` for the full testing philosophy, test types, anti-patte
 **api-specific conventions:**
 
 - Test files (`*.test.ts`) live **adjacent to the source file they test** — `src/agents/chat-agent.ts` → `src/agents/chat-agent.test.ts`
-- Shared mock-data factories belong in `tests/fixtures/`; shared helpers (supertest wrappers, stub factories, etc.) in `tests/utilities/`
+- Shared mock-data factories belong in `tests/fixtures/`; shared helpers (stub factories, etc.) in `tests/utilities/`
 - Import shared fixtures and utilities via the `@/tests/*` path alias (e.g. `@/tests/fixtures/registered-tool.fixture.js`)
 - Framework: **Mocha + Chai**
+- **Do not use `supertest`, or any other in-process/real-HTTP-server client, to test routes.** Spinning up (or in-process mounting) the Express app and hitting it over HTTP tests Express's own routing, not this codebase's logic, and it's a different test shape from everything else in this suite. Instead, follow the established `*.handlers.ts` pattern (`threads.handlers.ts`, `tasks.handlers.ts`, and 17 others): extract the route's logic into a plain, Express-agnostic handler function — no `Request`/`Response` types, typed arguments in, a `HandlerResult<T>` (`{ok:true,data}` or `{ok:false,status,error}`) out — and call it directly in a normal unit test. The route file itself stays thin, untested wiring that maps the handler's result onto an HTTP response. If what you actually need is proof that the full request → middleware → handler → response pipeline works end to end, that's an E2E concern (Playwright, `e2e/`), not a developer test here.
 
 ---
 

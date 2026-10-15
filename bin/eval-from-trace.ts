@@ -3,16 +3,18 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { bootObservability, getObservabilityStore } from '../api/src/services/observability.js';
-import { env } from '../api/src/config/env.js';
+import {
+  buildScenarioDraft,
+  formatSuiteYamlBlock,
+  type ScenarioSource,
+} from '../lib/evaluations/src/index.js';
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
   options: {
     'trace-id': { type: 'string' },
     suite: { type: 'string' },
-    detached: { type: 'boolean', default: false },
+    'base-url': { type: 'string', default: 'http://localhost:3000' },
   },
   strict: false,
 });
@@ -34,39 +36,43 @@ if (!existsSync(suitePath)) {
   process.exit(2);
 }
 
-let db: ReturnType<typeof openDatabase>;
+const traceId = values['trace-id'] as string;
+const baseUrl = (values['base-url'] as string).replace(/\/$/, '');
+
+let response: Response;
 try {
-  db = openDatabase(env.database.path);
-  bootObservability(db);
+  response = await fetch(`${baseUrl}/api/v1/traces/${traceId}/scenario-source`);
 } catch (err) {
-  console.error(`Error opening database: ${String(err)}`);
+  console.error(`Error reaching ${baseUrl}: ${String(err)}`);
   process.exit(3);
 }
 
-const store = getObservabilityStore();
-const trace = store.getTrace(values['trace-id']);
-if (!trace) {
-  console.error(`Error: Trace "${values['trace-id']}" not found`);
+if (response.status === 404) {
+  console.error(`Error: Trace "${traceId}" not found`);
   process.exit(2);
 }
+if (!response.ok) {
+  console.error(`Error: ${response.status} ${response.statusText} from ${baseUrl}`);
+  process.exit(3);
+}
 
-const llmSpan = trace.spans.find((s) => s.type === 'llm-call');
-const userInput = llmSpan?.inputPreview ?? 'TODO - extract from trace';
+const source = (await response.json()) as ScenarioSource;
 
-const traceId = values['trace-id'];
-const scenario = `
-  - id: TODO-change-me
-    name: TODO - Scenario name
-    purpose: "Regression: captured from trace ${traceId}"
-    type: llm-judge       # TODO: confirm eval type
-    input: "${userInput.replace(/"/g, '\\"')}"
-    rubric: TODO - What should the correct response look like?
-    minScore: 7
-`;
+const draft = buildScenarioDraft(source);
+const block = formatSuiteYamlBlock(draft);
 
-await appendFile(suitePath, scenario, 'utf-8');
+await appendFile(suitePath, block, 'utf-8');
 console.log(`\nScenario scaffold appended to: ${suitePath}`);
 console.log(`Trace ID: ${traceId}`);
-if (llmSpan?.outputPreview) {
-  console.log(`\nActual output (for reference):\n${llmSpan.outputPreview}`);
+
+if (source.incomplete) {
+  console.warn(`\nWarning: scenario source is incomplete — ${source.incompleteReason}`);
+}
+if (source.finalAssistantText) {
+  console.log(`\nModel's actual final reply (for reference):\n${source.finalAssistantText}`);
+}
+if (source.finalToolCall) {
+  console.log(
+    `\nModel's actual next tool call (for reference): ${source.finalToolCall.name}(${JSON.stringify(source.finalToolCall.args)})`,
+  );
 }
