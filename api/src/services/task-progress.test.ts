@@ -45,7 +45,10 @@ describe('services/task-progress', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function makeWorkspace(opts: { remoteUrl?: string } = {}): { workspace: Workspace; repoDir: string } {
+  function makeWorkspace(opts: { remoteUrl?: string } = {}): {
+    workspace: Workspace;
+    repoDir: string;
+  } {
     const repoDir = mkdtempSync(join(tmpdir(), 'task-progress-repo-'));
     initGitRepo(repoDir);
     const workspace = store.createWorkspace({
@@ -56,7 +59,10 @@ describe('services/task-progress', () => {
     return { workspace, repoDir };
   }
 
-  function makeTask(workspace: Workspace, opts: Parameters<WorkspaceStore['createTask']>[0] = { title: 't' }): Task {
+  function makeTask(
+    workspace: Workspace,
+    opts: Parameters<WorkspaceStore['createTask']>[0] = { title: 't' },
+  ): Task {
     return store.createTask({ ...opts, workspaceId: workspace.id, assignedTo: 'agent' });
   }
 
@@ -286,7 +292,12 @@ describe('services/task-progress', () => {
       const ctx = getGroupContext(dependent);
       expect(ctx).to.not.equal(null);
       expect(ctx!.dependsOnSummaries).to.deep.equal([
-        { taskId: target.id, title: 'Target', status: 'done', summary: 'Target finished its work.' },
+        {
+          taskId: target.id,
+          title: 'Target',
+          status: 'done',
+          summary: 'Target finished its work.',
+        },
       ]);
     });
 

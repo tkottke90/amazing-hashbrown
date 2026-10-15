@@ -1315,7 +1315,7 @@ describe('services/workspace-store', () => {
         expect(store.listDependents(a.id)).to.deep.equal([]);
       });
 
-      it('deleteTask does NOT remove that task\'s own progress entries (issue #302, by design)', () => {
+      it("deleteTask does NOT remove that task's own progress entries (issue #302, by design)", () => {
         const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
         const task = store.createTask({
           title: 'a',
@@ -1345,7 +1345,7 @@ describe('services/workspace-store', () => {
         expect(store.listTaskProgressEntries('github', 'issue-1')).to.have.length(1);
       });
 
-      it('deleteWorkspace removes that workspace\'s progress entries (issue #302)', () => {
+      it("deleteWorkspace removes that workspace's progress entries (issue #302)", () => {
         const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
         const task = store.createTask({
           title: 'a',

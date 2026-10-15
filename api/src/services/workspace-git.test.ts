@@ -417,7 +417,7 @@ describe('services/workspace-git', () => {
 
     it('returns null on an unborn HEAD (no commits yet) instead of throwing', async () => {
       const { stub } = makeStub(() => {
-        throw new Error('fatal: ambiguous argument \'HEAD\': unknown revision');
+        throw new Error("fatal: ambiguous argument 'HEAD': unknown revision");
       });
       const result = await getHeadCommit('/tmp/ws', stub);
       expect(result).to.equal(null);

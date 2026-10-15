@@ -381,7 +381,11 @@ describe('agents/task-context', () => {
           runNumber: 1,
           triggerSource: 'manual',
           previousRuns: [],
-          siblingContext: { trackerEntries: entries, dependsOnSummaries: [], dependedOnByTasks: [] },
+          siblingContext: {
+            trackerEntries: entries,
+            dependsOnSummaries: [],
+            dependedOnByTasks: [],
+          },
         });
         expect(text).to.include('- "Task 4"');
         expect(text).to.include('- "Task 3"');
@@ -394,7 +398,12 @@ describe('agents/task-context', () => {
         const ctx: SiblingProgressContext = {
           trackerEntries: [],
           dependsOnSummaries: [
-            { taskId: 'd1', title: 'Database migration', status: 'done', summary: 'Added refresh_token column.' },
+            {
+              taskId: 'd1',
+              title: 'Database migration',
+              status: 'done',
+              summary: 'Added refresh_token column.',
+            },
             { taskId: 'd2', title: 'Other dep', status: 'pending', summary: null },
           ],
           dependedOnByTasks: [],

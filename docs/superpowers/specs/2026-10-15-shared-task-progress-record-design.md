@@ -2,7 +2,7 @@
 
 ## Context
 
-A task's only built-in continuity today is with *itself* — `buildRunKickoff` (`api/src/agents/task-context.ts`) automatically hands a new run its own previous run's summary, no tool call required. There is no equivalent for *related but distinct* tasks working the same feature or branch. The existing relational primitives (`task_dependencies`/`dependsOnTaskId`, `trackerType`/`trackerId` from `create_tasks`' `trackerUrl`) only ever carry a boolean/status signal — "did the related task finish, and did it succeed or fail" — never *what it actually did*. `get_task_outcome` can answer that, but only if the agent already knows a specific sibling task's exact id and chooses, unprompted, to ask; nothing proactively tells a new task that related tasks even exist.
+A task's only built-in continuity today is with _itself_ — `buildRunKickoff` (`api/src/agents/task-context.ts`) automatically hands a new run its own previous run's summary, no tool call required. There is no equivalent for _related but distinct_ tasks working the same feature or branch. The existing relational primitives (`task_dependencies`/`dependsOnTaskId`, `trackerType`/`trackerId` from `create_tasks`' `trackerUrl`) only ever carry a boolean/status signal — "did the related task finish, and did it succeed or fail" — never _what it actually did_. `get_task_outcome` can answer that, but only if the agent already knows a specific sibling task's exact id and chooses, unprompted, to ask; nothing proactively tells a new task that related tasks even exist.
 
 In production this showed up as a concentrated failure: 6 tasks under the same tracker-linked feature (issue #250 — Docs, API, UI, AuthProvider refactor, error-path tests, docs+PR), each started cold with no visibility into what sibling tasks had already changed on the shared branch. Each burned most or all of its call budget re-deriving "what already exists here" via `git status`/`git log`/wiki lookups. All 7 flagged runs across a 47-run production sample were concentrated in this one tracker-linked cohort.
 
@@ -10,7 +10,7 @@ Full research on `task-context.ts`, `workspace-summarizer.ts`, `chat-agent.ts`, 
 
 ## Existing system (relevant facts gathered during research)
 
-- **`buildRunKickoff`** (`api/src/agents/task-context.ts`) builds a plain human-turn kickoff message (not a system-prompt block). When there's a previous run of the *same* task, it appends that run's one-line `summary` plus a conditionally-bound `read_task_run` tool — bound only when a previous run exists, never described generically in the system prompt. This is the sanctioned pattern this feature extends.
+- **`buildRunKickoff`** (`api/src/agents/task-context.ts`) builds a plain human-turn kickoff message (not a system-prompt block). When there's a previous run of the _same_ task, it appends that run's one-line `summary` plus a conditionally-bound `read_task_run` tool — bound only when a previous run exists, never described generically in the system prompt. This is the sanctioned pattern this feature extends.
 - **`workspace-summarizer.ts`** writes `.hashbrown/summaries/<timestamp>.md` under `workspace.location` via a single-writer flow (one workspace chat turn at a time) — it is **not** built for concurrent writers, which matters because sibling tasks under one tracker can complete concurrently.
 - **`complete_task` the tool** (`api/src/agents/tools/complete-task.tool.ts`) is a pure function — it validates the plan-checklist nudge and returns a string; it does **no** git capture and **no** file/DB writes itself.
 - **`task-execution.ts`**'s `onTaskComplete` hook is the actual choke point: on completion it calls `store.setQueueEntrySummary(entry.id, summary)` and `store.completeQueueEntry(entry.id, outcome)` — the only two writes that currently happen, and the two things that must never be blocked by anything new added here.
@@ -28,7 +28,7 @@ Full research on `task-context.ts`, `workspace-summarizer.ts`, `chat-agent.ts`, 
 3. **Touched-files capture is both harness-derived and model-authored**: the harness computes the authoritative file list + commit SHA(s) via new git helpers; the model's existing `complete_task` `summary` argument supplies the natural-language narrative. Matches the original issue's own developer notes almost exactly.
 4. **Scope is single-repo-per-workspace**, matching what exists today. A `repoIdentifier` field is still recorded on each entry for forward compatibility, but no multi-repo discovery/traversal is built — that's unscoped, separate future work if ever needed.
 5. **Progress entries are an append-only structured log**, not an LLM-regenerated rolling narrative — each task completion appends one row; nothing is ever rewritten or summarized away. Pure harness-side write, no extra model call.
-6. **Storage is a new DB table**, not a `.hashbrown` file. The literal `.hashbrown`-file precedent (`workspace-summarizer.ts`) is single-writer; this feature's production motivation is explicitly *concurrent* sibling-task completions under one tracker, which a shared file would need new locking infrastructure to handle safely. SQLite transactions get that for free.
+6. **Storage is a new DB table**, not a `.hashbrown` file. The literal `.hashbrown`-file precedent (`workspace-summarizer.ts`) is single-writer; this feature's production motivation is explicitly _concurrent_ sibling-task completions under one tracker, which a shared file would need new locking infrastructure to handle safely. SQLite transactions get that for free.
 7. **Cleanup on deletion**: a task's own progress entry **survives** that individual task being deleted (the whole point is a durable record independent of any one task's lifecycle — hence the denormalized `taskTitle`). A **workspace** being deleted **does** clean up its progress entries (genuine orphaning otherwise, no path back) — added to `deleteWorkspace`'s existing manual-cascade transaction.
 8. **Delivery is auto-injection into the existing kickoff message**, not a new tool. A tool the model has to remember to call reproduces exactly the failure mode this issue exists to close (the same way `update_plan` being optional caused the original problem). No new tool is introduced.
 
@@ -73,14 +73,22 @@ New `WorkspaceStore` methods, following the existing method-per-operation style 
 Read-only, same `execFile('git', [...], { cwd: location, timeout })` pattern as the existing `getGitStatus`/`listBranches` — no `withLock` needed (read-only, same category as those two):
 
 ```ts
-async function getHeadCommit(location: string): Promise<string | null>
+async function getHeadCommit(location: string): Promise<string | null>;
 // git rev-parse HEAD — null on an unborn HEAD (no commits yet)
 
-async function getChangedFiles(location: string, fromSha: string | null, toSha: string): Promise<string[]>
+async function getChangedFiles(
+  location: string,
+  fromSha: string | null,
+  toSha: string,
+): Promise<string[]>;
 // fromSha === null → git ls-files (first-commit case)
 // else → git diff --name-only <fromSha> <toSha>
 
-async function getCommitsBetween(location: string, fromSha: string | null, toSha: string): Promise<string[]>
+async function getCommitsBetween(
+  location: string,
+  fromSha: string | null,
+  toSha: string,
+): Promise<string[]>;
 // fromSha === null → [toSha]
 // else → git log --format=%H <fromSha>..<toSha>
 ```
@@ -96,10 +104,11 @@ async function recordTaskProgress(params: {
   outcome: 'done' | 'failed';
   summary: string;
   startSha: string | null;
-}): Promise<void>
+}): Promise<void>;
 ```
 
 Behavior:
+
 1. No-op if `!task.trackerType || !task.trackerId` — a task with no tracker link has nothing to record.
 2. `endSha = await getHeadCommit(workspace.location)`.
 3. `commitShas`/`filesChanged` via the helpers above. If `startSha === endSha` (no commits made this run), `commitShas = []` and `filesChanged` falls back to `git status --porcelain` output, so uncommitted-only work still gets recorded.
@@ -109,6 +118,7 @@ Behavior:
 7. **All failures here (git errors, DB errors) are caught and logged, never thrown.** A progress-recording failure must not fail the task's own completion, which is already settled by the time this runs.
 
 **`task-execution.ts` integration:**
+
 - At the top of the run function (before the model starts), capture `const startSha = await getHeadCommit(workspace.location);` into the same closure already holding `completeTaskBox`.
 - In the existing completion branch — where `store.setQueueEntrySummary`/`store.completeQueueEntry` already run — additionally call `await taskProgressService.recordTaskProgress({ task, workspace, outcome, summary, startSha })`. This is a new, best-effort addition alongside the two existing required writes, not a replacement for them.
 
@@ -117,11 +127,16 @@ Behavior:
 ```ts
 interface SiblingProgressContext {
   trackerEntries: TaskProgressEntry[];
-  dependsOnSummaries: { taskId: string; title: string; status: TaskStatus; summary: string | null }[];
+  dependsOnSummaries: {
+    taskId: string;
+    title: string;
+    status: TaskStatus;
+    summary: string | null;
+  }[];
   dependedOnByTasks: { taskId: string; title: string; status: TaskStatus }[];
 }
 
-function getGroupContext(task: Task): SiblingProgressContext | null
+function getGroupContext(task: Task): SiblingProgressContext | null;
 ```
 
 - `trackerEntries`: populated only when `task.trackerType && task.trackerId`; `store.listTaskProgressEntries(trackerType, trackerId, task.id)`.

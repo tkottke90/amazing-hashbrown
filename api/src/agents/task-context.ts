@@ -185,7 +185,7 @@ export function buildRunKickoff(input: RunKickoffInput): string {
     const { trackerEntries, dependsOnSummaries, dependedOnByTasks } = input.siblingContext;
 
     if (trackerEntries.length > 0) {
-      const trackerLabel = `${trackerEntries[0].trackerType}#${trackerEntries[0].trackerId}`;
+      const trackerLabel = `${trackerEntries[0]!.trackerType}#${trackerEntries[0]!.trackerId}`;
       lines.push('', `Related work on this feature (tracker: ${trackerLabel}):`);
       for (const e of trackerEntries.slice(0, TRACKER_ENTRIES_SHOWN)) {
         const commitPart =
