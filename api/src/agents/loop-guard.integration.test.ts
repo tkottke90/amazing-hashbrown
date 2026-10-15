@@ -65,6 +65,44 @@ const noOpTool = tool(async () => 'ok', {
   schema: z.object({}),
 });
 
+// Alternates between two tools call-by-call, each with its own stable
+// output — reproduces the production incident's shape (issue #301:
+// git_status/wiki_locate interleaved with no new information), unlike
+// StagnantChatModel which only ever calls one tool.
+class AlternatingChatModel extends BaseChatModel {
+  private callCount = 0;
+
+  _llmType() {
+    return 'alternating-fake';
+  }
+
+  bindTools() {
+    return this;
+  }
+
+  async _generate(_messages: BaseMessage[]): Promise<ChatResult> {
+    const toolName = this.callCount % 2 === 0 ? 'git_status' : 'wiki_locate';
+    this.callCount += 1;
+    const msg = new AIMessage({
+      content: '',
+      tool_calls: [{ id: `call_${Math.random()}`, name: toolName, args: {} }],
+    });
+    return { generations: [{ message: msg, text: '' }] };
+  }
+}
+
+const gitStatusTool = tool(async () => 'nothing to commit, working tree clean', {
+  name: 'git_status',
+  description: 'Reports git status, always the same in this fixture',
+  schema: z.object({}),
+});
+
+const wikiLocateTool = tool(async () => 'page not found: README', {
+  name: 'wiki_locate',
+  description: 'Locates a wiki page, always the same in this fixture',
+  schema: z.object({}),
+});
+
 const LOOP_GUARD = {
   enabled: true,
   stagnationNudgeThreshold: 2,
@@ -152,6 +190,93 @@ describe('agents/loop-guard (integration)', () => {
         'Stuck calling no_op repeatedly with no new information.',
       );
       expect(interruptValue?.choices).to.be.an('array');
+    });
+  });
+
+  describe('alternating-tool stagnation (production shape, issue #301)', () => {
+    let dir: string;
+    let db: Database.Database;
+    let checkpointer: SqliteSaver;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let agent: any;
+
+    const threadId = 'loop-guard-alternating-integration-thread';
+    const config = { configurable: { thread_id: threadId } };
+
+    before(() => {
+      dir = mkdtempSync(join(tmpdir(), 'loop-guard-alternating-integration-'));
+      db = new Database(join(dir, 'test.db'));
+      checkpointer = new SqliteSaver(db);
+      agent = createAgent({
+        model: new AlternatingChatModel({}),
+        tools: [gitStatusTool, wikiLocateTool],
+        checkpointer,
+        middleware: [
+          createRecursionGuardMiddleware({
+            recursionLimit: 1000,
+            warnThreshold: 0.99,
+            loopGuard: LOOP_GUARD,
+            escalationMode: 'interrupt',
+            evaluateLoopProgress: async () => ({
+              converging: false,
+              summary: 'Stuck alternating git_status/wiki_locate with no new information.',
+            }),
+          }),
+        ],
+      });
+    });
+
+    after(() => {
+      db.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('nudges, then escalates, for an alternating-tool stagnation loop — well before the raw-streak ceiling', async () => {
+      let caughtError: Error | null = null;
+      try {
+        const stream = agent.streamEvents(
+          { messages: [{ role: 'human', content: 'go' }] },
+          { ...config, version: 'v2', recursionLimit: 1000 },
+        );
+        for await (const _event of stream) {
+          // drain
+        }
+      } catch (err) {
+        caughtError = err as Error;
+      }
+
+      expect(caughtError, 'graph should pause gracefully, not throw').to.equal(null);
+
+      const state = await agent.graph.getState(config);
+
+      const humanMessages = (state.values?.messages ?? []).filter(
+        (m: BaseMessage) => m.getType() === 'human',
+      );
+      const nudgeMessage = humanMessages.find((m: BaseMessage) =>
+        String(m.content).includes('git_status'),
+      );
+      expect(
+        nudgeMessage,
+        'the nudge HumanMessage for the alternating tool should be present in state',
+      ).to.not.equal(undefined);
+
+      expect(
+        state.tasks?.[0]?.interrupts?.length,
+        'graph should have a pending interrupt after reflection escalates',
+      ).to.be.greaterThan(0);
+      const interruptValue = state.tasks[0].interrupts[0].value;
+      expect(interruptValue?.kind).to.equal('loop_stagnation_warning');
+      expect(interruptValue?.summary).to.equal(
+        'Stuck alternating git_status/wiki_locate with no new information.',
+      );
+
+      // The point of issue #301: this resolves via the alternating-tool
+      // stagnation count, not by exhausting LOOP_GUARD.streakReflectionThreshold
+      // (100) — well under it confirms the cheap/early path caught it.
+      const aiMessageCount = (state.values?.messages ?? []).filter(
+        (m: BaseMessage) => m.getType() === 'ai',
+      ).length;
+      expect(aiMessageCount).to.be.lessThan(10);
     });
   });
 

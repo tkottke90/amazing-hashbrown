@@ -69,24 +69,66 @@ function toolMessageName(msg: any): string {
   return msg.name ?? 'unknown_tool';
 }
 
-// Walks backward from the most recent ToolMessage, counting the trailing run
-// that shares its tool name and normalized output. Stops at the first
-// non-matching entry. Derived fresh from state.messages every call — no
-// persisted counter to lose on a resume.
+// Marker set on the loop guard's own injected nudge HumanMessage (see the
+// nudge branch in beforeModel below) so computeStagnationStreak's window
+// boundary can tell it apart from a genuine new human turn.
+const NUDGE_MARKER = { loopGuardKind: 'nudge' } as const;
+
+// A plain-text AIMessage (no tool_calls) or a HumanMessage marks the start of
+// a new conversation turn the gap-tolerant scan below shouldn't reach
+// behind — except the loop guard's own nudge, also a HumanMessage but
+// tagged with NUDGE_MARKER: it's part of the very stagnation being
+// measured, not a fresh turn, so a model that keeps looping right past it
+// still needs to be able to reach the reflection threshold. Scoped to
+// computeStagnationStreak only — computeRawStreak is untouched and keeps
+// its own, unrelated boundary check.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function computeStagnationStreak(toolMessages: any[]): number {
+function isStagnationWindowBoundary(msg: any): boolean {
+  if (isAIMessage(msg)) {
+    return !(Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0);
+  }
+  if (isHumanMessage(msg)) {
+    return msg.additional_kwargs?.loopGuardKind !== NUDGE_MARKER.loopGuardKind;
+  }
+  return true;
+}
+
+// Walks backward from the most recently called tool, counting every prior
+// ToolMessage that shares its tool name and normalized output — skipping
+// over (not stopping at) calls to other tools in between, so an alternating
+// shape (toolA, toolB, toolA, toolB, ...) where each tool keeps repeating
+// its own output is still caught. Only stops at a window boundary (see
+// isStagnationWindowBoundary). Anchoring to the most recently called tool's
+// own count (rather than a max across every tool seen) is what keeps the
+// "fires exactly once per crossing" property intact — a multi-tool max
+// could sit flat at the threshold across several unrelated turns. Derived
+// fresh from state.messages every call — no persisted counter to lose on a
+// resume.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function computeStagnationStreak(messages: any[]): number {
+  // Typed explicitly as any[] — isToolMessage is a type guard, so
+  // .filter(isToolMessage) would otherwise narrow this to ToolMessage[],
+  // and indexing that under noUncheckedIndexedAccess makes `last` possibly
+  // undefined even right after the length check below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toolMessages: any[] = messages.filter(isToolMessage);
   if (toolMessages.length === 0) return 0;
   const last = toolMessages[toolMessages.length - 1];
   const lastName = toolMessageName(last);
   const lastOutput = normalizeToolOutput(last.content);
+
   let streak = 0;
-  for (let i = toolMessages.length - 1; i >= 0; i--) {
-    const msg = toolMessages[i];
-    if (toolMessageName(msg) === lastName && normalizeToolOutput(msg.content) === lastOutput) {
-      streak += 1;
-    } else {
-      break;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (isToolMessage(msg)) {
+      if (toolMessageName(msg) === lastName && normalizeToolOutput(msg.content) === lastOutput) {
+        streak += 1;
+      }
+      continue; // non-matching tool call: skip over it, keep scanning
     }
+    if (isStagnationWindowBoundary(msg)) break;
+    // AIMessage carrying a tool call, or the loop guard's own nudge: pass
+    // through, neither is a boundary.
   }
   return streak;
 }
@@ -205,7 +247,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
 
       // --- Stagnation / raw-streak detection ---
       const toolMessages = messages.filter(isToolMessage);
-      const stagnationStreak = computeStagnationStreak(toolMessages);
+      const stagnationStreak = computeStagnationStreak(messages);
       const rawStreak = computeRawStreak(messages);
 
       // Nudge: fires exactly once per growing streak, no extra LLM call.
@@ -213,12 +255,14 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
         const toolName = toolMessageName(toolMessages[toolMessages.length - 1]);
         return {
           messages: [
-            new HumanMessage(
-              `You've called \`${toolName}\` ${stagnationStreak} times in a row with ` +
+            new HumanMessage({
+              content:
+                `You've called \`${toolName}\` ${stagnationStreak} times recently with ` +
                 `materially the same result. Before trying again: state what you've ` +
                 `actually confirmed so far, and either try a clearly different ` +
                 `approach or conclude the investigation.`,
-            ),
+              additional_kwargs: { ...NUDGE_MARKER },
+            }),
           ],
         };
       }
