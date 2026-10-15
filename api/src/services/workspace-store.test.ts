@@ -1314,6 +1314,169 @@ describe('services/workspace-store', () => {
 
         expect(store.listDependents(a.id)).to.deep.equal([]);
       });
+
+      it('deleteTask does NOT remove that task\'s own progress entries (issue #302, by design)', () => {
+        const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+        const task = store.createTask({
+          title: 'a',
+          workspaceId: ws.id,
+          trackerType: 'github',
+          trackerId: 'issue-1',
+        });
+        store.insertTaskProgressEntry({
+          trackerType: 'github',
+          trackerId: 'issue-1',
+          taskId: task.id,
+          taskTitle: 'a',
+          workspaceId: ws.id,
+          repoIdentifier: 'repo',
+          startCommitSha: null,
+          endCommitSha: null,
+          commitShas: [],
+          filesChanged: [],
+          planSnapshot: null,
+          outcome: 'done',
+          summary: 'Did the thing.',
+          completedAt: '2026-01-01T00:00:00.000Z',
+        });
+
+        store.deleteTask(task.id);
+
+        expect(store.listTaskProgressEntries('github', 'issue-1')).to.have.length(1);
+      });
+
+      it('deleteWorkspace removes that workspace\'s progress entries (issue #302)', () => {
+        const ws = store.createWorkspace({ name: 'W', location: '/tmp/w' });
+        const task = store.createTask({
+          title: 'a',
+          workspaceId: ws.id,
+          trackerType: 'github',
+          trackerId: 'issue-2',
+        });
+        store.insertTaskProgressEntry({
+          trackerType: 'github',
+          trackerId: 'issue-2',
+          taskId: task.id,
+          taskTitle: 'a',
+          workspaceId: ws.id,
+          repoIdentifier: 'repo',
+          startCommitSha: null,
+          endCommitSha: null,
+          commitShas: [],
+          filesChanged: [],
+          planSnapshot: null,
+          outcome: 'done',
+          summary: 'Did the thing.',
+          completedAt: '2026-01-01T00:00:00.000Z',
+        });
+
+        store.deleteWorkspace(ws.id);
+
+        expect(store.listTaskProgressEntries('github', 'issue-2')).to.have.length(0);
+      });
+    });
+  });
+
+  describe('task progress entries (migration 42 — shared task progress record, issue #302)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-progress-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function makeEntry(
+      overrides: Partial<Parameters<WorkspaceStore['insertTaskProgressEntry']>[0]> = {},
+    ): Parameters<WorkspaceStore['insertTaskProgressEntry']>[0] {
+      return {
+        trackerType: 'github',
+        trackerId: 'issue-1',
+        taskId: 'task-1',
+        taskTitle: 'A task',
+        workspaceId: 'ws-1',
+        repoIdentifier: 'repo',
+        startCommitSha: null,
+        endCommitSha: null,
+        commitShas: [],
+        filesChanged: [],
+        planSnapshot: null,
+        outcome: 'done',
+        summary: 'Did the thing.',
+        completedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    it('round-trips an entry, including the JSON array/object fields', () => {
+      store.insertTaskProgressEntry(
+        makeEntry({
+          commitShas: ['abc123'],
+          filesChanged: ['api/src/index.ts', 'README.md'],
+          planSnapshot: [{ step: 'Write the page', done: true }],
+          startCommitSha: 'def456',
+          endCommitSha: 'abc123',
+        }),
+      );
+
+      const entries = store.listTaskProgressEntries('github', 'issue-1');
+      expect(entries).to.have.length(1);
+      const { id, ...rest } = entries[0];
+      expect(id).to.be.a('number');
+      expect(rest).to.deep.equal({
+        trackerType: 'github',
+        trackerId: 'issue-1',
+        taskId: 'task-1',
+        taskTitle: 'A task',
+        workspaceId: 'ws-1',
+        repoIdentifier: 'repo',
+        startCommitSha: 'def456',
+        endCommitSha: 'abc123',
+        commitShas: ['abc123'],
+        filesChanged: ['api/src/index.ts', 'README.md'],
+        planSnapshot: [{ step: 'Write the page', done: true }],
+        outcome: 'done',
+        summary: 'Did the thing.',
+        completedAt: '2026-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('round-trips a null planSnapshot', () => {
+      store.insertTaskProgressEntry(makeEntry({ planSnapshot: null }));
+      expect(store.listTaskProgressEntries('github', 'issue-1')[0].planSnapshot).to.equal(null);
+    });
+
+    it('orders results newest first', () => {
+      store.insertTaskProgressEntry(
+        makeEntry({ taskId: 'task-older', completedAt: '2026-01-01T00:00:00.000Z' }),
+      );
+      store.insertTaskProgressEntry(
+        makeEntry({ taskId: 'task-newer', completedAt: '2026-01-02T00:00:00.000Z' }),
+      );
+
+      const entries = store.listTaskProgressEntries('github', 'issue-1');
+      expect(entries.map((e) => e.taskId)).to.deep.equal(['task-newer', 'task-older']);
+    });
+
+    it('excludes the given task when excludeTaskId is passed', () => {
+      store.insertTaskProgressEntry(makeEntry({ taskId: 'task-self' }));
+      store.insertTaskProgressEntry(makeEntry({ taskId: 'task-sibling' }));
+
+      const entries = store.listTaskProgressEntries('github', 'issue-1', 'task-self');
+      expect(entries.map((e) => e.taskId)).to.deep.equal(['task-sibling']);
+    });
+
+    it('only returns entries for the matching (trackerType, trackerId) pair', () => {
+      store.insertTaskProgressEntry(makeEntry({ trackerId: 'issue-1' }));
+      store.insertTaskProgressEntry(makeEntry({ trackerId: 'issue-2' }));
+      store.insertTaskProgressEntry(makeEntry({ trackerType: 'linear', trackerId: 'issue-1' }));
+
+      expect(store.listTaskProgressEntries('github', 'issue-1')).to.have.length(1);
     });
   });
 

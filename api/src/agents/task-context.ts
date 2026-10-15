@@ -1,4 +1,5 @@
 import type { PlanStep, TriggerSource } from '../services/workspace-store.js';
+import type { SiblingProgressContext } from '../services/task-progress.js';
 
 // Deliberately side-effect-free (type-only imports) — bin/eval.ts imports
 // buildTaskContextBlock() directly to render a suite's simulatedTask into the
@@ -88,12 +89,22 @@ export interface RunKickoffInput {
   scheduledFor?: string | null;
   // Newest first; only finished runs that have a transcript to read.
   previousRuns: PreviousRun[];
+  // Tracker-group entries + task_dependencies summaries for this task, if
+  // any — see task-progress.ts's getGroupContext(). Null/omitted for a task
+  // with no tracker link and no dependency edges, which produces no change
+  // to the kickoff message at all.
+  siblingContext?: SiblingProgressContext | null;
   timeZone?: string;
 }
 
 // Previous run + this many older ones — enough to spot a pattern, small
 // enough that the kickoff stays a few lines.
 const EARLIER_RUNS_SHOWN = 3;
+
+// Full detail for the most recent N tracker-group entries; a terse list for
+// anything older — same truncation shape as EARLIER_RUNS_SHOWN above, kept
+// as its own constant since it caps a different list.
+const TRACKER_ENTRIES_SHOWN = 3;
 
 // "2026-09-25 00:00 UTC" — a fixed, unambiguous rendering for the model.
 export function formatRunTime(iso: string, timeZone = 'UTC'): string {
@@ -167,6 +178,47 @@ export function buildRunKickoff(input: RunKickoffInput): string {
         '',
         'Earlier runs: ' + shown.map((r) => `#${r.runNumber} ${r.id} (${r.status})`).join(', '),
       );
+    }
+  }
+
+  if (input.siblingContext) {
+    const { trackerEntries, dependsOnSummaries, dependedOnByTasks } = input.siblingContext;
+
+    if (trackerEntries.length > 0) {
+      const trackerLabel = `${trackerEntries[0].trackerType}#${trackerEntries[0].trackerId}`;
+      lines.push('', `Related work on this feature (tracker: ${trackerLabel}):`);
+      for (const e of trackerEntries.slice(0, TRACKER_ENTRIES_SHOWN)) {
+        const commitPart =
+          e.commitShas.length > 0 ? `commits ${e.commitShas.join(', ')}` : 'no commits';
+        const filesPart =
+          e.filesChanged.length > 0 ? ` — touched ${e.filesChanged.join(', ')}` : '';
+        lines.push(
+          `- "${e.taskTitle}" (${e.outcome}, ${formatRunTime(e.completedAt, tz)}) — repo ${e.repoIdentifier}, ${commitPart}${filesPart}`,
+          `  "${e.summary}"`,
+        );
+      }
+      const olderEntries = trackerEntries.slice(TRACKER_ENTRIES_SHOWN);
+      if (olderEntries.length > 0) {
+        lines.push(
+          '',
+          'Earlier related work: ' +
+            olderEntries.map((e) => `"${e.taskTitle}" (${e.outcome})`).join(', '),
+        );
+      }
+    }
+
+    if (dependsOnSummaries.length > 0) {
+      lines.push('', 'Depends on:');
+      for (const d of dependsOnSummaries) {
+        lines.push(`- "${d.title}" (${d.status})${d.summary ? ` — "${d.summary}"` : ''}`);
+      }
+    }
+
+    if (dependedOnByTasks.length > 0) {
+      lines.push('', 'Expected to run after this task:');
+      for (const d of dependedOnByTasks) {
+        lines.push(`- "${d.title}"`);
+      }
     }
   }
 

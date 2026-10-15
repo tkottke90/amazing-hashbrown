@@ -107,6 +107,108 @@ export async function listBranches(
   return { local, remote };
 }
 
+// ---------------------------------------------------------------------------
+// Commit history (shared task progress record — issue #302)
+// ---------------------------------------------------------------------------
+// Read-only, same category as getGitStatus/listBranches above — no
+// withLock. NOTE: origin='agent' sub-agent tasks run concurrently against
+// the same workspace.location (dequeueNext() exempts them from the
+// per-workspace scope lock — see workspace-store.ts), so a concurrently-
+// running sibling's own commits can land between a task's startSha capture
+// and its endSha read. This is an accepted, documented limitation — no new
+// locking is added here. See
+// docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
+//
+// Unlike branch names (see assertSafeRefName below), the SHAs passed to
+// these helpers are always harness-derived (from getHeadCommit itself, or
+// stored state), never user-supplied ref names — there is no flag-injection
+// surface here to guard against.
+
+// null on an unborn HEAD (a repo with no commits yet) — the one case where
+// `git rev-parse HEAD` exits non-zero without the caller having done
+// anything wrong, so (unlike every other helper in this file) this needs
+// its own try/catch to turn that failure into a meaningful null rather than
+// letting it propagate as a rejected promise.
+export async function getHeadCommit(
+  location: string,
+  execFileFn: ExecFileFn = execFileAsync,
+): Promise<string | null> {
+  try {
+    const result = await execFileFn('git', ['rev-parse', 'HEAD'], {
+      cwd: location,
+      timeout: GIT_READ_TIMEOUT_MS,
+    });
+    return result.stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+// fromSha === null means the first-commit case (no prior HEAD to diff
+// against) — falls back to every file currently tracked, via `git
+// ls-files`, rather than a `git diff` with no base to compare to.
+export async function getChangedFiles(
+  location: string,
+  fromSha: string | null,
+  toSha: string,
+  execFileFn: ExecFileFn = execFileAsync,
+): Promise<string[]> {
+  const result =
+    fromSha === null
+      ? await execFileFn('git', ['ls-files'], { cwd: location, timeout: GIT_READ_TIMEOUT_MS })
+      : await execFileFn('git', ['diff', '--name-only', fromSha, toSha], {
+          cwd: location,
+          timeout: GIT_READ_TIMEOUT_MS,
+        });
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// fromSha === null means there was no prior HEAD — toSha (the repo's first
+// commit) is itself the only commit "between" nothing and toSha.
+export async function getCommitsBetween(
+  location: string,
+  fromSha: string | null,
+  toSha: string,
+  execFileFn: ExecFileFn = execFileAsync,
+): Promise<string[]> {
+  if (fromSha === null) return [toSha];
+  const result = await execFileFn('git', ['log', '--format=%H', `${fromSha}..${toSha}`], {
+    cwd: location,
+    timeout: GIT_READ_TIMEOUT_MS,
+  });
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// Fallback source for "files touched" when a run made no commits — getGitStatus
+// above only exposes a boolean `dirty`, not the actual paths, so this is a
+// separate small helper rather than extending that one's porcelain=2 parser.
+// Plain `git status --porcelain` (v1, not v2) lines are "XY PATH" or, for a
+// rename, "XY ORIG -> PATH" — this takes the text after "-> " when present,
+// else everything after the two status characters and the following space.
+export async function getDirtyFiles(
+  location: string,
+  execFileFn: ExecFileFn = execFileAsync,
+): Promise<string[]> {
+  const result = await execFileFn('git', ['status', '--porcelain'], {
+    cwd: location,
+    timeout: GIT_READ_TIMEOUT_MS,
+  });
+  const files: string[] = [];
+  for (const line of result.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    const renameSplit = line.indexOf(' -> ');
+    const path = renameSplit !== -1 ? line.slice(renameSplit + 4) : line.slice(3);
+    files.push(path.trim());
+  }
+  return files;
+}
+
 // git ref names can never start with "-" (git check-ref-format rejects
 // them), so any value that does is already an invalid ref — rejecting it
 // here, before it ever reaches execFile, is both correct and the only

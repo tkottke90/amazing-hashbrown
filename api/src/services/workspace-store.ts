@@ -233,6 +233,34 @@ export interface DependencyEdgeSummary {
   satisfied: boolean;
 }
 
+// One append-only row recording what a tracker-linked task did when one of
+// its runs reached a terminal outcome ('done' or 'failed') — the shared
+// progress record siblings under the same tracker read via getGroupContext()
+// in task-progress.ts. taskTitle is denormalized deliberately: this entry
+// survives the task itself being deleted (see deleteTask()'s own comment)
+// and must still read sensibly on its own. See
+// docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
+export interface TaskProgressEntry {
+  id: number;
+  trackerType: string;
+  trackerId: string;
+  taskId: string;
+  taskTitle: string;
+  workspaceId: string;
+  repoIdentifier: string;
+  startCommitSha: string | null;
+  endCommitSha: string | null;
+  commitShas: string[];
+  filesChanged: string[];
+  planSnapshot: PlanStep[] | null;
+  outcome: 'done' | 'failed';
+  summary: string;
+  completedAt: string;
+}
+
+// Input to insertTaskProgressEntry() — no `id` (autoincrement).
+export type NewTaskProgressEntryInput = Omit<TaskProgressEntry, 'id'>;
+
 // A task's trailing run of failed runs — see failedRunStreaks().
 export interface FailedRunStreak {
   attempts: number;
@@ -407,6 +435,24 @@ interface RawTaskDependencyRow {
   created_at: string;
 }
 
+interface RawTaskProgressRow {
+  id: number;
+  tracker_type: string;
+  tracker_id: string;
+  task_id: string;
+  task_title: string;
+  workspace_id: string;
+  repo_identifier: string;
+  start_commit_sha: string | null;
+  end_commit_sha: string | null;
+  commit_shas: string;
+  files_changed: string;
+  plan_snapshot: string | null;
+  outcome: 'done' | 'failed';
+  summary: string;
+  completed_at: string;
+}
+
 interface RawQueueRow {
   id: string;
   task_id: string;
@@ -508,6 +554,26 @@ function mapTaskDependency(row: RawTaskDependencyRow): TaskDependency {
   };
 }
 
+function mapTaskProgressEntry(row: RawTaskProgressRow): TaskProgressEntry {
+  return {
+    id: row.id,
+    trackerType: row.tracker_type,
+    trackerId: row.tracker_id,
+    taskId: row.task_id,
+    taskTitle: row.task_title,
+    workspaceId: row.workspace_id,
+    repoIdentifier: row.repo_identifier,
+    startCommitSha: row.start_commit_sha,
+    endCommitSha: row.end_commit_sha,
+    commitShas: JSON.parse(row.commit_shas) as string[],
+    filesChanged: JSON.parse(row.files_changed) as string[],
+    planSnapshot: row.plan_snapshot ? (JSON.parse(row.plan_snapshot) as PlanStep[]) : null,
+    outcome: row.outcome,
+    summary: row.summary,
+    completedAt: row.completed_at,
+  };
+}
+
 function mapTaskCohort(row: RawTaskCohortRow): TaskCohort {
   return {
     holderTaskId: row.holder_task_id,
@@ -575,6 +641,11 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 38=WorkspaceStore (task_cohorts table, tasks.cohort_of column, for the
 // cron-cohort-gating feature — see
 // docs/superpowers/specs/2026-10-11-cron-cohort-gating-design.md).
+// 40=WorkspaceStore (workspaces.auto_approve_shell). 41=WorkspaceStore
+// (tasks.provider/model, for task model switching). 42=WorkspaceStore
+// (task_progress_entries table, for the shared task progress record
+// feature — see
+// docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -819,6 +890,39 @@ const MIGRATIONS: DbMigration[] = [
     // task gets an explicit snapshot of env.defaultProvider at creation
     // (see createTask() below); existing rows stay NULL.
     sql: `ALTER TABLE tasks ADD COLUMN provider TEXT; ALTER TABLE tasks ADD COLUMN model TEXT;`,
+  },
+  {
+    version: 42,
+    // One append-only row per terminal task run (done/failed) that's linked
+    // to a tracker (trackerType/trackerId) — the shared progress record
+    // siblings read via getGroupContext() in task-progress.ts. Survives the
+    // task itself being deleted (task_title is denormalized on purpose, see
+    // deleteTask()'s own comment below); only cleaned up when the whole
+    // workspace is deleted (see deleteWorkspace() below). REFERENCES
+    // tasks(id) is safe here since this is a fresh CREATE TABLE, not an
+    // ALTER (see the version-23/31/38 comments above). See
+    // docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
+    sql: `
+      CREATE TABLE IF NOT EXISTS task_progress_entries (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        tracker_type      TEXT NOT NULL,
+        tracker_id        TEXT NOT NULL,
+        task_id           TEXT NOT NULL REFERENCES tasks(id),
+        task_title        TEXT NOT NULL,
+        workspace_id      TEXT NOT NULL,
+        repo_identifier   TEXT NOT NULL,
+        start_commit_sha  TEXT,
+        end_commit_sha    TEXT,
+        commit_shas       TEXT NOT NULL,
+        files_changed     TEXT NOT NULL,
+        plan_snapshot     TEXT,
+        outcome           TEXT NOT NULL,
+        summary           TEXT NOT NULL,
+        completed_at      TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_progress_tracker
+        ON task_progress_entries(tracker_type, tracker_id);
+    `,
   },
 ];
 
@@ -1070,6 +1174,11 @@ export class WorkspaceStore extends BaseStore {
               OR depends_on_task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
         )
         .run(id, id);
+      // Progress entries for this workspace's tracker-linked tasks (see
+      // "Task progress entries" below) — unlike deleteTask(), this whole-
+      // workspace cleanup DOES remove them, since there's no workspace left
+      // for them to be scoped to afterward.
+      this.db.prepare(`DELETE FROM task_progress_entries WHERE workspace_id = ?`).run(id);
       this.db.prepare(`DELETE FROM tasks WHERE workspace_id = ?`).run(id);
       this.db.prepare(`DELETE FROM projects WHERE workspace_id = ?`).run(id);
       return this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
@@ -1485,6 +1594,10 @@ export class WorkspaceStore extends BaseStore {
   // Removes a task with its dependency edges and its run history
   // (task_queue rows FK'd to it — without this, any task that ever ran
   // failed to delete). Callers refuse to delete a task with an active run.
+  // Deliberately does NOT touch task_progress_entries — a task's own
+  // progress entries are meant to survive its deletion (the whole point of
+  // that table is a durable record independent of any one task's lifecycle;
+  // see its own comment above). Only deleteWorkspace() cleans those up.
   deleteTask(id: string): boolean {
     return this.db.transaction(() => {
       this.db
@@ -1769,6 +1882,75 @@ export class WorkspaceStore extends BaseStore {
       result.set(row.holder_task_id, { settled: row.settled_count, total: row.total_count });
     }
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task progress entries (shared progress record — issue #302)
+  // ---------------------------------------------------------------------------
+  // Append-only: nothing here is ever updated, and rows are deleted only as
+  // part of a whole-workspace cleanup (see deleteWorkspace() above) — a
+  // task's own deletion deliberately leaves its entries in place (see
+  // deleteTask()'s own comment). See
+  // docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
+
+  insertTaskProgressEntry(entry: NewTaskProgressEntryInput): void {
+    this.db
+      .prepare(
+        `INSERT INTO task_progress_entries
+           (tracker_type, tracker_id, task_id, task_title, workspace_id, repo_identifier,
+            start_commit_sha, end_commit_sha, commit_shas, files_changed, plan_snapshot,
+            outcome, summary, completed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.trackerType,
+        entry.trackerId,
+        entry.taskId,
+        entry.taskTitle,
+        entry.workspaceId,
+        entry.repoIdentifier,
+        entry.startCommitSha,
+        entry.endCommitSha,
+        JSON.stringify(entry.commitShas),
+        JSON.stringify(entry.filesChanged),
+        entry.planSnapshot ? JSON.stringify(entry.planSnapshot) : null,
+        entry.outcome,
+        entry.summary,
+        entry.completedAt,
+      );
+  }
+
+  // Newest first. excludeTaskId drops the calling task's own prior entries
+  // (relevant on a rerun) from what its own kickoff sees — it would
+  // otherwise duplicate buildRunKickoff's existing previousRuns block.
+  listTaskProgressEntries(
+    trackerType: string,
+    trackerId: string,
+    excludeTaskId?: string,
+  ): TaskProgressEntry[] {
+    const rows = excludeTaskId
+      ? (this.db
+          .prepare(
+            `SELECT * FROM task_progress_entries
+             WHERE tracker_type = ? AND tracker_id = ? AND task_id != ?
+             ORDER BY completed_at DESC, id DESC`,
+          )
+          .all(trackerType, trackerId, excludeTaskId) as RawTaskProgressRow[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM task_progress_entries
+             WHERE tracker_type = ? AND tracker_id = ?
+             ORDER BY completed_at DESC, id DESC`,
+          )
+          .all(trackerType, trackerId) as RawTaskProgressRow[]);
+    return rows.map(mapTaskProgressEntry);
+  }
+
+  // Called only from deleteWorkspace()'s own cascade — see that method.
+  // deleteTask() deliberately does NOT call this (the entries survive an
+  // individual task's deletion by design).
+  deleteTaskProgressEntriesForWorkspace(workspaceId: string): void {
+    this.db.prepare(`DELETE FROM task_progress_entries WHERE workspace_id = ?`).run(workspaceId);
   }
 
   // -------------------------------------------------------------------------

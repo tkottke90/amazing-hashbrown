@@ -10,6 +10,8 @@ import {
   formatRunTime,
   type PreviousRun,
 } from './task-context.js';
+import type { SiblingProgressContext } from '../services/task-progress.js';
+import type { TaskProgressEntry } from '../services/workspace-store.js';
 
 const PLAN = [
   { step: 'Scaffold the route', done: true },
@@ -278,6 +280,160 @@ describe('agents/task-context', () => {
       expect(text).to.include(
         'This is a catch-up run — the server was offline at the scheduled time.',
       );
+    });
+
+    describe('siblingContext (shared progress record, issue #302)', () => {
+      const trackerEntry = (overrides: Partial<TaskProgressEntry> = {}): TaskProgressEntry => ({
+        id: 1,
+        trackerType: 'github',
+        trackerId: 'issue-250',
+        taskId: 'task-1',
+        taskTitle: 'API refactor',
+        workspaceId: 'ws-1',
+        repoIdentifier: 'myrepo',
+        startCommitSha: 'aaa',
+        endCommitSha: 'bbb',
+        commitShas: ['a1b2c3d'],
+        filesChanged: ['api/src/auth/token.ts'],
+        planSnapshot: null,
+        outcome: 'done',
+        summary: 'Refactored AuthProvider to support token refresh.',
+        completedAt: '2026-10-14T09:00:00.000Z',
+        ...overrides,
+      });
+
+      it('produces byte-identical output to today when siblingContext is null or omitted [unit]', () => {
+        const base = {
+          title: 'Audit',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual' as const,
+          previousRuns: [],
+        };
+        const withNull = buildRunKickoff({ ...base, siblingContext: null });
+        const omitted = buildRunKickoff(base);
+        expect(withNull).to.equal(omitted);
+        expect(withNull).to.equal('Begin work on this task now: Audit.');
+      });
+
+      it('does not touch the resume short-circuit when siblingContext is present [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: true,
+          runNumber: 3,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: {
+            trackerEntries: [trackerEntry()],
+            dependsOnSummaries: [],
+            dependedOnByTasks: [],
+          },
+        });
+        expect(text).to.equal('Resume this task — continue from where you left off: Audit.');
+      });
+
+      it('formats tracker entries with outcome, time, repo, commits and touched files [unit]', () => {
+        const ctx: SiblingProgressContext = {
+          trackerEntries: [trackerEntry()],
+          dependsOnSummaries: [],
+          dependedOnByTasks: [],
+        };
+        const text = buildRunKickoff({
+          title: 'UI auth screens',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: ctx,
+        });
+        expect(text).to.include('Related work on this feature (tracker: github#issue-250):');
+        expect(text).to.include(
+          '- "API refactor" (done, 2026-10-14 09:00 UTC) — repo myrepo, commits a1b2c3d — touched api/src/auth/token.ts',
+        );
+        expect(text).to.include('"Refactored AuthProvider to support token refresh."');
+      });
+
+      it('says "no commits" when a tracker entry has none [unit]', () => {
+        const ctx: SiblingProgressContext = {
+          trackerEntries: [trackerEntry({ commitShas: [], filesChanged: [] })],
+          dependsOnSummaries: [],
+          dependedOnByTasks: [],
+        };
+        const text = buildRunKickoff({
+          title: 'T',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: ctx,
+        });
+        expect(text).to.include('no commits');
+        expect(text).to.not.include('touched');
+      });
+
+      it('shows full detail for the most recent 3 tracker entries and a terse list for the rest [unit]', () => {
+        const entries = [4, 3, 2, 1, 0].map((n) =>
+          trackerEntry({ taskId: `task-${n}`, taskTitle: `Task ${n}` }),
+        );
+        const text = buildRunKickoff({
+          title: 'T',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: { trackerEntries: entries, dependsOnSummaries: [], dependedOnByTasks: [] },
+        });
+        expect(text).to.include('- "Task 4"');
+        expect(text).to.include('- "Task 3"');
+        expect(text).to.include('- "Task 2"');
+        expect(text).to.not.include('- "Task 1"');
+        expect(text).to.include('Earlier related work: "Task 1" (done), "Task 0" (done)');
+      });
+
+      it('formats a "Depends on:" block, with and without a recorded summary [unit]', () => {
+        const ctx: SiblingProgressContext = {
+          trackerEntries: [],
+          dependsOnSummaries: [
+            { taskId: 'd1', title: 'Database migration', status: 'done', summary: 'Added refresh_token column.' },
+            { taskId: 'd2', title: 'Other dep', status: 'pending', summary: null },
+          ],
+          dependedOnByTasks: [],
+        };
+        const text = buildRunKickoff({
+          title: 'T',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: ctx,
+        });
+        expect(text).to.include('Depends on:');
+        expect(text).to.include('- "Database migration" (done) — "Added refresh_token column."');
+        expect(text).to.include('- "Other dep" (pending)');
+        expect(text).to.not.include('"Other dep" (pending) — "');
+      });
+
+      it('formats an "Expected to run after this task:" block [unit]', () => {
+        const ctx: SiblingProgressContext = {
+          trackerEntries: [],
+          dependsOnSummaries: [],
+          dependedOnByTasks: [
+            { taskId: 'e1', title: 'Error-path tests', status: 'pending' },
+            { taskId: 'e2', title: 'Docs + PR', status: 'pending' },
+          ],
+        };
+        const text = buildRunKickoff({
+          title: 'T',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          siblingContext: ctx,
+        });
+        expect(text).to.include('Expected to run after this task:');
+        expect(text).to.include('- "Error-path tests"');
+        expect(text).to.include('- "Docs + PR"');
+      });
     });
   });
 

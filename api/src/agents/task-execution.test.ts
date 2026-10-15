@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
@@ -1775,6 +1776,171 @@ describe('agents/task-execution', () => {
         // Every run releases its thread through endThreadTurn().
         { type: 'thread_turn_completed', threadId: runThreadOf(entry) },
       ]);
+    });
+  });
+
+  describe('shared task progress record (issue #302)', () => {
+    // A real repo is needed (not the '/tmp/w' fake path other tests use) —
+    // recordTaskProgress's git helpers actually shell out, unlike
+    // buildWorkspaceContext which tolerates a missing directory.
+    function initGitRepo(repoDir: string): void {
+      execFileSync('git', ['init'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir });
+      execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repoDir });
+      writeFileSync(join(repoDir, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '.'], { cwd: repoDir });
+      execFileSync('git', ['commit', '-m', 'initial'], { cwd: repoDir });
+    }
+
+    function makeTrackedWorkspaceEntry(
+      opts: { title?: string; trackerType?: string; trackerId?: string } = {},
+    ): { entry: QueueEntryWithTask; workspaceId: string } {
+      const repoDir = mkdtempSync(join(tmpdir(), 'task-progress-repo-'));
+      initGitRepo(repoDir);
+      const workspace = store.createWorkspace({ name: 'W', location: repoDir });
+      const task = store.createTask({
+        title: opts.title ?? 'Tracked task',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+        trackerType: opts.trackerType ?? 'github',
+        trackerId: opts.trackerId ?? 'issue-250',
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      return { entry: store.dequeueNext()! as QueueEntryWithTask, workspaceId: workspace.id };
+    }
+
+    it('records a progress entry when complete_task fires for a tracker-linked task', async () => {
+      const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-301' });
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const entries = store.listTaskProgressEntries('github', 'issue-301');
+      expect(entries).to.have.length(1);
+      expect(entries[0].outcome).to.equal('done');
+      expect(entries[0].summary).to.equal('Wrote the page.');
+      expect(entries[0].taskId).to.equal(entry.task.id);
+      expect(entries[0].commitShas).to.deep.equal([]);
+    });
+
+    it('records a failed progress entry when the agent stops without calling complete_task', async () => {
+      const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-302' });
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
+        ),
+      });
+
+      const entries = store.listTaskProgressEntries('github', 'issue-302');
+      expect(entries).to.have.length(1);
+      expect(entries[0].outcome).to.equal('failed');
+      expect(entries[0].summary).to.match(/^Stopped without completing/);
+    });
+
+    it('records a failed progress entry via the finishFailedRun catch-all path', async () => {
+      const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-303' });
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])) });
+
+      const entries = store.listTaskProgressEntries('github', 'issue-303');
+      expect(entries).to.have.length(1);
+      expect(entries[0].outcome).to.equal('failed');
+    });
+
+    it('does not record a progress entry for a cancelled run', async () => {
+      const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-304' });
+      const agent = fakeAbortingAgent(entry.id, 'cancel');
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.listTaskProgressEntries('github', 'issue-304')).to.have.length(0);
+    });
+
+    it('does not record a progress entry for a paused (blocked) run', async () => {
+      const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-305' });
+      const agent = fakeAbortingAgent(entry.id, 'pause');
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.listTaskProgressEntries('github', 'issue-305')).to.have.length(0);
+    });
+
+    it('does not record anything for a task with no tracker link, and still completes normally', async () => {
+      const repoDir = mkdtempSync(join(tmpdir(), 'task-progress-repo-'));
+      initGitRepo(repoDir);
+      const workspace = store.createWorkspace({ name: 'W-untracked', location: repoDir });
+      const task = store.createTask({
+        title: 'Untracked',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(task.id)!.status).to.equal('done');
+    });
+
+    it('does not record anything for an Inbox (no-workspace) task, even with a tracker link set', async () => {
+      const task = store.createTask({
+        title: 'Inbox tracked task',
+        assignedTo: 'agent',
+        trackerType: 'github',
+        trackerId: 'issue-306',
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.listTaskProgressEntries('github', 'issue-306')).to.have.length(0);
+      expect(store.getTask(task.id)!.status).to.equal('done');
+    });
+
+    it("includes a completed sibling's progress in a second tracker-linked task's kickoff message", async () => {
+      const repoDir = mkdtempSync(join(tmpdir(), 'task-progress-repo-'));
+      initGitRepo(repoDir);
+      const workspace = store.createWorkspace({ name: 'W-siblings', location: repoDir });
+
+      const firstTask = store.createTask({
+        title: 'First task',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+        trackerType: 'github',
+        trackerId: 'issue-999',
+      });
+      store.patchTask(firstTask.id, { status: 'ready' });
+      store.enqueueTask(firstTask.id);
+      await executeTask(store.dequeueNext()! as QueueEntryWithTask, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const secondTask = store.createTask({
+        title: 'Second task',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+        trackerType: 'github',
+        trackerId: 'issue-999',
+      });
+      store.patchTask(secondTask.id, { status: 'ready' });
+      store.enqueueTask(secondTask.id);
+      const secondEntry = store.dequeueNext()! as QueueEntryWithTask;
+
+      const capture: { input: unknown } = { input: undefined };
+      await executeTask(secondEntry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent(COMPLETE_TASK_DONE_EVENTS, capture)),
+      });
+
+      const input = capture.input as { messages: { role: string; content: string }[] };
+      expect(input.messages[0].content).to.include('Related work on this feature');
+      expect(input.messages[0].content).to.include('"First task"');
+      expect(input.messages[0].content).to.include('Wrote the page.');
     });
   });
 });

@@ -62,6 +62,7 @@ describe('shared-database migrations (cross-store)', () => {
       'projects',
       'tasks',
       'task_queue',
+      'task_progress_entries',
     ];
     for (const table of expectedTables) {
       expect(tables, `expected table "${table}" in: ${JSON.stringify(tables)}`).to.include(table);
