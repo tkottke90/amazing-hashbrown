@@ -36,6 +36,12 @@ import {
 } from './thread-message-writer.js';
 import { buildRunKickoff, type PreviousRun } from './task-context.js';
 import { deliverSubAgentCompletion } from './sub-agent-notification.js';
+import { getHeadCommit } from '../services/workspace-git.js';
+import {
+  recordTaskProgress,
+  getGroupContext,
+  type SiblingProgressContext,
+} from '../services/task-progress.js';
 import {
   resolveTurnModel,
   startTurnObservability,
@@ -132,6 +138,16 @@ export async function executeTask(
   // The workspace chat thread a workspace task's run markers are copied
   // into — null for an Inbox task, which has no shared chat surface.
   let mirrorThreadId: string | null = null;
+  // HEAD at run start, captured once a workspace is resolved below — null
+  // for an Inbox task (no workspace.location to read) or an unborn-HEAD
+  // repo. Read by recordTaskProgress() at every terminal branch below to
+  // diff against the HEAD at completion. NOTE: origin='agent' sub-agent
+  // tasks run concurrently against the same workspace.location (see
+  // dequeueNext()'s scope-lock exemption), so this diff can race a
+  // concurrently-running sibling's own commits in that repo — an accepted,
+  // documented limitation (see workspace-git.ts's own comment on this). See
+  // docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
+  let startSha: string | null = null;
   // Every run executes in its own 'task' thread, minted on the run's first
   // start and stored on its queue row. A row that already has one is
   // continuing (a HITL answer, a user Resume, or a crash-recovery retry)
@@ -149,6 +165,7 @@ export async function executeTask(
       const workspaceContext = await buildWorkspaceContext(workspace);
       workspaceScope = { workspace, workspaceContext };
       mirrorThreadId = ensureWorkspaceChatThread(store, threadStore, workspace);
+      startSha = await getHeadCommit(workspace.location);
     }
     if (entry.threadId !== null) {
       threadId = entry.threadId;
@@ -368,10 +385,20 @@ export async function executeTask(
       if (resumeAnswer) {
         store.patchTask(task.id, { resumeAnswer: null });
       }
+      let siblingContext: SiblingProgressContext | null = null;
+      try {
+        siblingContext = getGroupContext(task);
+      } catch (err) {
+        logger.error('task-execution: getGroupContext failed, degrading to no sibling context', {
+          taskId: task.id,
+          err: serializeError(err),
+        });
+      }
       const kickoff = buildRunKickoff({
         title: task.title,
         resume: entry.pausedAt !== null,
         runNumber,
+        siblingContext,
         triggerSource: entry.triggerSource,
         scheduledFor: entry.scheduledFor,
         previousRuns,
@@ -458,6 +485,15 @@ export async function executeTask(
         finalOutcome = completeTaskBox.current.outcome;
         store.setQueueEntrySummary(entry.id, completeTaskBox.current.summary);
         store.completeQueueEntry(entry.id, completeTaskBox.current.outcome);
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: completeTaskBox.current.outcome,
+            summary: completeTaskBox.current.summary,
+            startSha,
+          });
+        }
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(
             task,
@@ -490,6 +526,15 @@ export async function executeTask(
           'Stopped without completing the task (ran out of steps or produced no final action).';
         store.setQueueEntrySummary(entry.id, stoppedSummary);
         store.completeQueueEntry(entry.id, 'failed');
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: 'failed',
+            summary: stoppedSummary,
+            startSha,
+          });
+        }
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', stoppedSummary);
         }
@@ -520,6 +565,15 @@ export async function executeTask(
         finalOutcome = 'failed';
         store.setQueueEntrySummary(entry.id, summary);
         store.completeQueueEntry(entry.id, 'failed');
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: 'failed',
+            summary,
+            startSha,
+          });
+        }
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', notifyMessage);
         }

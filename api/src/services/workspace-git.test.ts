@@ -12,6 +12,10 @@ import {
   withLock,
   GitOperationInProgressError,
   translateGitAuthError,
+  getHeadCommit,
+  getChangedFiles,
+  getCommitsBetween,
+  getDirtyFiles,
   type GitStatus,
 } from './workspace-git.js';
 import type { ExecFileFn } from './workspace-provision.js';
@@ -398,6 +402,99 @@ describe('services/workspace-git', () => {
       }
       expect(error?.message).to.include('Invalid git ref name');
       expect(calls.length).to.equal(0);
+    });
+  });
+
+  describe('getHeadCommit() [unit]', () => {
+    it('shells out to git rev-parse HEAD and returns the trimmed SHA', async () => {
+      const { stub, calls } = makeStub(() => ({ stdout: 'abc123def456\n', stderr: '' }));
+      const result = await getHeadCommit('/tmp/ws', stub);
+      expect(calls).to.deep.equal([
+        ['git', ['rev-parse', 'HEAD'], { cwd: '/tmp/ws', timeout: 10_000 }],
+      ]);
+      expect(result).to.equal('abc123def456');
+    });
+
+    it('returns null on an unborn HEAD (no commits yet) instead of throwing', async () => {
+      const { stub } = makeStub(() => {
+        throw new Error("fatal: ambiguous argument 'HEAD': unknown revision");
+      });
+      const result = await getHeadCommit('/tmp/ws', stub);
+      expect(result).to.equal(null);
+    });
+  });
+
+  describe('getChangedFiles() [unit]', () => {
+    it('runs git ls-files when fromSha is null (first-commit case)', async () => {
+      const { stub, calls } = makeStub(() => ({
+        stdout: 'api/src/index.ts\nREADME.md\n',
+        stderr: '',
+      }));
+      const result = await getChangedFiles('/tmp/ws', null, 'sha2', stub);
+      expect(calls).to.deep.equal([['git', ['ls-files'], { cwd: '/tmp/ws', timeout: 10_000 }]]);
+      expect(result).to.deep.equal(['api/src/index.ts', 'README.md']);
+    });
+
+    it('runs git diff --name-only <from> <to> when fromSha is set', async () => {
+      const { stub, calls } = makeStub(() => ({ stdout: 'api/src/index.ts\n', stderr: '' }));
+      const result = await getChangedFiles('/tmp/ws', 'sha1', 'sha2', stub);
+      expect(calls).to.deep.equal([
+        ['git', ['diff', '--name-only', 'sha1', 'sha2'], { cwd: '/tmp/ws', timeout: 10_000 }],
+      ]);
+      expect(result).to.deep.equal(['api/src/index.ts']);
+    });
+
+    it('filters out blank lines', async () => {
+      const { stub } = makeStub(() => ({ stdout: '\n\n', stderr: '' }));
+      const result = await getChangedFiles('/tmp/ws', 'sha1', 'sha2', stub);
+      expect(result).to.deep.equal([]);
+    });
+  });
+
+  describe('getCommitsBetween() [unit]', () => {
+    it('returns [toSha] without shelling out when fromSha is null', async () => {
+      const { stub, calls } = makeStub();
+      const result = await getCommitsBetween('/tmp/ws', null, 'sha2', stub);
+      expect(calls).to.deep.equal([]);
+      expect(result).to.deep.equal(['sha2']);
+    });
+
+    it('runs git log --format=%H <from>..<to> when fromSha is set', async () => {
+      const { stub, calls } = makeStub(() => ({ stdout: 'sha2\nsha1b\n', stderr: '' }));
+      const result = await getCommitsBetween('/tmp/ws', 'sha1', 'sha2', stub);
+      expect(calls).to.deep.equal([
+        ['git', ['log', '--format=%H', 'sha1..sha2'], { cwd: '/tmp/ws', timeout: 10_000 }],
+      ]);
+      expect(result).to.deep.equal(['sha2', 'sha1b']);
+    });
+  });
+
+  describe('getDirtyFiles() [unit]', () => {
+    it('shells out to git status --porcelain and parses file paths', async () => {
+      const { stub, calls } = makeStub(() => ({
+        stdout: ' M api/src/index.ts\n?? newfile.ts\n',
+        stderr: '',
+      }));
+      const result = await getDirtyFiles('/tmp/ws', stub);
+      expect(calls).to.deep.equal([
+        ['git', ['status', '--porcelain'], { cwd: '/tmp/ws', timeout: 10_000 }],
+      ]);
+      expect(result).to.deep.equal(['api/src/index.ts', 'newfile.ts']);
+    });
+
+    it('takes the destination path for a rename line', async () => {
+      const { stub } = makeStub(() => ({
+        stdout: 'R  old-name.ts -> new-name.ts\n',
+        stderr: '',
+      }));
+      const result = await getDirtyFiles('/tmp/ws', stub);
+      expect(result).to.deep.equal(['new-name.ts']);
+    });
+
+    it('returns an empty array for a clean tree', async () => {
+      const { stub } = makeStub(() => ({ stdout: '', stderr: '' }));
+      const result = await getDirtyFiles('/tmp/ws', stub);
+      expect(result).to.deep.equal([]);
     });
   });
 
