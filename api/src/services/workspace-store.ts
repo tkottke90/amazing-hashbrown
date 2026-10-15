@@ -898,16 +898,22 @@ const MIGRATIONS: DbMigration[] = [
     // siblings read via getGroupContext() in task-progress.ts. Survives the
     // task itself being deleted (task_title is denormalized on purpose, see
     // deleteTask()'s own comment below); only cleaned up when the whole
-    // workspace is deleted (see deleteWorkspace() below). REFERENCES
-    // tasks(id) is safe here since this is a fresh CREATE TABLE, not an
-    // ALTER (see the version-23/31/38 comments above). See
+    // workspace is deleted (see deleteWorkspace() below).
+    // task_id deliberately has NO `REFERENCES tasks(id)` — unlike the
+    // version-23/31/38 "fresh CREATE TABLE, so REFERENCES is safe" cases,
+    // this table's whole point is to outlive the task it names: this
+    // connection enforces FKs (PRAGMA foreign_keys = ON upstream), so a real
+    // REFERENCES constraint here would make deleteTask() throw instead of
+    // succeeding whenever a progress entry for that task still exists —
+    // exactly backwards from the survive-deletion behavior this table
+    // exists for. See
     // docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md.
     sql: `
       CREATE TABLE IF NOT EXISTS task_progress_entries (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,
         tracker_type      TEXT NOT NULL,
         tracker_id        TEXT NOT NULL,
-        task_id           TEXT NOT NULL REFERENCES tasks(id),
+        task_id           TEXT NOT NULL,
         task_title        TEXT NOT NULL,
         workspace_id      TEXT NOT NULL,
         repo_identifier   TEXT NOT NULL,

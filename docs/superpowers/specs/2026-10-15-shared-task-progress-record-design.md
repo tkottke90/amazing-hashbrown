@@ -18,7 +18,7 @@ Full research on `task-context.ts`, `workspace-summarizer.ts`, `chat-agent.ts`, 
 - **`get_task_outcome`** tool reads `store.listTaskRuns(taskId)` and formats the latest run's `summary` — this is the exact per-task data this feature reuses for the dependency side, just surfaced automatically instead of on-demand.
 - **No git diff/log helpers exist anywhere.** `workspace-git.ts` has `getGitStatus`/`listBranches`/`fetchRemote`/`syncFastForward`/`pushBranch`/`checkoutBranch`/`createBranch`, all via `execFile('git', [...], { cwd: location })`; read-only calls take no lock, mutating ones use `withLock(workspaceId, fn)`. No `diff`/`log` helper is present — new code.
 - **No multi-repo-per-workspace layout exists.** A `Workspace` is one directory (`workspace.location`); there is no `/app/config/projects/<workspace>/<repo>` nesting anywhere in the codebase, contrary to an assumption in the original issue's developer notes.
-- **No FK enforcement.** SQLite's `REFERENCES` constraints are inert here — `PRAGMA foreign_keys = ON` is never set repo-wide. The existing convention (`task_dependencies`, `task_cohorts`) is manual application-level cleanup inside `deleteTask`/`deleteWorkspace`, each wrapped in its own transaction — not a DB cascade.
+- **FK enforcement is ON** (`PRAGMA foreign_keys = ON`, set upstream of `WorkspaceStore` by the shared `@tkottke90/llm-common-types` connection — confirmed by a real `SqliteError: FOREIGN KEY constraint failed` in CI; an earlier pass of this research, scoped only to `api/src`, missed where this is set and wrongly concluded `REFERENCES` was inert here). `REFERENCES` constraints are real and enforced: `task_dependencies`/`task_cohorts` get away with manual application-level cleanup inside `deleteTask`/`deleteWorkspace` only because every call site deletes the child rows before the parent, in the same transaction, which satisfies the constraint rather than bypassing it — there is no DB-level cascade, but the ordering is load-bearing.
 - Migrations are a single flat `MIGRATIONS: DbMigration[]` array in `workspace-store.ts`; highest version currently in the ledger is **41** → next free version is **42** (re-verify still free before committing, per existing convention noted in prior specs).
 
 ## Decisions reached during brainstorming Q&A
@@ -29,7 +29,7 @@ Full research on `task-context.ts`, `workspace-summarizer.ts`, `chat-agent.ts`, 
 4. **Scope is single-repo-per-workspace**, matching what exists today. A `repoIdentifier` field is still recorded on each entry for forward compatibility, but no multi-repo discovery/traversal is built — that's unscoped, separate future work if ever needed.
 5. **Progress entries are an append-only structured log**, not an LLM-regenerated rolling narrative — each task completion appends one row; nothing is ever rewritten or summarized away. Pure harness-side write, no extra model call.
 6. **Storage is a new DB table**, not a `.hashbrown` file. The literal `.hashbrown`-file precedent (`workspace-summarizer.ts`) is single-writer; this feature's production motivation is explicitly _concurrent_ sibling-task completions under one tracker, which a shared file would need new locking infrastructure to handle safely. SQLite transactions get that for free.
-7. **Cleanup on deletion**: a task's own progress entry **survives** that individual task being deleted (the whole point is a durable record independent of any one task's lifecycle — hence the denormalized `taskTitle`). A **workspace** being deleted **does** clean up its progress entries (genuine orphaning otherwise, no path back) — added to `deleteWorkspace`'s existing manual-cascade transaction.
+7. **Cleanup on deletion**: a task's own progress entry **survives** that individual task being deleted (the whole point is a durable record independent of any one task's lifecycle — hence the denormalized `taskTitle`). This means `task_progress_entries.task_id` deliberately carries **no** `REFERENCES tasks(id)` — FK enforcement is genuinely on in this connection (see above), so a real constraint here would make `deleteTask` throw instead of succeed whenever a progress entry for that task exists, exactly backwards from "survives deletion." A **workspace** being deleted **does** clean up its progress entries (genuine orphaning otherwise, no path back) — added to `deleteWorkspace`'s existing manual-cascade transaction.
 8. **Delivery is auto-injection into the existing kickoff message**, not a new tool. A tool the model has to remember to call reproduces exactly the failure mode this issue exists to close (the same way `update_plan` being optional caused the original problem). No new tool is introduced.
 
 ## Design
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS task_progress_entries (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   tracker_type      TEXT NOT NULL,
   tracker_id        TEXT NOT NULL,
-  task_id           TEXT NOT NULL REFERENCES tasks(id),
+  task_id           TEXT NOT NULL,       -- no REFERENCES: this row must survive task_id's own row being deleted (see Decision 7)
   task_title        TEXT NOT NULL,       -- denormalized: survives task edits/deletion
   workspace_id      TEXT NOT NULL,
   repo_identifier   TEXT NOT NULL,       -- workspace.remoteUrl, else basename(workspace.location)
