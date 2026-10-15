@@ -14,6 +14,7 @@ import {
   Folder,
   Circle,
   MessagesSquare,
+  LayoutDashboard,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -333,6 +334,20 @@ export function ThreadSidebar() {
         ))}
       </div>
 
+      <a
+        href="/"
+        aria-label="Dashboard"
+        onClick={guardAnchorClick}
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url === '/'
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <LayoutDashboard className="size-4 shrink-0" />
+        Dashboard
+      </a>
       <a
         href="/inbox"
         aria-label="Inbox"

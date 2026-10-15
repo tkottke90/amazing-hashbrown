@@ -339,6 +339,8 @@ implementation details that change without notice.
 | `thread-row`                    | `ui/src/pages/threads/index.tsx`                          | A row on the Threads list page (all thread types); pair with `data-thread-id`                 |
 | `auto-approve-menu-item`        | `ui/src/components/chat-input.tsx`                        | The add-menu toggle for a workspace's shell_exec auto-approve setting                         |
 | `auto-approve-chip`             | `ui/src/components/chat-input.tsx`                        | The amber "Auto" chip shown next to the model chip when auto-approve is on; click to turn off |
+| `dashboard-grid`                | `ui/src/pages/dashboard/dashboard-grid.tsx`               | The responsive widget grid on the dashboard landing page; read `grid-template-columns` to assert column count per breakpoint |
+| `widget-card`                   | `ui/src/pages/dashboard/widget-card.tsx`                  | A single dashboard widget card (any widget type)                                              |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

@@ -1,13 +1,13 @@
-import { LocationProvider, Router, useLocation } from 'preact-iso';
+import { LocationProvider, Router } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 
 import { ToastContainer } from '@/components/toast-container';
 import { MovePrompts } from '@/components/task-board/move-prompts';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { activeThreadId } from '@/hooks/use-thread';
 import { activeGuard } from '@/hooks/use-settings-guard';
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { ChatRoot } from '@/pages/chat';
+import { DashboardView } from '@/pages/dashboard';
 import { SettingsView } from '@/pages/settings';
 import { ThreadsView } from '@/pages/threads';
 import { WikiView } from '@/pages/wiki';
@@ -15,15 +15,6 @@ import { WorkspacesView } from '@/pages/workspaces';
 import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
 import { CloseProjectView } from '@/pages/workspaces/close/[id]';
 import { InboxView } from '@/pages/inbox';
-
-// path prop is consumed by preact-iso's Router for route matching
-function RootRedirect(_props: { path?: string }) {
-  const { route } = useLocation();
-  useEffect(() => {
-    route(`/chat/${activeThreadId.value}`);
-  }, []);
-  return null;
-}
 
 export function App() {
   useEffect(() => {
@@ -51,7 +42,7 @@ export function App() {
         <ToastContainer />
         <MovePrompts />
         <Router>
-          <RootRedirect path="/" />
+          <DashboardView path="/" />
           <ChatRoot path="/chat/:id" />
           <WikiView path="/wiki" />
           <SettingsView path="/settings" />

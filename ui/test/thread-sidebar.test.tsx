@@ -1,4 +1,4 @@
-import { render } from '@testing-library/preact';
+import { render, screen } from '@testing-library/preact';
 
 import { ThreadSidebar, clampThreads } from '@/components/thread-sidebar';
 import { threads, type ThreadSummary } from '@/hooks/use-thread';
@@ -92,5 +92,22 @@ describe('ThreadSidebar mobile thread clamping', () => {
     const { container } = render(<ThreadSidebar />);
 
     expect(container.querySelectorAll('[data-slot="thread-row"]')).toHaveLength(5);
+  });
+});
+
+describe('ThreadSidebar Dashboard link', () => {
+  // The global preact-iso mock (test/__mocks__/preact-iso.tsx) returns
+  // url: '/' by default, so the active-state assertions here need no
+  // per-test override — see thread-sidebar-dashboard-link.test.tsx for the
+  // inactive-elsewhere case, which does need a different url.
+  it('renders a Dashboard link pointing at / [unit]', () => {
+    render(<ThreadSidebar />);
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/');
+  });
+
+  it('marks the Dashboard link active when url is / [unit]', () => {
+    render(<ThreadSidebar />);
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('bg-sidebar-accent');
+    expect(screen.getByRole('link', { name: 'Inbox' })).not.toHaveClass('bg-sidebar-accent');
   });
 });
