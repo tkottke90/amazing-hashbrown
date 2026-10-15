@@ -14,9 +14,9 @@ Close a blind spot in the loop guard's stagnation detector (`recursion-guard.mid
 
 ## Problem
 
-`computeStagnationStreak` walks backward from the most recent `ToolMessage` and counts a **strictly consecutive** run sharing the same tool name and normalized output. It stops at the first entry that doesn't match — including a call to a *different* tool, even one that is equally unproductive.
+`computeStagnationStreak` walks backward from the most recent `ToolMessage` and counts a **strictly consecutive** run sharing the same tool name and normalized output. It stops at the first entry that doesn't match — including a call to a _different_ tool, even one that is equally unproductive.
 
-A real production incident (task `ba9c5f3a-22df-4b07-b16e-a35776663ba7` and 6 sibling runs under the same epic) hit exactly this shape: the model alternated `git status`/`git log` → `wiki_locate` → `git status`/`git log` → `wiki_locate`, each call returning materially the same result as its own last call. Because the tools alternate, the same-tool trailing run never exceeds 1, so `stagnationNudgeThreshold` (default 3) never fires. The only detector that *can* see this shape is `computeRawStreak` — consecutive tool-call turns regardless of tool or output — which fires at `streakReflectionThreshold` (default 10). Confirmed from production data: across 7 affected runs, every one hit the guard at exactly `llmCallCount == 10`, by which point the run's effective budget was already spent.
+A real production incident (task `ba9c5f3a-22df-4b07-b16e-a35776663ba7` and 6 sibling runs under the same epic) hit exactly this shape: the model alternated `git status`/`git log` → `wiki_locate` → `git status`/`git log` → `wiki_locate`, each call returning materially the same result as its own last call. Because the tools alternate, the same-tool trailing run never exceeds 1, so `stagnationNudgeThreshold` (default 3) never fires. The only detector that _can_ see this shape is `computeRawStreak` — consecutive tool-call turns regardless of tool or output — which fires at `streakReflectionThreshold` (default 10). Confirmed from production data: across 7 affected runs, every one hit the guard at exactly `llmCallCount == 10`, by which point the run's effective budget was already spent.
 
 ---
 
@@ -24,7 +24,7 @@ A real production incident (task `ba9c5f3a-22df-4b07-b16e-a35776663ba7` and 6 si
 
 - Changing `computeRawStreak`, the reflection mechanism, the escalation ladder, or any config field's meaning. This is a change to one detector's counting logic only.
 - New configuration. The fix reuses `stagnationNudgeThreshold` / `stagnationReflectionThreshold` exactly as they exist today — no new threshold, no new window-size field.
-- Semantic/embedding similarity between outputs. Matching stays the existing exact-after-normalization comparison (`normalizeToolOutput`); this issue is about *which calls are compared*, not *how* two outputs are compared.
+- Semantic/embedding similarity between outputs. Matching stays the existing exact-after-normalization comparison (`normalizeToolOutput`); this issue is about _which calls are compared_, not _how_ two outputs are compared.
 - Oscillation between tools that each return genuinely different, useful output. That remains undetected by design — it's not stagnation.
 
 ---
@@ -33,7 +33,7 @@ A real production incident (task `ba9c5f3a-22df-4b07-b16e-a35776663ba7` and 6 si
 
 ### The core change: gap-tolerant matching, anchored to the most recent call
 
-`computeStagnationStreak` currently requires the matching prior call to be *immediately adjacent*. The fix makes it **gap-tolerant**: it still anchors to the most recently called tool and its output, but when scanning backward for prior matches, it skips over intervening calls to *other* tools instead of stopping at them. A call only breaks the scan if it reaches the window boundary (see below) — not merely because a different tool was called in between.
+`computeStagnationStreak` currently requires the matching prior call to be _immediately adjacent_. The fix makes it **gap-tolerant**: it still anchors to the most recently called tool and its output, but when scanning backward for prior matches, it skips over intervening calls to _other_ tools instead of stopping at them. A call only breaks the scan if it reaches the window boundary (see below) — not merely because a different tool was called in between.
 
 This is a minimal generalization of the existing algorithm, not a new parallel mechanism:
 
@@ -79,7 +79,7 @@ No other behavior of the nudge changes.
 
 - **Parity (regression):** every existing non-interleaved stagnation scenario (trailing run counts, resets on different tool, resets on different output, timestamp normalization) produces the same count and the same trigger points as before.
 - **Alternating-tool stagnation:** two tools alternating, each repeating its own prior output, trips the nudge at `stagnationNudgeThreshold` and reflection at `stagnationReflectionThreshold` — reproducing the worked example above.
-- **No false positive:** two (or more) tools alternating with *genuinely different* output each call never trips stagnation (only `computeRawStreak`, unchanged, can still catch that shape at its own higher threshold).
+- **No false positive:** two (or more) tools alternating with _genuinely different_ output each call never trips stagnation (only `computeRawStreak`, unchanged, can still catch that shape at its own higher threshold).
 - **Window boundary:** a plain-text `AIMessage` or a `HumanMessage` between two otherwise-matching calls to the same tool resets the count to 1 — the scan does not reach back across it.
 - **Nudge fires once:** in an alternating sequence where one tool's count sits at the threshold while other tools are subsequently called, the nudge does not re-fire on those later turns (only on the turn where that tool's own count actually crosses the threshold).
 
@@ -95,8 +95,8 @@ None required. This is a deterministic change to a counting function's inputs, n
 
 ## Files Changed
 
-| File | Change |
-| --- | --- |
-| `api/src/agents/recursion-guard.middleware.ts` | Generalize `computeStagnationStreak` to a gap-tolerant scan bounded by the same window boundary `computeRawStreak` uses; reword the nudge message to drop "in a row" |
-| `api/src/agents/recursion-guard.middleware.test.ts` | New alternating-tool tests, false-positive test, window-boundary test, fires-once test; parity tests for the existing non-interleaved cases |
-| `api/src/agents/loop-guard.integration.test.ts` | New end-to-end test reproducing the production alternating-tool shape |
+| File                                                | Change                                                                                                                                                               |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/src/agents/recursion-guard.middleware.ts`      | Generalize `computeStagnationStreak` to a gap-tolerant scan bounded by the same window boundary `computeRawStreak` uses; reword the nudge message to drop "in a row" |
+| `api/src/agents/recursion-guard.middleware.test.ts` | New alternating-tool tests, false-positive test, window-boundary test, fires-once test; parity tests for the existing non-interleaved cases                          |
+| `api/src/agents/loop-guard.integration.test.ts`     | New end-to-end test reproducing the production alternating-tool shape                                                                                                |

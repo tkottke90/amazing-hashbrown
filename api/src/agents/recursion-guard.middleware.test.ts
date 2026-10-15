@@ -53,6 +53,27 @@ function makeVariedStreakState(count: number): { messages: any[] } {
   return { messages };
 }
 
+// Builds a message list of alternating tool-call turns across `toolOutputs`
+// (tool name -> its own stable output), cycling through the list in order,
+// repeated for `rounds` full cycles — the shape computeStagnationStreak's
+// gap-tolerant scan must detect (issue #301).
+function makeAlternatingState(
+  toolOutputs: [string, string][],
+  rounds: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): { messages: any[] } {
+  const messages: unknown[] = [new HumanMessage('start')];
+  let callIndex = 0;
+  for (let round = 0; round < rounds; round++) {
+    for (const [toolName, output] of toolOutputs) {
+      const id = `call_${callIndex++}`;
+      messages.push(new AIMessage({ content: '', tool_calls: [{ id, name: toolName, args: {} }] }));
+      messages.push(new ToolMessage({ content: output, name: toolName, tool_call_id: id }));
+    }
+  }
+  return { messages };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function callBeforeModel(guard: any, state: { messages: any[] }): Promise<unknown> {
   return guard.beforeModel(state, { context: {}, configurable: {} });
@@ -255,6 +276,199 @@ describe('agents/recursion-guard.middleware', () => {
       const result = await callBeforeModel(guard, { messages } as any);
       expect(result).to.not.equal(undefined);
     });
+
+    it('detects stagnation across alternating tool calls and injects the nudge at the threshold (issue #301)', async () => {
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      const state = makeAlternatingState(
+        [
+          ['git_status', 'clean'],
+          ['wiki_locate', 'page not found'],
+        ],
+        2,
+      );
+      state.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_extra', name: 'git_status', args: {} }],
+        }),
+        new ToolMessage({ content: 'clean', name: 'git_status', tool_call_id: 'call_extra' }),
+      );
+      const result = (await callBeforeModel(guard, state)) as
+        { messages: HumanMessage[] } | undefined;
+      expect(result).to.not.equal(undefined);
+      expect(result!.messages).to.have.lengthOf(1);
+      expect(result!.messages[0]).to.be.instanceOf(HumanMessage);
+      const content = String(result!.messages[0].content);
+      expect(content).to.include('git_status');
+      expect(content).to.include('3 times');
+      expect(content).to.include('recently');
+      expect(content).to.not.include('in a row');
+    });
+
+    it('does not trip stagnation when alternating tools each return genuinely different output every call', async () => {
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      const messages: unknown[] = [new HumanMessage('start')];
+      const toolNames = ['git_status', 'wiki_locate'];
+      for (let i = 0; i < 8; i++) {
+        const toolName = toolNames[i % 2];
+        messages.push(
+          new AIMessage({
+            content: '',
+            tool_calls: [{ id: `call_${i}`, name: toolName, args: {} }],
+          }),
+          new ToolMessage({ content: `result-${i}`, name: toolName, tool_call_id: `call_${i}` }),
+        );
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await callBeforeModel(guard, { messages } as any);
+      expect(result).to.equal(undefined);
+    });
+
+    it('resets the gap-tolerant scan at a plain-text AIMessage between two matching tool calls', async () => {
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      const base = makeStagnantState('shell_exec', 'same output', 2);
+      base.messages.push(new AIMessage('a plain-text reply'));
+      base.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_x', name: 'shell_exec', args: {} }],
+        }),
+        new ToolMessage({ content: 'same output', name: 'shell_exec', tool_call_id: 'call_x' }),
+      );
+      const result = await callBeforeModel(guard, base);
+      expect(result).to.equal(undefined);
+    });
+
+    it('resets the gap-tolerant scan at a new HumanMessage between two matching tool calls', async () => {
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      const base = makeStagnantState('shell_exec', 'same output', 2);
+      base.messages.push(new HumanMessage('a new instruction'));
+      base.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_x', name: 'shell_exec', args: {} }],
+        }),
+        new ToolMessage({ content: 'same output', name: 'shell_exec', tool_call_id: 'call_x' }),
+      );
+      const result = await callBeforeModel(guard, base);
+      expect(result).to.equal(undefined);
+    });
+
+    it("does not re-fire the nudge for an unrelated tool once a different tool's count sits flat at the threshold", async () => {
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      // git_status crosses the nudge threshold (3) on this sequence.
+      const state = makeAlternatingState(
+        [
+          ['git_status', 'clean'],
+          ['wiki_locate', 'page not found'],
+        ],
+        2,
+      );
+      state.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_extra_1', name: 'git_status', args: {} }],
+        }),
+        new ToolMessage({ content: 'clean', name: 'git_status', tool_call_id: 'call_extra_1' }),
+      );
+      const firstResult = (await callBeforeModel(guard, state)) as
+        { messages: HumanMessage[] } | undefined;
+      expect(firstResult, 'git_status should trip the nudge here').to.not.equal(undefined);
+
+      // A call to a brand-new third tool: its own count is 1 (anchoring to
+      // only the most recently called tool, not a max across every tool
+      // seen, is exactly what keeps this from re-firing just because
+      // git_status's count — still 3 — happens to still be "at" the
+      // threshold somewhere earlier in the list).
+      state.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_extra_2', name: 'ls_output', args: {} }],
+        }),
+        new ToolMessage({ content: 'empty', name: 'ls_output', tool_call_id: 'call_extra_2' }),
+      );
+      const secondResult = await callBeforeModel(guard, state);
+      expect(
+        secondResult,
+        "the nudge should not re-fire for an unrelated tool while git_status's count sits unchanged at the threshold",
+      ).to.equal(undefined);
+
+      // wiki_locate already has 2 occurrences from the alternating sequence
+      // above; one more is its 3rd — a genuine new crossing, so the nudge
+      // should fire again, this time for wiki_locate.
+      state.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_extra_3', name: 'wiki_locate', args: {} }],
+        }),
+        new ToolMessage({
+          content: 'page not found',
+          name: 'wiki_locate',
+          tool_call_id: 'call_extra_3',
+        }),
+      );
+      const thirdResult = (await callBeforeModel(guard, state)) as
+        { messages: HumanMessage[] } | undefined;
+      expect(thirdResult, 'wiki_locate should trip its own nudge now').to.not.equal(undefined);
+      const content = String(thirdResult!.messages[0].content);
+      expect(content).to.include('wiki_locate');
+      expect(content).to.include('3 times');
+    });
+
+    it("passes through the loop guard's own nudge message without resetting the gap-tolerant scan", async () => {
+      // Simulates what a real run looks like once a nudge has already fired
+      // and been appended to state (see loop-guard.integration.test.ts for
+      // the end-to-end version) — the injected nudge HumanMessage must not
+      // act as a window boundary, or stagnation could never reach the
+      // reflection threshold once a model ignores the nudge and keeps going.
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+      });
+      const base = makeStagnantState('shell_exec', 'same output', 2);
+      base.messages.push(
+        new HumanMessage({
+          content: "You've called `shell_exec` 2 times recently...",
+          additional_kwargs: { loopGuardKind: 'nudge' },
+        }),
+      );
+      base.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_x', name: 'shell_exec', args: {} }],
+        }),
+        new ToolMessage({ content: 'same output', name: 'shell_exec', tool_call_id: 'call_x' }),
+      );
+      // Streak is 3 (2 matches before the nudge + 1 after it) — the nudge
+      // firing here (nudgeThreshold is also 3) proves the scan counted
+      // straight through the tagged nudge message rather than stopping at
+      // it; a reset would leave the streak at 1 and this would be undefined.
+      const result = await callBeforeModel(guard, base);
+      expect(result, 'the scan should count through the nudge, not reset at it').to.not.equal(
+        undefined,
+      );
+    });
   });
 
   describe('reflection trigger (stubbed evaluateLoopProgress — no real model call)', () => {
@@ -264,6 +478,39 @@ describe('agents/recursion-guard.middleware', () => {
       stagnationReflectionThreshold: 5,
       streakReflectionThreshold: 10,
     };
+
+    it('reaches reflection via the alternating-tool stagnation count, not just the raw streak (issue #301)', async () => {
+      let called: unknown;
+      const stub = async (params: unknown) => {
+        called = params;
+        return { converging: true, summary: 'making progress' };
+      };
+      const guard = createRecursionGuardMiddleware({
+        recursionLimit: 1000,
+        warnThreshold: 0.99,
+        loopGuard,
+        evaluateLoopProgress: stub,
+      });
+      // git_status reaches its 5th occurrence (stagnationReflectionThreshold)
+      // on the 9th call overall, alternating with wiki_locate the whole way.
+      const state = makeAlternatingState(
+        [
+          ['git_status', 'clean'],
+          ['wiki_locate', 'page not found'],
+        ],
+        4,
+      );
+      state.messages.push(
+        new AIMessage({
+          content: '',
+          tool_calls: [{ id: 'call_extra', name: 'git_status', args: {} }],
+        }),
+        new ToolMessage({ content: 'clean', name: 'git_status', tool_call_id: 'call_extra' }),
+      );
+      await callBeforeModel(guard, state);
+      expect(called, 'evaluateLoopProgress should have been called').to.not.equal(undefined);
+      expect((called as { reason: string }).reason).to.equal('stagnation');
+    });
 
     it('injects guidance and does not escalate when the stub reports converging: true', async () => {
       let called: unknown;
