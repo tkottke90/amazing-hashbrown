@@ -20,17 +20,17 @@ Today `/` immediately redirects to the active chat thread (`RootRedirect` in `ui
 
 ## Decisions (and why)
 
-| #   | Decision                                                                                                                                        | Rationale                                                                                                                                                                                                 |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | `/` renders the new `DashboardView` directly; `RootRedirect` is deleted.                                                                        | Matches issue #177/#176's explicit "dashboard is the main landing page." Chat is unaffected — `/chat/:id` is still reachable via the sidebar thread list and "New conversation."                             |
-| D2  | A new "Dashboard" link is added to `thread-sidebar.tsx`, above Inbox, routed to `/`.                                                            | Once `/` stops auto-redirecting to chat, there must be a way back to it from any other page, consistent with how Inbox/Workspaces/Threads/Wiki/Settings are already reached.                                |
-| D3  | `DashboardWidget` is a discriminated union on a `type` field, with exactly one member (`MarkdownWidget`) in this slice.                         | Issue #176 names 3 more widget types. Starting the union now — even with one member — means adding a type later is "add a sibling interface + a switch case," not a rewrite. Matches `AGENTS.md`'s composition-over-customization principle (no generic `content: any` bag). |
-| D4  | Every widget interface must `extends WidgetBase`, which declares `type: string` as a required field.                                            | Forgetting to declare `type` on a new widget interface becomes a compile error ("Property 'type' is missing") rather than a silent gap — this is the type-level guard the union's discriminant depends on. |
-| D5  | `widget-renderer.tsx` dispatches on `widget.type` via a `switch` whose `default` branch calls an `assertNever` helper.                          | If a new variant is added to `DashboardWidget` without a corresponding `case`, the `default` branch no longer type-checks as `never` — a compile error, not a runtime gap. Covered by a runtime test too (cast an invalid `type` through `unknown`). |
-| D6  | Widget data comes from a `useDashboardWidgets()` hook returning a static, hardcoded array. No fetch, no file I/O.                               | Matches the issue's explicit "no persistence yet." The hook is the seam: Slice 2 changes its internals to fetch/load from disk; nothing in `WidgetRenderer`/`WidgetCard`/the grid changes.                   |
-| D7  | Layout is plain Tailwind CSS Grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), no grid/drag library.                                           | The issue's own dev notes call for plain CSS Grid this slice; pulling in a drag/resize library (e.g. `react-grid-layout`) before Slice 3 needs it is premature (YAGNI) per `AGENTS.md`.                        |
-| D8  | All new widget files live under `ui/src/pages/dashboard/`, not `ui/src/components/`.                                                             | Per `ui/AGENTS.md`'s placement rule: a component used by only one page belongs in that page's folder. Nothing here is reused outside the dashboard page yet.                                                 |
-| D9  | Markdown widget content renders through the existing `Markdown` component (`ui/src/components/markdown.tsx`).                                   | Reuses the already-sanitized/styled renderer (remark-gfm, rehype-highlight, artifact-image/link overrides) instead of adding a second markdown pipeline.                                                     |
+| #   | Decision                                                                                                                | Rationale                                                                                                                                                                                                                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `/` renders the new `DashboardView` directly; `RootRedirect` is deleted.                                                | Matches issue #177/#176's explicit "dashboard is the main landing page." Chat is unaffected — `/chat/:id` is still reachable via the sidebar thread list and "New conversation."                                                                                             |
+| D2  | A new "Dashboard" link is added to `thread-sidebar.tsx`, above Inbox, routed to `/`.                                    | Once `/` stops auto-redirecting to chat, there must be a way back to it from any other page, consistent with how Inbox/Workspaces/Threads/Wiki/Settings are already reached.                                                                                                 |
+| D3  | `DashboardWidget` is a discriminated union on a `type` field, with exactly one member (`MarkdownWidget`) in this slice. | Issue #176 names 3 more widget types. Starting the union now — even with one member — means adding a type later is "add a sibling interface + a switch case," not a rewrite. Matches `AGENTS.md`'s composition-over-customization principle (no generic `content: any` bag). |
+| D4  | Every widget interface must `extends WidgetBase`, which declares `type: string` as a required field.                    | Forgetting to declare `type` on a new widget interface becomes a compile error ("Property 'type' is missing") rather than a silent gap — this is the type-level guard the union's discriminant depends on.                                                                   |
+| D5  | `widget-renderer.tsx` dispatches on `widget.type` via a `switch` whose `default` branch calls an `assertNever` helper.  | If a new variant is added to `DashboardWidget` without a corresponding `case`, the `default` branch no longer type-checks as `never` — a compile error, not a runtime gap. Covered by a runtime test too (cast an invalid `type` through `unknown`).                         |
+| D6  | Widget data comes from a `useDashboardWidgets()` hook returning a static, hardcoded array. No fetch, no file I/O.       | Matches the issue's explicit "no persistence yet." The hook is the seam: Slice 2 changes its internals to fetch/load from disk; nothing in `WidgetRenderer`/`WidgetCard`/the grid changes.                                                                                   |
+| D7  | Layout is plain Tailwind CSS Grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), no grid/drag library.                  | The issue's own dev notes call for plain CSS Grid this slice; pulling in a drag/resize library (e.g. `react-grid-layout`) before Slice 3 needs it is premature (YAGNI) per `AGENTS.md`.                                                                                      |
+| D8  | All new widget files live under `ui/src/pages/dashboard/`, not `ui/src/components/`.                                    | Per `ui/AGENTS.md`'s placement rule: a component used by only one page belongs in that page's folder. Nothing here is reused outside the dashboard page yet.                                                                                                                 |
+| D9  | Markdown widget content renders through the existing `Markdown` component (`ui/src/components/markdown.tsx`).           | Reuses the already-sanitized/styled renderer (remark-gfm, rehype-highlight, artifact-image/link overrides) instead of adding a second markdown pipeline.                                                                                                                     |
 
 ---
 
@@ -62,8 +62,8 @@ export type DashboardWidget = MarkdownWidget;
 - **`widget-renderer.tsx`** — the dispatch point:
 
   ```ts
-  function assertNever(x: never): never {
-    throw new Error(`Unhandled widget type: ${(x as DashboardWidget).type}`);
+  function assertNever(type: never): never {
+    throw new Error(`Unhandled widget type: ${type}`);
   }
 
   export function WidgetRenderer({ widget }: { widget: DashboardWidget }) {
@@ -71,12 +71,12 @@ export type DashboardWidget = MarkdownWidget;
       case 'markdown':
         return <MarkdownWidget widget={widget} />;
       default:
-        return assertNever(widget);
+        return assertNever(widget.type);
     }
   }
   ```
 
-  Adding `big-number` to the union without adding a `case 'big-number'` here fails to compile, because `widget` in the `default` branch is no longer narrowed to `never`.
+  The exhaustiveness check is on `widget.type` (the discriminant value), not the whole `widget` object — TypeScript's discriminated-union elimination that narrows an object to `never` only activates for a real multi-member union, and this slice's union has exactly one member. Narrowing the plain string literal `widget.type` to `never` works regardless of union cardinality, so this compiles today and still fails to compile if a future case is missing once `big-number` (or another type) joins the union — at that point `widget.type` in the `default` branch narrows to the unhandled member's literal, not `never`.
 
 - **`use-dashboard-widgets.ts`** — hook returning a static array of 3–4 sample `MarkdownWidget`s (more than one, so the grid has something to actually reflow across breakpoints). This is the only file Slice 2 needs to change to switch from static data to a real load.
 
@@ -125,6 +125,7 @@ export type DashboardWidget = MarkdownWidget;
 Per `ui/AGENTS.md`, Jest tests live flat under `ui/test/`, named after the source file, tagged `[unit]`/`[orchestration]`.
 
 **Jest:**
+
 - `dashboard-widget-card.test.tsx` [unit] — renders title/subtitle/children; subtitle omitted when absent.
 - `dashboard-markdown-widget.test.tsx` [unit] — renders `content` through `Markdown` (fixture with a heading renders as `<h1>`).
 - `dashboard-widget-renderer.test.tsx` [unit] — dispatches `markdown` to `MarkdownWidget`; a cast-through-`unknown` invalid `type` triggers `assertNever`'s thrown error (runtime coverage of the exhaustiveness guard, alongside its compile-time guarantee).
@@ -133,6 +134,7 @@ Per `ui/AGENTS.md`, Jest tests live flat under `ui/test/`, named after the sourc
 - `thread-sidebar.test.tsx` — extend with a case: Dashboard link renders, points at `/`, gets active-state class when `url === '/'`.
 
 **Playwright (`e2e/tests/`):**
+
 - `@smoke` — load `/`, assert the dashboard renders with at least one markdown widget showing title, subtitle, and rendered markdown content.
 - `@user-workflow` — from another page (e.g. Wiki), click the sidebar Dashboard link, land on `/`, widgets visible.
 - Viewport/responsive check (`@smoke` or `@functional`) — resize across mobile/tablet/desktop widths, assert column count changes and no clipping/overlap.

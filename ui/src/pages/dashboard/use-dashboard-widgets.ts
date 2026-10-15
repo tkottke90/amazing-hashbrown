@@ -24,7 +24,8 @@ const WIDGETS: DashboardWidget[] = [
     id: 'tip-of-the-day',
     type: 'markdown',
     title: 'Tip',
-    content: 'You can fork any thread to explore a different direction without losing the original.',
+    content:
+      'You can fork any thread to explore a different direction without losing the original.',
   },
   {
     id: 'changelog',

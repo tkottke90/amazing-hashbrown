@@ -89,9 +89,7 @@ test.describe(
     test.describe('Tablet viewport (640-1023px)', () => {
       test.use({ viewport: { width: 800, height: 900 } });
 
-      test('grid renders two columns with no horizontal overflow', async ({
-        page,
-      }, testInfo) => {
+      test('grid renders two columns with no horizontal overflow', async ({ page }, testInfo) => {
         await page.goto('/');
         await pauseBeforeAction(page, testInfo);
 
@@ -105,9 +103,7 @@ test.describe(
     test.describe('Desktop viewport (>=1024px)', () => {
       test.use({ viewport: { width: 1280, height: 900 } });
 
-      test('grid renders three columns with no horizontal overflow', async ({
-        page,
-      }, testInfo) => {
+      test('grid renders three columns with no horizontal overflow', async ({ page }, testInfo) => {
         await page.goto('/');
         await pauseBeforeAction(page, testInfo);
 
