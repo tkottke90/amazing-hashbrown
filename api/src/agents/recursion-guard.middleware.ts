@@ -106,7 +106,12 @@ function isStagnationWindowBoundary(msg: any): boolean {
 // resume.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function computeStagnationStreak(messages: any[]): number {
-  const toolMessages = messages.filter(isToolMessage);
+  // Typed explicitly as any[] — isToolMessage is a type guard, so
+  // .filter(isToolMessage) would otherwise narrow this to ToolMessage[],
+  // and indexing that under noUncheckedIndexedAccess makes `last` possibly
+  // undefined even right after the length check below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toolMessages: any[] = messages.filter(isToolMessage);
   if (toolMessages.length === 0) return 0;
   const last = toolMessages[toolMessages.length - 1];
   const lastName = toolMessageName(last);
