@@ -4,7 +4,7 @@ A locally-hosted LLM agent harness. It pairs a **ReAct chat agent** with a domai
 
 ![alt text](./docs/Images/image.png)
 
-The project is a work-in-progress. See [`TODO_LIST.md`](./TODO_LIST.md) for the current roadmap.
+The project is a work-in-progress. See the [GitHub Issues](https://github.com/tkottke90/amazing-hashbrown/issues) for the current roadmap.
 
 ---
 
@@ -220,10 +220,6 @@ Fix any failures before committing. Do not use `--no-verify` or otherwise bypass
 - **Tests are required.** Routes, agents, tools, services, and middleware all ship with tests. Untested code is not considered complete. See `AGENTS.md` for the full testing philosophy and type taxonomy.
 - **No comments explaining _what_ the code does.** Good names do that. Only add a comment when the _why_ is non-obvious (a hidden constraint, a workaround for a specific bug).
 - **No speculative abstractions.** Only add what the current task needs.
-
-### TODO list
-
-Outstanding work is tracked in [`TODO_LIST.md`](./TODO_LIST.md). If your branch completes an item, move it from "Outstanding" to "Completed" in that file as part of the same PR — so the list stays accurate at merge time.
 
 ### LLM-facing changes (Evaluation-Driven Development)
 
