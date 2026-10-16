@@ -345,8 +345,13 @@ implementation details that change without notice.
 | `widget-edit-button`            | `ui/src/pages/dashboard/markdown-widget.tsx`              | A Markdown widget card's edit (pencil) icon, opens the Edit drawer                                                           |
 | `widget-delete-button`          | `ui/src/pages/dashboard/markdown-widget.tsx`              | A Markdown widget card's delete (trash) icon; triggers a `confirm()` then deletes                                            |
 | `widget-error-card`             | `ui/src/pages/dashboard/widget-error-card.tsx`            | Wraps a widget-card shell when its file failed to parse; that card also still carries `widget-card`                          |
-| `widget-edit-raw-button`        | `ui/src/pages/dashboard/widget-error-card.tsx`            | Error card's "Edit raw file" action, opens the drawer in raw-text mode                                                       |
-| `widget-drawer-form`            | `ui/src/pages/dashboard/widget-drawer.tsx`                | The Add/Edit/Raw widget drawer's `<form>`, any mode                                                                          |
+| `widget-edit-raw-button`        | `ui/src/pages/dashboard/widget-error-card.tsx`            | Error card's "Edit raw file" action, opens the edit drawer defaulted to the Raw tab                                          |
+| `widget-drawer-form`            | `ui/src/pages/dashboard/widget-drawer.tsx`                | The Add/Edit widget drawer's `<form>`; Edit covers both the Form and Raw tabs                                                |
+| `widget-drawer-tab-form`        | `ui/src/pages/dashboard/widget-drawer.tsx`                | Edit drawer's "Form" tab button                                                                                              |
+| `widget-drawer-tab-raw`         | `ui/src/pages/dashboard/widget-drawer.tsx`                | Edit drawer's "Raw" tab button                                                                                               |
+| `widget-drawer-validate`        | `ui/src/pages/dashboard/widget-drawer.tsx`                | Raw tab's "Validate" button                                                                                                  |
+| `widget-drawer-raw-editor`      | `ui/src/pages/dashboard/widget-drawer.tsx`                | Wrapper around the Raw tab's CodeMirror editor; select `.cm-content` inside it to interact with the editor                   |
+| `widget-drawer-raw-error`       | `ui/src/pages/dashboard/widget-drawer.tsx`                | Raw tab's inline validation-error message, shown after a failed Validate                                                     |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

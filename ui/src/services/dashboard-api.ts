@@ -54,6 +54,34 @@ export async function updateWidgetRaw(dashboardId: string, id: string, raw: stri
   );
 }
 
+export interface ValidatedWidgetFields {
+  title: string;
+  subtitle?: string;
+  type: 'markdown';
+  order: number;
+  content: string;
+}
+
+export type ValidateWidgetResult =
+  { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };
+
+export interface ValidateWidgetInput {
+  dashboardId: string;
+  widgetId: string;
+  raw: string;
+}
+
+// Flat, not nested under /dashboards/:dashboardId/widgets/:id/raw — this
+// validates submitted text rather than a stored resource; dashboardId/
+// widgetId are log-correlation context only, carried in the body.
+export async function validateWidgetRaw(input: ValidateWidgetInput): Promise<ValidateWidgetResult> {
+  return request<ValidateWidgetResult>('/api/v1/widgets/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
 export async function deleteWidget(dashboardId: string, id: string): Promise<void> {
   await fetch(
     `/api/v1/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(id)}`,

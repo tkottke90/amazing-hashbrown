@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/preact';
 import { WidgetRenderer } from '@/pages/dashboard/widget-renderer';
+import { ThemeProvider } from '@/hooks/use-theme';
 import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 const noop = () => {};
@@ -15,14 +16,20 @@ describe('WidgetRenderer', () => {
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
 
-  it('dispatches an error result to the error card [unit]', () => {
+  it('dispatches an error result to the error card, which opens straight onto Raw [unit]', () => {
     const result: WidgetLoadResult = {
       status: 'error',
       id: 'broken',
       raw: '---\nbad\n---',
       error: 'Invalid widget frontmatter: title: Required',
     };
-    render(<WidgetRenderer result={result} onChanged={noop} />);
+    // Wrapped in ThemeProvider: an error result's drawer opens straight onto
+    // the Raw tab, which mounts the CodeMirror-based CodeEditor immediately.
+    render(
+      <ThemeProvider>
+        <WidgetRenderer result={result} onChanged={noop} />
+      </ThemeProvider>,
+    );
     expect(screen.getByText('Unable to load this widget')).toBeInTheDocument();
     expect(screen.getByText(/Invalid widget frontmatter/)).toBeInTheDocument();
   });

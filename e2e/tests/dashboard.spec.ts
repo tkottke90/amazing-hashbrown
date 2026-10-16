@@ -1,6 +1,18 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type Locator, type APIRequestContext } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+
+// CM6's `.cm-content` is a real contenteditable root, not a form control —
+// there's no `<label>`/`value` for `.fill()`/`getByLabel()` to use. Select
+// all then insertText fires a real input event and replaces the whole
+// selection in one shot, matching CodeMirror's own input pipeline more
+// reliably than a keystroke-by-keystroke `.type()`.
+async function setRawEditorContent(page: Page, dialog: Locator, text: string) {
+  const content = dialog.locator('[data-testid="widget-drawer-raw-editor"] .cm-content');
+  await content.click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText(text);
+}
 
 const suite: TestSuite = {
   id: 53,
@@ -53,7 +65,20 @@ const persistenceSuite: TestSuite = {
       tags: ['@user-workflow'],
       action: 'Corrupt a widget file via the raw API, reload, fix it through "Edit raw file"',
       expectedOutcome:
-        'The dashboard shows an error card instead of failing to load, and the widget renders normally once fixed',
+        'The dashboard shows an error card instead of failing to load; its drawer opens straight onto the Raw tab, and the widget renders normally once the fixed text is validated and saved',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open a healthy widget, switch to Raw, edit it directly, validate, save',
+      expectedOutcome: 'Validate passes and Save persists the edit across a reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open a healthy widget, switch to Raw, break the frontmatter, validate',
+      expectedOutcome:
+        'An inline error appears and the Form tab stays unreachable until the text is fixed',
       test: () => {},
     },
   ],
@@ -236,9 +261,16 @@ test.describe(
 
         await errorCard.getByTestId('widget-edit-raw-button').click();
         const rawDrawer = page.locator('dialog[open]');
-        await rawDrawer
-          .getByLabel('Raw file content')
-          .fill('---\ntitle: Fixed widget\ntype: markdown\norder: 0\n---\nFixed content');
+        // Lands straight on Raw — Form has nothing valid to show for a file
+        // that never parsed.
+        await expect(rawDrawer.getByTestId('widget-drawer-raw-editor')).toBeVisible();
+
+        await setRawEditorContent(
+          page,
+          rawDrawer,
+          '---\ntitle: Fixed widget\ntype: markdown\norder: 0\n---\nFixed content',
+        );
+        await rawDrawer.getByTestId('widget-drawer-validate').click();
         await rawDrawer.getByRole('button', { name: 'Save' }).click();
 
         await page.reload();
@@ -246,6 +278,82 @@ test.describe(
         await expect(
           page.getByTestId('widget-card').filter({ hasText: 'Fixed widget' }),
         ).toBeVisible();
+      } finally {
+        await deleteWidgetIfExists(page.request, widget.id);
+      }
+    });
+
+    test('editing a healthy widget directly in Raw persists after validate + save', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E raw-edit widget ${testInfo.testId}`;
+      const created = await page.request.post('/api/v1/dashboards/default/widgets', {
+        data: { title, content: 'original content' },
+      });
+      const widget = (await created.json()) as { id: string };
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await card.getByTestId('widget-edit-button').click();
+        const drawer = page.locator('dialog[open]');
+
+        await drawer.getByTestId('widget-drawer-tab-raw').click();
+        await setRawEditorContent(
+          page,
+          drawer,
+          `---\ntitle: "${title}"\ntype: "markdown"\norder: 0\n---\n\nEdited directly in Raw.`,
+        );
+
+        await drawer.getByTestId('widget-drawer-validate').click();
+        await drawer.getByRole('button', { name: 'Save' }).click();
+
+        // Confirm the dialog actually closed (the save went through) before
+        // reloading — but don't assert on the card's text pre-reload: the
+        // dialog (and its CodeMirror content, which has the same text) is a
+        // DOM descendant of the widget-card element and stays mounted even
+        // once closed, so a `card.getByText(...)` here would ambiguously
+        // match both the real rendered content and the editor's own line.
+        await expect(page.locator('dialog[open]')).toHaveCount(0);
+        await page.reload();
+        await expect(
+          page
+            .getByTestId('widget-card')
+            .filter({ hasText: title })
+            .getByText('Edited directly in Raw.'),
+        ).toBeVisible();
+      } finally {
+        await deleteWidgetIfExists(page.request, widget.id);
+      }
+    });
+
+    test('breaking the frontmatter in Raw shows an inline error and blocks the Form tab', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E raw-break widget ${testInfo.testId}`;
+      const created = await page.request.post('/api/v1/dashboards/default/widgets', {
+        data: { title, content: 'original content' },
+      });
+      const widget = (await created.json()) as { id: string };
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await card.getByTestId('widget-edit-button').click();
+        const drawer = page.locator('dialog[open]');
+
+        await drawer.getByTestId('widget-drawer-tab-raw').click();
+        await setRawEditorContent(page, drawer, '---\ntitle: [unterminated\n---\nBroken');
+        await drawer.getByTestId('widget-drawer-validate').click();
+
+        await expect(drawer.getByTestId('widget-drawer-raw-error')).toBeVisible();
+        await drawer.getByTestId('widget-drawer-tab-form').click();
+        // Still on Raw — the Form tab click itself re-checks and stays put.
+        await expect(drawer.getByTestId('widget-drawer-raw-editor')).toBeVisible();
       } finally {
         await deleteWidgetIfExists(page.request, widget.id);
       }

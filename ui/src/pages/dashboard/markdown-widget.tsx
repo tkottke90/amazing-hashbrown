@@ -32,7 +32,7 @@ export function MarkdownWidget({ widget, onChanged }: MarkdownWidgetProps) {
       <div className="flex justify-end gap-1">
         <WidgetDrawer
           mode="edit"
-          widget={widget}
+          target={{ status: 'ok', widget }}
           onSaved={onChanged}
           trigger={
             <Button
