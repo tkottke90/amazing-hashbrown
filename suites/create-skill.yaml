@@ -33,19 +33,28 @@ scenarios:
     name: Agent confirms before creating a skill, even with all fields already known
     purpose: >
       Given a /create-skill invocation that already states a name,
-      description, and body for a new app-wide skill, confirms the agent's
-      first tool call is ask_user (the scope question or the confirmation
-      the skill requires) rather than calling create_app_skill immediately
-      — the skill explicitly requires confirmation before writing, regardless
-      of how complete the input is.
-    type: tool-call
+      description, and body for a new app-wide skill, confirms that once the
+      collision check comes back clean, the agent's next tool call is
+      ask_user (the confirmation the skill requires) rather than calling
+      create_app_skill immediately — the skill explicitly requires
+      confirmation before writing, regardless of how complete the input is.
+      Seeds the search_skills collision-check turn the skill's own step 4
+      requires before confirming — every scenario in this suite simulates a
+      workspace, so that check is always in play for a creation request —
+      so this scenario isolates the confirmation step itself rather than
+      conflating it with the collision check (see cs-007 for that).
+    type: tool-sequence
     gatedSkill: create-skill
-    input: >
-      /create-skill called "wiki-search-tips", description: "Tips for
-      searching the wiki — trigger on 'how do I search the wiki', 'wiki
-      search syntax'", for the app-wide Skill Manager. Body: "When the user
-      asks how to search the wiki, explain that wiki_search supports
-      keyword and tag filters."
+    turns:
+      - user: >
+          /create-skill called "wiki-search-tips", description: "Tips for
+          searching the wiki — trigger on 'how do I search the wiki', 'wiki
+          search syntax'", for the app-wide Skill Manager. Body: "When the
+          user asks how to search the wiki, explain that wiki_search
+          supports keyword and tag filters."
+      - tool: search_skills
+        args: { keyword: wiki-search-tips }
+        result: { text: 'No skills found matching "wiki-search-tips".' }
     tool: ask_user
 
   - id: cs-002-asks-scope-when-ambiguous
