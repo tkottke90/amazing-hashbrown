@@ -70,9 +70,9 @@ const persistenceSuite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Open a healthy widget, switch to Raw, edit it directly, validate, save',
+      action: 'Open a healthy widget, switch to Raw, edit it with well-formed content, save',
       expectedOutcome:
-        'Save is locked until Validate passes; the raw edit persists across a reload',
+        'A single Save click silently validates unchecked-but-valid text and saves; the edit persists across a reload',
       test: () => {},
     },
     {
@@ -284,7 +284,7 @@ test.describe(
       }
     });
 
-    test('editing a healthy widget directly in Raw persists after validate + save', async ({
+    test('editing a healthy widget directly in Raw persists after a single Save (silent validate)', async ({
       page,
     }, testInfo) => {
       const title = `E2E raw-edit widget ${testInfo.testId}`;
@@ -308,11 +308,10 @@ test.describe(
           `---\ntitle: "${title}"\ntype: "markdown"\norder: 0\n---\n\nEdited directly in Raw.`,
         );
 
-        // Save is locked until a passing Validate.
-        await drawer.getByRole('button', { name: 'Save' }).click();
-        await expect(drawer.getByTestId('widget-drawer-raw-editor')).toBeVisible();
-
-        await drawer.getByTestId('widget-drawer-validate').click();
+        // The text is already well-formed and has never been checked, so a
+        // single Save click silently validates it first and then saves —
+        // no separate Validate click needed (that path is covered by the
+        // "breaking the frontmatter" test below).
         await drawer.getByRole('button', { name: 'Save' }).click();
 
         await expect(card.getByText('Edited directly in Raw.')).toBeVisible();
