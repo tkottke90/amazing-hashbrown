@@ -22,9 +22,7 @@ interface WidgetRendererProps {
 
 export function WidgetRenderer({ result, onChanged }: WidgetRendererProps) {
   if (result.status === 'error') {
-    return (
-      <WidgetErrorCard id={result.id} raw={result.raw} error={result.error} onChanged={onChanged} />
-    );
+    return <WidgetErrorCard result={result} onChanged={onChanged} />;
   }
   return renderWidget(result.widget, onChanged);
 }

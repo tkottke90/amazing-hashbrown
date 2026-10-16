@@ -74,11 +74,11 @@ export async function listWidgets(root: string, dashboardId: string): Promise<Wi
       results.push({ status: 'error', id, raw: '', error: (err as Error).message });
       continue;
     }
-    try {
-      const widget = frontmatter.toMarkdownWidget(id, raw);
-      results.push({ status: 'ok', widget });
-    } catch (err) {
-      results.push({ status: 'error', id, raw, error: (err as Error).message });
+    const parsed = frontmatter.parseWidgetFile(raw);
+    if (parsed.ok) {
+      results.push({ status: 'ok', widget: { id, ...parsed.widget } });
+    } else {
+      results.push({ status: 'error', id, raw, error: parsed.error });
     }
   }
 

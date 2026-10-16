@@ -31,6 +31,34 @@ export const MarkdownWidgetFrontmatterSchema = z.object({
 
 export type MarkdownWidgetFrontmatter = z.infer<typeof MarkdownWidgetFrontmatterSchema>;
 
+export type WidgetFileParseResult =
+  | { ok: true; widget: Omit<MarkdownWidget, 'id'> }
+  | { ok: false; error: string };
+
+/**
+ * Pure dry-run parse + validate of a widget file's raw text — no `id` (it
+ * doesn't come from a filename here) and no disk I/O. Never throws:
+ * `parse(raw)` itself can throw on malformed YAML, so that's caught and
+ * folded into the same `{ok:false}` shape as a schema failure. This is the
+ * one implementation of "is this file well-formed" shared by `listWidgets`
+ * (via `toMarkdownWidget` below) and `POST /api/v1/widgets/validate`.
+ */
+export function parseWidgetFile(raw: string): WidgetFileParseResult {
+  let data: Record<string, unknown>;
+  let body: string;
+  try {
+    ({ data, body } = parse(raw));
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+  const result = MarkdownWidgetFrontmatterSchema.safeParse(data);
+  if (!result.success) {
+    const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    return { ok: false, error: `Invalid widget frontmatter: ${issues}` };
+  }
+  return { ok: true, widget: { content: body, ...result.data } };
+}
+
 /**
  * Parse + validate a widget file's raw content into a `MarkdownWidget`.
  * Throws (with a human-readable message) on any parse or validation
@@ -38,11 +66,9 @@ export type MarkdownWidgetFrontmatter = z.infer<typeof MarkdownWidgetFrontmatter
  * doesn't take down a whole directory listing.
  */
 export function toMarkdownWidget(id: string, raw: string): MarkdownWidget {
-  const { data, body } = parse(raw);
-  const result = MarkdownWidgetFrontmatterSchema.safeParse(data);
-  if (!result.success) {
-    const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    throw new Error(`Invalid widget frontmatter: ${issues}`);
+  const result = parseWidgetFile(raw);
+  if (!result.ok) {
+    throw new Error(result.error);
   }
-  return { id, content: body, ...result.data };
+  return { id, ...result.widget };
 }
