@@ -1,42 +1,27 @@
-import type { DashboardWidget } from './types';
+import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
+import type { WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+import { fetchWidgets, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
 
-// Static sample data for this slice — no fetch, no file I/O (see design
-// spec D6). This function is the seam a future slice swaps for a real
-// load; nothing else in the dashboard depends on how this data is sourced.
-const WIDGETS: DashboardWidget[] = [
-  {
-    id: 'welcome',
-    type: 'markdown',
-    title: 'Welcome',
-    subtitle: 'Your AI Workspace',
-    content:
-      '# Welcome to Amazing Hashbrown\n\nThis is your central dashboard for all AI-powered features.',
-  },
-  {
-    id: 'getting-started',
-    type: 'markdown',
-    title: 'Getting Started',
-    subtitle: 'A few things to try',
-    content:
-      '## Getting Started\n\n- Start a chat from the sidebar\n- Browse the **Wiki** for ingested knowledge\n- Check **Workspaces** for active projects\n- Visit **Settings** to configure providers and tools',
-  },
-  {
-    id: 'tip-of-the-day',
-    type: 'markdown',
-    title: 'Tip',
-    content:
-      'You can fork any thread to explore a different direction without losing the original.',
-  },
-  {
-    id: 'changelog',
-    type: 'markdown',
-    title: "What's New",
-    subtitle: 'Recent changes',
-    content:
-      '### Dashboard\n\nThis dashboard is new! More widget types and the ability to customize your layout are coming in future updates.',
-  },
-];
+export function useDashboardWidgets() {
+  const widgets = useSignal<WidgetLoadResult[]>([]);
+  const loading = useSignal(true);
+  const error = useSignal<string | null>(null);
 
-export function useDashboardWidgets(): DashboardWidget[] {
-  return WIDGETS;
+  async function refresh() {
+    try {
+      widgets.value = await fetchWidgets(DEFAULT_DASHBOARD_ID);
+      error.value = null;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to load dashboard widgets';
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  return { widgets, loading, error, refresh };
 }

@@ -351,6 +351,7 @@ const AppConfigSchema = z.object({
   port: z.number().default(3000),
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./wiki'),
+  dashboardRoot: z.string().default('./dashboard'),
   mcpConfigDir: z.string().default('./mcp'),
   artifactRoot: z.string().default('./artifacts'),
   skillsRoot: z.string().default('./skills'),
@@ -400,6 +401,9 @@ export const env = {
   },
   get wikiRoot() {
     return configManager.getConfigDir(configManager.get('wikiRoot') as string);
+  },
+  get dashboardRoot() {
+    return configManager.getConfigDir(configManager.get('dashboardRoot') as string);
   },
   get mcpConfigDir() {
     return configManager.getConfigDir(configManager.get('mcpConfigDir') as string);

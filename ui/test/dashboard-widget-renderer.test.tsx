@@ -1,25 +1,45 @@
 import { render, screen } from '@testing-library/preact';
 import { WidgetRenderer } from '@/pages/dashboard/widget-renderer';
-import type { DashboardWidget, MarkdownWidget } from '@/pages/dashboard/types';
+import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+
+const noop = () => {};
 
 describe('WidgetRenderer', () => {
-  it('dispatches a markdown widget to MarkdownWidget [unit]', () => {
-    const widget: MarkdownWidget = {
-      id: 'w1',
-      type: 'markdown',
-      title: 'My Title',
-      content: 'hello',
+  it('dispatches an ok markdown result to MarkdownWidget [unit]', () => {
+    const result: WidgetLoadResult = {
+      status: 'ok',
+      widget: { id: 'w1', type: 'markdown', title: 'My Title', order: 0, content: 'hello' },
     };
-    render(<WidgetRenderer widget={widget} />);
+    render(<WidgetRenderer result={result} onChanged={noop} />);
     expect(screen.getByText('My Title')).toBeInTheDocument();
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
 
+  it('dispatches an error result to the error card [unit]', () => {
+    const result: WidgetLoadResult = {
+      status: 'error',
+      id: 'broken',
+      raw: '---\nbad\n---',
+      error: 'Invalid widget frontmatter: title: Required',
+    };
+    render(<WidgetRenderer result={result} onChanged={noop} />);
+    expect(screen.getByText('Unable to load this widget')).toBeInTheDocument();
+    expect(screen.getByText(/Invalid widget frontmatter/)).toBeInTheDocument();
+  });
+
   it('throws via assertNever for an unhandled widget type [unit]', () => {
-    const bad = { id: 'x', type: 'unknown-type', title: 'T' } as unknown as DashboardWidget;
+    const bad = {
+      id: 'x',
+      type: 'unknown-type',
+      title: 'T',
+      order: 0,
+    } as unknown as DashboardWidget;
+    const result: WidgetLoadResult = { status: 'ok', widget: bad };
     // Called directly as a function (not rendered) so the thrown error
     // is asserted without depending on how Preact propagates a
     // function-component throw through testing-library's render().
-    expect(() => WidgetRenderer({ widget: bad })).toThrow('Unhandled widget type: unknown-type');
+    expect(() => WidgetRenderer({ result, onChanged: noop })).toThrow(
+      'Unhandled widget type: unknown-type',
+    );
   });
 });
