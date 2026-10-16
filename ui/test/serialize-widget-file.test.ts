@@ -12,7 +12,9 @@ describe('serializeWidgetFile', () => {
       order: 0,
       content: '# Hello\n\nBody text.',
     });
-    expect(raw).toBe('---\ntitle: "Welcome"\ntype: "markdown"\norder: 0\n---\n\n# Hello\n\nBody text.');
+    expect(raw).toBe(
+      '---\ntitle: "Welcome"\ntype: "markdown"\norder: 0\n---\n\n# Hello\n\nBody text.',
+    );
   });
 
   it(`omits the subtitle line entirely when subtitle is undefined ${TestTypes.UNIT}`, () => {

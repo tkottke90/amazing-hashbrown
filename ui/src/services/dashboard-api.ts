@@ -63,8 +63,7 @@ export interface ValidatedWidgetFields {
 }
 
 export type ValidateWidgetResult =
-  | { ok: true; widget: ValidatedWidgetFields }
-  | { ok: false; error: string };
+  { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };
 
 export interface ValidateWidgetInput {
   dashboardId: string;
@@ -75,9 +74,7 @@ export interface ValidateWidgetInput {
 // Flat, not nested under /dashboards/:dashboardId/widgets/:id/raw — this
 // validates submitted text rather than a stored resource; dashboardId/
 // widgetId are log-correlation context only, carried in the body.
-export async function validateWidgetRaw(
-  input: ValidateWidgetInput,
-): Promise<ValidateWidgetResult> {
+export async function validateWidgetRaw(input: ValidateWidgetInput): Promise<ValidateWidgetResult> {
   return request<ValidateWidgetResult>('/api/v1/widgets/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

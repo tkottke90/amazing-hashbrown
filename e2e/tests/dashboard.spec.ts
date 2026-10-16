@@ -71,7 +71,8 @@ const persistenceSuite: TestSuite = {
     {
       tags: ['@user-workflow'],
       action: 'Open a healthy widget, switch to Raw, edit it directly, validate, save',
-      expectedOutcome: 'Save is locked until Validate passes; the raw edit persists across a reload',
+      expectedOutcome:
+        'Save is locked until Validate passes; the raw edit persists across a reload',
       test: () => {},
     },
     {
@@ -317,7 +318,10 @@ test.describe(
         await expect(card.getByText('Edited directly in Raw.')).toBeVisible();
         await page.reload();
         await expect(
-          page.getByTestId('widget-card').filter({ hasText: title }).getByText('Edited directly in Raw.'),
+          page
+            .getByTestId('widget-card')
+            .filter({ hasText: title })
+            .getByText('Edited directly in Raw.'),
         ).toBeVisible();
       } finally {
         await deleteWidgetIfExists(page.request, widget.id);

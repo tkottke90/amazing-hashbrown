@@ -100,7 +100,12 @@ describe('WidgetDrawer', () => {
 
   it('edit mode defaults to the Form tab, pre-filled from the given widget [unit]', () => {
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={jest.fn()} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Edit</button>}
+      />,
     );
     expect(screen.getByLabelText('Title')).toHaveValue('Original title');
     expect(screen.getByLabelText('Subtitle')).toHaveValue('Original subtitle');
@@ -112,7 +117,12 @@ describe('WidgetDrawer', () => {
     mockUpdate.mockResolvedValue(WIDGET);
     const onSaved = jest.fn();
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={onSaved} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={onSaved}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Changed' } });
@@ -131,7 +141,12 @@ describe('WidgetDrawer', () => {
   it('a widget whose file failed to parse opens straight onto Raw, with Form unreachable [unit]', async () => {
     mockValidate.mockResolvedValue({ ok: false, error: ERROR_TARGET.error });
     renderDrawer(
-      <WidgetDrawer mode="edit" target={ERROR_TARGET} onSaved={jest.fn()} trigger={<button>Fix</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={ERROR_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Fix</button>}
+      />,
     );
     expect(screen.getByTestId('widget-drawer-raw-editor')).toBeInTheDocument();
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
@@ -147,7 +162,12 @@ describe('WidgetDrawer', () => {
     mockValidate.mockResolvedValue({ ok: false, error: 'bad frontmatter' });
     const onSaved = jest.fn();
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={onSaved} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={onSaved}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));
@@ -162,12 +182,23 @@ describe('WidgetDrawer', () => {
   it('the first Save attempt on unchanged raw text silently validates then saves on success [unit]', async () => {
     mockValidate.mockResolvedValue({
       ok: true,
-      widget: { title: 'Original title', subtitle: 'Original subtitle', type: 'markdown', order: 0, content: 'Original content' },
+      widget: {
+        title: 'Original title',
+        subtitle: 'Original subtitle',
+        type: 'markdown',
+        order: 0,
+        content: 'Original content',
+      },
     });
     mockUpdateRaw.mockResolvedValue(undefined);
     const onSaved = jest.fn();
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={onSaved} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={onSaved}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));
@@ -184,7 +215,12 @@ describe('WidgetDrawer', () => {
       widget: { title: 'Original title', type: 'markdown', order: 0, content: 'Original content' },
     });
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={jest.fn()} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));
@@ -203,7 +239,12 @@ describe('WidgetDrawer', () => {
     });
     mockUpdateRaw.mockResolvedValue(undefined);
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={jest.fn()} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));
@@ -235,7 +276,12 @@ describe('WidgetDrawer', () => {
       },
     });
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={jest.fn()} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));
@@ -249,7 +295,12 @@ describe('WidgetDrawer', () => {
   it('reopening the drawer resets back to the Form tab [unit]', async () => {
     mockValidate.mockResolvedValue({ ok: false, error: 'still broken' });
     renderDrawer(
-      <WidgetDrawer mode="edit" target={OK_TARGET} onSaved={jest.fn()} trigger={<button>Edit</button>} />,
+      <WidgetDrawer
+        mode="edit"
+        target={OK_TARGET}
+        onSaved={jest.fn()}
+        trigger={<button>Edit</button>}
+      />,
     );
 
     fireEvent.click(screen.getByTestId('widget-drawer-tab-raw'));

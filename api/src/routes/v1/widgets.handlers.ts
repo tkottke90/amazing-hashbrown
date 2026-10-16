@@ -26,8 +26,7 @@ export interface ValidatedWidgetFields {
 }
 
 export type ValidateWidgetResult =
-  | { ok: true; widget: ValidatedWidgetFields }
-  | { ok: false; error: string };
+  { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };
 
 /**
  * Dry-run validation of a widget file's raw text — not nested under a

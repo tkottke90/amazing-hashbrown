@@ -32,8 +32,7 @@ export const MarkdownWidgetFrontmatterSchema = z.object({
 export type MarkdownWidgetFrontmatter = z.infer<typeof MarkdownWidgetFrontmatterSchema>;
 
 export type WidgetFileParseResult =
-  | { ok: true; widget: Omit<MarkdownWidget, 'id'> }
-  | { ok: false; error: string };
+  { ok: true; widget: Omit<MarkdownWidget, 'id'> } | { ok: false; error: string };
 
 /**
  * Pure dry-run parse + validate of a widget file's raw text — no `id` (it
