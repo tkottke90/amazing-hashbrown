@@ -19,6 +19,7 @@
     "@langchain/openai": "1.6.2",
     "@anthropic-ai/sdk": "0.103.0",
     "@mozilla/readability": "0.5.0",
+    "@tkottke90/amazing-hashbrown-widgets": "*",
     "@tkottke90/config-manager": "1.1.1",
     "@tkottke90/inference-adapter": "*",
     "@tkottke90/llm-common-types": "*",

@@ -1,19 +1,30 @@
+import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { MarkdownWidget } from './markdown-widget';
-import type { DashboardWidget } from './types';
+import { WidgetErrorCard } from './widget-error-card';
 
 function assertNever(type: never): never {
   throw new Error(`Unhandled widget type: ${type}`);
 }
 
-interface WidgetRendererProps {
-  widget: DashboardWidget;
-}
-
-export function WidgetRenderer({ widget }: WidgetRendererProps) {
+function renderWidget(widget: DashboardWidget, onChanged: () => void) {
   switch (widget.type) {
     case 'markdown':
-      return <MarkdownWidget widget={widget} />;
+      return <MarkdownWidget widget={widget} onChanged={onChanged} />;
     default:
       return assertNever(widget.type);
   }
+}
+
+interface WidgetRendererProps {
+  result: WidgetLoadResult;
+  onChanged: () => void;
+}
+
+export function WidgetRenderer({ result, onChanged }: WidgetRendererProps) {
+  if (result.status === 'error') {
+    return (
+      <WidgetErrorCard id={result.id} raw={result.raw} error={result.error} onChanged={onChanged} />
+    );
+  }
+  return renderWidget(result.widget, onChanged);
 }
