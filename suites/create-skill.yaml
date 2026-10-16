@@ -152,7 +152,12 @@ scenarios:
       Companion to cs-005: given get_skill_source already returned a
       concrete compliance issue (a missing description field), confirms the
       agent's next turn is an ask_user call about that specific problem,
-      not a generic "what should the new skill contain" restart.
+      not a generic "what should the new skill contain" restart. The seeded
+      result matches get_skill_source's real output shape (body plus empty
+      scripts/references arrays, frontmatter omitted since it's the invalid
+      part) rather than a bare {issue} fragment — a sparser seed than the
+      real tool ever returns was observed to make the model stall and
+      re-call get_skill_source looking for data it already had.
     type: tool-sequence
     gatedSkill: create-skill
     turns:
@@ -161,7 +166,7 @@ scenarios:
         args: { name: broken-skill }
         result:
           {
-            text: '{"scope":"app","exists":true,"issue":"SKILL.md missing required field: description"}',
+            text: '{"scope":"app","exists":true,"body":"Helps with homelab maintenance reminders.","scripts":[],"references":[],"issue":"SKILL.md missing required field: description"}',
           }
     tool: ask_user
     responseRubric: >
@@ -178,15 +183,21 @@ scenarios:
       agent checks for and mentions the collision (via search_skills or an
       ask_user warning) before the confirmation step — silently creating a
       same-named skill that will be shadowed is exactly the confusion this
-      check exists to prevent.
+      check exists to prevent. The first turn is the literal slash command
+      (not hand-typed paraphrase) so the skill's own step 4 — "tell the user
+      plainly... this is a warning, not a reason to block" — is actually in
+      context when the collision turns up; without it, both local and
+      Lemonade were observed to treat a found collision as something to
+      investigate further (another get_skill_source call) rather than
+      surface as a warning before confirming.
     type: tool-sequence
     gatedSkill: create-skill
     turns:
       - user: >
-          Make an app-wide skill called "local-helper" — description "Generic
-          helper tips", body "General tips."
+          /create-skill make an app-wide skill called "local-helper" —
+          description "Generic helper tips", body "General tips."
       - tool: search_skills
-        args: { query: local-helper }
+        args: { keyword: local-helper }
         result:
           {
             text: '[{"name":"local-helper","slashCommand":"/local-helper","description":"Helps with local maintenance tasks","source":"repo"}]',
