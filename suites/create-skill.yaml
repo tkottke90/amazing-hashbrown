@@ -184,12 +184,18 @@ scenarios:
       ask_user warning) before the confirmation step — silently creating a
       same-named skill that will be shadowed is exactly the confusion this
       check exists to prevent. The first turn is the literal slash command
-      (not hand-typed paraphrase) so the skill's own step 4 — "tell the user
-      plainly... this is a warning, not a reason to block" — is actually in
-      context when the collision turns up; without it, both local and
-      Lemonade were observed to treat a found collision as something to
-      investigate further (another get_skill_source call) rather than
-      surface as a warning before confirming.
+      (not hand-typed paraphrase) so the skill's own step 4 is actually in
+      context when the collision turns up. The seeded search_skills result
+      now matches the real tool's exact output shape ({name, slashCommand,
+      description} only — no scope/source field, since search_skills
+      genuinely can't tell the model which scope a match is in); an earlier
+      version of this seed carried a fabricated "source" field that doesn't
+      exist on the real tool, and three of four providers were observed
+      routing this into step 2's repair branch (another get_skill_source or
+      search_skills call) rather than step 4's collision case, since
+      nothing available to the model (real or seeded) distinguishes "same
+      skill, needs repair" from "different-scope collision, just warn."
+      Step 2's own wording now draws that line explicitly.
     type: tool-sequence
     gatedSkill: create-skill
     turns:
@@ -200,7 +206,7 @@ scenarios:
         args: { keyword: local-helper }
         result:
           {
-            text: '[{"name":"local-helper","slashCommand":"/local-helper","description":"Helps with local maintenance tasks","source":"repo"}]',
+            text: '[{"name":"local-helper","slashCommand":"/local-helper","description":"Helps with local maintenance tasks"}]',
           }
     tool: ask_user
     responseRubric: >
