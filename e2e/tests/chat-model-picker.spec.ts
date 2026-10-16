@@ -1,6 +1,7 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { gotoNewChat } from '../lib/chat.js';
 
 const suite: TestSuite = {
   id: 21,
@@ -115,7 +116,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockProvidersApi(page);
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       const addTrigger = page.locator('button[aria-label="Add to message"]');
@@ -144,7 +145,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockProvidersApi(page);
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       const addTrigger = page.locator('button[aria-label="Add to message"]');
@@ -168,7 +169,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockProvidersApi(page);
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       await page.locator('button[aria-label="Add to message"]').click();
@@ -239,7 +240,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockProvidersApi(page);
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       await page.locator('button[aria-label="Add to message"]').tap();
@@ -295,7 +296,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockProvidersApi(page, MOCK_PROVIDERS_WITH_LONG_MODEL_NAME);
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       await page.locator('button[aria-label="Add to message"]').tap();

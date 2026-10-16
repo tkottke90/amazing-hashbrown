@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { gotoNewChat } from '../lib/chat.js';
 // `import type` only — erased by Playwright's transform (see
 // settings-save-contracts.spec.ts for why these are imported, not redeclared).
 import type { ModelProvidersSettings } from '../../api/src/routes/v1/settings.handlers.js';
@@ -148,7 +149,7 @@ test.describe('Favorite models', { annotation: suiteAnnotations(suite) }, () => 
     page,
   }, testInfo) => {
     await mockBackend(page, [{ provider: 'openai', model: 'gpt-4o-mini' }]);
-    await page.goto('/');
+    await gotoNewChat(page);
     await pauseBeforeAction(page, testInfo);
 
     await openChatProviderMenu(page);
@@ -171,7 +172,7 @@ test.describe('Favorite models', { annotation: suiteAnnotations(suite) }, () => 
     page,
   }, testInfo) => {
     await mockBackend(page, [{ provider: 'openai', model: 'gpt-4o-mini' }]);
-    await page.goto('/');
+    await gotoNewChat(page);
     await pauseBeforeAction(page, testInfo);
 
     await openChatProviderMenu(page);
@@ -193,7 +194,7 @@ test.describe('Favorite models', { annotation: suiteAnnotations(suite) }, () => 
     await saveSettings(page);
     expect((state.lastPatch as ModelProvidersSettings).favoriteModels).toEqual([]);
 
-    await page.goto('/');
+    await gotoNewChat(page);
     await openChatProviderMenu(page);
     await expect(page.getByRole('menuitem', { name: 'openai', exact: true })).toBeVisible();
     await expect(page.getByText('Favorites', { exact: true })).toHaveCount(0);

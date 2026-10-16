@@ -1,6 +1,7 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { gotoNewChat } from '../lib/chat.js';
 
 const suite: TestSuite = {
   id: 26,
@@ -65,7 +66,7 @@ test.describe(
         'billing',
         'Your credit balance is too low to access the Anthropic API.',
       );
-      await page.goto('/');
+      await gotoNewChat(page);
 
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await pauseBeforeAction(page, testInfo);
@@ -90,7 +91,7 @@ test.describe(
         'context_length',
         "This model's maximum context length is 8192 tokens.",
       );
-      await page.goto('/');
+      await gotoNewChat(page);
 
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await pauseBeforeAction(page, testInfo);
@@ -113,7 +114,7 @@ test.describe(
       // a real Stop-mid-generation click requires a live LLM (see the
       // separate @llm spec for that full flow).
       await mockChatTurnError(page, 'cancelled', 'Stopped.');
-      await page.goto('/');
+      await gotoNewChat(page);
 
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await pauseBeforeAction(page, testInfo);
@@ -139,7 +140,7 @@ test.describe(
       // stream_error/errorCategory shape the server emits once it classifies
       // that failure, to deterministically cover the UI side in CI.
       await mockChatTurnError(page, 'interrupted', 'Abort');
-      await page.goto('/');
+      await gotoNewChat(page);
 
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await pauseBeforeAction(page, testInfo);
@@ -167,7 +168,7 @@ test.describe(
       page,
     }, testInfo) => {
       await mockChatTurnError(page, 'rate_limit', 'Rate limit reached for requests');
-      await page.goto('/');
+      await gotoNewChat(page);
 
       await page.locator('[data-slot="textarea"]').fill('Hello');
       await pauseBeforeAction(page, testInfo);

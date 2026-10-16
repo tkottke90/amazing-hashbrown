@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, type Route } from '@playwright/test';
 import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrite-test-runner';
+import { gotoNewChat } from '../lib/chat.js';
 
 async function mockProviders(page: Page, provider: string, model: string): Promise<void> {
   await page.route('**/api/v1/providers', async (route: Route) => {
@@ -47,12 +48,8 @@ export const ChatInterface: TestSuite = {
         // Setup a route listener for the LLM Models API (/api/v1/providers) to return a predictable response
         await mockProviders(page, defaultProvider, defaultModel);
 
-        // Goto the Chat Page
-        await page.goto('/');
-        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
-
-        // Capture the thread id from the URL
-        const initialThreadId = new URL(page.url()).pathname.split('/').pop();
+        // Goto a fresh chat thread
+        const initialThreadId = await gotoNewChat(page);
 
         // Click the "New Conversation" button
         await pauseForVideo(page, ChatInterface, testInfo);
@@ -131,9 +128,8 @@ export const ChatInterface: TestSuite = {
           });
         });
 
-        // Goto the Chat Page
-        await page.goto('/');
-        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+        // Goto a fresh chat thread
+        await gotoNewChat(page);
 
         // Click the "New Conversation" button
         await pauseForVideo(page, ChatInterface, testInfo);
@@ -222,9 +218,8 @@ export const ChatInterface: TestSuite = {
           });
         });
 
-        // Goto the Chat Page
-        await page.goto('/');
-        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+        // Goto a fresh chat thread
+        await gotoNewChat(page);
 
         // Click the "New Conversation" button
         await pauseForVideo(page, ChatInterface, testInfo);
@@ -371,9 +366,8 @@ export const ChatInterface: TestSuite = {
           });
         });
 
-        // Goto the Chat Page
-        await page.goto('/');
-        await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+        // Goto a fresh chat thread
+        await gotoNewChat(page);
 
         // Click the "New Conversation" button
         await pauseForVideo(page, ChatInterface, testInfo);

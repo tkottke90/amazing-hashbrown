@@ -1,6 +1,7 @@
 import { test, expect, type Route } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { gotoNewChat } from '../lib/chat.js';
 
 const suite: TestSuite = {
   id: 32,
@@ -72,7 +73,7 @@ test.describe(
     test('attaching 4 files sends every attachmentId, and the sent bubble shows per-attachment outcomes with working tiles', async ({
       page,
     }, testInfo) => {
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       // Real uploads — hits the actual (locally running) /api/v1/artifacts
@@ -195,7 +196,7 @@ test.describe(
       page,
       request,
     }, testInfo) => {
-      await page.goto('/');
+      await gotoNewChat(page);
       await pauseBeforeAction(page, testInfo);
 
       const fileInput = page.locator('input[type="file"]');

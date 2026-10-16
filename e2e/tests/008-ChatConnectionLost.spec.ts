@@ -1,5 +1,6 @@
 import { expect, type Route } from '@playwright/test';
 import { TAGS, TestSuite, suiteRunner, pauseForVideo } from '@tkottke90/playwrite-test-runner';
+import { gotoNewChat } from '../lib/chat.js';
 
 // Issue #191: a chat turn whose live stream drops (idle timeout during a long
 // tool call, proxy reset) used to show "Couldn't reach the provider — check
@@ -31,7 +32,7 @@ export const ChatConnectionLost: TestSuite = {
           }
           await route.abort('connectionreset');
         });
-        await page.goto('/');
+        await gotoNewChat(page);
 
         await page
           .locator('[data-slot="textarea"]')
