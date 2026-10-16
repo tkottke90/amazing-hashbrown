@@ -310,12 +310,13 @@ test.describe(
         await drawer.getByTestId('widget-drawer-validate').click();
         await drawer.getByRole('button', { name: 'Save' }).click();
 
-        // The dialog (and its still-mounted CodeMirror content, which would
-        // otherwise also match the text below since it's nested inside the
-        // same widget-card element) must actually close before checking the
-        // card's real rendered content — proof the save went through.
+        // Confirm the dialog actually closed (the save went through) before
+        // reloading — but don't assert on the card's text pre-reload: the
+        // dialog (and its CodeMirror content, which has the same text) is a
+        // DOM descendant of the widget-card element and stays mounted even
+        // once closed, so a `card.getByText(...)` here would ambiguously
+        // match both the real rendered content and the editor's own line.
         await expect(page.locator('dialog[open]')).toHaveCount(0);
-        await expect(card.getByText('Edited directly in Raw.')).toBeVisible();
         await page.reload();
         await expect(
           page
