@@ -70,9 +70,8 @@ const persistenceSuite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Open a healthy widget, switch to Raw, edit it with well-formed content, save',
-      expectedOutcome:
-        'A single Save click silently validates unchecked-but-valid text and saves; the edit persists across a reload',
+      action: 'Open a healthy widget, switch to Raw, edit it directly, validate, save',
+      expectedOutcome: 'Validate passes and Save persists the edit across a reload',
       test: () => {},
     },
     {
@@ -284,7 +283,7 @@ test.describe(
       }
     });
 
-    test('editing a healthy widget directly in Raw persists after a single Save (silent validate)', async ({
+    test('editing a healthy widget directly in Raw persists after validate + save', async ({
       page,
     }, testInfo) => {
       const title = `E2E raw-edit widget ${testInfo.testId}`;
@@ -308,12 +307,14 @@ test.describe(
           `---\ntitle: "${title}"\ntype: "markdown"\norder: 0\n---\n\nEdited directly in Raw.`,
         );
 
-        // The text is already well-formed and has never been checked, so a
-        // single Save click silently validates it first and then saves —
-        // no separate Validate click needed (that path is covered by the
-        // "breaking the frontmatter" test below).
+        await drawer.getByTestId('widget-drawer-validate').click();
         await drawer.getByRole('button', { name: 'Save' }).click();
 
+        // The dialog (and its still-mounted CodeMirror content, which would
+        // otherwise also match the text below since it's nested inside the
+        // same widget-card element) must actually close before checking the
+        // card's real rendered content — proof the save went through.
+        await expect(page.locator('dialog[open]')).toHaveCount(0);
         await expect(card.getByText('Edited directly in Raw.')).toBeVisible();
         await page.reload();
         await expect(
