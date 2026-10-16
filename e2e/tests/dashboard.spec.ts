@@ -53,7 +53,12 @@ test.describe(
 
       const firstCard = page.getByTestId('widget-card').first();
       await expect(firstCard).toBeVisible();
-      await expect(firstCard.getByText('Welcome')).toBeVisible();
+      // level: 2 disambiguates the widget's own <h2> title from the
+      // markdown content's <h1> heading just below it, whose text
+      // ("Welcome to Amazing Hashbrown") also contains "Welcome".
+      await expect(
+        firstCard.getByRole('heading', { level: 2, name: 'Welcome', exact: true }),
+      ).toBeVisible();
       await expect(firstCard.getByText('Your AI Workspace')).toBeVisible();
       await expect(
         firstCard.getByRole('heading', { name: 'Welcome to Amazing Hashbrown' }),
