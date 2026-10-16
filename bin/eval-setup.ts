@@ -30,6 +30,15 @@ import { searchConversationTool } from '../api/src/agents/tools/search-conversat
 import { spawnSubAgentTool } from '../api/src/agents/tools/spawn-sub-agent.tool.js';
 import { wikiCreateDomainTool } from '../api/src/agents/tools/wiki-create-domain.tool.js';
 import { proposeFileMergeTool } from '../api/src/agents/tools/propose-file-merge.tool.js';
+import { makeCreateAppSkillTool } from '../api/src/agents/tools/create-app-skill.tool.js';
+import { makeEditAppSkillTool } from '../api/src/agents/tools/edit-app-skill.tool.js';
+import { makeCreateWorkspaceSkillTool } from '../api/src/agents/tools/create-workspace-skill.tool.js';
+import { makeEditWorkspaceSkillTool } from '../api/src/agents/tools/edit-workspace-skill.tool.js';
+import { makeGetSkillSourceTool } from '../api/src/agents/tools/get-skill-source.tool.js';
+import { makeCreateSkillArtifactTool } from '../api/src/agents/tools/create-skill-artifact.tool.js';
+import { makeUpdateSkillArtifactTool } from '../api/src/agents/tools/update-skill-artifact.tool.js';
+import { makeDeleteSkillArtifactTool } from '../api/src/agents/tools/delete-skill-artifact.tool.js';
+import { makeTestSkillArtifactTool } from '../api/src/agents/tools/test-skill-artifact.tool.js';
 import { buildWikiIngestionSystemPrompt } from '../api/src/agents/wiki-ingestion-system-prompt.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
@@ -128,6 +137,21 @@ export const evalTools = [
   // path happened to emit the call anyway, which is what made the gap
   // visible instead of uniformly silent.
   proposeFileMergeTool,
+  // Same skill-gated reasoning again, for create-skill's own tool family
+  // (see GATED_SKILL_REGISTRATIONS) — suites/create-skill.yaml needs all
+  // nine actually offered, via gatedSkill: create-skill, to be meaningful.
+  // Never executed here, so none of these touch a real SkillsManager or
+  // workspace directory; runtime.configurable.workspaceId is simply absent
+  // for any scenario that doesn't seed a simulatedWorkspace.
+  makeCreateAppSkillTool(),
+  makeEditAppSkillTool(),
+  makeCreateWorkspaceSkillTool(),
+  makeEditWorkspaceSkillTool(),
+  makeGetSkillSourceTool(),
+  makeCreateSkillArtifactTool(),
+  makeUpdateSkillArtifactTool(),
+  makeDeleteSkillArtifactTool(),
+  makeTestSkillArtifactTool(),
   // Workspace-scoped in production (buildWorkspaceScopedTools() in
   // chat-agent.ts) — bound in buildWorkspaceChatAgent/buildTaskAgent, never
   // buildChatAgent, unlike every other tool in this list which mirrors

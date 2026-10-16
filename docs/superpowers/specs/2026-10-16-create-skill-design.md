@@ -22,22 +22,22 @@ actually requires.
 
 ## Decisions
 
-| Topic | Decision |
-| --- | --- |
-| Command surface | One skill, `create-skill`, handles both fresh creation and repair/upgrade of an existing skill — the interview detects which from what the user says. Splitting into two commands would duplicate the interview phase for no benefit. |
-| Target scope | App-level (Skill Manager) and workspace-level (`.agents/skills`) are both supported. The flow **always asks explicitly** which scope to target via `ask_user`, never infers it from context — app-level and workspace-level skills can share a name, and a wrong guess is worse than one extra question. |
-| Content scope (v1) | `SKILL.md` (frontmatter + body) plus `scripts/` and `references/` artifacts. `evals/` is explicitly deferred — see **Out of scope**. |
-| Interaction model | A multi-turn guided interview driven by the `ask_user` tool (`api/src/agents/tools/ask-user.tool.ts`), following the same conventions already established by `create-workspace`/`create-project`: batch related fields into one combined question rather than one field at a time, use `free_text` for open-ended fields (never `multiple_choice` with invented examples), confirm with a `yes_no` call before any write. |
-| Teaching | The agent explains *why* it's asking for each thing as it goes (what the description field drives, what makes a body "compatible"), rather than running silently and only producing a result. |
-| Tool shape | New, small, single-purpose tools rather than one generic parameterized tool — this repo's own `AGENTS.md` (§ Composition over Customization) calls out a generic `type`/config-bag tool as the anti-pattern to avoid. |
-| Gating | All new tools are hidden by default and only visible while `create-skill` is the active skill, via the existing Skill-Gated Tools mechanism (`skill-gated-tools.middleware.ts`, `gated-skill-registrations.ts`) — the same pattern `create_workspace`/`create_project`/`propose_file_merge` already use. |
-| Reservation | `create-skill` is added to `GATED_SKILL_REGISTRATIONS`, which `resolveWorkspaceSkills` already maps into its `reserved` list automatically — a workspace repo can never ship its own `.agents/skills/create-skill/SKILL.md` and hijack these tools. |
-| Repair reactivity | Reactive only: repair acts on a skill the user names. No proactive "scan everything and flag what's broken" audit feature in v1. |
-| Collision check | On **creation**, check both scopes for a name/slash-command collision and warn before writing, even though the target scope was already chosen explicitly — knowing the target doesn't tell the user whether they're about to shadow, or be shadowed by, a same-named skill in the other scope. |
-| Compliance check | Repair reuses the real frontmatter/boot-time validation logic (the same checks `SkillsManager.boot()` already runs) to produce a concrete list of what's wrong, rather than the model guessing from the raw text. |
-| Workspace writes | Written straight to disk in `.agents/skills`, **never auto-committed**. The user reviews and commits through their normal workspace git flow, same as any other workspace file change. |
-| Script risk | No separate "this is executable code" confirmation step beyond the normal draft-review confirmation — treated as implied by the existing skill model rather than a bespoke gate for this flow. |
-| Script sanity check | After writing a script artifact, the flow offers to dry-run it immediately (`test_skill_artifact`) so a broken script surfaces during the guided flow, not the next time the skill is invoked for real. |
+| Topic               | Decision                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command surface     | One skill, `create-skill`, handles both fresh creation and repair/upgrade of an existing skill — the interview detects which from what the user says. Splitting into two commands would duplicate the interview phase for no benefit.                                                                                                                                                                                     |
+| Target scope        | App-level (Skill Manager) and workspace-level (`.agents/skills`) are both supported. The flow **always asks explicitly** which scope to target via `ask_user`, never infers it from context — app-level and workspace-level skills can share a name, and a wrong guess is worse than one extra question.                                                                                                                  |
+| Content scope (v1)  | `SKILL.md` (frontmatter + body) plus `scripts/` and `references/` artifacts. `evals/` is explicitly deferred — see **Out of scope**.                                                                                                                                                                                                                                                                                      |
+| Interaction model   | A multi-turn guided interview driven by the `ask_user` tool (`api/src/agents/tools/ask-user.tool.ts`), following the same conventions already established by `create-workspace`/`create-project`: batch related fields into one combined question rather than one field at a time, use `free_text` for open-ended fields (never `multiple_choice` with invented examples), confirm with a `yes_no` call before any write. |
+| Teaching            | The agent explains _why_ it's asking for each thing as it goes (what the description field drives, what makes a body "compatible"), rather than running silently and only producing a result.                                                                                                                                                                                                                             |
+| Tool shape          | New, small, single-purpose tools rather than one generic parameterized tool — this repo's own `AGENTS.md` (§ Composition over Customization) calls out a generic `type`/config-bag tool as the anti-pattern to avoid.                                                                                                                                                                                                     |
+| Gating              | All new tools are hidden by default and only visible while `create-skill` is the active skill, via the existing Skill-Gated Tools mechanism (`skill-gated-tools.middleware.ts`, `gated-skill-registrations.ts`) — the same pattern `create_workspace`/`create_project`/`propose_file_merge` already use.                                                                                                                  |
+| Reservation         | `create-skill` is added to `GATED_SKILL_REGISTRATIONS`, which `resolveWorkspaceSkills` already maps into its `reserved` list automatically — a workspace repo can never ship its own `.agents/skills/create-skill/SKILL.md` and hijack these tools.                                                                                                                                                                       |
+| Repair reactivity   | Reactive only: repair acts on a skill the user names. No proactive "scan everything and flag what's broken" audit feature in v1.                                                                                                                                                                                                                                                                                          |
+| Collision check     | On **creation**, check both scopes for a name/slash-command collision and warn before writing, even though the target scope was already chosen explicitly — knowing the target doesn't tell the user whether they're about to shadow, or be shadowed by, a same-named skill in the other scope.                                                                                                                           |
+| Compliance check    | Repair reuses the real frontmatter/boot-time validation logic (the same checks `SkillsManager.boot()` already runs) to produce a concrete list of what's wrong, rather than the model guessing from the raw text.                                                                                                                                                                                                         |
+| Workspace writes    | Written straight to disk in `.agents/skills`, **never auto-committed**. The user reviews and commits through their normal workspace git flow, same as any other workspace file change.                                                                                                                                                                                                                                    |
+| Script risk         | No separate "this is executable code" confirmation step beyond the normal draft-review confirmation — treated as implied by the existing skill model rather than a bespoke gate for this flow.                                                                                                                                                                                                                            |
+| Script sanity check | After writing a script artifact, the flow offers to dry-run it immediately (`test_skill_artifact`) so a broken script surfaces during the guided flow, not the next time the skill is invoked for real.                                                                                                                                                                                                                   |
 
 ## Flow
 
@@ -57,7 +57,7 @@ actually requires.
    repair, frame this around the compliance issues already found, plus
    whatever the user actually wants changed.
 4. **Collision check (creation only).** Look up the chosen name/slash
-   command in *both* scopes (the existing `search_skills` tool is already
+   command in _both_ scopes (the existing `search_skills` tool is already
    scope-aware and merge-marks `overrides`, so this likely needs no new
    tool — see **Open implementation notes**). If found in the other scope,
    tell the user what will shadow or be shadowed, and let them rename or
@@ -85,17 +85,17 @@ the `makeCreateWorkspaceTool`-style factory pattern
 testable against a real `SkillsManager` over a temp directory rather than a
 module-level singleton.
 
-| Tool | Signature (sketch) | Backs onto |
-| --- | --- | --- |
-| `create_app_skill` | `(name, description, body, license?, compatibility?, metadata?, allowedTools?)` | `skillsManager.create()` — same `CreateSkillInput` the REST route already validates against (`api/src/routes/v1/skills.handlers.ts`'s `CreateSkillSchema`) |
-| `edit_app_skill` | `(name, description?, body?, license?, compatibility?, metadata?, allowedTools?)` | `skillsManager.edit()` / `EditSkillInput` |
-| `create_workspace_skill` | `(name, description, body, ...)` | Same shape, but resolved against the current workspace's `.agents/skills` directory directly (not through the read-only `resolveWorkspaceSkills` child — see **Open implementation notes**) |
-| `edit_workspace_skill` | `(name, description?, body?, ...)` | Same, workspace-scoped |
-| `get_skill_source` | `(name)` — scope is whichever was established in step 1 of this flow | Returns the full `Skill` (frontmatter, body, script/reference filenames) plus a structured compliance report reusing the same validation `boot()` already runs |
-| `create_skill_artifact` | `(skill, type: 'script' \| 'reference', name, content)` | `skillsManager.writeFile(skill, type === 'script' ? 'scripts' : 'references', name, content)`, guarded to fail if the file already exists |
-| `update_skill_artifact` | `(skill, type: 'script' \| 'reference', name, content)` | Same `writeFile`, overwrite semantics |
-| `delete_skill_artifact` | `(skill, type: 'script' \| 'reference', name)` | New `deleteFile` on `SkillsManager` (doesn't exist yet — `delete()` today only removes a whole skill directory) |
-| `test_skill_artifact` | `(skill, name, args?)` | `skillsManager.runScript()` or `runPythonScript()`, selected by `name`'s extension — the first tool to expose either method to the model at all |
+| Tool                     | Signature (sketch)                                                                | Backs onto                                                                                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_app_skill`       | `(name, description, body, license?, compatibility?, metadata?, allowedTools?)`   | `skillsManager.create()` — same `CreateSkillInput` the REST route already validates against (`api/src/routes/v1/skills.handlers.ts`'s `CreateSkillSchema`)                                  |
+| `edit_app_skill`         | `(name, description?, body?, license?, compatibility?, metadata?, allowedTools?)` | `skillsManager.edit()` / `EditSkillInput`                                                                                                                                                   |
+| `create_workspace_skill` | `(name, description, body, ...)`                                                  | Same shape, but resolved against the current workspace's `.agents/skills` directory directly (not through the read-only `resolveWorkspaceSkills` child — see **Open implementation notes**) |
+| `edit_workspace_skill`   | `(name, description?, body?, ...)`                                                | Same, workspace-scoped                                                                                                                                                                      |
+| `get_skill_source`       | `(name)` — scope is whichever was established in step 1 of this flow              | Returns the full `Skill` (frontmatter, body, script/reference filenames) plus a structured compliance report reusing the same validation `boot()` already runs                              |
+| `create_skill_artifact`  | `(skill, type: 'script' \| 'reference', name, content)`                           | `skillsManager.writeFile(skill, type === 'script' ? 'scripts' : 'references', name, content)`, guarded to fail if the file already exists                                                   |
+| `update_skill_artifact`  | `(skill, type: 'script' \| 'reference', name, content)`                           | Same `writeFile`, overwrite semantics                                                                                                                                                       |
+| `delete_skill_artifact`  | `(skill, type: 'script' \| 'reference', name)`                                    | New `deleteFile` on `SkillsManager` (doesn't exist yet — `delete()` today only removes a whole skill directory)                                                                             |
+| `test_skill_artifact`    | `(skill, name, args?)`                                                            | `skillsManager.runScript()` or `runPythonScript()`, selected by `name`'s extension — the first tool to expose either method to the model at all                                             |
 
 Naming deliberately distinguishes `test_skill_artifact` from a hypothetical
 "run" tool, so the model doesn't read it as how a skill's script gets
@@ -180,7 +180,7 @@ Tags per root `AGENTS.md`. Unit unless marked.
   `Command` shape comes back — same style as
   `create-workspace.tool.test.ts`.
 - `create_app_skill`/`create_workspace_skill` reject a name collision in
-  the *other* scope with a message naming the conflict, not a silent
+  the _other_ scope with a message naming the conflict, not a silent
   success `[orchestration]`.
 - `get_skill_source` on a skill with invalid frontmatter returns the raw
   content plus a non-empty compliance report rather than throwing.
@@ -235,7 +235,7 @@ collision scenario (same name already exists in the other scope).
   is deliberately read-only (`createChild(..., { reserved })`,
   `assertWritable()` throws on every write/script method). `create_workspace_skill`/
   `edit_workspace_skill`/the artifact tools for workspace scope therefore
-  need to construct a *separate*, writable `SkillsManager` rooted at
+  need to construct a _separate_, writable `SkillsManager` rooted at
   `<workspace.location>/.agents/skills` (via the plain constructor, not
   `createChild`) rather than going through the resolver used for reads. This
   mirrors how reads and writes already diverge for the global manager vs.

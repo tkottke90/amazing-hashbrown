@@ -1,0 +1,258 @@
+suite:
+  id: create-skill
+  name: Create/Repair Skill Chat Skill
+  purpose: >
+    Verifies the chat agent follows the /create-skill skill instructions
+    correctly: confirms with the user before writing anything (even when all
+    fields are already known), asks which scope (app-wide vs. workspace)
+    rather than guessing, reads a skill's real compliance issue before
+    repairing it instead of restarting a blank interview, warns on a
+    cross-scope name collision before creating, and stops rather than
+    blindly retrying after a rejection. Every scenario here sets
+    `gatedSkill: create-skill`, so the runner routes it through the real
+    skillExpansionMiddleware/skillGatedToolsMiddleware pair (see runner.ts
+    and docs/superpowers/specs/2026-08-27-skill-gated-tools-hardening-design.md)
+    instead of a static tool list — the nine create-skill tools are only
+    visible to the model when the gate is genuinely open. The "fresh
+    invocation" scenarios (whose input is the literal slash command) exercise
+    the live default-skills.ts body rather than hand-typed paraphrase text.
+    skill-gated-tools.middleware.test.ts and the create-skill tool unit
+    tests still cover the mechanics directly; this suite is about the
+    model's behavior under the skill's actual instructions. simulatedWorkspace
+    is set suite-wide (it's a suite-level field, not per-scenario) so every
+    scenario here runs as a workspace-chat turn, giving both scopes a real
+    option — scenarios that want app-wide scope say so explicitly in the
+    user's own message rather than relying on the absence of a workspace.
+  passingThreshold: 0.8
+  simulatedWorkspace:
+    name: Homelab Ops
+    location: /home/user/workspaces/homelab-ops
+
+scenarios:
+  - id: cs-001-confirms-before-creating
+    name: Agent confirms before creating a skill, even with all fields already known
+    purpose: >
+      Given a /create-skill invocation that already states a name,
+      description, and body for a new app-wide skill, confirms the agent's
+      first tool call is ask_user (the scope question or the confirmation
+      the skill requires) rather than calling create_app_skill immediately
+      — the skill explicitly requires confirmation before writing, regardless
+      of how complete the input is.
+    type: tool-call
+    gatedSkill: create-skill
+    input: >
+      /create-skill called "wiki-search-tips", description: "Tips for
+      searching the wiki — trigger on 'how do I search the wiki', 'wiki
+      search syntax'", for the app-wide Skill Manager. Body: "When the user
+      asks how to search the wiki, explain that wiki_search supports
+      keyword and tag filters."
+    tool: ask_user
+
+  - id: cs-002-asks-scope-when-ambiguous
+    name: Agent asks which scope to target rather than guessing, inside a workspace
+    purpose: >
+      Given a bare /create-skill invocation with no scope stated, inside a
+      workspace chat (so both app-wide and workspace scope are real
+      options), confirms the agent asks via ask_user rather than silently
+      picking one — the skill requires this question to always be asked
+      explicitly when a workspace is in play, never inferred.
+    type: tool-call
+    gatedSkill: create-skill
+    input: '/create-skill'
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: multiple_choice
+
+  - id: cs-003-creates-after-confirmation
+    name: Agent calls create_app_skill once the user confirms
+    purpose: >
+      Companion to cs-001: given the agent already confirmed scope and
+      content and the user said yes, confirms the very next tool call is
+      create_app_skill with the name from the earlier turn — the
+      confirmation step must actually lead somewhere, not just stall.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: >
+          Make a new app-wide skill called "wiki-search-tips" — description
+          "Tips for searching the wiki", body "Explain wiki_search's keyword
+          and tag filters when asked."
+      - tool: ask_user
+        args:
+          {
+            question: 'Create skill "wiki-search-tips" (app-wide) with that description and body?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+      - user: 'Yes, go ahead.'
+    tool: create_app_skill
+    argChecks:
+      - path: name
+        match: equals
+        value: wiki-search-tips
+
+  - id: cs-004-workspace-scope-creates-workspace-skill
+    name: Agent calls create_workspace_skill, not create_app_skill, once workspace scope is confirmed
+    purpose: >
+      Given the user explicitly asked for a workspace-scoped skill and
+      confirmed, verifies the agent calls create_workspace_skill — using
+      the wrong tool here would silently create an app-wide skill instead
+      of the workspace-local one the user asked for.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: >
+          Make a skill just for this workspace called "local-helper" —
+          description "Helps with local maintenance tasks", body "Remind
+          the user to check disk space weekly."
+      - tool: ask_user
+        args:
+          {
+            question: 'Create skill "local-helper" in this workspace with that description and body?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+      - user: 'Yep.'
+    tool: create_workspace_skill
+    argChecks:
+      - path: name
+        match: equals
+        value: local-helper
+
+  - id: cs-005-repair-reads-source-first
+    name: Agent calls get_skill_source before asking repair questions
+    purpose: >
+      Given the user asks to fix an existing, named skill, confirms the
+      agent's first tool call is get_skill_source — repair must be framed
+      around the skill's actual, concrete compliance issue, not a guess or
+      a blank restart of the creation interview.
+    type: tool-call
+    gatedSkill: create-skill
+    input: '/create-skill fix my "wiki-search-tips" skill, something seems wrong with it'
+    tool: get_skill_source
+    argChecks:
+      - path: name
+        match: equals
+        value: wiki-search-tips
+
+  - id: cs-006-repair-frames-around-real-issue
+    name: Agent's next question after get_skill_source names the actual issue found
+    purpose: >
+      Companion to cs-005: given get_skill_source already returned a
+      concrete compliance issue (a missing description field), confirms the
+      agent's next turn is an ask_user call about that specific problem,
+      not a generic "what should the new skill contain" restart.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: 'Fix my "broken-skill" — I think something is wrong with it.'
+      - tool: get_skill_source
+        args: { name: broken-skill }
+        result:
+          {
+            text: '{"scope":"app","exists":true,"issue":"SKILL.md missing required field: description"}',
+          }
+    tool: ask_user
+    responseRubric: >
+      The response should reference the actual problem found (a missing
+      description field) rather than asking a generic, unrelated question
+      about what the skill should do from scratch.
+    responseMinScore: 0.7
+
+  - id: cs-007-warns-on-cross-scope-collision
+    name: Agent surfaces a cross-scope name collision before confirming creation
+    purpose: >
+      Given the user is creating an app-wide skill with a name that
+      search_skills reports also exists as a workspace skill, confirms the
+      agent checks for and mentions the collision (via search_skills or an
+      ask_user warning) before the confirmation step — silently creating a
+      same-named skill that will be shadowed is exactly the confusion this
+      check exists to prevent.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: >
+          Make an app-wide skill called "local-helper" — description "Generic
+          helper tips", body "General tips."
+      - tool: search_skills
+        args: { query: local-helper }
+        result:
+          {
+            text: '[{"name":"local-helper","slashCommand":"/local-helper","description":"Helps with local maintenance tasks","source":"repo"}]',
+          }
+    tool: ask_user
+    responseRubric: >
+      The response should mention that a skill named "local-helper" already
+      exists in this workspace and would be shadowed by or shadow the new
+      app-wide one, before asking to confirm creation.
+    responseMinScore: 0.6
+
+  - id: cs-008-stops-after-conflict
+    name: Agent does not retry create_app_skill after a duplicate-name rejection without new direction
+    purpose: >
+      Given create_app_skill was already rejected with a duplicate-name
+      conflict and the user's next turn gives no new name or direction,
+      confirms the agent does not blindly retry the identical (or
+      auto-mangled) call — the skill requires waiting for the user's next
+      instruction after a rejection, not routing around it silently.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: 'Create an app-wide skill called "wiki-search-tips" — description "Tips", body "Tips body."'
+      - tool: create_app_skill
+        args: { name: 'wiki-search-tips', description: 'Tips', body: 'Tips body.' }
+        result:
+          {
+            text: 'Skill "wiki-search-tips" already exists — use edit_app_skill instead, or pick a different name.',
+          }
+      - user: 'Hmm, okay.'
+    tool: '!create_app_skill'
+
+  - id: cs-009-offers-dry-run-for-script-artifact
+    name: Agent offers test_skill_artifact after writing a script artifact
+    purpose: >
+      Given the agent just wrote a Python script artifact as part of a
+      confirmed skill creation, confirms the next step is either offering
+      or calling test_skill_artifact — the whole point of a dry run is
+      catching a broken script during authoring, not after.
+    type: tool-sequence
+    gatedSkill: create-skill
+    turns:
+      - user: >
+          Create app-wide skill "disk-check" — description "Checks disk
+          space", body "Run the check script.", with a Python script
+          check.py that prints free disk space.
+      - tool: ask_user
+        args:
+          {
+            question: 'Create skill "disk-check" (app-wide) with the check.py script — confirm?',
+            kind: 'yes_no',
+          }
+        result: { text: 'User answered: yes' }
+      - user: 'Yes.'
+      - tool: create_app_skill
+        args:
+          { name: 'disk-check', description: 'Checks disk space', body: 'Run the check script.' }
+        result:
+          {
+            text: 'Created skill "disk-check" (app-wide, shows up in the Skill Manager) — available as /disk-check.',
+          }
+      - tool: create_skill_artifact
+        args:
+          {
+            skill: 'disk-check',
+            type: 'script',
+            name: 'check.py',
+            content: 'import shutil; print(shutil.disk_usage("/"))',
+          }
+        result: { text: 'Added script "check.py" to "disk-check".' }
+    tool: test_skill_artifact
+    argChecks:
+      - path: skill
+        match: equals
+        value: disk-check
+      - path: name
+        match: equals
+        value: check.py

@@ -40,7 +40,7 @@ export async function readFrontmatter(skillPath: string): Promise<LoadedSummary>
   };
 }
 
-async function inventoryDir(dir: string): Promise<Record<string, string>> {
+export async function inventoryDir(dir: string): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
   try {
     const entries = await readdir(dir);
