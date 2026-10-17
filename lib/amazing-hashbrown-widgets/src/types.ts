@@ -3,8 +3,20 @@
  * layer. JSON-serializable, shared verbatim between the API (which imports
  * the whole package) and the UI (which imports only this module via the
  * package's `./types` export, so no `node:fs`/`gray-matter` ships to the
- * browser bundle).
+ * browser bundle). `DashboardWidgetSchema` at the bottom of this file is the
+ * one exception that needs a runtime import (zod, already browser-shipped
+ * via `@tkottke90/llm-common-types/chat`) — it must only ever pull in the
+ * zod-only `internal/widget-field-schemas.js`, never `internal/frontmatter.js`
+ * (which imports `gray-matter`) or `store.js` (which imports `node:fs`).
  */
+
+import { z } from 'zod';
+import {
+  MarkdownWidgetFrontmatterSchema,
+  BigNumberWidgetFrontmatterSchema,
+  LineGraphWidgetFrontmatterSchema,
+  PieGraphWidgetFrontmatterSchema,
+} from './internal/widget-field-schemas.js';
 
 /** Fields every widget type shares, regardless of its `type`. */
 export interface WidgetBase {
@@ -21,6 +33,12 @@ export interface WidgetBase {
   subtitle?: string;
   /** Ascending sort key among a dashboard's widgets. */
   order: number;
+  /** Widget Source (see GLOSSARY.md) — set by the calling code only, never request/tool-call input. */
+  source: 'manual' | 'agent' | 'system';
+  /** Widget Maintainer (see GLOSSARY.md) — only ever set via an agent-sourced write. */
+  maintainer?: string;
+  /** Derived from the widget file's own mtime (ADR-0006) — never persisted. ISO 8601. */
+  updatedAt: string;
 }
 
 export interface MarkdownWidget extends WidgetBase {
@@ -92,3 +110,45 @@ export type WidgetContentInput =
   | { type: 'big-number'; title: string; subtitle?: string; value?: number; unit?: string }
   | { type: 'line-graph'; title: string; subtitle?: string; data: string; color?: string }
   | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] };
+
+/** A widget before it's been stat'd for `updatedAt` — what `store.ts` builds and persists. */
+export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updatedAt'>;
+
+/**
+ * What `store.createWidget`/`updateWidget` accept: everything a caller must
+ * have already decided (including `source` — ADR-0005) before persistence,
+ * minus what the store itself assigns/preserves (`id`, `order`) or derives
+ * (`updatedAt`). Built structurally off `DashboardWidget` so it can never
+ * drift from it; distinct from `WidgetContentInput`, which is the UI
+ * drawer's own full-replace request shape and has no `source`/`maintainer`.
+ */
+export type WidgetPersistInput = DistributiveOmit<DashboardWidget, 'id' | 'order' | 'updatedAt'>;
+
+/**
+ * The full `DashboardWidget` shape, as a runtime-checkable schema — needed
+ * by `lib/llm-common-types`'s `widget_updated` broadcast event, which has no
+ * other way to validate an incoming SSE payload's `widget` field. Each
+ * per-type Widget Frontmatter schema covers every field except `id`/
+ * `updatedAt` (store-assigned/derived, never part of frontmatter) *and*
+ * each type's Widget Body field (`content`/`data` — stored below the
+ * frontmatter delimiter, not in it, so the frontmatter schemas never
+ * declare them either).
+ */
+export const DashboardWidgetSchema = z.discriminatedUnion('type', [
+  MarkdownWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    content: z.string(),
+  }),
+  BigNumberWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
+  LineGraphWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    data: z.string(),
+  }),
+  PieGraphWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    data: z.string(),
+  }),
+]);

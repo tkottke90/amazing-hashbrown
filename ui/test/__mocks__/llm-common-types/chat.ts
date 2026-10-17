@@ -75,6 +75,39 @@ export const AfterAgentStateSchema = z.discriminatedUnion('status', [
 ]);
 export type AfterAgentState = z.infer<typeof AfterAgentStateSchema>;
 
+// Hand-duplicated from @tkottke90/amazing-hashbrown-widgets/types'
+// DashboardWidgetSchema, same as every other schema in this mock — that
+// package is ESM-only and can't be `require()`d by this CJS Jest mock as a
+// runtime value (only type-only imports of it, erased at compile time, work
+// elsewhere in this test suite).
+const DashboardWidgetBaseSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  subtitle: z.string().optional(),
+  order: z.number(),
+  source: z.enum(['manual', 'agent', 'system']),
+  maintainer: z.string().optional(),
+  updatedAt: z.string(),
+});
+const DashboardWidgetSchema = z.discriminatedUnion('type', [
+  DashboardWidgetBaseSchema.extend({ type: z.literal('markdown'), content: z.string() }),
+  DashboardWidgetBaseSchema.extend({
+    type: z.literal('big-number'),
+    value: z.number().optional(),
+    unit: z.string().optional(),
+  }),
+  DashboardWidgetBaseSchema.extend({
+    type: z.literal('line-graph'),
+    data: z.string(),
+    color: z.string().optional(),
+  }),
+  DashboardWidgetBaseSchema.extend({
+    type: z.literal('pie-graph'),
+    data: z.string(),
+    colors: z.array(z.string()).optional(),
+  }),
+]);
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task_queue_update'),
@@ -106,6 +139,11 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     type: z.literal('after_agent_state'),
     threadId: z.string(),
     state: AfterAgentStateSchema,
+  }),
+  z.object({
+    type: z.literal('widget_updated'),
+    dashboardId: z.string(),
+    widget: DashboardWidgetSchema,
   }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

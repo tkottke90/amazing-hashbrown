@@ -55,8 +55,12 @@ export async function updateWidgetRaw(dashboardId: string, id: string, raw: stri
   );
 }
 
-/** Any of the 4 widget types' fully-parsed fields (no `id` — validates submitted text, not a stored resource). */
-export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id'>;
+/**
+ * Any of the 4 widget types' fully-parsed fields — no `id` (validates
+ * submitted text, not a stored resource) and no `updatedAt` (derived from a
+ * file's mtime, which validating raw text never reads one of).
+ */
+export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id' | 'updatedAt'>;
 
 export type ValidateWidgetResult =
   { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };

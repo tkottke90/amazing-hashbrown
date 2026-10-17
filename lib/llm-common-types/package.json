@@ -30,6 +30,7 @@
     "test": "mocha"
   },
   "dependencies": {
+    "@tkottke90/amazing-hashbrown-widgets": "*",
     "better-sqlite3": "^12.10.0"
   },
   "peerDependencies": {

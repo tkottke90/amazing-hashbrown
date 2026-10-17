@@ -3,22 +3,30 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
+import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
+import { registerBroadcastClient, unregisterBroadcastClient } from '../../services/broadcast.js';
 import {
   listWidgetsHandler,
   createWidgetHandler,
   updateWidgetHandler,
+  updateWidgetContentHandler,
   updateWidgetRawHandler,
   deleteWidgetHandler,
 } from './dashboards.handlers.js';
 
 describe('routes/v1/dashboards.handlers', () => {
   let root: string;
+  let broadcastedEvents: AppBroadcastEvent[];
+  const captureBroadcast = (event: AppBroadcastEvent) => broadcastedEvents.push(event);
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'dashboards-handlers-test-'));
+    broadcastedEvents = [];
+    registerBroadcastClient(captureBroadcast);
   });
 
   afterEach(() => {
+    unregisterBroadcastClient(captureBroadcast);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -42,7 +50,23 @@ describe('routes/v1/dashboards.handlers', () => {
       if (result.ok) {
         expect(result.data.title).to.equal('Welcome');
         expect(result.data.type).to.equal('markdown');
+        expect(result.data.source).to.equal('manual');
       }
+    });
+
+    it('broadcasts widget_updated on a successful create [unit]', async () => {
+      const result = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'Welcome',
+        content: '# Hello',
+      });
+      if (!result.ok) throw new Error('setup failed');
+      expect(broadcastedEvents).to.have.length(1);
+      expect(broadcastedEvents[0]).to.deep.equal({
+        type: 'widget_updated',
+        dashboardId: 'default',
+        widget: result.data,
+      });
     });
 
     it('rejects a body missing a title with 400 [unit]', async () => {
@@ -166,7 +190,61 @@ describe('routes/v1/dashboards.handlers', () => {
         content: 'b',
       });
       expect(result.ok).to.equal(true);
-      if (result.ok) expect(result.data.title).to.equal('New Title');
+      if (result.ok) {
+        expect(result.data.title).to.equal('New Title');
+        expect(result.data.source).to.equal('manual');
+      }
+    });
+
+    it('broadcasts widget_updated on a successful update [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+      broadcastedEvents = [];
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'markdown',
+        title: 'New Title',
+        content: 'b',
+      });
+      if (!result.ok) throw new Error('setup failed');
+      expect(broadcastedEvents).to.have.length(1);
+      expect(broadcastedEvents[0]).to.deep.equal({
+        type: 'widget_updated',
+        dashboardId: 'default',
+        widget: result.data,
+      });
+    });
+
+    it('preserves an existing maintainer across a full-replace edit (D15) [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'Disk check',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+      const viaContent = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { maintainer: 'check-disk-space.sh' },
+        'agent',
+      );
+      if (!viaContent.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'markdown',
+        title: 'Disk check (renamed)',
+        content: 'b',
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.source).to.equal('manual');
+        expect(result.data.maintainer).to.equal('check-disk-space.sh');
+      }
     });
 
     it('returns 404 for a widget id that does not exist [unit]', async () => {
@@ -211,6 +289,171 @@ describe('routes/v1/dashboards.handlers', () => {
       });
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data).to.deep.include({ value: 2, unit: 'things' });
+    });
+  });
+
+  describe('updateWidgetContentHandler()', () => {
+    it('merges a single field, leaving title/subtitle/other fields untouched [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Disk space',
+        subtitle: 'Root volume',
+        value: 50,
+        unit: '%',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { value: 87 },
+        'agent',
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data).to.deep.include({
+          title: 'Disk space',
+          subtitle: 'Root volume',
+          value: 87,
+          unit: '%',
+        });
+      }
+    });
+
+    it('returns 404 for a widget id that does not exist [unit]', async () => {
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        'nope',
+        { value: 1 },
+        'agent',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it("returns 400 for a value of the wrong type for the target widget's schema [unit]", async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { value: 'not-a-number' } as unknown as Record<string, unknown>,
+        'agent',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('ignores a field that belongs to a different widget type, like the drawer route does [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { colors: ['#111111'] } as unknown as Record<string, unknown>,
+        'agent',
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.type).to.equal('big-number');
+        expect((result.data as { colors?: string[] }).colors).to.equal(undefined);
+      }
+    });
+
+    it('returns 400 for malformed CSV on a line-graph widget [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'line-graph',
+        title: 'CPU',
+        data: 'label,value\n09:00,1',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { data: '09:00,1\n09:05,2' },
+        'agent',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('round-trips maintainer [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'Disk check',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { content: 'b', maintainer: 'check-disk-space.sh' },
+        'agent',
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.maintainer).to.equal('check-disk-space.sh');
+    });
+
+    it('always stamps source "agent", ignoring any source key in the body (ADR-0005) [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'Disk check',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { content: 'b', source: 'manual' } as unknown as Record<string, unknown>,
+        'agent',
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.source).to.equal('agent');
+    });
+
+    it('broadcasts widget_updated on a successful content update [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Disk space',
+        value: 50,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      broadcastedEvents = [];
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { value: 87 },
+        'agent',
+      );
+      if (!result.ok) throw new Error('setup failed');
+      expect(broadcastedEvents).to.have.length(1);
+      expect(broadcastedEvents[0]).to.deep.equal({
+        type: 'widget_updated',
+        dashboardId: 'default',
+        widget: result.data,
+      });
     });
   });
 

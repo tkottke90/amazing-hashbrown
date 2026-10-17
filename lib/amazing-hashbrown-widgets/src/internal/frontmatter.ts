@@ -1,8 +1,8 @@
 /** Frontmatter parse/serialize (via gray-matter) + validation. Pure on strings. */
 
 import matter from 'gray-matter';
-import { z } from 'zod';
 import type { DashboardWidget, DistributiveOmit, MarkdownWidget } from '../types.js';
+import { WidgetFrontmatterSchema } from './widget-field-schemas.js';
 
 export interface ParsedWidgetFile {
   data: Record<string, unknown>;
@@ -21,59 +21,25 @@ export function serialize(frontmatter: Record<string, unknown>, body: string): s
   return matter.stringify(body.replace(/^\n+/, ''), frontmatter);
 }
 
-/** A Color Override value: `#rgb` or `#rrggbb`, case-insensitive. */
-export const HexColorSchema = z
-  .string()
-  .regex(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i, 'Expected a hex color (#rgb or #rrggbb)');
-
-/** Validated shape of a `MarkdownWidget`'s frontmatter block (no `id`/`content` — those come from the filename and body). */
-export const MarkdownWidgetFrontmatterSchema = z.object({
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  type: z.literal('markdown'),
-  order: z.number(),
-});
-
-/** Validated shape of a `BigNumberWidget`'s frontmatter block (no body). */
-export const BigNumberWidgetFrontmatterSchema = z.object({
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  type: z.literal('big-number'),
-  order: z.number(),
-  value: z.number().optional(),
-  unit: z.string().optional(),
-});
-
-/** Validated shape of a `LineGraphWidget`'s frontmatter block (`data` CSV Body is validated separately, see `parseCsvBody`). */
-export const LineGraphWidgetFrontmatterSchema = z.object({
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  type: z.literal('line-graph'),
-  order: z.number(),
-  color: HexColorSchema.optional(),
-});
-
-/** Validated shape of a `PieGraphWidget`'s frontmatter block (`data` CSV Body is validated separately, see `parseCsvBody`). */
-export const PieGraphWidgetFrontmatterSchema = z.object({
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  type: z.literal('pie-graph'),
-  order: z.number(),
-  colors: z.array(HexColorSchema).optional(),
-});
-
-export const WidgetFrontmatterSchema = z.discriminatedUnion('type', [
+export {
+  HexColorSchema,
   MarkdownWidgetFrontmatterSchema,
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
-]);
+  WidgetFrontmatterSchema,
+} from './widget-field-schemas.js';
+export type { MarkdownWidgetFrontmatter, WidgetFrontmatter } from './widget-field-schemas.js';
 
-export type MarkdownWidgetFrontmatter = z.infer<typeof MarkdownWidgetFrontmatterSchema>;
-export type WidgetFrontmatter = z.infer<typeof WidgetFrontmatterSchema>;
-
+/**
+ * No `id` (it doesn't come from a filename here) and no `updatedAt` — this
+ * function only ever sees raw text, never a file path, so it has no mtime to
+ * attach. Callers with a path (`store.ts`) stat the file themselves and add
+ * `updatedAt` on top of this result.
+ */
 export type WidgetFileParseResult =
-  { ok: true; widget: DistributiveOmit<DashboardWidget, 'id'> } | { ok: false; error: string };
+  | { ok: true; widget: DistributiveOmit<DashboardWidget, 'id' | 'updatedAt'> }
+  | { ok: false; error: string };
 
 export interface CsvBodyData {
   labels: string[];
@@ -195,9 +161,10 @@ export function parseWidgetFile(raw: string): WidgetFileParseResult {
  * Throws (with a human-readable message) on any parse or validation
  * failure, including a well-formed file of a different widget type —
  * callers are expected to catch this per-file so one bad file doesn't take
- * down a whole directory listing.
+ * down a whole directory listing. No `updatedAt` — this function never sees
+ * a file path, so it has no mtime to attach (see `WidgetFileParseResult`).
  */
-export function toMarkdownWidget(id: string, raw: string): MarkdownWidget {
+export function toMarkdownWidget(id: string, raw: string): Omit<MarkdownWidget, 'updatedAt'> {
   const result = parseWidgetFile(raw);
   if (!result.ok) {
     throw new Error(result.error);

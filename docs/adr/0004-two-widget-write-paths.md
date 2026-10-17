@@ -1,0 +1,8 @@
+# Two widget write paths: drawer (full replace) vs. content-only merge (Agent/CLI)
+
+The UI drawer's existing `PATCH /api/v1/dashboards/:dashboardId/widgets/:id` always sends every field, so full-replace semantics cost it nothing. An Agent or CLI-driven automation, by contrast, typically knows only the one Widget Payload field it's updating (e.g. a Big Number's `value`) and has no business resupplying — or risking clobbering — a widget's `title`. We leave the drawer's route and handler untouched (adding only broadcast-on-write and stamping `source: 'manual'`) and add a new sibling route, `PATCH /api/v1/dashboards/:dashboardId/widgets/:id/content` (mirroring the existing `.../widgets/:id/raw` sibling), whose handler loads the stored widget, merges in only the supplied Widget Payload fields plus an optional `maintainer`, re-validates the merged whole against the existing per-type schema, persists, and broadcasts. The agent tool calls this route's handler function directly in-process; the CLI calls it over localhost HTTP, since it runs as a separate OS process with no access to in-process state.
+
+## Considered Options
+
+- One endpoint with a schema that conditionally accepts either a full or a partial payload — rejected: this is exactly the "escape-hatch/bag field" shape this repo's own `AGENTS.md` warns rots the moment a second consumer needs something the bag can't express; two small, honest schemas are clearer than one that tries to serve both.
+- Require Agent/CLI callers to always supply the full widget, same as the drawer — rejected: forces every automation script to know and resend a title it has no reason to touch, which is the exact UX problem #315 exists to solve.

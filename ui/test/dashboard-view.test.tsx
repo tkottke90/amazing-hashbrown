@@ -18,11 +18,27 @@ const mockFetch = api.fetchWidgets as jest.MockedFunction<typeof api.fetchWidget
 const RESULTS = [
   {
     status: 'ok' as const,
-    widget: { id: 'a', type: 'markdown' as const, title: 'A', order: 0, content: 'x' },
+    widget: {
+      id: 'a',
+      type: 'markdown' as const,
+      title: 'A',
+      order: 0,
+      source: 'manual' as const,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      content: 'x',
+    },
   },
   {
     status: 'ok' as const,
-    widget: { id: 'b', type: 'markdown' as const, title: 'B', order: 1, content: 'y' },
+    widget: {
+      id: 'b',
+      type: 'markdown' as const,
+      title: 'B',
+      order: 1,
+      source: 'manual' as const,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      content: 'y',
+    },
   },
 ];
 

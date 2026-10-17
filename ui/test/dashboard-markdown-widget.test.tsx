@@ -28,6 +28,8 @@ function widget(overrides: Partial<MarkdownWidgetData> = {}): MarkdownWidgetData
     title: 'My Title',
     subtitle: 'My Subtitle',
     order: 0,
+    source: 'manual',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     content: '# hi',
     ...overrides,
   };

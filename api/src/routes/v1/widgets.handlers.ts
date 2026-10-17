@@ -18,8 +18,12 @@ const ValidateWidgetBodySchema = z.object({
   raw: z.string(),
 });
 
-/** Any of the 4 widget types' fully-parsed fields (no `id` — this validates submitted text, not a stored resource). */
-export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id'>;
+/**
+ * Any of the 4 widget types' fully-parsed fields — no `id` (this validates
+ * submitted text, not a stored resource) and no `updatedAt` (that's derived
+ * from a file's mtime, which this endpoint never reads one of).
+ */
+export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id' | 'updatedAt'>;
 
 export type ValidateWidgetResult =
   { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };
