@@ -41,8 +41,12 @@ A widget's `w`/`h` Widget Metadata fields — its span in grid columns/rows. Cla
 _Avoid_: Dimensions, bounds
 
 **Edit Mode**:
-A dashboard-wide toggle state that enables grid drag (reposition) and resize-handle (Widget Size) interactions on widgets. Other dashboard interactions are disabled while it's active. Purely a client-side UI state — never itself persisted; every dashboard load starts with it off regardless of how the previous session left it.
+A dashboard-wide toggle state that enables grid drag (Reorder) and resize-handle (Widget Size) interactions on widgets. Other dashboard interactions are disabled while it's active. Purely a client-side UI state — never itself persisted; every dashboard load starts with it off regardless of how the previous session left it.
 _Avoid_: Edit state, drag mode
+
+**Reorder**:
+The drag operation that moves a dragged widget to the position of whichever widget it's dropped on; every widget between the dragged widget's old and new slot shifts by one position. Supersedes #179's own "swap" description — a drop never exchanges just two widgets' positions, it's a full splice.
+_Avoid_: Swap, move
 
 **Widget Source**:
 Which of a widget's write surfaces produced its last write: `manual` (the UI drawer), `agent` (an agent's conversational tool call, or a CLI-driven automation script — both count as the same source), or the reserved `system` (application-collected metadata nobody asked for; no producer exists yet — tracked by #320). A widget whose file predates this field reads as `manual`. Set by the calling code only — never a field the request body or an agent's tool-call arguments can supply.
