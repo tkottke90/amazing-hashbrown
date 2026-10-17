@@ -1,15 +1,16 @@
 import { request } from '@/utils/fetch.utils';
-import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+import type {
+  DashboardWidget,
+  DistributiveOmit,
+  WidgetContentInput,
+  WidgetLoadResult,
+} from '@tkottke90/amazing-hashbrown-widgets/types';
 
 // Only one dashboard exists so far — see the design doc's D4/D16. The UI
 // never passes anything else; multi-dashboard selection is future scope.
 export const DEFAULT_DASHBOARD_ID = 'default';
 
-export interface WidgetContentInput {
-  title: string;
-  subtitle?: string;
-  content: string;
-}
+export type { WidgetContentInput };
 
 export async function fetchWidgets(dashboardId: string): Promise<WidgetLoadResult[]> {
   return request<WidgetLoadResult[]>(
@@ -54,13 +55,8 @@ export async function updateWidgetRaw(dashboardId: string, id: string, raw: stri
   );
 }
 
-export interface ValidatedWidgetFields {
-  title: string;
-  subtitle?: string;
-  type: 'markdown';
-  order: number;
-  content: string;
-}
+/** Any of the 4 widget types' fully-parsed fields (no `id` — validates submitted text, not a stored resource). */
+export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id'>;
 
 export type ValidateWidgetResult =
   { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };

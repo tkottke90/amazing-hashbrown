@@ -59,15 +59,15 @@ describe('WidgetDrawer', () => {
     jest.clearAllMocks();
   });
 
-  it('add mode renders empty title/subtitle/content fields, no type selector [unit]', () => {
+  it('add mode defaults to Markdown, with a type selector and empty title/subtitle/content fields [unit]', () => {
     renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+    expect(screen.getByTestId('widget-type-picker')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('');
     expect(screen.getByLabelText('Subtitle')).toHaveValue('');
     expect(screen.getByLabelText('Content (Markdown)')).toHaveValue('');
-    expect(screen.queryByText(/type/i)).not.toBeInTheDocument();
   });
 
-  it('add mode calls createWidget with the entered fields and onSaved on success [unit]', async () => {
+  it('add mode calls createWidget with the entered fields (including type) and onSaved on success [unit]', async () => {
     mockCreate.mockResolvedValue({ ...WIDGET, id: 'new' });
     const onSaved = jest.fn();
     renderDrawer(<WidgetDrawer mode="add" onSaved={onSaved} trigger={<button>Add</button>} />);
@@ -78,6 +78,7 @@ describe('WidgetDrawer', () => {
 
     await waitFor(() =>
       expect(mockCreate).toHaveBeenCalledWith('default', {
+        type: 'markdown',
         title: 'New widget',
         subtitle: undefined,
         content: 'body',
@@ -111,6 +112,8 @@ describe('WidgetDrawer', () => {
     expect(screen.getByLabelText('Subtitle')).toHaveValue('Original subtitle');
     expect(screen.getByLabelText('Content (Markdown)')).toHaveValue('Original content');
     expect(screen.queryByTestId('widget-drawer-raw-editor')).not.toBeInTheDocument();
+    // Type is immutable after creation (D12) — no picker in edit mode.
+    expect(screen.queryByTestId('widget-type-picker')).not.toBeInTheDocument();
   });
 
   it('edit mode calls updateWidget with the widget id when saving from Form [unit]', async () => {
@@ -130,6 +133,7 @@ describe('WidgetDrawer', () => {
 
     await waitFor(() =>
       expect(mockUpdate).toHaveBeenCalledWith('default', 'w1', {
+        type: 'markdown',
         title: 'Changed',
         subtitle: 'Original subtitle',
         content: 'Original content',
@@ -311,5 +315,125 @@ describe('WidgetDrawer', () => {
 
     expect(screen.queryByTestId('widget-drawer-raw-editor')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('Original title');
+  });
+
+  describe('type picker and per-type field sets', () => {
+    it('the type picker offers all 4 types and swaps the field set on selection [unit]', async () => {
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
+
+      expect(screen.getByLabelText('Value')).toBeInTheDocument();
+      expect(screen.getByLabelText('Unit')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Content (Markdown)')).not.toBeInTheDocument();
+    });
+
+    it('switching to Line Graph shows the color override field and the CSV editor [unit]', async () => {
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));
+
+      expect(screen.getByLabelText('Color override (hex, optional)')).toBeInTheDocument();
+      expect(screen.getByTestId('widget-drawer-csv-editor')).toBeInTheDocument();
+    });
+
+    it('switching to Pie Graph shows the colors override field and the CSV editor [unit]', async () => {
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Pie Graph' }));
+
+      expect(
+        screen.getByLabelText('Color overrides (comma-separated hex, optional)'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('widget-drawer-csv-editor')).toBeInTheDocument();
+    });
+
+    it('creates a big-number widget with a blank value sent as undefined [unit]', async () => {
+      mockCreate.mockResolvedValue({ id: 'new', type: 'big-number', title: 'Count', order: 0 });
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
+      fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Count' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(mockCreate).toHaveBeenCalledWith('default', {
+          type: 'big-number',
+          title: 'Count',
+          subtitle: undefined,
+          value: undefined,
+          unit: undefined,
+        }),
+      );
+    });
+
+    it('creates a big-number widget with a numeric value [unit]', async () => {
+      mockCreate.mockResolvedValue({ id: 'new', type: 'big-number', title: 'Count', order: 0 });
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
+      fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Count' } });
+      fireEvent.input(screen.getByLabelText('Value'), { target: { value: '42' } });
+      fireEvent.input(screen.getByLabelText('Unit'), { target: { value: 'things' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(mockCreate).toHaveBeenCalledWith('default', {
+          type: 'big-number',
+          title: 'Count',
+          subtitle: undefined,
+          value: 42,
+          unit: 'things',
+        }),
+      );
+    });
+
+    it("a line-graph widget's Save validates the CSV before creating, and blocks on a validation failure [unit]", async () => {
+      mockValidate.mockResolvedValue({ ok: false, error: 'bad csv' });
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));
+      fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Response time' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockValidate).toHaveBeenCalledTimes(1));
+      expect(screen.getByText('bad csv')).toBeInTheDocument();
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('a line-graph widget creates once the CSV validates successfully [unit]', async () => {
+      mockValidate.mockResolvedValue({
+        ok: true,
+        widget: {
+          title: 'Response time',
+          type: 'line-graph',
+          order: 0,
+          data: 'label,value\n09:00,120',
+        },
+      });
+      mockCreate.mockResolvedValue({
+        id: 'new',
+        type: 'line-graph',
+        title: 'Response time',
+        order: 0,
+        data: 'label,value\n09:00,120',
+      });
+      const onSaved = jest.fn();
+      renderDrawer(<WidgetDrawer mode="add" onSaved={onSaved} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));
+      fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Response time' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+      expect(onSaved).toHaveBeenCalled();
+    });
   });
 });

@@ -3,11 +3,18 @@ import { useEffect, useRef } from 'preact/hooks';
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import type { EditorView } from '@codemirror/view';
 import type { JSX } from 'preact';
-import type { WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
 import {
   createWidget,
@@ -15,9 +22,11 @@ import {
   updateWidgetRaw,
   validateWidgetRaw,
   DEFAULT_DASHBOARD_ID,
+  type ValidatedWidgetFields,
   type ValidateWidgetResult,
 } from '@/services/dashboard-api';
-import { serializeWidgetFile } from './serialize-widget-file';
+import { serializeWidgetFile, type WidgetFrontmatterInput } from './serialize-widget-file';
+import type { WidgetContentInput } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 export type WidgetDrawerMode = 'add' | 'edit';
 
@@ -25,13 +34,19 @@ export type WidgetDrawerProps =
   | { mode: 'add'; onSaved: () => void; trigger: JSX.Element }
   | { mode: 'edit'; target: WidgetLoadResult; onSaved: () => void; trigger: JSX.Element };
 
-// Add/Edit for a Markdown widget — the only type this slice supports
-// creating or editing. Edit mode adds a Form/Raw tab toggle: Form is the
-// structured title/subtitle/content fields (unchanged), Raw is the widget's
-// entire file (frontmatter + body) edited directly via CodeMirror, gated
-// behind manual validation (see the design doc's validation state machine).
-// Raw also replaces the old standalone raw-recovery drawer — a widget whose
-// file failed to parse opens straight onto Raw with Form unreachable.
+function assertNeverWidgetType(type: never): never {
+  throw new Error(`Unhandled widget type: ${type}`);
+}
+
+// Add/Edit for any widget type. Add gains a type picker (Select, mirroring
+// mcp-server-drawer.tsx's transport picker) that chooses which field set
+// renders below it; type is immutable after creation (D12), so Edit mode
+// never shows the picker — its field set is fixed from the loaded widget's
+// own type. Edit mode also keeps the Form/Raw tab toggle: Form is the
+// structured, type-specific fields, Raw is the widget's entire file
+// (frontmatter + body) edited directly via CodeMirror, gated behind manual
+// validation (see the design doc's validation state machine). A widget
+// whose file failed to parse opens straight onto Raw with Form unreachable.
 export function WidgetDrawer(props: WidgetDrawerProps) {
   // Re-open counter, same pattern as mcp-server-drawer.tsx: dialog children
   // stay mounted between opens, so transient state needs an explicit reset.
@@ -69,21 +84,50 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   const widgetId = target ? (target.status === 'ok' ? target.widget.id : target.id) : undefined;
   const instanceKey = mode === 'edit' && widgetId ? `edit-${widgetId}` : 'add';
 
+  const widgetType = useSignal<DashboardWidget['type']>(initialWidget?.type ?? 'markdown');
   const title = useSignal(initialWidget?.title ?? '');
   const subtitle = useSignal(initialWidget?.subtitle ?? '');
-  const content = useSignal(initialWidget?.content ?? '');
   const order = useSignal(initialWidget?.order ?? 0);
+
+  const content = useSignal(initialWidget?.type === 'markdown' ? initialWidget.content : '');
+  const value = useSignal(
+    initialWidget?.type === 'big-number' && initialWidget.value !== undefined
+      ? String(initialWidget.value)
+      : '',
+  );
+  const unit = useSignal(initialWidget?.type === 'big-number' ? (initialWidget.unit ?? '') : '');
+  const color = useSignal(initialWidget?.type === 'line-graph' ? (initialWidget.color ?? '') : '');
+  const colorsText = useSignal(
+    initialWidget?.type === 'pie-graph' ? (initialWidget.colors?.join(',') ?? '') : '',
+  );
+  const csvData = useSignal(
+    initialWidget?.type === 'line-graph' || initialWidget?.type === 'pie-graph'
+      ? initialWidget.data
+      : '',
+  );
+
+  function widgetToFrontmatterInput(
+    widget: DashboardWidget | ValidatedWidgetFields,
+  ): WidgetFrontmatterInput {
+    const base = { title: widget.title, subtitle: widget.subtitle, order: widget.order };
+    switch (widget.type) {
+      case 'markdown':
+        return { ...base, type: 'markdown', content: widget.content };
+      case 'big-number':
+        return { ...base, type: 'big-number', value: widget.value, unit: widget.unit };
+      case 'line-graph':
+        return { ...base, type: 'line-graph', data: widget.data, color: widget.color };
+      case 'pie-graph':
+        return { ...base, type: 'pie-graph', data: widget.data, colors: widget.colors };
+      default:
+        return assertNeverWidgetType(widget);
+    }
+  }
 
   function initialRawText(): string {
     if (!target) return '';
     if (target.status === 'error') return target.raw;
-    return serializeWidgetFile({
-      title: target.widget.title,
-      subtitle: target.widget.subtitle,
-      type: 'markdown',
-      order: target.widget.order,
-      content: target.widget.content,
-    });
+    return serializeWidgetFile(widgetToFrontmatterInput(target.widget));
   }
 
   const tab = useSignal<Tab>(loadFailed ? 'raw' : 'form');
@@ -91,25 +135,44 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   const rawGeneration = useSignal(0);
   const rawDirty = useSignal(false);
   const rawViewRef = useRef<EditorView | null>(null);
+
+  const csvGeneration = useSignal(0);
+  const csvDirty = useSignal(false);
+  const csvViewRef = useRef<EditorView | null>(null);
+
   const lastChecked = useSignal<LastChecked | undefined>(undefined);
   const isValidating = useSignal(false);
 
   const isSaving = useSignal(false);
   const saveError = useSignal<string | null>(null);
 
-  // Fires on mount and again on every reopen — resets both the seeded form
-  // fields and every bit of Raw/validation state, so a widget edited then
-  // abandoned mid-Raw-edit doesn't leak into the next open.
+  // Fires on mount and again on every reopen — resets every seeded form
+  // field and all Raw/CSV/validation state, so a widget edited (or a new
+  // widget half-filled-in) then abandoned doesn't leak into the next open.
   const openedAt = openCount.value;
   useEffect(() => {
-    if (mode !== 'edit') return;
+    widgetType.value = initialWidget?.type ?? 'markdown';
     title.value = initialWidget?.title ?? '';
     subtitle.value = initialWidget?.subtitle ?? '';
-    content.value = initialWidget?.content ?? '';
     order.value = initialWidget?.order ?? 0;
+    content.value = initialWidget?.type === 'markdown' ? initialWidget.content : '';
+    value.value =
+      initialWidget?.type === 'big-number' && initialWidget.value !== undefined
+        ? String(initialWidget.value)
+        : '';
+    unit.value = initialWidget?.type === 'big-number' ? (initialWidget.unit ?? '') : '';
+    color.value = initialWidget?.type === 'line-graph' ? (initialWidget.color ?? '') : '';
+    colorsText.value =
+      initialWidget?.type === 'pie-graph' ? (initialWidget.colors?.join(',') ?? '') : '';
+    csvData.value =
+      initialWidget?.type === 'line-graph' || initialWidget?.type === 'pie-graph'
+        ? initialWidget.data
+        : '';
     rawText.value = initialRawText();
     rawGeneration.value++;
     rawDirty.value = false;
+    csvGeneration.value++;
+    csvDirty.value = false;
     lastChecked.value = undefined;
     tab.value = loadFailed ? 'raw' : 'form';
     saveError.value = null;
@@ -119,21 +182,96 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     return rawViewRef.current?.state.doc.toString() ?? rawText.value;
   }
 
+  function readCsvText(): string {
+    return csvViewRef.current?.state.doc.toString() ?? csvData.value;
+  }
+
+  function parsedValue(): number | undefined {
+    const trimmed = value.value.trim();
+    return trimmed === '' ? undefined : Number(trimmed);
+  }
+
+  function parsedColors(): string[] | undefined {
+    const trimmed = colorsText.value.trim();
+    if (trimmed === '') return undefined;
+    return trimmed
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+  }
+
+  function typeSpecificContentFields() {
+    switch (widgetType.value) {
+      case 'markdown':
+        return { type: 'markdown' as const, content: content.value };
+      case 'big-number':
+        return {
+          type: 'big-number' as const,
+          value: parsedValue(),
+          unit: unit.value.trim() || undefined,
+        };
+      case 'line-graph':
+        return {
+          type: 'line-graph' as const,
+          data: readCsvText(),
+          color: color.value.trim() || undefined,
+        };
+      case 'pie-graph':
+        return { type: 'pie-graph' as const, data: readCsvText(), colors: parsedColors() };
+      default:
+        return assertNeverWidgetType(widgetType.value);
+    }
+  }
+
+  function buildWidgetContentInput(): WidgetContentInput {
+    return {
+      title: title.value.trim(),
+      subtitle: subtitle.value.trim() || undefined,
+      ...typeSpecificContentFields(),
+    };
+  }
+
+  function buildFrontmatterInput(): WidgetFrontmatterInput {
+    return {
+      title: title.value.trim(),
+      subtitle: subtitle.value.trim() || undefined,
+      order: order.value,
+      ...typeSpecificContentFields(),
+    };
+  }
+
+  // Line/Pie's CSV body (and any color override) needs a server-side dry
+  // run before it can be saved (design doc §5.1) — Markdown/Big Number
+  // have nothing that needs one (free text, or a plain number input the
+  // browser already constrains), so they save immediately like before.
+  function needsValidationGate(): boolean {
+    return (
+      tab.value === 'raw' || widgetType.value === 'line-graph' || widgetType.value === 'pie-graph'
+    );
+  }
+
+  function candidateRawText(): string {
+    if (tab.value === 'raw') return readRawText();
+    return serializeWidgetFile(buildFrontmatterInput());
+  }
+
   async function runValidate(text: string): Promise<boolean> {
     isValidating.value = true;
     try {
       const result = await validateWidgetRaw({
         dashboardId: DEFAULT_DASHBOARD_ID,
-        widgetId: widgetId as string,
+        widgetId: widgetId ?? 'new',
         raw: text,
       });
       lastChecked.value = { text, result };
       rawDirty.value = false;
+      csvDirty.value = false;
       return result.ok;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to validate';
       lastChecked.value = { text, result: { ok: false, error: message } };
       rawDirty.value = false;
+      csvDirty.value = false;
       return false;
     } finally {
       isValidating.value = false;
@@ -144,7 +282,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   // (same text as last time, whatever the outcome) reuses it for free;
   // anything else (edited since) stays locked pending an explicit Validate.
   async function ensureValidated(): Promise<boolean> {
-    const currentText = readRawText();
+    if (!needsValidationGate()) return true;
+    const currentText = candidateRawText();
     const checked = lastChecked.value;
     if (checked === undefined) return runValidate(currentText);
     if (checked.text === currentText) return checked.result.ok;
@@ -152,24 +291,46 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   }
 
   async function handleValidateClick() {
-    const currentText = readRawText();
+    const currentText = candidateRawText();
     if (lastChecked.value && lastChecked.value.text === currentText) return;
     await runValidate(currentText);
   }
 
   function enterRaw() {
     if (tab.value === 'raw') return;
-    rawText.value = serializeWidgetFile({
-      title: title.value.trim(),
-      subtitle: subtitle.value.trim() || undefined,
-      type: 'markdown',
-      order: order.value,
-      content: content.value,
-    });
+    rawText.value = serializeWidgetFile(buildFrontmatterInput());
     rawGeneration.value++;
     rawDirty.value = false;
     lastChecked.value = undefined;
     tab.value = 'raw';
+  }
+
+  function applyParsedWidgetToFormFields(widget: ValidatedWidgetFields) {
+    widgetType.value = widget.type;
+    title.value = widget.title;
+    subtitle.value = widget.subtitle ?? '';
+    order.value = widget.order;
+    switch (widget.type) {
+      case 'markdown':
+        content.value = widget.content;
+        break;
+      case 'big-number':
+        value.value = widget.value !== undefined ? String(widget.value) : '';
+        unit.value = widget.unit ?? '';
+        break;
+      case 'line-graph':
+        csvData.value = widget.data;
+        csvGeneration.value++;
+        color.value = widget.color ?? '';
+        break;
+      case 'pie-graph':
+        csvData.value = widget.data;
+        csvGeneration.value++;
+        colorsText.value = widget.colors?.join(',') ?? '';
+        break;
+      default:
+        assertNeverWidgetType(widget);
+    }
   }
 
   async function handleFormTabClick() {
@@ -177,10 +338,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     if (!(await ensureValidated())) return;
     const checked = lastChecked.value;
     if (checked?.result.ok) {
-      title.value = checked.result.widget.title;
-      subtitle.value = checked.result.widget.subtitle ?? '';
-      content.value = checked.result.widget.content;
-      order.value = checked.result.widget.order;
+      applyParsedWidgetToFormFields(checked.result.widget);
     }
     tab.value = 'form';
   }
@@ -204,20 +362,15 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       return;
     }
 
+    if (!(await ensureValidated())) return;
+
     isSaving.value = true;
     try {
+      const input = buildWidgetContentInput();
       if (mode === 'add') {
-        await createWidget(DEFAULT_DASHBOARD_ID, {
-          title: title.value.trim(),
-          subtitle: subtitle.value.trim() || undefined,
-          content: content.value,
-        });
+        await createWidget(DEFAULT_DASHBOARD_ID, input);
       } else if (widgetId) {
-        await updateWidget(DEFAULT_DASHBOARD_ID, widgetId, {
-          title: title.value.trim(),
-          subtitle: subtitle.value.trim() || undefined,
-          content: content.value,
-        });
+        await updateWidget(DEFAULT_DASHBOARD_ID, widgetId, input);
       }
       onSaved();
       close();
@@ -255,6 +408,34 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
 
       {tab.value === 'form' ? (
         <>
+          {mode === 'add' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${instanceKey}-type`}>Type</Label>
+              <Select
+                value={widgetType.value}
+                onValueChange={(v) => (widgetType.value = v as DashboardWidget['type'])}
+              >
+                <SelectTrigger id={`${instanceKey}-type`} data-testid="widget-type-picker">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="markdown" data-testid="widget-type-option-markdown">
+                    Markdown
+                  </SelectItem>
+                  <SelectItem value="big-number" data-testid="widget-type-option-big-number">
+                    Big Number
+                  </SelectItem>
+                  <SelectItem value="line-graph" data-testid="widget-type-option-line-graph">
+                    Line Graph
+                  </SelectItem>
+                  <SelectItem value="pie-graph" data-testid="widget-type-option-pie-graph">
+                    Pie Graph
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <Label htmlFor={`${instanceKey}-title`}>Title</Label>
             <Input
@@ -272,15 +453,106 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
               onInput={(e) => (subtitle.value = (e.target as HTMLInputElement).value)}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${instanceKey}-content`}>Content (Markdown)</Label>
-            <Textarea
-              id={`${instanceKey}-content`}
-              rows={10}
-              value={content.value}
-              onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
-            />
-          </div>
+
+          {widgetType.value === 'markdown' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${instanceKey}-content`}>Content (Markdown)</Label>
+              <Textarea
+                id={`${instanceKey}-content`}
+                rows={10}
+                value={content.value}
+                onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
+              />
+            </div>
+          )}
+
+          {widgetType.value === 'big-number' && (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-value`}>Value</Label>
+                <Input
+                  id={`${instanceKey}-value`}
+                  type="number"
+                  value={value.value}
+                  onInput={(e) => (value.value = (e.target as HTMLInputElement).value)}
+                  placeholder="Leave blank for N/A"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-unit`}>Unit</Label>
+                <Input
+                  id={`${instanceKey}-unit`}
+                  value={unit.value}
+                  onInput={(e) => (unit.value = (e.target as HTMLInputElement).value)}
+                />
+              </div>
+            </>
+          )}
+
+          {widgetType.value === 'line-graph' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${instanceKey}-color`}>Color override (hex, optional)</Label>
+              <Input
+                id={`${instanceKey}-color`}
+                data-testid="widget-drawer-color-input"
+                value={color.value}
+                onInput={(e) => (color.value = (e.target as HTMLInputElement).value)}
+                placeholder="#3366ff"
+              />
+            </div>
+          )}
+
+          {widgetType.value === 'pie-graph' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${instanceKey}-colors`}>
+                Color overrides (comma-separated hex, optional)
+              </Label>
+              <Input
+                id={`${instanceKey}-colors`}
+                data-testid="widget-drawer-color-input"
+                value={colorsText.value}
+                onInput={(e) => (colorsText.value = (e.target as HTMLInputElement).value)}
+                placeholder="#3366ff,#ff6633"
+              />
+            </div>
+          )}
+
+          {(widgetType.value === 'line-graph' || widgetType.value === 'pie-graph') && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <Label>CSV data (label,value)</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="widget-drawer-validate"
+                  disabled={isValidating.value}
+                  onClick={() => void handleValidateClick()}
+                >
+                  {isValidating.value ? 'Validating…' : 'Validate'}
+                </Button>
+              </div>
+              <div
+                data-testid="widget-drawer-csv-editor"
+                className="h-40 overflow-hidden rounded-md border border-border"
+              >
+                <CodeEditor
+                  key={csvGeneration.value}
+                  path={`${instanceKey}.csv`}
+                  initialContent={csvData.value}
+                  dirty={csvDirty}
+                  onReady={(view) => {
+                    csvViewRef.current = view;
+                  }}
+                />
+              </div>
+              {lastChecked.value && !lastChecked.value.result.ok && (
+                <p data-testid="widget-drawer-raw-error" className="text-sm text-destructive">
+                  {lastChecked.value.result.error}
+                </p>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <div className="flex flex-col gap-2">

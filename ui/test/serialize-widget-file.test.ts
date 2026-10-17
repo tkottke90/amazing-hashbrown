@@ -58,4 +58,47 @@ describe('serializeWidgetFile', () => {
     });
     expect(raw.endsWith('---\n\nBody after blank lines')).toBe(true);
   });
+
+  it(`writes a big-number widget with value/unit in frontmatter and no body ${TestTypes.UNIT}`, () => {
+    const raw = serializeWidgetFile({
+      title: 'Count',
+      type: 'big-number',
+      order: 0,
+      value: 5,
+      unit: 'things',
+    });
+    expect(raw).toContain('value: 5');
+    expect(raw).toContain('unit: "things"');
+    expect(raw.endsWith('---\n\n')).toBe(true);
+  });
+
+  it(`omits value/unit lines entirely when absent ${TestTypes.UNIT}`, () => {
+    const raw = serializeWidgetFile({ title: 'Count', type: 'big-number', order: 0 });
+    expect(raw).not.toContain('value:');
+    expect(raw).not.toContain('unit:');
+  });
+
+  it(`writes a line-graph widget's CSV Body as the file body ${TestTypes.UNIT}`, () => {
+    const raw = serializeWidgetFile({
+      title: 'Response time',
+      type: 'line-graph',
+      order: 0,
+      data: 'label,value\n09:00,120',
+      color: '#ff0000',
+    });
+    expect(raw).toContain('color: "#ff0000"');
+    expect(raw.endsWith('---\n\nlabel,value\n09:00,120')).toBe(true);
+  });
+
+  it(`writes a pie-graph widget's colors override as a JSON array line ${TestTypes.UNIT}`, () => {
+    const raw = serializeWidgetFile({
+      title: 'Agent usage',
+      type: 'pie-graph',
+      order: 0,
+      data: 'label,value\nQuery,30',
+      colors: ['#111111', '#222222'],
+    });
+    expect(raw).toContain('colors: ["#111111","#222222"]');
+    expect(raw.endsWith('---\n\nlabel,value\nQuery,30')).toBe(true);
+  });
 });

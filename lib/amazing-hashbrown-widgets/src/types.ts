@@ -29,8 +29,42 @@ export interface MarkdownWidget extends WidgetBase {
   content: string;
 }
 
-export type DashboardWidget = MarkdownWidget;
-// Future slices add: | BigNumberWidget | LineGraphWidget | PieGraphWidget
+export interface BigNumberWidget extends WidgetBase {
+  type: 'big-number';
+  /** Omitted (not `0`) when there's no value yet — UI renders "N/A". */
+  value?: number;
+  unit?: string;
+}
+
+export interface LineGraphWidget extends WidgetBase {
+  type: 'line-graph';
+  /** CSV Body: a `label,value` header row followed by ≥1 data row. */
+  data: string;
+  /** Color Override: hex string, replaces the default palette's line color. */
+  color?: string;
+}
+
+export interface PieGraphWidget extends WidgetBase {
+  type: 'pie-graph';
+  /** CSV Body: a `label,value` header row followed by ≥1 data row. */
+  data: string;
+  /** Color Override: hex strings, applied positionally to parsed labels, cycling if shorter. */
+  colors?: string[];
+}
+
+export type DashboardWidget = MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget;
+
+/**
+ * `Omit<T, K>`, applied per-member when `T` is a union, instead of
+ * collapsing to the members' common keys first (the built-in `Omit`'s
+ * `keyof T` computes an intersection over a union, which silently drops
+ * every field that isn't present on *every* variant — exactly the
+ * type-specific fields, like `content`/`data`/`value`, that make
+ * `DashboardWidget` a discriminated union in the first place). Use this
+ * instead of `Omit` anywhere a widget's own `type` field must stay
+ * narrowable per variant.
+ */
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 /** A dashboard — currently always the single hardcoded `default` instance. */
 export interface Dashboard {
@@ -46,3 +80,15 @@ export interface Dashboard {
 export type WidgetLoadResult =
   | { status: 'ok'; widget: DashboardWidget }
   | { status: 'error'; id: string; raw: string; error: string };
+
+/**
+ * The create/update payload for each widget type — a discriminated union on
+ * `type` so the API, store, and UI drawer all validate/branch the same way.
+ * Shared across all variants: `title`/`subtitle?`. `order`/`id` are never
+ * part of this input — the store assigns/preserves those itself.
+ */
+export type WidgetContentInput =
+  | { type: 'markdown'; title: string; subtitle?: string; content: string }
+  | { type: 'big-number'; title: string; subtitle?: string; value?: number; unit?: string }
+  | { type: 'line-graph'; title: string; subtitle?: string; data: string; color?: string }
+  | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] };

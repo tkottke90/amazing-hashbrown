@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import * as frontmatter from '../src/internal/frontmatter.js';
 import * as store from '../src/store.js';
 
 async function tmpRoot(): Promise<string> {
@@ -17,8 +18,12 @@ describe('store', () => {
 
     it('returns created widgets sorted by order', async () => {
       const root = await tmpRoot();
-      await store.createWidget(root, 'default', { title: 'First', content: 'a' });
-      await store.createWidget(root, 'default', { title: 'Second', content: 'b' });
+      await store.createWidget(root, 'default', { type: 'markdown', title: 'First', content: 'a' });
+      await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Second',
+        content: 'b',
+      });
       const results = await store.listWidgets(root, 'default');
       expect(results).to.have.length(2);
       expect(results.every((r) => r.status === 'ok')).to.equal(true);
@@ -28,7 +33,7 @@ describe('store', () => {
 
     it('surfaces a malformed file as an error entry, appended after ok entries, without throwing', async () => {
       const root = await tmpRoot();
-      await store.createWidget(root, 'default', { title: 'Good', content: 'a' });
+      await store.createWidget(root, 'default', { type: 'markdown', title: 'Good', content: 'a' });
       const dir = path.join(root, 'default');
       await fs.writeFile(
         path.join(dir, 'broken.md'),
@@ -42,12 +47,37 @@ describe('store', () => {
       expect(results[1]).to.deep.include({ status: 'error', id: 'broken' });
       expect((results[1] as { error: string }).error).to.be.a('string');
     });
+
+    it('round-trips one widget of each of the 4 types, sorted by order', async () => {
+      const root = await tmpRoot();
+      await store.createWidget(root, 'default', {
+        type: 'pie-graph',
+        title: 'Pie',
+        data: 'label,value\nA,1\nB,2',
+      });
+      await store.createWidget(root, 'default', { type: 'markdown', title: 'Md', content: 'hi' });
+      await store.createWidget(root, 'default', { type: 'big-number', title: 'Num', value: 5 });
+      await store.createWidget(root, 'default', {
+        type: 'line-graph',
+        title: 'Line',
+        data: 'label,value\n09:00,1',
+      });
+
+      const results = await store.listWidgets(root, 'default');
+      expect(results).to.have.length(4);
+      expect(results.every((r) => r.status === 'ok')).to.equal(true);
+      const orders = results.map((r) => (r.status === 'ok' ? r.widget.order : null));
+      expect(orders).to.deep.equal([0, 1, 2, 3]);
+      const types = results.map((r) => (r.status === 'ok' ? r.widget.type : null));
+      expect(types).to.deep.equal(['pie-graph', 'markdown', 'big-number', 'line-graph']);
+    });
   });
 
   describe('createWidget', () => {
     it('slugifies the title into the filename', async () => {
       const root = await tmpRoot();
       const widget = await store.createWidget(root, 'default', {
+        type: 'markdown',
         title: 'Getting Started!',
         content: 'x',
       });
@@ -57,8 +87,16 @@ describe('store', () => {
 
     it('resolves a filename collision with a UUID-suffixed slug', async () => {
       const root = await tmpRoot();
-      const first = await store.createWidget(root, 'default', { title: 'Tip', content: 'a' });
-      const second = await store.createWidget(root, 'default', { title: 'Tip', content: 'b' });
+      const first = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        content: 'a',
+      });
+      const second = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        content: 'b',
+      });
       expect(first.id).to.equal('tip');
       expect(second.id).to.match(/^tip-[0-9a-f]{8}$/);
       expect(second.id).to.not.equal(first.id);
@@ -66,10 +104,85 @@ describe('store', () => {
 
     it('assigns sequential order to successive widgets', async () => {
       const root = await tmpRoot();
-      const a = await store.createWidget(root, 'default', { title: 'A', content: 'x' });
-      const b = await store.createWidget(root, 'default', { title: 'B', content: 'y' });
+      const a = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'x',
+      });
+      const b = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'B',
+        content: 'y',
+      });
       expect(a.order).to.equal(0);
       expect(b.order).to.equal(1);
+    });
+
+    it('creates a big-number widget with an empty body and value/unit in frontmatter', async () => {
+      const root = await tmpRoot();
+      const widget = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Messages',
+        value: 12547,
+        unit: 'messages',
+      });
+      expect(widget).to.deep.include({ type: 'big-number', value: 12547, unit: 'messages' });
+
+      const raw = await fs.readFile(path.join(root, 'default', `${widget.id}.md`), 'utf8');
+      const { data, body } = frontmatter.parse(raw);
+      expect(data).to.deep.include({ value: 12547, unit: 'messages' });
+      expect(body.trim()).to.equal('');
+    });
+
+    it('creates a big-number widget with no value as absent, not zero', async () => {
+      const root = await tmpRoot();
+      const widget = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Open questions',
+      });
+      expect(widget.value).to.equal(undefined);
+
+      const raw = await fs.readFile(path.join(root, 'default', `${widget.id}.md`), 'utf8');
+      const { data } = frontmatter.parse(raw);
+      expect(data).to.not.have.property('value');
+    });
+
+    it('creates a line-graph widget with its CSV Body stored as the file body', async () => {
+      const root = await tmpRoot();
+      const csv = 'label,value\n09:00,120\n09:05,135';
+      const widget = await store.createWidget(root, 'default', {
+        type: 'line-graph',
+        title: 'Response time',
+        data: csv,
+        color: '#ff0000',
+      });
+      expect(widget).to.deep.include({ type: 'line-graph', data: csv, color: '#ff0000' });
+
+      const raw = await fs.readFile(path.join(root, 'default', `${widget.id}.md`), 'utf8');
+      const { data, body } = frontmatter.parse(raw);
+      expect(data).to.deep.include({ color: '#ff0000' });
+      expect(body.trim()).to.equal(csv);
+    });
+
+    it('creates a pie-graph widget with its CSV Body stored as the file body', async () => {
+      const root = await tmpRoot();
+      const csv = 'label,value\nQuery,30\nAnalysis,25';
+      const widget = await store.createWidget(root, 'default', {
+        type: 'pie-graph',
+        title: 'Agent usage',
+        data: csv,
+        colors: ['#111111', '#222222'],
+      });
+      expect(widget).to.deep.include({
+        type: 'pie-graph',
+        data: csv,
+        colors: ['#111111', '#222222'],
+      });
+
+      const raw = await fs.readFile(path.join(root, 'default', `${widget.id}.md`), 'utf8');
+      const { data, body } = frontmatter.parse(raw);
+      expect(data).to.deep.include({ colors: ['#111111', '#222222'] });
+      expect(body.trim()).to.equal(csv);
     });
   });
 
@@ -77,10 +190,12 @@ describe('store', () => {
     it('updates content without renaming the file or changing order', async () => {
       const root = await tmpRoot();
       const created = await store.createWidget(root, 'default', {
+        type: 'markdown',
         title: 'Original',
         content: 'x',
       });
       const updated = await store.updateWidget(root, 'default', created.id, {
+        type: 'markdown',
         title: 'Changed Title',
         content: 'new content',
       });
@@ -95,18 +210,57 @@ describe('store', () => {
     it('throws WidgetNotFoundError for a missing id', async () => {
       const root = await tmpRoot();
       try {
-        await store.updateWidget(root, 'default', 'does-not-exist', { title: 'x', content: 'y' });
+        await store.updateWidget(root, 'default', 'does-not-exist', {
+          type: 'markdown',
+          title: 'x',
+          content: 'y',
+        });
         expect.fail('expected updateWidget to throw');
       } catch (err) {
         expect(err).to.be.instanceOf(store.WidgetNotFoundError);
       }
+    });
+
+    it('updates a big-number widget value/unit', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      const updated = await store.updateWidget(root, 'default', created.id, {
+        type: 'big-number',
+        title: 'Count',
+        value: 2,
+        unit: 'things',
+      });
+      expect(updated).to.deep.include({ value: 2, unit: 'things' });
+    });
+
+    it('updates a line-graph widget CSV Body', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'line-graph',
+        title: 'CPU',
+        data: 'label,value\n09:00,1',
+      });
+      const updated = await store.updateWidget(root, 'default', created.id, {
+        type: 'line-graph',
+        title: 'CPU',
+        data: 'label,value\n09:00,1\n09:05,2',
+      });
+      expect(updated.data).to.equal('label,value\n09:00,1\n09:05,2');
     });
   });
 
   describe('updateWidgetRaw', () => {
     it('writes the raw content verbatim with no validation', async () => {
       const root = await tmpRoot();
-      const created = await store.createWidget(root, 'default', { title: 'Tip', content: 'x' });
+      const created = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        content: 'x',
+      });
       await store.updateWidgetRaw(root, 'default', created.id, '---\nstill: broken\n---\nBody');
 
       const [result] = await store.listWidgets(root, 'default');
@@ -127,7 +281,11 @@ describe('store', () => {
   describe('deleteWidget', () => {
     it('removes the file', async () => {
       const root = await tmpRoot();
-      const created = await store.createWidget(root, 'default', { title: 'Tip', content: 'x' });
+      const created = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        content: 'x',
+      });
       await store.deleteWidget(root, 'default', created.id);
       expect(await store.listWidgets(root, 'default')).to.deep.equal([]);
     });
@@ -154,7 +312,7 @@ describe('store', () => {
 
     it('is a no-op when the dashboard folder already has widgets', async () => {
       const root = await tmpRoot();
-      await store.createWidget(root, 'default', { title: 'Mine', content: 'x' });
+      await store.createWidget(root, 'default', { type: 'markdown', title: 'Mine', content: 'x' });
       await store.ensureSeeded(root, 'default');
       const results = await store.listWidgets(root, 'default');
       expect(results).to.have.length(1);
