@@ -472,7 +472,7 @@ test.describe(
     }, testInfo) => {
       const title = `E2E broken widget ${testInfo.testId}`;
       const created = await page.request.post('/api/v1/dashboards/default/widgets', {
-        data: { title, content: 'original content' },
+        data: { type: 'markdown', title, content: 'original content' },
       });
       const widget = (await created.json()) as { id: string };
 
@@ -520,7 +520,7 @@ test.describe(
     }, testInfo) => {
       const title = `E2E raw-edit widget ${testInfo.testId}`;
       const created = await page.request.post('/api/v1/dashboards/default/widgets', {
-        data: { title, content: 'original content' },
+        data: { type: 'markdown', title, content: 'original content' },
       });
       const widget = (await created.json()) as { id: string };
 
@@ -566,7 +566,7 @@ test.describe(
     }, testInfo) => {
       const title = `E2E raw-break widget ${testInfo.testId}`;
       const created = await page.request.post('/api/v1/dashboards/default/widgets', {
-        data: { title, content: 'original content' },
+        data: { type: 'markdown', title, content: 'original content' },
       });
       const widget = (await created.json()) as { id: string };
 
