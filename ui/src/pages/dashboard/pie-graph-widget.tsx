@@ -63,7 +63,13 @@ export function PieGraphWidget({ widget, onChanged }: PieGraphWidgetProps) {
   }
 
   return (
-    <WidgetCard title={widget.title} subtitle={widget.subtitle}>
+    <WidgetCard
+      title={widget.title}
+      subtitle={widget.subtitle}
+      source={widget.source}
+      maintainer={widget.maintainer}
+      updatedAt={widget.updatedAt}
+    >
       <div data-testid="pie-graph-widget" className="flex justify-center">
         <svg ref={svgRef} viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`} className="h-40 w-40" />
       </div>

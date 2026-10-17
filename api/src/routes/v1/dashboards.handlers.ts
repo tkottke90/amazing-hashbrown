@@ -6,6 +6,7 @@ import type {
   WidgetContentInput,
   WidgetLoadResult,
 } from '@tkottke90/amazing-hashbrown-widgets/types';
+import { broadcast } from '../../services/broadcast.js';
 
 // ---- HandlerResult (mirrors mcp-servers.handlers.ts) ---------------------------
 
@@ -33,6 +34,7 @@ function badRequest(error: string): HandlerFailure {
 
 export interface WidgetStoreDeps {
   listWidgets: typeof widgetsLib.listWidgets;
+  loadWidget: typeof widgetsLib.loadWidget;
   createWidget: typeof widgetsLib.createWidget;
   updateWidget: typeof widgetsLib.updateWidget;
   updateWidgetRaw: typeof widgetsLib.updateWidgetRaw;
@@ -96,6 +98,47 @@ const WidgetRawSchema = z.object({
   raw: z.string(),
 });
 
+// ---- Content-only input (D4) ------------------------------------------------------
+//
+// One schema per widget type for the Agent/CLI content-merge route — only
+// Widget Payload fields plus an optional `maintainer`. No `title`/
+// `subtitle`/`order` key exists on any of these: supplying one is a
+// validation error (extra keys are stripped by a bare z.object(), not
+// rejected — but none of these fields ever reach `buildWidget`/persistence
+// since the handler only reads the keys each schema actually declares).
+// Never a `type` key either — a widget's type is read from the stored
+// widget, never accepted as input (D5).
+
+const MarkdownContentInputSchema = z.object({
+  content: z.string().optional(),
+  maintainer: z.string().optional(),
+});
+
+const BigNumberContentInputSchema = z.object({
+  value: z.number().optional(),
+  unit: z.string().optional(),
+  maintainer: z.string().optional(),
+});
+
+const LineGraphContentInputSchema = z.object({
+  data: z.string().optional(),
+  color: HexColorSchema.optional(),
+  maintainer: z.string().optional(),
+});
+
+const PieGraphContentInputSchema = z.object({
+  data: z.string().optional(),
+  colors: z.array(HexColorSchema).optional(),
+  maintainer: z.string().optional(),
+});
+
+const CONTENT_INPUT_SCHEMAS = {
+  markdown: MarkdownContentInputSchema,
+  'big-number': BigNumberContentInputSchema,
+  'line-graph': LineGraphContentInputSchema,
+  'pie-graph': PieGraphContentInputSchema,
+} as const;
+
 /**
  * The structural Zod schemas above only check `data: z.string()` for
  * Line/Pie Graph — any string passes, including malformed CSV. CSV Body
@@ -103,8 +146,11 @@ const WidgetRawSchema = z.object({
  * (D5/D7) are checked here, reusing the lib's `parseCsvBody` — the same
  * function `parseWidgetFile` uses when reading a file back, so a create/
  * update and a later load can never disagree about what counts as valid.
+ * Also called by `updateWidgetContentHandler` against a full merged
+ * `DashboardWidget`, not just a fresh `WidgetContentInput` — it only ever
+ * reads `.type`/`.data`, so either shape works.
  */
-function validateTypeSpecificPayload(input: WidgetContentInput): string | null {
+function validateTypeSpecificPayload(input: WidgetContentInput | DashboardWidget): string | null {
   if (input.type !== 'line-graph' && input.type !== 'pie-graph') return null;
   const csv = parseCsvBody(input.data);
   if (!csv.ok) return csv.error;
@@ -137,7 +183,13 @@ export async function createWidgetHandler(
   }
   const payloadError = validateTypeSpecificPayload(parsed.data);
   if (payloadError) return badRequest(payloadError);
-  const widget = await store.createWidget(dashboardRoot, dashboardId, parsed.data);
+  // Widget lifecycle (creation) is a User-only action (D10) — always
+  // 'manual', nothing to preserve, and never request/tool-call input (ADR-0005).
+  const widget = await store.createWidget(dashboardRoot, dashboardId, {
+    ...parsed.data,
+    source: 'manual',
+  });
+  broadcast({ type: 'widget_updated', dashboardId, widget });
   return ok(widget);
 }
 
@@ -154,13 +206,59 @@ export async function updateWidgetHandler(
   }
   const payloadError = validateTypeSpecificPayload(parsed.data);
   if (payloadError) return badRequest(payloadError);
+  // This schema has no `maintainer` key, so without reading the existing
+  // widget a full-replace write would silently drop it (D15: a manual edit
+  // never clears `maintainer`). `source` always resets to 'manual' — a
+  // human is doing this edit, regardless of what it was before (ADR-0005).
+  const existing = await store.loadWidget(dashboardRoot, dashboardId, id);
+  if (!existing) return notFound(`Widget "${id}" not found.`);
   try {
-    const widget = await store.updateWidget(dashboardRoot, dashboardId, id, parsed.data);
+    const widget = await store.updateWidget(dashboardRoot, dashboardId, id, {
+      ...parsed.data,
+      source: 'manual',
+      maintainer: existing.maintainer,
+    });
+    broadcast({ type: 'widget_updated', dashboardId, widget });
     return ok(widget);
   } catch (err) {
     if (err instanceof WidgetNotFoundError) return notFound(err.message);
     throw err;
   }
+}
+
+/**
+ * Agent/CLI content-merge write (D2/ADR-0004): loads the existing widget,
+ * overlays only the fields actually present in `body` plus an optional
+ * `maintainer`, re-validates the merged whole against the existing per-type
+ * schema, persists, and broadcasts. `type` is read from the stored widget
+ * and never accepted as input — a widget's type is immutable (same rule as
+ * `id`). `source` is always whatever the caller (the route, or the agent
+ * tool calling this directly) passes in — never the request body
+ * (ADR-0005); today that's always `'agent'`.
+ */
+export async function updateWidgetContentHandler(
+  dashboardRoot: string,
+  dashboardId: string,
+  id: string,
+  body: unknown,
+  source: 'agent',
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<DashboardWidget>> {
+  const existing = await store.loadWidget(dashboardRoot, dashboardId, id);
+  if (!existing) return notFound(`Widget "${id}" not found.`);
+
+  const parsed = CONTENT_INPUT_SCHEMAS[existing.type].safeParse(body);
+  if (!parsed.success) {
+    return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+
+  const merged = { ...existing, ...parsed.data, source } as DashboardWidget;
+  const payloadError = validateTypeSpecificPayload(merged);
+  if (payloadError) return badRequest(payloadError);
+
+  const widget = await store.updateWidget(dashboardRoot, dashboardId, id, merged);
+  broadcast({ type: 'widget_updated', dashboardId, widget });
+  return ok(widget);
 }
 
 /**

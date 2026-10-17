@@ -22,10 +22,40 @@ jest.mock('@/hooks/use-thread', () => ({
   refreshThreadList: (...args: unknown[]) => mockRefreshThreadList(...args),
 }));
 
+jest.mock('@/services/dashboard-api', () => ({
+  ...jest.requireActual('@/services/dashboard-api'),
+  fetchWidgets: jest.fn(),
+}));
+
+import { renderHook, waitFor } from '@testing-library/preact';
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { tasks, queueState } from '@/hooks/use-tasks';
 import { threads, type ThreadSummary } from '@/hooks/use-thread';
+import { useDashboardWidgets, _resetDashboardWidgetsForTests } from '@/hooks/use-dashboard-widgets';
+import * as dashboardApi from '@/services/dashboard-api';
 import type { Task } from '@/services/tasks-api';
+import type { BigNumberWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+
+const mockFetchWidgets = dashboardApi.fetchWidgets as jest.MockedFunction<
+  typeof dashboardApi.fetchWidgets
+>;
+
+function makeBigNumberWidget(overrides: Partial<BigNumberWidget> = {}): BigNumberWidget {
+  return {
+    id: 'disk-space',
+    type: 'big-number',
+    title: 'Disk space',
+    order: 0,
+    source: 'manual',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    value: 50,
+    ...overrides,
+  };
+}
+
+function makeWidgetResult(overrides: Partial<BigNumberWidget> = {}): WidgetLoadResult {
+  return { status: 'ok', widget: makeBigNumberWidget(overrides) };
+}
 
 // jsdom has no real EventSource — a minimal fake that captures the handlers
 // connectLiveEvents() assigns, so a test can drive them directly.
@@ -108,9 +138,11 @@ describe('hooks/use-live-events', () => {
     mockHasThreadInstance.mockClear();
     mockHasThreadInstance.mockReturnValue(false);
     mockRefreshThreadList.mockClear();
+    mockFetchWidgets.mockReset();
     threads.value = [];
     tasks.value = [];
     queueState.value = { queue: [], running: [] };
+    _resetDashboardWidgetsForTests();
   });
 
   function currentSource(): FakeEventSource {
@@ -426,5 +458,32 @@ describe('hooks/use-live-events', () => {
   it('silently ignores a payload that is not valid JSON', () => {
     connectLiveEvents();
     expect(() => currentSource().emitRaw('not json')).not.toThrow();
+  });
+
+  it('patches the matching widget in its dashboard on widget_updated, with no fetch [unit]', async () => {
+    mockFetchWidgets.mockResolvedValue([makeWidgetResult()]);
+    const { result } = renderHook(() => useDashboardWidgets());
+    await waitFor(() => expect(result.current.loading.value).toBe(false));
+
+    connectLiveEvents();
+    currentSource().emit({
+      type: 'widget_updated',
+      dashboardId: 'default',
+      widget: makeBigNumberWidget({ value: 87 }),
+    });
+
+    expect(result.current.widgets.value).toEqual([makeWidgetResult({ value: 87 })]);
+    expect(mockFetchWidgets).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op on widget_updated for a dashboard this tab has not loaded [unit]', () => {
+    connectLiveEvents();
+    expect(() =>
+      currentSource().emit({
+        type: 'widget_updated',
+        dashboardId: 'default',
+        widget: makeBigNumberWidget(),
+      }),
+    ).not.toThrow();
   });
 });

@@ -23,7 +23,13 @@ export function BigNumberWidget({ widget, onChanged }: BigNumberWidgetProps) {
   }
 
   return (
-    <WidgetCard title={widget.title} subtitle={widget.subtitle}>
+    <WidgetCard
+      title={widget.title}
+      subtitle={widget.subtitle}
+      source={widget.source}
+      maintainer={widget.maintainer}
+      updatedAt={widget.updatedAt}
+    >
       <div data-testid="big-number-widget" className="flex items-baseline gap-2">
         <span className="text-3xl font-semibold text-foreground">
           {widget.value === undefined ? 'N/A' : widget.value.toLocaleString()}

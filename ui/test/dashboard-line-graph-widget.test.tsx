@@ -25,6 +25,8 @@ function widget(overrides: Partial<LineGraphWidgetData> = {}): LineGraphWidgetDa
     title: 'Response time',
     subtitle: 'Average latency',
     order: 0,
+    source: 'manual',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     data: 'label,value\n09:00,120\n09:05,135',
     ...overrides,
   };
