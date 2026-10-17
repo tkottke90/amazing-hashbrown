@@ -6,6 +6,7 @@
 
 export {
   listWidgets,
+  loadWidget,
   createWidget,
   updateWidget,
   updateWidgetRaw,

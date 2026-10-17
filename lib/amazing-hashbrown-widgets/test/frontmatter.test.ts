@@ -25,6 +25,7 @@ describe('frontmatter', () => {
       title: 'Tip',
       subtitle: 'Of the day',
       order: 2,
+      source: 'manual',
       content: 'Some content.',
     });
   });
@@ -53,6 +54,7 @@ describe('frontmatter', () => {
           title: 'Tip',
           type: 'markdown',
           order: 2,
+          source: 'manual',
           content: 'Some content.',
         });
       }
@@ -82,6 +84,7 @@ describe('frontmatter', () => {
           title: 'Count',
           type: 'big-number',
           order: 0,
+          source: 'manual',
           value: 5,
           unit: 'things',
         });
@@ -180,6 +183,38 @@ describe('frontmatter', () => {
       );
       const result = frontmatter.parseWidgetFile(raw);
       expect(result.ok).to.equal(false);
+    });
+
+    it('round-trips an explicit source/maintainer', () => {
+      const raw = frontmatter.serialize(
+        {
+          title: 'Disk space',
+          type: 'big-number',
+          order: 0,
+          source: 'agent',
+          maintainer: 'check-disk-space.sh',
+          value: 87,
+        },
+        '',
+      );
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.widget).to.deep.include({
+          source: 'agent',
+          maintainer: 'check-disk-space.sh',
+        });
+      }
+    });
+
+    it('defaults source to manual for a widget file predating the field (D13)', () => {
+      const raw = frontmatter.serialize({ title: 'Count', type: 'big-number', order: 0 }, '');
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.widget.source).to.equal('manual');
+        expect(result.widget).to.not.have.property('maintainer');
+      }
     });
   });
 

@@ -87,7 +87,13 @@ export function LineGraphWidget({ widget, onChanged }: LineGraphWidgetProps) {
   }
 
   return (
-    <WidgetCard title={widget.title} subtitle={widget.subtitle}>
+    <WidgetCard
+      title={widget.title}
+      subtitle={widget.subtitle}
+      source={widget.source}
+      maintainer={widget.maintainer}
+      updatedAt={widget.updatedAt}
+    >
       <div data-testid="line-graph-widget">
         <svg
           ref={svgRef}

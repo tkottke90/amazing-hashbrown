@@ -26,6 +26,8 @@ const WIDGET: MarkdownWidget = {
   title: 'Original title',
   subtitle: 'Original subtitle',
   order: 0,
+  source: 'manual',
+  updatedAt: '2026-01-01T00:00:00.000Z',
   content: 'Original content',
 };
 
@@ -191,6 +193,7 @@ describe('WidgetDrawer', () => {
         subtitle: 'Original subtitle',
         type: 'markdown',
         order: 0,
+        source: 'manual',
         content: 'Original content',
       },
     });
@@ -216,7 +219,13 @@ describe('WidgetDrawer', () => {
   it('clicking Validate twice without further edits only calls the endpoint once [unit]', async () => {
     mockValidate.mockResolvedValue({
       ok: true,
-      widget: { title: 'Original title', type: 'markdown', order: 0, content: 'Original content' },
+      widget: {
+        title: 'Original title',
+        type: 'markdown',
+        order: 0,
+        source: 'manual',
+        content: 'Original content',
+      },
     });
     renderDrawer(
       <WidgetDrawer
@@ -239,7 +248,13 @@ describe('WidgetDrawer', () => {
   it('editing the raw text re-locks Save until it is explicitly re-validated [unit]', async () => {
     mockValidate.mockResolvedValue({
       ok: true,
-      widget: { title: 'Original title', type: 'markdown', order: 0, content: 'Original content' },
+      widget: {
+        title: 'Original title',
+        type: 'markdown',
+        order: 0,
+        source: 'manual',
+        content: 'Original content',
+      },
     });
     mockUpdateRaw.mockResolvedValue(undefined);
     renderDrawer(
@@ -276,6 +291,7 @@ describe('WidgetDrawer', () => {
         subtitle: 'Validated subtitle',
         type: 'markdown',
         order: 0,
+        source: 'manual',
         content: 'Validated content',
       },
     });
@@ -352,7 +368,14 @@ describe('WidgetDrawer', () => {
     });
 
     it('creates a big-number widget with a blank value sent as undefined [unit]', async () => {
-      mockCreate.mockResolvedValue({ id: 'new', type: 'big-number', title: 'Count', order: 0 });
+      mockCreate.mockResolvedValue({
+        id: 'new',
+        type: 'big-number',
+        title: 'Count',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
       renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
@@ -372,7 +395,14 @@ describe('WidgetDrawer', () => {
     });
 
     it('creates a big-number widget with a numeric value [unit]', async () => {
-      mockCreate.mockResolvedValue({ id: 'new', type: 'big-number', title: 'Count', order: 0 });
+      mockCreate.mockResolvedValue({
+        id: 'new',
+        type: 'big-number',
+        title: 'Count',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
       renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
@@ -414,6 +444,7 @@ describe('WidgetDrawer', () => {
           title: 'Response time',
           type: 'line-graph',
           order: 0,
+          source: 'manual',
           data: 'label,value\n09:00,120',
         },
       });
@@ -422,6 +453,8 @@ describe('WidgetDrawer', () => {
         type: 'line-graph',
         title: 'Response time',
         order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
         data: 'label,value\n09:00,120',
       });
       const onSaved = jest.fn();

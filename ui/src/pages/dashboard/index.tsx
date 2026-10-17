@@ -3,7 +3,7 @@ import { Layout } from '@/components/layout';
 import { useTitle } from '@/hooks/use-title';
 import { Button } from '@/components/ui/button';
 import { DashboardGrid } from './dashboard-grid';
-import { useDashboardWidgets } from './use-dashboard-widgets';
+import { useDashboardWidgets } from '@/hooks/use-dashboard-widgets';
 import { WidgetDrawer } from './widget-drawer';
 
 // path prop is consumed by preact-iso's Router for route matching

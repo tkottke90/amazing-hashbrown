@@ -27,7 +27,13 @@ export function MarkdownWidget({ widget, onChanged }: MarkdownWidgetProps) {
   }
 
   return (
-    <WidgetCard title={widget.title} subtitle={widget.subtitle}>
+    <WidgetCard
+      title={widget.title}
+      subtitle={widget.subtitle}
+      source={widget.source}
+      maintainer={widget.maintainer}
+      updatedAt={widget.updatedAt}
+    >
       <Markdown>{widget.content}</Markdown>
       <div className="flex justify-end gap-1">
         <WidgetDrawer

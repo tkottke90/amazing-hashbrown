@@ -25,6 +25,8 @@ function widget(overrides: Partial<PieGraphWidgetData> = {}): PieGraphWidgetData
     title: 'Agent usage',
     subtitle: 'Tool distribution',
     order: 0,
+    source: 'manual',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     data: 'label,value\nQuery,30\nAnalysis,25\nCode,20\nSearch,25',
     ...overrides,
   };

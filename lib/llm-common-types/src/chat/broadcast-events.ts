@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DashboardWidgetSchema } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 // Out-of-band events pushed over the standing app-level SSE channel
 // (GET /api/v1/events) — deliberately kept separate from ChatSSEEventSchema
@@ -122,6 +123,17 @@ const AfterAgentStateEventSchema = z.object({
   state: AfterAgentStateSchema,
 });
 
+// Fired whenever a widget write lands — the drawer's full-replace route, the
+// agent/CLI content-merge route, or a future create/delete path — carrying
+// the full updated widget so an open dashboard patches in place with no
+// extra round-trip (same "full current value" shape as TaskQueueUpdateSchema
+// above). See docs/superpowers/specs/2026-10-17-dashboard-widget-write-api-design.md §6.
+const WidgetUpdatedSchema = z.object({
+  type: z.literal('widget_updated'),
+  dashboardId: z.string(),
+  widget: DashboardWidgetSchema,
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
@@ -131,5 +143,6 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   ThreadTurnStartedSchema,
   ThreadTurnCompletedSchema,
   AfterAgentStateEventSchema,
+  WidgetUpdatedSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

@@ -24,6 +24,8 @@ function widget(overrides: Partial<BigNumberWidgetData> = {}): BigNumberWidgetDa
     title: 'Messages processed',
     subtitle: 'This month',
     order: 0,
+    source: 'manual',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     value: 12547,
     unit: 'messages',
     ...overrides,

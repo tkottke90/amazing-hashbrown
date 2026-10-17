@@ -9,7 +9,15 @@ describe('WidgetRenderer', () => {
   it('dispatches an ok markdown result to MarkdownWidget [unit]', () => {
     const result: WidgetLoadResult = {
       status: 'ok',
-      widget: { id: 'w1', type: 'markdown', title: 'My Title', order: 0, content: 'hello' },
+      widget: {
+        id: 'w1',
+        type: 'markdown',
+        title: 'My Title',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        content: 'hello',
+      },
     };
     render(<WidgetRenderer result={result} onChanged={noop} />);
     expect(screen.getByText('My Title')).toBeInTheDocument();
@@ -19,7 +27,16 @@ describe('WidgetRenderer', () => {
   it('dispatches an ok big-number result to BigNumberWidget [unit]', () => {
     const result: WidgetLoadResult = {
       status: 'ok',
-      widget: { id: 'w2', type: 'big-number', title: 'Messages', order: 0, value: 5, unit: 'msgs' },
+      widget: {
+        id: 'w2',
+        type: 'big-number',
+        title: 'Messages',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        value: 5,
+        unit: 'msgs',
+      },
     };
     render(<WidgetRenderer result={result} onChanged={noop} />);
     expect(screen.getByTestId('big-number-widget')).toBeInTheDocument();
@@ -33,6 +50,8 @@ describe('WidgetRenderer', () => {
         type: 'line-graph',
         title: 'Response time',
         order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
         data: 'label,value\n09:00,120',
       },
     };
@@ -54,6 +73,8 @@ describe('WidgetRenderer', () => {
         type: 'pie-graph',
         title: 'Agent usage',
         order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
         data: 'label,value\nQuery,30\nAnalysis,25',
       },
     };
