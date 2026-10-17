@@ -24,7 +24,7 @@ describe('agents/tools/update-widget-content', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("updates one field of an existing widget, leaving its other fields and title untouched [unit]", async () => {
+  it('updates one field of an existing widget, leaving its other fields and title untouched [unit]', async () => {
     const created = await createWidgetHandler(root, 'default', {
       type: 'big-number',
       title: 'Disk space',

@@ -10,7 +10,9 @@ const UpdateWidgetContentSchema = z.object({
   dashboardId: z
     .string()
     .optional()
-    .describe("The dashboard the widget belongs to. Defaults to 'default' — the only dashboard that exists today."),
+    .describe(
+      "The dashboard the widget belongs to. Defaults to 'default' — the only dashboard that exists today.",
+    ),
   widgetId: z.string().describe("The target widget's id, as shown on the dashboard."),
   content: z
     .record(z.string(), z.unknown())

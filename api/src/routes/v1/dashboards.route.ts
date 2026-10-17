@@ -53,23 +53,20 @@ dashboardsRouter.patch('/:dashboardId/widgets/:id', async (req: Request, res: Re
 // above. `source` is hardcoded here, never read from the request body
 // (ADR-0005); the agent tool calls `updateWidgetContentHandler` directly,
 // in-process, bypassing this route entirely.
-dashboardsRouter.patch(
-  '/:dashboardId/widgets/:id/content',
-  async (req: Request, res: Response) => {
-    const result = await updateWidgetContentHandler(
-      env.dashboardRoot,
-      req.params['dashboardId'] as string,
-      req.params['id'] as string,
-      req.body,
-      'agent',
-    );
-    if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
-      return;
-    }
-    res.json(result.data);
-  },
-);
+dashboardsRouter.patch('/:dashboardId/widgets/:id/content', async (req: Request, res: Response) => {
+  const result = await updateWidgetContentHandler(
+    env.dashboardRoot,
+    req.params['dashboardId'] as string,
+    req.params['id'] as string,
+    req.body,
+    'agent',
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
 
 // PUT, not PATCH — an unconditional whole-file raw overwrite, same convention
 // as skills.route.ts's PUT /:name/files/:dir/:basename.

@@ -59,7 +59,9 @@ export function WidgetCard({
           className="flex items-center justify-between text-xs text-muted-foreground"
         >
           {badgeLabel && <span data-testid="widget-card-badge">{badgeLabel}</span>}
-          {updatedAt && <span data-testid="widget-card-updated-at">{formatRelativeTime(updatedAt)}</span>}
+          {updatedAt && (
+            <span data-testid="widget-card-updated-at">{formatRelativeTime(updatedAt)}</span>
+          )}
         </div>
       )}
     </div>

@@ -25,7 +25,9 @@ export function patchDashboardWidget(dashboardId: string, widget: DashboardWidge
   if (!current) return;
   setDashboardWidgets(
     dashboardId,
-    current.map((r) => (r.status === 'ok' && r.widget.id === widget.id ? { status: 'ok', widget } : r)),
+    current.map((r) =>
+      r.status === 'ok' && r.widget.id === widget.id ? { status: 'ok', widget } : r,
+    ),
   );
 }
 

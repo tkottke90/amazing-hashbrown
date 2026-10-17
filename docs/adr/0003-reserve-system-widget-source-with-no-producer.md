@@ -5,4 +5,4 @@ The #176 design mockup's provenance badge shows three sources — Manual, Agent,
 ## Considered Options
 
 - Leave `system` out of the type entirely until #320 lands — rejected: #320 would then need to widen a type every other call site already pattern-matches on, for a one-line addition that costs nothing to reserve now.
-- Build a minimal real producer as part of #315 — rejected: scope creep; #315 is about external write surfaces (agent, CLI), and `system` is explicitly *not* an external write surface.
+- Build a minimal real producer as part of #315 — rejected: scope creep; #315 is about external write surfaces (agent, CLI), and `system` is explicitly _not_ an external write surface.

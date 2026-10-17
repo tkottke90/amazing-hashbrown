@@ -55,7 +55,9 @@ describe('WidgetCard', () => {
         content
       </WidgetCard>,
     );
-    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent('Agent · check-disk-space.sh');
+    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent(
+      'Agent · check-disk-space.sh',
+    );
   });
 
   it('renders no badge for the reserved, inert "system" source (D12) [unit]', () => {

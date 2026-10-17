@@ -333,7 +333,7 @@ describe('routes/v1/dashboards.handlers', () => {
       if (!result.ok) expect(result.status).to.equal(404);
     });
 
-    it('returns 400 for a value of the wrong type for the target widget\'s schema [unit]', async () => {
+    it("returns 400 for a value of the wrong type for the target widget's schema [unit]", async () => {
       const created = await createWidgetHandler(root, 'default', {
         type: 'big-number',
         title: 'Count',

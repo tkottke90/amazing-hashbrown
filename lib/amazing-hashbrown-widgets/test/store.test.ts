@@ -138,7 +138,11 @@ describe('store', () => {
       const root = await tmpRoot();
       const dir = path.join(root, 'default');
       await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, 'broken.md'), '---\ntitle: [unterminated\n---\nBody', 'utf8');
+      await fs.writeFile(
+        path.join(dir, 'broken.md'),
+        '---\ntitle: [unterminated\n---\nBody',
+        'utf8',
+      );
       expect(await store.loadWidget(root, 'default', 'broken')).to.equal(null);
     });
   });

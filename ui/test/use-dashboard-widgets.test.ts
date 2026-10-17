@@ -5,10 +5,7 @@ jest.mock('@/services/dashboard-api', () => ({
   DEFAULT_DASHBOARD_ID: 'default',
 }));
 
-import {
-  useDashboardWidgets,
-  _resetDashboardWidgetsForTests,
-} from '@/hooks/use-dashboard-widgets';
+import { useDashboardWidgets, _resetDashboardWidgetsForTests } from '@/hooks/use-dashboard-widgets';
 import * as api from '@/services/dashboard-api';
 
 const mockFetch = api.fetchWidgets as jest.MockedFunction<typeof api.fetchWidgets>;

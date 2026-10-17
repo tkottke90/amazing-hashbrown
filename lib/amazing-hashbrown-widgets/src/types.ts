@@ -128,12 +128,27 @@ export type WidgetPersistInput = DistributiveOmit<DashboardWidget, 'id' | 'order
  * The full `DashboardWidget` shape, as a runtime-checkable schema — needed
  * by `lib/llm-common-types`'s `widget_updated` broadcast event, which has no
  * other way to validate an incoming SSE payload's `widget` field. Each
- * per-type Widget Frontmatter schema already has every field except `id`
- * and `updatedAt` (store-assigned/derived, never part of frontmatter).
+ * per-type Widget Frontmatter schema covers every field except `id`/
+ * `updatedAt` (store-assigned/derived, never part of frontmatter) *and*
+ * each type's Widget Body field (`content`/`data` — stored below the
+ * frontmatter delimiter, not in it, so the frontmatter schemas never
+ * declare them either).
  */
 export const DashboardWidgetSchema = z.discriminatedUnion('type', [
-  MarkdownWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
+  MarkdownWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    content: z.string(),
+  }),
   BigNumberWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
-  LineGraphWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
-  PieGraphWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
+  LineGraphWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    data: z.string(),
+  }),
+  PieGraphWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    data: z.string(),
+  }),
 ]);
