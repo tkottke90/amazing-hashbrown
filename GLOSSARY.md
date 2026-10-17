@@ -27,3 +27,19 @@ _Avoid_: Data payload, series data
 **Color Override**:
 A widget's own `color` (Line Graph) or `colors` (Pie Graph) Widget Frontmatter field, replacing the default palette (`getDomainColor`) for that widget's rendering. Values must be hex strings (`#rgb` or `#rrggbb`); Pie Graph's `colors` apply positionally to its CSV Body's labels and cycle if shorter than the label count.
 _Avoid_: Theme, palette override
+
+**Widget Payload**:
+A widget's type-specific fields, excluding the shared `title`/`subtitle`/`order` — Markdown's Widget Body; Big Number's `value`/`unit`; Line Graph's and Pie Graph's CSV Body plus Color Override. The only part of a widget an Agent or the CLI may write.
+_Avoid_: Content (see Widget Body's own avoid-note), data
+
+**Widget Metadata**:
+A widget's shared, type-independent fields: `title`, `subtitle`, `order` — a subset of its Widget Frontmatter that excludes `type` and any Widget Payload scalars. Editable only through the UI drawer; never part of an Agent or CLI write.
+_Avoid_: Frontmatter (broader — includes `type` and Widget Payload scalars too)
+
+**Widget Source**:
+Which of a widget's write surfaces produced its last write: `manual` (the UI drawer), `agent` (an agent's conversational tool call, or a CLI-driven automation script — both count as the same source), or the reserved `system` (application-collected metadata nobody asked for; no producer exists yet — tracked by #320). A widget whose file predates this field reads as `manual`. Set by the calling code only — never a field the request body or an agent's tool-call arguments can supply.
+_Avoid_: Provenance, writer, author
+
+**Widget Maintainer**:
+An optional free-text label on an `agent`-sourced widget, naming the automation or person responsible for its ongoing updates (e.g. a script name). Settable only by an Agent/CLI write, never by the UI drawer; preserved across any later write that doesn't resupply it.
+_Avoid_: Owner, author
