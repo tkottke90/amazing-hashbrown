@@ -52,5 +52,51 @@ describe('routes/v1/widgets.handlers', () => {
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data.ok).to.equal(true);
     });
+
+    it('validates a well-formed big-number widget file [unit]', () => {
+      const raw = '---\ntitle: "Count"\ntype: "big-number"\norder: 0\nvalue: 5\n---\n';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'count', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(true);
+    });
+
+    it('validates a well-formed line-graph widget file [unit]', () => {
+      const raw =
+        '---\ntitle: "Response time"\ntype: "line-graph"\norder: 0\n---\nlabel,value\n09:00,120';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'rt', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(true);
+    });
+
+    it('rejects a line-graph widget file whose CSV body is missing its header [unit]', () => {
+      const raw = '---\ntitle: "Response time"\ntype: "line-graph"\norder: 0\n---\n09:00,120';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'rt', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(false);
+    });
+
+    it('validates a well-formed pie-graph widget file [unit]', () => {
+      const raw =
+        '---\ntitle: "Agent usage"\ntype: "pie-graph"\norder: 0\n---\nlabel,value\nQuery,30\nAnalysis,25';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'au', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(true);
+    });
+
+    it('rejects a pie-graph widget file with a negative value [unit]', () => {
+      const raw =
+        '---\ntitle: "Agent usage"\ntype: "pie-graph"\norder: 0\n---\nlabel,value\nQuery,30\nAnalysis,-5';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'au', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(false);
+    });
+
+    it('rejects a line-graph widget file with an invalid hex color override [unit]', () => {
+      const raw =
+        '---\ntitle: "Response time"\ntype: "line-graph"\norder: 0\ncolor: "not-a-color"\n---\nlabel,value\n09:00,120';
+      const result = validateWidgetHandler({ dashboardId: 'default', widgetId: 'rt', raw });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.ok).to.equal(false);
+    });
   });
 });

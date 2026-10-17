@@ -10,7 +10,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as frontmatter from './internal/frontmatter.js';
 import { slugify, withCollisionSuffix } from './internal/slug.js';
-import type { MarkdownWidget, WidgetLoadResult } from './types.js';
+import type {
+  DashboardWidget,
+  MarkdownWidget,
+  WidgetContentInput,
+  WidgetLoadResult,
+} from './types.js';
 
 /** Thrown when a widget id (or dashboard id) doesn't resolve to a file on disk. */
 export class WidgetNotFoundError extends Error {
@@ -83,7 +88,7 @@ export async function listWidgets(root: string, dashboardId: string): Promise<Wi
   }
 
   const ok = results.filter(
-    (r): r is { status: 'ok'; widget: MarkdownWidget } => r.status === 'ok',
+    (r): r is { status: 'ok'; widget: DashboardWidget } => r.status === 'ok',
   );
   const errors = results.filter((r) => r.status === 'error');
   ok.sort((a, b) => a.widget.order - b.widget.order);
@@ -93,23 +98,38 @@ export async function listWidgets(root: string, dashboardId: string): Promise<Wi
 async function nextOrder(root: string, dashboardId: string): Promise<number> {
   const results = await listWidgets(root, dashboardId);
   const orders = results
-    .filter((r): r is { status: 'ok'; widget: MarkdownWidget } => r.status === 'ok')
+    .filter((r): r is { status: 'ok'; widget: DashboardWidget } => r.status === 'ok')
     .map((r) => r.widget.order);
   return orders.length === 0 ? 0 : Math.max(...orders) + 1;
 }
 
-export interface WidgetContentInput {
-  title: string;
-  subtitle?: string;
-  content: string;
+function assertNeverWidgetType(type: never): never {
+  throw new Error(`Unhandled widget type: ${type}`);
 }
 
-/** Create a new Markdown widget. Slugifies `title`; a filename collision gets a UUID suffix. */
+/** Build the typed widget object for a given id/order from a create/update input. */
+function buildWidget(id: string, order: number, input: WidgetContentInput): DashboardWidget {
+  const base = { id, title: input.title, subtitle: input.subtitle, order };
+  switch (input.type) {
+    case 'markdown':
+      return { ...base, type: 'markdown', content: input.content };
+    case 'big-number':
+      return { ...base, type: 'big-number', value: input.value, unit: input.unit };
+    case 'line-graph':
+      return { ...base, type: 'line-graph', data: input.data, color: input.color };
+    case 'pie-graph':
+      return { ...base, type: 'pie-graph', data: input.data, colors: input.colors };
+    default:
+      return assertNeverWidgetType(input);
+  }
+}
+
+/** Create a new widget of any type. Slugifies `title`; a filename collision gets a UUID suffix. */
 export async function createWidget(
   root: string,
   dashboardId: string,
   input: WidgetContentInput,
-): Promise<MarkdownWidget> {
+): Promise<DashboardWidget> {
   const dir = dashboardDir(root, dashboardId);
   await fs.mkdir(dir, { recursive: true });
 
@@ -124,22 +144,20 @@ export async function createWidget(
   }
 
   const order = await nextOrder(root, dashboardId);
-  const widget: MarkdownWidget = {
-    id: slug,
-    type: 'markdown',
-    title: input.title,
-    subtitle: input.subtitle,
-    order,
-    content: input.content,
-  };
+  const widget = buildWidget(slug, order, input);
   await writeWidgetFile(root, dashboardId, widget);
   return widget;
 }
 
+/**
+ * Write a widget's frontmatter + body, per its type's persistence shape
+ * (ADR-0002): Markdown's body is its prose `content`; Big Number has no
+ * body; Line/Pie Graph's body is their CSV Body (`data`), verbatim.
+ */
 async function writeWidgetFile(
   root: string,
   dashboardId: string,
-  widget: MarkdownWidget,
+  widget: DashboardWidget,
 ): Promise<void> {
   const filePath = widgetPath(root, dashboardId, widget.id);
   const data: Record<string, unknown> = {
@@ -148,7 +166,30 @@ async function writeWidgetFile(
     order: widget.order,
   };
   if (widget.subtitle !== undefined) data.subtitle = widget.subtitle;
-  await fs.writeFile(filePath, frontmatter.serialize(data, widget.content), 'utf8');
+
+  let body: string;
+  switch (widget.type) {
+    case 'markdown':
+      body = widget.content;
+      break;
+    case 'big-number':
+      if (widget.value !== undefined) data.value = widget.value;
+      if (widget.unit !== undefined) data.unit = widget.unit;
+      body = '';
+      break;
+    case 'line-graph':
+      if (widget.color !== undefined) data.color = widget.color;
+      body = widget.data;
+      break;
+    case 'pie-graph':
+      if (widget.colors !== undefined) data.colors = widget.colors;
+      body = widget.data;
+      break;
+    default:
+      return assertNeverWidgetType(widget);
+  }
+
+  await fs.writeFile(filePath, frontmatter.serialize(data, body), 'utf8');
 }
 
 async function readOrThrowNotFound(filePath: string, id: string): Promise<string> {
@@ -160,29 +201,26 @@ async function readOrThrowNotFound(filePath: string, id: string): Promise<string
 }
 
 /**
- * Update an existing Markdown widget's title/subtitle/content. The
+ * Update an existing widget's title/subtitle/type-specific fields. The
  * filename never changes, and `order` is read from the existing file and
- * preserved — this endpoint never assigns a new one.
+ * preserved — this endpoint never assigns a new one. `input.type` is
+ * expected to match the widget's existing type (type is immutable after
+ * creation — no UI affordance changes it); this layer trusts that
+ * invariant rather than re-checking it, matching the API layer's own
+ * validation of the request body against the existing resource.
  */
 export async function updateWidget(
   root: string,
   dashboardId: string,
   id: string,
   input: WidgetContentInput,
-): Promise<MarkdownWidget> {
+): Promise<DashboardWidget> {
   const filePath = widgetPath(root, dashboardId, id);
   const raw = await readOrThrowNotFound(filePath, id);
   const { data } = frontmatter.parse(raw);
   const order = typeof data.order === 'number' ? data.order : 0;
 
-  const widget: MarkdownWidget = {
-    id,
-    type: 'markdown',
-    title: input.title,
-    subtitle: input.subtitle,
-    order,
-    content: input.content,
-  };
+  const widget = buildWidget(id, order, input);
   await writeWidgetFile(root, dashboardId, widget);
   return widget;
 }
@@ -214,25 +252,29 @@ export async function deleteWidget(root: string, dashboardId: string, id: string
   }
 }
 
-const SEED_WIDGETS: WidgetContentInput[] = [
+const SEED_WIDGETS: Extract<WidgetContentInput, { type: 'markdown' }>[] = [
   {
+    type: 'markdown',
     title: 'Welcome',
     subtitle: 'Your AI Workspace',
     content:
       '# Welcome to Amazing Hashbrown\n\nThis is your central dashboard for all AI-powered features.',
   },
   {
+    type: 'markdown',
     title: 'Getting Started',
     subtitle: 'A few things to try',
     content:
       '## Getting Started\n\n- Start a chat from the sidebar\n- Browse the **Wiki** for ingested knowledge\n- Check **Workspaces** for active projects\n- Visit **Settings** to configure providers and tools',
   },
   {
+    type: 'markdown',
     title: 'Tip',
     content:
       'You can fork any thread to explore a different direction without losing the original.',
   },
   {
+    type: 'markdown',
     title: "What's New",
     subtitle: 'Recent changes',
     content:
@@ -242,7 +284,8 @@ const SEED_WIDGETS: WidgetContentInput[] = [
 
 /**
  * If `<root>/<dashboardId>/` is missing or has no `.md` files, create it
- * and write the sample widgets as real files. A no-op otherwise.
+ * and write the sample widgets as real files. A no-op otherwise. Seed data
+ * stays Markdown-only by design — no requirement to seed the other types.
  */
 export async function ensureSeeded(root: string, dashboardId: string): Promise<void> {
   const dir = dashboardDir(root, dashboardId);

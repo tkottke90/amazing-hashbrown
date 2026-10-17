@@ -14,6 +14,21 @@ async function setRawEditorContent(page: Page, dialog: Locator, text: string) {
   await page.keyboard.insertText(text);
 }
 
+async function setCsvEditorContent(page: Page, dialog: Locator, text: string) {
+  const content = dialog.locator('[data-testid="widget-drawer-csv-editor"] .cm-content');
+  await content.click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText(text);
+}
+
+// Radix Select's popover content renders through a portal attached to
+// <body>, not inside the drawer's own DOM subtree — so the option is
+// queried page-wide, same as the trigger click is scoped to the drawer.
+async function selectWidgetType(page: Page, dialog: Locator, label: string) {
+  await dialog.getByTestId('widget-type-picker').click();
+  await page.getByRole('option', { name: label }).click();
+}
+
 const suite: TestSuite = {
   id: 53,
   name: 'Dashboard',
@@ -176,6 +191,223 @@ test.describe(
 async function deleteWidgetIfExists(request: APIRequestContext, id: string) {
   await request.delete(`/api/v1/dashboards/default/widgets/${id}`).catch(() => {});
 }
+
+// Chart widget types suite (#313) — mutates real dashboard widget files on
+// disk, so @user-workflow only, same reasoning as the persistence suite above.
+const chartWidgetsSuite: TestSuite = {
+  id: 55,
+  name: 'Dashboard chart widget types',
+  description:
+    'Verifies Big Number, Line Graph, and Pie Graph widgets can be added, rendered, validated, and deleted',
+  purpose:
+    'Catch regressions in issue #313 — the three new widget types must persist and render like Markdown already does, and bad CSV/color input must block the save with an inline error',
+  tags: ['@user-workflow'],
+  steps: [
+    {
+      tags: ['@user-workflow'],
+      action: 'Add a Big Number widget with no value',
+      expectedOutcome: 'Renders "N/A" and persists across a reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add a Line Graph widget with valid CSV data',
+      expectedOutcome:
+        'Validate passes, the widget is created, an svg line renders, persists across a reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add a Pie Graph widget with valid CSV data',
+      expectedOutcome:
+        'Validate passes, the widget is created, an svg pie renders, persists across a reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Attempt to save a Line Graph widget whose CSV is missing its header',
+      expectedOutcome: 'An inline validation error appears and no widget is created',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Seed one widget of each of the 4 types via the API, load the dashboard',
+      expectedOutcome: 'All four render without error',
+      test: () => {},
+    },
+  ],
+};
+
+test.describe(
+  '@user-workflow',
+  {
+    annotation: suiteAnnotations(chartWidgetsSuite),
+  },
+  () => {
+    test('add a big-number widget with no value — renders N/A and persists', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E big number ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await page.getByTestId('dashboard-add-widget').click();
+        const addDrawer = page.locator('dialog[open]');
+        await selectWidgetType(page, addDrawer, 'Big Number');
+        await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+        await addDrawer.getByRole('button', { name: 'Save' }).click();
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        await expect(card.getByText('N/A')).toBeVisible();
+
+        const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+        const body = (await widgets.json()) as Array<{
+          status: string;
+          widget?: { id: string; title: string };
+        }>;
+        widgetId =
+          body.find((r) => r.status === 'ok' && r.widget?.title === title)?.widget?.id ?? null;
+
+        await page.reload();
+        await expect(
+          page.getByTestId('widget-card').filter({ hasText: title }).getByText('N/A'),
+        ).toBeVisible();
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('add a line-graph widget with valid CSV — renders a line and persists', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E line graph ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await page.getByTestId('dashboard-add-widget').click();
+        const addDrawer = page.locator('dialog[open]');
+        await selectWidgetType(page, addDrawer, 'Line Graph');
+        await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+        await setCsvEditorContent(page, addDrawer, 'label,value\n09:00,120\n09:05,135');
+        await addDrawer.getByTestId('widget-drawer-validate').click();
+        await addDrawer.getByRole('button', { name: 'Save' }).click();
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        await expect(card.getByTestId('line-graph-widget').locator('svg path')).toHaveCount(1);
+
+        const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+        const body = (await widgets.json()) as Array<{
+          status: string;
+          widget?: { id: string; title: string };
+        }>;
+        widgetId =
+          body.find((r) => r.status === 'ok' && r.widget?.title === title)?.widget?.id ?? null;
+
+        await page.reload();
+        await expect(page.getByTestId('widget-card').filter({ hasText: title })).toBeVisible();
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('add a pie-graph widget with valid CSV — renders segments and persists', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E pie graph ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await page.getByTestId('dashboard-add-widget').click();
+        const addDrawer = page.locator('dialog[open]');
+        await selectWidgetType(page, addDrawer, 'Pie Graph');
+        await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+        await setCsvEditorContent(page, addDrawer, 'label,value\nQuery,30\nAnalysis,25');
+        await addDrawer.getByTestId('widget-drawer-validate').click();
+        await addDrawer.getByRole('button', { name: 'Save' }).click();
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        await expect(card.getByTestId('pie-graph-widget').locator('svg path')).toHaveCount(2);
+
+        const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+        const body = (await widgets.json()) as Array<{
+          status: string;
+          widget?: { id: string; title: string };
+        }>;
+        widgetId =
+          body.find((r) => r.status === 'ok' && r.widget?.title === title)?.widget?.id ?? null;
+
+        await page.reload();
+        await expect(page.getByTestId('widget-card').filter({ hasText: title })).toBeVisible();
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('an invalid line-graph CSV blocks save with an inline error, no widget created', async ({
+      page,
+    }, testInfo) => {
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      await page.getByTestId('dashboard-add-widget').click();
+      const addDrawer = page.locator('dialog[open]');
+      await selectWidgetType(page, addDrawer, 'Line Graph');
+      const title = `E2E invalid csv ${testInfo.testId}`;
+      await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+      // Missing the required "label,value" header row.
+      await setCsvEditorContent(page, addDrawer, '09:00,120\n09:05,135');
+      await addDrawer.getByRole('button', { name: 'Save' }).click();
+
+      await expect(addDrawer.getByTestId('widget-drawer-raw-error')).toBeVisible();
+      await expect(page.getByTestId('widget-card').filter({ hasText: title })).toHaveCount(0);
+    });
+
+    test('a dashboard seeded with one of each widget type renders all without error', async ({
+      page,
+    }, testInfo) => {
+      const createdIds: string[] = [];
+      const titles = {
+        markdown: `E2E all-types md ${testInfo.testId}`,
+        bigNumber: `E2E all-types num ${testInfo.testId}`,
+        line: `E2E all-types line ${testInfo.testId}`,
+        pie: `E2E all-types pie ${testInfo.testId}`,
+      };
+
+      async function seed(data: Record<string, unknown>) {
+        const res = await page.request.post('/api/v1/dashboards/default/widgets', { data });
+        createdIds.push(((await res.json()) as { id: string }).id);
+      }
+
+      try {
+        await seed({ type: 'markdown', title: titles.markdown, content: 'hi' });
+        await seed({ type: 'big-number', title: titles.bigNumber, value: 1 });
+        await seed({ type: 'line-graph', title: titles.line, data: 'label,value\nA,1' });
+        await seed({ type: 'pie-graph', title: titles.pie, data: 'label,value\nA,1' });
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        for (const title of Object.values(titles)) {
+          await expect(page.getByTestId('widget-card').filter({ hasText: title })).toBeVisible();
+        }
+      } finally {
+        for (const id of createdIds) await deleteWidgetIfExists(page.request, id);
+      }
+    });
+  },
+);
 
 test.describe(
   '@user-workflow',

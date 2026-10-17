@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseWidgetFile } from '@tkottke90/amazing-hashbrown-widgets';
+import type { DashboardWidget, DistributiveOmit } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { logger } from '../../config/logger.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 
@@ -17,13 +18,8 @@ const ValidateWidgetBodySchema = z.object({
   raw: z.string(),
 });
 
-export interface ValidatedWidgetFields {
-  title: string;
-  subtitle?: string;
-  type: 'markdown';
-  order: number;
-  content: string;
-}
+/** Any of the 4 widget types' fully-parsed fields (no `id` — this validates submitted text, not a stored resource). */
+export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id'>;
 
 export type ValidateWidgetResult =
   { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };

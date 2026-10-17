@@ -13,9 +13,12 @@ export {
   ensureSeeded,
   WidgetNotFoundError,
 } from './store.js';
-export type { WidgetContentInput } from './store.js';
 
-export { parseWidgetFile } from './internal/frontmatter.js';
-export type { WidgetFileParseResult } from './internal/frontmatter.js';
+export { parseWidgetFile, parseCsvBody } from './internal/frontmatter.js';
+export type {
+  WidgetFileParseResult,
+  CsvBodyData,
+  CsvBodyParseResult,
+} from './internal/frontmatter.js';
 
 export * from './types.js';

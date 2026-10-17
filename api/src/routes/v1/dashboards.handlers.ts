@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import * as widgetsLib from '@tkottke90/amazing-hashbrown-widgets';
-import { WidgetNotFoundError } from '@tkottke90/amazing-hashbrown-widgets';
-import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+import { WidgetNotFoundError, parseCsvBody } from '@tkottke90/amazing-hashbrown-widgets';
+import type {
+  DashboardWidget,
+  WidgetContentInput,
+  WidgetLoadResult,
+} from '@tkottke90/amazing-hashbrown-widgets/types';
 
 // ---- HandlerResult (mirrors mcp-servers.handlers.ts) ---------------------------
 
@@ -37,17 +41,78 @@ export interface WidgetStoreDeps {
 
 const defaultStore: WidgetStoreDeps = widgetsLib;
 
-// ---- Validation ----------------------------------------------------------------
+// ---- Validation -----------------------------------------------------------------
+//
+// One schema per widget type, combined into a discriminated union on `type`
+// — mirrors the shape of `WidgetContentInput`/the lib's own frontmatter
+// schemas, minus `order` (server-assigned, never client-supplied). A hex
+// regex is duplicated here rather than imported from the lib's `internal/`
+// module, consistent with this file already hand-authoring its own request
+// schema independent of the lib's persistence-layer schema.
 
-const WidgetContentSchema = z.object({
+const HexColorSchema = z
+  .string()
+  .regex(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i, 'Expected a hex color (#rgb or #rrggbb)');
+
+const MarkdownWidgetInputSchema = z.object({
+  type: z.literal('markdown'),
   title: z.string().min(1),
   subtitle: z.string().optional(),
   content: z.string(),
 });
 
+const BigNumberWidgetInputSchema = z.object({
+  type: z.literal('big-number'),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  value: z.number().optional(),
+  unit: z.string().optional(),
+});
+
+const LineGraphWidgetInputSchema = z.object({
+  type: z.literal('line-graph'),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  data: z.string(),
+  color: HexColorSchema.optional(),
+});
+
+const PieGraphWidgetInputSchema = z.object({
+  type: z.literal('pie-graph'),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  data: z.string(),
+  colors: z.array(HexColorSchema).optional(),
+});
+
+const WidgetInputSchema = z.discriminatedUnion('type', [
+  MarkdownWidgetInputSchema,
+  BigNumberWidgetInputSchema,
+  LineGraphWidgetInputSchema,
+  PieGraphWidgetInputSchema,
+]);
+
 const WidgetRawSchema = z.object({
   raw: z.string(),
 });
+
+/**
+ * The structural Zod schemas above only check `data: z.string()` for
+ * Line/Pie Graph — any string passes, including malformed CSV. CSV Body
+ * shape (header row, ≥1 row, numeric values) and Pie's non-negative rule
+ * (D5/D7) are checked here, reusing the lib's `parseCsvBody` — the same
+ * function `parseWidgetFile` uses when reading a file back, so a create/
+ * update and a later load can never disagree about what counts as valid.
+ */
+function validateTypeSpecificPayload(input: WidgetContentInput): string | null {
+  if (input.type !== 'line-graph' && input.type !== 'pie-graph') return null;
+  const csv = parseCsvBody(input.data);
+  if (!csv.ok) return csv.error;
+  if (input.type === 'pie-graph' && csv.data.values.some((value) => value < 0)) {
+    return 'Pie Graph values must be non-negative.';
+  }
+  return null;
+}
 
 // ---- Handlers --------------------------------------------------------------------
 
@@ -66,10 +131,12 @@ export async function createWidgetHandler(
   body: unknown,
   store: WidgetStoreDeps = defaultStore,
 ): Promise<HandlerResult<DashboardWidget>> {
-  const parsed = WidgetContentSchema.safeParse(body);
+  const parsed = WidgetInputSchema.safeParse(body);
   if (!parsed.success) {
     return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
   }
+  const payloadError = validateTypeSpecificPayload(parsed.data);
+  if (payloadError) return badRequest(payloadError);
   const widget = await store.createWidget(dashboardRoot, dashboardId, parsed.data);
   return ok(widget);
 }
@@ -81,10 +148,12 @@ export async function updateWidgetHandler(
   body: unknown,
   store: WidgetStoreDeps = defaultStore,
 ): Promise<HandlerResult<DashboardWidget>> {
-  const parsed = WidgetContentSchema.safeParse(body);
+  const parsed = WidgetInputSchema.safeParse(body);
   if (!parsed.success) {
     return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
   }
+  const payloadError = validateTypeSpecificPayload(parsed.data);
+  if (payloadError) return badRequest(payloadError);
   try {
     const widget = await store.updateWidget(dashboardRoot, dashboardId, id, parsed.data);
     return ok(widget);

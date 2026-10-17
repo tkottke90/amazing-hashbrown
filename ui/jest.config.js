@@ -26,6 +26,19 @@ export default {
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
+    // The D3 packages Line/Pie Graph widgets render with (and their own
+    // dependencies) ship ESM-only, with no CJS/UMD build Jest's default
+    // node_modules-is-ignored transform setup can load directly — unlike
+    // d3-force/d3-selection/d3-drag/d3-zoom (the Wiki graph's D3 packages,
+    // identical in that respect), which happened to never be exercised by
+    // a Jest-run import path before. Transpile just these via ts-jest with
+    // its own override config (not the shared tsconfig, which isn't meant
+    // for third-party JS) rather than adding a Babel dependency.
+    '/node_modules/(d3-[a-z-]+|internmap)/.+\\.js$': [
+      'ts-jest',
+      { tsconfig: { allowJs: true, module: 'commonjs', target: 'es2019' } },
+    ],
   },
+  transformIgnorePatterns: ['/node_modules/(?!d3-[a-z-]+|internmap)'],
   testMatch: ['<rootDir>/test/**/*.test.tsx', '<rootDir>/test/**/*.test.ts'],
 };
