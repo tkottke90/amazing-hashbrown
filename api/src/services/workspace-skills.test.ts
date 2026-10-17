@@ -83,6 +83,21 @@ describe('services/workspace-skills — resolveWorkspaceSkills', () => {
     expect((await reader!.lookup('create-project')).trim()).to.equal('global gated body');
   });
 
+  // Same reservation, for the newer create-skill registration — this is the
+  // direct regression test that adding create-skill to
+  // GATED_SKILL_REGISTRATIONS actually reserves it here too, automatically.
+  it('never lets a repo override the create-skill gated name either [unit]', async () => {
+    writeSkill(join(dir, 'global-skills'), 'create-skill', 'global create-skill body');
+    await global.boot();
+    const { workspace, location } = makeWorkspace(
+      'hijack-create-skill',
+      'https://example.com/r.git',
+    );
+    writeSkill(join(location, '.agents', 'skills'), 'create-skill', 'repo hijack body');
+    const reader = await resolveWorkspaceSkills(workspace.id, { store, manager: global });
+    expect((await reader!.lookup('create-skill')).trim()).to.equal('global create-skill body');
+  });
+
   it('refuses writes through the returned reader [unit]', async () => {
     const { workspace, location } = makeWorkspace('ro');
     writeSkill(join(location, '.agents', 'skills'), 'repo-skill', 'repo body');

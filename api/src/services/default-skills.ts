@@ -225,4 +225,47 @@ Steps:
 
 This skill has exactly one valid response: a single propose_file_merge tool call carrying the full merged content. Writing the merge out as a chat message — prose, a markdown table, a bullet list, anything — does not satisfy this skill, no matter how correct that text is, because the user's editor only updates from the tool call's arguments; text left in chat is invisible to it. propose_file_merge is already bound and callable the moment this skill is active — if it looks unavailable or absent from your tools for this turn, that reading is wrong; call it anyway, with the real merged content as the mergedContent argument.`,
   },
+  // First draft, structurally complete against the design
+  // (docs/superpowers/specs/2026-10-16-create-skill-design.md) but not yet
+  // eval-tightened against a real run — expect this to need the same kind
+  // of iterative tightening create-workspace/create-project/
+  // resolve-file-conflict's bodies above needed, once suites/create-skill.yaml
+  // has been run against real models.
+  {
+    name: 'create-skill',
+    description:
+      'Guide the user through creating a new skill, or repairing/upgrading an existing one — for the app-wide Skill Manager or the current workspace.',
+    body: `Guide the user through creating a new Agent Skill, or repairing/upgrading one that already exists. This covers the skill's SKILL.md (frontmatter + body) and its scripts/references artifacts — not evals, which this skill does not handle yet.
+
+Every question to the user anywhere in this flow — scope, repair framing, field collection, the cross-scope collision warning, the final confirmation — is its own ask_user tool call, never plain chat text. This holds even when you're confident you already know the right answer (an obvious scope, an obvious fix for a missing field, a complete-looking request): being confident which value belongs is not the same as the user having confirmed it, and skipping ask_user because you're sure skips the one chance they have to correct a wrong guess before anything is written. If you catch yourself drafting an explanation or a question as your reply's own text, stop and make it an ask_user call instead.
+
+Step 1 (always first, before anything else): determine which path applies below.
+- Take the REPAIR path only when the user is asking to fix, change, or repair a skill they believe already exists ("fix my X skill", "something's wrong with X", "update X") — not merely because a name is mentioned. Giving a brand-new skill a name as part of a creation request (e.g. "make a skill called X") is not this — that's the CREATE path.
+- A bare invocation with no repair language yet (e.g. just "/create-skill" on its own) is also not repair — take the CREATE path; its own first step (asking scope) handles a request with nothing else specified.
+- Once you know which path applies, follow only that path's steps. They have their own independent numbering and never refer back to each other — you will never need both at once.
+
+## CREATE path
+
+1. Determine scope — app-wide (the Skill Manager, visible everywhere) or this workspace (.agents/skills, visible only here).
+   - If there is no workspace in this conversation, app-wide is the only option — state that plainly, don't ask.
+   - If the user's own message already states the scope explicitly (e.g. "app-wide", "just for this workspace", "in the Skill Manager"), treat it as settled — don't ask again just because a workspace happens to also be available.
+   - Otherwise ask with its own, single ask_user call using kind: "multiple_choice" (choices: the two scopes), separate from any other question and before collecting anything else in step 2. Never fold this into a batched free_text question — it specifically needs the multiple_choice buttons, not prose. Never infer it from ambient context either (e.g. "we're in a workspace chat, so default to workspace") — only the user's own stated scope or this dedicated question settles it.
+2. Collect what you need in as few batched ask_user calls as possible — do not ask one field at a time: name (lowercase, hyphenated — this becomes the slash command), description, body, and whether any scripts or reference files are needed.
+   - The description field is not a summary — it's the literal text search_skills and the slash menu match against, so it needs concrete trigger phrases a user would actually type (e.g. "wiki search tips, search syntax help" rather than "helps with search"). Say this to the user as part of asking, so they understand why it matters.
+   - Use kind: "free_text" for name/description/body — never kind: "multiple_choice" with invented example values, since none of these fields has a fixed set of valid answers.
+3. Before confirming anything: use search_skills to check whether a skill with this name already exists in the *other* scope (the one not chosen in step 1). If it does, say so as part of step 4's confirmation question itself (one ask_user call, not a separate prose explanation first) — a workspace skill shadows a same-named app-wide one when both exist — and let them rename or proceed with that understood; this is a warning, not a reason to block on its own, and not a reason to call get_skill_source to investigate further.
+4. Summarize the full draft (frontmatter fields plus any planned scripts/references, plus any step 3 collision warning) and confirm with a single yes/no ask_user call before writing anything. This applies even when every field was already given up front in the user's own message — a complete request is exactly the case this step exists for, not a reason to skip straight to a write.
+5. Only after explicit confirmation: call create_app_skill (app scope) or create_workspace_skill (workspace scope) with exactly what was confirmed. If the tool reports a conflict or validation error, relay it as-is and stop — do not retry with a different name or otherwise route around the rejection; wait for the user's next instruction.
+6. If scripts or reference files were part of the draft, add each one with create_skill_artifact after the SKILL.md write succeeds. For any script artifact, immediately call #test_skill_artifact to dry-run it and show the result before finishing — a direct tool call, not a prose question asking whether the user wants it tested; this is a sanity check during authoring, not how the skill's script runs for real once the skill is invoked later.
+7. Wrap up with a brief confirmation of what was created. For a workspace-scope write, say plainly that the file is on disk but not committed — the user reviews and commits it through the workspace's own normal git flow, the same as any other change there.
+
+## REPAIR path
+
+1. Call get_skill_source with the skill's name first, before asking anything else — the skill's existing scope (which get_skill_source reports) is already the answer, so don't ask the user to pick one. If it reports the name is ambiguous (exists in both scopes), ask the user (via ask_user) which one they mean before doing anything else; do not guess.
+2. Read its "issue" field (if any) and ask about that specific, concrete problem via its own #ask_user call — never restart a blank interview for a skill that already has content.
+3. Once the user answers, summarize exactly what you're about to change (the field, and its new value) and confirm with a single yes/no #ask_user call before writing anything — a direct answer from the user is something to confirm, not yet an instruction to write. Never compose the new value yourself from the existing body or name and skip straight to editing: however plausible your own guess looks, it is still a guess the user never approved, and this confirmation step exists for exactly that case.
+4. Only after explicit confirmation: call edit_app_skill (app scope) or edit_workspace_skill (workspace scope) with exactly what was confirmed. If the tool reports a conflict or validation error, relay it as-is and stop — do not retry with a different name or otherwise route around the rejection; wait for the user's next instruction.
+5. If the fix touches scripts or reference files, use update_skill_artifact for an existing file (or create_skill_artifact for a new one) after the SKILL.md edit succeeds. For any script artifact, immediately call #test_skill_artifact to dry-run it and show the result before finishing — a direct tool call, not a prose question asking whether the user wants it tested.
+6. Wrap up with a brief confirmation of what changed. For a workspace-scope write, say plainly that the file is on disk but not committed — the user reviews and commits it through the workspace's own normal git flow, the same as any other change there.`,
+  },
 ];

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidDir, isSafeBasename, FILE_DIRS } from '@tkottke90/skills-manager';
 import type {
   SkillsManager,
   Skill,
@@ -102,21 +103,10 @@ const EvalSuiteSchema = z.object({
 
 // ---- File path safety ---------------------------------------------------------
 // SkillsManager.readFile/writeFile/deleteFile join `basename` straight into a
-// filesystem path with no validation of their own — this is where
-// path-traversal protection has to live for these new routes.
-
-const FILE_DIRS = ['scripts', 'references'] as const;
-type FileDir = (typeof FILE_DIRS)[number];
-
-function isValidDir(dir: string): dir is FileDir {
-  return (FILE_DIRS as readonly string[]).includes(dir);
-}
-
-const BASENAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-function isSafeBasename(basename: string): boolean {
-  return BASENAME_RE.test(basename) && !basename.includes('..');
-}
+// filesystem path with no validation of their own — isValidDir/isSafeBasename
+// (imported above from @tkottke90/skills-manager) are where path-traversal
+// protection lives, shared with the model-facing skill-artifact tools so
+// there's exactly one copy of this check rather than one per caller.
 
 // ---- Handlers -------------------------------------------------------------
 

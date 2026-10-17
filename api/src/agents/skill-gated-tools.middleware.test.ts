@@ -113,4 +113,62 @@ describe('agents/skill-gated-tools.middleware', () => {
       expect(seenTools.map((t) => t.name)).to.include('propose_file_merge');
     });
   });
+
+  // Same reasoning as the resolve-file-conflict block above, for
+  // create-skill's nine tools — fails here if a future edit to
+  // gated-skill-registrations.ts drops or misnames any of them.
+  describe('create-skill tools (create-skill registration)', () => {
+    const CREATE_SKILL_TOOL_NAMES = [
+      'create_app_skill',
+      'edit_app_skill',
+      'create_workspace_skill',
+      'edit_workspace_skill',
+      'get_skill_source',
+      'create_skill_artifact',
+      'update_skill_artifact',
+      'delete_skill_artifact',
+      'test_skill_artifact',
+    ];
+    const tools = [...ALWAYS_ON, ...GATED, ...CREATE_SKILL_TOOL_NAMES.map(fakeTool)];
+
+    function requestWith(activeGatedSkill: string | null) {
+      return {
+        tools,
+        state: { activeGatedSkill },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    it('hides all nine tools when create-skill is not the active gated skill', async () => {
+      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      let seenTools: { name: string }[] = [];
+      const handler = async (req: { tools: { name: string }[] }) => {
+        seenTools = req.tools;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return {} as any;
+      };
+
+      await middleware.wrapModelCall!(requestWith(null), handler);
+
+      for (const name of CREATE_SKILL_TOOL_NAMES) {
+        expect(seenTools.map((t) => t.name)).to.not.include(name);
+      }
+    });
+
+    it('exposes all nine tools together once create-skill is the active gated skill', async () => {
+      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      let seenTools: { name: string }[] = [];
+      const handler = async (req: { tools: { name: string }[] }) => {
+        seenTools = req.tools;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return {} as any;
+      };
+
+      await middleware.wrapModelCall!(requestWith('create-skill'), handler);
+
+      for (const name of CREATE_SKILL_TOOL_NAMES) {
+        expect(seenTools.map((t) => t.name)).to.include(name);
+      }
+    });
+  });
 });

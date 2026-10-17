@@ -242,4 +242,83 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: false,
     skillCommand: 'resolve-file-conflict',
   },
+  {
+    toolId: 'create_app_skill',
+    name: 'Create App Skill',
+    description: 'Create a new app-wide skill. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'edit_app_skill',
+    name: 'Edit App Skill',
+    description: 'Edit an existing app-wide skill. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'create_workspace_skill',
+    name: 'Create Workspace Skill',
+    description:
+      'Create a new skill scoped to a workspace\'s .agents/skills. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'edit_workspace_skill',
+    name: 'Edit Workspace Skill',
+    description:
+      'Edit an existing skill in a workspace\'s .agents/skills. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'get_skill_source',
+    name: 'Get Skill Source',
+    description:
+      'Read a skill\'s frontmatter, body, and compliance issues for repair. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'create_skill_artifact',
+    name: 'Create Skill Artifact',
+    description:
+      'Add a new script or reference file to a skill. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'update_skill_artifact',
+    name: 'Update Skill Artifact',
+    description:
+      'Overwrite an existing skill\'s script or reference file. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'delete_skill_artifact',
+    name: 'Delete Skill Artifact',
+    description:
+      'Remove an existing script or reference file from a skill. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
+  {
+    toolId: 'test_skill_artifact',
+    name: 'Test Skill Artifact',
+    description:
+      'Dry-run a skill script right after writing it. Unlocked by the "create-skill" skill.',
+    category: 'skill-gated',
+    alwaysOn: false,
+    skillCommand: 'create-skill',
+  },
 ];
