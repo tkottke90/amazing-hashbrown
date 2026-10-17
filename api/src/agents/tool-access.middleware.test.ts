@@ -303,6 +303,31 @@ describe('agents/tool-access.middleware', () => {
       expect(systemContent).to.include('<tool_guidance:web_fetch>');
       expect(systemContent).to.include('<required-tool id="web_fetch">');
     });
+
+    // Regression test: a skill-gated tool id (e.g. one of create-skill's
+    // nine) is never part of enabledIds — a thread's tool-settings snapshot
+    // doesn't cover skill-gated tools at all (see SKILL_GATED_TOOL_IDS's own
+    // comment). Validating a requested id against enabledIds instead of the
+    // actually-bound set silently dropped every #tool-name request for a
+    // skill-gated tool, even while that tool's gate was genuinely open for
+    // this call — e.g. a create-skill step asking for #test_skill_artifact
+    // would never produce a required-tool block no matter what. Fixed by
+    // validating against boundIds instead.
+    it('produces a required-tool block for a skill-gated tool whose gate is currently open', async () => {
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['create_app_skill'], 't1', 'base prompt', ['create_app_skill']),
+      );
+      expect(systemContent).to.include('<required-tool id="create_app_skill">');
+    });
+
+    it('still drops a requested id for a skill-gated tool whose gate is currently closed', async () => {
+      const { systemContent } = await runMiddleware(
+        middleware,
+        fakeRequest(['web_fetch'], 't1', 'base prompt', ['create_app_skill']),
+      );
+      expect(systemContent).to.not.include('required-tool');
+    });
   });
 
   describe('harness section filtering (issue #154)', () => {

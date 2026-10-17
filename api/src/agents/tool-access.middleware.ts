@@ -127,19 +127,31 @@ export function createToolAccessMiddleware(
         })
         .filter((block): block is string => block !== null);
 
+      // This call's actual bound-tool set, in display-id space — "bound"
+      // means enabled for the thread AND actually offered by this agent
+      // (`tools`, filtered above): a tool that is enabled but that this
+      // agent flavor never binds (schedule_wakeup or create_tasks in a task
+      // run) must not get prompt guidance for a tool the model cannot call.
+      // Computed before requiredToolBlocks below (not just for
+      // filterHarnessSections further down) because, unlike enabledIds, it
+      // also contains a skill-gated tool id when that skill's gate happens
+      // to be open for this call — enabledIds deliberately never does (see
+      // SKILL_GATED_TOOL_IDS's own comment) since a thread's tool-settings
+      // snapshot never covers skill-gated tools at all.
+      const boundIds = new Set(
+        tools.map((tool) => displayIdByMatchKey.get(tool.name as string) ?? (tool.name as string)),
+      );
+
       // Explicit #tool-name syntax (issue #172): requestedToolIds was
       // detected earlier in the chain by tool-syntax.middleware.ts from the
-      // latest human message, before this middleware's own enabledIds was
-      // available to validate against. Filtering happens here, in the one
-      // place that already resolves the effective tool-id set — a
-      // requested id not in enabledIds (typo, or a real but currently
-      // disabled tool) is silently dropped, same as an unmatched /skill
-      // name is handled differently on purpose: this one needs no user
-      // feedback, per the design doc.
-      const requiredToolBlocks = buildRequiredToolBlocks(
-        request.state.requestedToolIds,
-        enabledIds,
-      );
+      // latest human message, before this middleware's own bound-tool set
+      // was available to validate against. Filtering happens here, against
+      // boundIds rather than raw enabledIds, so a requested id for a
+      // currently-active skill-gated tool (e.g. a create-skill step asking
+      // for #ask_user or #test_skill_artifact) survives instead of being
+      // silently dropped the same way a typo or a globally-disabled tool is
+      // — this one needs no user feedback either, per the design doc.
+      const requiredToolBlocks = buildRequiredToolBlocks(request.state.requestedToolIds, boundIds);
 
       const allBlocks = [...instructionBlocks, ...requiredToolBlocks];
 
@@ -151,19 +163,8 @@ export function createToolAccessMiddleware(
       // runs instead of silently skipping it for a multimodal turn.
       const baseContent = getMessageText(request.systemMessage.content);
 
-      // Gate tool-scoped harness sections (issue #154) on this call's actual
-      // bound-tool set — must happen unconditionally here, not only when
-      // allBlocks is non-empty below, or a thread with no per-tool custom
-      // instructions set and no #tool-name syntax present (the common case)
-      // would never have its system message touched at all, silently
-      // defeating this filter. "Bound" means enabled for the thread AND
-      // actually offered by this agent (`tools`, filtered above): a tool that
-      // is enabled but that this agent flavor never binds (schedule_wakeup
-      // or create_tasks in a task run) must not get prompt guidance for a
-      // tool the model cannot call.
-      const boundIds = new Set(
-        tools.map((tool) => displayIdByMatchKey.get(tool.name as string) ?? (tool.name as string)),
-      );
+      // Gate tool-scoped harness sections (issue #154) on this same
+      // bound-tool set.
       const filteredContent = filterHarnessSections(baseContent, boundIds);
 
       if (allBlocks.length === 0) {
