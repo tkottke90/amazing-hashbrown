@@ -14,6 +14,7 @@ import {
   type RunConfig,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type ToolSyntaxMiddlewareLike,
 } from '../../src/runner.js';
 import type {
   DeterministicScenario,
@@ -1609,6 +1610,203 @@ describe('executeScenario — required-tool injection (issue #172)', () => {
 
     const input = getLastInput() as SystemMessage[];
     assert.equal(input[0]!.content, 'BASE PROMPT (filtered)\n\n<required-tool id="web_fetch"/>');
+  });
+});
+
+// Regression coverage for the bug found diagnosing real create-skill eval
+// transcripts: a #token embedded inside a skill's own expanded body (e.g.
+// default-skills.ts) was never detected, because the four tests above only
+// ever scan a scenario's own pre-expansion `input`/turn text — the gap a
+// `gatedSkill` scenario's #token genuinely lives behind. These tests prove
+// toolSyntaxMiddleware.beforeAgent is now called on the real post-expansion
+// messages instead.
+describe('executeScenario — required-tool injection scans post-expansion text for gatedSkill scenarios', () => {
+  const ALWAYS_ON = fakeTool('ask_user');
+  const GATED = fakeTool('test_skill_artifact');
+
+  // Same small-scale mirror of the real skillExpansionMiddleware already
+  // used in the gatedSkill describe block above, scoped locally here since
+  // that block's helpers aren't exported.
+  function makeFakeExpansionMiddleware(
+    command: string,
+    expandedBody: string,
+  ): SkillExpansionMiddlewareLike {
+    return {
+      beforeAgent: async (state) => {
+        const last = state.messages[state.messages.length - 1];
+        const content = last?.content;
+        if (typeof content !== 'string' || !content.startsWith(`/${command}`)) return undefined;
+        const messages = [...state.messages];
+        messages[messages.length - 1] = new HumanMessage(expandedBody);
+        return { messages, activeGatedSkill: command };
+      },
+    };
+  }
+
+  function makeFakeGatingMiddleware(command: string): SkillGatedToolsMiddlewareLike {
+    return {
+      wrapModelCall: async (request, handler) => {
+        const tools =
+          request.state.activeGatedSkill === command ? [...request.tools, GATED] : request.tools;
+        return handler({ ...request, tools });
+      },
+    };
+  }
+
+  // Mirrors the real tool-syntax.middleware.ts's own beforeAgent: scans the
+  // latest message's text for #tokens, returns {requestedToolIds} or
+  // undefined — notably never touches `messages`.
+  function makeFakeToolSyntaxMiddleware(): ToolSyntaxMiddlewareLike {
+    return {
+      beforeAgent: async (state) => {
+        const last = state.messages[state.messages.length - 1];
+        const content = last?.content;
+        if (typeof content !== 'string') return undefined;
+        const ids = [...content.matchAll(/#([a-z_]+)/g)].map((m) => m[1]!);
+        return ids.length ? { requestedToolIds: ids } : undefined;
+      },
+    };
+  }
+
+  it('tool-call: detects a #token embedded in the skill-expanded body, not just the scenario input', async () => {
+    const scenario: ToolCallScenario = {
+      id: 'reqtool-gated-tc-1',
+      name: 'Gated required-tool tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: '/fake-skill do the thing', // deliberately no literal #token here
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel(GATED.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      systemPrompt: 'BASE PROMPT',
+      skillExpansionMiddleware: makeFakeExpansionMiddleware(
+        'fake-skill',
+        'Do the thing. Immediately call #test_skill_artifact to verify.',
+      ),
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+      toolSyntaxMiddleware: makeFakeToolSyntaxMiddleware(),
+      buildRequiredToolBlocks: (ids, available) =>
+        ids.filter((id) => available.has(id)).map((id) => `<required-tool id="${id}"/>`),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT\n\n<required-tool id="test_skill_artifact"/>');
+  });
+
+  it('tool-sequence: detects a #token embedded in the skill-expanded body', async () => {
+    const scenario: ToolSequenceScenario = {
+      id: 'reqtool-gated-ts-1',
+      name: 'Gated required-tool tool-sequence scenario',
+      purpose: 'Testing',
+      type: 'tool-sequence',
+      turns: [{ user: '/fake-skill do the thing' }], // no literal #token here either
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getLastInput } = makeCapturingBindToolsModel(GATED.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      systemPrompt: 'BASE PROMPT',
+      skillExpansionMiddleware: makeFakeExpansionMiddleware(
+        'fake-skill',
+        'Do the thing. Immediately call #test_skill_artifact to verify.',
+      ),
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+      toolSyntaxMiddleware: makeFakeToolSyntaxMiddleware(),
+      buildRequiredToolBlocks: (ids, available) =>
+        ids.filter((id) => available.has(id)).map((id) => `<required-tool id="${id}"/>`),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    const input = getLastInput() as SystemMessage[];
+    assert.equal(input[0]!.content, 'BASE PROMPT\n\n<required-tool id="test_skill_artifact"/>');
+  });
+
+  it('errors (not crashes) when gatedSkill + buildRequiredToolBlocks are set but toolSyntaxMiddleware is missing', async () => {
+    const scenario: ToolCallScenario = {
+      id: 'reqtool-gated-tc-missing-mw',
+      name: 'Gated required-tool scenario missing toolSyntaxMiddleware',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: '/fake-skill do the thing',
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+    };
+    const suite = makeSuite([scenario]);
+    const { model } = makeCapturingBindToolsModel(GATED.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillExpansionMiddleware: makeFakeExpansionMiddleware(
+        'fake-skill',
+        '#test_skill_artifact now',
+      ),
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+      buildRequiredToolBlocks: (ids) => ids.map((id) => `<required-tool id="${id}"/>`),
+      // toolSyntaxMiddleware intentionally omitted
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.ok(result.actualOutput.includes('toolSyntaxMiddleware'));
+  });
+
+  it('is a no-op (no throw) when gatedSkill is set but buildRequiredToolBlocks is never configured', async () => {
+    const scenario: ToolCallScenario = {
+      id: 'reqtool-gated-tc-no-feature',
+      name: 'Gated scenario without the #tool-name feature opted into',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: '/fake-skill do the thing',
+      tool: GATED.name as string,
+      minScore: 1,
+      gatedSkill: 'fake-skill',
+    };
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools } = makeCapturingBindToolsModel(GATED.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillExpansionMiddleware: makeFakeExpansionMiddleware(
+        'fake-skill',
+        '#test_skill_artifact now',
+      ),
+      skillGatedToolsMiddleware: makeFakeGatingMiddleware('fake-skill'),
+      // no buildRequiredToolBlocks, no toolSyntaxMiddleware — the whole
+      // #tool-name feature is simply unused by this run, same as most suites.
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user', 'test_skill_artifact'],
+    );
+    assert.equal(result.details.type, 'tool-call');
   });
 });
 

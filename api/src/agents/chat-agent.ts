@@ -63,6 +63,15 @@ import { listTasksTool } from './tools/list-tasks.tool.js';
 import { getTaskOutcomeTool } from './tools/get-task-outcome.tool.js';
 import { readWorkspaceTaskRunTool } from './tools/read-workspace-task-run.tool.js';
 import { proposeFileMergeTool } from './tools/propose-file-merge.tool.js';
+import { makeCreateAppSkillTool } from './tools/create-app-skill.tool.js';
+import { makeEditAppSkillTool } from './tools/edit-app-skill.tool.js';
+import { makeCreateWorkspaceSkillTool } from './tools/create-workspace-skill.tool.js';
+import { makeEditWorkspaceSkillTool } from './tools/edit-workspace-skill.tool.js';
+import { makeGetSkillSourceTool } from './tools/get-skill-source.tool.js';
+import { makeCreateSkillArtifactTool } from './tools/create-skill-artifact.tool.js';
+import { makeUpdateSkillArtifactTool } from './tools/update-skill-artifact.tool.js';
+import { makeDeleteSkillArtifactTool } from './tools/delete-skill-artifact.tool.js';
+import { makeTestSkillArtifactTool } from './tools/test-skill-artifact.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
 import { skillsManager } from '../services/skills-manager.js';
 import { resolveWorkspaceSkills, type SkillReader } from '../services/workspace-skills.js';
@@ -340,6 +349,31 @@ function buildGatedTools() {
   return [makeCreateWorkspaceTool(), makeCreateProjectTool()];
 }
 
+// create-skill's own gated tools (gated-skill-registrations.ts) — a
+// deliberate asymmetry from buildGatedTools() above: spread into
+// buildChatAgent and buildWorkspaceChatAgent only, NOT buildTaskAgent. This
+// is an interactive, ask_user-driven guided interview, which doesn't fit an
+// automated/background task run the way a one-shot create_workspace/
+// create_project call does — don't "fix" this by adding it to
+// buildTaskAgent to match buildGatedTools()'s spread there. Also never
+// added to buildSubAgentAgent's candidatePool, same as buildGatedTools()
+// itself — that pool never spreads either array in today, so both are
+// excluded by omission. Built fresh per agent construction, same
+// TDZ/circular-import reasoning as buildGatedTools().
+function buildCreateSkillTools() {
+  return [
+    makeCreateAppSkillTool(),
+    makeEditAppSkillTool(),
+    makeCreateWorkspaceSkillTool(),
+    makeEditWorkspaceSkillTool(),
+    makeGetSkillSourceTool(),
+    makeCreateSkillArtifactTool(),
+    makeUpdateSkillArtifactTool(),
+    makeDeleteSkillArtifactTool(),
+    makeTestSkillArtifactTool(),
+  ];
+}
+
 // Workspace/task-scoped-only tools — bound wherever workspace or task
 // context exists (buildWorkspaceChatAgent, buildTaskAgent) but never in
 // buildChatAgent (plain chat has no workspaceId to create tasks against)
@@ -437,6 +471,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ...WAKEUP_TOOLS,
       ...buildSkillTools(globalSkills),
       ...buildGatedTools(),
+      ...buildCreateSkillTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,
     ],
@@ -574,6 +609,7 @@ async function buildWorkspaceChatAgent(
       ...buildWorkspaceScopedTools(),
       ...buildTaskVisibilityTools(),
       ...buildGatedTools(),
+      ...buildCreateSkillTools(),
       ...buildFileConflictTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,

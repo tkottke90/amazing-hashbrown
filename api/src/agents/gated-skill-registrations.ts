@@ -16,4 +16,18 @@ export const GATED_SKILL_REGISTRATIONS: SkillGatedToolRegistration[] = [
   { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
   { skillCommand: 'create-project', toolNames: ['create_project'] },
   { skillCommand: 'resolve-file-conflict', toolNames: ['propose_file_merge'] },
+  {
+    skillCommand: 'create-skill',
+    toolNames: [
+      'create_app_skill',
+      'edit_app_skill',
+      'create_workspace_skill',
+      'edit_workspace_skill',
+      'get_skill_source',
+      'create_skill_artifact',
+      'update_skill_artifact',
+      'delete_skill_artifact',
+      'test_skill_artifact',
+    ],
+  },
 ];

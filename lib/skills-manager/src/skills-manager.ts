@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { serialize, validateFrontmatter, parse, DESCRIPTION_MAX } from './internal/frontmatter.js';
-import { scanSkillsRoot, readFrontmatter, readFullSkill } from './internal/loader.js';
+import { scanSkillsRoot, readFrontmatter, readFullSkill, inventoryDir } from './internal/loader.js';
 import {
   runJsScript,
   runPythonScript as execPythonScript,
@@ -18,6 +18,7 @@ import type {
   EvalSuite,
   BootResult,
   SkippedSkill,
+  SkillInspection,
 } from './types.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -132,6 +133,64 @@ export class SkillsManager {
     const owner = this.owner(name);
     if (owner !== this) return owner.load(name);
     return readFullSkill(join(this.skillsRoot, name));
+  }
+
+  // Raw, non-throwing read of a named skill's SKILL.md directly off disk —
+  // deliberately independent of the cache/boot() and of this.owner()'s
+  // parent-chain delegation (each manager inspects only its own root; a
+  // caller juggling both a global and a workspace manager resolves which
+  // one to ask itself). Unlike load()/lookup(), this works even for a skill
+  // broken enough to have failed boot() validation and therefore never
+  // entered the cache — the exact case repair needs to read.
+  async inspect(name: string): Promise<SkillInspection> {
+    const skillPath = join(this.skillsRoot, name);
+    let raw: string;
+    try {
+      raw = await readFile(join(skillPath, SKILL_FILE), 'utf8');
+    } catch {
+      return { exists: false };
+    }
+
+    const scripts = await inventoryDir(join(skillPath, 'scripts'));
+    const references = await inventoryDir(join(skillPath, 'references'));
+
+    let data: Record<string, unknown>;
+    let body: string;
+    try {
+      ({ data, body } = parse(raw));
+    } catch (err) {
+      // Malformed YAML frontmatter — gray-matter/js-yaml can throw here,
+      // independently of validateFrontmatter's field-level checks below.
+      return {
+        exists: true,
+        raw,
+        scripts,
+        references,
+        issue: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    try {
+      const frontmatter = validateFrontmatter(data);
+      return {
+        exists: true,
+        raw,
+        body,
+        scripts,
+        references,
+        frontmatter,
+        nameMismatch: frontmatter.name !== name,
+      };
+    } catch (err) {
+      return {
+        exists: true,
+        raw,
+        body,
+        scripts,
+        references,
+        issue: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   async create(input: CreateSkillInput): Promise<Skill> {

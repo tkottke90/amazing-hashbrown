@@ -66,6 +66,25 @@ export interface ScriptResult {
   exitCode: number;
 }
 
+// Result of SkillsManager.inspect() — a raw, non-throwing read of a named
+// skill's SKILL.md directly off disk, independent of boot()'s cache. Unlike
+// load()/lookup() (which only resolve a name already in the cache, i.e. a
+// skill that already passed validation), inspect() exists specifically to
+// reach a skill broken enough to have failed boot() validation, so repair
+// has something to work from. `issue` is a single string, not a list:
+// validateFrontmatter throws on the first problem it finds rather than
+// collecting every one, so repair is inherently iterative.
+export interface SkillInspection {
+  exists: boolean;
+  raw?: string;
+  frontmatter?: SkillFrontmatter;
+  body?: string;
+  scripts?: Record<string, string>;
+  references?: Record<string, string>;
+  nameMismatch?: boolean;
+  issue?: string;
+}
+
 // ── Output quality eval types ──────────────────────────────────────────
 
 export interface EvalCase {
