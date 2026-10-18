@@ -71,6 +71,55 @@ describe('chat/AppBroadcastEventSchema — thread turn lifecycle', () => {
   });
 });
 
+describe('chat/AppBroadcastEventSchema — dashboard_reordered', () => {
+  const widget = {
+    id: 'widget-1',
+    type: 'markdown',
+    title: 'Welcome',
+    order: 0,
+    w: 3,
+    h: 2,
+    source: 'manual',
+    updatedAt: '2026-10-18T00:00:00.000Z',
+    content: 'Hello',
+  };
+
+  it('accepts a dashboard_reordered event carrying every changed widget [unit]', () => {
+    const event = { type: 'dashboard_reordered', dashboardId: 'default', widgets: [widget] };
+    const parsed = AppBroadcastEventSchema.safeParse(event);
+    expect(parsed.success).to.equal(true);
+    expect(parsed.data).to.deep.equal(event);
+  });
+
+  it('accepts an empty widgets array, so a no-op Reorder stays representable [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'dashboard_reordered',
+      dashboardId: 'default',
+      widgets: [],
+    });
+    expect(parsed.success).to.equal(true);
+  });
+
+  it('rejects a widgets entry missing Widget Size, since every widget carries w/h now [unit]', () => {
+    const { w, ...withoutSize } = widget;
+    void w;
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'dashboard_reordered',
+      dashboardId: 'default',
+      widgets: [withoutSize],
+    });
+    expect(parsed.success).to.equal(false);
+  });
+
+  it('rejects an event with no dashboardId, since the UI has no dashboard to patch [unit]', () => {
+    const parsed = AppBroadcastEventSchema.safeParse({
+      type: 'dashboard_reordered',
+      widgets: [widget],
+    });
+    expect(parsed.success).to.equal(false);
+  });
+});
+
 describe('chat/AppBroadcastEventSchema — after_agent_state', () => {
   it('accepts a running state, so the thread list can show the spinner live [unit]', () => {
     const event = { type: 'after_agent_state', threadId: 't-1', state: { status: 'running' } };

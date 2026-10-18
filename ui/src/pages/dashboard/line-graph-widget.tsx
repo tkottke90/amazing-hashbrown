@@ -8,13 +8,20 @@ import { showToast } from '@/lib/toast';
 import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 import { parseCsvBody } from './parse-csv-body';
-import { WidgetCard } from './widget-card';
+import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetDrawer } from './widget-drawer';
 import type { LineGraphWidget as LineGraphWidgetData } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 interface LineGraphWidgetProps {
   widget: LineGraphWidgetData;
   onChanged: () => void;
+  editMode?: boolean;
+  dragHandleProps?: DragHandleProps;
+  w?: number;
+  h?: number;
+  minW?: number;
+  minH?: number;
+  onResize?: (w: number, h: number) => void;
 }
 
 const CHART_WIDTH = 320;
@@ -24,7 +31,17 @@ const MARGIN = { top: 8, right: 8, bottom: 20, left: 8 };
 // avoids overlapping, unreadable text on a chart with many data points.
 const MAX_TICKS = 5;
 
-export function LineGraphWidget({ widget, onChanged }: LineGraphWidgetProps) {
+export function LineGraphWidget({
+  widget,
+  onChanged,
+  editMode,
+  dragHandleProps,
+  w,
+  h,
+  minW,
+  minH,
+  onResize,
+}: LineGraphWidgetProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -93,6 +110,13 @@ export function LineGraphWidget({ widget, onChanged }: LineGraphWidgetProps) {
       source={widget.source}
       maintainer={widget.maintainer}
       updatedAt={widget.updatedAt}
+      editMode={editMode}
+      dragHandleProps={dragHandleProps}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      onResize={onResize}
     >
       <div data-testid="line-graph-widget">
         <svg

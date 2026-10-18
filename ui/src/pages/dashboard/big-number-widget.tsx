@@ -2,16 +2,33 @@ import { Pencil, Trash2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
 import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
-import { WidgetCard } from './widget-card';
+import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetDrawer } from './widget-drawer';
 import type { BigNumberWidget as BigNumberWidgetData } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 interface BigNumberWidgetProps {
   widget: BigNumberWidgetData;
   onChanged: () => void;
+  editMode?: boolean;
+  dragHandleProps?: DragHandleProps;
+  w?: number;
+  h?: number;
+  minW?: number;
+  minH?: number;
+  onResize?: (w: number, h: number) => void;
 }
 
-export function BigNumberWidget({ widget, onChanged }: BigNumberWidgetProps) {
+export function BigNumberWidget({
+  widget,
+  onChanged,
+  editMode,
+  dragHandleProps,
+  w,
+  h,
+  minW,
+  minH,
+  onResize,
+}: BigNumberWidgetProps) {
   async function handleDelete() {
     if (!confirm(`Remove widget "${widget.title}"? This cannot be undone.`)) return;
     try {
@@ -29,6 +46,13 @@ export function BigNumberWidget({ widget, onChanged }: BigNumberWidgetProps) {
       source={widget.source}
       maintainer={widget.maintainer}
       updatedAt={widget.updatedAt}
+      editMode={editMode}
+      dragHandleProps={dragHandleProps}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      onResize={onResize}
     >
       <div data-testid="big-number-widget" className="flex items-baseline gap-2">
         <span className="text-3xl font-semibold text-foreground">

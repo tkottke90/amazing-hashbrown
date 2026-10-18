@@ -339,7 +339,7 @@ implementation details that change without notice.
 | `thread-row`                    | `ui/src/pages/threads/index.tsx`                          | A row on the Threads list page (all thread types); pair with `data-thread-id`                                                      |
 | `auto-approve-menu-item`        | `ui/src/components/chat-input.tsx`                        | The add-menu toggle for a workspace's shell_exec auto-approve setting                                                              |
 | `auto-approve-chip`             | `ui/src/components/chat-input.tsx`                        | The amber "Auto" chip shown next to the model chip when auto-approve is on; click to turn off                                      |
-| `dashboard-grid`                | `ui/src/pages/dashboard/dashboard-grid.tsx`               | The responsive widget grid on the dashboard landing page; read `grid-template-columns` to assert column count per breakpoint       |
+| `dashboard-grid`                | `ui/src/pages/dashboard/dashboard-grid.tsx`               | The dashboard landing page's widget grid — a 12-column fixed track at ≥1024px, a single-column stack below it (#314)               |
 | `widget-card`                   | `ui/src/pages/dashboard/widget-card.tsx`                  | A single dashboard widget card (any widget type)                                                                                   |
 | `dashboard-add-widget`          | `ui/src/pages/dashboard/index.tsx`                        | Header button that opens the Add Widget drawer                                                                                     |
 | `widget-edit-button`            | `ui/src/pages/dashboard/markdown-widget.tsx`              | A Markdown widget card's edit (pencil) icon, opens the Edit drawer                                                                 |
@@ -359,6 +359,9 @@ implementation details that change without notice.
 | `big-number-widget`             | `ui/src/pages/dashboard/big-number-widget.tsx`            | A rendered Big Number widget's value/unit container                                                                                |
 | `line-graph-widget`             | `ui/src/pages/dashboard/line-graph-widget.tsx`            | A rendered Line Graph widget's wrapper around its `<svg>`                                                                          |
 | `pie-graph-widget`              | `ui/src/pages/dashboard/pie-graph-widget.tsx`             | A rendered Pie Graph widget's wrapper around its `<svg>`                                                                           |
+| `dashboard-edit-mode-toggle`    | `ui/src/pages/dashboard/index.tsx`                        | Header button that toggles Edit Mode (#314); gates the drag/resize handles below                                                   |
+| `widget-drag-handle`            | `ui/src/pages/dashboard/widget-card.tsx`                  | A widget card's Reorder drag grip, shown only in Edit Mode                                                                         |
+| `widget-resize-handle`          | `ui/src/pages/dashboard/widget-card.tsx`                  | A widget card's bottom-right Widget Size resize handle, shown only in Edit Mode                                                    |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

@@ -9,6 +9,7 @@ import {
   listWidgetsHandler,
   createWidgetHandler,
   updateWidgetHandler,
+  reorderWidgetHandler,
   updateWidgetContentHandler,
   updateWidgetRawHandler,
   deleteWidgetHandler,
@@ -289,6 +290,187 @@ describe('routes/v1/dashboards.handlers', () => {
       });
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data).to.deep.include({ value: 2, unit: 'things' });
+    });
+
+    it('persists Widget Size when both w and h are supplied (resize) [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      expect(created.data).to.deep.include({ w: 2, h: 2 });
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+        w: 6,
+        h: 4,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.include({ w: 6, h: 4 });
+    });
+
+    it('preserves Widget Size when w/h are omitted, the drawer edit path [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      const resized = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+        w: 6,
+        h: 4,
+      });
+      if (!resized.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'big-number',
+        title: 'Count renamed',
+        value: 1,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.include({ w: 6, h: 4 });
+    });
+
+    it('rejects a w below the type minimum with 400 [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'big-number',
+        title: 'Count',
+        value: 1,
+        w: 1,
+        h: 2,
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+  });
+
+  describe('reorderWidgetHandler()', () => {
+    it('reorders two widgets, returning only the ones whose order changed [unit]', async () => {
+      const a = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      const b = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'B',
+        content: 'b',
+      });
+      if (!a.ok || !b.ok) throw new Error('setup failed');
+
+      const result = await reorderWidgetHandler(root, 'default', b.data.id, {
+        targetWidgetId: a.data.id,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const ids = result.data.map((w) => w.id).sort();
+        expect(ids).to.deep.equal([a.data.id, b.data.id].sort());
+      }
+
+      const list = await listWidgetsHandler(root, 'default');
+      if (list.ok) {
+        const ordered = list.data.map((r) => (r.status === 'ok' ? r.widget.id : null));
+        expect(ordered).to.deep.equal([b.data.id, a.data.id]);
+      }
+    });
+
+    it('returns an empty array and broadcasts nothing for a no-op reorder [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+      broadcastedEvents = [];
+
+      const result = await reorderWidgetHandler(root, 'default', created.data.id, {
+        targetWidgetId: created.data.id,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal([]);
+      expect(broadcastedEvents).to.have.length(0);
+    });
+
+    it('broadcasts dashboard_reordered carrying every changed widget [unit]', async () => {
+      const a = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      const b = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'B',
+        content: 'b',
+      });
+      if (!a.ok || !b.ok) throw new Error('setup failed');
+      broadcastedEvents = [];
+
+      const result = await reorderWidgetHandler(root, 'default', b.data.id, {
+        targetWidgetId: a.data.id,
+      });
+      if (!result.ok) throw new Error('setup failed');
+      expect(broadcastedEvents).to.have.length(1);
+      expect(broadcastedEvents[0]).to.deep.equal({
+        type: 'dashboard_reordered',
+        dashboardId: 'default',
+        widgets: result.data,
+      });
+    });
+
+    it('returns 404 for an unknown movedId [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await reorderWidgetHandler(root, 'default', 'nope', {
+        targetWidgetId: created.data.id,
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 404 for an unknown targetWidgetId [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await reorderWidgetHandler(root, 'default', created.data.id, {
+        targetWidgetId: 'nope',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for a missing targetWidgetId in the body [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        content: 'a',
+      });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await reorderWidgetHandler(root, 'default', created.data.id, {});
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
     });
   });
 

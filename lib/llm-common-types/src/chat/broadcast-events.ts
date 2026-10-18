@@ -134,6 +134,17 @@ const WidgetUpdatedSchema = z.object({
   widget: DashboardWidgetSchema,
 });
 
+// Fired once per Reorder (see GLOSSARY.md) — a drag-and-drop splice can
+// change every widget's `order` between the old and new slot in one user
+// action, so this carries all of them rather than firing `widget_updated`
+// once per changed widget (ADR-0008). See
+// docs/superpowers/specs/2026-10-18-dashboard-widget-layout-design.md §3.
+const DashboardReorderedSchema = z.object({
+  type: z.literal('dashboard_reordered'),
+  dashboardId: z.string(),
+  widgets: z.array(DashboardWidgetSchema),
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
@@ -144,5 +155,6 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   ThreadTurnCompletedSchema,
   AfterAgentStateEventSchema,
   WidgetUpdatedSchema,
+  DashboardReorderedSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

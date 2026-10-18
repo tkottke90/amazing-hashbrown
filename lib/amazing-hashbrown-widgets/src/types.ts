@@ -18,6 +18,8 @@ import {
   PieGraphWidgetFrontmatterSchema,
 } from './internal/widget-field-schemas.js';
 
+export { WIDGET_SIZE_MIN, WIDGET_SIZE_MAX } from './internal/widget-field-schemas.js';
+
 /** Fields every widget type shares, regardless of its `type`. */
 export interface WidgetBase {
   /**
@@ -33,6 +35,9 @@ export interface WidgetBase {
   subtitle?: string;
   /** Ascending sort key among a dashboard's widgets. */
   order: number;
+  /** Widget Size (see GLOSSARY.md) — grid column/row span, clamped to `[type minimum, WIDGET_SIZE_MAX]`. */
+  w: number;
+  h: number;
   /** Widget Source (see GLOSSARY.md) — set by the calling code only, never request/tool-call input. */
   source: 'manual' | 'agent' | 'system';
   /** Widget Maintainer (see GLOSSARY.md) — only ever set via an agent-sourced write. */
@@ -118,11 +123,19 @@ export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updated
  * What `store.createWidget`/`updateWidget` accept: everything a caller must
  * have already decided (including `source` — ADR-0005) before persistence,
  * minus what the store itself assigns/preserves (`id`, `order`) or derives
- * (`updatedAt`). Built structurally off `DashboardWidget` so it can never
- * drift from it; distinct from `WidgetContentInput`, which is the UI
- * drawer's own full-replace request shape and has no `source`/`maintainer`.
+ * (`updatedAt`). `w`/`h` (Widget Size) are excluded the same way `order` is
+ * — `createWidget` always assigns the type's minimum, `updateWidget` takes
+ * them as a separate optional `size` argument rather than a bare input
+ * field (preserve-unless-supplied; see ADR-0008/ADR-0010 and the design
+ * spec's §1 decision on `WidgetPersistInput`). Built structurally off
+ * `DashboardWidget` so it can never drift from it; distinct from
+ * `WidgetContentInput`, which is the UI drawer's own full-replace request
+ * shape and has no `source`/`maintainer`/`w`/`h`.
  */
-export type WidgetPersistInput = DistributiveOmit<DashboardWidget, 'id' | 'order' | 'updatedAt'>;
+export type WidgetPersistInput = DistributiveOmit<
+  DashboardWidget,
+  'id' | 'order' | 'updatedAt' | 'w' | 'h'
+>;
 
 /**
  * The full `DashboardWidget` shape, as a runtime-checkable schema — needed

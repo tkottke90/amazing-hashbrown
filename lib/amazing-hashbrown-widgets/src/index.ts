@@ -11,6 +11,7 @@ export {
   updateWidget,
   updateWidgetRaw,
   deleteWidget,
+  reorderWidget,
   ensureSeeded,
   WidgetNotFoundError,
 } from './store.js';

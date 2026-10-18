@@ -44,6 +44,59 @@ export async function updateWidget(
   );
 }
 
+/**
+ * Reorder (see GLOSSARY.md): moves `movedId` to immediately before
+ * `targetId`'s current position, splicing every widget between the old and
+ * new slot (ADR-0008). Returns only the widgets whose order actually
+ * changed — the caller patches those directly via patchDashboardWidgets
+ * rather than refetching the whole dashboard.
+ */
+export async function reorderWidget(
+  dashboardId: string,
+  movedId: string,
+  targetId: string,
+): Promise<DashboardWidget[]> {
+  return request<DashboardWidget[]>(
+    `/api/v1/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(movedId)}/reorder`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetWidgetId: targetId }),
+    },
+  );
+}
+
+/**
+ * Widget Size (see GLOSSARY.md): PATCHes the resize handle's new `w`/`h`
+ * through the same full-replace route the drawer uses, resupplying the
+ * widget's current content fields so nothing else is clobbered — a
+ * dedicated function (rather than widening `updateWidget`'s own type) so
+ * the drawer's call path stays untouched.
+ */
+export async function resizeWidget(
+  dashboardId: string,
+  widget: DashboardWidget,
+  w: number,
+  h: number,
+): Promise<DashboardWidget> {
+  const { id, order, w: _w, h: _h, source, maintainer, updatedAt, ...contentFields } = widget;
+  void id;
+  void order;
+  void _w;
+  void _h;
+  void source;
+  void maintainer;
+  void updatedAt;
+  return request<DashboardWidget>(
+    `/api/v1/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(widget.id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...contentFields, w, h }),
+    },
+  );
+}
+
 export async function updateWidgetRaw(dashboardId: string, id: string, raw: string): Promise<void> {
   await request(
     `/api/v1/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(id)}/raw`,

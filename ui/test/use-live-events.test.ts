@@ -46,6 +46,8 @@ function makeBigNumberWidget(overrides: Partial<BigNumberWidget> = {}): BigNumbe
     type: 'big-number',
     title: 'Disk space',
     order: 0,
+    w: 2,
+    h: 2,
     source: 'manual',
     updatedAt: '2026-01-01T00:00:00.000Z',
     value: 50,
@@ -485,5 +487,56 @@ describe('hooks/use-live-events', () => {
         widget: makeBigNumberWidget(),
       }),
     ).not.toThrow();
+  });
+
+  it('patches every widget listed in a dashboard_reordered event, with no fetch [unit]', async () => {
+    mockFetchWidgets.mockResolvedValue([
+      makeWidgetResult({ id: 'a', order: 0 }),
+      makeWidgetResult({ id: 'b', order: 1 }),
+    ]);
+    const { result } = renderHook(() => useDashboardWidgets());
+    await waitFor(() => expect(result.current.loading.value).toBe(false));
+
+    connectLiveEvents();
+    currentSource().emit({
+      type: 'dashboard_reordered',
+      dashboardId: 'default',
+      widgets: [
+        makeBigNumberWidget({ id: 'a', order: 1 }),
+        makeBigNumberWidget({ id: 'b', order: 0 }),
+      ],
+    });
+
+    const orders = result.current.widgets.value.map((r) =>
+      r.status === 'ok' ? [r.widget.id, r.widget.order] : null,
+    );
+    expect(orders).toEqual([
+      ['a', 1],
+      ['b', 0],
+    ]);
+    expect(mockFetchWidgets).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op on dashboard_reordered for a dashboard this tab has not loaded [unit]', () => {
+    connectLiveEvents();
+    expect(() =>
+      currentSource().emit({
+        type: 'dashboard_reordered',
+        dashboardId: 'default',
+        widgets: [makeBigNumberWidget()],
+      }),
+    ).not.toThrow();
+  });
+
+  it('is a no-op on dashboard_reordered with an empty widgets array [unit]', async () => {
+    mockFetchWidgets.mockResolvedValue([makeWidgetResult({ id: 'a' })]);
+    const { result } = renderHook(() => useDashboardWidgets());
+    await waitFor(() => expect(result.current.loading.value).toBe(false));
+    const before = result.current.widgets.value;
+
+    connectLiveEvents();
+    currentSource().emit({ type: 'dashboard_reordered', dashboardId: 'default', widgets: [] });
+
+    expect(result.current.widgets.value).toEqual(before);
   });
 });

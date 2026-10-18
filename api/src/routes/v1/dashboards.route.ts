@@ -5,6 +5,7 @@ import {
   listWidgetsHandler,
   createWidgetHandler,
   updateWidgetHandler,
+  reorderWidgetHandler,
   updateWidgetContentHandler,
   updateWidgetRawHandler,
   deleteWidgetHandler,
@@ -36,6 +37,23 @@ dashboardsRouter.post('/:dashboardId/widgets', async (req: Request, res: Respons
 
 dashboardsRouter.patch('/:dashboardId/widgets/:id', async (req: Request, res: Response) => {
   const result = await updateWidgetHandler(
+    env.dashboardRoot,
+    req.params['dashboardId'] as string,
+    req.params['id'] as string,
+    req.body,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+// Reorder (ADR-0008) — the drag-and-drop splice, distinct from the
+// full-replace PATCH above (which already covers resize, since that's just
+// `w`/`h` on the same body).
+dashboardsRouter.patch('/:dashboardId/widgets/:id/reorder', async (req: Request, res: Response) => {
+  const result = await reorderWidgetHandler(
     env.dashboardRoot,
     req.params['dashboardId'] as string,
     req.params['id'] as string,
