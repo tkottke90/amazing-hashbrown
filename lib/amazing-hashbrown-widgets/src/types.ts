@@ -104,11 +104,7 @@ export interface SystemWidget extends WidgetBase {
 }
 
 export type DashboardWidget =
-  | MarkdownWidget
-  | BigNumberWidget
-  | LineGraphWidget
-  | PieGraphWidget
-  | SystemWidget;
+  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SystemWidget;
 
 /**
  * `Omit<T, K>`, applied per-member when `T` is a union, instead of

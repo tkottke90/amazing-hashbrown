@@ -121,8 +121,7 @@ export async function updateWidgetRaw(dashboardId: string, id: string, raw: stri
 export type ValidatedWidgetFields = DistributiveOmit<DashboardWidget, 'id' | 'updatedAt'>;
 
 export type ValidateWidgetResult =
-  | { ok: true; widget: ValidatedWidgetFields }
-  | { ok: false; error: string };
+  { ok: true; widget: ValidatedWidgetFields } | { ok: false; error: string };
 
 export interface ValidateWidgetInput {
   dashboardId: string;
