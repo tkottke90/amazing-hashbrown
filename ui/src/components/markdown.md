@@ -54,6 +54,20 @@ Code blocks are wrapped in a custom `CodeBlock` component that:
 - Shows a **language label** (e.g. `typescript`) in the top-right corner of the block when the language is specified in the fence.
 - Shows a **Copy** icon button that copies the block's plain text to the clipboard. After a successful copy the icon changes to **Check** for 2 seconds, then resets.
 - The label and button are hidden by default and appear on hover (`group-hover:opacity-100`).
+- Preserves the block's exact whitespace (indentation included), both on screen and when copied — important for whitespace-sensitive content like YAML.
+
+### Long lines: scroll vs. wrap
+
+How a line longer than the block's width is handled is controlled by the
+**"Wrap long lines in code blocks"** setting (Settings → Agent behavior),
+read from the global `codeBlockWrap` signal in
+`@/hooks/use-chat-display-settings`:
+
+- **Off (default):** the block scrolls horizontally (`overflow-x-auto`);
+  whitespace is preserved exactly (`whitespace-pre`).
+- **On:** the line wraps at the block's edge instead of scrolling
+  (`whitespace-pre-wrap`), with `break-words` guarding against a single
+  unbroken long token forcing overflow.
 
 ### Specifying a language
 

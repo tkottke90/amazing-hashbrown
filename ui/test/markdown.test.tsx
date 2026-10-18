@@ -1,8 +1,9 @@
-import { render } from '@testing-library/preact';
+import { fireEvent, render, screen } from '@testing-library/preact';
 
 // Imported via relative path (not the `@/components/markdown` alias) to bypass the
 // global jest moduleNameMapper stub and exercise the real component.
-import { MarkdownLink } from '../src/components/markdown';
+import { CodeBlock, MarkdownLink } from '../src/components/markdown';
+import { codeBlockWrap } from '@/hooks/use-chat-display-settings';
 
 describe('MarkdownLink', () => {
   it('opens absolute http(s) links in a new tab', () => {
@@ -40,5 +41,56 @@ describe('MarkdownLink', () => {
     const a = getByText('link');
     expect(a).not.toHaveAttribute('target');
     expect(a).not.toHaveAttribute('rel');
+  });
+});
+
+describe('CodeBlock', () => {
+  const INDENTED = '  foo\n    bar';
+
+  beforeEach(() => {
+    codeBlockWrap.value = false;
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: jest.fn().mockResolvedValue(undefined) },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('preserves multi-space indentation in the rendered output [unit]', () => {
+    const { container } = render(<CodeBlock>{INDENTED}</CodeBlock>);
+    expect(container.querySelector('pre')?.textContent).toBe(INDENTED);
+  });
+
+  it('scrolls (does not wrap) by default, preserving whitespace exactly [unit]', () => {
+    const { container } = render(<CodeBlock>{INDENTED}</CodeBlock>);
+    const pre = container.querySelector('pre');
+    expect(pre?.className).toContain('whitespace-pre');
+    expect(pre?.className).toContain('overflow-x-auto');
+    expect(pre?.className).not.toContain('whitespace-pre-wrap');
+    expect(pre?.className).not.toContain('whitespace-pre-line');
+  });
+
+  it('wraps long lines instead of scrolling when codeBlockWrap is enabled [unit]', () => {
+    codeBlockWrap.value = true;
+    const { container } = render(<CodeBlock>{INDENTED}</CodeBlock>);
+    const pre = container.querySelector('pre');
+    expect(pre?.className).toContain('whitespace-pre-wrap');
+    expect(pre?.className).toContain('break-words');
+    expect(pre?.className).not.toContain('overflow-x-auto');
+  });
+
+  it('copies the unmodified, indented text to the clipboard in scroll mode [unit]', async () => {
+    render(<CodeBlock>{INDENTED}</CodeBlock>);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    await Promise.resolve();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(INDENTED);
+  });
+
+  it('copies the unmodified, indented text to the clipboard in wrap mode [unit]', async () => {
+    codeBlockWrap.value = true;
+    render(<CodeBlock>{INDENTED}</CodeBlock>);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    await Promise.resolve();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(INDENTED);
   });
 });

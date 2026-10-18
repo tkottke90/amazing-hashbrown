@@ -103,7 +103,7 @@ const STUBS: {
   },
   'agent-behavior': {
     afterAgent: { enabled: true },
-    chat: { showErrorMessages: false },
+    chat: { showErrorMessages: false, codeBlockWrap: false },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
   },
   'model-settings': { models: [], legacyCosts: [] },
@@ -317,7 +317,7 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
 
     const expected: AgentBehaviorSettings = {
       afterAgent: { enabled: true },
-      chat: { showErrorMessages: true },
+      chat: { showErrorMessages: true, codeBlockWrap: false },
       observability: { enabled: true, spanOutputPreviewChars: 500 },
     };
     expect(captured['agent-behavior']).toEqual(expected);
