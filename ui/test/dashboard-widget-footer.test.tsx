@@ -24,9 +24,9 @@ describe('WidgetFooter', () => {
     );
   });
 
-  it('renders no badge for the reserved, inert "system" source (D12) [unit]', () => {
+  it('renders a "System" badge for the system source (#320) [unit]', () => {
     render(<WidgetFooter source="system" />);
-    expect(screen.queryByTestId('widget-card-badge')).not.toBeInTheDocument();
+    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent('System');
   });
 
   it('renders a relative-time footer derived from updatedAt [unit]', () => {

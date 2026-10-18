@@ -7,6 +7,8 @@ jest.mock('@/services/dashboard-api', () => ({
   updateWidget: jest.fn(),
   updateWidgetRaw: jest.fn(),
   validateWidgetRaw: jest.fn(),
+  fetchMetricCatalog: jest.fn().mockResolvedValue([]),
+  previewMetricValue: jest.fn(),
   DEFAULT_DASHBOARD_ID: 'default',
 }));
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));

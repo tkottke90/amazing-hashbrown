@@ -2,7 +2,7 @@ import { formatRelativeTime } from '@/lib/format-relative-time';
 import type { DashboardWidget } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 interface WidgetFooterProps {
-  /** Widget Source — see GLOSSARY.md. Omitted entirely for the reserved, inert 'system' value (D12). */
+  /** Widget Source — see GLOSSARY.md. */
   source?: DashboardWidget['source'];
   /** Widget Maintainer — see GLOSSARY.md. Rendered as a badge sub-label when `source` is 'agent'. */
   maintainer?: string;
@@ -20,8 +20,8 @@ function provenanceBadgeLabel(
     case 'agent':
       return maintainer ? `Agent · ${maintainer}` : 'Agent';
     case 'system':
-      // Reserved, no UI treatment yet (D12) — the actual feature is #320.
-      return null;
+      // System widgets never have a maintainer (ADR-0012) — just the badge.
+      return 'System';
     default:
       return null;
   }

@@ -1,0 +1,3 @@
+# System widgets are added through the existing drawer flow, not auto-seeded
+
+Extend the existing manual widget-creation drawer with a `system` source: picking it swaps the type-specific form/raw editor for a metric selector plus a live preview of that metric's current value, reusing the existing creation/delete API untouched. Rejected the alternative of the app auto-seeding a fixed, non-removable set of system widgets on first run: that would mean two different ways to end up with a widget on the dashboard, and would force every user to see every system metric whether they want it or not, instead of letting them opt into only the ones useful to them.

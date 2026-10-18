@@ -61,5 +61,19 @@ Which of a widget's write surfaces produced its last write: `manual` (the UI dra
 _Avoid_: Provenance, writer, author
 
 **Widget Maintainer**:
-An optional free-text label on an `agent`-sourced widget, naming the automation or person responsible for its ongoing updates (e.g. a script name). Settable only by an Agent/CLI write, never by the UI drawer; preserved across any later write that doesn't resupply it.
+An optional free-text label on an `agent`-sourced widget, naming the automation or person responsible for its ongoing updates (e.g. a script name). Settable only by an Agent/CLI write, never by the UI drawer; preserved across any later write that doesn't resupply it. `system`-sourced widgets never have one (see System Widget).
 _Avoid_: Owner, author
+
+### System Widgets
+
+**System Widget**:
+A widget with `source: 'system'` whose payload is never stored in its file and never written by a person, Agent, or CLI — the dashboard read handler resolves it live, every time, from the app's own data via a Metric. Its Widget Metadata (title, subtitle, position, size) is file-backed and editable like any widget; only its payload is live-only.
+_Avoid_: Live widget, telemetry widget
+
+**Metric**:
+A named, fixed computation a System Widget can display — one query against the app's own data (e.g. `workspace-count`, `usage-by-provider-tokens`), registered in code rather than user-definable. Chosen from a fixed catalog when a System Widget is created; the widget's frontmatter stores only the chosen Metric's id, never its result.
+_Avoid_: Stat, KPI, system metadata
+
+**Metric Registry**:
+The in-process lookup from a Metric's id to the function that computes its current value, called directly by the dashboard read handler against the app's own stores — never over HTTP, never from a widget's file.
+_Avoid_: Metrics API, producer registry

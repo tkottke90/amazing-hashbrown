@@ -24,6 +24,13 @@ export type WidgetFrontmatterInput =
       data: string;
       colors?: string[];
     }
+  | {
+      type: 'system';
+      title: string;
+      subtitle?: string;
+      order: number;
+      metric: string;
+    }
   // subtitle kept optional (never populated in practice — Spacer has no UI
   // field for it) purely so the shared prefix logic below can read
   // `input.subtitle` generically, same as every other member.
@@ -80,6 +87,13 @@ export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
     case 'pie-graph':
       if (input.colors !== undefined) lines.push(`colors: ${JSON.stringify(input.colors)}`);
       body = input.data;
+      break;
+    case 'system':
+      // No Widget Payload (ADR-0011) — functionally unreachable, since the
+      // drawer hides the Form/Raw tab toggle entirely for this type, but
+      // required here to satisfy assertNeverWidgetType.
+      lines.push(`metric: ${JSON.stringify(input.metric)}`);
+      body = '';
       break;
     case 'spacer':
       body = '';

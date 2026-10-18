@@ -11,6 +11,8 @@ jest.mock('@/services/dashboard-api', () => ({
   deleteWidget: jest.fn(),
   reorderWidget: jest.fn(),
   resizeWidget: jest.fn(),
+  fetchMetricCatalog: jest.fn().mockResolvedValue([]),
+  previewMetricValue: jest.fn(),
   DEFAULT_DASHBOARD_ID: 'default',
 }));
 

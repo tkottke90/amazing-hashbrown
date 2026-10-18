@@ -140,6 +140,8 @@ function buildWidget(
       return { ...base, type: 'line-graph', data: input.data, color: input.color };
     case 'pie-graph':
       return { ...base, type: 'pie-graph', data: input.data, colors: input.colors };
+    case 'system':
+      return { ...base, type: 'system', metric: input.metric };
     case 'spacer':
       return { ...base, type: 'spacer' };
     default:
@@ -226,6 +228,13 @@ async function writeWidgetFile(
     case 'pie-graph':
       if (widget.colors !== undefined) data.colors = widget.colors;
       body = widget.data;
+      break;
+    case 'system':
+      // No Widget Payload at all (ADR-0011) — `metric` is the only
+      // type-specific field, and `resolved` is never written: it isn't on
+      // `WritableDashboardWidget` in the first place (see types.ts).
+      data.metric = widget.metric;
+      body = '';
       break;
     case 'spacer':
       body = '';
@@ -369,6 +378,34 @@ export async function loadWidget(
   if (!parsed.ok) return null;
   const stat = await fs.stat(filePath);
   return { id, ...parsed.widget, updatedAt: stat.mtime.toISOString() };
+}
+
+/**
+ * Cheap, unvalidated sniff of just `type`/`source` from an existing widget
+ * file — used only to gate the raw-overwrite endpoint against touching a
+ * system widget (ADR-0011), never to build a real `DashboardWidget`.
+ * Returns `null` if the file is missing *or* its YAML itself fails to parse
+ * — the exact case the raw endpoint exists to repair, so a `null` result is
+ * treated as "allow" by its one caller (`updateWidgetRawHandler`).
+ */
+export async function peekWidgetFrontmatter(
+  root: string,
+  dashboardId: string,
+  id: string,
+): Promise<{ type?: unknown; source?: unknown } | null> {
+  const filePath = widgetPath(root, dashboardId, id);
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const { data } = frontmatter.parse(raw);
+    return { type: data['type'], source: data['source'] };
+  } catch {
+    return null;
+  }
 }
 
 /**

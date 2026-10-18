@@ -8,6 +8,11 @@ import type {
   WidgetLoadResult,
 } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { broadcast } from '../../services/broadcast.js';
+import { getMetric, resolveSystemWidget } from '../../services/metric-registry.js';
+import { getWorkspaceStore } from '../../services/workspace-store.js';
+import { getUsageStore } from '../../services/usage.js';
+import { env } from '../../config/env.js';
+import type { MetricDeps } from '../../services/metric.js';
 
 // ---- HandlerResult (mirrors mcp-servers.handlers.ts) ---------------------------
 
@@ -41,6 +46,7 @@ export interface WidgetStoreDeps {
   updateWidgetRaw: typeof widgetsLib.updateWidgetRaw;
   deleteWidget: typeof widgetsLib.deleteWidget;
   reorderWidget: typeof widgetsLib.reorderWidget;
+  peekWidgetFrontmatter: typeof widgetsLib.peekWidgetFrontmatter;
 }
 
 const defaultStore: WidgetStoreDeps = widgetsLib;
@@ -106,6 +112,19 @@ const PieGraphWidgetInputSchema = z.object({
   h: z.number().min(WIDGET_SIZE_MIN['pie-graph'].h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
+// System widgets (ADR-0011/0013) have no Widget Payload at all — just the
+// Metric id they display. Created/edited through this same route (picking
+// `source: system` is what the drawer's create flow does); the metric's
+// *value* is never part of this input, only which metric to show.
+const SystemWidgetInputSchema = z.object({
+  type: z.literal('system'),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  metric: z.string().min(1),
+  w: z.number().min(WIDGET_SIZE_MIN.system.w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN.system.h).max(WIDGET_SIZE_MAX.h).optional(),
+});
+
 // No `title` key — same convention `source` already follows on every
 // variant above (never part of the input, always assigned by the
 // handler). A Spacer Widget has no title field in the UI (design spec
@@ -121,6 +140,7 @@ const WidgetInputSchema = z.discriminatedUnion('type', [
   BigNumberWidgetInputSchema,
   LineGraphWidgetInputSchema,
   PieGraphWidgetInputSchema,
+  SystemWidgetInputSchema,
   SpacerWidgetInputSchema,
 ]);
 
@@ -196,13 +216,40 @@ function validateTypeSpecificPayload(input: WidgetContentInput | DashboardWidget
 
 // ---- Handlers --------------------------------------------------------------------
 
+// Built fresh per call (not once at module load) so a settings change to
+// `env.updates.checkForUpdates` takes effect on the very next dashboard
+// load — no reload step, unlike TrackerRegistry.
+function buildDefaultMetricDeps(): MetricDeps {
+  return {
+    workspaceStore: getWorkspaceStore(),
+    usageStore: getUsageStore(),
+    checkForUpdates: env.updates.checkForUpdates,
+  };
+}
+
 export async function listWidgetsHandler(
   dashboardRoot: string,
   dashboardId: string,
   store: WidgetStoreDeps = defaultStore,
+  metricDeps?: MetricDeps,
 ): Promise<HandlerResult<WidgetLoadResult[]>> {
   const data = await store.listWidgets(dashboardRoot, dashboardId);
-  return ok(data);
+  // Only touches the real stores (which throw if unbooted — fine in
+  // production, fatal to a unit test that injects its own `store` and
+  // never calls bootWorkspaceStore()/bootUsage()) when a system widget is
+  // actually present to resolve. Most dashboards have none.
+  const hasSystemWidget = data.some((r) => r.status === 'ok' && r.widget.type === 'system');
+  if (!hasSystemWidget) return ok(data);
+
+  const deps = metricDeps ?? buildDefaultMetricDeps();
+  const resolved = await Promise.all(
+    data.map(async (result) =>
+      result.status === 'ok'
+        ? { status: 'ok' as const, widget: await resolveSystemWidget(result.widget, deps) }
+        : result,
+    ),
+  );
+  return ok(resolved);
 }
 
 export async function createWidgetHandler(
@@ -217,8 +264,13 @@ export async function createWidgetHandler(
   }
   const payloadError = validateTypeSpecificPayload(parsed.data);
   if (payloadError) return badRequest(payloadError);
-  // Widget lifecycle (creation) is a User-only action (D10) — always
-  // 'manual', nothing to preserve, and never request/tool-call input (ADR-0005).
+  if (parsed.data.type === 'system' && !getMetric(parsed.data.metric)) {
+    return badRequest(`Unknown metric id "${parsed.data.metric}".`);
+  }
+  // Widget lifecycle (creation) is a User-only action (D10) for every type
+  // except `system`, which sets `source: 'system'` instead — still created
+  // through this same route (the drawer's own create flow, ADR-0013), never
+  // request/tool-call input beyond the type/metric choice (ADR-0005/0011).
   // `w`/`h` are never forwarded — `createWidget` always assigns the type's
   // minimum (design spec §1.4); a caller has no form field to supply one
   // from, and `WidgetPersistInput` excludes the field entirely.
@@ -233,7 +285,7 @@ export async function createWidgetHandler(
     contentFields.type === 'spacer' ? { ...contentFields, title: 'Spacer' } : contentFields;
   const widget = await store.createWidget(dashboardRoot, dashboardId, {
     ...content,
-    source: 'manual',
+    source: parsed.data.type === 'system' ? 'system' : 'manual',
   });
   broadcast({ type: 'widget_updated', dashboardId, widget });
   return ok(widget);
@@ -252,12 +304,27 @@ export async function updateWidgetHandler(
   }
   const payloadError = validateTypeSpecificPayload(parsed.data);
   if (payloadError) return badRequest(payloadError);
+  if (parsed.data.type === 'system' && !getMetric(parsed.data.metric)) {
+    return badRequest(`Unknown metric id "${parsed.data.metric}".`);
+  }
   // This schema has no `maintainer` key, so without reading the existing
   // widget a full-replace write would silently drop it (D15: a manual edit
   // never clears `maintainer`). `source` always resets to 'manual' — a
-  // human is doing this edit, regardless of what it was before (ADR-0005).
+  // human is doing this edit, regardless of what it was before (ADR-0005)
+  // — except for `system`, which keeps `source: 'system'` (ADR-0011): a
+  // title/subtitle/metric edit through this same drawer never turns a
+  // system widget into a manual one.
   const existing = await store.loadWidget(dashboardRoot, dashboardId, id);
   if (!existing) return notFound(`Widget "${id}" not found.`);
+  // Type is immutable after creation — no UI affordance changes it, and
+  // without this check a full-replace PATCH could silently convert a
+  // `system` widget into a writable one (or vice versa), undermining
+  // ADR-0011's read-only guarantee.
+  if (existing.type !== parsed.data.type) {
+    return badRequest(
+      `Widget "${id}" is type "${existing.type}" and cannot be changed to "${parsed.data.type}".`,
+    );
+  }
   // Widget Size: present only on the resize handle's PATCH to this route
   // (design spec §2.1) — both `w` and `h` must be present to count as a
   // resize; a lone one (which the UI never sends) is treated as absent,
@@ -278,7 +345,7 @@ export async function updateWidgetHandler(
       id,
       {
         ...content,
-        source: 'manual',
+        source: parsed.data.type === 'system' ? 'system' : 'manual',
         maintainer: existing.maintainer,
       },
       size,
@@ -346,6 +413,12 @@ export async function updateWidgetContentHandler(
 ): Promise<HandlerResult<DashboardWidget>> {
   const existing = await store.loadWidget(dashboardRoot, dashboardId, id);
   if (!existing) return notFound(`Widget "${id}" not found.`);
+  // A system widget's payload is never written to (ADR-0011) — not by an
+  // agent, not by the CLI, which calls this same handler directly
+  // in-process (api/src/agents/tools/update-widget-content.tool.ts).
+  if (existing.type === 'system') {
+    return badRequest(`Widget "${id}" is a system widget and cannot be written to.`);
+  }
 
   // A Spacer Widget has no Widget Payload at all (GLOSSARY.md), so it has
   // no entry in CONTENT_INPUT_SCHEMAS below — guard explicitly rather than
@@ -384,6 +457,23 @@ export async function updateWidgetRawHandler(
   if (!parsed.success) {
     return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
   }
+
+  // Neither direction may touch a system widget's payload (ADR-0011): not
+  // the existing widget (if it's already `system`), and not the incoming
+  // raw text (if it tries to declare `type: system` on what was some other
+  // type — fabricating a system widget via raw paste, bypassing the
+  // create-flow metric-id check entirely).
+  const existingPeek = await store.peekWidgetFrontmatter(dashboardRoot, dashboardId, id);
+  if (existingPeek && (existingPeek.type === 'system' || existingPeek.source === 'system')) {
+    return badRequest(`Widget "${id}" is a system widget and cannot be edited as raw text.`);
+  }
+  // A cheap textual check, not a full YAML parse: malformed frontmatter is
+  // not this guard's concern — a still-broken save just surfaces the same
+  // parse error again on the next list, as today.
+  if (/^\s*type:\s*system\s*$/m.test(parsed.data.raw)) {
+    return badRequest('A widget cannot be converted into a system widget via raw edit.');
+  }
+
   try {
     await store.updateWidgetRaw(dashboardRoot, dashboardId, id, parsed.data.raw);
     return ok({ updated: true });

@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
@@ -17,6 +18,7 @@ import { FormLayout } from '@/components/form-layout';
 interface GeneralSettings {
   port: number;
   logLevel: string;
+  checkForUpdates: boolean;
 }
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -73,6 +75,21 @@ export function GeneralPanel() {
                 </Select>
                 <FieldError errors={fieldErrors.value['logLevel']} />
               </div>
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="general-checkForUpdates">Check for updates</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Look up the latest GitHub release for the Version Info system widget.
+                  </p>
+                </div>
+                <Switch
+                  id="general-checkForUpdates"
+                  checked={form.value.checkForUpdates}
+                  onCheckedChange={(v) => setField('checkForUpdates', v)}
+                />
+              </div>
+              <FieldError errors={fieldErrors.value['checkForUpdates']} />
             </FormLayout>
           </CardContent>
         </Card>

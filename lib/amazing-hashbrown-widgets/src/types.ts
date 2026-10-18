@@ -16,6 +16,8 @@ import {
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
+  SystemWidgetFrontmatterSchema,
+  ResolvedMetricValueSchema,
   SpacerWidgetFrontmatterSchema,
 } from './internal/widget-field-schemas.js';
 
@@ -77,6 +79,32 @@ export interface PieGraphWidget extends WidgetBase {
 }
 
 /**
+ * What a Metric resolver hands back (see GLOSSARY.md) — keyed by
+ * `displayType` rather than reusing a widget `type` literal, since a Metric's
+ * display shape is independent of the fact that it's always stored as a
+ * `system` widget. `pie-graph`/`line-graph` are declared now so the schema
+ * shape exists, but no Metric returns them until a follow-up issue adds one.
+ */
+export type ResolvedMetricValue =
+  | { displayType: 'big-number'; value?: number; unit?: string }
+  | { displayType: 'markdown'; content: string }
+  | { displayType: 'pie-graph'; labels: string[]; values: number[] }
+  | { displayType: 'line-graph'; labels: string[]; values: number[] };
+
+export interface SystemWidget extends WidgetBase {
+  type: 'system';
+  /** The chosen Metric's id (see GLOSSARY.md) — the only thing ever persisted for this type. */
+  metric: string;
+  /**
+   * Live-resolved display value (see GLOSSARY.md: Metric Registry). Set only
+   * by the dashboard GET handler, never by `store.ts`, never persisted to
+   * the widget file, and never accepted as create/update input (ADR-0011).
+   * Absent if resolution hasn't run yet or the Metric failed to resolve.
+   */
+  resolved?: ResolvedMetricValue;
+}
+
+/**
  * Spacer Widget (see GLOSSARY.md): pure grid-occupying whitespace, no
  * Widget Payload at all — same frontmatter-only persistence shape as
  * `BigNumberWidget` (ADR-0002), minus even that type's own optional
@@ -87,7 +115,7 @@ export interface SpacerWidget extends WidgetBase {
 }
 
 export type DashboardWidget =
-  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SpacerWidget;
+  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SystemWidget | SpacerWidget;
 
 /**
  * `Omit<T, K>`, applied per-member when `T` is a union, instead of
@@ -127,13 +155,19 @@ export type WidgetContentInput =
   | { type: 'big-number'; title: string; subtitle?: string; value?: number; unit?: string }
   | { type: 'line-graph'; title: string; subtitle?: string; data: string; color?: string }
   | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] }
+  | { type: 'system'; title: string; subtitle?: string; metric: string }
   // No title/subtitle (Q4/Q8): a Spacer Widget has no UI-editable fields
   // beyond its position and Widget Size. The store assigns a fixed
   // `title: 'Spacer'` at creation — never caller-supplied.
   | { type: 'spacer' };
 
-/** A widget before it's been stat'd for `updatedAt` — what `store.ts` builds and persists. */
-export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updatedAt'>;
+/**
+ * A widget before it's been stat'd for `updatedAt` — what `store.ts` builds
+ * and persists. `resolved` is excluded too: it never exists at build time —
+ * it's a read-time enrichment the dashboard GET handler layers on afterward,
+ * never something `store.ts` builds, writes, or even knows about.
+ */
+export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updatedAt' | 'resolved'>;
 
 /**
  * What `store.createWidget`/`updateWidget` accept: everything a caller must
@@ -150,7 +184,7 @@ export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updated
  */
 export type WidgetPersistInput = DistributiveOmit<
   DashboardWidget,
-  'id' | 'order' | 'updatedAt' | 'w' | 'h'
+  'id' | 'order' | 'updatedAt' | 'w' | 'h' | 'resolved'
 >;
 
 /**
@@ -179,6 +213,11 @@ export const DashboardWidgetSchema = z.discriminatedUnion('type', [
     id: z.string(),
     updatedAt: z.string(),
     data: z.string(),
+  }),
+  SystemWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    resolved: ResolvedMetricValueSchema.optional(),
   }),
   SpacerWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
 ]);

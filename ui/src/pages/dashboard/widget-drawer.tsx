@@ -3,7 +3,11 @@ import { useEffect, useRef } from 'preact/hooks';
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import type { EditorView } from '@codemirror/view';
 import type { JSX } from 'preact';
-import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
+import type {
+  DashboardWidget,
+  ResolvedMetricValue,
+  WidgetLoadResult,
+} from '@tkottke90/amazing-hashbrown-widgets/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,15 +19,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Markdown } from '@/components/markdown';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
 import {
   createWidget,
   updateWidget,
   updateWidgetRaw,
   validateWidgetRaw,
+  fetchMetricCatalog,
+  previewMetricValue,
   DEFAULT_DASHBOARD_ID,
   type ValidatedWidgetFields,
   type ValidateWidgetResult,
+  type MetricCatalogEntry,
 } from '@/services/dashboard-api';
 import { serializeWidgetFile, type WidgetFrontmatterInput } from './serialize-widget-file';
 import type { WidgetContentInput } from '@tkottke90/amazing-hashbrown-widgets/types';
@@ -105,6 +113,14 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       ? initialWidget.data
       : '',
   );
+  // System Widget Metric (ADR-0011/0013) — the only thing a system widget's
+  // frontmatter persists. No payload fields of its own: the value shown is
+  // always the live preview below, never form input.
+  const metricId = useSignal(initialWidget?.type === 'system' ? initialWidget.metric : '');
+  const metricCatalog = useSignal<MetricCatalogEntry[]>([]);
+  const metricPreview = useSignal<ResolvedMetricValue | undefined>(undefined);
+  const metricPreviewError = useSignal<string | null>(null);
+  const metricPreviewLoading = useSignal(false);
 
   function widgetToFrontmatterInput(
     widget: DashboardWidget | ValidatedWidgetFields,
@@ -119,6 +135,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         return { ...base, type: 'line-graph', data: widget.data, color: widget.color };
       case 'pie-graph':
         return { ...base, type: 'pie-graph', data: widget.data, colors: widget.colors };
+      case 'system':
+        return { ...base, type: 'system', metric: widget.metric };
       case 'spacer':
         return { ...base, type: 'spacer' };
       default:
@@ -170,6 +188,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       initialWidget?.type === 'line-graph' || initialWidget?.type === 'pie-graph'
         ? initialWidget.data
         : '';
+    metricId.value = initialWidget?.type === 'system' ? initialWidget.metric : '';
     rawText.value = initialRawText();
     rawGeneration.value++;
     rawDirty.value = false;
@@ -179,6 +198,47 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     tab.value = loadFailed ? 'raw' : 'form';
     saveError.value = null;
   }, [openedAt]);
+
+  // Fetched once per drawer instance (add drawer, each edit drawer) — a
+  // small, mostly-static catalog; not worth a shared cache for v1.
+  useEffect(() => {
+    void fetchMetricCatalog()
+      .then((catalog) => {
+        metricCatalog.value = catalog;
+      })
+      .catch(() => {
+        // Leave the catalog empty; the picker just has nothing to offer.
+      });
+  }, []);
+
+  // Live preview (ADR-0013) — re-resolves on demand whenever the selected
+  // Metric changes, purely for display; nothing here is ever saved.
+  useEffect(() => {
+    if (widgetType.value !== 'system' || !metricId.value) {
+      metricPreview.value = undefined;
+      metricPreviewError.value = null;
+      return;
+    }
+    let cancelled = false;
+    metricPreviewLoading.value = true;
+    previewMetricValue(metricId.value)
+      .then((resolved) => {
+        if (cancelled) return;
+        metricPreview.value = resolved;
+        metricPreviewError.value = null;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        metricPreview.value = undefined;
+        metricPreviewError.value = err instanceof Error ? err.message : 'Failed to preview metric';
+      })
+      .finally(() => {
+        if (!cancelled) metricPreviewLoading.value = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [widgetType.value, metricId.value]);
 
   function readRawText(): string {
     return rawViewRef.current?.state.doc.toString() ?? rawText.value;
@@ -226,6 +286,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         };
       case 'pie-graph':
         return { type: 'pie-graph' as const, data: readCsvText(), colors: parsedColors() };
+      case 'system':
+        return { type: 'system' as const, metric: metricId.value };
       default:
         return assertNeverWidgetType(type);
     }
@@ -345,6 +407,12 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         csvGeneration.value++;
         colorsText.value = widget.colors?.join(',') ?? '';
         break;
+      case 'system':
+        // Unreachable in practice — the Raw tab is hidden entirely for
+        // this type (see the Form/Raw toggle below) — kept only so this
+        // switch stays exhaustive.
+        metricId.value = widget.metric;
+        break;
       case 'spacer':
         break;
       default:
@@ -402,7 +470,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
 
   return (
     <form data-testid="widget-drawer-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
-      {mode === 'edit' && (
+      {mode === 'edit' && widgetType.value !== 'system' && (
         <div className="flex gap-1">
           <Button
             type="button"
@@ -449,6 +517,9 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                   </SelectItem>
                   <SelectItem value="pie-graph" data-testid="widget-type-option-pie-graph">
                     Pie Graph
+                  </SelectItem>
+                  <SelectItem value="system" data-testid="widget-type-option-system">
+                    System
                   </SelectItem>
                   <SelectItem value="spacer" data-testid="widget-type-option-spacer">
                     Spacer
@@ -540,6 +611,71 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                 onInput={(e) => (colorsText.value = (e.target as HTMLInputElement).value)}
                 placeholder="#3366ff,#ff6633"
               />
+            </div>
+          )}
+
+          {widgetType.value === 'system' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${instanceKey}-metric`}>Metric</Label>
+              <Select value={metricId.value} onValueChange={(v) => (metricId.value = v)}>
+                <SelectTrigger id={`${instanceKey}-metric`} data-testid="widget-metric-picker">
+                  <SelectValue placeholder="Select a metric" />
+                </SelectTrigger>
+                <SelectContent>
+                  {metricCatalog.value.map((metric) => (
+                    <SelectItem
+                      key={metric.id}
+                      value={metric.id}
+                      data-testid={`widget-metric-option-${metric.id}`}
+                    >
+                      {metric.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div
+                data-testid="widget-metric-preview"
+                className="rounded-md border border-dashed border-border p-3"
+              >
+                {metricPreviewLoading.value && (
+                  <span className="text-sm text-muted-foreground">Loading preview…</span>
+                )}
+                {!metricPreviewLoading.value && metricPreviewError.value && (
+                  <span className="text-sm text-destructive">{metricPreviewError.value}</span>
+                )}
+                {!metricPreviewLoading.value &&
+                  !metricPreviewError.value &&
+                  metricPreview.value === undefined && (
+                    <span className="text-sm text-muted-foreground">
+                      Pick a metric to preview its current value.
+                    </span>
+                  )}
+                {!metricPreviewLoading.value &&
+                  !metricPreviewError.value &&
+                  metricPreview.value?.displayType === 'big-number' && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-semibold text-foreground">
+                        {metricPreview.value.value === undefined
+                          ? 'N/A'
+                          : metricPreview.value.value.toLocaleString()}
+                      </span>
+                      {metricPreview.value.unit && (
+                        <span className="text-sm text-muted-foreground">
+                          {metricPreview.value.unit}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                {!metricPreviewLoading.value &&
+                  !metricPreviewError.value &&
+                  metricPreview.value?.displayType === 'markdown' && (
+                    <Markdown>{metricPreview.value.content}</Markdown>
+                  )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This widget is provided by the application itself and isn't editable beyond its
+                title, subtitle, and which metric it shows.
+              </p>
             </div>
           )}
 

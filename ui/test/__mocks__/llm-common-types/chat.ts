@@ -108,6 +108,30 @@ const DashboardWidgetSchema = z.discriminatedUnion('type', [
     data: z.string(),
     colors: z.array(z.string()).optional(),
   }),
+  DashboardWidgetBaseSchema.extend({
+    type: z.literal('system'),
+    metric: z.string(),
+    resolved: z
+      .union([
+        z.object({
+          displayType: z.literal('big-number'),
+          value: z.number().optional(),
+          unit: z.string().optional(),
+        }),
+        z.object({ displayType: z.literal('markdown'), content: z.string() }),
+        z.object({
+          displayType: z.literal('pie-graph'),
+          labels: z.array(z.string()),
+          values: z.array(z.number()),
+        }),
+        z.object({
+          displayType: z.literal('line-graph'),
+          labels: z.array(z.string()),
+          values: z.array(z.number()),
+        }),
+      ])
+      .optional(),
+  }),
   DashboardWidgetBaseSchema.extend({ type: z.literal('spacer') }),
 ]);
 

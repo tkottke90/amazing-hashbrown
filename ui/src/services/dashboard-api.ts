@@ -2,6 +2,7 @@ import { request } from '@/utils/fetch.utils';
 import type {
   DashboardWidget,
   DistributiveOmit,
+  ResolvedMetricValue,
   WidgetContentInput,
   WidgetLoadResult,
 } from '@tkottke90/amazing-hashbrown-widgets/types';
@@ -87,6 +88,10 @@ export async function resizeWidget(
   void source;
   void maintainer;
   void updatedAt;
+  // `contentFields` carries a system widget's `resolved` through to the
+  // PATCH body too (it's not a named field above, just whatever's left in
+  // the rest-spread) — harmless: the server's SystemWidgetInputSchema has
+  // no `resolved` key and silently strips it, and it's never read back.
   return request<DashboardWidget>(
     `/api/v1/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(widget.id)}`,
     {
@@ -133,6 +138,26 @@ export async function validateWidgetRaw(input: ValidateWidgetInput): Promise<Val
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+// ---- System Widget Metric catalog + preview (ADR-0013) ---------------------------
+//
+// Neither of these ever persists anything — the catalog is the fixed list a
+// System Widget's drawer picks a `metric` id from, and the preview is a
+// throwaway on-demand resolve shown before the widget is even saved.
+
+export interface MetricCatalogEntry {
+  id: string;
+  label: string;
+  displayType: ResolvedMetricValue['displayType'];
+}
+
+export async function fetchMetricCatalog(): Promise<MetricCatalogEntry[]> {
+  return request<MetricCatalogEntry[]>('/api/v1/metrics');
+}
+
+export async function previewMetricValue(id: string): Promise<ResolvedMetricValue> {
+  return request<ResolvedMetricValue>(`/api/v1/metrics/${encodeURIComponent(id)}/value`);
 }
 
 export async function deleteWidget(dashboardId: string, id: string): Promise<void> {
