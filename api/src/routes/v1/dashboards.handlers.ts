@@ -220,13 +220,21 @@ export async function listWidgetsHandler(
   dashboardRoot: string,
   dashboardId: string,
   store: WidgetStoreDeps = defaultStore,
-  metricDeps: MetricDeps = buildDefaultMetricDeps(),
+  metricDeps?: MetricDeps,
 ): Promise<HandlerResult<WidgetLoadResult[]>> {
   const data = await store.listWidgets(dashboardRoot, dashboardId);
+  // Only touches the real stores (which throw if unbooted — fine in
+  // production, fatal to a unit test that injects its own `store` and
+  // never calls bootWorkspaceStore()/bootUsage()) when a system widget is
+  // actually present to resolve. Most dashboards have none.
+  const hasSystemWidget = data.some((r) => r.status === 'ok' && r.widget.type === 'system');
+  if (!hasSystemWidget) return ok(data);
+
+  const deps = metricDeps ?? buildDefaultMetricDeps();
   const resolved = await Promise.all(
     data.map(async (result) =>
       result.status === 'ok'
-        ? { status: 'ok' as const, widget: await resolveSystemWidget(result.widget, metricDeps) }
+        ? { status: 'ok' as const, widget: await resolveSystemWidget(result.widget, deps) }
         : result,
     ),
   );

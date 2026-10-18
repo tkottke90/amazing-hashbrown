@@ -25,6 +25,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     database: { path: 'app.db' },
     observability: { enabled: true, spanOutputPreviewChars: 500 },
     afterAgent: { enabled: true },
+    updates: { checkForUpdates: false },
     chat: { showErrorMessages: false },
     embeddings: {
       enabled: true,
