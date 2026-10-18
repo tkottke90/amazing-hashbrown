@@ -103,3 +103,27 @@ _Avoid_: Unknown scope, null scope
 **Bound Wiki**:
 The one wiki domain a workspace is tied to via its `wikiId`. Binding is what turns a workspace's Write Scope from Open to Locked; an unbound workspace has no Bound Wiki and stays in Open Scope.
 _Avoid_: Linked wiki, assigned wiki, dedicated wiki
+
+**Domain Fit Score**:
+A 1–10 integer the `extract` step assigns to the one domain it already picked from the candidate list, rating how well the content actually matches that domain — independent of whether the content is worth saving at all (that's `classify`'s job). Only meaningful under Open Scope; under Locked Scope there is exactly one candidate, so nothing to score.
+_Avoid_: Confidence score, relevance score, match score
+
+**Write Band**:
+A Domain Fit Score of 8–10. The content commits immediately, the same way every AfterAgent write does today.
+_Avoid_: High confidence, auto-write
+
+**Review Band**:
+A Domain Fit Score of 5–7. The pipeline makes no registry writes of its own and instead creates a Placement Review Task to let a human decide.
+_Avoid_: Medium confidence, needs review
+
+**Drop Band**:
+A Domain Fit Score of 1–4. Treated exactly like AfterAgent's other no-op cases (an unrecognized domain, an empty candidate list) — nothing is written, nothing is staged, no provenance is kept.
+_Avoid_: Low confidence, discard
+
+**Placement Review Task**:
+A task AfterAgent creates for a Review Band item instead of writing it — self-contained (title, extracted body, tags, the tentatively-matched domain and its Domain Fit Score), `assignedTo: 'agent'`, no trigger. Its own run asks the user where the content should go (or whether to drop it) and performs the actual write itself, through the ordinary wiki write tools — AfterAgent's pipeline never touches the registry for a Review Band item itself.
+_Avoid_: Review queue, triage task, staging item
+
+**Disposition**:
+The `identified` AfterAgent outcome's own record of what actually happened to the knowledge it found: `written` (landed in the Write Band) or `review` (handed to a Placement Review Task). Distinct from the outcome itself — `identified` always means "worth saving," Disposition says where it ended up.
+_Avoid_: Result, status, action
