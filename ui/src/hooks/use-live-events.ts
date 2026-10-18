@@ -1,7 +1,7 @@
 import { AppBroadcastEventSchema, type AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import { tasks, queueState, refreshQueue, refreshTask, refreshTasks } from './use-tasks';
 import { hasThreadInstance, refreshThreadList, threads, useThreadInstance } from './use-thread';
-import { patchDashboardWidget } from './use-dashboard-widgets';
+import { patchDashboardWidget, patchDashboardWidgets } from './use-dashboard-widgets';
 import type { QueueState, TaskStatus } from '../services/tasks-api';
 
 // Opens the standing app-level SSE channel (GET /api/v1/events) — unlike
@@ -118,6 +118,11 @@ function handleEvent(event: AppBroadcastEvent): void {
       // Carries the full updated widget (D16) — patch in place, no refetch.
       // A no-op if this dashboard hasn't been loaded in this tab yet.
       patchDashboardWidget(event.dashboardId, event.widget);
+      return;
+    case 'dashboard_reordered':
+      // A Reorder can change every widget's order between the old and new
+      // slot (ADR-0008) — patch every listed widget in one go, no refetch.
+      patchDashboardWidgets(event.dashboardId, event.widgets);
       return;
   }
 }

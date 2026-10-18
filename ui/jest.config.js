@@ -9,6 +9,8 @@ export default {
   moduleNameMapper: {
     '\\.(css|less|scss)$': 'identity-obj-proxy',
     '^@tkottke90/llm-common-types/(.*)$': '<rootDir>/test/__mocks__/llm-common-types/$1.ts',
+    '^@tkottke90/amazing-hashbrown-widgets/types$':
+      '<rootDir>/test/__mocks__/amazing-hashbrown-widgets-types.ts',
     '^react-markdown$': '<rootDir>/test/__mocks__/react-markdown.tsx',
     '^remark-gfm$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^rehype-highlight$': '<rootDir>/test/__mocks__/esm-plugin.tsx',

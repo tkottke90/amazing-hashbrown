@@ -25,6 +25,8 @@ describe('frontmatter', () => {
       title: 'Tip',
       subtitle: 'Of the day',
       order: 2,
+      w: 3,
+      h: 2,
       source: 'manual',
       content: 'Some content.',
     });
@@ -54,6 +56,8 @@ describe('frontmatter', () => {
           title: 'Tip',
           type: 'markdown',
           order: 2,
+          w: 3,
+          h: 2,
           source: 'manual',
           content: 'Some content.',
         });
@@ -84,6 +88,8 @@ describe('frontmatter', () => {
           title: 'Count',
           type: 'big-number',
           order: 0,
+          w: 2,
+          h: 2,
           source: 'manual',
           value: 5,
           unit: 'things',
@@ -215,6 +221,59 @@ describe('frontmatter', () => {
         expect(result.widget.source).to.equal('manual');
         expect(result.widget).to.not.have.property('maintainer');
       }
+    });
+
+    it('defaults w/h to the type minimum for a widget file predating the fields (ADR-0009)', () => {
+      const cases: [string, number, number][] = [
+        ['markdown', 3, 2],
+        ['big-number', 2, 2],
+        ['line-graph', 4, 3],
+        ['pie-graph', 4, 3],
+      ];
+      for (const [type, w, h] of cases) {
+        const raw = frontmatter.serialize({ title: 'Legacy', type, order: 0 }, 'label,value\nA,1');
+        const result = frontmatter.parseWidgetFile(raw);
+        expect(result.ok, `expected ${type} to parse`).to.equal(true);
+        if (result.ok) {
+          expect(result.widget).to.include({ w, h });
+        }
+      }
+    });
+
+    it('preserves an explicit w/h instead of defaulting', () => {
+      const raw = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 5, h: 4 },
+        '',
+      );
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.widget).to.include({ w: 5, h: 4 });
+    });
+
+    it("clamps w/h to each type's minimum and the shared 12×8 maximum", () => {
+      const atMinimum = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 2, h: 2 },
+        '',
+      );
+      expect(frontmatter.parseWidgetFile(atMinimum).ok).to.equal(true);
+
+      const belowMinimum = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 1, h: 2 },
+        '',
+      );
+      expect(frontmatter.parseWidgetFile(belowMinimum).ok).to.equal(false);
+
+      const atMaximum = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 12, h: 8 },
+        '',
+      );
+      expect(frontmatter.parseWidgetFile(atMaximum).ok).to.equal(true);
+
+      const aboveMaximum = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 13, h: 8 },
+        '',
+      );
+      expect(frontmatter.parseWidgetFile(aboveMaximum).ok).to.equal(false);
     });
   });
 

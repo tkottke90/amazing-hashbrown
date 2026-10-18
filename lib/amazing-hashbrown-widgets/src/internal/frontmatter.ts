@@ -2,7 +2,7 @@
 
 import matter from 'gray-matter';
 import type { DashboardWidget, DistributiveOmit, MarkdownWidget } from '../types.js';
-import { WidgetFrontmatterSchema } from './widget-field-schemas.js';
+import { WidgetFrontmatterSchema, WIDGET_SIZE_MIN } from './widget-field-schemas.js';
 
 export interface ParsedWidgetFile {
   data: Record<string, unknown>;
@@ -127,6 +127,17 @@ export function parseWidgetFile(raw: string): WidgetFileParseResult {
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
+
+  // Widget Size backward compatibility (ADR-0009): a file predating `w`/`h`
+  // defaults to its type's minimum, applied here rather than as a zod
+  // `.default()` since the right default depends on the sibling `type`
+  // field, which a per-field zod default can't see.
+  const sizeMin = WIDGET_SIZE_MIN[data['type'] as keyof typeof WIDGET_SIZE_MIN];
+  if (sizeMin) {
+    if (typeof data['w'] !== 'number') data['w'] = sizeMin.w;
+    if (typeof data['h'] !== 'number') data['h'] = sizeMin.h;
+  }
+
   const result = WidgetFrontmatterSchema.safeParse(data);
   if (!result.success) {
     const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');

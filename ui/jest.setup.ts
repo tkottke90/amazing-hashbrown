@@ -8,6 +8,22 @@ if (!globalThis.crypto?.randomUUID) {
   });
 }
 
+// jsdom has no PointerEvent constructor at all — needed by anything using
+// raw pointerdown/pointermove/pointerup (the dashboard widget resize
+// handle's own pointer-delta logic; dnd-kit's PointerSensor polyfills its
+// own handling and doesn't need this). A minimal MouseEvent-based stand-in
+// is enough: clientX/clientY/pointerId are all either flags are needed for.
+if (typeof globalThis.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    constructor(type: string, params: MouseEventInit & { pointerId?: number } = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 0;
+    }
+  }
+  globalThis.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 // Radix popover-style primitives (DropdownMenu, Select, ...) call these
 // during open/close in the browser; jsdom doesn't implement them.
 if (!Element.prototype.hasPointerCapture) {

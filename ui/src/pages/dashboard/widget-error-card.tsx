@@ -19,7 +19,7 @@ export function WidgetErrorCard({ result, onChanged }: WidgetErrorCardProps) {
     // design doc's D13 — this wrapper adds the distinguishing testid on top
     // of the shell's own "widget-card" one, rather than threading an
     // error-only prop into the shared component.
-    <div data-testid="widget-error-card">
+    <div data-testid="widget-error-card" className="h-full">
       <WidgetCard title="Unable to load this widget">
         <p className="text-sm text-destructive">{result.error}</p>
         <WidgetDrawer

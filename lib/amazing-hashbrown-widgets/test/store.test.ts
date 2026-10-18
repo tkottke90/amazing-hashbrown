@@ -295,6 +295,37 @@ describe('store', () => {
       const { data } = frontmatter.parse(raw);
       expect(data).to.deep.include({ source: 'agent', maintainer: 'check-disk-space.sh' });
     });
+
+    it('sets Widget Size to the type minimum for each widget type', async () => {
+      const root = await tmpRoot();
+      const markdown = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Md',
+        source: 'manual',
+        content: 'x',
+      });
+      const bigNumber = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Num',
+        source: 'manual',
+      });
+      const lineGraph = await store.createWidget(root, 'default', {
+        type: 'line-graph',
+        title: 'Line',
+        source: 'manual',
+        data: 'label,value\nA,1',
+      });
+      const pieGraph = await store.createWidget(root, 'default', {
+        type: 'pie-graph',
+        title: 'Pie',
+        source: 'manual',
+        data: 'label,value\nA,1',
+      });
+      expect(markdown).to.deep.include({ w: 3, h: 2 });
+      expect(bigNumber).to.deep.include({ w: 2, h: 2 });
+      expect(lineGraph).to.deep.include({ w: 4, h: 3 });
+      expect(pieGraph).to.deep.include({ w: 4, h: 3 });
+    });
   });
 
   describe('updateWidget', () => {
@@ -405,6 +436,203 @@ describe('store', () => {
       });
       expect(updated).to.deep.include({ source: 'agent', maintainer: 'check-disk-space.sh' });
     });
+
+    it('preserves the existing Widget Size when no size is supplied', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        source: 'manual',
+        value: 1,
+      });
+      expect(created).to.deep.include({ w: 2, h: 2 });
+      const updated = await store.updateWidget(root, 'default', created.id, {
+        type: 'big-number',
+        title: 'Count',
+        source: 'manual',
+        value: 2,
+      });
+      expect(updated).to.deep.include({ w: 2, h: 2 });
+    });
+
+    it('overwrites Widget Size when a size is supplied (resize)', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'big-number',
+        title: 'Count',
+        source: 'manual',
+        value: 1,
+      });
+      const resized = await store.updateWidget(
+        root,
+        'default',
+        created.id,
+        { type: 'big-number', title: 'Count', source: 'manual', value: 1 },
+        { w: 6, h: 4 },
+      );
+      expect(resized).to.deep.include({ w: 6, h: 4 });
+    });
+  });
+
+  describe('reorderWidget', () => {
+    async function createThree(root: string): Promise<[string, string, string]> {
+      const a = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        source: 'manual',
+        content: 'a',
+      });
+      const b = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'B',
+        source: 'manual',
+        content: 'b',
+      });
+      const c = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'C',
+        source: 'manual',
+        content: 'c',
+      });
+      return [a.id, b.id, c.id];
+    }
+
+    async function orderedIds(root: string): Promise<string[]> {
+      const results = await store.listWidgets(root, 'default');
+      return results
+        .filter((r): r is { status: 'ok'; widget: { id: string } } => r.status === 'ok')
+        .map((r) => r.widget.id);
+    }
+
+    it('is a no-op when movedId equals targetId', async () => {
+      const root = await tmpRoot();
+      const [a] = await createThree(root);
+      const before = await orderedIds(root);
+      const changed = await store.reorderWidget(root, 'default', a, a);
+      expect(changed).to.deep.equal([]);
+      expect(await orderedIds(root)).to.deep.equal(before);
+    });
+
+    it('moves a widget forward, into the middle of the sequence', async () => {
+      const root = await tmpRoot();
+      const a = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'A',
+          source: 'manual',
+          content: 'a',
+        })
+      ).id;
+      const b = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'B',
+          source: 'manual',
+          content: 'b',
+        })
+      ).id;
+      const c = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'C',
+          source: 'manual',
+          content: 'c',
+        })
+      ).id;
+      const d = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'D',
+          source: 'manual',
+          content: 'd',
+        })
+      ).id;
+      // Moving A to immediately before C lands it between B and C, not at the end.
+      await store.reorderWidget(root, 'default', a, c);
+      expect(await orderedIds(root)).to.deep.equal([b, a, c, d]);
+    });
+
+    it('moves a widget backward in the sequence', async () => {
+      const root = await tmpRoot();
+      const [a, b, c] = await createThree(root);
+      await store.reorderWidget(root, 'default', c, a);
+      expect(await orderedIds(root)).to.deep.equal([c, a, b]);
+    });
+
+    it('moves a widget to the end of the sequence', async () => {
+      const root = await tmpRoot();
+      const [a, b, c] = await createThree(root);
+      await store.reorderWidget(root, 'default', a, c);
+      // moving A to immediately before C (which is last) lands it second
+      expect(await orderedIds(root)).to.deep.equal([b, a, c]);
+    });
+
+    it('returns only the widgets whose order actually changed', async () => {
+      const root = await tmpRoot();
+      const a = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'A',
+          source: 'manual',
+          content: 'a',
+        })
+      ).id;
+      const b = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'B',
+          source: 'manual',
+          content: 'b',
+        })
+      ).id;
+      const c = (
+        await store.createWidget(root, 'default', {
+          type: 'markdown',
+          title: 'C',
+          source: 'manual',
+          content: 'c',
+        })
+      ).id;
+      await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'D',
+        source: 'manual',
+        content: 'd',
+      });
+      // Moving A to immediately before C shifts only A and B; C and D keep
+      // their original order values, so only 2 of the 4 widgets are written.
+      const changed = await store.reorderWidget(root, 'default', a, c);
+      const changedIds = changed.map((w) => w.id).sort();
+      expect(changedIds).to.deep.equal([a, b].sort());
+      expect(changed.find((w) => w.id === b)?.order).to.equal(0);
+      expect(changed.find((w) => w.id === a)?.order).to.equal(1);
+    });
+
+    it('throws WidgetNotFoundError and writes nothing for an unknown movedId', async () => {
+      const root = await tmpRoot();
+      await createThree(root);
+      const before = await orderedIds(root);
+      try {
+        await store.reorderWidget(root, 'default', 'does-not-exist', before[0]!);
+        expect.fail('expected reorderWidget to throw');
+      } catch (err) {
+        expect(err).to.be.instanceOf(store.WidgetNotFoundError);
+      }
+      expect(await orderedIds(root)).to.deep.equal(before);
+    });
+
+    it('throws WidgetNotFoundError and writes nothing for an unknown targetWidgetId', async () => {
+      const root = await tmpRoot();
+      await createThree(root);
+      const before = await orderedIds(root);
+      try {
+        await store.reorderWidget(root, 'default', before[0]!, 'does-not-exist');
+        expect.fail('expected reorderWidget to throw');
+      } catch (err) {
+        expect(err).to.be.instanceOf(store.WidgetNotFoundError);
+      }
+      expect(await orderedIds(root)).to.deep.equal(before);
+    });
   });
 
   describe('updateWidgetRaw', () => {
@@ -501,6 +729,22 @@ describe('store', () => {
         expect.fail('expected deleteWidget to throw');
       } catch (err) {
         expect((err as Error).message).to.match(/invalid/i);
+      }
+    });
+
+    it('rejects an unsafe movedId/targetId passed to reorderWidget', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'A',
+        source: 'manual',
+        content: 'a',
+      });
+      try {
+        await store.reorderWidget(root, 'default', created.id, '../escape');
+        expect.fail('expected reorderWidget to throw');
+      } catch (err) {
+        expect(err).to.be.instanceOf(store.WidgetNotFoundError);
       }
     });
   });

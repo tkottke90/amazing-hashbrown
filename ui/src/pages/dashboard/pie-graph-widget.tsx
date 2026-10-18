@@ -7,19 +7,36 @@ import { showToast } from '@/lib/toast';
 import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 import { parseCsvBody } from './parse-csv-body';
-import { WidgetCard } from './widget-card';
+import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetDrawer } from './widget-drawer';
 import type { PieGraphWidget as PieGraphWidgetData } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 interface PieGraphWidgetProps {
   widget: PieGraphWidgetData;
   onChanged: () => void;
+  editMode?: boolean;
+  dragHandleProps?: DragHandleProps;
+  w?: number;
+  h?: number;
+  minW?: number;
+  minH?: number;
+  onResize?: (w: number, h: number) => void;
 }
 
 const CHART_SIZE = 160;
 const RADIUS = CHART_SIZE / 2;
 
-export function PieGraphWidget({ widget, onChanged }: PieGraphWidgetProps) {
+export function PieGraphWidget({
+  widget,
+  onChanged,
+  editMode,
+  dragHandleProps,
+  w,
+  h,
+  minW,
+  minH,
+  onResize,
+}: PieGraphWidgetProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -69,6 +86,13 @@ export function PieGraphWidget({ widget, onChanged }: PieGraphWidgetProps) {
       source={widget.source}
       maintainer={widget.maintainer}
       updatedAt={widget.updatedAt}
+      editMode={editMode}
+      dragHandleProps={dragHandleProps}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      onResize={onResize}
     >
       <div data-testid="pie-graph-widget" className="flex justify-center">
         <svg ref={svgRef} viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`} className="h-40 w-40" />

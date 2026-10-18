@@ -31,6 +31,27 @@ export function patchDashboardWidget(dashboardId: string, widget: DashboardWidge
   );
 }
 
+/**
+ * Plural sibling of patchDashboardWidget — patches every listed widget in
+ * one setDashboardWidgets call, not a loop over the singular function (which
+ * would cause one signal write per widget instead of one for the whole
+ * Reorder). Called from use-live-events.ts on a `dashboard_reordered`
+ * broadcast, and directly after this tab's own drag-reorder request.
+ */
+export function patchDashboardWidgets(dashboardId: string, widgets: DashboardWidget[]): void {
+  const current = widgetsByDashboard.value[dashboardId];
+  if (!current || widgets.length === 0) return;
+  const byId = new Map(widgets.map((w) => [w.id, w]));
+  setDashboardWidgets(
+    dashboardId,
+    current.map((r) =>
+      r.status === 'ok' && byId.has(r.widget.id)
+        ? { status: 'ok', widget: byId.get(r.widget.id)! }
+        : r,
+    ),
+  );
+}
+
 // Test-only: clears every dashboard's cached widgets so a fresh test file
 // (or `beforeEach`) doesn't observe state left over from a previous one —
 // same role as _resetThreadInstancesForTests() in use-thread.ts.

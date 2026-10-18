@@ -10,6 +10,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as frontmatter from './internal/frontmatter.js';
 import { slugify, withCollisionSuffix } from './internal/slug.js';
+import { WIDGET_SIZE_MIN } from './internal/widget-field-schemas.js';
 import type {
   DashboardWidget,
   MarkdownWidget,
@@ -113,17 +114,20 @@ function assertNeverWidgetType(type: never): never {
   throw new Error(`Unhandled widget type: ${type}`);
 }
 
-/** Build the typed widget object for a given id/order from a create/update input. */
+/** Build the typed widget object for a given id/order/size from a create/update input. */
 function buildWidget(
   id: string,
   order: number,
   input: WidgetPersistInput,
+  size: { w: number; h: number },
 ): WritableDashboardWidget {
   const base = {
     id,
     title: input.title,
     subtitle: input.subtitle,
     order,
+    w: size.w,
+    h: size.h,
     source: input.source,
     maintainer: input.maintainer,
   };
@@ -161,10 +165,22 @@ export async function createWidget(
   }
 
   const order = await nextOrder(root, dashboardId);
-  const widget = buildWidget(slug, order, input);
+  const widget = buildWidget(slug, order, input, WIDGET_SIZE_MIN[input.type]);
   await writeWidgetFile(root, dashboardId, widget);
   const stat = await fs.stat(widgetPath(root, dashboardId, widget.id));
   return { ...widget, updatedAt: stat.mtime.toISOString() };
+}
+
+/**
+ * Write a file's content via a temp file + rename, so a reader never sees a
+ * half-written file. Every widget write (create, update, reorder) funnels
+ * through this — see ADR-0008's atomicity discussion for `reorderWidget`,
+ * which this hardens too as a side effect with no behavior change.
+ */
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await fs.writeFile(tmpPath, content, 'utf8');
+  await fs.rename(tmpPath, filePath);
 }
 
 /**
@@ -184,6 +200,8 @@ async function writeWidgetFile(
     title: widget.title,
     type: widget.type,
     order: widget.order,
+    w: widget.w,
+    h: widget.h,
     source: widget.source,
   };
   if (widget.subtitle !== undefined) data.subtitle = widget.subtitle;
@@ -211,7 +229,7 @@ async function writeWidgetFile(
       return assertNeverWidgetType(widget);
   }
 
-  await fs.writeFile(filePath, frontmatter.serialize(data, body), 'utf8');
+  await writeFileAtomic(filePath, frontmatter.serialize(data, body));
 }
 
 async function readOrThrowNotFound(filePath: string, id: string): Promise<string> {
@@ -233,22 +251,94 @@ async function readOrThrowNotFound(filePath: string, id: string): Promise<string
  * persistence (ADR-0005): writes exactly the `source`/`maintainer` already
  * computed by the caller (the drawer handler vs. the content handler each
  * decide their own), never hardcoding either itself.
+ *
+ * `size` is Widget Size (`w`/`h`) handling for the resize handle's PATCH
+ * (design spec §2.1): when supplied, it overwrites the stored size (already
+ * validated/clamped by the caller); when omitted — the drawer's full-replace
+ * PATCH has no reason to touch size — the existing file's `w`/`h` is
+ * preserved the same way `order` already is, falling back to the type's
+ * minimum for a widget file that predates these fields.
  */
 export async function updateWidget(
   root: string,
   dashboardId: string,
   id: string,
   input: WidgetPersistInput,
+  size?: { w: number; h: number },
 ): Promise<DashboardWidget> {
   const filePath = widgetPath(root, dashboardId, id);
   const raw = await readOrThrowNotFound(filePath, id);
   const { data } = frontmatter.parse(raw);
   const order = typeof data.order === 'number' ? data.order : 0;
+  const min = WIDGET_SIZE_MIN[input.type];
+  const resolvedSize = size ?? {
+    w: typeof data.w === 'number' ? data.w : min.w,
+    h: typeof data.h === 'number' ? data.h : min.h,
+  };
 
-  const widget = buildWidget(id, order, input);
+  const widget = buildWidget(id, order, input, resolvedSize);
   await writeWidgetFile(root, dashboardId, widget);
   const stat = await fs.stat(filePath);
   return { ...widget, updatedAt: stat.mtime.toISOString() };
+}
+
+/**
+ * Reorder (see GLOSSARY.md): move `movedId` to immediately before
+ * `targetId`'s current position, splicing every widget between the old and
+ * new slot by one (ADR-0007/ADR-0010 — no `x`/`y` coordinates, auto-flow by
+ * `order`). A no-op (`movedId === targetId`) touches nothing and returns
+ * `[]`. Both ids are resolved against `listWidgets` before anything is
+ * written — an unknown id throws `WidgetNotFoundError`, and an unsafe path
+ * segment throws via `widgetPath`'s existing guard — so a validation
+ * failure never writes a single file (ADR-0008, scoped per the design
+ * spec/plan: validate everything before writing anything; this is not a
+ * crash-safe multi-file transaction, which nothing in this codebase has).
+ * Only widgets whose `order` actually changed are written, in ascending
+ * `order` sequence, each via the same atomic `writeWidgetFile` every other
+ * write already uses.
+ */
+export async function reorderWidget(
+  root: string,
+  dashboardId: string,
+  movedId: string,
+  targetId: string,
+): Promise<DashboardWidget[]> {
+  if (movedId === targetId) return [];
+
+  const results = await listWidgets(root, dashboardId);
+  const ok = results.filter(
+    (r): r is { status: 'ok'; widget: DashboardWidget } => r.status === 'ok',
+  );
+  const moved = ok.find((r) => r.widget.id === movedId)?.widget;
+  const target = ok.find((r) => r.widget.id === targetId)?.widget;
+  if (!moved) throw new WidgetNotFoundError(`Widget "${movedId}" not found`);
+  if (!target) throw new WidgetNotFoundError(`Widget "${targetId}" not found`);
+
+  // Throws before any write on an unsafe id — belt-and-suspenders, since a
+  // `movedId`/`targetId` that resolved above came from a real filename.
+  widgetPath(root, dashboardId, movedId);
+  widgetPath(root, dashboardId, targetId);
+
+  const sequence = ok.map((r) => r.widget).sort((a, b) => a.order - b.order);
+  const originalOrderById = new Map(sequence.map((w) => [w.id, w.order]));
+  const withoutMoved = sequence.filter((w) => w.id !== movedId);
+  const targetIndex = withoutMoved.findIndex((w) => w.id === targetId);
+  withoutMoved.splice(targetIndex, 0, moved);
+
+  const changed = withoutMoved
+    .map((widget, order) => ({ ...widget, order }))
+    .filter((widget) => widget.order !== originalOrderById.get(widget.id));
+
+  for (const widget of changed) {
+    await writeWidgetFile(root, dashboardId, widget);
+  }
+
+  return Promise.all(
+    changed.map(async (widget) => {
+      const stat = await fs.stat(widgetPath(root, dashboardId, widget.id));
+      return { ...widget, updatedAt: stat.mtime.toISOString() };
+    }),
+  );
 }
 
 /**
@@ -352,6 +442,8 @@ export async function ensureSeeded(root: string, dashboardId: string): Promise<v
       title: seed.title,
       subtitle: seed.subtitle,
       order,
+      w: WIDGET_SIZE_MIN.markdown.w,
+      h: WIDGET_SIZE_MIN.markdown.h,
       source: 'manual',
       content: seed.content,
     };

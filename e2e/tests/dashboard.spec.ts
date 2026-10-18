@@ -158,28 +158,38 @@ test.describe(
       });
     });
 
-    test.describe('Tablet viewport (640-1023px)', () => {
+    // Below 1024px there's only one state — a single-column stack by order,
+    // w/h ignored entirely (#314's design spec §4.1) — the 2-column tablet
+    // tier this used to assert no longer exists.
+    test.describe('Sub-desktop viewport (640-1023px)', () => {
       test.use({ viewport: { width: 800, height: 900 } });
 
-      test('grid renders two columns with no horizontal overflow', async ({ page }, testInfo) => {
+      test('grid renders a single column with no horizontal overflow', async ({
+        page,
+      }, testInfo) => {
         await page.goto('/');
         await pauseBeforeAction(page, testInfo);
 
-        expect(await gridColumnCount(page)).toBe(2);
+        expect(await gridColumnCount(page)).toBe(1);
 
         const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
         expect(scrollWidth).toBeLessThanOrEqual(800 + 1);
       });
     });
 
+    // At/above 1024px the grid is a fixed 12-column track (#314) — every
+    // widget spans `grid-column: span w`, not a responsive 1/2/3-column
+    // stack.
     test.describe('Desktop viewport (>=1024px)', () => {
       test.use({ viewport: { width: 1280, height: 900 } });
 
-      test('grid renders three columns with no horizontal overflow', async ({ page }, testInfo) => {
+      test('grid renders a 12-column fixed track with no horizontal overflow', async ({
+        page,
+      }, testInfo) => {
         await page.goto('/');
         await pauseBeforeAction(page, testInfo);
 
-        expect(await gridColumnCount(page)).toBe(3);
+        expect(await gridColumnCount(page)).toBe(12);
 
         const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
         expect(scrollWidth).toBeLessThanOrEqual(1280 + 1);
@@ -588,6 +598,236 @@ test.describe(
         await expect(drawer.getByTestId('widget-drawer-raw-editor')).toBeVisible();
       } finally {
         await deleteWidgetIfExists(page.request, widget.id);
+      }
+    });
+  },
+);
+
+// Drag reorder + resize suite (#314) — mutates real dashboard widget files
+// on disk and needs the full 12-column desktop grid, so @user-workflow
+// only, same reasoning as the other mutating suites above.
+const layoutSuite: TestSuite = {
+  id: 56,
+  name: 'Dashboard widget layout',
+  description: 'Verifies drag-reorder and resize persist to disk and broadcast live',
+  purpose:
+    "Catch regressions in issue #314 — a drag or resize must survive a reload, and another open tab must pick up the change over SSE without a manual refresh, since that's the whole point of the feature over #179's non-persistent foundation",
+  tags: ['@user-workflow'],
+  steps: [
+    {
+      tags: ['@user-workflow'],
+      action: 'Enter Edit Mode, drag one widget onto another, reload',
+      expectedOutcome:
+        "The dragged widget lands at the target's former slot and the new order survives the reload",
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: "Enter Edit Mode, drag a widget's corner resize handle, reload",
+      expectedOutcome:
+        'The widget grows beyond its original span and the new size survives the reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open a second tab on the same dashboard, reorder in the first tab',
+      expectedOutcome: "The second tab's widget order updates live, with no manual refresh",
+      test: () => {},
+    },
+  ],
+};
+
+test.describe(
+  '@user-workflow',
+  {
+    annotation: suiteAnnotations(layoutSuite),
+  },
+  () => {
+    test.use({ viewport: { width: 1280, height: 900 } });
+
+    async function seedMarkdown(page: Page, title: string, content = 'x'): Promise<string> {
+      const res = await page.request.post('/api/v1/dashboards/default/widgets', {
+        data: { type: 'markdown', title, content },
+      });
+      return ((await res.json()) as { id: string }).id;
+    }
+
+    // :visible excludes each card's own (closed, but still in the DOM)
+    // "Edit widget" drawer heading — also an <h2>, nested inside the card.
+    async function cardTitles(page: Page): Promise<string[]> {
+      return page.getByTestId('widget-card').locator('h2:visible').allTextContents();
+    }
+
+    test('drag-reordering a widget onto another persists across reload', async ({
+      page,
+    }, testInfo) => {
+      const titleA = `E2E layout A ${testInfo.testId}`;
+      const titleB = `E2E layout B ${testInfo.testId}`;
+      const createdIds: string[] = [];
+
+      try {
+        createdIds.push(await seedMarkdown(page, titleA));
+        createdIds.push(await seedMarkdown(page, titleB));
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+        await expect(page.getByTestId('widget-card').filter({ hasText: titleB })).toBeVisible();
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+
+        const cardA = page.getByTestId('widget-card').filter({ hasText: titleA });
+        const cardB = page.getByTestId('widget-card').filter({ hasText: titleB });
+        // B was created after A, so A already sits immediately before B —
+        // dragging A onto B would be a no-op under "insert before target"
+        // semantics (ADR-0008). Drag B onto A instead, a genuine move.
+        const handleB = cardB.getByTestId('widget-drag-handle');
+
+        const handleBox = await handleB.boundingBox();
+        const targetBox = await cardA.boundingBox();
+        if (!handleBox || !targetBox) throw new Error('could not measure drag elements');
+
+        await page.mouse.move(
+          handleBox.x + handleBox.width / 2,
+          handleBox.y + handleBox.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          targetBox.x + targetBox.width / 2,
+          targetBox.y + targetBox.height / 2,
+          { steps: 10 },
+        );
+        await page.mouse.up();
+
+        await expect(async () => {
+          const titles = await cardTitles(page);
+          expect(titles.indexOf(titleB)).toBeLessThan(titles.indexOf(titleA));
+        }).toPass();
+
+        await page.reload();
+        await pauseBeforeAction(page, testInfo);
+        const titlesAfterReload = await cardTitles(page);
+        expect(titlesAfterReload.indexOf(titleB)).toBeLessThan(titlesAfterReload.indexOf(titleA));
+      } finally {
+        for (const id of createdIds) await deleteWidgetIfExists(page.request, id);
+      }
+    });
+
+    test('resizing a widget via its corner handle persists across reload', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E layout resize ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        widgetId = await seedMarkdown(page, title);
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        const originalBox = await card.boundingBox();
+        if (!originalBox) throw new Error('could not measure widget card');
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+        const handle = card.getByTestId('widget-resize-handle');
+        const handleBox = await handle.boundingBox();
+        if (!handleBox) throw new Error('could not measure resize handle');
+
+        await page.mouse.move(
+          handleBox.x + handleBox.width / 2,
+          handleBox.y + handleBox.height / 2,
+        );
+        await page.mouse.down();
+        // Drag well past the markdown minimum (3×2) in both directions —
+        // several columns and rows, not a fine-grained pixel target, so the
+        // assertion below only needs "grew", not an exact w/h.
+        await page.mouse.move(
+          handleBox.x + handleBox.width / 2 + 400,
+          handleBox.y + handleBox.height / 2 + 300,
+          { steps: 10 },
+        );
+        await page.mouse.up();
+
+        await expect(async () => {
+          const box = await card.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.width).toBeGreaterThan(originalBox.width);
+          expect(box!.height).toBeGreaterThan(originalBox.height);
+        }).toPass();
+
+        await page.reload();
+        await pauseBeforeAction(page, testInfo);
+        const boxAfterReload = await page
+          .getByTestId('widget-card')
+          .filter({ hasText: title })
+          .boundingBox();
+        expect(boxAfterReload).not.toBeNull();
+        expect(boxAfterReload!.width).toBeGreaterThan(originalBox.width);
+        expect(boxAfterReload!.height).toBeGreaterThan(originalBox.height);
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('a second tab picks up a reorder live over SSE, with no manual refresh', async ({
+      page,
+      context,
+    }, testInfo) => {
+      const titleA = `E2E layout live A ${testInfo.testId}`;
+      const titleB = `E2E layout live B ${testInfo.testId}`;
+      const createdIds: string[] = [];
+
+      try {
+        createdIds.push(await seedMarkdown(page, titleA));
+        createdIds.push(await seedMarkdown(page, titleB));
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+        await expect(page.getByTestId('widget-card').filter({ hasText: titleB })).toBeVisible();
+
+        const secondTab = await context.newPage();
+        await secondTab.goto('/');
+        await expect(
+          secondTab.getByTestId('widget-card').filter({ hasText: titleB }),
+        ).toBeVisible();
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+        const cardA = page.getByTestId('widget-card').filter({ hasText: titleA });
+        const cardB = page.getByTestId('widget-card').filter({ hasText: titleB });
+        // B was created after A, so A already sits immediately before B —
+        // dragging A onto B would be a no-op under "insert before target"
+        // semantics (ADR-0008). Drag B onto A instead, a genuine move.
+        const handleB = cardB.getByTestId('widget-drag-handle');
+
+        const handleBox = await handleB.boundingBox();
+        const targetBox = await cardA.boundingBox();
+        if (!handleBox || !targetBox) throw new Error('could not measure drag elements');
+
+        await page.mouse.move(
+          handleBox.x + handleBox.width / 2,
+          handleBox.y + handleBox.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          targetBox.x + targetBox.width / 2,
+          targetBox.y + targetBox.height / 2,
+          { steps: 10 },
+        );
+        await page.mouse.up();
+
+        // No reload or refresh on secondTab — the reorder must arrive over
+        // the standing SSE channel (dashboard_reordered) on its own.
+        await expect(async () => {
+          const titles = await secondTab
+            .getByTestId('widget-card')
+            .locator('h2:visible')
+            .allTextContents();
+          expect(titles.indexOf(titleB)).toBeLessThan(titles.indexOf(titleA));
+        }).toPass();
+
+        await secondTab.close();
+      } finally {
+        for (const id of createdIds) await deleteWidgetIfExists(page.request, id);
       }
     });
   },

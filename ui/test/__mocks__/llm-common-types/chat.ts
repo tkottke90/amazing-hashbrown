@@ -85,6 +85,8 @@ const DashboardWidgetBaseSchema = z.object({
   title: z.string(),
   subtitle: z.string().optional(),
   order: z.number(),
+  w: z.number(),
+  h: z.number(),
   source: z.enum(['manual', 'agent', 'system']),
   maintainer: z.string().optional(),
   updatedAt: z.string(),
@@ -144,6 +146,11 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     type: z.literal('widget_updated'),
     dashboardId: z.string(),
     widget: DashboardWidgetSchema,
+  }),
+  z.object({
+    type: z.literal('dashboard_reordered'),
+    dashboardId: z.string(),
+    widgets: z.array(DashboardWidgetSchema),
   }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as widgetsLib from '@tkottke90/amazing-hashbrown-widgets';
 import { WidgetNotFoundError, parseCsvBody } from '@tkottke90/amazing-hashbrown-widgets';
+import { WIDGET_SIZE_MIN, WIDGET_SIZE_MAX } from '@tkottke90/amazing-hashbrown-widgets/types';
 import type {
   DashboardWidget,
   WidgetContentInput,
@@ -39,6 +40,7 @@ export interface WidgetStoreDeps {
   updateWidget: typeof widgetsLib.updateWidget;
   updateWidgetRaw: typeof widgetsLib.updateWidgetRaw;
   deleteWidget: typeof widgetsLib.deleteWidget;
+  reorderWidget: typeof widgetsLib.reorderWidget;
 }
 
 const defaultStore: WidgetStoreDeps = widgetsLib;
@@ -56,11 +58,22 @@ const HexColorSchema = z
   .string()
   .regex(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i, 'Expected a hex color (#rgb or #rrggbb)');
 
+// Widget Size (w/h), optional on every type's input schema — present only
+// on the resize handle's PATCH to this same route (updateWidgetHandler
+// treats "both present" as a resize, "either absent" as preserve; see
+// design spec §2.1). Clamped per type to [type minimum, WIDGET_SIZE_MAX],
+// reusing the lib's shared constants rather than re-typing the numbers
+// (AGENTS.md's composition-over-customization principle) — the bound
+// numbers are shared, the zod call duplicating them is this file's own
+// established convention.
+
 const MarkdownWidgetInputSchema = z.object({
   type: z.literal('markdown'),
   title: z.string().min(1),
   subtitle: z.string().optional(),
   content: z.string(),
+  w: z.number().min(WIDGET_SIZE_MIN.markdown.w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN.markdown.h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
 const BigNumberWidgetInputSchema = z.object({
@@ -69,6 +82,8 @@ const BigNumberWidgetInputSchema = z.object({
   subtitle: z.string().optional(),
   value: z.number().optional(),
   unit: z.string().optional(),
+  w: z.number().min(WIDGET_SIZE_MIN['big-number'].w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN['big-number'].h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
 const LineGraphWidgetInputSchema = z.object({
@@ -77,6 +92,8 @@ const LineGraphWidgetInputSchema = z.object({
   subtitle: z.string().optional(),
   data: z.string(),
   color: HexColorSchema.optional(),
+  w: z.number().min(WIDGET_SIZE_MIN['line-graph'].w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN['line-graph'].h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
 const PieGraphWidgetInputSchema = z.object({
@@ -85,6 +102,8 @@ const PieGraphWidgetInputSchema = z.object({
   subtitle: z.string().optional(),
   data: z.string(),
   colors: z.array(HexColorSchema).optional(),
+  w: z.number().min(WIDGET_SIZE_MIN['pie-graph'].w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN['pie-graph'].h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
 const WidgetInputSchema = z.discriminatedUnion('type', [
@@ -96,6 +115,10 @@ const WidgetInputSchema = z.discriminatedUnion('type', [
 
 const WidgetRawSchema = z.object({
   raw: z.string(),
+});
+
+const ReorderWidgetSchema = z.object({
+  targetWidgetId: z.string().min(1),
 });
 
 // ---- Content-only input (D4) ------------------------------------------------------
@@ -185,8 +208,14 @@ export async function createWidgetHandler(
   if (payloadError) return badRequest(payloadError);
   // Widget lifecycle (creation) is a User-only action (D10) — always
   // 'manual', nothing to preserve, and never request/tool-call input (ADR-0005).
+  // `w`/`h` are never forwarded — `createWidget` always assigns the type's
+  // minimum (design spec §1.4); a caller has no form field to supply one
+  // from, and `WidgetPersistInput` excludes the field entirely.
+  const { w, h, ...contentFields } = parsed.data;
+  void w;
+  void h;
   const widget = await store.createWidget(dashboardRoot, dashboardId, {
-    ...parsed.data,
+    ...contentFields,
     source: 'manual',
   });
   broadcast({ type: 'widget_updated', dashboardId, widget });
@@ -212,14 +241,62 @@ export async function updateWidgetHandler(
   // human is doing this edit, regardless of what it was before (ADR-0005).
   const existing = await store.loadWidget(dashboardRoot, dashboardId, id);
   if (!existing) return notFound(`Widget "${id}" not found.`);
+  // Widget Size: present only on the resize handle's PATCH to this route
+  // (design spec §2.1) — both `w` and `h` must be present to count as a
+  // resize; a lone one (which the UI never sends) is treated as absent,
+  // not a partial resize. When absent, `store.updateWidget` preserves the
+  // existing size itself — this handler doesn't need to know what it was.
+  const { w, h, ...contentFields } = parsed.data;
+  const size = w !== undefined && h !== undefined ? { w, h } : undefined;
   try {
-    const widget = await store.updateWidget(dashboardRoot, dashboardId, id, {
-      ...parsed.data,
-      source: 'manual',
-      maintainer: existing.maintainer,
-    });
+    const widget = await store.updateWidget(
+      dashboardRoot,
+      dashboardId,
+      id,
+      {
+        ...contentFields,
+        source: 'manual',
+        maintainer: existing.maintainer,
+      },
+      size,
+    );
     broadcast({ type: 'widget_updated', dashboardId, widget });
     return ok(widget);
+  } catch (err) {
+    if (err instanceof WidgetNotFoundError) return notFound(err.message);
+    throw err;
+  }
+}
+
+/**
+ * Reorder (see GLOSSARY.md), ADR-0008: moves `id` to immediately before
+ * `targetWidgetId`'s current position, splicing every widget between the
+ * old and new slot. A no-op (`id === targetWidgetId`) returns an empty
+ * array and broadcasts nothing — there's nothing for another open tab to
+ * react to. 404 if either widget doesn't exist in this dashboard.
+ */
+export async function reorderWidgetHandler(
+  dashboardRoot: string,
+  dashboardId: string,
+  id: string,
+  body: unknown,
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<DashboardWidget[]>> {
+  const parsed = ReorderWidgetSchema.safeParse(body);
+  if (!parsed.success) {
+    return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+  try {
+    const widgets = await store.reorderWidget(
+      dashboardRoot,
+      dashboardId,
+      id,
+      parsed.data.targetWidgetId,
+    );
+    if (widgets.length > 0) {
+      broadcast({ type: 'dashboard_reordered', dashboardId, widgets });
+    }
+    return ok(widgets);
   } catch (err) {
     if (err instanceof WidgetNotFoundError) return notFound(err.message);
     throw err;
