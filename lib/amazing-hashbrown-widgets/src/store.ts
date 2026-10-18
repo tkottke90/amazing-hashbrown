@@ -140,6 +140,8 @@ function buildWidget(
       return { ...base, type: 'line-graph', data: input.data, color: input.color };
     case 'pie-graph':
       return { ...base, type: 'pie-graph', data: input.data, colors: input.colors };
+    case 'spacer':
+      return { ...base, type: 'spacer' };
     default:
       return assertNeverWidgetType(input);
   }
@@ -224,6 +226,9 @@ async function writeWidgetFile(
     case 'pie-graph':
       if (widget.colors !== undefined) data.colors = widget.colors;
       body = widget.data;
+      break;
+    case 'spacer':
+      body = '';
       break;
     default:
       return assertNeverWidgetType(widget);

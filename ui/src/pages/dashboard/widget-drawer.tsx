@@ -119,6 +119,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         return { ...base, type: 'line-graph', data: widget.data, color: widget.color };
       case 'pie-graph':
         return { ...base, type: 'pie-graph', data: widget.data, colors: widget.colors };
+      case 'spacer':
+        return { ...base, type: 'spacer' };
       default:
         return assertNeverWidgetType(widget);
     }
@@ -200,8 +202,14 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       .filter((c) => c.length > 0);
   }
 
-  function typeSpecificContentFields() {
-    switch (widgetType.value) {
+  // Takes the current type as a narrowed local-`const` parameter, rather
+  // than re-reading `widgetType.value` internally — a plain `const` is what
+  // TS can reliably narrow across the early-return guards below; a second,
+  // separate read of a signal's `.value` getter isn't guaranteed to stay
+  // narrowed the same way. Spacer (no Widget Payload at all) is excluded
+  // from this type and handled entirely by its callers instead.
+  function typeSpecificContentFields(type: Exclude<DashboardWidget['type'], 'spacer'>) {
+    switch (type) {
       case 'markdown':
         return { type: 'markdown' as const, content: content.value };
       case 'big-number':
@@ -219,24 +227,33 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       case 'pie-graph':
         return { type: 'pie-graph' as const, data: readCsvText(), colors: parsedColors() };
       default:
-        return assertNeverWidgetType(widgetType.value);
+        return assertNeverWidgetType(type);
     }
   }
 
+  // Spacer has no title/subtitle field at all (design spec §1.3) — early
+  // return rather than merging title/subtitle into typeSpecificContentFields'
+  // result, which WidgetContentInput's spacer member doesn't accept.
   function buildWidgetContentInput(): WidgetContentInput {
+    const type = widgetType.value;
+    if (type === 'spacer') return { type: 'spacer' };
     return {
       title: title.value.trim(),
       subtitle: subtitle.value.trim() || undefined,
-      ...typeSpecificContentFields(),
+      ...typeSpecificContentFields(type),
     };
   }
 
   function buildFrontmatterInput(): WidgetFrontmatterInput {
+    const type = widgetType.value;
+    if (type === 'spacer') {
+      return { type: 'spacer', title: title.value.trim(), order: order.value };
+    }
     return {
       title: title.value.trim(),
       subtitle: subtitle.value.trim() || undefined,
       order: order.value,
-      ...typeSpecificContentFields(),
+      ...typeSpecificContentFields(type),
     };
   }
 
@@ -327,6 +344,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         csvData.value = widget.data;
         csvGeneration.value++;
         colorsText.value = widget.colors?.join(',') ?? '';
+        break;
+      case 'spacer':
         break;
       default:
         assertNeverWidgetType(widget);
@@ -431,28 +450,35 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                   <SelectItem value="pie-graph" data-testid="widget-type-option-pie-graph">
                     Pie Graph
                   </SelectItem>
+                  <SelectItem value="spacer" data-testid="widget-type-option-spacer">
+                    Spacer
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${instanceKey}-title`}>Title</Label>
-            <Input
-              id={`${instanceKey}-title`}
-              value={title.value}
-              onInput={(e) => (title.value = (e.target as HTMLInputElement).value)}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${instanceKey}-subtitle`}>Subtitle</Label>
-            <Input
-              id={`${instanceKey}-subtitle`}
-              value={subtitle.value}
-              onInput={(e) => (subtitle.value = (e.target as HTMLInputElement).value)}
-            />
-          </div>
+          {widgetType.value !== 'spacer' && (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-title`}>Title</Label>
+                <Input
+                  id={`${instanceKey}-title`}
+                  value={title.value}
+                  onInput={(e) => (title.value = (e.target as HTMLInputElement).value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-subtitle`}>Subtitle</Label>
+                <Input
+                  id={`${instanceKey}-subtitle`}
+                  value={subtitle.value}
+                  onInput={(e) => (subtitle.value = (e.target as HTMLInputElement).value)}
+                />
+              </div>
+            </>
+          )}
 
           {widgetType.value === 'markdown' && (
             <div className="flex flex-col gap-2">

@@ -174,6 +174,21 @@ describe('routes/v1/dashboards.handlers', () => {
         expect((result.data as { data?: string }).data).to.equal(undefined);
       }
     });
+
+    it('creates a spacer widget with a fixed title, ignoring any caller-supplied title [unit]', async () => {
+      const result = await createWidgetHandler(root, 'default', {
+        type: 'spacer',
+        // SpacerWidgetInputSchema has no title key, so even if a caller
+        // somehow smuggled one in, zod strips it before this ever runs —
+        // this body is deliberately as bare as the UI drawer ever sends.
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.type).to.equal('spacer');
+        expect(result.data.title).to.equal('Spacer');
+        expect(result.data).to.deep.include({ w: 1, h: 1 });
+      }
+    });
   });
 
   describe('updateWidgetHandler()', () => {
@@ -355,6 +370,22 @@ describe('routes/v1/dashboards.handlers', () => {
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(400);
     });
+
+    it('resizes a spacer widget, keeping its title fixed at "Spacer" (D-preserve) [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', { type: 'spacer' });
+      if (!created.ok) throw new Error('setup failed');
+      expect(created.data).to.deep.include({ w: 1, h: 1 });
+
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'spacer',
+        w: 3,
+        h: 2,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data).to.deep.include({ w: 3, h: 2, title: 'Spacer' });
+      }
+    });
   });
 
   describe('reorderWidgetHandler()', () => {
@@ -513,6 +544,21 @@ describe('routes/v1/dashboards.handlers', () => {
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for a spacer widget, which has no content to update [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', { type: 'spacer' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { maintainer: 'some-script.sh' },
+        'agent',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
     });
 
     it("returns 400 for a value of the wrong type for the target widget's schema [unit]", async () => {

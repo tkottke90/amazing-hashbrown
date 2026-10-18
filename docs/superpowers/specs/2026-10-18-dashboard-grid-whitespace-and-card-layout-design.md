@@ -64,11 +64,7 @@ export interface SpacerWidget extends WidgetBase {
 }
 
 export type DashboardWidget =
-  | MarkdownWidget
-  | BigNumberWidget
-  | LineGraphWidget
-  | PieGraphWidget
-  | SpacerWidget;
+  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SpacerWidget;
 ```
 
 `WidgetContentInput` gains a title/subtitle-free variant — the drawer
@@ -212,11 +208,28 @@ shared shell.
 each restructure their `WidgetCard` children from one flat block into:
 
 ```tsx
-<WidgetCard editMode={editMode} dragHandleProps={dragHandleProps} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
-  <WidgetHeader title={widget.title} subtitle={widget.subtitle} editMode={editMode} dragHandleProps={dragHandleProps} />
+<WidgetCard
+  editMode={editMode}
+  dragHandleProps={dragHandleProps}
+  w={w}
+  h={h}
+  minW={minW}
+  minH={minH}
+  onResize={onResize}
+>
+  <WidgetHeader
+    title={widget.title}
+    subtitle={widget.subtitle}
+    editMode={editMode}
+    dragHandleProps={dragHandleProps}
+  />
   <WidgetContent>{/* existing type-specific content */}</WidgetContent>
   <WidgetAction>{/* existing Edit/Delete buttons */}</WidgetAction>
-  <WidgetFooter source={widget.source} maintainer={widget.maintainer} updatedAt={widget.updatedAt} />
+  <WidgetFooter
+    source={widget.source}
+    maintainer={widget.maintainer}
+    updatedAt={widget.updatedAt}
+  />
 </WidgetCard>
 ```
 
@@ -224,7 +237,8 @@ each restructure their `WidgetCard` children from one flat block into:
 widget") → `WidgetContent` (the parse error text) → `WidgetAction` (the
 "Edit raw file" link) — no `WidgetFooter`, a file that failed to parse has
 no real provenance. The Spacer's Edit-Mode card (§1.4) uses `WidgetHeader`
-+ `WidgetAction` (Delete only).
+
+- `WidgetAction` (Delete only).
 
 ## 4. Testing
 

@@ -102,6 +102,45 @@ describe('DashboardGrid', () => {
     expect(titles).toEqual(['a', 'b']);
   });
 
+  it('renders no Ghost Cells outside Edit Mode [unit]', () => {
+    mockMatchMedia(true);
+    render(
+      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={false} />,
+    );
+    expect(screen.queryAllByTestId('ghost-cell')).toHaveLength(0);
+  });
+
+  it('renders Ghost Cells only over cells no real widget occupies, non-interactively, in Edit Mode [unit]', () => {
+    mockMatchMedia(true);
+    // A single 3x2 widget: cells (1,1)-(2,3) are occupied, so no Ghost Cell
+    // should ever declare that exact row/col start.
+    render(
+      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={true} />,
+    );
+    const ghosts = screen.getAllByTestId('ghost-cell');
+    expect(ghosts.length).toBeGreaterThan(0);
+    for (const ghost of ghosts) {
+      expect(ghost).toHaveClass('pointer-events-none');
+      expect(ghost).toHaveAttribute('aria-hidden', 'true');
+      const row = ghost.style.gridRow;
+      const col = ghost.style.gridColumn;
+      const isOccupiedByWidget =
+        (row === '1 / span 1' || row === '2 / span 1') &&
+        (col === '1 / span 1' || col === '2 / span 1' || col === '3 / span 1');
+      expect(isOccupiedByWidget).toBe(false);
+    }
+  });
+
+  it('floors Ghost Cell rows at 5 for a near-empty dashboard in Edit Mode [unit]', () => {
+    mockMatchMedia(true);
+    render(
+      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={true} />,
+    );
+    const ghosts = screen.getAllByTestId('ghost-cell');
+    const maxRow = Math.max(...ghosts.map((g) => Number(g.style.gridRow.split(' ')[0])));
+    expect(maxRow).toBe(5);
+  });
+
   it('gives a fixed small span to a parse-error entry, never a real Widget Size [unit]', () => {
     mockMatchMedia(true);
     const results: WidgetLoadResult[] = [

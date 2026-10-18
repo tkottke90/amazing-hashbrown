@@ -832,3 +832,208 @@ test.describe(
     });
   },
 );
+
+// Spacer Widget / Ghost Cell / card overflow fix suite — mutates real
+// dashboard widget files on disk and needs the full desktop grid, so
+// @user-workflow only, same reasoning as the other mutating suites above.
+const whitespaceSuite: TestSuite = {
+  id: 57,
+  name: 'Dashboard whitespace controls',
+  description: 'Verifies the Spacer Widget, Ghost Cell overlay, and the widget card overflow fix',
+  purpose:
+    "Catch regressions from the Spacer/Ghost Cell/card-layout design — a Spacer must stay invisible outside Edit Mode yet behave like a real reorderable widget inside it, Ghost Cells must only ever appear in Edit Mode, and a widget whose content overflows its card must keep its footer visible instead of pushing it out of the card's bounds",
+  tags: ['@user-workflow'],
+  steps: [
+    {
+      tags: ['@user-workflow'],
+      action:
+        'Add a Spacer widget, toggle Edit Mode off/on, drag-reorder it among real widgets, reload',
+      expectedOutcome:
+        'No card renders for it outside Edit Mode; inside Edit Mode it shows a labeled, draggable, deletable placeholder; its new order survives the reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Toggle Edit Mode on a dashboard with real widgets',
+      expectedOutcome:
+        'Dashed Ghost Cell overlays appear over empty grid cells and disappear again once Edit Mode is turned back off',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add a Markdown widget with content long enough to overflow its card',
+      expectedOutcome:
+        "The card's footer (provenance badge/timestamp) stays within the card's own bottom edge while its content region scrolls independently",
+      test: () => {},
+    },
+  ],
+};
+
+test.describe(
+  '@user-workflow',
+  {
+    annotation: suiteAnnotations(whitespaceSuite),
+  },
+  () => {
+    test.use({ viewport: { width: 1280, height: 900 } });
+
+    async function seedMarkdown(page: Page, title: string, content = 'x'): Promise<string> {
+      const res = await page.request.post('/api/v1/dashboards/default/widgets', {
+        data: { type: 'markdown', title, content },
+      });
+      return ((await res.json()) as { id: string }).id;
+    }
+
+    async function seedSpacer(page: Page): Promise<string> {
+      const res = await page.request.post('/api/v1/dashboards/default/widgets', {
+        data: { type: 'spacer' },
+      });
+      return ((await res.json()) as { id: string }).id;
+    }
+
+    test('a Spacer widget is invisible outside Edit Mode, a real draggable placeholder inside it, and its position persists', async ({
+      page,
+    }, testInfo) => {
+      // Deliberately avoids the word "spacer" — Playwright's `hasText`
+      // string filter is case-insensitive, so a title containing it would
+      // also match the `hasText: 'Spacer'` filter used below for the
+      // Spacer widget's own card, defeating the "no card renders outside
+      // Edit Mode" assertion.
+      const titleA = `E2E whitespace-anchor-widget ${testInfo.testId}`;
+      const createdIds: string[] = [];
+
+      try {
+        const anchorId = await seedMarkdown(page, titleA);
+        createdIds.push(anchorId);
+        const spacerId = await seedSpacer(page);
+        createdIds.push(spacerId);
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+        await expect(page.getByTestId('widget-card').filter({ hasText: titleA })).toBeVisible();
+
+        // No card at all for the spacer outside Edit Mode — it's blank
+        // grid space, not a hidden-but-present card.
+        await expect(page.getByTestId('widget-card').filter({ hasText: 'Spacer' })).toHaveCount(0);
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+
+        const spacerCard = page.getByTestId('widget-card').filter({ hasText: 'Spacer' });
+        await expect(spacerCard).toBeVisible();
+        await expect(spacerCard.getByTestId('widget-drag-handle')).toBeVisible();
+        await expect(spacerCard.getByTestId('widget-delete-button')).toBeVisible();
+
+        // Drag it onto the real widget to reorder, the same gesture the
+        // layout suite above uses.
+        const handle = spacerCard.getByTestId('widget-drag-handle');
+        const targetCard = page.getByTestId('widget-card').filter({ hasText: titleA });
+        const handleBox = await handle.boundingBox();
+        const targetBox = await targetCard.boundingBox();
+        if (!handleBox || !targetBox) throw new Error('could not measure drag elements');
+
+        await page.mouse.move(
+          handleBox.x + handleBox.width / 2,
+          handleBox.y + handleBox.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          targetBox.x + targetBox.width / 2,
+          targetBox.y + targetBox.height / 2,
+          { steps: 10 },
+        );
+        await page.mouse.up();
+
+        await expect(async () => {
+          const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+          const body = (await widgets.json()) as Array<{
+            status: string;
+            widget?: { id: string; order: number };
+          }>;
+          const spacerOrder = body.find((r) => r.status === 'ok' && r.widget?.id === spacerId)
+            ?.widget?.order;
+          const anchorOrder = body.find((r) => r.status === 'ok' && r.widget?.id === anchorId)
+            ?.widget?.order;
+          expect(spacerOrder).toBeLessThan(anchorOrder!);
+        }).toPass();
+
+        await page.reload();
+        await pauseBeforeAction(page, testInfo);
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+        await expect(page.getByTestId('widget-card').filter({ hasText: 'Spacer' })).toBeVisible();
+      } finally {
+        for (const id of createdIds) await deleteWidgetIfExists(page.request, id);
+      }
+    });
+
+    test('Ghost Cells appear only in Edit Mode', async ({ page }, testInfo) => {
+      const title = `E2E ghost cells ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        widgetId = await seedMarkdown(page, title);
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+        await expect(page.getByTestId('widget-card').filter({ hasText: title })).toBeVisible();
+
+        await expect(page.getByTestId('ghost-cell')).toHaveCount(0);
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+        await expect(async () => {
+          expect(await page.getByTestId('ghost-cell').count()).toBeGreaterThan(0);
+        }).toPass();
+
+        await page.getByTestId('dashboard-edit-mode-toggle').click();
+        await expect(page.getByTestId('ghost-cell')).toHaveCount(0);
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('a long Markdown widget keeps its footer within the card bottom while only its content scrolls', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E overflow fix ${testInfo.testId}`;
+      const longContent = Array.from(
+        { length: 80 },
+        (_, i) => `Line ${i + 1} of overflowing content.`,
+      ).join('\n\n');
+      let widgetId: string | null = null;
+
+      try {
+        const created = await page.request.post('/api/v1/dashboards/default/widgets', {
+          data: { type: 'markdown', title, content: longContent },
+        });
+        widgetId = ((await created.json()) as { id: string }).id;
+
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+
+        const footer = card.getByTestId('widget-card-provenance');
+        await expect(footer).toBeVisible();
+
+        const cardBox = await card.boundingBox();
+        const footerBox = await footer.boundingBox();
+        if (!cardBox || !footerBox) throw new Error('could not measure card/footer');
+
+        // The regression this guards against: the footer rendering below
+        // the card's own bottom edge. Its bottom must stay within the
+        // card's bounds (+1px rounding allowance).
+        expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 1);
+
+        const content = card.getByTestId('widget-content');
+        await expect(content).toBeVisible();
+        const scrollHeight = await content.evaluate((el) => el.scrollHeight);
+        const clientHeight = await content.evaluate((el) => el.clientHeight);
+        // Confirms the content region itself is the one that overflows and
+        // scrolls — not just "the card happens to be tall enough".
+        expect(scrollHeight).toBeGreaterThan(clientHeight);
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+  },
+);

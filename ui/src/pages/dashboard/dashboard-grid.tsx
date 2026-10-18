@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals';
+import type { JSX } from 'preact';
 import {
   DndContext,
   DragOverlay,
@@ -21,6 +22,7 @@ import { patchDashboardWidgets } from '@/hooks/use-dashboard-widgets';
 import { reorderWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
 import { WidgetRenderer } from './widget-renderer';
 import { GRID_COLUMNS, GRID_ROW_HEIGHT_PX } from './grid-constants';
+import { computeOccupiedCells, ghostGridRowCount, type GridItemSpan } from './ghost-cells';
 
 interface DashboardGridProps {
   results: WidgetLoadResult[];
@@ -61,6 +63,37 @@ const collisionDetection: CollisionDetection = (args) => {
   const overlaps = rectIntersection(args);
   return overlaps.length > 0 ? overlaps : closestCorners(args);
 };
+
+// Ghost Cell (see GLOSSARY.md), ADR-0011: a decorative, non-interactive
+// overlay painted over cells no widget currently occupies, placed via exact
+// grid-line coordinates (not auto-flow `span`) so it aligns pixel-for-pixel
+// with real widgets. Rendered before real widgets in DOM order so it paints
+// behind them; `pointer-events-none` keeps it out of every pointer
+// interaction, drag/drop included.
+function GhostCell({ row, col }: { row: number; col: number }) {
+  return (
+    <div
+      data-testid="ghost-cell"
+      aria-hidden="true"
+      className="pointer-events-none rounded-md border border-dashed border-foreground/50"
+      style={{ gridColumn: `${col} / span 1`, gridRow: `${row} / span 1` }}
+    />
+  );
+}
+
+function GhostCells({ items }: { items: GridItemSpan[] }) {
+  const occupied = computeOccupiedCells(items);
+  const rowCount = ghostGridRowCount(items);
+  const cells: JSX.Element[] = [];
+  for (let row = 1; row <= rowCount; row++) {
+    for (let col = 1; col <= GRID_COLUMNS; col++) {
+      if (!occupied.has(`${row},${col}`)) {
+        cells.push(<GhostCell key={`${row},${col}`} row={row} col={col} />);
+      }
+    }
+  }
+  return <>{cells}</>;
+}
 
 function SortableGridItem({
   result,
@@ -163,6 +196,11 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
             gridAutoFlow: 'row',
           }}
         >
+          {editMode && (
+            <GhostCells
+              items={ordered.map((result, index) => ({ order: index, ...resultSpan(result) }))}
+            />
+          )}
           {ordered.map((result) => (
             <SortableGridItem
               key={resultKey(result)}

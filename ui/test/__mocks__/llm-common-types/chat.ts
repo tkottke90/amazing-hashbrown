@@ -108,6 +108,7 @@ const DashboardWidgetSchema = z.discriminatedUnion('type', [
     data: z.string(),
     colors: z.array(z.string()).optional(),
   }),
+  DashboardWidgetBaseSchema.extend({ type: z.literal('spacer') }),
 ]);
 
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [

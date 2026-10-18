@@ -9,6 +9,10 @@ import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 import { parseCsvBody } from './parse-csv-body';
 import { WidgetCard, type DragHandleProps } from './widget-card';
+import { WidgetHeader } from './widget-header';
+import { WidgetContent } from './widget-content';
+import { WidgetAction } from './widget-action';
+import { WidgetFooter } from './widget-footer';
 import { WidgetDrawer } from './widget-drawer';
 import type { LineGraphWidget as LineGraphWidgetData } from '@tkottke90/amazing-hashbrown-widgets/types';
 
@@ -104,28 +108,23 @@ export function LineGraphWidget({
   }
 
   return (
-    <WidgetCard
-      title={widget.title}
-      subtitle={widget.subtitle}
-      source={widget.source}
-      maintainer={widget.maintainer}
-      updatedAt={widget.updatedAt}
-      editMode={editMode}
-      dragHandleProps={dragHandleProps}
-      w={w}
-      h={h}
-      minW={minW}
-      minH={minH}
-      onResize={onResize}
-    >
-      <div data-testid="line-graph-widget">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          className="h-auto w-full"
-        />
-      </div>
-      <div className="flex justify-end gap-1">
+    <WidgetCard editMode={editMode} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
+      <WidgetHeader
+        title={widget.title}
+        subtitle={widget.subtitle}
+        editMode={editMode}
+        dragHandleProps={dragHandleProps}
+      />
+      <WidgetContent>
+        <div data-testid="line-graph-widget">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            className="h-auto w-full"
+          />
+        </div>
+      </WidgetContent>
+      <WidgetAction>
         <WidgetDrawer
           mode="edit"
           target={{ status: 'ok', widget }}
@@ -152,7 +151,12 @@ export function LineGraphWidget({
         >
           <Trash2 />
         </Button>
-      </div>
+      </WidgetAction>
+      <WidgetFooter
+        source={widget.source}
+        maintainer={widget.maintainer}
+        updatedAt={widget.updatedAt}
+      />
     </WidgetCard>
   );
 }

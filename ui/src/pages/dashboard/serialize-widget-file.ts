@@ -23,7 +23,11 @@ export type WidgetFrontmatterInput =
       order: number;
       data: string;
       colors?: string[];
-    };
+    }
+  // subtitle kept optional (never populated in practice — Spacer has no UI
+  // field for it) purely so the shared prefix logic below can read
+  // `input.subtitle` generically, same as every other member.
+  | { type: 'spacer'; title: string; subtitle?: string; order: number };
 
 function assertNeverWidgetType(type: never): never {
   throw new Error(`Unhandled widget type: ${type}`);
@@ -76,6 +80,9 @@ export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
     case 'pie-graph':
       if (input.colors !== undefined) lines.push(`colors: ${JSON.stringify(input.colors)}`);
       body = input.data;
+      break;
+    case 'spacer':
+      body = '';
       break;
     default:
       return assertNeverWidgetType(input);
