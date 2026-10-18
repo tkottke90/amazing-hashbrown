@@ -6,6 +6,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
+import { codeBlockWrap } from '@/hooks/use-chat-display-settings';
 import { ArtifactImage } from './artifact-image';
 
 // ---- helpers ----
@@ -32,13 +33,18 @@ export function CodeBlock(props: preact.JSX.HTMLAttributes<HTMLPreElement>) {
   }
 
   return (
-    <div className="relative group">
+    <div className="relative group" data-testid="code-block">
       <pre
         ref={(el) => {
           ref.current = el;
         }}
         {...props}
-        className={cn('overflow-hidden whitespace-pre-line', props.className)}
+        className={cn(
+          codeBlockWrap.value
+            ? 'whitespace-pre-wrap break-words'
+            : 'whitespace-pre overflow-x-auto',
+          props.className,
+        )}
       />
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         {lang && <span className="text-xs text-muted-foreground capitalize">{lang}</span>}

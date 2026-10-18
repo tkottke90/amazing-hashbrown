@@ -26,7 +26,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     observability: { enabled: true, spanOutputPreviewChars: 500 },
     afterAgent: { enabled: true },
     updates: { checkForUpdates: false },
-    chat: { showErrorMessages: false },
+    chat: { showErrorMessages: false, codeBlockWrap: false },
     embeddings: {
       enabled: true,
       type: 'ollama',
@@ -186,6 +186,15 @@ describe('routes/v1/settings.handlers', () => {
         const data = result.data as { port: number; logLevel: string };
         expect(data.port).to.equal(4000);
         expect(data.logLevel).to.equal('warn');
+      }
+    });
+
+    it('returns chat.codeBlockWrap defaulting to false for agent-behavior [unit]', () => {
+      const result = getSettingsSectionHandler('agent-behavior', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { chat: { codeBlockWrap: boolean } };
+        expect(data.chat.codeBlockWrap).to.equal(false);
       }
     });
 
@@ -487,6 +496,37 @@ describe('routes/v1/settings.handlers', () => {
         'seedProviderCosts',
         'reloadTrackerRegistry',
       ]);
+    });
+
+    it('PATCH agent-behavior writes chat.codeBlockWrap while preserving showErrorMessages [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'agent-behavior',
+        { chat: { codeBlockWrap: true } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      // Note: unlike `general` (which reads live off disk via `config.get`),
+      // `agent-behavior`'s GET reads from the `env` snapshot passed in — a
+      // static object here, not a live getter like the real env.ts. So the
+      // handler's immediate response below still reflects `makeEnv()`'s
+      // original values; what proves the write merged correctly is the
+      // persisted file.
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      expect(written.chat).to.deep.equal({ showErrorMessages: false, codeBlockWrap: true });
     });
 
     it('PATCH general returns the new GET response (includes updated logLevel) [unit]', async () => {

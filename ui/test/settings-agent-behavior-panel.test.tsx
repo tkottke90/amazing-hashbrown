@@ -24,7 +24,7 @@ const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fet
 
 const DEFAULT_DATA = {
   afterAgent: { enabled: true },
-  chat: { showErrorMessages: false },
+  chat: { showErrorMessages: false, codeBlockWrap: false },
   observability: { enabled: true, spanOutputPreviewChars: 500 },
 };
 
@@ -73,5 +73,31 @@ describe('AgentBehaviorPanel', () => {
     await waitFor(() =>
       expect(screen.queryByLabelText('Span output preview characters')).not.toBeInTheDocument(),
     );
+  });
+
+  it('reflects chat.codeBlockWrap in the wrap-long-lines switch', async () => {
+    mockFetch.mockResolvedValue({
+      ...DEFAULT_DATA,
+      chat: { showErrorMessages: false, codeBlockWrap: true },
+    });
+
+    render(<AgentBehaviorPanel />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Wrap long lines in code blocks' })).toBeChecked(),
+    );
+  });
+
+  it('toggling wrap long lines flips the switch', async () => {
+    render(<AgentBehaviorPanel />);
+
+    const toggle = await waitFor(() =>
+      screen.getByRole('switch', { name: 'Wrap long lines in code blocks' }),
+    );
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle).toBeChecked());
   });
 });
