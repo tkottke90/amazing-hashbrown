@@ -95,6 +95,20 @@ if (typeof URL.revokeObjectURL !== 'function') {
   URL.revokeObjectURL = () => {};
 }
 
+// jsdom doesn't implement innerText at all (it's layout-dependent, which
+// jsdom doesn't compute) — markdown.tsx's CodeBlock reads it to copy a code
+// block's rendered text. This approximates it with textContent, which is
+// sufficient for plain-text code block content (no hidden/collapsed
+// elements to differ on) and is what makes that Copy behavior testable here.
+if (!('innerText' in Element.prototype)) {
+  Object.defineProperty(Element.prototype, 'innerText', {
+    configurable: true,
+    get(this: Element) {
+      return this.textContent;
+    },
+  });
+}
+
 if (typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
