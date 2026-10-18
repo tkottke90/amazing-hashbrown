@@ -10,7 +10,7 @@ import { FormLayout } from '@/components/form-layout';
 
 interface AgentBehaviorSettings {
   afterAgent: { enabled: boolean };
-  chat: { showErrorMessages: boolean };
+  chat: { showErrorMessages: boolean; codeBlockWrap: boolean };
   observability: { enabled: boolean; spanOutputPreviewChars: number };
 }
 
@@ -73,6 +73,20 @@ export function AgentBehaviorPanel() {
                   id="chat-showErrorMessages"
                   checked={form.value.chat?.showErrorMessages ?? false}
                   onCheckedChange={(v) => setField('chat.showErrorMessages', v)}
+                />
+              </div>
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="chat-codeBlockWrap">Wrap long lines in code blocks</Label>
+                  <p class="text-xs text-muted-foreground">
+                    Long lines wrap to fit instead of scrolling horizontally.
+                  </p>
+                </div>
+                <Switch
+                  id="chat-codeBlockWrap"
+                  checked={form.value.chat?.codeBlockWrap ?? false}
+                  onCheckedChange={(v) => setField('chat.codeBlockWrap', v)}
                 />
               </div>
               <FieldError errors={fieldErrors.value['chat']} />

@@ -187,6 +187,7 @@ export const WorkspaceSummarySchema = z.object({
 
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
+  codeBlockWrap: z.boolean().default(false),
   contextWindow: ContextWindowSchema.optional(),
   conversationSearch: ConversationSearchSchema.optional(),
   workspaceSummary: WorkspaceSummarySchema.optional(),

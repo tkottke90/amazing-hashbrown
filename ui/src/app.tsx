@@ -6,6 +6,7 @@ import { MovePrompts } from '@/components/task-board/move-prompts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { activeGuard } from '@/hooks/use-settings-guard';
 import { connectLiveEvents } from '@/hooks/use-live-events';
+import { fetchChatDisplaySettings } from '@/hooks/use-chat-display-settings';
 import { ChatRoot } from '@/pages/chat';
 import { DashboardView } from '@/pages/dashboard';
 import { SettingsView } from '@/pages/settings';
@@ -34,6 +35,13 @@ export function App() {
   useEffect(() => {
     const es = connectLiveEvents();
     return () => es.close();
+  }, []);
+
+  // Fetched once per tab session so CodeBlock (markdown.tsx) can read the
+  // user's scroll/wrap preference without every page that renders Markdown
+  // needing to fetch it itself.
+  useEffect(() => {
+    void fetchChatDisplaySettings();
   }, []);
 
   return (
