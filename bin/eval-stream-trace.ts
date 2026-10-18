@@ -12,6 +12,7 @@ import {
   toTraceChunks,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type ToolSyntaxMiddlewareLike,
   type StreamedChunkLike,
   type TraceChunk,
 } from '../lib/evaluations/src/index.js';
@@ -23,6 +24,7 @@ import {
 } from '../api/src/services/provider-factory.js';
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
+import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
 import { bootSkillsManager } from '../api/src/services/skills-manager.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
@@ -184,6 +186,7 @@ if (scenario.type !== 'tool-call' && scenario.type !== 'tool-sequence') {
 await bootSkillsManager();
 const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+const toolSyntaxMiddleware = createToolSyntaxMiddleware();
 
 const logDir = resolve(
   projectRoot,
@@ -217,6 +220,7 @@ for (let n = 1; n <= runs; n++) {
       skillExpansionMiddleware: skillExpansionMiddleware as unknown as SkillExpansionMiddlewareLike,
       skillGatedToolsMiddleware:
         skillGatedToolsMiddleware as unknown as SkillGatedToolsMiddlewareLike,
+      toolSyntaxMiddleware: toolSyntaxMiddleware as unknown as ToolSyntaxMiddlewareLike,
     },
     { count: 0, total: 0 },
   );

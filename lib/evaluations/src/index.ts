@@ -50,6 +50,7 @@ export type {
   RunResult,
   SkillExpansionMiddlewareLike,
   SkillGatedToolsMiddlewareLike,
+  ToolSyntaxMiddlewareLike,
 } from './runner.js';
 
 // Comparator

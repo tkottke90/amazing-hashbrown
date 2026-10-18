@@ -69,6 +69,21 @@ export interface SkillGatedToolsMiddlewareLike {
   ) => Promise<unknown>;
 }
 
+// Structural shape of the real production tool-syntax.middleware.ts's
+// beforeAgent hook (api/src/agents/middleware/tool-syntax.middleware.ts),
+// same reasoning as the two interfaces above: this package only
+// peer-depends on @langchain/core, so the caller (bin/eval.ts) bridges the
+// real instance in with an `as unknown as` cast. Verified safe against the
+// real hook body: it only ever reads state.messages and never mutates it,
+// returning either {requestedToolIds} or undefined — notably NOT
+// {messages, ...} like SkillExpansionMiddlewareLike above, since this hook
+// never touches message content, only reads it.
+export interface ToolSyntaxMiddlewareLike {
+  beforeAgent: (state: {
+    messages: BaseMessage[];
+  }) => Promise<{ requestedToolIds?: string[] } | undefined>;
+}
+
 export interface RunConfig {
   suiteId: string;
   model: BaseChatModel;
@@ -93,14 +108,19 @@ export interface RunConfig {
    * to support this. Callers that don't set it (or don't set systemPrompt at
    * all) get today's unfiltered behavior unchanged. */
   filterHarnessSections?: (prompt: string, availableToolIds: Set<string>) => string;
-  /** Detects `#tool-name` tokens in a scenario's literal `input` text (issue
-   * #172) — same split as filterHarnessSections above: this package has no
-   * dependency on the app that owns the real implementation
-   * (api/src/agents/tool-syntax.ts's extractRequestedToolIds), so it's
-   * injected as a plain function. Called, when set, in the tool-call/
-   * tool-sequence branches of executeScenario, on the scenario's `input`
-   * before any priorTurns/seeding is applied — mirrors how the production
-   * middleware chain reads only the latest human message's raw text. */
+  /** Detects `#tool-name` tokens in a scenario's literal, pre-expansion
+   * authored text (issue #172) — same split as filterHarnessSections above:
+   * this package has no dependency on the app that owns the real
+   * implementation (api/src/agents/tool-syntax.ts's extractRequestedToolIds),
+   * so it's injected as a plain function. This is now only the FALLBACK path
+   * for a scenario with no `gatedSkill` set (no skill-expansion ever runs for
+   * those, so the scenario's own text genuinely IS the latest human message).
+   * A `gatedSkill` scenario instead goes through toolSyntaxMiddleware below,
+   * scanning the real post-expansion message — see resolveRequestedToolIds.
+   * Confirmed via real eval transcripts that scanning the pre-expansion text
+   * for a `gatedSkill` scenario misses any #token embedded in the skill's
+   * own expanded body (e.g. default-skills.ts's create-skill entry), which
+   * is exactly the case toolSyntaxMiddleware exists to cover correctly. */
   extractRequestedToolIds?: (content: string) => string[];
   /** Turns detected requested tool ids into <required-tool> instruction
    * blocks (issue #172), scoped to a scenario's actual bound-tool set the
@@ -122,6 +142,16 @@ export interface RunConfig {
   /** Real production skillGatedToolsMiddleware. Same requirement as
    * skillExpansionMiddleware above. */
   skillGatedToolsMiddleware?: SkillGatedToolsMiddlewareLike;
+  /** Real production tool-syntax.middleware.ts, bridged in the same way as
+   * the two middlewares above. Required whenever a `gatedSkill` scenario
+   * also has buildRequiredToolBlocks configured (i.e. the #tool-name
+   * feature is opted into for a run that includes gated-skill scenarios) —
+   * see the tool-call/tool-sequence branches of executeScenario, which
+   * throw a clear error rather than silently falling back to scanning the
+   * scenario's pre-expansion text (the exact bug this field fixes) if
+   * missing. Not required for a run with no gatedSkill scenarios, or one
+   * that never configures buildRequiredToolBlocks at all. */
+  toolSyntaxMiddleware?: ToolSyntaxMiddlewareLike;
   /** The sampling settings bin/eval.ts actually resolved for the model
    * under test, carried straight through onto the returned EvalRun (see
    * EvalRunSchema's sampling field) — this package never reads or
@@ -616,24 +646,70 @@ function toolName(t: BindToolsInput): string {
   return typeof t === 'object' && t !== null && 'name' in t ? (t as { name: string }).name : '';
 }
 
-// Applies explicit #tool-name detection (issue #172) on top of an
-// already-filterHarnessSections'd prompt, using the exact same resolved
-// tool-id set — a scenario can write `input: '#web_fetch summarize this'`
-// and have it actually detected here, closing the gap that made this
-// undetectable before: the production middleware chain never runs in this
-// eval harness (see invokeToolCallModel), so nothing else in this file would
-// otherwise notice a literal `#token` in a scenario's input.
+// Resolves the #tool-name ids (issue #172) a scenario is requesting, for
+// either shape a scenario can take:
+//
+// - No `gatedSkill` (postExpansionMessages omitted): no skill-expansion ever
+//   runs for these, so the scenario's own authored text genuinely IS the
+//   latest human message the model sees — scan it directly, matching
+//   production's own "scan the latest human message" rule by coincidence
+//   rather than by construction.
+// - `gatedSkill` set (postExpansionMessages provided): the scenario's own
+//   text is NOT what the model sees — resolveGatedSkillState() already
+//   expanded it via the real skillExpansionMiddleware into a full skill
+//   body that may itself contain #tokens (e.g. default-skills.ts's
+//   create-skill entry). Scanning the pre-expansion text misses those
+//   entirely — confirmed by grepping real eval transcripts and finding the
+//   mechanism never fired. toolSyntaxMiddleware is the REAL production
+//   tool-syntax.middleware.ts, so calling its beforeAgent on the actual
+//   post-expansion messages reproduces exactly what production detects,
+//   rather than this file re-deriving "which text counts as latest human
+//   message" a second time and risking it drifting out of sync again.
+async function resolveRequestedToolIds(
+  scenarioInputText: string,
+  postExpansionMessages: BaseMessage[] | undefined,
+  config: Pick<
+    RunConfig,
+    'extractRequestedToolIds' | 'toolSyntaxMiddleware' | 'buildRequiredToolBlocks'
+  >,
+): Promise<string[]> {
+  if (postExpansionMessages) {
+    if (!config.toolSyntaxMiddleware) {
+      // Fail loudly rather than silently falling back to the known-wrong
+      // pre-expansion text — same precedent as the skillGatedToolsMiddleware-
+      // missing check elsewhere in this file. Only triggers when the
+      // #tool-name feature is actually opted into (buildRequiredToolBlocks
+      // set); a gatedSkill scenario that never uses #tokens needs neither.
+      if (config.buildRequiredToolBlocks) {
+        throw new Error(
+          'a gatedSkill scenario is running with buildRequiredToolBlocks configured but no ' +
+            'toolSyntaxMiddleware was provided in RunConfig — #tool-name detection would ' +
+            "silently miss any token embedded in the skill's expanded body",
+        );
+      }
+      return [];
+    }
+    const result = await config.toolSyntaxMiddleware.beforeAgent({
+      messages: postExpansionMessages,
+    });
+    return result?.requestedToolIds ?? [];
+  }
+  return config.extractRequestedToolIds ? config.extractRequestedToolIds(scenarioInputText) : [];
+}
+
+// Turns already-resolved requested tool ids into <required-tool>
+// instruction blocks (issue #172), appended onto an already-
+// filterHarnessSections'd prompt.
 function withRequiredToolBlocks(
   systemPrompt: string | undefined,
-  scenarioInput: string,
+  requestedToolIds: string[],
   availableToolIds: Set<string>,
-  config: Pick<RunConfig, 'extractRequestedToolIds' | 'buildRequiredToolBlocks'>,
+  config: Pick<RunConfig, 'buildRequiredToolBlocks'>,
 ): string | undefined {
-  if (!systemPrompt || !config.extractRequestedToolIds || !config.buildRequiredToolBlocks) {
+  if (!systemPrompt || !config.buildRequiredToolBlocks || requestedToolIds.length === 0) {
     return systemPrompt;
   }
-  const requested = config.extractRequestedToolIds(scenarioInput);
-  const blocks = config.buildRequiredToolBlocks(requested, availableToolIds);
+  const blocks = config.buildRequiredToolBlocks(requestedToolIds, availableToolIds);
   return blocks.length > 0 ? `${systemPrompt}\n\n${blocks.join('\n\n')}` : systemPrompt;
 }
 
@@ -899,9 +975,14 @@ export async function executeScenario(
         config.filterHarnessSections && config.systemPrompt
           ? config.filterHarnessSections(config.systemPrompt, new Set(toolsForCall.map(toolName)))
           : config.systemPrompt;
+      const requestedToolIds = await resolveRequestedToolIds(
+        s.input,
+        s.gatedSkill ? (modelInput as BaseMessage[]) : undefined,
+        config,
+      );
       const finalSystemPrompt = withRequiredToolBlocks(
         effectiveSystemPrompt,
-        s.input,
+        requestedToolIds,
         new Set(toolsForCall.map(toolName)),
         config,
       );
@@ -1070,9 +1151,14 @@ export async function executeScenario(
         [...(s.turns ?? [])].reverse().find((t): t is { user: string } => 'user' in t)?.user ??
         s.steps?.[s.steps.length - 1]?.user ??
         scenarioInputText;
+      const requestedToolIds = await resolveRequestedToolIds(
+        scenarioInputText,
+        s.gatedSkill ? gatedMessages : undefined,
+        config,
+      );
       const finalSystemPrompt = withRequiredToolBlocks(
         effectiveSystemPrompt,
-        scenarioInputText,
+        requestedToolIds,
         new Set(toolsForCall.map(toolName)),
         config,
       );

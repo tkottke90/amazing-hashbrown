@@ -18,6 +18,7 @@ import {
   type Suite,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type ToolSyntaxMiddlewareLike,
   type BaselineFile,
   type BaselineVerdict,
   type EvalRun,
@@ -32,6 +33,7 @@ import {
 import { env } from '../api/src/config/env.js';
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
+import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
 import { bootSkillsManager } from '../api/src/services/skills-manager.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
@@ -217,6 +219,10 @@ await bootSkillsManager();
 // runner.ts's gatedSkill branch).
 const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+// Same real-instance treatment as the two above — needs no registrations,
+// it only scans the latest human message for #tokens (see
+// api/src/agents/middleware/tool-syntax.middleware.ts).
+const toolSyntaxMiddleware = createToolSyntaxMiddleware();
 
 const projectRoot = resolve(import.meta.url.replace('file://', ''), '../..');
 const suitesPath = resolve(projectRoot, 'suites');
@@ -382,12 +388,14 @@ async function runOneSuite(
       // Cast through the narrow *Like interfaces lib/evaluations declares
       // (it only peer-depends on @langchain/core, not langchain — the
       // package these real instances' richer types live in). Verified safe
-      // against both hook bodies — see runner.ts's SkillExpansionMiddlewareLike/
-      // SkillGatedToolsMiddlewareLike doc comments; do not "fix" this into
+      // against all three hook bodies — see runner.ts's
+      // SkillExpansionMiddlewareLike/SkillGatedToolsMiddlewareLike/
+      // ToolSyntaxMiddlewareLike doc comments; do not "fix" this into
       // something more type-strict without re-reading that reasoning.
       skillExpansionMiddleware: skillExpansionMiddleware as unknown as SkillExpansionMiddlewareLike,
       skillGatedToolsMiddleware:
         skillGatedToolsMiddleware as unknown as SkillGatedToolsMiddlewareLike,
+      toolSyntaxMiddleware: toolSyntaxMiddleware as unknown as ToolSyntaxMiddlewareLike,
     });
 
     const { run } = result;
