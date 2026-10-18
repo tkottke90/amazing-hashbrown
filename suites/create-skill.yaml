@@ -157,11 +157,16 @@ scenarios:
       scripts/references arrays, frontmatter omitted since it's the invalid
       part) rather than a bare {issue} fragment — a sparser seed than the
       real tool ever returns was observed to make the model stall and
-      re-call get_skill_source looking for data it already had.
+      re-call get_skill_source looking for data it already had. The opening
+      turn is the literal slash command (not hand-typed paraphrase) so the
+      skill's own REPAIR path instructions are actually in context by the
+      time the result comes back — skill-expansion only ever substitutes
+      the single latest human message, so a paraphrase here means the
+      model never sees the REPAIR path at all, no matter what it says.
     type: tool-sequence
     gatedSkill: create-skill
     turns:
-      - user: 'Fix my "broken-skill" — I think something is wrong with it.'
+      - user: '/create-skill fix my "broken-skill" — I think something is wrong with it.'
       - tool: get_skill_source
         args: { name: broken-skill }
         result:
@@ -242,14 +247,27 @@ scenarios:
       Given the agent just wrote a Python script artifact as part of a
       confirmed skill creation, confirms the next step is either offering
       or calling test_skill_artifact — the whole point of a dry run is
-      catching a broken script during authoring, not after.
+      catching a broken script during authoring, not after. The opening
+      turn is the literal slash command (not hand-typed paraphrase) so the
+      skill's own CREATE path instructions are actually in context by the
+      time the artifact is written. There is deliberately no separate
+      "Yes."/confirmation turn after the seeded ask_user result either —
+      answering a real ask_user prompt never adds a new top-level human
+      message (it's a LangGraph interrupt()/Command({resume}) continuation;
+      the answer becomes that same tool call's own result, confirmed
+      against stream-handler.ts), so a seeded human turn here wasn't just
+      redundant, it was actively wrong, and it was also what made the
+      opening slash command stop being "the latest human message" by the
+      time this scenario's real test point is reached — skill-expansion
+      only ever substitutes that one message, so expansion never fired for
+      this scenario at all until both of those were fixed.
     type: tool-sequence
     gatedSkill: create-skill
     turns:
       - user: >
-          Create app-wide skill "disk-check" — description "Checks disk
-          space", body "Run the check script.", with a Python script
-          check.py that prints free disk space.
+          /create-skill create app-wide skill "disk-check" — description
+          "Checks disk space", body "Run the check script.", with a Python
+          script check.py that prints free disk space.
       - tool: ask_user
         args:
           {
@@ -257,7 +275,6 @@ scenarios:
             kind: 'yes_no',
           }
         result: { text: 'User answered: yes' }
-      - user: 'Yes.'
       - tool: create_app_skill
         args:
           { name: 'disk-check', description: 'Checks disk space', body: 'Run the check script.' }
