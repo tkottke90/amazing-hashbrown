@@ -100,4 +100,14 @@ describe('PieGraphWidget', () => {
     expect(screen.getByTestId('widget-edit-button')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drawer-form')).toBeInTheDocument();
   });
+
+  it('renders content in the scrollable region and buttons in the pinned action row [unit]', () => {
+    renderWidget(<PieGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    expect(screen.getByTestId('widget-content')).toContainElement(
+      screen.getByTestId('pie-graph-widget'),
+    );
+    expect(screen.getByTestId('widget-action')).toContainElement(
+      screen.getByTestId('widget-delete-button'),
+    );
+  });
 });

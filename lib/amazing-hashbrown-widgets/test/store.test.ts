@@ -321,10 +321,30 @@ describe('store', () => {
         source: 'manual',
         data: 'label,value\nA,1',
       });
+      const spacer = await store.createWidget(root, 'default', {
+        type: 'spacer',
+        title: 'Spacer',
+        source: 'manual',
+      });
       expect(markdown).to.deep.include({ w: 3, h: 2 });
       expect(bigNumber).to.deep.include({ w: 2, h: 2 });
       expect(lineGraph).to.deep.include({ w: 4, h: 3 });
       expect(pieGraph).to.deep.include({ w: 4, h: 3 });
+      expect(spacer).to.deep.include({ w: 1, h: 1 });
+    });
+
+    it('creates a spacer widget with an empty body, same shape big-number uses', async () => {
+      const root = await tmpRoot();
+      const widget = await store.createWidget(root, 'default', {
+        type: 'spacer',
+        title: 'Spacer',
+        source: 'manual',
+      });
+      expect(widget).to.deep.include({ type: 'spacer', w: 1, h: 1 });
+
+      const raw = await fs.readFile(path.join(root, 'default', `${widget.id}.md`), 'utf8');
+      const { body } = frontmatter.parse(raw);
+      expect(body.trim()).to.equal('');
     });
   });
 

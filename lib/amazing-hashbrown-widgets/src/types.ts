@@ -16,6 +16,7 @@ import {
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
+  SpacerWidgetFrontmatterSchema,
 } from './internal/widget-field-schemas.js';
 
 export { WIDGET_SIZE_MIN, WIDGET_SIZE_MAX } from './internal/widget-field-schemas.js';
@@ -75,7 +76,18 @@ export interface PieGraphWidget extends WidgetBase {
   colors?: string[];
 }
 
-export type DashboardWidget = MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget;
+/**
+ * Spacer Widget (see GLOSSARY.md): pure grid-occupying whitespace, no
+ * Widget Payload at all — same frontmatter-only persistence shape as
+ * `BigNumberWidget` (ADR-0002), minus even that type's own optional
+ * scalars.
+ */
+export interface SpacerWidget extends WidgetBase {
+  type: 'spacer';
+}
+
+export type DashboardWidget =
+  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SpacerWidget;
 
 /**
  * `Omit<T, K>`, applied per-member when `T` is a union, instead of
@@ -114,7 +126,11 @@ export type WidgetContentInput =
   | { type: 'markdown'; title: string; subtitle?: string; content: string }
   | { type: 'big-number'; title: string; subtitle?: string; value?: number; unit?: string }
   | { type: 'line-graph'; title: string; subtitle?: string; data: string; color?: string }
-  | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] };
+  | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] }
+  // No title/subtitle (Q4/Q8): a Spacer Widget has no UI-editable fields
+  // beyond its position and Widget Size. The store assigns a fixed
+  // `title: 'Spacer'` at creation — never caller-supplied.
+  | { type: 'spacer' };
 
 /** A widget before it's been stat'd for `updatedAt` — what `store.ts` builds and persists. */
 export type WritableDashboardWidget = DistributiveOmit<DashboardWidget, 'updatedAt'>;
@@ -164,4 +180,5 @@ export const DashboardWidgetSchema = z.discriminatedUnion('type', [
     updatedAt: z.string(),
     data: z.string(),
   }),
+  SpacerWidgetFrontmatterSchema.extend({ id: z.string(), updatedAt: z.string() }),
 ]);

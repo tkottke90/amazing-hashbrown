@@ -163,6 +163,29 @@ describe('frontmatter', () => {
       }
     });
 
+    it('parses a spacer widget with an empty body', () => {
+      const raw = frontmatter.serialize({ title: 'Spacer', type: 'spacer', order: 0 }, '');
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.widget).to.deep.equal({
+          title: 'Spacer',
+          type: 'spacer',
+          order: 0,
+          w: 1,
+          h: 1,
+          source: 'manual',
+        });
+      }
+    });
+
+    it('rejects a spacer widget missing title', () => {
+      const raw = frontmatter.serialize({ type: 'spacer', order: 0 }, '');
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.error).to.match(/title/i);
+    });
+
     it('rejects a pie-graph widget with any negative value', () => {
       const raw = frontmatter.serialize(
         { title: 'Agent usage', type: 'pie-graph', order: 0 },
@@ -229,6 +252,7 @@ describe('frontmatter', () => {
         ['big-number', 2, 2],
         ['line-graph', 4, 3],
         ['pie-graph', 4, 3],
+        ['spacer', 1, 1],
       ];
       for (const [type, w, h] of cases) {
         const raw = frontmatter.serialize({ title: 'Legacy', type, order: 0 }, 'label,value\nA,1');

@@ -7,6 +7,7 @@ import { BigNumberWidget } from './big-number-widget';
 import { LineGraphWidget } from './line-graph-widget';
 import { MarkdownWidget } from './markdown-widget';
 import { PieGraphWidget } from './pie-graph-widget';
+import { SpacerWidget } from './spacer-widget';
 import { WidgetErrorCard } from './widget-error-card';
 import type { DragHandleProps } from './widget-card';
 
@@ -77,6 +78,18 @@ function renderWidget(widget: DashboardWidget, options: RenderWidgetOptions) {
           h={h}
           minW={WIDGET_SIZE_MIN['pie-graph'].w}
           minH={WIDGET_SIZE_MIN['pie-graph'].h}
+          {...shared}
+        />
+      );
+    case 'spacer':
+      return (
+        <SpacerWidget
+          widget={widget}
+          onChanged={options.onChanged}
+          w={w}
+          h={h}
+          minW={WIDGET_SIZE_MIN.spacer.w}
+          minH={WIDGET_SIZE_MIN.spacer.h}
           {...shared}
         />
       );
